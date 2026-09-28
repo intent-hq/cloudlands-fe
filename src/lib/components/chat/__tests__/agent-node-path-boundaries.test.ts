@@ -7,6 +7,7 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { agentFileRefreshTriggered } from '$store/renderer/slices/chat-changes/chat-changes-slice';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { handleLink } from '$features/navigation/link-handler';
@@ -459,59 +460,153 @@ function deferred<T>() {
 }
 
 describe('placement changes during lazy diff reads', () => {
-  for (const phase of ['git.diffs', 'file.read'] as const) {
-    for (const recorded of [false, true]) {
-      it(`invalidates pending ${phase} and keeps ${recorded ? 'recorded' : 'unavailable'} remote content`, async () => {
-        const pending = deferred<unknown>();
-        const path = 'src/pending.ts';
-        backend.onRequest('git.diffs', () =>
-          phase === 'git.diffs' ? pending.promise : [{ path, hunks: [] }],
-        );
-        backend.onRequest('file.read', () =>
-          phase === 'file.read' ? pending.promise : { content: 'HEAD NEW' },
-        );
-        backend.onRequest('git.showFile', () => ({ content: 'HEAD OLD' }));
-        appStore.dispatch(
-          bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]),
-        );
-        const change = {
-          filePath: path,
-          action: 'modify' as const,
-          additions: 1,
-          deletions: 1,
-          toolName: 'edit_file',
-          toolCallId: 'pending-edit',
-        };
-        const view = render(ChatChangesPanelHarness, { agentId: id, changes: [change] });
-        await waitFor(() => expect(backend.requests.some((r) => r.method === phase)).toBe(true));
-        const readsBefore = backend.requests.length;
-        appStore.dispatch(bulkUpsertSessions([agent()]));
-        await view.rerender({
-          agentId: id,
-          changes: [
-            recorded
-              ? { ...change, oldContent: 'RECORDED OLD', newContent: 'RECORDED NEW' }
-              : change,
-          ],
+  for (const mode of ['per-turn', 'aggregate', 'staging', 'refresh'] as const) {
+    for (const phase of ['git.diffs', 'file.read'] as const) {
+      for (const recorded of [false, true]) {
+        it(`${mode}: invalidates pending ${phase} and keeps ${recorded ? 'recorded' : 'unavailable'} remote content`, async () => {
+          const pending = deferred<unknown>();
+          const path = 'src/pending.ts';
+          let refreshing = mode !== 'refresh';
+          backend.onRequest('git.numstat', () => []);
+          backend.onRequest('git.diffs', () =>
+            !refreshing ? [] : phase === 'git.diffs' ? pending.promise : [{ path, hunks: [] }],
+          );
+          backend.onRequest('file.read', () =>
+            phase === 'file.read' ? pending.promise : { content: 'HEAD NEW' },
+          );
+          backend.onRequest('git.showFile', () => ({ content: 'HEAD OLD' }));
+          appStore.dispatch(
+            bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]),
+          );
+          const change = {
+            filePath: path,
+            action: 'modify' as const,
+            additions: 1,
+            deletions: 1,
+            toolName: 'edit_file',
+            toolCallId: 'pending-edit',
+          };
+          const modeProps = {
+            isAggregate: mode === 'aggregate',
+            showStagingControls: mode === 'staging' || mode === 'refresh',
+          };
+          const view = render(ChatChangesPanelHarness, {
+            agentId: id,
+            changes: [change],
+            ...modeProps,
+          });
+          if (mode === 'refresh') {
+            await screen.findByRole('button', { name: 'Open file' });
+            backend.requests.length = 0;
+            refreshing = true;
+            appStore.dispatch(agentFileRefreshTriggered(workspaceId, path));
+          }
+          await waitFor(() => expect(backend.requests.some((r) => r.method === phase)).toBe(true));
+          const readsBefore = backend.requests.length;
+          appStore.dispatch(bulkUpsertSessions([agent()]));
+          await view.rerender({
+            agentId: id,
+            ...modeProps,
+            changes: [
+              recorded
+                ? { ...change, oldContent: 'RECORDED OLD', newContent: 'RECORDED NEW' }
+                : change,
+            ],
+          });
+          pending.resolve(phase === 'git.diffs' ? [{ path, hunks: [] }] : { content: 'HEAD NEW' });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(
+            backend.requests
+              .slice(readsBefore)
+              .filter((r) => ['git.diffs', 'git.showFile', 'file.read'].includes(r.method)),
+          ).toEqual([]);
+          if (recorded)
+            await waitFor(() =>
+              expect(screen.getByTestId('new-content').textContent).toBe('RECORDED NEW'),
+            );
+          else
+            await screen.findByText(
+              'This file’s content is unavailable in the recorded tool output.',
+            );
+          expect(document.body.textContent).not.toContain('HEAD NEW');
+          expect(document.body.textContent).not.toContain('HEAD OLD');
         });
-        pending.resolve(phase === 'git.diffs' ? [{ path, hunks: [] }] : { content: 'HEAD NEW' });
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(
-          backend.requests
-            .slice(readsBefore)
-            .filter((r) => ['git.diffs', 'git.showFile', 'file.read'].includes(r.method)),
-        ).toEqual([]);
-        if (recorded)
-          await waitFor(() =>
-            expect(screen.getByTestId('new-content').textContent).toBe('RECORDED NEW'),
-          );
-        else
-          await screen.findByText(
-            'This file’s content is unavailable in the recorded tool output.',
-          );
-        expect(document.body.textContent).not.toContain('HEAD NEW');
-        expect(document.body.textContent).not.toContain('HEAD OLD');
-      });
+      }
     }
+  }
+});
+
+describe('parent diff read controls', () => {
+  const path = 'src/local-parent.ts';
+  const change = {
+    filePath: path,
+    action: 'modify' as const,
+    additions: 1,
+    deletions: 0,
+    toolName: 'edit_file',
+    toolCallId: 'local-parent',
+  };
+  const diff = [
+    {
+      path,
+      hunks: [
+        {
+          oldStart: 1,
+          oldLines: 0,
+          newStart: 1,
+          newLines: 1,
+          lines: [{ type: 'Addition', content: 'LOCAL NEW', newNumber: 1 }],
+        },
+      ],
+    },
+  ];
+  for (const mode of ['aggregate', 'staging', 'refresh'] as const) {
+    it(`keeps ${mode} head reads working while the agent stays local`, async () => {
+      appStore.dispatch(bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]));
+      backend.onRequest('git.numstat', () => []);
+      backend.onRequest('git.diffs', (params) =>
+        (params as { staged?: boolean })?.staged ? [] : diff,
+      );
+      backend.onRequest('git.showFile', () => ({ content: 'LOCAL OLD' }));
+      let content = 'LOCAL NEW';
+      backend.onRequest('file.read', () => ({ content }));
+      render(ChatChangesPanelHarness, {
+        agentId: id,
+        changes: [change],
+        isAggregate: mode === 'aggregate',
+        showStagingControls: mode !== 'aggregate',
+      });
+      await waitFor(() => expect(screen.getByTestId('new-content').textContent).toBe('LOCAL NEW'));
+      if (mode === 'refresh') {
+        content = 'LOCAL REFRESHED';
+        appStore.dispatch(agentFileRefreshTriggered(workspaceId, path));
+        await waitFor(() =>
+          expect(screen.getByTestId('new-content').textContent).toBe('LOCAL REFRESHED'),
+        );
+      }
+      expect(backend.requests.some((r) => r.method === 'file.read')).toBe(true);
+    });
+  }
+  for (const mode of ['per-turn', 'aggregate', 'staging'] as const) {
+    it(`cancels ${mode} enrichment when the panel unmounts`, async () => {
+      appStore.dispatch(bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]));
+      const pending = deferred<unknown>();
+      backend.onRequest('git.numstat', () => []);
+      backend.onRequest('git.diffs', () => pending.promise);
+      const view = render(ChatChangesPanelHarness, {
+        agentId: id,
+        changes: [change],
+        isAggregate: mode === 'aggregate',
+        showStagingControls: mode === 'staging',
+      });
+      await waitFor(() =>
+        expect(backend.requests.some((r) => r.method === 'git.diffs')).toBe(true),
+      );
+      const before = backend.requests.length;
+      view.unmount();
+      pending.resolve(diff);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(backend.requests.slice(before)).toEqual([]);
+    });
   }
 });
