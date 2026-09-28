@@ -309,4 +309,137 @@ describe('panel-wide operational row window', () => {
     policy.setViewport({ top: 10, bottom: 10 });
     expect(policy.snapshot().pendingKeys).toEqual([]);
   });
+
+  it('shares projected overscan, pins and admissions across multiple clipped scrollers', () => {
+    const policy = createOperationalRowWindow();
+    const windows = Array.from({ length: 4 }, (_, i) => rows(100, `window-${i}`));
+    const entries = windows.flat();
+    const visible = windows.flatMap((window) => window.slice(40, 44).map((row) => row.key));
+    const before = Array.from({ length: 20 }, (_, distance) =>
+      windows.map((window) => window[39 - distance].key),
+    ).flat();
+    const after = Array.from({ length: 20 }, (_, distance) =>
+      windows.map((window) => window[44 + distance].key),
+    ).flat();
+    policy.setEntries(entries);
+    policy.setVisibility({ visibleKeys: visible, beforeKeys: before, afterKeys: after });
+    policy.setPins(windows.map((window) => window[90].key));
+    expect(policy.advanceFrame(1)).toEqual(visible.slice(0, 4));
+    expect(policy.advanceFrame(1)).toEqual([]);
+    settle(policy, 2);
+    expect(new Set(policy.snapshot().mountedKeys)).toEqual(
+      new Set([
+        ...visible,
+        ...before.slice(0, 12),
+        ...after.slice(0, 12),
+        windows[0][90].key,
+        windows[1][90].key,
+      ]),
+    );
+    expect(policy.snapshot().mountedKeys).toHaveLength(16 + 24 + 2);
+    expect(policy.snapshot().totalHeight).toBe(4000);
+  });
+
+  it('does not force clipped ancestor headers to admit visible descendants', () => {
+    const policy = createOperationalRowWindow();
+    const entries = Array.from({ length: 30 }, (_, i) => {
+      const pair = rows(2, `group-${i}`);
+      pair[0].kind = 'group';
+      return pair;
+    }).flat();
+    const childKeys = entries.filter((row) => row.kind !== 'group').map((row) => row.key);
+    policy.setEntries(entries);
+    policy.setVisibility({ visibleKeys: childKeys, beforeKeys: [], afterKeys: [] });
+    settle(policy);
+    expect(policy.snapshot().visibleKeys).toEqual(childKeys);
+    expect(policy.snapshot().mountedKeys).toEqual(childKeys);
+    expect(policy.snapshot().segments.filter((s) => s.type === 'spacer')).toHaveLength(30);
+    // Cheap structural shells are the renderer's responsibility; no expensive
+    // ancestor exemption is needed even with more than 24 visible child roots.
+  });
+
+  it('deduplicates projected candidates and ignores unknown, content and repeated-side keys', () => {
+    const policy = createOperationalRowWindow();
+    const entries = rows(100);
+    entries[0].kind = 'content';
+    policy.setEntries(entries);
+    const visibleKeys = [
+      entries[50].key,
+      entries[49].key,
+      entries[50].key,
+      'unknown',
+      entries[0].key,
+    ];
+    const beforeKeys = [
+      'unknown',
+      entries[0].key,
+      entries[49].key,
+      ...Array(20).fill(entries[40].key),
+      ...entries.slice(10, 30).map((r) => r.key),
+    ];
+    const afterKeys = [entries[40].key, ...entries.slice(60, 90).map((r) => r.key)];
+    policy.setVisibility({ visibleKeys, beforeKeys, afterKeys });
+    visibleKeys.push(entries[99].key);
+    beforeKeys.splice(0);
+    afterKeys.splice(0);
+    expect(policy.snapshot().visibleKeys).toEqual([entries[49].key, entries[50].key]);
+    settle(policy);
+    expect(new Set(policy.snapshot().mountedKeys)).toEqual(
+      new Set([
+        entries[49].key,
+        entries[50].key,
+        entries[40].key,
+        ...entries.slice(10, 21).map((r) => r.key),
+        ...entries.slice(60, 72).map((r) => r.key),
+      ]),
+    );
+  });
+
+  it('keeps nested geometry separate from projection and restores the numeric viewport on request', () => {
+    const policy = createOperationalRowWindow();
+    const entries = rows(100);
+    policy.setEntries(entries);
+    policy.setVisibility({ visibleKeys: [entries[80].key], beforeKeys: [], afterKeys: [] });
+    policy.measure([{ key: entries[0].key, height: 100 }]);
+    expect(policy.snapshot().visibleKeys).toEqual([entries[80].key]);
+    expect(policy.locate(entries[80].key)).toEqual({ index: 80, top: 890, height: 10 });
+    policy.setEntries(entries.slice(1));
+    expect(policy.snapshot().visibleKeys).toEqual([entries[80].key]);
+    policy.releaseScope('message');
+    expect(policy.snapshot().visibleKeys).toEqual([]);
+    policy.setVisibility({ visibleKeys: [entries[80].key], beforeKeys: [], afterKeys: [] });
+    policy.setEntries(entries);
+    expect(policy.snapshot().visibleKeys).toEqual([]);
+    policy.setEntries(entries, { top: 0, bottom: 20 });
+    expect(policy.snapshot().visibleKeys).toEqual(entries.slice(0, 2).map((r) => r.key));
+    policy.setVisibility({ visibleKeys: [entries[80].key], beforeKeys: [], afterKeys: [] });
+    policy.setViewport({ top: 50, bottom: 60 });
+    expect(policy.snapshot().visibleKeys).toEqual([entries[5].key]);
+    policy.dispose();
+    policy.setVisibility({ visibleKeys: [entries[80].key], beforeKeys: [], afterKeys: [] });
+    expect(policy.snapshot().segments).toEqual([]);
+  });
+
+  it('charges projected child reattachment even after admissions accumulated behind an absent shell', () => {
+    const policy = createOperationalRowWindow();
+    const entries = rows(30, 'child-window');
+    const keys = entries.map((row) => row.key);
+    policy.setEntries(entries);
+    policy.measure([{ key: keys[0], height: 35 }]);
+    const projection = { visibleKeys: keys, beforeKeys: [], afterKeys: [] };
+    policy.setVisibility(projection);
+    const nextFrame = settle(policy);
+    expect(policy.snapshot().mountedKeys).toHaveLength(30);
+    // Every shell attachment publishes a fresh invalidated snapshot BEFORE
+    // it exposes child components, including after hidden pre-admission.
+    policy.invalidateMounts(keys);
+    expect(policy.snapshot().mountedKeys).toEqual([]);
+    expect(policy.advanceFrame(nextFrame)).toHaveLength(4);
+    policy.invalidateMounts(keys);
+    policy.setVisibility(projection);
+    expect(policy.advanceFrame(nextFrame)).toEqual([]);
+    expect(policy.advanceFrame(nextFrame + 1)).toHaveLength(4);
+    expect(policy.snapshot().totalHeight).toBe(325);
+    expect(policy.locate(keys[0])?.height).toBe(35);
+  });
 });

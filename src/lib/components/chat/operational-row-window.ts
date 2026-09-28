@@ -15,6 +15,17 @@ export interface OperationalRowViewport {
   bottom: number;
 }
 
+/** Projected by the adapter through every clip/scroll ancestor, panel-wide.
+ * Each side is nearest-first; the policy caps it globally, not once per root.
+ * Only genuinely intersecting emitted rows belong in visibleKeys. An ancestor
+ * header is not visible merely because a child is; use cheap structural shells.
+ */
+export interface OperationalRowVisibility {
+  visibleKeys: readonly string[];
+  beforeKeys: readonly string[];
+  afterKeys: readonly string[];
+}
+
 type OperationalRowSegment = {
   type: 'row' | 'content' | 'spacer';
   scopeId: string;
@@ -86,6 +97,7 @@ export function createOperationalRowWindow() {
   const measured = new Map<string, number>();
   const mounted = new Set<string>();
   let viewport: OperationalRowViewport = { top: 0, bottom: 0 };
+  let projectedVisibility: OperationalRowVisibility | undefined;
   let requestedPins: string[] = [];
   let visibleKeys: string[] = [];
   let pinnedKeys: string[] = [];
@@ -94,11 +106,29 @@ export function createOperationalRowWindow() {
   let remainingAdmissions = 0;
   let disposed = false;
 
+  function operationalKeys(keys: readonly string[], excluded: ReadonlySet<string>): string[] {
+    const seen = new Set(excluded);
+    return keys.filter((key) => {
+      const index = positions.get(key);
+      if (index === undefined || entries[index].kind === 'content' || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   function reconcile(): void {
     visibleKeys = [];
     pinnedKeys = [];
     candidates = [];
-    if (viewport.bottom > viewport.top) {
+    let beforeKeys: string[] = [];
+    let afterKeys: string[] = [];
+    if (projectedVisibility) {
+      visibleKeys = operationalKeys(projectedVisibility.visibleKeys, new Set()).sort(
+        (a, b) => (positions.get(a) ?? 0) - (positions.get(b) ?? 0),
+      );
+      beforeKeys = [...projectedVisibility.beforeKeys];
+      afterKeys = [...projectedVisibility.afterKeys];
+    } else if (viewport.bottom > viewport.top) {
       const start = lowerBound(
         operationalIndices.length,
         (i) => offsets[operationalIndices[i] + 1] > viewport.top,
@@ -108,19 +138,26 @@ export function createOperationalRowWindow() {
         (i) => offsets[operationalIndices[i]] >= viewport.bottom,
       );
       visibleKeys = operationalIndices.slice(start, end).map((i) => entries[i].key);
+      beforeKeys = operationalIndices
+        .slice(Math.max(0, start - OVERSCAN_PER_SIDE), start)
+        .reverse()
+        .map((i) => entries[i].key);
+      afterKeys = operationalIndices.slice(end, end + OVERSCAN_PER_SIDE).map((i) => entries[i].key);
+    }
+    if (projectedVisibility || viewport.bottom > viewport.top) {
       const visible = new Set(visibleKeys);
-      pinnedKeys = requestedPins
-        .filter((key) => {
-          const index = positions.get(key);
-          return index !== undefined && entries[index].kind !== 'content' && !visible.has(key);
-        })
-        .slice(0, MAX_OFFSCREEN_PINS);
+      pinnedKeys = operationalKeys(requestedPins, visible).slice(0, MAX_OFFSCREEN_PINS);
+      beforeKeys = operationalKeys(beforeKeys, visible).slice(0, OVERSCAN_PER_SIDE);
+      afterKeys = operationalKeys(afterKeys, new Set([...visibleKeys, ...beforeKeys])).slice(
+        0,
+        OVERSCAN_PER_SIDE,
+      );
       const priority = new Set([...visibleKeys, ...pinnedKeys]);
-      for (let distance = 1; distance <= OVERSCAN_PER_SIDE; distance += 1) {
-        const before = operationalIndices[start - distance];
-        const after = operationalIndices[end + distance - 1];
-        if (before !== undefined) priority.add(entries[before].key);
-        if (after !== undefined) priority.add(entries[after].key);
+      for (let distance = 0; distance < OVERSCAN_PER_SIDE; distance += 1) {
+        const before = beforeKeys[distance];
+        const after = afterKeys[distance];
+        if (before !== undefined) priority.add(before);
+        if (after !== undefined) priority.add(after);
       }
       candidates = [...priority];
     }
@@ -157,17 +194,43 @@ export function createOperationalRowWindow() {
     for (const key of measured.keys()) if (!positions.has(key)) measured.delete(key);
     for (const key of mounted) if (!positions.has(key)) mounted.delete(key);
     requestedPins = requestedPins.filter((key) => positions.has(key));
-    if (nextViewport) viewport = { ...nextViewport };
+    if (nextViewport) {
+      viewport = { ...nextViewport };
+      projectedVisibility = undefined;
+    } else if (projectedVisibility) {
+      projectedVisibility = {
+        visibleKeys: projectedVisibility.visibleKeys.filter((key) => positions.has(key)),
+        beforeKeys: projectedVisibility.beforeKeys.filter((key) => positions.has(key)),
+        afterKeys: projectedVisibility.afterKeys.filter((key) => positions.has(key)),
+      };
+    }
     rebuildIndex();
   }
 
   return {
     /** Pass the adjusted viewport atomically when restoring a prepend anchor. */
     setEntries,
+    /**
+     * Use local nested geometry plus outer reserved extents to project visibility
+     * in the adapter; this mode never interprets the logical height index as one
+     * physical scrollport. Install descriptors first; unknown keys are discarded.
+     * Republish after clip/geometry changes. Mount invalidation
+     * is still required immediately before child-window attachment/replacement.
+     */
+    setVisibility(next: OperationalRowVisibility): void {
+      if (disposed) return;
+      projectedVisibility = {
+        visibleKeys: operationalKeys(next.visibleKeys, new Set()),
+        beforeKeys: operationalKeys(next.beforeKeys, new Set()),
+        afterKeys: operationalKeys(next.afterKeys, new Set()),
+      };
+      reconcile();
+    },
     setViewport(next: OperationalRowViewport): void {
       if (disposed) return;
       validateViewport(next);
       viewport = { ...next };
+      projectedVisibility = undefined;
       reconcile();
     },
     /** Priority ordered interaction targets, at most two offscreen. No force path. */
@@ -268,6 +331,7 @@ export function createOperationalRowWindow() {
     },
     dispose(): void {
       if (disposed) return;
+      projectedVisibility = undefined;
       setEntries([]);
       requestedPins = [];
       disposed = true;
