@@ -28,6 +28,9 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanels: { select: vi.fn() },
   selectAllTabs: { select: vi.fn() },
   selectLastPanelClose: { select: vi.fn() },
+  selectPanelLayoutRoot: {
+    select: (_state: unknown, wsId: string) => mocks.state.panelLayout.byWorkspaceId[wsId].root,
+  },
   selectPanelIds: {
     select: (_state: unknown, wsId: string) =>
       getPanelOrder(mocks.state.panelLayout.byWorkspaceId[wsId].root),

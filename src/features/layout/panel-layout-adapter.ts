@@ -11,7 +11,7 @@
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import type { PanelCycleDirection } from './panel-cycle-navigation';
-import { resolvePaneColumnMove } from './panel-pane-column-move';
+import { resolvePaneColumnMove, resolvePaneVerticalMove } from './panel-pane-column-move';
 import {
   openTab,
   openTabInAdjacentOrSplit as openTabInAdjacentOrSplitAction,
@@ -27,6 +27,7 @@ import {
   selectPreviousTab,
   reorderTabs,
   moveTabToPanel,
+  moveActivePaneVertically as moveActivePaneVerticallyAction,
   moveTabToSplit,
   moveTabToSplitLevel,
   closeOtherTabs,
@@ -60,6 +61,7 @@ import {
   createGridLayout,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
+  selectPanelLayoutRoot,
   selectFocusedPanelId,
   selectPanels,
   selectAllTabs,
@@ -200,13 +202,32 @@ export class PanelLayoutAdapter {
     this.dispatch(moveTabToPanel(this.workspaceId, tabId, fromPanelId, toPanelId, insertIndex));
   }
   moveActivePaneToColumn(panelId: string, direction: PanelCycleDirection): boolean {
-    const move = resolvePaneColumnMove(this.getPanelIds(), this.getPanel(panelId), direction);
+    const move = resolvePaneColumnMove(
+      this.getPanelIds(),
+      this.getPanel(panelId),
+      direction,
+      selectPanelLayoutRoot.select(this.state, this.workspaceId),
+    );
     if (!move) return false;
     if (move.kind === 'neighbor') {
       this.moveTabToPanel(move.tabId, panelId, move.targetPanelId);
     } else {
       this.moveTabToSplitLevel(move.tabId, panelId, [], move.position, 'horizontal');
     }
+    return true;
+  }
+  canMoveActivePaneVertically(panelId: string, direction: 'up' | 'down'): boolean {
+    return (
+      resolvePaneVerticalMove(
+        selectPanelLayoutRoot.select(this.state, this.workspaceId),
+        this.getPanel(panelId),
+        direction,
+      ) !== null
+    );
+  }
+  moveActivePaneVertically(panelId: string, direction: 'up' | 'down'): boolean {
+    if (!this.canMoveActivePaneVertically(panelId, direction)) return false;
+    this.dispatch(moveActivePaneVerticallyAction(this.workspaceId, panelId, direction));
     return true;
   }
   moveTabToSplit(
