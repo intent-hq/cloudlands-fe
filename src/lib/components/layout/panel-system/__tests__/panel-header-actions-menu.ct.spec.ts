@@ -55,6 +55,47 @@ test('changes the font and runs a core action with keyboard focus restored', asy
 const panelTypes: PanelTabType[] = ['agent', 'note', 'browser', 'terminal', 'changes'];
 const stackCounts = [1, 2, 3, 4, 5] as const;
 
+test('panel menu commands remain clickable where they overlap the titlebar', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 720, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelHeaderActionsHost, {
+    props: { width: 720, zoom: 1, titlebarOverlap: true },
+  });
+  const trigger = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+  await trigger.click();
+  const menu = page.locator('.panel-actions-menu-content');
+  await waitForMenuFocusReady(menu);
+  const command = menu.getByRole('menuitem', { name: 'Content display action' });
+  const overlap = await command.evaluate((element) => {
+    const row = element.getBoundingClientRect();
+    const chrome = document.querySelector('.window-title-bar-wrapper')!.getBoundingClientRect();
+    const x = row.x + row.width / 2;
+    const y = Math.max(row.top, chrome.top) + 2;
+    return {
+      x,
+      y,
+      overlaps: y < Math.min(row.bottom, chrome.bottom),
+      receivesPointer: element.contains(document.elementFromPoint(x, y)),
+    };
+  });
+  expect(overlap.overlaps).toBe(true);
+  expect(overlap.receivesPointer).toBe(true);
+  await testInfo.attach('panel-menu-titlebar-overlap', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.mouse.click(overlap.x, overlap.y);
+  await expect(component.getByTestId('panel-actions-host')).toHaveAttribute(
+    'data-display-count',
+    '1',
+  );
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 async function waitForMenuFocusReady(menu: Locator) {
   await menu.evaluate(async (element) => {
     await Promise.allSettled(

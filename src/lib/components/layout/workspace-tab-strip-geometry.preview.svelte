@@ -172,7 +172,7 @@
 <style>
   .window-title-bar-wrapper {
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     width: 360px;
   }
 

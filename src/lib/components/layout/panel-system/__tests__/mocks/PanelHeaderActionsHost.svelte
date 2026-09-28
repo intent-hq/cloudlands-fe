@@ -18,6 +18,7 @@
   import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import * as Menu from '$lib/components/ui/menu';
   import PanelTabBar from '../../PanelTabBar.svelte';
+  import WindowTitleBar from '../../../WindowTitleBar.svelte';
   import NoteViewSettingsDropdown from '$features/layout/tab-types/NoteViewSettingsDropdown.svelte';
 
   let {
@@ -33,6 +34,7 @@
     longMenuContent = false,
     noteAppearance = false,
     showTabStrip = false,
+    titlebarOverlap = false,
   }: {
     panelType?: PanelTabType;
     width?: number;
@@ -46,6 +48,7 @@
     longMenuContent?: boolean;
     noteAppearance?: boolean;
     showTabStrip?: boolean;
+    titlebarOverlap?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -144,6 +147,12 @@
 {#snippet contentCommandAction()}
   <Menu.CommandItem label="Content command action" onclick={() => (contentCount += 1)} />
 {/snippet}
+
+{#if titlebarOverlap}
+  <div class="absolute inset-x-0 top-16">
+    <WindowTitleBar />
+  </div>
+{/if}
 
 <section
   class="overflow-hidden bg-background text-foreground"
