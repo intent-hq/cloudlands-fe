@@ -7,7 +7,6 @@ import {
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from './constants';
 import { createActionRingBufferMiddleware } from './middlewares/action-ring-buffer';
-import { createQuickActionProviderSwitchMiddleware } from './middlewares/quick-action-provider-switch';
 import { createBatchingMiddleware } from './middlewares/batch';
 import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';
 import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';
@@ -18,7 +17,6 @@ const isDevBuild = (): boolean =>
 function buildMiddleware(): StoreMiddleware[] {
   const baseMiddleware: StoreMiddleware[] = [
     createStoreGuardMiddleware('renderer'),
-    createQuickActionProviderSwitchMiddleware(),
     createBatchingMiddleware([]),
     createActionRingBufferMiddleware(),
   ];

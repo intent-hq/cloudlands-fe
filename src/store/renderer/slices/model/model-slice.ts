@@ -5,8 +5,8 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   activeProviderPersistRejected,
-  setAtomicDefaultModel,
-  setActiveProvider,
+  atomicDefaultModelAccepted,
+  activeProviderAccepted,
 } from '../provider-settings/provider-settings-slice';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { toBareProviderModels } from './model-selection-utils';
@@ -197,7 +197,7 @@ modelReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
     defaultProviderId,
   };
 });
-modelReducer.with(setActiveProvider, (state, { payload: [providerId] }) => {
+modelReducer.with(activeProviderAccepted, (state, { payload: [providerId] }) => {
   const defaultProviderId = validatedDefaultProviderId(
     providerId,
     state.catalogProviderIds,
@@ -244,7 +244,7 @@ modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }
     pendingProviderModels: { ...state.pendingProviderModels, [providerId]: bareModel },
   };
 });
-modelReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId, model }] }) => {
+modelReducer.with(atomicDefaultModelAccepted, (state, { payload: [{ providerId, model }] }) => {
   const bareModel = splitLegacyCompoundId(model).modelId;
   return {
     ...state,

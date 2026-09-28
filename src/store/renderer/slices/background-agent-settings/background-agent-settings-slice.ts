@@ -1,8 +1,8 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
-  setActiveProvider,
-  setAtomicDefaultModel,
+  activeProviderAccepted,
+  atomicDefaultModelAccepted,
 } from '../provider-settings/provider-settings-slice';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -329,11 +329,12 @@ function switchProvider(
     typeReasoningEffortOverrides: normalizeEffortOverrides(next?.typeReasoningEffortOverrides),
   };
 }
-backgroundAgentSettingsReducer.with(setActiveProvider, (state, { payload: [providerId] }) =>
+backgroundAgentSettingsReducer.with(activeProviderAccepted, (state, { payload: [providerId] }) =>
   switchProvider(state, providerId),
 );
-backgroundAgentSettingsReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId }] }) =>
-  switchProvider(state, providerId),
+backgroundAgentSettingsReducer.with(
+  atomicDefaultModelAccepted,
+  (state, { payload: [{ providerId }] }) => switchProvider(state, providerId),
 );
 
 backgroundAgentSettingsReducer.with(

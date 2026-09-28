@@ -1,5 +1,9 @@
+import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
-import { backgroundSettingsSaveSettled } from '../../background-agent-settings/background-agent-settings-slice';
+import {
+  backgroundProviderSwitchBlocked,
+  backgroundSettingsSaveSettled,
+} from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers } from 'redux-saga';
@@ -18,6 +22,7 @@ import { selectActiveProviderId } from '../../provider-settings/provider-setting
 import {
   activeProviderPersistRejected,
   setAtomicDefaultModel,
+  atomicDefaultModelAccepted,
 } from '../../provider-settings/provider-settings-slice';
 import { selectProviderModels } from '../model-selectors';
 import {
@@ -30,6 +35,17 @@ import {
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 
 const logger = createLogger('ModelSelectionSaga');
+
+function* acceptAtomicDefaultModel(action: ReturnType<typeof setAtomicDefaultModel>) {
+  const pick = action.payload[0];
+  const background = yield* selectBgSettings.effect();
+  if (isQuickActionProviderSwitchBlocked(background, pick.providerId)) {
+    yield* put(backgroundProviderSwitchBlocked(pick.providerId));
+    return false;
+  }
+  yield* put(atomicDefaultModelAccepted(pick));
+  return true;
+}
 
 export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   const [rawModel, explicitProviderId] = action.payload;
@@ -64,8 +80,11 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   // run, so if the reload were requested first it would fetch the PREVIOUS
   // provider's catalog and leave the newly picked provider without models
   // until another reload happened to fire.
-  yield* put(setAtomicDefaultModel({ providerId, model }));
-  if (shouldReload) {
+  const accepted = yield* call(
+    acceptAtomicDefaultModel,
+    setAtomicDefaultModel({ providerId, model }),
+  );
+  if (accepted && shouldReload) {
     yield* put(reloadModelsForProvider());
   }
 }
@@ -176,7 +195,7 @@ export function* persistSelectedModelsWorker(
 
 function* watchSelectedModelPersistence() {
   const channel = yield* actionChannel(
-    [setAtomicDefaultModel, setSelectedModel],
+    [atomicDefaultModelAccepted, setSelectedModel],
     buffers.sliding(1),
   );
   // Newest pick per provider made this session. Session-scoped on purpose:
@@ -193,7 +212,7 @@ function* watchSelectedModelPersistence() {
       const result = yield* call(
         persistSelectedModelsWorker,
         sessionPicks,
-        action.type === setAtomicDefaultModel.type ? providerId : undefined,
+        action.type === atomicDefaultModelAccepted.type ? providerId : undefined,
       );
       if (result !== 'retry') {
         if (result === 'rejected') {
@@ -257,5 +276,6 @@ function* watchDefaultReasoningEffortPersistence() {
 
 export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
+  yield* takeEvery(setAtomicDefaultModel, acceptAtomicDefaultModel);
   yield* all([call(watchSelectedModelPersistence), call(watchDefaultReasoningEffortPersistence)]);
 }

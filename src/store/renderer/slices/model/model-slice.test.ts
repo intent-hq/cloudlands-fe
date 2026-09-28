@@ -5,8 +5,10 @@ import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalo
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   activeProviderPersistRejected,
+  activeProviderAccepted,
   setActiveProvider,
   setAtomicDefaultModel,
+  atomicDefaultModelAccepted,
 } from '../provider-settings/provider-settings-slice';
 import {
   hydrateDefaultProvider,
@@ -70,7 +72,7 @@ describe('modelReducer', () => {
   });
 
   it('adopts a picked default provider and keeps picks bare', () => {
-    const withActive = modelReducer(bareInitialState, setActiveProvider('codex'));
+    const withActive = modelReducer(bareInitialState, activeProviderAccepted('codex'));
     expect(withActive.defaultProviderId).toBe('codex');
     // A picked default provider survives catalog hydration (no first-row clobber).
     const hydrated = modelReducer(withActive, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
@@ -92,7 +94,7 @@ describe('modelReducer', () => {
   });
 
   it('keeps a newer local default provider over a stale hydration until confirmation', () => {
-    const selected = modelReducer(initialState, setActiveProvider('claude-code'));
+    const selected = modelReducer(initialState, activeProviderAccepted('claude-code'));
     expect(selected.pendingDefaultProviderId).toBe('claude-code');
     const stale = modelReducer(selected, hydrateDefaultProvider('auggie'));
     expect(stale).toBe(selected);
@@ -108,8 +110,8 @@ describe('modelReducer', () => {
   });
 
   it('retires only the matching pending default provider after daemon rejection', () => {
-    const claude = modelReducer(initialState, setActiveProvider('claude-code'));
-    const codex = modelReducer(claude, setActiveProvider('codex'));
+    const claude = modelReducer(initialState, activeProviderAccepted('claude-code'));
+    const codex = modelReducer(claude, activeProviderAccepted('codex'));
     const oldRejection = modelReducer(codex, activeProviderPersistRejected('claude-code'));
     expect(oldRejection).toBe(codex);
 
@@ -134,13 +136,13 @@ describe('modelReducer', () => {
   });
 
   it('rejects unknown provider ids after catalog hydration', () => {
-    // Post-hydration, hydrated/setActiveProvider payloads are validated
+    // Post-hydration, hydrated/activeProviderAccepted payloads are validated
     // against the catalog: unknown ids keep the current default so model-id
     // normalization never strips/prefixes against a bogus provider.
     const fromHydrate = modelReducer(initialState, hydrateDefaultProvider('removed-provider'));
     expect(fromHydrate.defaultProviderId).toBe(defaultProviderId);
 
-    const fromSet = modelReducer(initialState, setActiveProvider('removed-provider'));
+    const fromSet = modelReducer(initialState, activeProviderAccepted('removed-provider'));
     expect(fromSet.defaultProviderId).toBe(defaultProviderId);
 
     // Known ids are still adopted.
@@ -161,8 +163,8 @@ describe('modelReducer', () => {
     expect(afterEmptyHydrate.defaultProviderId).toBe(defaultProviderId);
     expect(afterEmptyHydrate.providerModels).toEqual({ [defaultProviderId]: 'gpt5.4' });
 
-    // setActiveProvider('') (defensive symmetry) behaves the same.
-    const afterEmptySet = modelReducer(withPicks, setActiveProvider(''));
+    // activeProviderAccepted('') (defensive symmetry) behaves the same.
+    const afterEmptySet = modelReducer(withPicks, activeProviderAccepted(''));
     expect(afterEmptySet.defaultProviderId).toBe(defaultProviderId);
   });
 
@@ -203,7 +205,7 @@ describe('modelReducer', () => {
     // Provenance is stamped from the dispatch, never re-derived from the
     // current default/active provider — a provider switch between trigger and
     // dispatch must not silently re-attribute the catalog.
-    const withActive = modelReducer(initialState, setActiveProvider('grok'));
+    const withActive = modelReducer(initialState, activeProviderAccepted('grok'));
     const state = modelReducer(withActive, setAvailableModels(mockModels, 'codex'));
 
     expect(state.availableModelsProviderId).toBe('codex');
@@ -230,7 +232,7 @@ describe('modelReducer', () => {
 
   it('keeps local model picks authoritative through stale hydration and retires them on confirmation', () => {
     const picked = modelReducer(
-      modelReducer(initialState, setActiveProvider('codex')),
+      modelReducer(initialState, activeProviderAccepted('codex')),
       setSelectedModel({ providerId: 'codex', model: 'codex:gpt-5.3-codex/high' }),
     );
     const stale = modelReducer(
@@ -256,7 +258,7 @@ describe('modelReducer', () => {
   it('normalizes an atomic cross-provider pick against the newly active provider', () => {
     const picked = modelReducer(
       initialState,
-      setAtomicDefaultModel({ providerId: 'codex', model: 'codex:gpt-5.3-codex/high' }),
+      atomicDefaultModelAccepted({ providerId: 'codex', model: 'codex:gpt-5.3-codex/high' }),
     );
 
     expect(picked.defaultProviderId).toBe('codex');
@@ -399,4 +401,11 @@ describe('modelReducer', () => {
       codex: 'gpt-5.3-codex/high',
     });
   });
+});
+
+it('leaves default state untouched until the saga accepts a provider request', () => {
+  expect(modelReducer(initialState, setActiveProvider('codex'))).toBe(initialState);
+  expect(
+    modelReducer(initialState, setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' })),
+  ).toBe(initialState);
 });

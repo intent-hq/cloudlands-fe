@@ -30,7 +30,7 @@ import { connectionsListReceived } from '$store/renderer/slices/connections/conn
 import {
   activeProviderPersistRejected,
   loadEnabledProvidersFromStorage,
-  setActiveProvider,
+  activeProviderAccepted,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import {
   hydrateDefaultProvider,
@@ -71,10 +71,10 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
   it('guards default-provider hydration against stale echoes', () => {
     const state = () => appStore.state;
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(activeProviderAccepted('auggie'));
     applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
 
-    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(activeProviderAccepted('claude-code'));
     applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
     expect(state().model.defaultProviderId).toBe('claude-code');
     expect(state().model.pendingDefaultProviderId).toBe('claude-code');
@@ -83,7 +83,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(state().model.defaultProviderId).toBe('claude-code');
     expect(state().model.pendingDefaultProviderId).toBeNull();
 
-    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(activeProviderAccepted('claude-code'));
     appStore.dispatch(activeProviderPersistRejected('claude-code'));
     applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
     expect(state().model.defaultProviderId).toBe('auggie');
@@ -96,7 +96,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
     ]);
 
-    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(activeProviderAccepted('claude-code'));
     appStore.dispatch(
       setSelectedModel({ providerId: 'claude-code', model: 'claude-code:sonnet-4.8' }),
     );

@@ -1,3 +1,7 @@
+import {
+  setActiveProvider,
+  setAtomicDefaultModel,
+} from '../provider-settings/provider-settings-slice';
 import { describe, it, expect } from 'vitest';
 import {
   backgroundAgentSettingsReducer,
@@ -216,4 +220,16 @@ it('hydrates blank effort as inheritance without dropping future saved candidate
   );
   expect(state.defaultReasoningEffort).toBe('');
   expect(state.typeReasoningEffortOverrides).toEqual({ fast: 'future-level' });
+});
+
+it('does not mutate provider snapshots or effort for unaccepted switch requests', () => {
+  expect(backgroundAgentSettingsReducer(initialState, setActiveProvider('codex'))).toBe(
+    initialState,
+  );
+  expect(
+    backgroundAgentSettingsReducer(
+      initialState,
+      setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' }),
+    ),
+  ).toBe(initialState);
 });

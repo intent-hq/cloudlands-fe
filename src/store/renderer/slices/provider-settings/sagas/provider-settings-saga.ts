@@ -1,6 +1,10 @@
+import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
-import { backgroundSettingsSaveSettled } from '../../background-agent-settings/background-agent-settings-slice';
+import {
+  backgroundProviderSwitchBlocked,
+  backgroundSettingsSaveSettled,
+} from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers, channel, type Channel } from 'redux-saga';
@@ -16,6 +20,7 @@ import {
   activeProviderPersistRejected,
   enablementPersistRejected,
   setActiveProvider,
+  activeProviderAccepted,
   setProviderEnabled,
   toggleProvider,
 } from '../provider-settings-slice';
@@ -73,7 +78,14 @@ function* queueActiveProviderWorker(
   action: ReturnType<typeof setActiveProvider>,
 ) {
   const providerId = action.payload[0];
-  if (providerId) yield* put(updates, { activeProviderId: providerId });
+  if (!providerId) return;
+  const background = yield* selectBgSettings.effect();
+  if (isQuickActionProviderSwitchBlocked(background, providerId)) {
+    yield* put(backgroundProviderSwitchBlocked(providerId));
+    return;
+  }
+  yield* put(activeProviderAccepted(providerId));
+  yield* put(updates, { activeProviderId: providerId });
 }
 
 function* queueEnabledProviders(

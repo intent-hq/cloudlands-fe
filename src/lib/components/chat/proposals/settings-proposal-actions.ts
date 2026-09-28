@@ -7,7 +7,7 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { isUpdateChannel } from '$features/auto-update/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { isQuickActionProviderSwitchBlocked } from '$store/renderer/middlewares/quick-action-provider-switch';
+import { isQuickActionProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/quick-action-provider-switch';
 import {
   getActiveBackendId,
   namespaceBackendKey,

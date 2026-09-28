@@ -5,7 +5,7 @@
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { isQuickActionProviderSwitchBlocked } from '$store/renderer/middlewares/quick-action-provider-switch';
+  import { isQuickActionProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/quick-action-provider-switch';
   import { backgroundProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
   import Button from '$lib/components/ui/button/button.svelte';
