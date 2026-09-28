@@ -1,5 +1,5 @@
 /**
- * Note presence menu: takes a presence lease when opened in a shared workspace
+ * Note presence tab: holds a presence lease independently of its lazy menu
  * (AC 6) and renders the roster emitted by the session.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,6 +70,10 @@ vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
 }));
+vi.mock('../RenderedNotePreview.svelte', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
+}));
 vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
@@ -136,6 +140,7 @@ describe('NoteTabType presence avatar stack', () => {
     mockState.joinNotePresence.mockClear();
     mockState.release.mockClear();
     mockState.listeners.clear();
+    mockState.noteViewMode.set('editor');
   });
 
   afterEach(() => {
@@ -154,8 +159,8 @@ describe('NoteTabType presence avatar stack', () => {
   it('mounts in a shared workspace and renders the peers the session emits', async () => {
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main', memberCount: 2 });
     const { unmount } = render(NoteTabTypeHeaderHarness, { props: { tab } });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(mockState.joinNotePresence).toHaveBeenCalledWith('ws-1', 'note-1'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     expect(screen.queryByTestId('note-presence-avatar-stack')).toBeNull();
 
     for (const listener of mockState.listeners) {
@@ -183,5 +188,63 @@ describe('NoteTabType presence avatar stack', () => {
 
     unmount();
     expect(mockState.release).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['preview', 'raw'] as const)(
+    'keeps %s presence across menu dismissal and reopening',
+    async (mode) => {
+      mockState.noteViewMode.set(mode);
+      mockState.workspace.set({ id: 'ws-1', memberCount: 2 });
+      const { unmount } = render(NoteTabTypeHeaderHarness, { props: { tab } });
+      await waitFor(() => expect(mockState.joinNotePresence).toHaveBeenCalledTimes(1));
+      for (const listener of mockState.listeners) {
+        listener([
+          {
+            principalId: 'peer',
+            displayName: 'Peer',
+            login: 'peer',
+            cursor: null,
+            cursorSeenAt: null,
+            avatarUrl: null,
+          },
+        ]);
+      }
+      const trigger = screen.getByRole('button', { name: 'Panel actions' });
+      await fireEvent.click(trigger);
+      expect(await screen.findByRole('menuitem', { name: 'Peer', exact: true })).not.toBeNull();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(mockState.release).not.toHaveBeenCalled();
+      await fireEvent.click(trigger);
+      expect(await screen.findByRole('menuitem', { name: 'Peer', exact: true })).not.toBeNull();
+      expect(mockState.joinNotePresence).toHaveBeenCalledTimes(1);
+      unmount();
+      expect(mockState.release).toHaveBeenCalledTimes(1);
+      expect(mockState.listeners.size).toBe(0);
+    },
+  );
+
+  it('releases and retargets the visible lease on activation, identity and membership changes', async () => {
+    mockState.workspace.set({ id: 'ws-1', memberCount: 2 });
+    const { rerender, unmount } = render(NoteTabTypeHeaderHarness, {
+      props: { tab, isActive: false },
+    });
+    expect(mockState.joinNotePresence).not.toHaveBeenCalled();
+    await rerender({ tab, isActive: true });
+    await waitFor(() => expect(mockState.joinNotePresence).toHaveBeenCalledTimes(1));
+    await rerender({ tab, isActive: false });
+    expect(mockState.release).toHaveBeenCalledTimes(1);
+    expect(mockState.listeners.size).toBe(0);
+    await rerender({ tab, isActive: true });
+    await waitFor(() => expect(mockState.joinNotePresence).toHaveBeenCalledTimes(2));
+    await rerender({ tab: { ...tab, noteId: 'note-2' }, workspaceId: 'ws-2' });
+    expect(mockState.release).toHaveBeenCalledTimes(2);
+    expect(mockState.joinNotePresence).toHaveBeenLastCalledWith('ws-2', 'note-2');
+    expect(mockState.listeners.size).toBe(1);
+    mockState.workspace.set({ id: 'ws-2', memberCount: 1 });
+    await waitFor(() => expect(mockState.release).toHaveBeenCalledTimes(3));
+    expect(mockState.listeners.size).toBe(0);
+    unmount();
+    expect(mockState.release).toHaveBeenCalledTimes(3);
   });
 });
