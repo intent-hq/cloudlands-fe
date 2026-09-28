@@ -1,5 +1,5 @@
 import { test, expect } from '../../../test/ct-test';
-import PdfViewer from './PdfViewer.svelte';
+import PdfViewer from '../__tests__/PdfViewerHarness.svelte';
 import { createPdfFixture } from '../__tests__/pdf-fixture';
 
 const bytes = createPdfFixture();
@@ -48,6 +48,10 @@ test('renders real binary PDF pages, navigates, zooms, and releases the view', a
     .toBeGreaterThan(width);
   await expect.poll(pixel).toEqual([0, 0, 255, 255]);
   await page.screenshot({ path: testInfo.outputPath('inline-pdf.png') });
+  await page.getByRole('button', { name: 'Previous page' }).click();
+  await expect.poll(pixel).toEqual([255, 0, 0, 255]);
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await expect.poll(pixel).toEqual([0, 0, 255, 255]);
   await component.unmount();
   await expect(page.locator('canvas')).toHaveCount(0);
 });

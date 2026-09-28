@@ -1,11 +1,25 @@
 <script lang="ts">
-  import type { PDFDocumentProxy, PDFDocumentLoadingTask, RenderTask } from 'pdfjs-dist';
+  import type {
+    PDFDocumentProxy,
+    PDFDocumentLoadingTask,
+    PDFPageProxy,
+    RenderTask,
+  } from 'pdfjs-dist';
   import { Button } from '$lib/components/ui/button';
   import { formatInteger, formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import { readPdf, PdfReadError } from '../services/read-pdf';
+  import { LoadingState, ErrorState } from '$lib/components/patterns/screen';
+  import { store as appStore } from '$store/renderer/store';
+  import { selectPdfPreview } from '$store/renderer/slices/pdf-preview/pdf-preview-selectors';
+  import {
+    pdfPreviewRequested,
+    pdfPreviewReleased,
+  } from '$store/renderer/slices/pdf-preview/pdf-preview-slice';
 
   let { workspaceId, filePath }: { workspaceId: string; filePath: string } = $props();
+  const viewId = crypto.randomUUID();
+  const preview = selectPdfPreview(viewId);
+  const pageUsers = new WeakMap<PDFPageProxy, number>();
   let pdf = $state.raw<PDFDocumentProxy | null>(null);
   let canvas = $state<HTMLCanvasElement>();
   let pageNumber = $state(1);
@@ -14,14 +28,15 @@
   let rendering = $state(false);
   let error = $state<'missing' | 'large' | 'load' | 'invalid' | 'password' | null>(null);
   let retry = $state(0);
+  const shownError = $derived($preview?.error ?? error);
   const errorMessage = $derived(
-    error === 'missing'
+    shownError === 'missing'
       ? m.file_pdf_missing_error()
-      : error === 'large'
+      : shownError === 'large'
         ? m.file_pdf_large_error()
-        : error === 'invalid'
+        : shownError === 'invalid'
           ? m.file_pdf_invalid_error()
-          : error === 'password'
+          : shownError === 'password'
             ? m.file_pdf_password_error()
             : m.file_pdf_load_error(),
   );
@@ -30,38 +45,44 @@
     const wsId = workspaceId;
     const path = filePath;
     void retry;
-    const abort = new AbortController();
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(pdfPreviewRequested(viewId, requestId, wsId, path));
+    return () => {
+      appStore.dispatch(pdfPreviewReleased(viewId, requestId));
+    };
+  });
+
+  $effect(() => {
+    const url = $preview?.url;
+    let cancelled = false;
     let task: PDFDocumentLoadingTask | undefined;
     pdf = null;
     error = null;
     loading = true;
     pageNumber = 1;
     scale = 1;
+    if (!url) return;
     void (async () => {
       try {
-        // eslint-disable-next-line intent/no-component-async-data-fetch -- View-owned binary rendering resource, transferred to PDF.js and destroyed on unmount; never shared Redux domain state.
-        const bytes = await readPdf(wsId, path, abort.signal);
         const { loadPdfDocument } = await import('../services/pdf-renderer');
-        if (abort.signal.aborted) return;
-        task = loadPdfDocument(bytes);
+        if (cancelled) return;
+        task = loadPdfDocument(url);
         const document = await task.promise;
-        if (!abort.signal.aborted) pdf = document;
+        if (!cancelled) pdf = document;
       } catch (cause) {
-        if (abort.signal.aborted) return;
+        if (cancelled) return;
         error =
-          cause instanceof PdfReadError
-            ? cause.reason
-            : cause instanceof Error && cause.name === 'PasswordException'
-              ? 'password'
-              : cause instanceof Error && cause.name === 'InvalidPDFException'
-                ? 'invalid'
-                : 'load';
+          cause instanceof Error && cause.name === 'PasswordException'
+            ? 'password'
+            : cause instanceof Error && cause.name === 'InvalidPDFException'
+              ? 'invalid'
+              : 'load';
       } finally {
-        if (!abort.signal.aborted) loading = false;
+        if (!cancelled) loading = false;
       }
     })();
     return () => {
-      abort.abort();
+      cancelled = true;
       void task?.destroy();
     };
   });
@@ -74,11 +95,27 @@
     if (!document || !target) return;
     let cancelled = false;
     let renderTask: RenderTask | undefined;
+    let page: PDFPageProxy | undefined;
+    const releasePage = () => {
+      if (!page) return;
+      const remaining = (pageUsers.get(page) ?? 1) - 1;
+      if (remaining) pageUsers.set(page, remaining);
+      else {
+        pageUsers.delete(page);
+        page.cleanup();
+      }
+      page = undefined;
+    };
     rendering = true;
     void (async () => {
       try {
-        const page = await document.getPage(number);
-        if (cancelled) return;
+        page = await document.getPage(number);
+        // A zoom or late getPage may share PDF.js's cached proxy with a newer effect.
+        pageUsers.set(page, (pageUsers.get(page) ?? 0) + 1);
+        if (cancelled) {
+          releasePage();
+          return;
+        }
         const viewport = page.getViewport({ scale: zoom });
         // Bound canvas memory for unusually large pages while keeping CSS zoom.
         const density = Math.min(
@@ -105,18 +142,21 @@
     return () => {
       cancelled = true;
       renderTask?.cancel();
+      // PDF.js caches decoded images beyond render completion. Release the retired
+      // page only after its render settles and no newer effect is using that proxy.
+      if (renderTask) void renderTask.promise.then(releasePage, releasePage);
+      else releasePage();
     };
   });
 </script>
 
 <div class="flex h-full min-h-0 flex-col" data-testid="pdf-viewer">
-  {#if loading}
-    <p role="status" class="m-auto text-subtle">{m.file_pdf_loading_label()}</p>
-  {:else if error}
-    <div class="m-auto flex flex-col items-center gap-3 p-4">
-      <p role="alert">{errorMessage}</p>
-      <Button variant="outline" onclick={() => retry++}>{m.ui_combobox_retry_label()}</Button>
-    </div>
+  {#if shownError}
+    <ErrorState onRetry={() => retry++} retryLabel={m.ui_combobox_retry_label()} class="m-auto">
+      {#snippet message()}{errorMessage}{/snippet}
+    </ErrorState>
+  {:else if loading || $preview?.status === 'loading'}
+    <LoadingState label={m.file_pdf_loading_label()} count={1} class="p-4" />
   {:else if pdf}
     <div
       class="flex shrink-0 flex-wrap items-center justify-center gap-2 border-b border-border p-2"

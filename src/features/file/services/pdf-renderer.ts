@@ -23,10 +23,10 @@ class BundledPdfData {
   }
 }
 
-export function loadPdfDocument(data: Uint8Array<ArrayBuffer>) {
+export function loadPdfDocument(url: string) {
   GlobalWorkerOptions.workerSrc = workerUrl;
   return getDocument({
-    data,
+    url,
     BinaryDataFactory: BundledPdfData,
     useWorkerFetch: false,
     stopAtErrors: true,

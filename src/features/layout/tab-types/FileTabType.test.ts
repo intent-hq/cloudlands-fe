@@ -6,6 +6,10 @@ import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { FileNode } from '$shared/types';
 
+vi.mock('$features/file/components/PdfViewer.svelte', async () => ({
+  default: (await import('../../file/__tests__/MockPdfViewer.svelte')).default,
+}));
+
 const {
   actionMocks,
   createMockSelector,
@@ -588,18 +592,12 @@ describe('FileTabType Redux integration', () => {
   });
 
   it.each(['docs/my report #1%.pdf', '/repo/docs/my report #1%.pdf'])(
-    'sends the exact contained PDF path %s to the binary reader',
+    'passes the exact contained PDF path %s to its viewer',
     async (filePath) => {
-      vi.mocked(backendRequest).mockRejectedValue(new Error('offline'));
       renderFileTab({ ...fileTab, filePath });
-      await waitFor(() =>
-        expect(backendRequest).toHaveBeenCalledWith('file.readChunk', {
-          workspaceId: 'ws-1',
-          path: 'docs/my report #1%.pdf',
-          offset: 0,
-          length: 1048576,
-        }),
-      );
+      const viewer = await screen.findByTestId('pdf-viewer');
+      expect(viewer.getAttribute('data-workspace-id')).toBe('ws-1');
+      expect(viewer.getAttribute('data-file-path')).toBe('docs/my report #1%.pdf');
       expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
     },
   );
