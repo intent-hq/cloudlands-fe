@@ -23,6 +23,7 @@ import {
   selectHasCompletedProviderSetup,
   selectLabsSettingsVisible,
   selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectReduceMotionOnBattery,
@@ -49,6 +50,7 @@ import {
   setHasCompletedProviderSetup,
   setLabsSettingsVisible,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -63,6 +65,7 @@ import {
   toggleChatAurora,
   toggleLabsSettingsVisibility,
   toggleLabsMultiplayer,
+  toggleLabsGitLab,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -83,6 +86,7 @@ const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
+const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -199,6 +203,11 @@ export function* hydrateUserPreferencesWorker() {
   const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
   if (typeof labsMultiplayerEnabled === 'boolean') {
     yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
+  }
+
+  const labsGitLabEnabled = yield* getLocalStorageJSON<boolean>(LABS_GITLAB_STORAGE_KEY);
+  if (typeof labsGitLabEnabled === 'boolean') {
+    yield* put(setLabsGitLabEnabled(labsGitLabEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -322,6 +331,10 @@ function* persistLabsMultiplayerWorker() {
   );
 }
 
+function* persistLabsGitLabWorker() {
+  yield* setLocalStorageJSON(LABS_GITLAB_STORAGE_KEY, yield* selectLabsGitLabEnabled.effect());
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -407,6 +420,7 @@ function* watchUserPreferenceWrites() {
     [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
     persistLabsMultiplayerWorker,
   );
+  yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], persistLabsGitLabWorker);
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);

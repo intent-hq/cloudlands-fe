@@ -1608,6 +1608,83 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agents[1].parentAgentId).toBeUndefined();
   });
 
+  it.each([false, true])(
+    'retire forwards the direct contract (already retired: %s)',
+    async (alreadyRetired) => {
+      const response = {
+        success: true,
+        retiredAt: '2026-09-28T08:00:00Z',
+        ...(alreadyRetired ? { alreadyRetired: true } : {}),
+      };
+      backend.onRequest('agent.retire', () => response);
+      expect(await new LiveAgentsClient().retire('agent-1', 'ws-1')).toEqual(response);
+      expect(backend.requests).toEqual([
+        {
+          method: 'agent.retire',
+          params: { agentId: 'agent-1', workspaceId: 'ws-1' },
+        },
+      ]);
+    },
+  );
+
+  it('retire preserves errors and omits an absent workspace id without sending a message', async () => {
+    backend.onRequest('agent.retire', () => {
+      throw new BackendError(buildErrorPayload(-32003, 'Forbidden'));
+    });
+    expect(await new LiveAgentsClient().retire('agent-1')).toEqual({
+      success: false,
+      error: expect.stringContaining('Forbidden'),
+    });
+    expect(backend.requests).toEqual([{ method: 'agent.retire', params: { agentId: 'agent-1' } }]);
+  });
+
+  it.each([undefined, 0, 1, true, '1'])(
+    'requires explicit retirement capability %s',
+    async (capability) => {
+      backend.onRequest('client.hello', () => ({
+        server: { capabilities: { agentRetire: capability } },
+      }));
+      const client = new LiveAgentsClient();
+      expect(await Promise.all([client.supportsRetirement(), client.supportsRetirement()])).toEqual(
+        [capability === 1, capability === 1],
+      );
+      expect(backend.requests).toEqual([{ method: 'client.hello', params: {} }]);
+    },
+  );
+
+  it('does not share a pending capability probe with a replacement connection', async () => {
+    let resolveOld!: (value: unknown) => void;
+    backend.onRequest(
+      'client.hello',
+      () =>
+        new Promise((done) => {
+          resolveOld = done;
+        }),
+    );
+    const client = new LiveAgentsClient();
+    const old = client.supportsRetirement(1);
+    backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+    expect(await client.supportsRetirement(2)).toBe(false);
+    resolveOld({ server: { capabilities: { agentRetire: 1 } } });
+    expect(await old).toBe(true);
+    expect(backend.requests).toEqual([
+      { method: 'client.hello', params: {} },
+      { method: 'client.hello', params: {} },
+    ]);
+  });
+
+  it('does not retain support across a failed hello or a changed daemon', async () => {
+    const client = new LiveAgentsClient();
+    backend.onRequest('client.hello', () => {
+      throw new Error('offline');
+    });
+    expect(await client.supportsRetirement()).toBe(false);
+    backend.onRequest('client.hello', () => ({ server: { capabilities: { agentRetire: 1 } } }));
+    expect(await client.supportsRetirement()).toBe(true);
+    backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+    expect(await client.supportsRetirement()).toBe(false);
+  });
+
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
     backend.onRequest('agent.restore', () => ({ success: true }));
     const client = new LiveAgentsClient();
@@ -2701,5 +2778,50 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
       { subscriptionId: 'chan-1' },
       { subscriptionId: 'chan-2' },
     ]);
+  });
+});
+
+describe('node agent wire compatibility', () => {
+  afterEach(() => resetMockBackend());
+  it('uses unchanged get/list requests and preserves remote and legacy projections', async () => {
+    const backend = installMockBackend();
+    const remote = {
+      id: 'agent-node-wire',
+      workspaceId: 'ws-node-wire',
+      status: 'halted',
+      placement: {
+        target: 'remote',
+        checkout: 'isolated',
+        os: 'linux',
+        nodeId: 'node-build',
+        exclusive: true,
+      },
+      nodeId: 'node-build',
+      leaseId: 'lease-build',
+      nodeState: 'offline',
+      effectiveIsolation: 'isolated',
+      nodePath: '/node/checkout',
+      checkpoint: {
+        id: 'checkpoint-wire',
+        assignmentEpoch: '1',
+        captureRevision: '10',
+        capturedAt: '2026-09-28T09:00:00Z',
+        committedAt: '2026-09-28T09:00:01Z',
+      },
+    };
+    const legacy = { id: 'agent-local-wire', workspaceId: 'ws-node-wire', status: 'idle' };
+    backend.onRequest('agent.list', () => ({ agents: [remote, legacy] }));
+    backend.onRequest('agent.get', () => ({ agent: remote }));
+    const client = new LiveAgentsClient();
+    const rows = await client.list('ws-node-wire', { scope: 'topLevel' });
+    const detail = await client.get('agent-node-wire');
+    expect(backend.requests).toEqual([
+      { method: 'agent.list', params: { workspaceId: 'ws-node-wire', scope: 'topLevel' } },
+      { method: 'agent.get', params: { agentId: 'agent-node-wire' } },
+    ]);
+    expect(rows[0]).toMatchObject(remote);
+    expect(rows[1]).toMatchObject(legacy);
+    expect(rows[1]).not.toHaveProperty('placement');
+    expect(detail).toMatchObject(remote);
   });
 });

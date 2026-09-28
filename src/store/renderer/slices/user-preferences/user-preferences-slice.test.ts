@@ -3,8 +3,11 @@ import {
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  hydrateNotificationVolume,
   hydrateShortcutOverrides,
   initialState,
+  notificationVolumeHydrationStarted,
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   resetAllShortcutOverrides,
   resetShortcutOverride,
@@ -15,6 +18,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -35,6 +39,7 @@ import {
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleLabsMultiplayer,
+  toggleLabsGitLab,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -60,6 +65,7 @@ import {
   selectIsAgentMonospace,
   selectIsNoteMonospace,
   selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
   selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -78,6 +84,80 @@ describe('userPreferencesReducer', () => {
   it('should return initial state', () => {
     const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  it.each([
+    [0.75, 0.75],
+    [0.5, 0.5],
+    [-1, 0],
+    [2, 1],
+  ])('hydrates notification volume %s with the existing clamp', (value, expected) => {
+    const state = userPreferencesReducer(initialState, hydrateNotificationVolume(value));
+    expect(state.volume).toBe(expected);
+    expect(state.enabled).toBe(true);
+    expect(state.soundEnabled).toBe(true);
+    expect(state.soundOnlyWhenUnfocused).toBe(true);
+  });
+
+  it('settles only the matching volume edit, including a repeated value', () => {
+    const first = userPreferencesReducer(initialState, setVolume(0.9));
+    const second = userPreferencesReducer(first, setVolume(0.4));
+    const latest = userPreferencesReducer(second, setVolume(0.9));
+    expect(userPreferencesReducer(latest, hydrateNotificationVolume(0.25)).volume).toBe(0.9);
+    expect(
+      userPreferencesReducer(
+        latest,
+        notificationVolumeWriteSettled(first.notificationVolumeEditId, 0, 11),
+      ),
+    ).toBe(latest);
+    const settled = userPreferencesReducer(
+      latest,
+      notificationVolumeWriteSettled(latest.notificationVolumeEditId, 0, 12),
+    );
+    expect(settled.pendingNotificationVolumeEditId).toBeNull();
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.75)).volume).toBe(0.75);
+  });
+
+  it('treats a local reset as a new pending volume edit', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const reset = userPreferencesReducer(edited, resetNotificationSettings());
+    expect(reset.volume).toBe(0.5);
+    expect(reset.pendingNotificationVolumeEditId).toBe(edited.notificationVolumeEditId + 1);
+    expect(userPreferencesReducer(reset, hydrateNotificationVolume(0.9)).volume).toBe(0.5);
+  });
+
+  it.each([
+    [10, 11, 0.9],
+    [12, 11, 0.75],
+    [12, undefined, 0.75],
+    [undefined, 0, 0.75],
+  ])(
+    'reconciles deferred revision %s when a write settles at %s',
+    (incomingRevision, writeRevision, expected) => {
+      const edited = userPreferencesReducer(initialState, setVolume(0.9));
+      const hydrated = userPreferencesReducer(
+        edited,
+        hydrateNotificationVolume(0.75, incomingRevision),
+      );
+      expect(hydrated.volume).toBe(0.9);
+      expect(hydrated.deferredNotificationVolume?.value).toBe(0.75);
+      const settled = userPreferencesReducer(
+        hydrated,
+        notificationVolumeWriteSettled(1, 0, writeRevision),
+      );
+      expect(settled.volume).toBe(expected);
+      expect(settled.pendingNotificationVolumeEditId).toBeNull();
+      expect(settled.deferredNotificationVolume).toBeNull();
+    },
+  );
+
+  it('rejects snapshots older than a confirmed write, then resets revisions for a new stream', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const settled = userPreferencesReducer(edited, notificationVolumeWriteSettled(1, 0, 11));
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.25, 10))).toBe(settled);
+    const reconnected = userPreferencesReducer(settled, notificationVolumeHydrationStarted());
+    expect(reconnected.notificationVolumeHydrationEpoch).toBe(1);
+    expect(userPreferencesReducer(reconnected, hydrateNotificationVolume(0.5, 0)).volume).toBe(0.5);
   });
 
   describe('shortcut overrides', () => {
@@ -389,6 +469,7 @@ describe('userPreferencesReducer', () => {
 
       const shown = userPreferencesReducer(fresh, setLabsSettingsVisible(true));
       expect(selectLabsSettingsVisible.select({ userPreferences: shown } as any)).toBe(true);
+      expect(shown.labsGitLabEnabled).toBe(false);
       const hidden = userPreferencesReducer(shown, setLabsSettingsVisible(false));
       expect(hidden.labsSettingsVisible).toBe(false);
       const toggled = userPreferencesReducer(hidden, toggleLabsSettingsVisibility());
@@ -399,11 +480,14 @@ describe('userPreferencesReducer', () => {
     });
 
     it('preserves experiment values while showing and hiding Settings', () => {
-      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const multiplayer = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const enabled = userPreferencesReducer(multiplayer, setLabsGitLabEnabled(true));
       const shown = userPreferencesReducer(enabled, setLabsSettingsVisible(true));
       const hidden = userPreferencesReducer(shown, toggleLabsSettingsVisibility());
       expect(shown.labsMultiplayerEnabled).toBe(true);
       expect(hidden.labsMultiplayerEnabled).toBe(true);
+      expect(shown.labsGitLabEnabled).toBe(true);
+      expect(hidden.labsGitLabEnabled).toBe(true);
       expect(hidden).toEqual(enabled);
     });
   });
@@ -418,6 +502,19 @@ describe('userPreferencesReducer', () => {
       const disabled = userPreferencesReducer(enabled, toggleLabsMultiplayer());
       expect(enabled.labsMultiplayerEnabled).toBe(true);
       expect(disabled.labsMultiplayerEnabled).toBe(false);
+    });
+  });
+
+  describe('labs preference actions', () => {
+    it('defaults the GitLab lab to disabled', () => {
+      expect(initialState.labsGitLabEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsGitLabEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsGitLabEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsGitLab());
+      expect(enabled.labsGitLabEnabled).toBe(true);
+      expect(disabled.labsGitLabEnabled).toBe(false);
     });
   });
 
@@ -514,6 +611,15 @@ describe('userPreferencesReducer', () => {
         } as any),
       ).toBe(true);
       expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
+    });
+    it('selects labsGitLabEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsGitLabEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsGitLabEnabled.select({
+          userPreferences: { ...initialState, labsGitLabEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsGitLabEnabled.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

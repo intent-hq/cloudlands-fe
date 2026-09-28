@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
   /**
@@ -371,7 +372,9 @@
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
   import {
@@ -711,6 +714,7 @@
   }
 
   let scrollContainer = $state<HTMLDivElement>();
+  const operationalPanel = provideOperationalPanel(() => scrollContainer);
   let composerElement = $state<HTMLDivElement>();
   let panelHeight = $state(0);
   let composerHeight = $state(0);
@@ -776,7 +780,26 @@
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
   const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
-  const activeAnimationFrames = new Set<number>();
+  const activeAnimationFrames = new Map<number, (active: boolean) => void>();
+
+  function waitForActiveFrame(): Promise<boolean> {
+    if (!isActive || isComponentDestroyed) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const frame = requestAnimationFrame(() => {
+        activeAnimationFrames.delete(frame);
+        resolve(isActive && !isComponentDestroyed);
+      });
+      activeAnimationFrames.set(frame, resolve);
+    });
+  }
+
+  function cancelActiveFrames() {
+    for (const [frame, resolve] of activeAnimationFrames) {
+      cancelAnimationFrame(frame);
+      resolve(false);
+    }
+    activeAnimationFrames.clear();
+  }
 
   function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
     if (!isActive) return;
@@ -787,21 +810,11 @@
     highlightRemovalTimers.add(timer);
   }
 
-  function scheduleActiveAnimationFrame(callback: () => void) {
-    if (!isActive) return;
-    const frame = requestAnimationFrame(() => {
-      activeAnimationFrames.delete(frame);
-      if (isActive && !isComponentDestroyed) callback();
-    });
-    activeAnimationFrames.add(frame);
-  }
-
   $effect(() => {
     if (isActive) return;
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
-    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
-    activeAnimationFrames.clear();
+    cancelActiveFrames();
   });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
@@ -1152,17 +1165,13 @@
   // reload) and clears the pending question set, so the sticky wizard stays
   // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  // Returns the action promise so the wizard clears its stored draft only
+  // Returns the dispatch promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).
   async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    const action = agentSessionDismissQuestionsRequested(
-      agentId,
-      workspace.id,
-      pendingQuestions.messageId,
+    await appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
     );
-    appStore.dispatch(action);
-    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -1254,7 +1263,8 @@
   let searchInputRef: HTMLInputElement | null = $state(null);
   let panelElement: HTMLElement | null = $state(null);
   let currentSearchIndex = $state(0);
-  let searchOpenedDisclosures: Array<{ messageId: string; disclosureId: string }> = [];
+  let searchOpenedDisclosures: Array<{ messageId: string; disclosureId: string; key?: string }> =
+    [];
   let searchHighlightRequest = 0;
 
   // Tracks DOM focus within the panel wrapper. Combined with the `isPanelFocused`
@@ -1379,28 +1389,113 @@
     triggerHighlight();
   }
 
+  // Resolve the current catalog path to the renderer's canonical identity before
+  // scrolling. Admission still happens through the shared per-frame budget.
+  async function materializeSearchRow(
+    messageId: string,
+    path: string,
+    current: () => boolean,
+    query?: string,
+    occurrence = 0,
+  ) {
+    const lease = {};
+    let pinned: string | undefined;
+    let afterRead = operationalPanel.refreshGeometry();
+    try {
+      for (let attempt = 0; attempt < 40 && current() && !isComponentDestroyed; attempt++) {
+        const targetKey =
+          query === undefined
+            ? operationalPanel.resolveTarget(messageId, path)
+            : operationalPanel.resolveMatch(messageId, path, query, occurrence)?.key;
+        // A live preview's child scope does not exist until its parent group is
+        // admitted. Reveal that canonical parent without opening its disclosure,
+        // then transfer the same lease to the actual child on the next read.
+        const parentPath = path.includes(':c:') ? path.split(':c:')[0] : undefined;
+        const key =
+          targetKey ??
+          (parentPath ? operationalPanel.resolveTarget(messageId, parentPath) : undefined);
+        if (key) {
+          if (pinned !== key) {
+            if (pinned) operationalPanel.pin(pinned, false, lease);
+            pinned = key;
+            operationalPanel.pin(key, true, lease);
+            afterRead = operationalPanel.refreshGeometry();
+          }
+          const location = operationalPanel.locate(key);
+          if (location) {
+            const { node, scrollRoot, top, observation } = location;
+            if (
+              targetKey &&
+              node?.isConnected &&
+              location.admitted &&
+              observation?.visible &&
+              observation.revision > afterRead
+            )
+              return node;
+            const height =
+              location.kind === 'group' ? operationalPanel.summaryHeight(key) : location.height;
+            if (scrollRoot)
+              scrollRoot.scrollTop = Math.max(0, top - (scrollRoot.clientHeight - height) / 2);
+          }
+        }
+        // Disclosure growth can change the real scrollport without a scroll
+        // event. Keep the lease until a fresh read proves the row is visible.
+        afterRead = operationalPanel.refreshGeometry();
+        if (!(await waitForActiveFrame())) return undefined;
+        await tick();
+      }
+    } finally {
+      if (pinned) operationalPanel.pin(pinned, false, lease);
+    }
+    return undefined;
+  }
+
   async function restoreSearchDisclosures(
     container: HTMLDivElement | undefined,
     keepMessageId: string | undefined,
     keep: ReadonlySet<string>,
+    current: () => boolean,
   ) {
-    if (!isActive) return;
-    if (!container) return;
-    const remaining: Array<{ messageId: string; disclosureId: string }> = [];
+    if (!current() || !container) return;
+    const remaining: typeof searchOpenedDisclosures = [];
     for (const opened of [...searchOpenedDisclosures].reverse()) {
-      if (opened.messageId === keepMessageId && keep.has(opened.disclosureId)) {
+      if (
+        opened.messageId === keepMessageId &&
+        (opened.key
+          ? [...keep].some(
+              (id) =>
+                operationalPanel.resolveTarget(
+                  keepMessageId,
+                  id.replace(/^(?:group|thinking):/, ''),
+                ) === opened.key,
+            )
+          : keep.has(opened.disclosureId))
+      ) {
         remaining.unshift(opened);
         continue;
       }
+      const node = opened.key ? operationalPanel.locate(opened.key)?.node : undefined;
       const message = container.querySelector(
         `[data-message-id="${CSS.escape(opened.messageId)}"]`,
       );
-      const disclosure = message?.querySelector(
-        `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
-      );
+      const disclosure = node
+        ? node.querySelector('[data-chat-search-disclosure-id]')
+        : message?.querySelector(
+            `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
+          );
       if (disclosure) requestSearchDisclosure(disclosure, false);
+      else if (opened.key) {
+        const saved = operationalPanel.state<{ expanded?: boolean; searchOwnsExpansion?: boolean }>(
+          opened.key,
+          () => ({}),
+        );
+        if (saved.searchOwnsExpansion) {
+          saved.expanded = false;
+          saved.searchOwnsExpansion = false;
+        }
+      }
       await tick();
-      if (!isActive) return;
+      if (!current()) return;
     }
     searchOpenedDisclosures = remaining;
   }
@@ -1408,15 +1503,22 @@
   async function revealSearchMatch(
     match: ChatSearchMatch | undefined,
     container: HTMLDivElement | undefined,
+    current = () => isActive && !isComponentDestroyed,
+    query?: string,
   ) {
-    if (!isActive) return;
+    if (!current()) return;
     const required = new Set(match?.disclosurePath ?? []);
-    await restoreSearchDisclosures(container, match?.messageId, required);
-    if (!isActive || !match || !container) return;
-    const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
-    if (!message) return;
+    await restoreSearchDisclosures(container, match?.messageId, required, current);
+    if (!current() || !match || !container) return;
     for (const id of match.disclosurePath) {
-      const disclosure = message.querySelector(
+      const row = await materializeSearchRow(
+        match.messageId,
+        id.replace(/^(?:group|thinking):/, ''),
+        current,
+      );
+      if (!current()) return;
+      const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
+      const disclosure = (row ?? message)?.querySelector(
         `[data-chat-search-disclosure-id="${CSS.escape(id)}"]`,
       );
       if (!disclosure) continue;
@@ -1426,35 +1528,63 @@
           !searchOpenedDisclosures.some(
             (opened) => opened.messageId === match.messageId && opened.disclosureId === id,
           )
-        ) {
-          searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
-        }
+        )
+          searchOpenedDisclosures.push({
+            messageId: match.messageId,
+            disclosureId: id,
+            key: operationalPanel.resolveTarget(
+              match.messageId,
+              id.replace(/^(?:group|thinking):/, ''),
+            ),
+          });
         await tick();
-        if (!isActive) return;
-        await new Promise(requestAnimationFrame);
-        if (!isActive) return;
+        if (!current()) return;
       }
     }
+    if (match.blockPath)
+      await materializeSearchRow(
+        match.messageId,
+        match.blockPath,
+        current,
+        query,
+        match.occurrenceInBlock,
+      );
   }
 
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
     if (!isActive) return;
-    const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
     const isShowing = untrack(() => showSearch);
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
+    // Clearing highlights restores search-owned disclosures without taking the
+    // viewport from an unrelated navigation or disabling follow-bottom.
+    const getContainer =
+      isShowing && query.trim() && matches[index] ? beginScrollNavigation() : undefined;
+    const request = ++searchHighlightRequest;
+    const binding = searchBindingKey();
+    const current = () =>
+      isActive &&
+      !isComponentDestroyed &&
+      binding === searchBindingKey() &&
+      request === searchHighlightRequest &&
+      (!getContainer || !!getContainer());
     await tick();
-    if (!isActive || request !== searchHighlightRequest) return;
-    await revealSearchMatch(isShowing ? matches[index] : undefined, container);
-    if (!isActive || request !== searchHighlightRequest) return;
+    if (!current()) return;
+    await revealSearchMatch(isShowing ? matches[index] : undefined, container, current, query);
+    if (!current()) return;
     await tick();
-    if (!isActive) return;
-    await new Promise(requestAnimationFrame);
-    if (!isActive || request !== searchHighlightRequest) return;
-    doHighlightSearchMatches(query, index, matches, isShowing, container);
+    if (!current() || !(await waitForActiveFrame()) || !current()) return;
+    doHighlightSearchMatches(
+      query,
+      index,
+      matches,
+      isShowing,
+      container,
+      getContainer ? () => (current() ? getContainer() : null) : undefined,
+    );
   }
 
   // Use CSS Custom Highlight API for search highlighting
@@ -1466,6 +1596,7 @@
     matches: ChatSearchMatch[],
     isShowing: boolean,
     container: HTMLDivElement | undefined,
+    getContainer?: () => HTMLElement | null,
   ) {
     // Clear existing highlights
     CSS.highlights?.delete('search-results');
@@ -1481,7 +1612,7 @@
       return;
     }
 
-    const lowerQuery = query.toLowerCase();
+    const lowerQuery = query.trim().toLowerCase();
     const allRanges: Range[] = [];
     let currentRange: Range | null = null;
 
@@ -1495,12 +1626,22 @@
 
     const matchesByBlock = new Map<
       string,
-      Array<{ match: ChatSearchMatch; globalIndex: number }>
+      Array<{ match: ChatSearchMatch; globalIndex: number; rowKey?: string }>
     >();
     matches.forEach((match, globalIndex) => {
-      const key = `${match.messageId}\u0000${match.blockPath}`;
+      const target = operationalPanel.resolveMatch(
+        match.messageId,
+        match.blockPath,
+        query,
+        match.occurrenceInBlock,
+      );
+      const key = target?.key ?? `${match.messageId}\u0000${match.blockPath}`;
       const group = matchesByBlock.get(key) ?? [];
-      group.push({ match, globalIndex });
+      group.push({
+        match: target ? { ...match, occurrenceInBlock: target.occurrenceInRow } : match,
+        globalIndex,
+        rowKey: target?.key,
+      });
       matchesByBlock.set(key, group);
     });
 
@@ -1509,11 +1650,13 @@
       const messageEl = messageElById.get(first.messageId);
       if (!messageEl) continue;
       const selector = `[data-chat-search-block-path="${CSS.escape(first.blockPath)}"]`;
+      const rowKey = blockMatches[0].rowKey;
+      const owner = rowKey ? operationalPanel.locate(rowKey)?.node : messageEl;
       const blockEl = first.blockPath
-        ? messageEl.matches(selector)
-          ? messageEl
-          : messageEl.querySelector(selector)
-        : messageEl;
+        ? owner?.matches(selector)
+          ? owner
+          : owner?.querySelector(selector)
+        : owner;
       if (!blockEl) continue;
 
       const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, {
@@ -1571,7 +1714,7 @@
       CSS.highlights.set('search-results', searchHighlight);
     }
 
-    if (currentRange) {
+    if (currentRange && getContainer?.()) {
       const currentSearchHighlight = new Highlight(currentRange);
       CSS.highlights.set('current-search-result', currentSearchHighlight);
 
@@ -1581,10 +1724,7 @@
       const elementOffsetTop = rect.top - containerRect.top + container.scrollTop;
       const targetScrollTop = elementOffsetTop - containerRect.height / 2 + rect.height / 2;
 
-      container.scrollTo({
-        top: Math.max(0, targetScrollTop),
-        behavior: 'smooth',
-      });
+      smoothScrollToPosition(Math.max(0, targetScrollTop), undefined, getContainer);
     }
   }
 
@@ -3488,7 +3628,11 @@
 
   // A turn notice the transcript renders (mirrors the notice rows below).
   function isRenderedTurnNotice(notice: AgentMessage): boolean {
-    return Boolean(getModelChangeNotice(notice) || getProviderRehomedNotice(notice));
+    return Boolean(
+      getModelChangeNotice(notice) ||
+      getEffortChangeNotice(notice) ||
+      getProviderRehomedNotice(notice),
+    );
   }
 
   // Compute the turn structure and both virtualization/search indexes in one
@@ -3951,6 +4095,24 @@
     return header?.getBoundingClientRect().bottom;
   }
 
+  // A single owner spans lazy rendering and animation. Returning null cancels
+  // animateScrollTo before either its next write or its completion callback.
+  let scrollNavigationId = 0;
+  function beginScrollNavigation(): () => HTMLElement | null {
+    searchHighlightRequest++;
+    const navigationId = ++scrollNavigationId;
+    const container = scrollContainer ?? null;
+    shouldFollowBottom = false;
+    scheduleDeepOpenRelease();
+    return () =>
+      isActive &&
+      !isComponentDestroyed &&
+      navigationId === scrollNavigationId &&
+      scrollContainer === container
+        ? container
+        : null;
+  }
+
   /**
    * Smoothly scroll an element into view with a custom duration.
    * Uses easeOutCubic for a natural feel.
@@ -3959,9 +4121,13 @@
     element: HTMLElement,
     block: 'start' | 'center' | 'end' = 'center',
     duration: number = 150,
+    getContainer = beginScrollNavigation(),
   ) {
-    if (!isActive || !scrollContainer) return;
+    if (!getContainer() || !scrollContainer) return;
 
+    // Explicit navigation owns the viewport until the user returns to bottom.
+    // Programmatic scroll events intentionally do not release followBottom.
+    shouldFollowBottom = false;
     const containerRect = scrollContainer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
 
@@ -3987,15 +4153,20 @@
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
-    animateScrollTo(() => (isActive ? scrollContainer : null), targetScrollTop, duration);
+    animateScrollTo(getContainer, targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with the moderate motion tier.
    */
-  function smoothScrollToPosition(top: number, duration: number = spring.moderate.settleMs) {
-    if (!isActive) return;
-    animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
+  function smoothScrollToPosition(
+    top: number,
+    duration: number = spring.moderate.settleMs,
+    getContainer = beginScrollNavigation(),
+  ) {
+    if (!getContainer()) return;
+    shouldFollowBottom = false;
+    animateScrollTo(getContainer, top, duration);
   }
 
   // Navigate to a specific message by index
@@ -4007,6 +4178,7 @@
 
     // Clamp index to valid range, or -1 for "at bottom"
     if (index < 0) {
+      beginScrollNavigation();
       currentMessageIndex = -1;
       shouldFollowBottom = true;
       followToBottom(scrollContainer);
@@ -4218,6 +4390,7 @@
     ...EMPTY_TEMPORARY_TURN_MATERIALIZATION,
   });
   const handledOpenMessageRequestIds = new Set<string>();
+  const pendingOpenMessageRequestIds = new Set<string>();
   let clearDeepOpenHighlight: (() => void) | null = null;
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
@@ -4275,6 +4448,7 @@
 
   $effect(() => {
     if (isActive) return;
+    scrollNavigationId++;
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
     deepOpenReleaseTimer = null;
     deepOpenTurnKey = null;
@@ -4285,16 +4459,21 @@
   // the deep-open force-visible key) and resolve its DOM element once rendered.
   // Drops follow so the placeholder expanding doesn't yank the viewport back
   // down. Retries across a few frames; resolves null if it never appears.
-  async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
-    if (!isActive) return null;
+  async function forceRenderAndFindMessage(
+    messageId: string,
+    getContainer: () => HTMLElement | null,
+  ): Promise<HTMLElement | null> {
+    if (!getContainer()) return null;
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = null;
     deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
     shouldFollowBottom = false;
     await tick();
-    if (!isActive) return null;
+    if (!getContainer()) return null;
     const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
     for (let attempt = 0; attempt < 5; attempt++) {
       await new Promise(requestAnimationFrame);
-      if (!isActive) return null;
+      if (!getContainer()) return null;
       const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
       if (targetElement) return targetElement;
     }
@@ -4307,16 +4486,17 @@
     const messageId = offscreenPendingProposalMessageId;
     const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
     if (!messageId || !ref) return;
+    const getContainer = beginScrollNavigation();
     if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId)) || !isActive) return;
+      if (!(await seekConversationToMessage(agentId, messageId)) || !getContainer()) return;
       await tick();
     }
-    const message = await forceRenderAndFindMessage(messageId);
-    if (!message || !isActive) return;
+    const message = await forceRenderAndFindMessage(messageId, getContainer);
+    if (!message || !getContainer()) return;
     await tick();
-    if (!isActive) return;
+    if (!getContainer()) return;
     const target = findPendingProposalCard(message, ref) ?? message;
-    smoothScrollTo(target, 'center');
+    smoothScrollTo(target, 'center', undefined, getContainer);
     target.classList.add('highlight-flash');
     scheduleHighlightRemoval(target, 'highlight-flash', 1500);
     scheduleDeepOpenRelease();
@@ -4333,8 +4513,9 @@
   // viewport down. Falls back to today's scroll-to-bottom if the anchor never
   // renders.
   async function scrollToNewMessagesDivider(anchorMessageId: string) {
-    const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
-    if (!isActive || isComponentDestroyed || !scrollContainer) return;
+    const getContainer = beginScrollNavigation();
+    const anchorElement = await forceRenderAndFindMessage(anchorMessageId, getContainer);
+    if (!getContainer() || !scrollContainer) return;
     const dividerElement = scrollContainer.querySelector(
       '[data-new-messages-divider]',
     ) as HTMLElement | null;
@@ -4371,7 +4552,7 @@
     if (prefersReducedMotion()) {
       scrollContainer.scrollTop = entryScrollTop;
     } else {
-      smoothScrollToPosition(entryScrollTop);
+      smoothScrollToPosition(entryScrollTop, undefined, getContainer);
     }
     scheduleDeepOpenRelease();
   }
@@ -4414,34 +4595,55 @@
     if (!isActive || !detail || detail.agentId !== agentId) return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
-    if (handledOpenMessageRequestIds.has(detail.requestId)) return;
+    if (
+      handledOpenMessageRequestIds.has(detail.requestId) ||
+      pendingOpenMessageRequestIds.has(detail.requestId)
+    )
+      return;
 
-    // Force-render the target's turn through the LazyTurn virtualization and
-    // drop follow so streaming growth doesn't yank the viewport back down.
-    deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
-    shouldFollowBottom = false;
-    await tick();
-    if (!isActive) return;
-    scheduleActiveAnimationFrame(() => {
-      if (!isActive) return;
-      const targetElement = scrollContainer?.querySelector(
+    // Search and deep links share one navigation generation. A slower reveal
+    // must never scroll or highlight after a newer target has taken over.
+    const getContainer = beginScrollNavigation();
+    const request = ++searchHighlightRequest;
+    const binding = searchBindingKey();
+    const current = () =>
+      !!getContainer() && binding === searchBindingKey() && request === searchHighlightRequest;
+    pendingOpenMessageRequestIds.add(detail.requestId);
+    try {
+      // Force-render only the target's turn through LazyTurn; individual rows
+      // still enter through the panel-wide admission budget.
+      deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
+      shouldFollowBottom = false;
+      await tick();
+      if (!current() || !(await waitForActiveFrame()) || !current()) return;
+      const targetElement = scrollContainer?.querySelector<HTMLElement>(
         `[data-message-id="${CSS.escape(detail.messageId)}"]`,
-      ) as HTMLElement | null;
-      if (!targetElement) {
-        // Not rendered yet — leave the requestId unhandled so a later retry
-        // from the dispatch ladder can try again.
-        logger.warn('[ChatPanel] Deep-open target not rendered yet', {
-          messageId: detail.messageId,
-        });
-        return;
-      }
+      );
+      if (!targetElement) return;
       handledOpenMessageRequestIds.add(detail.requestId);
-      smoothScrollTo(targetElement, 'center');
+      const match = detail.query
+        ? findChatSearchMatches(
+            $agentMessages$.filter((message) => message.id === detail.messageId),
+            detail.query,
+            messageIdToTurnKey,
+            workspace?.ownerPrincipalId,
+          )[0]
+        : undefined;
+      if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
+      if (!current()) return;
+      if (!match?.blockPath)
+        smoothScrollTo(targetElement, 'center', undefined, () =>
+          current() ? getContainer() : null,
+        );
       scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
       scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
-    });
+    } finally {
+      pendingOpenMessageRequestIds.delete(detail.requestId);
+      // A retry for a superseded target must not become a new navigation.
+      if (request !== searchHighlightRequest) handledOpenMessageRequestIds.add(detail.requestId);
+    }
   }
 
   $effect(() => {
@@ -4562,29 +4764,23 @@
   // Automated rows (wakes, system, agent-origin) are skipped; when the
   // current message is itself automated, the walk starts from its position
   // in the full message order. No preceding user message → scroll to top.
-  function scrollToPreviousUserMessage(currentMessageId: string) {
-    if (!scrollContainer) return;
+  async function scrollToPreviousUserMessage(currentMessageId: string) {
+    if (!isActive || !scrollContainer) return;
+    const getContainer = beginScrollNavigation();
 
     const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
 
     if (!previousMessage) {
       // No preceding user-authored message - scroll to top
-      smoothScrollToPosition(0);
+      smoothScrollToPosition(0, undefined, getContainer);
       return;
     }
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-id="${previousMessage.id}"]`,
-    ) as HTMLElement;
-
-    if (targetElement) {
-      smoothScrollTo(targetElement, 'start');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
-    }
+    // Measure the rendered row, not its lazy placeholder, just as the header
+    // navigator does. Reuse the same follow release and force-visible lifetime.
+    const targetElement = await forceRenderAndFindMessage(previousMessage.id, getContainer);
+    if (!getContainer() || !targetElement) return;
+    smoothScrollTo(targetElement, 'start', undefined, getContainer);
+    scheduleDeepOpenRelease();
   }
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
@@ -4692,8 +4888,7 @@
     }
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
-    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
-    activeAnimationFrames.clear();
+    cancelActiveFrames();
 
     // Cache the transcript scroll state so a remount restores the user's
     // reading position instead of re-entering at the bottom. Guarded
@@ -4783,9 +4978,9 @@
   async function handleSendQueuedMessageNow(messageId: string) {
     if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
-    const action = sendQueuedMessageNowRequested(agentId, workspace.id, messageId);
-    appStore.dispatch(action);
-    const outcome = await action.promise;
+    const outcome = await appStore.dispatch(
+      sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
+    );
     if (outcome === 'delivered') {
       void performLocalSendCleanup({ clearInput: false, followBottom: true });
     }
@@ -4925,6 +5120,7 @@
     // Scroll + follow re-lock must run synchronously, before any await: a
     // stalled or rejecting drafts.clear must never delay or skip them.
     if (options.followBottom) {
+      beginScrollNavigation();
       shouldFollowBottom = true;
       if (scrollContainer) followToBottom(scrollContainer);
     }
@@ -5224,10 +5420,9 @@
       },
       specialistRollback: { metadata: session.metadata, model: session.model },
     });
-    appStore.dispatch(saveAction);
-    // The mutation saga owns rollback and the user-visible error; observe the
-    // rejection here so this component dispatch is not an unhandled promise.
-    void saveAction.promise.catch((error) => {
+    // The mutation saga owns rollback and the user-visible error; retain
+    // specialist-specific failure context in the log.
+    void appStore.dispatch(saveAction).catch((error) => {
       logger.error('Failed to persist agent specialist change', { agentId, error });
     });
     logger.info('Agent specialist change dispatched', {
@@ -5327,9 +5522,7 @@
       options,
     );
     appStore.dispatch(action);
-    // Failures are surfaced via toast by the edit-regenerate middleware;
-    // swallow the rejection here to avoid an unhandled-rejection warning.
-    action.promise.catch(() => {});
+    // Failures are surfaced via toast by the edit-regenerate saga.
     // No launch-bubble transition on this path (there is no composer origin);
     // just re-engage auto-follow and scroll so the regeneration is visible.
     void performLocalSendCleanup({ followBottom: true });
@@ -5345,9 +5538,7 @@
     );
     appStore.dispatch(action);
     // Failures are surfaced via toast by the regenerate saga (before it
-    // delegates) or by the edit-regenerate saga it delegates to; swallow the
-    // rejection here.
-    action.promise.catch(() => {});
+    // delegates) or by the edit-regenerate saga it delegates to.
   }
 
   // Handle selecting a suggested prompt - sends immediately
@@ -5403,6 +5594,7 @@
     if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
+    const getContainer = beginScrollNavigation();
     if (prefersReducedMotion()) {
       shouldFollowBottom = true;
       followToBottom(container);
@@ -5410,11 +5602,11 @@
     }
     shouldFollowBottom = false;
     animateScrollTo(
-      () => (isActive && scrollContainer === container ? container : null),
+      getContainer,
       Math.max(0, container.scrollHeight - container.clientHeight),
       150,
       () => {
-        if (!isActive || scrollContainer !== container) return;
+        if (!getContainer()) return;
         shouldFollowBottom = true;
         followToBottom(container);
       },
@@ -5424,6 +5616,7 @@
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!isActive) return false;
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
+    const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
     // both). Seek the page containing it (§5.5 aroundMessageId) and replace
@@ -5433,10 +5626,11 @@
     if (agentId && !messageIdToTurnKey.has(messageId)) {
       if (!(await seekConversationToMessage(agentId, messageId))) return false;
     }
-    const targetElement = await forceRenderAndFindMessage(messageId);
-    if (!isActive || !targetElement) return false;
+    if (!getContainer()) return false;
+    const targetElement = await forceRenderAndFindMessage(messageId, getContainer);
+    if (!getContainer() || !targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
-    smoothScrollTo(targetElement, 'start');
+    smoothScrollTo(targetElement, 'start', undefined, getContainer);
     targetElement.classList.add('message-highlight-flash');
     scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
     scheduleDeepOpenRelease();
@@ -6460,14 +6654,23 @@
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
 
-                    <!-- Model-change and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
+                    <!-- Model, effort, and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
                       {@const notice = getModelChangeNotice(noticeMessage)}
+                      {@const effortNotice = getEffortChangeNotice(noticeMessage)}
                       {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
                             {notice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {:else if effortNotice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <EffortChangeNotice
+                            notice={effortNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
                         </div>

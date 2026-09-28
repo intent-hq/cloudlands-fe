@@ -62,6 +62,9 @@ describe('backgroundAgentSettingsSaga', () => {
             path: 'quickActions.typeOverrides',
             value: { commit: '', pr: '', review: '', fast: '' },
           },
+          { path: 'quickActions.defaultReasoningEffort', value: '' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+          { path: 'quickActions.providerSettings', value: {} },
         ],
       ],
       [
@@ -71,6 +74,9 @@ describe('backgroundAgentSettingsSaga', () => {
             path: 'quickActions.typeOverrides',
             value: { commit: 'haiku4.5', pr: '', review: '', fast: 'gpt-5' },
           },
+          { path: 'quickActions.defaultReasoningEffort', value: '' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+          { path: 'quickActions.providerSettings', value: {} },
         ],
       ],
     ]);

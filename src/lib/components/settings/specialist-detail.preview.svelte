@@ -5,7 +5,10 @@
     id: 'specialist-detail',
     title: 'Specialist detail controls',
     defaultState: 'modified',
-    states: { modified: { props: {} } },
+    states: {
+      modified: { props: {} },
+      create: { props: { create: true } },
+    },
   });
 </script>
 
@@ -28,6 +31,8 @@
   import { selectInstalledEditors } from '$store/renderer/slices/external-editors/external-editors-selectors';
   import AIBehaviorEditor from './AIBehaviorEditor.svelte';
   import { interceptSpecialistEditorLaunches } from './__tests__/specialist-detail.fixture';
+
+  let { create = false }: { create?: boolean } = $props();
 
   let launches = $state<Array<{ channel: string; args: unknown[] }>>([]);
   const disposeLaunchHandlers = interceptSpecialistEditorLaunches((launch) => {
@@ -101,6 +106,11 @@
 </script>
 
 <div class="w-full min-w-0 bg-background p-6 text-foreground" data-specialist-detail-preview>
-  <AIBehaviorEditor activeView={{ type: 'specialist', id: 'preview-detail' }} workspaceId={null} />
+  <AIBehaviorEditor
+    activeView={create
+      ? { type: 'create-specialist' }
+      : { type: 'specialist', id: 'preview-detail' }}
+    workspaceId={null}
+  />
   <output class="sr-only" data-testid="editor-launches">{JSON.stringify(launches)}</output>
 </div>

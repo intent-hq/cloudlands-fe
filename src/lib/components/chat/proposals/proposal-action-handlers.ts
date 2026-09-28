@@ -87,8 +87,8 @@ function requestResolution(input: {
     outcome: input.outcome,
     ...(input.detail ? { detail: input.detail } : {}),
   });
-  appStore.dispatch(action);
-  const request = action.promise
+  const request = appStore
+    .dispatch(action)
     .then(() => {
       if (!input.clearDraftBeforeRequest) clearProposalDraft(input.agentId, input.proposalId);
     })

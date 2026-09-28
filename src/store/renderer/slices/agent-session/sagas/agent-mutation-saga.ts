@@ -17,7 +17,10 @@ import {
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { dismissAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
-import { readAgentSession } from '$features/agent/agent-read-service';
+import {
+  readAgentSession,
+  refreshAgentSessionAfterEvent,
+} from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
@@ -43,12 +46,15 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   activateAgentRequested,
+  agentRetirementSupportRequested,
+  agentRetirementSupportReceived,
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
   removeAgent,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
+  retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   stopAgentSessionRequested,
@@ -62,6 +68,7 @@ import {
 } from '../agent-session-slice';
 import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
 import { selectAgentSession } from '../agent-session-selectors';
+import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
 import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
 
 const logger = createLogger('AgentMutationSaga');
@@ -162,6 +169,60 @@ function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
 function* restoreHiddenSession(wsId: string, session: StoredAgentSession): SagaGenerator<void> {
   yield* put(restoreStoredSessions([session]));
   yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
+}
+
+function* loadRetirementSupport(
+  action: ReturnType<typeof agentRetirementSupportRequested>,
+): SagaGenerator<void> {
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  let supported = false;
+  try {
+    supported = yield* call([appClient.agents, appClient.agents.supportsRetirement], generation);
+    if (generation === (yield* selectDaemonConnectionGeneration.effect())) {
+      yield* put(agentRetirementSupportReceived(generation, supported));
+    }
+  } catch {
+    supported = false;
+  } finally {
+    yield* put(action.success(supported));
+  }
+}
+
+function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
+  const [wsId, agentId] = action.payload;
+  let settled = false;
+  try {
+    const generation = yield* selectDaemonConnectionGeneration.effect();
+    if (
+      !(yield* call([appClient.agents, appClient.agents.supportsRetirement], generation)) ||
+      generation !== (yield* selectDaemonConnectionGeneration.effect())
+    ) {
+      throw new Error(m.agent_mutation_retireUnavailable_error());
+    }
+    const beforeRetire = yield* selectAgentSession.effect(agentId);
+    const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
+    if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
+    if (
+      beforeRetire &&
+      beforeRetire === (yield* selectAgentSession.effect(agentId)) &&
+      generation === (yield* selectDaemonConnectionGeneration.effect())
+    ) {
+      yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+    } else {
+      // Events and Restore can overtake this response. Reconcile changed rows
+      // through the existing trailing read instead of replaying an old timestamp.
+      yield* spawn(refreshAgentSessionAfterEvent, agentId);
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(mutationError(error, m.agent_mutation_retireFailed_error())));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_retireFailed_error())));
+    }
+  }
 }
 
 /**
@@ -728,6 +789,8 @@ export function* agentMutationSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(restoreAgentSessionRequested, restoreAgent),
     takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
+    takeEvery(retireAgentRequested, retireAgent),
+    takeEvery(agentRetirementSupportRequested, loadRetirementSupport),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
     takeEvery(renameAgentSessionRequested, renameAgent),

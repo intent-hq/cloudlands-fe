@@ -17,7 +17,7 @@
 //      `test.fail()` expected failures (the incident triage on
 //      cloudlands-fe#2533 missed five cases for exactly that reason).
 
-const CT_JOB_NAME = /^Component Tests \(shard (\d+)\/(\d+)\)$/;
+const CT_JOB_NAME = /(?:^| \/ )Component Tests \(shard (\d+)\/(\d+)\)$/;
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 // `gh run view --log` prefixes every line with `<job>\t<step>\t`; the raw job

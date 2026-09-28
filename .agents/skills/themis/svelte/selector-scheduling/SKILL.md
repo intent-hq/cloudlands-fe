@@ -1,9 +1,9 @@
 ---
 name: svelte/selector-scheduling
 description: >-
-  Use for Svelte Store selector emission coalescing, rAF scheduling, FPS
-  tuning, or cached/throttled readables. Keep scheduling owned by Store; do
-  not wrap its selectors.
+  Use for Svelte Store selector emission coalescing, rAF scheduling, or FPS
+  tuning. Keep scheduling owned by Store; do not wrap selectors or import
+  scheduler internals. Authoring/cache and call modes have separate owners.
 type: sub-skill
 requires:
   - svelte
@@ -19,102 +19,43 @@ triggers:
 
 Public facade: `@augmentcode/themis/svelte-store` (`store.createSelector` and `Store` selector options). Selector implementation and scheduler internals are package-private; see `@augmentcode/themis/docs/SELECTORS.md` for behavior.
 
-## Store-first rule
+## Scheduling options
 
-- Create app selectors with the configured `Store` instance: `store.createSelector(...)`.
 - Tune Svelte-readable selector coalescing only through the final constructor options argument: `new Store(reducers, middleware, { throttledSelectorFrequency })`.
 - Treat this as Svelte Store family scheduling. Use the Store-owned scheduler
   rather than adding a second scheduling layer.
 - Omit `throttledSelectorFrequency` for the default `64` FPS; explicit values must be finite numbers in the inclusive `1..256` range. Fractional values are supported.
 - Selector trace output is disabled by default; pass `{ traceSelectors: true }` in the final Store options object only for temporary diagnostics.
-- In components, call selector readables directly at component init: `const value$ = selectValue()`.
-- Let the package's selector internals cache selector results, reuse readable outputs for the same source + selector + args, and schedule/coalesce readable emissions.
-- For one-shot reads, use `selectValue.select(store.state, ...args)`.
-- For sagas, use `yield* selectValue.effect(...args)`.
-- For explicit non-context binding, use `selectValue.withStore(store)(...args)` after `store.init()`.
+
+Scheduling does not change which call mode is valid. Use
+`../selector-lifecycle/SKILL.md` → **Call-mode map** for components, handlers,
+services, tests, saga reads, and explicit binding; its **Bind explicitly with .withStore when no Svelte context is available**
+section covers initialization and subscription cleanup. Authoring and cache reuse
+live in `../selectors/SKILL.md` → **Choose the factory** and **Selector caching**.
 
 ## Do not
 
 - Do not import selector scheduler internals from app code.
 - Do not wrap Store-created selectors, selector callbacks, selector calls, or selector readables in extra `memoize`, `cache`, debounce/throttle, timer, `requestAnimationFrame`, scheduler, or writable-proxy layers just to reduce recomputes or UI updates.
 - Do not rely on selector readables as audit/event streams; they represent the latest derived state and may coalesce intermediate writes.
-- Do not call selector readable mode from event handlers, callbacks, async functions, services, or tests; use `.select(store.state, ...)` or `.withStore(store)`.
+- Respect `../selector-lifecycle/SKILL.md` → **Don't** even when a readable is cached or scheduled.
 
 ## Examples
 
-### 1. Define selectors through the configured Store
+### Configure coalescing on the Store
 
 ```ts
-import { store } from "$lib/store";
+import { Store } from "@augmentcode/themis/svelte-store";
+import { pointerReducer } from "./pointer-slice";
 
-type Pointer = { x: number; y: number };
-
-export const selectPointer = store.createSelector((state): Pointer => {
-  return state.pointer.current;
-});
-
-export const selectPointerLabel = store.createSelector((state) => {
-  const pointer = selectPointer.select(state);
-  return `${pointer.x},${pointer.y}`;
+export const store = new Store({ pointer: pointerReducer }, [], {
+  throttledSelectorFrequency: 30,
 });
 ```
 
-### 2. Component init reads the already-scheduled selector readable directly
-
-```ts
-import { onDestroy } from "svelte";
-import { selectPointer, selectPointerLabel } from "./pointer-selectors";
-
-declare function renderPointer(value: { x: number; y: number }): void;
-
-export const pointer = selectPointer();
-export const pointerLabel = selectPointerLabel();
-
-const unsubscribe = pointer.subscribe((value) => renderPointer(value));
-onDestroy(unsubscribe);
-```
-
-### 3. Event handlers use `.select(store.state)` for one-shot reads
-
-```ts
-import { store } from "$lib/store";
-import { selectPointer } from "./pointer-selectors";
-import { copyPointer } from "./pointer-slice";
-
-export function handleCopyPointer() {
-  const pointer = selectPointer.select(store.state);
-  store.dispatch(copyPointer(pointer));
-}
-```
-
-### 4. Bind to an explicit initialized Store with `.withStore`
-
-```ts
-import type { Store } from "@augmentcode/themis/svelte-store";
-import { selectPointer } from "./pointer-selectors";
-
-export function createPointerReadable(store: Store) {
-  return selectPointer.withStore(store)();
-}
-```
-
-### 5. Saga code uses `.effect()` rather than readable scheduling
-
-```ts
-import { call, put, takeLatest } from "typed-redux-saga";
-import { pointerMoved, pointerPersisted } from "./pointer-slice";
-import { selectPointer } from "./pointer-selectors";
-
-declare const api: { savePointer(pointer: { x: number; y: number }): Promise<void> };
-
-export function* pointerSaga() {
-  yield* takeLatest(pointerMoved, function* persistPointer() {
-    const pointer = yield* selectPointer.effect();
-    yield* call(api.savePointer, pointer);
-    yield* put(pointerPersisted());
-  });
-}
-```
+Define and compose selectors with `../selectors/SKILL.md` → **Examples**;
+consume them using `../selector-lifecycle/SKILL.md` → **Examples**. The same
+Store-owned scheduling applies without a custom wrapper or copied call-mode recipe.
 
 ### 6. ❌ Bad: wrapping selector readables in another cache or timer layer
 
@@ -161,31 +102,14 @@ export function* pointerAuditSaga() {
 }
 ```
 
-### Examples retained/added
+## Verification cues
 
-| # | Example | Kind |
-| --- | --- | --- |
-| 1 | Store-bound selector definitions | Good |
-| 2 | Component-init readable subscription and cleanup | Good |
-| 3 | One-shot handler read with .select(store.state) | Good |
-| 4 | Explicit Store binding with .withStore(store) | Good |
-| 5 | Saga state read with .effect() | Good |
-| 6 | Manual debounce/timer wrapper around selector readable | Bad |
-| 7 | Selector readable used as an event/audit stream | Bad |
-| 8 | Action-driven saga audit replacement | Good |
-
-### Cases covered
-
-| Case | Examples |
-| --- | --- |
-| Store-owned selector scheduling and current public API | 1, 2 |
-| Component lifecycle and cleanup | 2 |
-| Handler/service one-shot reads | 3 |
-| Explicit Store compatibility binding | 4 |
-| Saga read mode that bypasses readable scheduling | 5 |
-| Realistic scheduling misuse not caught by missing imports | 6, 7, 8 |
+- FPS values satisfy **Scheduling options**; default behavior needs no extra scheduler.
+- Consumers needing every event use action/saga evidence, not coalesced state readables.
+- Validate call sites against `../selector-lifecycle/SKILL.md` → **Verification cues**.
 
 ## See also
 
-- `svelte/selectors` — building Store-bound selectors.
+- `../selectors/SKILL.md` — building Store-bound selectors and cache contracts.
+- `../selector-lifecycle/SKILL.md` — selector call-site modes and cleanup.
 - `@augmentcode/themis/docs/SELECTORS.md` — selector memoization and lifecycle rules.

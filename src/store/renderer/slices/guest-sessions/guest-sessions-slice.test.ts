@@ -63,8 +63,6 @@ describe('guestSessionsReducer', () => {
   it('keeps retry targets independent and clears only the operation being retried', () => {
     const failed = leaveGuestSessionRequested('guest-1');
     const other = leaveGuestSessionRequested('guest-2');
-    failed.promise.catch(() => {});
-    other.promise.catch(() => {});
     let state = guestSessionsReducer(
       initialState,
       failed.failure(new GuestSessionOperationError('ipc')),
@@ -74,7 +72,6 @@ describe('guestSessionsReducer', () => {
     expect(state.failedLeaveIds).toEqual(['guest-2']);
     expect(state.leavingIds).toEqual(['guest-1']);
     const perWorkspace = leaveGuestWorkspaceRequested('guest-1', 'ws-1');
-    perWorkspace.promise.catch(() => {});
     state = guestSessionsReducer(
       state,
       perWorkspace.failure(new GuestSessionOperationError('ipc')),
@@ -88,8 +85,6 @@ describe('guestSessionsReducer', () => {
   it('keeps failed members independent when retrying another removal', () => {
     const first = removeHostedMemberRequested('ws-1', 'principal-1');
     const second = removeHostedMemberRequested('ws-1', 'principal-2');
-    first.promise.catch(() => {});
-    second.promise.catch(() => {});
     let state = guestSessionsReducer(
       initialState,
       first.failure(new HostedRosterOperationError('transport')),
@@ -105,7 +100,6 @@ describe('guestSessionsReducer', () => {
 
   it('forgets a removed membership failure before the same principal joins again', () => {
     const removal = removeHostedMemberRequested('ws-1', MEMBER.principalId);
-    removal.promise.catch(() => {});
     let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
     state = guestSessionsReducer(
       state,
@@ -135,7 +129,6 @@ describe('guestSessionsReducer', () => {
       ['ws-10', MEMBER.principalId],
     ]) {
       const removal = removeHostedMemberRequested(workspaceId, principalId);
-      removal.promise.catch(() => {});
       state = guestSessionsReducer(
         state,
         removal.failure(new HostedRosterOperationError('transport')),
@@ -164,7 +157,6 @@ describe('guestSessionsReducer', () => {
 
   it('does not offer retry for cancelled leaves or forbidden/cancelled member removals', () => {
     const leave = leaveGuestSessionRequested('guest-1');
-    leave.promise.catch(() => {});
     expect(
       guestSessionsReducer(
         initialState,
@@ -172,7 +164,6 @@ describe('guestSessionsReducer', () => {
       ),
     ).toBe(initialState);
     const member = removeHostedMemberRequested('ws-1', MEMBER.principalId);
-    member.promise.catch(() => {});
     for (const code of ['cancelled', 'forbidden'] as const) {
       expect(
         guestSessionsReducer(initialState, member.failure(new HostedRosterOperationError(code))),

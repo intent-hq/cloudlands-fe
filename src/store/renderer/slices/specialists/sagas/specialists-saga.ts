@@ -206,16 +206,11 @@ function* showMutationError(error: unknown, fallback: string) {
   yield* call([notify, notify.error], errorMessage(error, fallback));
 }
 
-/**
- * Reject the per-dispatch promise with `error`. The promise is marked handled
- * first so fire-and-forget dispatchers (e.g. the settings editor) don't
- * surface unhandled-rejection noise; awaiting callers still get the rejection.
- */
+/** Reject the per-dispatch promise while publishing its failure stage. */
 function* rejectAction(
   action: ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>,
   error: Error,
 ) {
-  action.promise.catch(() => {});
   yield* put(action.failure(error));
 }
 

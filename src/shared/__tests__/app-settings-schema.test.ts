@@ -8,6 +8,17 @@ import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from '../theme-presets-manife
 import { UPDATE_CHANNELS } from '../../features/auto-update/types';
 
 describe('app settings schema', () => {
+  it('exposes GitLab as a local, default-off Labs preference', () => {
+    expect(findAppSettingDefinition('labs.gitlab')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:gitlabEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
+    });
+  });
+
   it('defines the persisted Open In editor order setting', () => {
     expect(findAppSettingDefinition('openIn.editorOrder')).toMatchObject({
       type: 'array',

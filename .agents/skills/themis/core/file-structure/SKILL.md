@@ -1,9 +1,9 @@
 ---
 name: core/file-structure
 description: >-
-  Use when scaffolding or organizing Themis slices, types, selectors, sagas,
-  and tests, including naming, saga-only slices, reducer registration, and
-  saga startup.
+  Use when organizing Themis slices, types, selectors, sagas, and tests,
+  including naming, reducer registration, and app saga startup placement.
+  Store lifecycle mechanics belong to core/saga-manager.
 type: sub-skill
 requires:
   - core
@@ -15,7 +15,7 @@ triggers:
 ---
 # File Structure & Registration
 
-> Source: @augmentcode/themis/docs/ARCHITECTURE.md → Slice File Structure + Store Initialization; ../SKILL.md §9.
+> Source: @augmentcode/themis/docs/ARCHITECTURE.md → Slice File Structure + Store Initialization; see [Core leaf routes](../SKILL.md#core-leaf-routes) for related owners.
 
 ## Setup — slice directory layout
 
@@ -49,11 +49,15 @@ export const store = new Store({ mySlice: mySliceReducer });
 export type AppState = StoreState<typeof store>;
 ```
 
-Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation. Register only app-owned reducers. `Store` manages package-owned internals automatically under reserved `@internal_` names: internal reducers such as `@internal_storeUtility` are always package-managed, and the internal saga manager starts during `Store` initialization. Do not add app reducers/sagas with that prefix or couple selectors/tests to the internal state shape.
+Use `StoreState<typeof store>` for app state typing after constructing the store with app reducer maps. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation. Register only app-owned reducers. `Store` manages internal reducers such as `@internal_storeUtility` automatically under reserved `@internal_` names; do not use that prefix for app-owned registrations or couple selectors/tests to the internal state shape. For the package-owned saga manager boundary, follow [Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle).
 
 Then in the application's selected Store family root lifecycle, initialize the store and start each app saga explicitly by function. Use the selected Store family skill for component/runtime lifecycle details; core owns the file layout, saga registration, and reducer ownership rules.
 
-`store.init()` combines the registered reducers, creates the Redux store with middleware, lets the concrete Store variant create its selector state resources, and starts the package saga manager. It does **not** start app sagas — start each one with `store.runSaga(sagaFn)` from the family-appropriate root lifecycle, or imperatively and keep the returned cancel function. It derives the manager name from the saga function and rejects direct `@internal_sagaManager` usage. Register the `store.init()` disposer with the selected Store family lifecycle cleanup; that disposer delegates to `store.dispose()`, which tears down the initialized Store runtime and stops Store-owned saga tasks when the whole Store lifetime ends.
+For initialization order, `store.runSaga(sagaFn)`, manager naming, matching cancels,
+and Store-wide teardown, follow [Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle).
+When deciding between root, component/layout, service, or test ownership, follow
+[Application saga startup](../sagas/SKILL.md#application-saga-startup); keep the
+explicit startup calls next to that owner's lifecycle wiring, not in a constructor saga map.
 
 ### Saga-only slice (no state, no reducer)
 
@@ -110,7 +114,7 @@ export const store = new Store({ triggers: noopReducer });
 export const store = new Store({});
 ```
 
-Source: `../SKILL.md` §9 (Saga-only slices) · **Priority: MEDIUM**
+Source: [Saga-only slice (no state, no reducer)](#saga-only-slice-no-state-no-reducer) · **Priority: MEDIUM**
 
 ### ❌ Adding multiple slice or selectors owner files to one directory
 
@@ -132,7 +136,7 @@ src/slices/theme/theme-slice.ts
 src/slices/theme/theme-selectors.ts
 ```
 
-Source: `../SKILL.md` §9 (File structure) · **Priority: HIGH**
+Source: `./SKILL.md` — **Setup — slice directory layout** · **Priority: HIGH**
 
 ### ❌ Using kebab-case or snake_case as the logical slice identity
 
@@ -150,7 +154,7 @@ export const updateTheme = createAction("userPreferences/updateTheme");
 export const store = new Store({ userPreferences: userPreferencesReducer });
 ```
 
-Source: `../SKILL.md` §9 (Naming) · **Priority: HIGH**
+Source: [Naming conventions](#naming-conventions) · **Priority: HIGH**
 
 ### ❌ Naming selectors without the `select` prefix
 
@@ -166,7 +170,7 @@ export const isLoading = store.createSelector(...);
 export const selectIsLoading = store.createSelector(...);
 ```
 
-Source: `../SKILL.md` §9 (Naming) · **Priority: MEDIUM**
+Source: [Naming conventions](#naming-conventions) · **Priority: MEDIUM**
 
 ### ❌ Defining state types inline in `{slice-name}-slice.ts`
 
@@ -186,10 +190,11 @@ export type FeatureState = { items: Collection<Item, 'id'> };
 import type { FeatureState } from './feature-types';
 ```
 
-Source: `../SKILL.md` §1, §9 · **Priority: MEDIUM**
+Source: `../core-policy/SKILL.md` — **Types live in `{slice-name}-types.ts`**; `./SKILL.md` — **Setup — slice directory layout** · **Priority: MEDIUM**
 
 ## See also
 
-- `core/core-policy/SKILL.md` — why types live in `-types.ts`
-- `core/actions/SKILL.md` — action naming and namespacing
+- `../core-policy/SKILL.md` — **Types live in `{slice-name}-types.ts`**
+- `../actions/SKILL.md` — action naming and namespacing
+- [Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle) — init/run/cancel/dispose mechanics
 - Selected Store family skill — Store initialization wiring

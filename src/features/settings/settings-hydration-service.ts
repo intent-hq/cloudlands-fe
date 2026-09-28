@@ -25,6 +25,7 @@ import { store as appStore } from '$store/renderer/store';
 import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
+  hydrateProviderFastMode,
   ensureEnabledIfUnset,
   loadEnabledProvidersFromStorage,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -32,6 +33,7 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   hydrateSettings as hydrateBackgroundAgentSettings,
   type BackgroundAgentType,
+  type BackgroundAgentSettingsState,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import {
   setDisabledServers,
@@ -45,18 +47,32 @@ import {
   loadProviderModelsFromStorage,
 } from '$store/renderer/slices/model/model-slice';
 import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
+import { hydrateNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const logger = createLogger('SettingsHydrationService');
 
 /** Apply a single applied-change to the slice that owns its dotted path. */
-function applyOne(change: AppliedSettingChange): void {
+function applyOne(change: AppliedSettingChange, revision?: number): void {
   const { path, value } = change;
   switch (path) {
+    case 'notifications.volume': {
+      if (typeof value === 'number') appStore.dispatch(hydrateNotificationVolume(value, revision));
+      return;
+    }
     case 'model.defaultProvider': {
       // The reducer's pending-local-intent guard keeps a newer local pick
       // over a stale snapshot/echo until the daemon confirms it.
       if (typeof value === 'string' && value.length > 0) {
         appStore.dispatch(hydrateDefaultProvider(value));
+      }
+      return;
+    }
+    case 'providers.fastMode': {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const entries = Object.entries(value).filter(
+          ([id, enabled]) => ['claude-code', 'codex'].includes(id) && typeof enabled === 'boolean',
+        );
+        appStore.dispatch(hydrateProviderFastMode(Object.fromEntries(entries), revision));
       }
       return;
     }
@@ -314,10 +330,36 @@ function seedDefaultProviderEnablement(): void {
  * Background-agent settings reconcile two dotted paths in one dispatch.
  * Only called when the delta actually includes at least one quickActions.* key.
  */
-function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
+function applyBackgroundAgentBundle(byPath: Map<string, unknown>, revision?: number): void {
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
+  // A delayed switch acknowledgement must not apply the outgoing provider's
+  // bundle while the model slice is protecting a newer provider choice.
+  const incomingProvider = byPath.get('model.defaultProvider');
+  if (
+    !currentState.persistencePending &&
+    typeof incomingProvider === 'string' &&
+    incomingProvider !== appStore.state.model.defaultProviderId
+  )
+    return;
+  const providerId =
+    typeof incomingProvider === 'string'
+      ? incomingProvider
+      : (currentState.authoritativeSettings?.providerId ?? appStore.state.model.defaultProviderId);
+  const providerChanged = typeof incomingProvider === 'string';
+  if (![...byPath.keys()].some((path) => path.startsWith('quickActions.'))) {
+    appStore.dispatch(
+      hydrateBackgroundAgentSettings({
+        ...currentState,
+        revision,
+        changedFields: [],
+        providerId,
+        providerChanged,
+      }),
+    );
+    return;
+  }
   const defaultModel =
     (byPath.get('quickActions.defaultModel') as string | undefined) ?? currentState.defaultModel;
   const typeOverrides =
@@ -341,7 +383,36 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
       defaultModel,
       overrides as Record<BackgroundAgentType, string>,
     );
-    appStore.dispatch(hydrateBackgroundAgentSettings(migrated));
+    appStore.dispatch(
+      hydrateBackgroundAgentSettings({
+        ...migrated,
+        revision,
+        changedFields: (
+          [
+            'defaultModel',
+            'typeOverrides',
+            'defaultReasoningEffort',
+            'typeReasoningEffortOverrides',
+            'providerSettings',
+          ] as const
+        ).filter((field) => byPath.has(`quickActions.${field}`)),
+        providerId,
+        providerChanged,
+        defaultReasoningEffort: byPath.has('quickActions.defaultReasoningEffort')
+          ? ((byPath.get('quickActions.defaultReasoningEffort') as string | null) ?? '')
+          : currentState.defaultReasoningEffort,
+        typeReasoningEffortOverrides: byPath.has('quickActions.typeReasoningEffortOverrides')
+          ? ((byPath.get(
+              'quickActions.typeReasoningEffortOverrides',
+            ) as BackgroundAgentSettingsState['typeReasoningEffortOverrides']) ?? {})
+          : currentState.typeReasoningEffortOverrides,
+        providerSettings: byPath.has('quickActions.providerSettings')
+          ? ((byPath.get(
+              'quickActions.providerSettings',
+            ) as BackgroundAgentSettingsState['providerSettings']) ?? {})
+          : currentState.providerSettings,
+      }),
+    );
   }
 }
 
@@ -351,15 +422,18 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
  * panels with bespoke wiring can react. Unknown paths are silently skipped
  * (the FE intentionally tolerates BE-side schema additions).
  */
-export function applySettingsChanges(changes: readonly AppliedSettingChange[]): void {
+export function applySettingsChanges(
+  changes: readonly AppliedSettingChange[],
+  revision?: number,
+): void {
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
   let hasBackgroundAgentPaths = false;
   let hasEnabledProvidersPath = false;
   for (const change of changes) {
-    applyOne(change);
+    applyOne(change, revision);
     bundle.set(change.path, change.value);
-    if (change.path.startsWith('quickActions.')) {
+    if (change.path.startsWith('quickActions.') || change.path === 'model.defaultProvider') {
       hasBackgroundAgentPaths = true;
     }
     if (change.path === 'providers.enabled') {
@@ -368,7 +442,7 @@ export function applySettingsChanges(changes: readonly AppliedSettingChange[]): 
   }
   // Only reconcile quick-action bundle when the delta contains at least one quickActions.* key
   if (hasBackgroundAgentPaths) {
-    applyBackgroundAgentBundle(bundle);
+    applyBackgroundAgentBundle(bundle, revision);
   }
   // Seed the default provider's enablement entry when the hydrated map lacks
   // one (upgrade migration, monorepo#1947).

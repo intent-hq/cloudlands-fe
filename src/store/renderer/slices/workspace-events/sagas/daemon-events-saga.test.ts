@@ -248,6 +248,7 @@ describe('daemonEventsSaga', () => {
     expect(FILE_EVENTS_SUBSCRIBE_TYPES).toEqual(['file:*']);
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toEqual([
       'agent:*',
+      'hub:checkpoint',
       'note:*',
       'comment:*',
       'script:*',
@@ -273,6 +274,8 @@ describe('daemonEventsSaga', () => {
       'pr:*',
       'mcp.servers:status-changed',
       'github:auth-changed',
+      'sourceControl:auth-changed',
+      'principal:identity-changed',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',

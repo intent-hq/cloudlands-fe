@@ -580,6 +580,9 @@ export interface AgentListResult {
   delegatedCounts?: AgentDelegatedCounts;
 }
 
+export type AgentRetireResult =
+  { success: true; retiredAt: string; alreadyRetired?: true } | { success: false; error: string };
+
 export interface AgentsClient {
   /**
    * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
@@ -915,6 +918,10 @@ export interface AgentsClient {
    * the list. Idempotent — restoring an already-active agent succeeds.
    */
   restore(agentId: string, workspaceId?: string): Promise<MutationResult>;
+  /** Retire directly without a model turn; preserves the conversation. */
+  retire(agentId: string, workspaceId?: string): Promise<AgentRetireResult>;
+  /** Explicit hello capability; independent of model peer-agent features. */
+  supportsRetirement(connectionGeneration?: number): Promise<boolean>;
   /**
    * Retry a failed agent spawn (`agent.retry`). Only valid when the agent
    * status is `error` (after spawn exhaustion); returns `{ ok: false, error }`
@@ -1914,6 +1921,8 @@ export interface SpecialistDef {
    */
   resolvedModel?: string;
   resolvedProvider?: string;
+  /** Effort from the matching model option or specialist, before Settings fallback. */
+  resolvedReasoningEffort?: string;
 }
 
 export interface SpecialistsClient {

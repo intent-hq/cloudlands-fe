@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { toPngMock } = vi.hoisted(() => ({ toPngMock: vi.fn() }));
 
@@ -34,6 +34,10 @@ describe('exportFileName', () => {
 });
 
 describe('exportCardPng', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.replaceChildren();
+  });
   beforeEach(() => {
     toPngMock.mockReset();
   });
@@ -50,11 +54,35 @@ describe('exportCardPng', () => {
     const node = document.createElement('div');
     await exportCardPng(node, 'intent-passport-2026-07.png');
 
-    expect(toPngMock).toHaveBeenCalledWith(node, { pixelRatio: 3, width: 360, height: 640 });
+    expect(toPngMock).toHaveBeenCalledWith(node, {
+      pixelRatio: 3,
+      width: 360,
+      height: 640,
+      filter: expect.any(Function),
+    });
     expect(EXPORT_OPTIONS).toEqual({ pixelRatio: 3, width: 360, height: 640 });
     expect(clicks).toEqual([
       { download: 'intent-passport-2026-07.png', href: 'data:image/png;base64,abc' },
     ]);
+    clickSpy.mockRestore();
+  });
+
+  it('filters interactive chrome even when a control is focused', async () => {
+    toPngMock.mockResolvedValue('data:image/png;base64,abc');
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const card = document.createElement('div');
+    const control = document.createElement('button');
+    control.dataset.statsExportExclude = '';
+    const value = document.createTextNode('09–18 · 50%');
+    card.append(control, value);
+    document.body.append(card);
+    control.focus();
+    await exportCardPng(card, 'hours.png');
+    const options = toPngMock.mock.calls[0][1];
+    expect(options.filter?.(control)).toBe(false);
+    expect(options.filter?.(value)).toBe(true);
+    expect(options.filter?.(card)).toBe(true);
+    card.remove();
     clickSpy.mockRestore();
   });
 

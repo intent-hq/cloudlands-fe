@@ -11,9 +11,10 @@
     target: string;
     label?: string;
     workspaceId?: string;
+    canOpenFile?: () => boolean;
   }
 
-  let { target, label, workspaceId }: Props = $props();
+  let { target, label, workspaceId, canOpenFile }: Props = $props();
   // Drop the clickable affordance when the target does not point at a real
   // app surface. The assistant occasionally hallucinates routes (e.g.
   // /specialists, /workspaces/foo); rendering those as plain text keeps the
@@ -42,6 +43,7 @@
       await handleLink(target.trim(), {
         workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
         event,
+        canOpenFile,
       });
       return;
     }
@@ -63,6 +65,7 @@
       void handleLink(target.trim(), {
         workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
         event,
+        canOpenFile,
       });
     }
   }

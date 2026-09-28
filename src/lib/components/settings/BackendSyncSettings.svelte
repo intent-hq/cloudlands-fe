@@ -49,12 +49,12 @@
   });
 
   onMount(() => {
-    appStore.dispatch(loadKeychainSyncStateRequested()).promise.catch(() => {});
+    appStore.dispatch(loadKeychainSyncStateRequested());
   });
 
   function handleToggle(checked: boolean) {
     toggleOn = checked;
-    appStore.dispatch(setKeychainSyncEnabledRequested(checked)).promise.catch(() => {});
+    appStore.dispatch(setKeychainSyncEnabledRequested(checked));
   }
 
   const schema = $derived.by(() =>

@@ -43,6 +43,7 @@ export interface WorkspaceInitializerAgentSettings {
   /** Bare model id of an explicit pick, paired with `selectedProvider`. */
   selectedModel?: string;
   modelWasOverridden?: boolean;
+  /** Absent inherits defaults; blank remembers an explicit clear. */
   selectedReasoningEffort?: string;
   isTeamMode?: boolean;
   /** Provider the persisted `selectedModel` belongs to. */

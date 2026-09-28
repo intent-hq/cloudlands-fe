@@ -68,7 +68,7 @@
     onkeydown={handleKeydown}
     placeholder={m.codeReview_inlineComment_askLine_placeholder()}
     disabled={isSending}
-    class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary-ink/30 focus:border-primary-ink/50 disabled:opacity-50"
+    class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground disabled:opacity-50"
   />
   <Button
     type="button"

@@ -73,12 +73,12 @@ export function formatShare(share: number): string {
   return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
 }
 
-/** Share-bar / rank palette from the design (1st → 4th). */
+/** Theme-aware share-bar / rank palette (1st → 4th). */
 export const MODEL_BAR_COLORS = [
-  'hsl(158 100% 30%)',
-  'hsl(158 60% 45%)',
-  'hsl(158 35% 62%)',
-  'hsl(240 5% 40%)',
+  'hsl(var(--primary-ink))',
+  'hsl(var(--success))',
+  'hsl(var(--info))',
+  'hsl(var(--muted-foreground))',
 ] as const;
 
 export interface RankedModel {

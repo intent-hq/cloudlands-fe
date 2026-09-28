@@ -395,11 +395,8 @@ function* announceDaemonsBehindPin(
     }
     if (!canRequestDeviceUpdate(conn, connectedIds, pinnedVersion)) continue;
     yield* call(showDaemonBehindPinToast, conn, daemonVersion, pinnedVersion, () => {
-      const action = updateBackendRequested(conn.id);
-      // Failure feedback is the update saga's toast; the unobserved promise
-      // must not surface as an unhandled rejection.
-      action.promise.catch(() => {});
-      updateActions.put(action);
+      // Failure feedback is the update saga's toast.
+      updateActions.put(updateBackendRequested(conn.id));
     });
     toasted.add(conn.id);
   }
@@ -781,14 +778,12 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         : { kind: 'captureRejected', statusCode: result.statusCode };
     } else if (intent.kind === 'connect') {
       const add = addConnectionRequested(intent.params);
-      add.promise.catch(() => {});
       yield* call(addConnection, add);
       const { connection } = yield* call(() => add.promise);
       if (!(yield* workflowIsCurrent(action))) return;
       if (intent.enableSync && !(yield* enableSyncForWorkflow(action))) return;
       if (!(yield* workflowIsCurrent(action))) return;
       const open = openConnectionRequested(connection.id);
-      open.promise.catch(() => {});
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
@@ -832,7 +827,6 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
             : { kind: 'blocked', operation: 'test', result };
     } else if (intent.kind === 'open') {
       const open = openConnectionRequested(intent.id);
-      open.promise.catch(() => {});
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') {
@@ -844,7 +838,6 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       yield* call(invokeForgetConnection, { id: intent.id });
     } else {
       const update = updateBackendRequested(intent.id);
-      update.promise.catch(() => {});
       yield* call(updateBackend, update);
       yield* call(() => update.promise);
     }
@@ -1072,10 +1065,8 @@ export function* connectionsSaga(): SagaGenerator<void> {
   const eventTask = yield* fork(consumeConnectionsEvents, events, tracker, updateActions);
   const pumpTask = yield* fork(pumpUpdateActions, updateActions);
   const actionsTask = yield* fork(watchConnectionsActions, tracker, updateActions);
-  const initial = loadConnectionsRequested();
-  initial.promise.catch(() => {});
   try {
-    yield* put(initial);
+    yield* put(loadConnectionsRequested());
     yield* all([join(eventTask), join(pumpTask), join(actionsTask)]);
   } finally {
     events.close();

@@ -7,6 +7,7 @@ import { vi, afterEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
 import { scrubHostNodeInjection } from './scrub-host-node-injection';
+import { scrubHostPythonInjection } from './scrub-host-python-injection';
 import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
 
 // vitest.config.ts starts each fork with V8 flags (`--no-sparkplug`) that Node
@@ -34,6 +35,9 @@ if (execArgvRemoved.length > 0) {
 // re-inject NODE_OPTIONS into every fresh `node` regardless of the env it
 // starts from; this documented opt-out makes the launcher skip the children.
 scrubHostNodeInjection(process.env);
+// Python ZIP helpers also inherit startup injection through PYTHONPATH; keep
+// ordinary imports while preventing tracer files in the private test temp root.
+scrubHostPythonInjection(process.env);
 process.env.DD_INSTRUMENT_SERVICE_WITH_APM = 'false';
 
 // Ensure tests use a temporary workspaces root

@@ -72,7 +72,7 @@ describe('modelSelectionSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       {
-        type: 'providerSettings/setAtomicDefaultModel',
+        type: 'providerSettings/atomicDefaultModelAccepted',
         payload: [{ providerId: 'codex', model: 'gpt-5' }],
       },
       { type: 'model/reloadModelsForProvider', payload: [] },
@@ -129,7 +129,7 @@ describe('modelSelectionSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       {
-        type: 'providerSettings/setAtomicDefaultModel',
+        type: 'providerSettings/atomicDefaultModelAccepted',
         payload: [{ providerId: 'claude-code', model: 'fable5' }],
       },
       { type: 'model/reloadModelsForProvider', payload: [] },

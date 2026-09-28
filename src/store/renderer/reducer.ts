@@ -35,12 +35,14 @@ import { releaseNotesReducer } from './slices/release-notes/release-notes-slice'
 import { skillsReducer } from './slices/skills/skills-slice';
 import { workspaceReducer } from './slices/workspace/workspace-slice';
 import { githubAuthReducer } from './slices/github-auth/github-auth-slice';
+import { gitlabAuthReducer } from './slices/gitlab-auth/gitlab-auth-slice';
 import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
 import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
 import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
+import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
 import { browserReducer } from './slices/browser/browser-slice';
 import { browserClientsReducer } from './slices/browser-clients/browser-clients-slice';
@@ -73,6 +75,7 @@ import { backgroundAgentExecutorReducer } from './slices/background-agent-execut
 import { chatStateReducer } from './slices/chat-state/chat-state-slice';
 import { chatChangesReducer } from './slices/chat-changes/chat-changes-slice';
 import { fileExplorerReducer } from './slices/file-explorer/file-explorer-slice';
+import { pdfPreviewReducer } from './slices/pdf-preview/pdf-preview-slice';
 import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
@@ -139,12 +142,14 @@ export const reducers = {
   workspace: workspaceReducer,
   skills: skillsReducer,
   githubAuth: githubAuthReducer,
+  gitlabAuth: gitlabAuthReducer,
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
   githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
   legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,
+  identity: identityReducer,
   voiceSettings: voiceSettingsReducer,
   sentryAuth: sentryAuthReducer,
   browser: browserReducer,
@@ -178,6 +183,7 @@ export const reducers = {
   chatChanges: chatChangesReducer,
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
+  pdfPreview: pdfPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,

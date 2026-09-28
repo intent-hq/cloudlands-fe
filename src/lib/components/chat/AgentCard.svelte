@@ -1,11 +1,5 @@
 <script lang="ts">
-  /**
-   * AgentCard Component
-   *
-   * A compact card that shows an agent's avatar, name, status, and message preview.
-   * Uses subscription for real-time updates and displays line changes stats.
-   * Reads Redux-owned streaming state for real-time response updates.
-   */
+  /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
@@ -24,10 +18,13 @@
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
     renameAgentSessionRequested,
+    retireAgentRequested,
+    agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
     stopAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
+  import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
@@ -35,6 +32,8 @@
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentNodeStatusLabel } from './agent-node-status-label';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
@@ -50,6 +49,7 @@
   import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
+  import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 
@@ -60,6 +60,7 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faBoxArchive,
     faBell,
     faBellSlash,
     faCircleInfo,
@@ -179,12 +180,8 @@
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
-  // Restore a session the store has no row for (e.g. a card rendered before
-  // its workspace's `agent.list` hydration). A row already present — even a
-  // slim `agent.list` projection row (PROTOCOL §5.5) — must NOT trigger a
-  // per-card `agent.get` on mount: N mounted cards would fan out into N
-  // detail reads on every list hydration. Detail-only fields are pulled on
-  // demand from `handleContextMenu` instead.
+  // Load missing rows only; list projections must not trigger per-card detail
+  // fan-out. handleContextMenu loads detail-only fields on demand.
   $effect(() => {
     const wsId = workspace?.id;
     if (!wsId || readOnly) return;
@@ -205,6 +202,8 @@
 
   // Replace Agent modal (opened from the context menu when eligible).
   let replaceAgentModalOpen = $state(false);
+  let retireAgentModalOpen = $state(false);
+  const retirementSupported$ = selectAgentRetirementSupported();
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -254,9 +253,7 @@
             nameExplicitlySet: true,
           } as any),
         );
-        const action = renameAgentSessionRequested(wsId, agentId, nextName);
-        appStore.dispatch(action);
-        action.promise.catch(() => {
+        appStore.dispatch(renameAgentSessionRequested(wsId, agentId, nextName)).catch(() => {
           // Revert the optimistic dispatch so Redux matches disk, then notify.
           appStore.dispatch(
             updateAgentSessionFields(agentId, {
@@ -329,11 +326,8 @@
     const position = getSidebarContextPosition(e);
     if (!position) return;
     contextMenu = position;
-    // The `agent.list` row this card renders from omits the detail-only
-    // fields (§5.5 list projection) the menu gates on — `harnessFeatures`
-    // drives both "Replace agent" and the harness modal. Pull the detail
-    // read on open (single-flight per agent in the read seam); the menu
-    // items recompute reactively once it lands.
+    void appStore.dispatch(agentRetirementSupportRequested());
+    // Read detail-only menu fields on demand; items update when they arrive.
     const wsId = $agent$?.workspaceId ?? workspace?.id;
     if (wsId) {
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
@@ -395,11 +389,8 @@
               : undefined;
           closeContextMenu();
           if (!wsId) return;
-          const action = setAgentNotificationsMutedRequested(wsId, agentId, !muted);
-          appStore.dispatch(action);
-          // The saga surfaces the failure toast and rolls back; swallow here so
-          // a daemon rejection never becomes an unhandled rejection.
-          await action.promise.catch(() => {});
+          // The saga owns the failure toast and rollback.
+          appStore.dispatch(setAgentNotificationsMutedRequested(wsId, agentId, !muted));
         },
       });
     }
@@ -415,7 +406,11 @@
       : workspace?.id
         ? String(workspace.id)
         : '';
-    if (sandboxPath && selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)) {
+    if (
+      sandboxPath &&
+      !hasNodeOwnedAgentPath($agent$) &&
+      selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)
+    ) {
       items.push({
         id: 'reveal-sandbox',
         label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
@@ -435,10 +430,7 @@
       });
     }
 
-    // Add stop option if agent is running. Gate on the canonical runtime
-    // state, not the display state: user-attention states (question,
-    // needs-permission, …) outrank `running` in getAvatarState, but a live
-    // turn must stay stoppable regardless of what the avatar shows.
+    // Attention states can mask a running turn; use canonical runtime state.
     if (isTurnRunning) {
       items.push({ type: 'separator' });
       items.push({
@@ -451,14 +443,10 @@
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          // The stop trigger settles for real now (agent-mutation-service
-          // forwards agent.stop) — guard so a daemon-side failure cannot
-          // become an unhandled rejection that skips closing the menu.
+          // Close the menu even when the daemon refuses the stop.
           try {
             if (wsId) {
-              const action = stopAgentSessionRequested(wsId, agentId);
-              appStore.dispatch(action);
-              await action.promise;
+              await appStore.dispatch(stopAgentSessionRequested(wsId, agentId));
             }
           } catch (error) {
             logger.error('Failed to stop agent', { agentId, error });
@@ -471,10 +459,7 @@
 
     items.push({ type: 'separator' });
 
-    // "Replace Agent" (peer-agent hand-off): hidden unless every
-    // session-derived eligibility gate passes (harnessFeatures.peerAgents
-    // snapshot true, top-level, non-background, not retired) — mirrors the
-    // AgentTabType panel menu.
+    // Match the panel menu's peer-agent hand-off eligibility.
     if (!readOnly && !isBackground && isReplaceAgentEligible($agent$)) {
       items.push({
         id: 'replace-agent',
@@ -494,6 +479,17 @@
     const hidesDelete =
       !!deleteWorkspaceId &&
       selectHidesAgentLifecycleActions.select(appStore.state, deleteWorkspaceId);
+    if ($retirementSupported$ && deleteWorkspaceId && $agent$ && !$agent$.retiredAt) {
+      items.push({
+        id: 'retire-agent',
+        label: m.modals_retireAgent_confirm_label(),
+        icon: faBoxArchive,
+        onClick: () => {
+          retireAgentModalOpen = true;
+          closeContextMenu();
+        },
+      });
+    }
     if (!hidesDelete) {
       items.push({
         id: 'delete',
@@ -508,13 +504,9 @@
           closeContextMenu();
 
           if (deleteWorkspaceId) {
-            const action = deleteAgentWithUndoRequested(
-              deleteWorkspaceId,
-              agentId,
-              agentName || undefined,
+            await appStore.dispatch(
+              deleteAgentWithUndoRequested(deleteWorkspaceId, agentId, agentName || undefined),
             );
-            appStore.dispatch(action);
-            await action.promise;
           }
         },
       });
@@ -639,6 +631,8 @@
     if (!wsId) return;
     appStore.dispatch(sendMessage(agentId, { wsId, text, agentName: displayName }));
   }
+
+  const effectiveStatusLabel = $derived(getAgentNodeStatusLabel($agent$) ?? statusLabel);
 
   // Sandbox directory for sandboxed agents (daemon-provided metadata).
   const agentSandboxPath = $derived.by(() => {
@@ -890,24 +884,14 @@
                 <Fa icon={faBellSlash} class="h-3! w-3!" />
               </span>
             {/if}
-            {#if statusLabel}
+            {#if effectiveStatusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
                 data-testid="agent-card-status"
               >
-                {statusLabel}
+                {effectiveStatusLabel}
               </span>
             {/if}
-            <!-- {#if specialist}
-            <span
-              class="specialist-icon shrink-0 text-subtle dark:text-background ml-1.5 mr-0.5"
-            >
-              <SpecialistToolIcon {specialist} size={12} muted />
-            </span>
-            <span class="specialist-text text-ui text-subtle shrink-0">
-              {specialistDisplayName}
-            </span>
-          {/if} -->
             {#if delegatedByName && (!inline || panelRow)}
               <span
                 class="delegated-by-text min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle {panelRow
@@ -1072,6 +1056,17 @@
     bind:open={harnessModalOpen}
     version={$agent$.harnessVersion}
     features={$agent$?.harnessFeatures ?? null}
+  />
+{/if}
+
+{#if retireAgentModalOpen}
+  <RetireAgentModal
+    bind:open={retireAgentModalOpen}
+    agentName={$agent$?.name || agentName || ''}
+    onRetire={() =>
+      appStore.dispatch(
+        retireAgentRequested(String($agent$?.workspaceId || workspace?.id), agentId),
+      )}
   />
 {/if}
 

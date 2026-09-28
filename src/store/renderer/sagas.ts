@@ -40,6 +40,7 @@ import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-p
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
+import { pdfPreviewSaga } from './slices/pdf-preview/sagas/pdf-preview-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
@@ -47,6 +48,7 @@ import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
+import { gitlabAuthSaga } from './slices/gitlab-auth/sagas/gitlab-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
@@ -58,6 +60,7 @@ import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-tr
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
+import { identitySaga } from './slices/identity/sagas/identity-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
 import { modelReloadSaga } from './slices/model/sagas/model-reload-saga';
@@ -161,6 +164,7 @@ export const sagas = [
   acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,
+  pdfPreviewSaga,
   filesWriteSaga,
   workspaceNotesSaga,
   noteReadTrackingSaga,
@@ -198,10 +202,12 @@ export const sagas = [
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
   githubAuthSaga,
+  gitlabAuthSaga,
   githubRepoSearchSaga,
   githubUserSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,
+  identitySaga,
   mcpSettingsSaga,
   directoryPickerSaga,
   legacyImportSaga,

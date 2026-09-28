@@ -12,6 +12,8 @@ export enum AgentStatus {
   // Current values
   Pending = 'pending',
   Active = 'active',
+  Halted = 'halted',
+  Resuming = 'resuming',
   // App-level runtime events (including Chief) can persist lowercase idle;
   // keep it valid so save/load round-trips do not repair or rewrite it.
   RuntimeIdle = 'idle',

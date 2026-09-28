@@ -27,6 +27,16 @@ import type {
   GithubUserSearchHit,
   StartAuthResult,
 } from '$features/github-auth/types';
+import { FORGE_AUTH_CHANNELS } from '$features/forge-auth/constants';
+import type {
+  ForgeAuthResult,
+  ForgeAuthStatus,
+  ForgeConnectErrorCode,
+  ForgeConnectParams,
+  ForgeConnectResult,
+  ForgeProvider,
+  ForgeUser,
+} from '$features/forge-auth/types';
 import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
 import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
 import { SENTRY_AUTH_CHANNELS } from '$features/sentry-auth/constants';
@@ -37,6 +47,7 @@ import type {
 } from '$features/sentry-auth/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { LiveIntegrationsClient } from '$lib/client/live/live-integrations-client';
+import { mutationErrorMessage } from '$lib/client/live/live-support';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   invalidateGitHubAuthStatus,
@@ -118,9 +129,10 @@ registerMockIpcHandler(
 // re-authorized for new scopes (intent#5206). The daemon swaps the stored
 // token on authorize, so the old one keeps working until then.
 
-/** `github.connect` success payload (§5.27) — user-facing codes only. */
+/** `github.connect` success payload (§5.27) — user-facing codes plus the flow's id. */
 interface GitHubConnectWire {
   ok?: boolean;
+  flowId?: string;
   userCode?: string;
   verificationUri?: string;
   expiresIn?: number;
@@ -149,6 +161,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (arg): Promise<Sta
       invalidateGitHubAuthStatus();
       return {
         success: true,
+        ...(typeof result.flowId === 'string' ? { flowId: result.flowId } : {}),
         oauthUrl: result.verificationUri,
         userCode: result.userCode,
         verificationUri: result.verificationUri,
@@ -181,12 +194,18 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
 });
 
 // `github.cancelAuth` (§5.27) — cancels the pending flow; the daemon's poll
-// task exits cooperatively. The contract shape is `{ ok: true, cancelled }`
-// (failures arrive as JSON-RPC errors), so only a confirmed `ok: true` maps
-// to a successful envelope — anything else is treated as a failed cancel.
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
+// task exits cooperatively. A `flowId` (from `github.connect`) scopes the
+// cancel to that flow: any other pending flow is left alone (`cancelled:
+// false`). The contract shape is `{ ok: true, cancelled }` (failures arrive
+// as JSON-RPC errors), so only a confirmed `ok: true` maps to a successful
+// envelope — anything else is treated as a failed cancel.
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async (arg) => {
+  const flowId = asRecord(arg).flowId;
   try {
-    const result = await backendRequest<{ ok?: boolean }>('github.cancelAuth');
+    const result =
+      typeof flowId === 'string'
+        ? await backendRequest<{ ok?: boolean }>('github.cancelAuth', { flowId })
+        : await backendRequest<{ ok?: boolean }>('github.cancelAuth');
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the cancel.' };
     }
@@ -209,6 +228,159 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LOGOUT, async () => {
       return { success: false, error: 'The daemon did not confirm the revoke.' };
     }
     invalidateGitHubAuthStatus();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
+
+// ── Provider-generic forge auth (daemon `sourceControl.*`) ──
+//
+// `github.authStatus / connect / cancelAuth / revoke / getUser` are aliases of
+// these methods with `provider: "github"`; the GitLab flow (instance host,
+// device grant when `deviceGrantSupported`, PAT fallback) only exists here.
+// A PAT travels in the `connect` params over the authenticated RPC channel and
+// is stored daemon-side; it is never held, logged or echoed on this side.
+
+function asProvider(value: unknown): ForgeProvider | null {
+  return value === 'github' || value === 'gitlab' ? value : null;
+}
+
+/**
+ * Narrow the renderer's `{ provider, host? }` argument for the host-bound
+ * `sourceControl.*` methods. `host` is forwarded verbatim when present so an
+ * operation on instance B is never resolved against the persisted instance A.
+ */
+function forgeHostParams(arg: unknown): { provider: ForgeProvider; host?: string } | null {
+  const { provider, host } = asRecord(arg);
+  const forge = asProvider(provider);
+  if (!forge) return null;
+  return { provider: forge, ...(typeof host === 'string' && host ? { host } : {}) };
+}
+
+/** Narrow the renderer's connect argument to the daemon's `sourceControl.connect` params. */
+function forgeConnectParams(arg: unknown): ForgeConnectParams | null {
+  const { provider, host, method, token } = asRecord(arg);
+  const forge = asProvider(provider);
+  if (!forge) return null;
+  if (method !== undefined && method !== 'device' && method !== 'pat') return null;
+  return {
+    provider: forge,
+    ...(typeof host === 'string' && host ? { host } : {}),
+    ...(method ? { method } : {}),
+    ...(method === 'pat' && typeof token === 'string' && token ? { token } : {}),
+  };
+}
+
+/** Stable `error.data.code` of a typed `sourceControl.*` error, if present. */
+function forgeErrorCode(error: unknown): ForgeConnectErrorCode | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'device-grant-unsupported' || code === 'source-control-unauthorized'
+    ? code
+    : undefined;
+}
+
+/** The GitHub alias shares the daemon slot, so its cached status must follow. */
+function invalidateForgeCaches(provider: ForgeProvider): void {
+  if (provider === 'github') invalidateGitHubAuthStatus();
+}
+
+registerMockIpcHandler(
+  FORGE_AUTH_CHANNELS.GET_STATUS,
+  async (arg): Promise<ForgeAuthStatus | null> => {
+    const params = forgeHostParams(arg);
+    if (!params) return null;
+    try {
+      return await backendRequest<ForgeAuthStatus>('sourceControl.authStatus', params);
+    } catch {
+      return null;
+    }
+  },
+);
+
+registerMockIpcHandler(FORGE_AUTH_CHANNELS.GET_USER, async (arg): Promise<ForgeUser | null> => {
+  const params = forgeHostParams(arg);
+  if (!params) return null;
+  try {
+    const result = await backendRequest<{ user?: ForgeUser | null }>(
+      'sourceControl.getUser',
+      params,
+    );
+    const user = result?.user;
+    return user && typeof user.login === 'string' && user.login.length > 0 ? user : null;
+  } catch {
+    return null;
+  }
+});
+
+/** `sourceControl.connect` success payload — device codes only present for a device grant. */
+interface ForgeConnectWire extends GitHubConnectWire {
+  user?: ForgeUser | null;
+}
+
+registerMockIpcHandler(FORGE_AUTH_CHANNELS.CONNECT, async (arg): Promise<ForgeConnectResult> => {
+  const params = forgeConnectParams(arg);
+  if (!params) return { success: false, error: 'provider is required' };
+  if (params.method === 'pat' && !params.token) {
+    return { success: false, error: 'token is required' };
+  }
+  try {
+    const result = await backendRequest<ForgeConnectWire>('sourceControl.connect', params);
+    if (result?.ok !== true) {
+      return { success: false, error: 'The daemon did not confirm the connection.' };
+    }
+    invalidateForgeCaches(params.provider);
+    if (params.method === 'pat') return { success: true };
+    if (
+      typeof result.userCode === 'string' &&
+      typeof result.verificationUri === 'string' &&
+      typeof result.expiresIn === 'number' &&
+      typeof result.interval === 'number'
+    ) {
+      return {
+        success: true,
+        deviceFlow: {
+          userCode: result.userCode,
+          verificationUri: result.verificationUri,
+          expiresIn: result.expiresIn,
+          interval: result.interval,
+        },
+      };
+    }
+    logger.error('sourceControl.connect returned an unexpected payload shape', {
+      provider: params.provider,
+      keys: result && typeof result === 'object' ? Object.keys(result) : typeof result,
+    });
+    return { success: false, error: 'The device authorization could not be started.' };
+  } catch (error) {
+    return { success: false, error: mutationErrorMessage(error), code: forgeErrorCode(error) };
+  }
+});
+
+registerMockIpcHandler(FORGE_AUTH_CHANNELS.CANCEL_AUTH, async (arg): Promise<ForgeAuthResult> => {
+  const params = forgeHostParams(arg);
+  if (!params) return { success: false, error: 'provider is required' };
+  try {
+    const result = await backendRequest<{ ok?: boolean }>('sourceControl.cancelAuth', params);
+    if (result?.ok !== true) {
+      return { success: false, error: 'The daemon did not confirm the cancel.' };
+    }
+    invalidateForgeCaches(params.provider);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
+
+registerMockIpcHandler(FORGE_AUTH_CHANNELS.REVOKE, async (arg): Promise<ForgeAuthResult> => {
+  const params = forgeHostParams(arg);
+  if (!params) return { success: false, error: 'provider is required' };
+  try {
+    const result = await backendRequest<{ ok?: boolean }>('sourceControl.revoke', params);
+    if (result?.ok !== true) {
+      return { success: false, error: 'The daemon did not confirm the revoke.' };
+    }
+    invalidateForgeCaches(params.provider);
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

@@ -126,12 +126,14 @@ function makeDeleteProposal(): Proposal {
 
 // Async write actions (saveFileSpecialist/deleteFileSpecialist) carry a
 // per-dispatch promise the saga settles with the daemon write outcome; the
-// mocked dispatch resolves it so awaited work functions complete.
+// mocked dispatch resolves and returns it so awaited work functions complete.
 function settleAsyncActions() {
-  mocks.dispatch.mockImplementation((action: { success?: (response: unknown) => unknown }) => {
-    action.success?.(undefined);
-    return action;
-  });
+  mocks.dispatch.mockImplementation(
+    (action: { success?: (response: unknown) => unknown; promise?: Promise<unknown> }) => {
+      action.success?.(undefined);
+      return action.promise ?? action;
+    },
+  );
 }
 
 function expectDispatchedWrite(
@@ -239,12 +241,31 @@ describe('specialist-proposal-actions', () => {
     expect(result.reverse).toEqual(expect.objectContaining({ kind: 'save' }));
   });
 
+  it('does not navigate or complete apply before the write acknowledgement', async () => {
+    let acknowledge!: () => void;
+    mocks.dispatch.mockImplementation(
+      (action: { success?: (response: unknown) => unknown; promise?: Promise<unknown> }) => {
+        acknowledge = () => action.success?.(undefined);
+        return action.promise ?? action;
+      },
+    );
+    const complete = vi.fn();
+    const applying = applySpecialistProposalWork(makeDetail(makeCreateProposal())).then(complete);
+    await Promise.resolve();
+    expect(complete).not.toHaveBeenCalled();
+    expect(mocks.navigateToSettings).not.toHaveBeenCalled();
+
+    acknowledge();
+    await applying;
+    expect(complete).toHaveBeenCalledOnce();
+    expect(mocks.navigateToSettings).toHaveBeenCalledOnce();
+  });
+
   it('apply work rejects when the daemon write fails (monorepo review PR#1947)', async () => {
     mocks.dispatch.mockImplementation(
       (action: { failure?: (error: Error) => unknown; promise?: Promise<unknown> }) => {
-        action.promise?.catch(() => {});
         action.failure?.(new Error('daemon write failed'));
-        return action;
+        return action.promise ?? action;
       },
     );
 
@@ -282,9 +303,8 @@ describe('specialist-proposal-actions', () => {
   it('undo work rejects when the daemon write fails (monorepo review PR#1947)', async () => {
     mocks.dispatch.mockImplementation(
       (action: { failure?: (error: Error) => unknown; promise?: Promise<unknown> }) => {
-        action.promise?.catch(() => {});
         action.failure?.(new Error('undo write failed'));
-        return action;
+        return action.promise ?? action;
       },
     );
 
