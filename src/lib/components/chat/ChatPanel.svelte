@@ -4324,6 +4324,7 @@
     ...EMPTY_TEMPORARY_TURN_MATERIALIZATION,
   });
   const handledOpenMessageRequestIds = new Set<string>();
+  const pendingOpenMessageRequestIds = new Set<string>();
   let clearDeepOpenHighlight: (() => void) | null = null;
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
@@ -4520,36 +4521,54 @@
     if (!isActive || !detail || detail.agentId !== agentId) return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
-    if (handledOpenMessageRequestIds.has(detail.requestId)) return;
+    if (
+      handledOpenMessageRequestIds.has(detail.requestId) ||
+      pendingOpenMessageRequestIds.has(detail.requestId)
+    )
+      return;
 
+    // Search and deep links share one navigation generation. A slower reveal
+    // must never scroll or highlight after a newer target has taken over.
+    const request = ++searchHighlightRequest;
     const binding = searchBindingKey();
-    // Force-render the target's turn through the LazyTurn virtualization and
-    // drop follow so streaming growth doesn't yank the viewport back down.
-    deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
-    shouldFollowBottom = false;
-    await tick();
-    if (!(await waitForActiveFrame())) return;
-    const targetElement = scrollContainer?.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(detail.messageId)}"]`,
-    );
-    const current = () => isActive && !isComponentDestroyed && binding === searchBindingKey();
-    if (!current() || !targetElement) return;
-    handledOpenMessageRequestIds.add(detail.requestId);
-    const match = detail.query
-      ? findChatSearchMatches(
-          $agentMessages$.filter((message) => message.id === detail.messageId),
-          detail.query,
-          messageIdToTurnKey,
-          workspace?.ownerPrincipalId,
-        )[0]
-      : undefined;
-    if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
-    if (!current()) return;
-    if (!match) smoothScrollTo(targetElement, 'center');
-    scheduleDeepOpenRelease();
-    targetElement.classList.add('message-highlight-flash');
-    scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
-    if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
+    const current = () =>
+      isActive &&
+      !isComponentDestroyed &&
+      binding === searchBindingKey() &&
+      request === searchHighlightRequest;
+    pendingOpenMessageRequestIds.add(detail.requestId);
+    try {
+      // Force-render only the target's turn through LazyTurn; individual rows
+      // still enter through the panel-wide admission budget.
+      deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
+      shouldFollowBottom = false;
+      await tick();
+      if (!current() || !(await waitForActiveFrame()) || !current()) return;
+      const targetElement = scrollContainer?.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(detail.messageId)}"]`,
+      );
+      if (!targetElement) return;
+      handledOpenMessageRequestIds.add(detail.requestId);
+      const match = detail.query
+        ? findChatSearchMatches(
+            $agentMessages$.filter((message) => message.id === detail.messageId),
+            detail.query,
+            messageIdToTurnKey,
+            workspace?.ownerPrincipalId,
+          )[0]
+        : undefined;
+      if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
+      if (!current()) return;
+      if (!match) smoothScrollTo(targetElement, 'center');
+      scheduleDeepOpenRelease();
+      targetElement.classList.add('message-highlight-flash');
+      scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
+      if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
+    } finally {
+      pendingOpenMessageRequestIds.delete(detail.requestId);
+      // A retry for a superseded target must not become a new navigation.
+      if (request !== searchHighlightRequest) handledOpenMessageRequestIds.add(detail.requestId);
+    }
   }
 
   $effect(() => {

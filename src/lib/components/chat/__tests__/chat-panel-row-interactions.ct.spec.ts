@@ -150,6 +150,50 @@ for (const navigation of ['search', 'deep-link']) {
   });
 }
 
+test('the latest same-agent deep link wins over pending reveals and duplicate retries', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const host = await mount(ChatPanelOperationalGeometryHost, {
+    props: { liveMessages: messages(), detachedStatus: true },
+  });
+  await expect.poll(() => host.locator('[data-chat-operational-row]').count()).toBeGreaterThan(0);
+  await page.evaluate(async () => {
+    const open = (index: number) =>
+      window.dispatchEvent(
+        new CustomEvent('chat:open-message', {
+          detail: {
+            agentId: 'chat-panel-operational-agent',
+            messageId: 'interaction-assistant',
+            query: `Hidden tool marker-${index}-end.`,
+            requestId: `overlap-${index}`,
+          },
+        }),
+      );
+    open(10);
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    open(90);
+    open(90);
+  });
+  const target = host.getByText('Hidden tool marker-90-end.', { exact: true });
+  await expect(target).toBeInViewport();
+  // Let the superseded request exhaust its former retry window; the final
+  // target must stay visible after both navigation pins have been released.
+  await page.evaluate(async () => {
+    for (let frame = 0; frame < 45; frame++) await new Promise(requestAnimationFrame);
+  });
+  await expect(target).toBeInViewport();
+  await expect(host.getByText('Hidden tool marker-10-end.', { exact: true })).toHaveCount(0);
+  const highlighted = await page.evaluate(() => {
+    const ranges = CSS.highlights?.get('deep-open-match') as Iterable<Range> | undefined;
+    return ranges ? Array.from(ranges, (range) => range.toString()).join(' ') : '';
+  });
+  expect(highlighted).toContain('marker-90-end.');
+  expect(highlighted).not.toContain('marker-10-end.');
+});
+
 test('real chat follows disclosure growth and resizing, but preserves user scrollback', async ({
   mount,
   page,

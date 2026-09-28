@@ -3250,6 +3250,72 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(target.classList.contains('highlight-flash')).toBe(false);
   });
 
+  it('supersedes a pending same-agent deep link with the newer target', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      searchableAssistant('old-target', 'old needle'),
+      searchableAssistant('new-target', 'new needle'),
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const targets = ['old-target', 'new-target'].map((id) =>
+      transcript.querySelector<HTMLElement>(`[data-message-id="${id}"]`)!,
+    );
+    expect(targets.every(Boolean)).toBe(true);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'old-target',
+          query: 'old',
+          requestId: 'old-request',
+        },
+      }),
+    );
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: { agentId: 'agent-a', messageId: 'new-target', requestId: 'new-request' },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 45; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(targets[1].classList.contains('message-highlight-flash')).toBe(true);
+    expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
+  });
+
+  it('deduplicates retry-ladder deep links before their first frame', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const add = vi.spyOn(target.classList, 'add');
+    for (let retry = 0; retry < 2; retry++)
+      window.dispatchEvent(
+        new CustomEvent('chat:open-message', {
+          detail: { agentId: 'agent-a', messageId: 'message-a', requestId: 'same-request' },
+        }),
+      );
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(add.mock.calls.filter(([name]) => name === 'message-highlight-flash')).toHaveLength(1);
+  });
+
   it('cancels active highlight timers and open-message frames on unmount', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
