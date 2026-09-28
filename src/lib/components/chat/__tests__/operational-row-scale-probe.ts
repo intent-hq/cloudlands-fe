@@ -240,6 +240,9 @@ export async function timeline(page: Page) {
           'disabled-by-default-devtools.timeline',
           'disabled-by-default-devtools.timeline.stack',
           'blink.user_timing',
+          ...(process.env.ROW_PERF_CPU === '1'
+            ? ['v8.execute', 'disabled-by-default-v8.cpu_profiler']
+            : []),
         ],
       },
       transferMode: 'ReportEvents',
