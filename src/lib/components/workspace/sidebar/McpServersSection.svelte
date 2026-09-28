@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import SidebarGroupHeader from './SidebarGroupHeader.svelte';
   import { Button } from '$lib/components/ui/button';
   /**
@@ -12,7 +13,6 @@
 
   import {
     hydrateWorkspaceMcpDisabled,
-    loadServers,
     toggleWorkspaceMcpServer,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
   import {
@@ -49,9 +49,9 @@
   });
 
   // ✅ At component init — these use getContext() internally
-  const servers$ = selectMcpServers();
+  const servers$ = selectMcpServers(workspaceIdStore);
   const disabledServerNames$ = selectWorkspaceDisabledMcpServerNamesByWorkspaceId(workspaceIdStore);
-  const serverErrors$ = selectMcpErrorMessages();
+  const serverErrors$ = selectMcpErrorMessages(workspaceIdStore);
 
   type McpServerRow = {
     server: McpServerConfig;
@@ -79,7 +79,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      appStore.dispatch(loadServers());
+      appStore.dispatch(workspaceCatalogRequested(workspaceId));
       appStore.dispatch(hydrateWorkspaceMcpDisabled(workspaceId));
     }
   });

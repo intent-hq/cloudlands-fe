@@ -1196,31 +1196,34 @@ export interface UserRuleState {
 
 export interface SettingsClient {
   /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
-  list(): Promise<SettingDefinitionWithValue[]>;
-  listSnapshot?(): Promise<SettingsSnapshot>;
+  list(workspaceId?: string): Promise<SettingDefinitionWithValue[]>;
+  listSnapshot?(workspaceId?: string): Promise<SettingsSnapshot>;
   /** `settings.get` (§5.12). Returns the single setting + its definition; `null` when the daemon rejects the path. */
-  get(path: string): Promise<SettingDefinitionWithValue | null>;
+  get(path: string, workspaceId?: string): Promise<SettingDefinitionWithValue | null>;
   /** `settings.update` (§5.12). Atomic batch update; emits `settings:changed` on success. */
   update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
   updateSnapshot?(changes: AppSettingChange[]): Promise<SettingsUpdateResult>;
   /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
   reset(path: string): Promise<AppliedSettingChange | null>;
   /** `rules.get` (§5.21). Reads one global user-override rule type; `null` when the probe fails. */
-  getUserRule(ruleType: string): Promise<UserRuleState | null>;
+  getUserRule(ruleType: string, workspaceId?: string): Promise<UserRuleState | null>;
   /** `rules.update` (§5.21). Upserts the global user-override body (+ `enabled`) for one rule type. */
   updateUserRule(ruleType: string, content: string, enabled?: boolean): Promise<MutationResult>;
   getUserPreferences(): Promise<UserPreferencesState | null>;
   setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
-  getProviderSettings(): Promise<PersistedProviderSettings | null>;
+  getProviderSettings(workspaceId?: string): Promise<PersistedProviderSettings | null>;
   setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult>;
-  getMcpServers(): Promise<McpServerConfig[]>;
+  getMcpServers(workspaceId?: string): Promise<McpServerConfig[]>;
   setMcpServers(servers: McpServerConfig[]): Promise<MutationResult>;
   /**
    * `mcp.servers.getStatus` (§5.22) fanned out per server id. Returns the
    * daemon-reported runtime statuses keyed by `serverId`; ids whose point read
    * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
    */
-  getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]>;
+  getMcpServerStatuses(
+    serverIds: string[],
+    workspaceId?: string,
+  ): Promise<McpServerRuntimeStatus[]>;
   /** `mcp.servers.restart` (§5.22). Restarts/re-probes one daemon-owned server. */
   restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus>;
   /**
@@ -1245,7 +1248,7 @@ export interface SettingsClient {
     workspaceId: string,
     settings: Partial<SingleWorkspaceSettings>,
   ): Promise<MutationResult>;
-  getBackgroundAgentSettings(): Promise<BackgroundAgentSettingsState | null>;
+  getBackgroundAgentSettings(workspaceId?: string): Promise<BackgroundAgentSettingsState | null>;
   setBackgroundAgentSettings(
     settings: Partial<BackgroundAgentSettingsState>,
   ): Promise<MutationResult>;
@@ -1920,12 +1923,12 @@ export interface SpecialistDef {
 
 export interface SpecialistsClient {
   /**
-   * Merged bundled + user + project definitions (`specialist.list`, PROTOCOL
+   * Merged bundled + user definitions (`specialist.list`, PROTOCOL
    * §5.11). The optional `provider` supplies the resolution context for the
    * `resolvedModel`/`resolvedProvider` preview fields (defaults to the
    * daemon's default provider; unknown provider → -32602).
    */
-  list(provider?: string): Promise<SpecialistDef[]>;
+  list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]>;
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
   /**
    * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).
@@ -1936,6 +1939,7 @@ export interface SpecialistsClient {
     spec: SpecialistDef,
     scope?: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef>;
   /**
    * Edit an existing specialist definition (`specialist.edit`, PROTOCOL §5.11).
@@ -1946,29 +1950,35 @@ export interface SpecialistsClient {
     spec: SpecialistDef,
     scope: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef>;
   /**
    * Delete a specialist definition (`specialist.delete`, PROTOCOL §5.11).
    * Errors if the specialist does not exist in the target scope.
    * Bundled definitions are read-only and cannot be deleted.
    */
-  delete(id: string, scope: 'project' | 'user', workspacePath?: string): Promise<{ success: true }>;
+  delete(
+    id: string,
+    scope: 'project' | 'user',
+    workspacePath?: string,
+    workspaceId?: string,
+  ): Promise<{ success: true }>;
 }
 
 export interface ModelsClient {
-  list(providerId?: string): Promise<AuggieModel[]>;
+  list(providerId?: string, workspaceId?: string): Promise<AuggieModel[]>;
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
 }
 
 /**
  * Provider registry domain (`providers.catalog`, PROTOCOL §5.38).
- * Daemon-global: no `workspaceId`. Returns the full static provider registry
+ * Daemon-owned, with optional workspace routing context. Returns the full static provider registry
  * (gated-off rows included, in registry order).
  * THROWS on transport/daemon failure so the seeder can decide the fallback
  * (keep the last hydrated catalog rather than wiping it).
  */
 export interface ProvidersClient {
-  catalog(): Promise<ProviderCatalogResult>;
+  catalog(workspaceId?: string): Promise<ProviderCatalogResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
@@ -2133,7 +2143,7 @@ export interface BrowserClient {
  */
 export interface ClientsClient {
   /** `client.list` → every connected logical client. */
-  list(): Promise<LiveClient[]>;
+  list(workspaceId?: string): Promise<LiveClient[]>;
   /** The stable `clientId` the daemon confirmed for this connection. */
   ownClientId(): Promise<string>;
 }
@@ -2271,7 +2281,7 @@ export interface SystemCapabilities {
 export interface SystemClient {
   status(): Promise<SystemStatusState>;
   /** `system.capabilities` (§5.7) — machine capabilities independent of any workspace. */
-  capabilities(): Promise<SystemCapabilities>;
+  capabilities(workspaceId?: string): Promise<SystemCapabilities>;
   releaseNotes(): Promise<ReleaseNotes | null>;
   autoUpdate(): Promise<AutoUpdateState | null>;
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;

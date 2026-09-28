@@ -154,3 +154,7 @@ describe('RegularAgentWelcome specialist picker', () => {
     });
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', () => ({
+  selectContextSpecialists: () => mocks.specialists$,
+}));

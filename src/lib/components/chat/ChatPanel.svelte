@@ -349,25 +349,23 @@
   } from './chat-queue-edge-layout';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import {
-    selectSpecialists,
-    selectEffectiveBehaviorPrompt,
-    selectEffectiveModel,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
+    selectContextSpecialists,
+    selectContextQuotaRetryProviderIds,
+    selectContextDefaultProvider,
+    selectContextProviderEntries,
+    selectWorkspaceCatalogEpoch,
+    selectContextEnabledProviders,
+    selectContextModelProviderIds,
+    selectContextReadiness,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import {
-    selectEffectiveDefaultProviderId,
     selectProviderAuthFailureGuidance,
-    selectProviderCatalogEntries,
     selectProviderCatalogLoaded,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    selectAvailableEnabledProviderIds,
-    selectEnabledProviders,
-    selectQuotaRetryProviderIds,
-  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -533,13 +531,14 @@
   // other slices. The raw flags are anchored separately because the picker set
   // always admits the default provider, so toggling it leaves that array
   // shallow-equal and the selector stream deduplicates the change away.
-  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
-  const enabledProviders$ = selectEnabledProviders();
-  const providerStatusMap$ = selectProviderStatusMap();
+  const availableEnabledProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
+  const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
+  const providerStatusMap$ = selectContextReadiness(workspaceIdStore);
   // Read purely as a reactivity anchor for the display-name derivation below:
   // provider display names come from the catalog, which hydrates
   // asynchronously and can land after the quota failure does.
-  const providerCatalogEntries$ = selectProviderCatalogEntries();
+  const providerCatalogEntries$ = selectContextProviderEntries(workspaceIdStore);
+  const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
@@ -2266,7 +2265,7 @@
   // Hydrated input model — uses session model when available, falls back to agentModel prop
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
-  const catalogDefaultProviderId$ = selectEffectiveDefaultProviderId();
+  const catalogDefaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
   const providerCatalogLoaded$ = selectProviderCatalogLoaded();
 
   // Provider ID for the input — resolved from the agent session
@@ -5191,9 +5190,13 @@
     void $availableEnabledProviderIds$;
     void $enabledProviders$;
     void $providerStatusMap$;
-    return selectQuotaRetryProviderIds
-      .select(appStore.state, quota.providerId)
-      .map((id) => ({ id, displayName: selectProviderDisplayName.select(appStore.state, id) }));
+    void $workspaceCatalogEpoch$;
+    return selectContextQuotaRetryProviderIds
+      .select(appStore.state, quota.providerId, workspace?.id)
+      .map((id) => ({
+        id,
+        displayName: $providerCatalogEntries$.find((p) => p.id === id)?.displayName ?? id,
+      }));
   });
 
   // Handle changing the specialist for an agent
@@ -5214,14 +5217,12 @@
     if (specialistId) {
       // Direct specialist selected
       const reduxState = appStore.state;
-      const specialist = selectSpecialists.select(reduxState).find((s) => s.id === specialistId);
-      behaviorPrompt = specialist
-        ? selectEffectiveBehaviorPrompt.select(reduxState, specialist.id)
-        : undefined;
+      const specialist = selectContextSpecialists
+        .select(reduxState, workspace.id)
+        .find((s) => s.id === specialistId);
+      behaviorPrompt = specialist ? specialist.defaultBehaviorPrompt : undefined;
       // Use getEffectiveModel which resolves tier to actual model for current provider
-      newModel = specialist
-        ? selectEffectiveModel.select(reduxState, specialist.id) || session.model
-        : session.model;
+      newModel = specialist ? specialist.defaultModel || session.model : session.model;
       specialistName = specialist?.name;
     } else {
       // Blank agent - no specialist
@@ -5835,6 +5836,7 @@
           <!-- Welcome page: settled hydration + zero messages + no durable conversation evidence. -->
           <div class="mt-16"></div>
           <RegularAgentWelcome
+            workspaceId={workspace?.id}
             onSpecialistChange={handleSpecialistChange}
             session={$agentSession$}
           />
@@ -6499,6 +6501,7 @@
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
+                            workspaceId={workspace?.id}
                             {notice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
@@ -6515,6 +6518,7 @@
                       {:else if rehomeNotice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ProviderRehomedNotice
+                            workspaceId={workspace?.id}
                             notice={rehomeNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />

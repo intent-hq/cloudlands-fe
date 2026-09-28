@@ -1084,7 +1084,7 @@ describe('chatSendSaga', () => {
       run.channel.put(retry);
       await expect(retry.promise).resolves.toBeUndefined();
 
-      expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER);
+      expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER, { workspaceId: WS });
       expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
       // The redrive MUST carry the newly picked model as an explicit
       // override on the wire: the plain last-message retry resolves the

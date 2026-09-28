@@ -3,12 +3,19 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  reconnect: undefined as undefined | (() => void),
   ownClientId: vi.fn(),
   getBrowserClient: vi.fn(),
   setBrowserClient: vi.fn(),
   navigateTab: vi.fn(),
   closeTab: vi.fn(),
   toastError: vi.fn(),
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  onBackendReconnected: (fn: () => void) => {
+    mocks.reconnect = fn;
+    return () => {};
+  },
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -106,6 +113,26 @@ function startWithReducer() {
 }
 
 describe('browserClientsSaga', () => {
+  it('keeps workspace client lists separate and discards replies from the old connection', async () => {
+    const oldA = deferred<LiveClient[]>();
+    mocks.list.mockImplementation((id: string) =>
+      id === 'A' ? oldA.promise : Promise.resolve([{ ...desk, clientId: 'B-client' }]),
+    );
+    const run = startWithReducer();
+    run.dispatch(refreshLiveClientsRequested('A'));
+    run.dispatch(refreshLiveClientsRequested('B'));
+    await settle();
+    expect(run.entry('B').liveClients?.ids).toEqual(['B-client']);
+    mocks.reconnect?.();
+    oldA.resolve([{ ...desk, clientId: 'old-A' }]);
+    await settle();
+    expect(run.entry('A')?.liveClients?.ids ?? []).toEqual([]);
+    expect(mocks.list).toHaveBeenCalledWith('A');
+    expect(mocks.list).toHaveBeenCalledWith('B');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.list.mockResolvedValue([desk]);
@@ -160,7 +187,7 @@ describe('browserClientsSaga', () => {
     expect(dispatched().filter((a) => a.type === 'browserClients/liveClientsReceived')).toEqual([]);
   });
 
-  it('hydrates once on the first workspace mount, then only reads that workspace browser client', async () => {
+  it('hydrates identity once and reads a separate client list for each workspace', async () => {
     const browserClient = { source: 'default', resolved: { clientId: 'cli-desk' } };
     mocks.getBrowserClient.mockResolvedValue(browserClient);
     const { dispatch, task, entry } = startWithReducer();
@@ -177,7 +204,7 @@ describe('browserClientsSaga', () => {
     task.cancel();
 
     expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
-    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.list.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(entry('ws-2').browserClient).toEqual(browserClient);
   });
@@ -206,7 +233,7 @@ describe('browserClientsSaga', () => {
       await settle();
       task.cancel();
 
-      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.list).toHaveBeenCalledTimes(3);
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
     });
 

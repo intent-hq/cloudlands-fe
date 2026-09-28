@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    selectContextSpecialists,
+    selectContextSelectedModel,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   /**
    * Agent Tab Type Component
    *
@@ -34,11 +38,7 @@
   import Fa from 'svelte-fa';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
-  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-  import {
-    selectSpecialistName,
-    selectSpecialists,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
     faBell,
     faBellSlash,
@@ -83,12 +83,12 @@
   // `agent.delete` is refused (-32003) for a collaborator connection: the
   // menu item is withheld rather than disabled.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
-  const defaultModel = selectSelectedModel();
+  const defaultModel = selectContextSelectedModel(workspaceIdStore);
   // Other people whose focus is this chat (multiplayer w5 presence circles).
   const presencePeople$ = selectAgentPresencePeople(workspaceIdStore, agentIdStore);
 
   // Reactive store subscription for specialist names
-  const specialists$ = selectSpecialists();
+  const specialists$ = selectContextSpecialists(workspaceIdStore);
 
   // Check if this agent is the initial workspace agent (created during onboarding)
   const initialAgentId$ = selectInitialAgentId(workspaceIdStore);

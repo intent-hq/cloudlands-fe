@@ -276,3 +276,8 @@ describe('AgentTabType agent model reactivity', () => {
     );
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', () => ({
+  selectContextSpecialists: () => mockState.presencePeople,
+  selectContextSelectedModel: () => mockState.defaultModel,
+}));

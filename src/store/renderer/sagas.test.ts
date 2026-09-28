@@ -73,6 +73,7 @@ describe('renderer app saga registry', () => {
       'powerSaga',
       'autoUpdateSaga',
       'specialistsSaga',
+      'workspaceCatalogSaga',
       'proposalLifecycleSaga',
       'settingsProposalHistorySaga',
       'specialistProposalHistorySaga',

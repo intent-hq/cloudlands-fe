@@ -490,3 +490,11 @@ describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', (
     await waitFor(() => expect(screen.queryByTestId('agent-tab-muted-indicator')).toBeNull());
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const specialists = await import('$store/renderer/slices/specialists/specialists-selectors');
+  return {
+    selectContextSelectedModel: () => mockState.defaultModel,
+    selectContextSpecialists: specialists.selectSpecialists,
+  };
+});

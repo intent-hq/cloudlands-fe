@@ -123,6 +123,39 @@ function makeState() {
         },
       ]),
     },
+    providerCatalog: {
+      providers: createCollection<{ id: string }, 'id'>('id'),
+      loaded: false,
+      byWorkspaceId: Object.fromEntries(
+        ['ws-1', 'ws-2'].map((id) => [
+          id,
+          {
+            settings: [
+              { path: 'model.defaultProvider', value: 'codex' },
+              { path: 'model.providerDefaults', value: { codex: 'model-a' } },
+            ],
+          },
+        ]),
+      ),
+    },
+    providerModels: {
+      byProviderId: {},
+      clearEpoch: 0,
+      byWorkspaceId: Object.fromEntries(
+        ['ws-1', 'ws-2'].map((id) => [
+          id,
+          {
+            codex: {
+              models: [
+                { value: 'model-a', label: 'Model A', effortLevels: ['low', 'medium', 'high'] },
+                { value: 'model-b', label: 'Model B', effortLevels: ['minimal', 'ultra'] },
+              ],
+              fetchedAt: '2026-09-28T00:00:00Z',
+            },
+          },
+        ]),
+      ),
+    },
     model: {
       availableModelsProviderId: 'codex',
       availableModels: createCollection('value', [

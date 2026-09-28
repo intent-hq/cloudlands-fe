@@ -893,3 +893,54 @@ describe('LiveSettingsClient user-rule accessors (rules.* — PROTOCOL §5.21)',
     expect(result.error).toContain('rule content exceeds');
   });
 });
+
+describe('workspace settings routing', () => {
+  it('keeps concurrent and late workspace reads separate, including global invalidation', async () => {
+    const a = deferred<unknown>();
+    mockedRequest.mockImplementation(async (_method, params) => {
+      const workspaceId = (params as { workspaceId?: string }).workspaceId;
+      if (workspaceId === 'A') return a.promise;
+      return { definition: { path: 'model.default' }, value: workspaceId ?? 'direct' };
+    });
+    const pendingA = readSetting('model.default', 'A');
+    expect((await readSetting('model.default', 'B'))?.value).toBe('B');
+    a.resolve({ definition: { path: 'model.default' }, value: 'A' });
+    expect((await pendingA)?.value).toBe('A');
+    expect((await readSetting('model.default', 'B'))?.value).toBe('B');
+    expect(mockedRequest).toHaveBeenCalledWith('settings.get', {
+      path: 'model.default',
+      workspaceId: 'A',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('settings.get', {
+      path: 'model.default',
+      workspaceId: 'B',
+    });
+    invalidateSettingsReadCache(['model.default']);
+    await readSetting('model.default', 'B');
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+});
+
+it('routes workspace snapshots and MCP reads while keeping the global rules sentinel', async () => {
+  mockedRequest.mockResolvedValue({ settings: [], servers: [], content: '', enabled: true });
+  const client = new LiveSettingsClient();
+  await client.list('A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('settings.list', { workspaceId: 'A' });
+  await client.getMcpServers('A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('mcp.servers.list', { workspaceId: 'A' });
+  await client.getMcpServerStatuses(['server'], 'A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('mcp.servers.getStatus', {
+    serverId: 'server',
+    workspaceId: 'A',
+  });
+  await client.getUserRule('agent', 'A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('rules.get', {
+    ruleType: 'agent',
+    workspaceId: 'A',
+  });
+  await client.getUserRule('agent');
+  expect(mockedRequest).toHaveBeenLastCalledWith('rules.get', {
+    ruleType: 'agent',
+    workspaceId: 'global',
+  });
+});

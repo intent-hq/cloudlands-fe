@@ -1,7 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { writable, derived } from 'svelte/store';
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -32,15 +32,12 @@
   import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
 
   import {
-    selectSelectedModel,
     selectAvailableModels,
     selectAvailableModelsProviderId,
     selectModelFallbackInfo,
     selectModelPickerCollapsedGroups,
     selectIsLoadingModels,
     selectLoadError,
-    selectAllProviderWarnings,
-    selectAllProviderStaleFlags,
     selectAgentModelEffortLevels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
@@ -51,20 +48,28 @@
     setModelPickerGroupCollapsed,
   } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
-    selectActiveProviderId,
-    selectAvailableEnabledProviderIds,
-    selectEnabledProviders,
     selectIsProviderModelAccessAllowed,
-    selectModelFetchProviderIds,
+    selectActiveProviderId,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     getModelsForProvider,
     getModelsForProviderForLoadingState,
   } from '$store/renderer/slices/model/model-utils';
+  import {
+    selectContextDefaultProvider,
+    selectContextReadinessLoaded,
+    selectContextSelectedModel,
+    selectContextProviderWarnings,
+    selectContextProviderStaleFlags,
+    selectContextProviderEntries,
+    selectContextModelProviderIds,
+    selectContextAvailableProviderIds,
+    selectContextEnabledProviders,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
+  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
   import {
     selectProviderModelsCacheEntry,
@@ -73,13 +78,6 @@
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-  import {
-    selectEffectiveDefaultProviderId,
-    selectProviderCatalogEntries,
-    selectResolvedProviderCatalogEntry,
-    selectNormalizedProviderId,
-    selectProviderDisplayName,
-  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
@@ -113,19 +111,23 @@
 
   const logger = createLogger('ModelPicker');
 
-  const defaultProviderId$ = selectEffectiveDefaultProviderId();
-  const providerCatalogEntries$ = selectProviderCatalogEntries();
-
   // Catalog-backed local shims for the legacy provider-config helpers, so the
   // picker's many call sites keep their shape. Reads are reactive via the
   // defaultProviderId$ subscription above plus the appStore.state lookups.
   function normalizeProviderId(providerId: string): string {
     void $providerCatalogEntries$;
-    return selectNormalizedProviderId.select(appStore.state, providerId);
+    return (
+      $providerCatalogEntries$.find(
+        (p) => p.id === providerId || p.legacyAliases?.includes(providerId),
+      )?.id ?? providerId
+    );
   }
   function providerDisplayName(providerId: string): string {
     void $providerCatalogEntries$;
-    return selectProviderDisplayName.select(appStore.state, providerId);
+    return (
+      $providerCatalogEntries$.find((p) => p.id === normalizeProviderId(providerId))?.displayName ??
+      providerId
+    );
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -137,16 +139,15 @@
 
   function hasResolvedProvider(providerId: string): boolean {
     void $providerCatalogEntries$;
-    return !!selectResolvedProviderCatalogEntry.select(appStore.state, providerId);
+    return $providerCatalogEntries$.some((p) => p.id === normalizeProviderId(providerId));
   }
 
-  const activeProviderId$ = selectActiveProviderId();
-  const modelFetchProviderIds$ = selectModelFetchProviderIds();
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
   // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
   // host catalog regardless (`isGuestLocked` is declared with the props below
   // and only read once the picker is rendering).
   function canUseProviderModels(providerId: string, allowLoadedCatalog = false): boolean {
+    if (workspaceId && isGuestLocked && providerId) return true;
     // An existing models.list response has its own provider provenance. Keep
     // its labels during registry hydration; writes still require a registry row.
     if (
@@ -156,21 +157,15 @@
       return false;
     return (
       normalizeProviderId(providerId) !== 'antigravity' ||
-      $antigravityModelsAllowed$ ||
+      (workspaceId ? $modelFetchProviderIds$.includes(providerId) : $antigravityModelsAllowed$) ||
       isGuestLocked
     );
   }
-  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
-  const enabledProviders$ = selectEnabledProviders();
-  const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
-  const allProviderWarnings$ = selectAllProviderWarnings();
-  const allProviderStaleFlags$ = selectAllProviderStaleFlags();
-  const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
 
   // The availability status map gates which providers the picker offers, but
@@ -179,7 +174,7 @@
   // trigger is ensure-once and the middleware coalesces overlapping bulk
   // checks, so multiple pickers mounting concurrently cause no duplicate probes.
   onMount(() => {
-    appStore.dispatch(ensureProvidersChecked());
+    if (!workspaceId) appStore.dispatch(ensureProvidersChecked());
   });
 
   interface Props {
@@ -304,6 +299,25 @@
     noticeClass,
   }: Props = $props();
 
+  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
+  const defaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
+  const directActiveProviderId$ = selectActiveProviderId();
+  const activeProviderId$ = derived(
+    [workspaceIdStore, defaultProviderId$, directActiveProviderId$],
+    ([id, scoped, direct]) => (id ? scoped : direct),
+  );
+  const providerCatalogEntries$ = selectContextProviderEntries(workspaceIdStore);
+  const modelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
+  const availableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
+  const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
+  const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
+  const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
+  const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
+  const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  $effect(() => {
+    if (workspaceId) appStore.dispatch(workspaceCatalogRequested(workspaceId));
+  });
+
   // `default`-variant pickers stack the notice directly under a full-width
   // trigger, so give it a default top margin; callers can still override it.
   const resolvedNoticeClass = $derived(
@@ -355,7 +369,6 @@
   // host: the agent-bound picker renders read-only with the host catalog
   // label and no availability warnings (intent#5378). The selector fails
   // closed while the window's identity is still the boot-time default.
-  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
   const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
@@ -378,6 +391,7 @@
     warning: string | undefined,
     stale: boolean | undefined,
   ) {
+    if (workspaceId) return;
     const normalizedId = normalizeProviderId(providerId);
     appStore.dispatch(
       setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning, stale }),
@@ -385,6 +399,7 @@
   }
 
   function setProviderErrorState(providerId: string, error: string) {
+    if (workspaceId) return;
     const normalizedId = normalizeProviderId(providerId);
     appStore.dispatch(
       setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }),
@@ -405,7 +420,7 @@
   // frame, while the debounced background fetch below still revalidates every
   // provider and writes fresh results back through the cache. Uncached
   // providers keep the normal loading path.
-  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state);
+  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state, workspaceId);
   const seededProviderModels: Record<string, DropdownOption[]> = {};
   const seededProviderLoading: Record<string, boolean> = {};
   for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
@@ -481,6 +496,7 @@
     // check keeps them out of local state (the epoch effect's generation
     // bump can run after a pending response settles) and the reducer drops
     // any pre-clear write-through stamped below as a second line of defense.
+    const originWorkspaceId = workspaceId;
     const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
     const providerIdsToFetch = providerIds.filter(
       (providerId) =>
@@ -497,11 +513,15 @@
       providerIdsToFetch.map(async (providerId) => {
         const providerGeneration = advanceProviderFetchGeneration(providerId);
         const isStale = () =>
+          workspaceId !== originWorkspaceId ||
           fetchGeneration !== currentGen ||
           providerFetchGenerations.get(providerId) !== providerGeneration ||
           selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
         try {
-          const result = await getModelsForProviderForLoadingState(providerId);
+          const result = await getModelsForProviderForLoadingState(
+            providerId,
+            ...(originWorkspaceId ? [{ workspaceId: originWorkspaceId }] : []),
+          );
           if (isStale()) return;
           const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
           allProviderErrors = remainingErrors;
@@ -510,7 +530,9 @@
             [providerId]: toDropdownOptions(result.models),
           };
           // Write through to the session cache (providerId is normalized here).
-          appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+          appStore.dispatch(
+            providerModelsLoaded(providerId, result, cacheEpoch, originWorkspaceId),
+          );
           setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
           if (isStale()) return;
@@ -570,7 +592,9 @@
   const usesAgentProviderFetch = $derived(
     canUseProviderModels(effectiveProviderId) &&
       (isGuestLocked ||
-        (effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
+        (workspaceId
+          ? !$modelFetchProviderIds$.includes(effectiveProviderId)
+          : effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -585,7 +609,7 @@
     // the only cache consumer for a locked/agent picker whose provider is no
     // longer enabled. The fetch below still revalidates.
     const cacheId = normalizeProviderId(providerId);
-    const cached = selectProviderModelsCacheEntry.select(appStore.state, cacheId);
+    const cached = selectProviderModelsCacheEntry.select(appStore.state, cacheId, workspaceId);
     if (cached) {
       agentProviderModels = cached.models;
       agentProviderLoading = false;
@@ -596,16 +620,21 @@
 
     // Epoch at fetch start: a reconnect clear mid-flight makes this response
     // stale for local state too, not just for the reducer write-through.
+    const originWorkspaceId = workspaceId;
     const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
     const isStale = () =>
+      workspaceId !== originWorkspaceId ||
       agentFetchGeneration !== currentGen ||
       selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
-      const result = await getModelsForProviderForLoadingState(providerId);
+      const result = await getModelsForProviderForLoadingState(
+        providerId,
+        ...(originWorkspaceId ? [{ workspaceId: originWorkspaceId }] : []),
+      );
       if (isStale()) return;
       agentProviderModels = result.models;
       // Write through so the next mount of this picker hydrates too.
-      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch));
+      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch, originWorkspaceId));
       setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
       if (isStale()) return;
@@ -630,6 +659,27 @@
     }
 
     void fetchAgentProviderModels(epid);
+  });
+
+  let previousWorkspaceId = untrack(() => workspaceId);
+  $effect(() => {
+    const nextWorkspaceId = workspaceId;
+    if (nextWorkspaceId === previousWorkspaceId) return;
+    previousWorkspaceId = nextWorkspaceId;
+    untrack(() => {
+      ++fetchGeneration;
+      ++agentFetchGeneration;
+      lastFetchedProviderIds = '';
+      allProviderModels = {};
+      allProviderErrors = {};
+      allProviderLoading = {};
+      agentProviderModels = null;
+      agentProviderError = null;
+      refreshingProviders = new Set();
+      refreshingProviderEpochs.clear();
+      void fetchAllProviderModels($modelFetchProviderIds$);
+      if (usesAgentProviderFetch) void fetchAgentProviderModels(effectiveProviderId);
+    });
   });
 
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -669,17 +719,25 @@
   // agent's provider differs from the active one, the global store otherwise.
   const availableModels = $derived(
     !canUseProviderModels(
-      agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
+      workspaceId || agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
       true,
     ) || agentProviderLoading
       ? []
-      : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
+      : (agentProviderModels ??
+          (agentProviderError
+            ? []
+            : workspaceId
+              ? (allProviderModels[effectiveProviderId] ?? []).map(({ data, ...option }) => ({
+                  ...data,
+                  ...option,
+                }))
+              : $availableModels$)),
   );
   // Which provider `availableModels` was loaded for: the per-agent fetch is
   // for the effective provider by construction; the global catalog carries
   // explicit provenance ('' before the first load).
   const availableModelsProviderId = $derived(
-    !agentProviderLoading && agentProviderModels
+    workspaceId || (!agentProviderLoading && agentProviderModels)
       ? effectiveProviderId
       : $availableModelsProviderId$,
   );
@@ -689,7 +747,7 @@
         (!hasProviderResult(effectiveProviderId) &&
           ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded))),
   );
-  const loadError = $derived($loadError$);
+  const loadError = $derived(workspaceId ? agentProviderError : $loadError$);
 
   // Provider display name for footer — reflects the effective provider, not the global one
 
@@ -707,18 +765,23 @@
     if (refreshingProviders.has(providerId)) return;
     // Epoch at fetch start: a reconnect clear mid-flight makes this response
     // stale for local state as well as for the reducer write-through.
+    const originWorkspaceId = workspaceId;
     const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
     const providerGeneration = advanceProviderFetchGeneration(providerId);
     refreshingProviderEpochs.set(providerId, cacheEpoch);
     refreshingProviders = new Set([...refreshingProviders, providerId]);
     const isStale = () =>
+      workspaceId !== originWorkspaceId ||
       providerFetchGenerations.get(providerId) !== providerGeneration ||
       selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
       // True force refresh: the daemon skips its cache and awaits a fresh
       // probe (PROTOCOL §6.7), so the spinner spins for the real probe
       // duration and the returned list replaces the group immediately.
-      const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
+      const result = await getModelsForProviderForLoadingState(providerId, {
+        forceRefresh: true,
+        workspaceId: originWorkspaceId,
+      });
       if (isStale()) return;
       setProviderWarningState(providerId, result.warning, result.stale);
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
@@ -731,7 +794,7 @@
         [providerId]: toDropdownOptions(result.models),
       };
       // Write through to the session cache (group keys are normalized ids).
-      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch, originWorkspaceId));
     } catch (err) {
       if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
@@ -742,10 +805,12 @@
       setProviderErrorState(providerId, providerError.displayText);
       logger.warn('Failed to refresh models for provider', { providerId, error: err });
     } finally {
-      refreshingProviderEpochs.delete(providerId);
-      const next = new Set(refreshingProviders);
-      next.delete(providerId);
-      refreshingProviders = next;
+      if (!isStale()) {
+        refreshingProviderEpochs.delete(providerId);
+        const next = new Set(refreshingProviders);
+        next.delete(providerId);
+        refreshingProviders = next;
+      }
     }
   }
 
@@ -1066,7 +1131,7 @@
       availableModelsProviderId !== '' &&
       normalizeProviderId(availableModelsProviderId) === normalizedId
     ) {
-      const row = availableModels.find((model) => model.isDefault);
+      const row = availableModels.find((model) => 'isDefault' in model && model.isDefault);
       if (row) return toDropdownOptions([row])[0];
     }
     return undefined;
@@ -2069,10 +2134,15 @@
     void (async () => {
       // Epoch at fetch start: a reconnect clear mid-flight makes this
       // response stale for local state as well as the cache write-through.
+      const originWorkspaceId = workspaceId;
       const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       try {
-        const models = await getModelsForProvider(currentProvider);
-        if (selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch) return;
+        const models = await getModelsForProvider(currentProvider, originWorkspaceId);
+        if (
+          workspaceId !== originWorkspaceId ||
+          selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch
+        )
+          return;
         if (models.length > 0) {
           const normalizedId = normalizeProviderId(currentProvider);
           allProviderModels = {
@@ -2080,7 +2150,9 @@
             [normalizedId]: toDropdownOptions(models),
           };
           // Write through to the session cache like the other fetch paths.
-          appStore.dispatch(providerModelsLoaded(normalizedId, { models }, cacheEpoch));
+          appStore.dispatch(
+            providerModelsLoaded(normalizedId, { models }, cacheEpoch, originWorkspaceId),
+          );
           return;
         }
       } catch (err) {

@@ -421,12 +421,14 @@ import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
 } from '$features/agent/utils/chat-interest-leases';
+import type { StoreState } from '$store/renderer/types';
 import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
 import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
 import { store as appStore } from '$store/renderer/store';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
+  workspaceCatalogReceived,
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
@@ -1818,8 +1820,23 @@ describe('ChatPanel mounted lifecycle', () => {
     ) {
       mocks.storeState = {
         providerCatalog: providerCatalogReducer(
-          providerCatalogInitialState,
-          providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+          providerCatalogReducer(
+            providerCatalogInitialState,
+            providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+          ),
+          workspaceCatalogReceived(
+            'workspace-a',
+            {
+              catalog: MOCK_PROVIDER_CATALOG,
+              settings: [
+                { path: 'model.defaultProvider', value: defaultProviderId },
+                { path: 'providers.enabled', value: enabledProviders },
+              ] as never,
+              readiness: providerStatusMap,
+              specialists: [],
+            },
+            0,
+          ),
         ),
         model: { ...modelInitialState, defaultProviderId },
         providerSettings: { enabledProviders, nonDisableableProviderIds: [] },
@@ -1848,6 +1865,26 @@ describe('ChatPanel mounted lifecycle', () => {
           enabledProviders: { ...state.providerSettings.enabledProviders, [providerId]: enabled },
         },
       };
+      const catalogState = (mocks.storeState as StoreState).providerCatalog;
+      const snapshot = catalogState.byWorkspaceId!['workspace-a'];
+      (mocks.storeState as StoreState).providerCatalog = providerCatalogReducer(
+        catalogState,
+        workspaceCatalogReceived(
+          'workspace-a',
+          {
+            ...snapshot,
+            settings: snapshot.settings.map((setting) =>
+              setting.path === 'providers.enabled'
+                ? {
+                    ...setting,
+                    value: { ...(setting.value as Record<string, boolean>), [providerId]: enabled },
+                  }
+                : setting,
+            ),
+          },
+          catalogState.workspaceEpoch ?? 0,
+        ),
+      );
       (appStore as unknown as { emitState: () => void }).emitState();
       await tick();
       await tick();

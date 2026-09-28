@@ -74,6 +74,11 @@ const settingCache = new Map<string, SettingDefinitionWithValue | null>();
 const pendingSettingReads = new Map<string, PendingSettingRead>();
 const trailingSettingReads = new Map<string, Promise<SettingDefinitionWithValue | null>>();
 let settingsGeneration = 0;
+let connectionGeneration = 0;
+
+function settingKey(path: string, workspaceId?: string): string {
+  return JSON.stringify([connectionGeneration, workspaceId ?? null, path]);
+}
 let settingsLifecycleInstalled = false;
 
 function eventType(notification: { method: string; params?: unknown }): string | undefined {
@@ -94,14 +99,21 @@ function ensureSettingsLifecycle(): void {
     });
   }
   if (typeof onBackendReconnected === 'function') {
-    onBackendReconnected(() => invalidateSettingsReadCache());
+    onBackendReconnected(() => {
+      connectionGeneration += 1;
+      invalidateSettingsReadCache();
+    });
   }
 }
 
 export function invalidateSettingsReadCache(paths?: readonly string[]): void {
   settingsGeneration += 1;
   if (!paths) settingCache.clear();
-  else for (const path of paths) settingCache.delete(path);
+  else
+    for (const key of settingCache.keys()) {
+      if (paths.includes((JSON.parse(key) as [number, string | null, string])[2]))
+        settingCache.delete(key);
+    }
 }
 
 function parseSettingResult(result: {
@@ -120,25 +132,29 @@ function parseSettingResult(result: {
 }
 
 /** Strict shared settings.get read; transport errors reject and are never cached. */
-export function readSetting(path: string): Promise<SettingDefinitionWithValue | null> {
+export function readSetting(
+  path: string,
+  workspaceId?: string,
+): Promise<SettingDefinitionWithValue | null> {
   ensureSettingsLifecycle();
-  if (settingCache.has(path)) return Promise.resolve(settingCache.get(path) ?? null);
+  const key = settingKey(path, workspaceId);
+  if (settingCache.has(key)) return Promise.resolve(settingCache.get(key) ?? null);
 
-  const pending = pendingSettingReads.get(path);
+  const pending = pendingSettingReads.get(key);
   if (pending?.generation === settingsGeneration) return pending.promise;
   if (pending) {
-    const trailing = trailingSettingReads.get(path);
+    const trailing = trailingSettingReads.get(key);
     if (trailing) return trailing;
     const run = pending.promise
       .catch(() => null)
       .then(() => {
-        if (trailingSettingReads.get(path) === run) trailingSettingReads.delete(path);
-        return readSetting(path);
+        if (trailingSettingReads.get(key) === run) trailingSettingReads.delete(key);
+        return readSetting(path, workspaceId);
       })
       .finally(() => {
-        if (trailingSettingReads.get(path) === run) trailingSettingReads.delete(path);
+        if (trailingSettingReads.get(key) === run) trailingSettingReads.delete(key);
       });
-    trailingSettingReads.set(path, run);
+    trailingSettingReads.set(key, run);
     return run;
   }
 
@@ -148,16 +164,16 @@ export function readSetting(path: string): Promise<SettingDefinitionWithValue | 
     definition?: Omit<SettingDefinitionWithValue, 'value'>;
     origin?: SettingDefinitionWithValue['origin'];
     revision?: unknown;
-  }>('settings.get', { path })
+  }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) })
     .then(parseSettingResult)
     .then((setting) => {
-      if (generation === settingsGeneration) settingCache.set(path, setting);
+      if (generation === settingsGeneration) settingCache.set(key, setting);
       return setting;
     })
     .finally(() => {
-      if (pendingSettingReads.get(path)?.promise === run) pendingSettingReads.delete(path);
+      if (pendingSettingReads.get(key)?.promise === run) pendingSettingReads.delete(key);
     });
-  pendingSettingReads.set(path, { generation, promise: run });
+  pendingSettingReads.set(key, { generation, promise: run });
   return run;
 }
 
@@ -192,16 +208,17 @@ function changesFrom(patch: Record<string, unknown>): AppSettingChange[] {
 }
 
 export class LiveSettingsClient implements SettingsClient {
-  async list(): Promise<SettingDefinitionWithValue[]> {
-    return (await this.listSnapshot()).settings;
+  async list(workspaceId?: string): Promise<SettingDefinitionWithValue[]> {
+    return (await this.listSnapshot(workspaceId)).settings;
   }
 
-  async listSnapshot(): Promise<SettingsSnapshot> {
+  async listSnapshot(workspaceId?: string): Promise<SettingsSnapshot> {
     ensureSettingsLifecycle();
     const generation = settingsGeneration;
     try {
       const result = await backendRequest<{ settings?: unknown[]; revision?: unknown }>(
         'settings.list',
+        ...(workspaceId ? [{ workspaceId }] : []),
       );
       const snapshot = {
         settings: Array.isArray(result?.settings)
@@ -210,7 +227,8 @@ export class LiveSettingsClient implements SettingsClient {
         revision: typeof result?.revision === 'number' ? result.revision : 0,
       };
       if (generation === settingsGeneration) {
-        for (const setting of snapshot.settings) settingCache.set(setting.path, setting);
+        for (const setting of snapshot.settings)
+          settingCache.set(settingKey(setting.path, workspaceId), setting);
       }
       return snapshot;
     } catch {
@@ -218,9 +236,9 @@ export class LiveSettingsClient implements SettingsClient {
     }
   }
 
-  async get(path: string): Promise<SettingDefinitionWithValue | null> {
+  async get(path: string, workspaceId?: string): Promise<SettingDefinitionWithValue | null> {
     try {
-      return await readSetting(path);
+      return await readSetting(path, workspaceId);
     } catch {
       return null;
     }
@@ -247,13 +265,13 @@ export class LiveSettingsClient implements SettingsClient {
     }
   }
 
-  async getUserRule(ruleType: string): Promise<UserRuleState | null> {
+  async getUserRule(ruleType: string, workspaceId?: string): Promise<UserRuleState | null> {
     try {
       const result = await backendRequest<{
         enabled?: boolean;
         content?: string;
         updatedAt?: number;
-      }>('rules.get', { workspaceId: GLOBAL_RULES_WORKSPACE_ID, ruleType });
+      }>('rules.get', { workspaceId: workspaceId ?? GLOBAL_RULES_WORKSPACE_ID, ruleType });
       if (!result || typeof result.content !== 'string') return null;
       return {
         enabled: result.enabled === true,
@@ -294,8 +312,8 @@ export class LiveSettingsClient implements SettingsClient {
     return { success: true };
   }
 
-  async getProviderSettings(): Promise<PersistedProviderSettings | null> {
-    const settings = await this.list();
+  async getProviderSettings(workspaceId?: string): Promise<PersistedProviderSettings | null> {
+    const settings = await this.list(workspaceId);
     const activeProviderId = readString(settings, 'model.defaultProvider');
     const enabledProviders = readObject(settings, 'providers.enabled') as Record<
       string,
@@ -317,18 +335,21 @@ export class LiveSettingsClient implements SettingsClient {
     });
   }
 
-  async getMcpServers(): Promise<McpServerConfig[]> {
-    const wire = await listWireMcpServers();
+  async getMcpServers(workspaceId?: string): Promise<McpServerConfig[]> {
+    const wire = await listWireMcpServers(workspaceId);
     return wire.flatMap((server) => fromWireMcpConfig(server) ?? []);
   }
 
-  async getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]> {
+  async getMcpServerStatuses(
+    serverIds: string[],
+    workspaceId?: string,
+  ): Promise<McpServerRuntimeStatus[]> {
     const statuses = await Promise.all(
       serverIds.map(async (serverId): Promise<McpServerRuntimeStatus | null> => {
         try {
           const result = await backendRequest<{ status?: WireMcpServerStatus }>(
             'mcp.servers.getStatus',
-            { serverId },
+            { serverId, ...(workspaceId ? { workspaceId } : {}) },
           );
           return fromWireMcpStatus(serverId, result?.status);
         } catch {
@@ -465,8 +486,10 @@ export class LiveSettingsClient implements SettingsClient {
     });
   }
 
-  async getBackgroundAgentSettings(): Promise<BackgroundAgentSettingsState | null> {
-    const settings = await this.list();
+  async getBackgroundAgentSettings(
+    workspaceId?: string,
+  ): Promise<BackgroundAgentSettingsState | null> {
+    const settings = await this.list(workspaceId);
     const defaultReasoningEffort = readString(settings, 'quickActions.defaultReasoningEffort');
     const typeReasoningEffortOverrides = readObject(
       settings,
@@ -576,9 +599,12 @@ function fromWireMcpStatus(
 }
 
 /** `mcp.servers.list` (§5.22) — sensitive `env`/`headers` values arrive redacted. */
-async function listWireMcpServers(): Promise<WireMcpServerConfig[]> {
+async function listWireMcpServers(workspaceId?: string): Promise<WireMcpServerConfig[]> {
   try {
-    const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>('mcp.servers.list');
+    const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
+      'mcp.servers.list',
+      ...(workspaceId ? [{ workspaceId }] : []),
+    );
     return Array.isArray(result?.servers) ? result.servers : [];
   } catch {
     return [];

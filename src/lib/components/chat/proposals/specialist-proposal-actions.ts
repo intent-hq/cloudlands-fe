@@ -30,7 +30,6 @@ import {
   saveFileSpecialist,
   type FileSpecialist,
 } from '$store/renderer/slices/specialists/specialists-slice';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { getProposalId } from './proposal-id';
 
@@ -66,8 +65,7 @@ function stringField(
   return typeof value === 'string' ? value : fallback;
 }
 
-function getCurrentWorkspacePath(state: StoreState): string | undefined {
-  const workspaceId = selectCurrentWorkspaceTabId.select(state);
+function getCurrentWorkspacePath(state: StoreState, workspaceId?: string): string | undefined {
   if (!workspaceId) return undefined;
   const workspace = selectWorkspaceById.select(state, workspaceId);
   return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
@@ -84,6 +82,7 @@ function buildCurrentSpecialistPayload(
   fileSpec: FileSpecialist | undefined,
   scope: SpecialistFileScope,
   workspacePath: string | undefined,
+  workspaceId?: string,
 ): FileSpecialistWritePayload {
   return {
     id,
@@ -96,6 +95,7 @@ function buildCurrentSpecialistPayload(
     behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
     scope,
     workspacePath,
+    workspaceId,
   };
 }
 
@@ -138,10 +138,12 @@ export async function applySpecialistProposalWork(
     );
   const fileSpec = selectGetFileSpecialist.select(state, id);
   const scope = getScope(payload.scope, fileSpec?.source);
-  const workspacePath = scope === 'project' ? getCurrentWorkspacePath(state) : undefined;
+  const workspaceId = scope === 'project' ? detail.workspaceId : undefined;
+  const workspacePath =
+    scope === 'project' ? getCurrentWorkspacePath(state, workspaceId) : undefined;
   const reverse: SpecialistReverseAction =
     operation === 'create'
-      ? { kind: 'delete', id, scope, workspacePath }
+      ? { kind: 'delete', id, scope, workspacePath, workspaceId }
       : current
         ? {
             kind: 'save',
@@ -152,12 +154,13 @@ export async function applySpecialistProposalWork(
               fileSpec,
               scope,
               workspacePath,
+              workspaceId,
             ),
           }
-        : { kind: 'delete', id, scope, workspacePath };
+        : { kind: 'delete', id, scope, workspacePath, workspaceId };
 
   if (operation === 'delete') {
-    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));
+    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath, workspaceId }));
     return { reverse };
   }
 
@@ -200,6 +203,7 @@ export async function applySpecialistProposalWork(
     behaviorPrompt: prompt,
     scope,
     workspacePath,
+    workspaceId,
   });
   await appStore.dispatch(saveAction);
   if (operation === 'create') await navigateToCreatedSpecialist(id);
@@ -209,8 +213,8 @@ export async function applySpecialistProposalWork(
 
 export async function undoSpecialistProposalWork(reverse: SpecialistReverseAction): Promise<void> {
   if (reverse.kind === 'delete') {
-    const { id, scope, workspacePath } = reverse;
-    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));
+    const { id, scope, workspacePath, workspaceId } = reverse;
+    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath, workspaceId }));
     return;
   }
 

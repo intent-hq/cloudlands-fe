@@ -206,6 +206,50 @@ describe('specialist-proposal-actions', () => {
     });
   });
 
+  it('captures the project origin for apply and undo even after focus changes', async () => {
+    const proposal = makeCreateProposal();
+    if (proposal.kind !== 'specialist-edit') throw new Error('fixture');
+    proposal.payload.scope = 'project';
+    mocks.getState.mockReturnValue(
+      makeState({
+        workspace: {
+          workspaces: createCollection('id', [
+            { id: 'A', path: '/project/A' },
+            { id: 'B', path: '/project/B' },
+          ]),
+        } as unknown as StoreState['workspace'],
+      }),
+    );
+    const result = await applySpecialistProposalWork({ ...makeDetail(proposal), workspaceId: 'A' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: saveFileSpecialist.type,
+        payload: [
+          expect.objectContaining({
+            workspaceId: 'A',
+            workspacePath: '/project/A',
+            scope: 'project',
+          }),
+        ],
+      }),
+    );
+    expect(result.reverse).toEqual({
+      kind: 'delete',
+      id: 'review-buddy',
+      workspaceId: 'A',
+      workspacePath: '/project/A',
+      scope: 'project',
+    });
+    mocks.getState.mockReturnValue(makeState());
+    await undoSpecialistProposalWork(result.reverse);
+    expectDispatchedWrite(deleteFileSpecialist, {
+      id: 'review-buddy',
+      workspaceId: 'A',
+      workspacePath: '/project/A',
+      scope: 'project',
+    });
+  });
+
   it('returns edit proposal reverse action from current specialist values', async () => {
     mocks.getState.mockReturnValue(stateWithExistingSpecialist());
 

@@ -572,7 +572,9 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
   try {
     let models: AuggieModel[] = [];
     try {
-      const catalog = yield* call(getModelsForProviderForLoadingState, providerId);
+      const catalog = yield* call(getModelsForProviderForLoadingState, providerId, {
+        workspaceId: wsId,
+      });
       models = catalog.models;
     } catch (error) {
       logger.warn('Provider retry aborted; model catalog fetch failed', {

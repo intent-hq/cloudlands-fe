@@ -34,6 +34,36 @@ function mockState(
       ...model,
     },
     providerSettings: { ...providerSettingsInitialState, ...settings },
+    providerCatalog: {
+      providers: createCollection('id'),
+      loaded: false,
+      byWorkspaceId: {
+        'ws-1': {
+          catalog: { providers: [] },
+          settings: [
+            {
+              path: 'model.defaultProvider',
+              value: model.defaultProviderId ?? activeProviderId ?? 'auggie',
+            },
+            { path: 'model.providerDefaults', value: model.providerModels ?? {} },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    },
+    providerModels: {
+      byProviderId: {},
+      clearEpoch: 0,
+      byWorkspaceId: {
+        'ws-1': {
+          [model.availableModelsProviderId ?? activeProviderId ?? 'auggie']: {
+            models: Object.values(model.availableModels?.map ?? {}),
+            fetchedAt: '2026-09-28T00:00:00Z',
+          },
+        },
+      },
+    },
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap: {},
@@ -406,6 +436,38 @@ describe('selectProviderModelEffortLevels', () => {
 });
 
 describe('selectAgentModelEffortLevels', () => {
+  it('inherits defaults from its own workspace instead of direct settings', () => {
+    const state = mockState({ defaultProviderId: 'auggie', providerModels: { auggie: 'local' } });
+    state.providerCatalog = {
+      providers: createCollection('id'),
+      loaded: false,
+      byWorkspaceId: {
+        A: {
+          catalog: { providers: [] },
+          settings: [
+            { path: 'model.defaultProvider', value: 'codex' },
+            { path: 'model.providerDefaults', value: { codex: 'remote' } },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    } as StoreState['providerCatalog'];
+    state.providerModels.byWorkspaceId = {
+      A: {
+        codex: {
+          models: [{ value: 'remote', label: 'Remote', effortLevels: ['high'] }],
+          fetchedAt: '2026-09-28T00:00:00Z',
+        },
+      },
+    };
+    state.agentSessions = {
+      byAgentId: { a: { id: 'a', workspaceId: 'A' } },
+      agentIdsByWorkspace: {},
+    } as unknown as StoreState['agentSessions'];
+    expect(selectAgentModelEffortLevels.select(state, 'a')).toEqual(['high']);
+  });
+
   it('resolves effort levels from the agent session model', () => {
     const base = mockState({
       defaultProviderId,

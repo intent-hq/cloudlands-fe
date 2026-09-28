@@ -16,8 +16,19 @@ import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 export type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
 export interface ProviderCatalogState {
+  byWorkspaceId?: Record<string, WorkspaceCatalogSnapshot>;
+  workspaceEpoch?: number;
   /** Wire rows, id-keyed with `ids` preserving the registry order. */
   providers: Collection<ProviderCatalogEntry, 'id'>;
   /** Flips true once the first `providers.catalog` hydration lands. */
   loaded: boolean;
+}
+
+export interface WorkspaceCatalogSnapshot {
+  mcpServers?: import('../mcp-settings/mcp-settings-types').McpServerConfig[];
+  mcpStatuses?: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus[];
+  readiness: Record<string, import('$shared/types/provider-availability').ProviderStatus>;
+  catalog: import('$shared/provider-catalog').ProviderCatalogResult;
+  settings: import('$lib/client/app-client').SettingDefinitionWithValue[];
+  specialists: import('$lib/client/app-client').SpecialistDef[];
 }

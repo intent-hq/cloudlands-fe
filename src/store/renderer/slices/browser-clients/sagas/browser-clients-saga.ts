@@ -30,10 +30,12 @@
  * can neither resurrect a deleted workspace nor leak into a later remount,
  * which starts a fresh lane.
  */
+import { eventChannel, buffers } from 'redux-saga';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
@@ -52,6 +54,7 @@ import {
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
   liveClientsReceived,
+  liveClientListsInvalidated,
   navigateBrowserTabRequested,
   ownClientIdReceived,
   refreshLiveClientsRequested,
@@ -101,14 +104,34 @@ function browserClientReadContext(action: BrowserClientReadAction) {
  * resolution lane, so a presence burst cannot start overlapping resolution
  * calls: one read is in flight and at most one trailing read follows it.
  */
-function* readLiveClients(): SagaGenerator<void> {
+function* readLiveClients(
+  connection: { epoch: number },
+  action:
+    | ReturnType<typeof refreshLiveClientsRequested>
+    | ReturnType<typeof workspaceUnmounted>
+    | ReturnType<typeof workspaceDeleted>
+    | ReturnType<typeof removeWorkspaceEntity>,
+): SagaGenerator<void> {
+  if (action.type !== refreshLiveClientsRequested.type) return;
+  const epoch = connection.epoch;
   try {
-    const presenceChange = yield* selectLiveClientsLoaded.effect();
-    const clients = yield* call([appClient.clients, appClient.clients.list]);
-    yield* put(liveClientsReceived(clients));
-    if (!presenceChange) return;
-    const mounted = yield* selectMountedWorkspaceIds.effect();
-    for (const wsId of mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    const mounted = action.payload[0]
+      ? [action.payload[0]]
+      : yield* selectMountedWorkspaceIds.effect();
+    if (mounted.length === 0) {
+      const clients = yield* call([appClient.clients, appClient.clients.list]);
+      if (epoch === connection.epoch) yield* put(liveClientsReceived(clients));
+    }
+    for (const wsId of mounted) {
+      const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
+      const read = yield* untilWorkspaceCleanup(
+        wsId,
+        call([appClient.clients, appClient.clients.list], wsId),
+      );
+      if (read.cleanup || epoch !== connection.epoch) continue;
+      yield* put(liveClientsReceived(read.result, wsId));
+      if (presenceChange) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    }
   } catch (error) {
     logger.warn('client.list failed', { error: error instanceof Error ? error.message : error });
   }
@@ -125,9 +148,13 @@ function* readOwnClientId(): SagaGenerator<void> {
   }
 }
 
-function* hydrate(): SagaGenerator<void> {
+function* hydrate(action: ReturnType<typeof hydrateBrowserClientsRequested>): SagaGenerator<void> {
   yield* call(readOwnClientId);
-  yield* put(refreshLiveClientsRequested());
+  yield* put(
+    action.payload[0]
+      ? refreshLiveClientsRequested(action.payload[0])
+      : refreshLiveClientsRequested(),
+  );
 }
 
 function matchesWorkspaceCleanup(wsId: string) {
@@ -263,19 +290,49 @@ function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaG
   const [wsId] = action.payload;
   if (!wsId) return;
   const ownClientId = yield* selectOwnClientId.effect();
-  const liveClientsLoaded = yield* selectLiveClientsLoaded.effect();
-  if (ownClientId === null || !liveClientsLoaded) yield* put(hydrateBrowserClientsRequested());
+  if (ownClientId === null) yield* put(hydrateBrowserClientsRequested(wsId));
+  else yield* put(refreshLiveClientsRequested(wsId));
   yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+}
+
+function* watchClientConnection(connection: { epoch: number }) {
+  const channel = eventChannel<true>(
+    (emit) =>
+      onBackendReconnected(() => {
+        connection.epoch++;
+        emit(true);
+      }),
+    buffers.sliding(1),
+  );
+  try {
+    while (true) {
+      yield* take(channel);
+      yield* put(liveClientListsInvalidated());
+      yield* put(refreshLiveClientsRequested());
+    }
+  } finally {
+    channel.close();
+  }
 }
 
 export function* browserClientsSaga(): SagaGenerator<void> {
   const pinWriteEpochs: PinWriteEpochs = {};
+  const connection = { epoch: 0 };
+  yield* fork(watchClientConnection, connection);
   yield* takeEvery(workspaceMounted, onWorkspaceMounted);
-  yield* takeLatest(hydrateBrowserClientsRequested, hydrate);
   yield* takeSingleFlightInContext(
-    refreshLiveClientsRequested,
-    () => LIVE_CLIENTS_CONTEXT,
+    hydrateBrowserClientsRequested,
+    (action) => action.payload[0] ?? LIVE_CLIENTS_CONTEXT,
+    hydrate,
+  );
+  yield* takeSingleFlightInContext(
+    [refreshLiveClientsRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
+    (action) =>
+      action.type === refreshLiveClientsRequested.type
+        ? (action.payload[0] ?? LIVE_CLIENTS_CONTEXT)
+        : { context: action.payload[0] ?? LIVE_CLIENTS_CONTEXT, cancel: true as const },
     readLiveClients,
+    connection,
   );
   yield* takeSingleFlightInContext(
     [
