@@ -24,6 +24,7 @@
     autoExpandWhileStreaming?: boolean;
     workspaceId?: string;
     canOpenFile?: () => boolean;
+    allowFileMedia?: boolean;
     class?: string;
     adjacentOperationalRow?: boolean;
   }
@@ -34,6 +35,7 @@
     autoExpandWhileStreaming = true,
     workspaceId,
     canOpenFile,
+    allowFileMedia = true,
     class: className = '',
     adjacentOperationalRow = false,
   }: Props = $props();
@@ -95,6 +97,7 @@
   <div class="reasoning-expanded-body" data-reasoning-expanded-body>
     <MarkdownViewer
       {canOpenFile}
+      {allowFileMedia}
       content={reasoningContent.body}
       {isStreaming}
       {workspaceId}

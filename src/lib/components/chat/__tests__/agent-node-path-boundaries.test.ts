@@ -610,3 +610,123 @@ describe('parent diff read controls', () => {
     });
   }
 });
+
+describe('agent media provenance before mounting', () => {
+  for (const [renderer, component] of [
+    ['static', MessageContent],
+    ['streaming', StreamingMessageContent],
+  ] as const) {
+    for (const kind of [
+      'text',
+      'thinking',
+      'history',
+      'video',
+      'nested video',
+      'video fence',
+    ] as const) {
+      it(`${renderer} ${kind} blocks remote media and revokes mounted local media`, async () => {
+        const text =
+          'Preview ![preview](intent://local/file/output.png) and ![movie](intent://local/file/output.mp4). End.';
+        const content =
+          kind === 'video fence'
+            ? [
+                {
+                  type: 'text',
+                  text: '```ws-block:video\n{"path":"output.mp4","poster":"intent://local/file/poster.png"}\n```',
+                },
+              ]
+            : kind === 'nested video'
+              ? [
+                  {
+                    type: 'tool_result',
+                    id: 'orphan-media',
+                    tool_use_id: 'unmatched',
+                    output: [
+                      {
+                        type: 'video',
+                        source: {
+                          kind: 'workspace',
+                          url: `workspace-file://${workspaceId}/nested.mp4`,
+                          mimeType: 'video/mp4',
+                        },
+                      },
+                    ],
+                  },
+                ]
+              : kind === 'history'
+                ? [
+                    { type: 'text', text: '<group:Prepping>' },
+                    { type: 'thinking', text },
+                    { type: 'text', text: '</group:Prepping>Done.' },
+                  ]
+                : kind === 'video'
+                  ? [
+                      {
+                        type: 'video',
+                        source: {
+                          kind: 'workspace',
+                          url: `workspace-file://${workspaceId}/output.mp4`,
+                          mimeType: 'video/mp4',
+                        },
+                      },
+                    ]
+                  : [{ type: kind, text }];
+        const { container } = render(component, {
+          agentId: id,
+          workspaceId,
+          content,
+          isStreaming: kind === 'thinking',
+        });
+        for (const disclosure of screen.queryAllByTestId(
+          /^(reasoning|response-group)-disclosure$/,
+        )) {
+          if (disclosure.getAttribute('aria-expanded') === 'false')
+            await fireEvent.click(disclosure);
+        }
+        const headMedia = () =>
+          container.querySelectorAll(
+            'img[src^="workspace-file:"],video[src^="workspace-file:"],video[poster^="workspace-file:"]',
+          );
+        await waitFor(() =>
+          expect(
+            container.querySelector('img, video, [data-testid="media-unavailable"]'),
+          ).not.toBeNull(),
+        );
+        expect(headMedia()).toHaveLength(0);
+        await waitFor(() =>
+          expect(container.querySelector('[data-testid="media-unavailable"]')).not.toBeNull(),
+        );
+        appStore.dispatch(
+          bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]),
+        );
+        await waitFor(() => expect(headMedia().length).toBeGreaterThan(0));
+        appStore.dispatch(bulkUpsertSessions([agent()]));
+        await waitFor(() => expect(headMedia()).toHaveLength(0));
+      });
+    }
+  }
+});
+
+describe('remote media allowed controls', () => {
+  for (const [renderer, component] of [
+    ['static', MessageContent],
+    ['streaming', StreamingMessageContent],
+  ] as const) {
+    it(`${renderer} preserves web and asset images and embedded transcript bytes`, async () => {
+      const { container } = render(component, {
+        agentId: id,
+        workspaceId,
+        content: [
+          {
+            type: 'text',
+            text: `![web](https://example.com/image.png) ![asset](workspace-asset://${workspaceId}/image.png)`,
+          },
+          { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+        ],
+      });
+      await waitFor(() => expect(container.querySelector('img[src^="https:"]')).not.toBeNull());
+      expect(container.querySelector('img[src^="workspace-asset:"]')).not.toBeNull();
+      expect(container.querySelector('img[src^="data:"]')).not.toBeNull();
+    });
+  }
+});

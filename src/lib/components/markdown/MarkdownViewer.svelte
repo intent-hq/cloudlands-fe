@@ -1,5 +1,6 @@
 <script lang="ts">
   import './markdown-math.css';
+  import { canLoadMediaUrl, filterFileMedia } from '$lib/utils/media-provenance';
   import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
   import { mount, onDestroy, unmount } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
@@ -51,6 +52,8 @@
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
     /** File-only policy; external web and note links remain usable. */
     canOpenFile?: () => boolean;
+    /** Reactive authority for automatically loaded file media. */
+    allowFileMedia?: boolean;
     onFileClick?: (
       path: string,
       options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
@@ -62,11 +65,7 @@
     forceExternalLinks?: boolean;
     /** Show rich fenced blocks as source when no TipTap node views are mounted. */
     renderRichFencesAsCode?: boolean;
-    /**
-     * Text-block image dimension sidecar (PROTOCOL §7.1), keyed by Markdown
-     * `src`. Matching images render in a pre-sized frame with a placeholder
-     * until they load; images without an entry keep the legacy rendering.
-     */
+    /** PROTOCOL §7.1 dimensions keyed by Markdown src; reserve image space while loading. */
     media?: TextBlockMedia;
   }
 
@@ -79,6 +78,7 @@
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
     canOpenFile,
+    allowFileMedia = true,
     taskBlockRenderMode = 'placeholder',
     chatImageThumbnails = false,
     forceExternalLinks = false,
@@ -86,7 +86,6 @@
     media,
   }: Props = $props();
 
-  // Keep image URLs stable until this viewer is remounted.
   const workspaceFileVersion = createWorkspaceFileVersion();
 
   const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
@@ -99,11 +98,17 @@
 
   const contentComplexity = $derived(classifyMarkdownContent(markdownContent));
 
-  // Track static content element for click handling
   let staticContentElement: HTMLElement | null = $state(null);
   let processedContent = $state('');
-  // Only the latest requested render may publish, including when an older worker
-  // finishes after streaming has ended or the viewer has been destroyed.
+  function canUseMedia(url: string) {
+    return canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false);
+  }
+  // Recheck live authority on publication as well as reactive placement changes.
+  // Filtering happens in an inert template, before any media enters the live DOM.
+  const renderedContent = $derived(
+    filterFileMedia(processedContent, allowFileMedia && canOpenFile?.() !== false),
+  );
+  // Ignore obsolete worker results, including after streaming ends or unmount.
   let renderVersion = 0;
   const STREAMING_THROTTLE_MS = 150;
   let lastUpdateTime = -Infinity;
@@ -119,8 +124,7 @@
     try {
       const html = await processMarkdownToHTML(markdown, options);
       if (version !== renderVersion) return;
-      // Svelte owns this HTML and the adjacent image-actions overlay. Replacing
-      // the container's innerHTML would remove Svelte's anchors and the overlay.
+      // Svelte owns the HTML and overlay anchors; never replace its container manually.
       processedContent = stampMarkdownImageDimensions(html, imageMedia, options?.workspaceId);
     } catch (error) {
       if (version !== renderVersion) return;
@@ -160,8 +164,7 @@
   }
 
   $effect(() => {
-    // Capture every rendering dependency now, not in the trailing timer or after
-    // awaiting the processor. A new input immediately invalidates in-flight work.
+    // Capture dependencies before yielding; new input invalidates in-flight work.
     const markdown = markdownContent;
     const options = {
       allowEmpty: true,
@@ -186,15 +189,12 @@
     }
   });
 
-  // Lightbox state for supported inline images.
   let lightboxOpen = $state(false);
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
 
-  // Hover overlay: supported image sources share one image actions menu.
-  // The images live in {@html}-managed DOM, so a single Svelte-rendered
-  // trigger is positioned over whichever image is hovered or focused.
+  // One shared actions trigger follows the hovered/focused image in {@html} DOM.
   let hoveredImage = $state<HTMLImageElement | null>(null);
   let hoveredImagePosition = $state({ top: 0, right: 0 });
   let imageActionsOpen = $state(false);
@@ -210,7 +210,7 @@
       return;
     const target = event.target;
     const image = imageAtTarget(target);
-    if (image && isActionableImage(image)) {
+    if (image && isActionableImage(image) && canUseMedia(image.getAttribute('src') || '')) {
       if (hoveredImage === image) return;
       hoveredImage = image;
       hoveredImagePosition = imageActionsPosition(image, event.currentTarget as HTMLElement);
@@ -229,7 +229,8 @@
 
   function handleImageContextMenu(event: MouseEvent): void {
     const image = imageAtTarget(event.target);
-    if (!image || !isActionableImage(image)) return;
+    if (!image || !isActionableImage(image) || !canUseMedia(image.getAttribute('src') || ''))
+      return;
     event.preventDefault();
     event.stopPropagation();
     handleImageInteraction(event);
@@ -246,9 +247,7 @@
       return parent?.classList.contains(IMAGE_FRAME_CLASS) ? parent : null;
     }
 
-    // Sized images (`width`/`height` from the text block's media sidecar)
-    // sit in a frame that already occupies their final box and shows an
-    // icon + path placeholder until the bytes arrive.
+    // Reserve sidecar dimensions and show a placeholder until image bytes arrive.
     function frameSizedImage(image: HTMLImageElement) {
       const width = Number(image.getAttribute('width'));
       const height = Number(image.getAttribute('height'));
@@ -377,7 +376,7 @@
     // link, in which case the link wins)
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (supportsImageActions(src)) {
+      if (supportsImageActions(src) && canUseMedia(src)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -485,7 +484,8 @@
 
   function handleImageCopy(event: KeyboardEvent | ClipboardEvent): void {
     const image = imageAtTarget(event.target);
-    if (!image || !isActionableImage(image)) return;
+    if (!image || !isActionableImage(image) || !canUseMedia(image.getAttribute('src') || ''))
+      return;
     imageActionsMenu?.handleCopy(event, image.getAttribute('src') || '');
   }
 
@@ -501,12 +501,9 @@
   });
 </script>
 
-<!-- PERF: Use separate rendering paths based on content complexity -->
-<!-- streaming: live updates with processed HTML -->
-<!-- simple: plain text, no markdown - just <p> -->
-<!-- static: processed HTML without TipTap (links, code blocks, task lists, tables, etc.) -->
+<!-- Streaming/static Markdown use processed HTML; simple text bypasses processing. -->
 {#snippet imageActionsOverlay()}
-  {#if hoveredImage}
+  {#if hoveredImage && canUseMedia(hoveredImage.getAttribute('src') || '')}
     <div
       bind:this={imageActionsOverlayElement}
       class="image-actions-overlay absolute z-10"
@@ -527,7 +524,13 @@
   <div class="markdown-video-segments {className}">
     {#each mediaSegments as segment}
       {#if segment.type === 'video'}
-        <ChatVideoBlock source={segment.source} name={segment.name} poster={segment.poster} />
+        <ChatVideoBlock
+          {allowFileMedia}
+          {canOpenFile}
+          source={segment.source}
+          name={segment.name}
+          poster={segment.poster}
+        />
       {:else}
         <RecursiveMarkdownViewer
           content={segment.content}
@@ -536,6 +539,7 @@
           onCodeBlockAction={_onCodeBlockAction}
           {onFileClick}
           {canOpenFile}
+          {allowFileMedia}
           {taskBlockRenderMode}
           {chatImageThumbnails}
           {forceExternalLinks}
@@ -560,17 +564,14 @@
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
-    {@html processedContent}
+    {@html renderedContent}
     {@render imageActionsOverlay()}
   </div>
 {:else if contentComplexity === 'simple'}
-  <!-- PERF: Simple text - render directly without any processing -->
   <div class="markdown-viewer simple-content {className}">
     <p class="whitespace-pre-wrap">{markdownContent}</p>
   </div>
 {:else}
-  <!-- PERF: Static content - use processed HTML without TipTap -->
-  <!-- This path handles links, code blocks, task lists, tables, etc. without the overhead of TipTap -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_mouse_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
@@ -586,12 +587,12 @@
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
-    {@html processedContent}
+    {@html renderedContent}
     {@render imageActionsOverlay()}
   </div>
 {/if}
 
-{#if lightboxImageUrl}
+{#if lightboxImageUrl && canUseMedia(lightboxImageUrl)}
   <ImageLightbox
     bind:open={lightboxOpen}
     imageUrl={lightboxImageUrl}

@@ -15,6 +15,7 @@
     isStreaming?: boolean;
     workspaceId?: string;
     canOpenFile?: () => boolean;
+    allowFileMedia?: boolean;
     adjacentOperationalRow?: boolean;
   }
 
@@ -23,6 +24,7 @@
     isStreaming = false,
     workspaceId,
     canOpenFile,
+    allowFileMedia = true,
     adjacentOperationalRow = false,
   }: Props = $props();
 
@@ -68,6 +70,7 @@
         >
           <MarkdownViewer
             {canOpenFile}
+            {allowFileMedia}
             content={item.body}
             {isStreaming}
             {workspaceId}

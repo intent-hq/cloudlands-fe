@@ -85,6 +85,8 @@
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { canOpenAgentPath } from './agent-path-actions';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('StreamingMessageContent');
@@ -121,6 +123,10 @@
     isLastConversationMessage = false,
     onSetupScriptGenerated,
   }: Props = $props();
+  const mediaAgent$ = $derived(selectAgentSession(agentId ?? ''));
+  const allowFileMedia = $derived(
+    !agentId || (!!$mediaAgent$ && !hasNodeOwnedAgentPath($mediaAgent$)),
+  );
 
   // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): substitute cached full blocks for slim-truncated
@@ -697,7 +703,13 @@
     />
   {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
     {@const video = parsedBlock.metadata.videoData}
-    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
+    <ChatVideoBlock
+      {allowFileMedia}
+      canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+      source={video.source}
+      name={video.name}
+      poster={video.poster}
+    />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}
@@ -716,6 +728,7 @@
   {:else if parsedBlock.type === 'text'}
     <div data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}>
       <MarkdownViewer
+        {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
@@ -729,6 +742,7 @@
   {:else}
     <div data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}>
       <MarkdownViewer
+        {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
@@ -800,6 +814,7 @@
             data-assistant-prose={nested ? undefined : 'streaming-plain'}
           >
             <MarkdownViewer
+              {allowFileMedia}
               canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
               content={cleanedText}
               isStreaming={isStreaming && isLastBlock}
@@ -838,6 +853,8 @@
             />
           {:else if nestedBlock?.type === 'video' && nestedBlock.source}
             <ChatVideoBlock
+              {allowFileMedia}
+              canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
               source={nestedBlock.source}
               name={nestedBlock.fileName}
               poster={typeof nestedBlock.metadata?.poster === 'string'
@@ -862,6 +879,7 @@
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
+                  {allowFileMedia}
                   canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
                   content={nestedBlock.text}
                   {workspaceId}
@@ -878,6 +896,8 @@
               />
             {:else if nestedBlock.type === 'video' && nestedBlock.source}
               <ChatVideoBlock
+                {allowFileMedia}
+                canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
                 source={nestedBlock.source}
                 name={nestedBlock.fileName}
                 poster={typeof nestedBlock.metadata?.poster === 'string'
@@ -908,6 +928,7 @@
          <think>-tag parser path in messageParser emits `content`. -->
     {#if reasoningHistory}
       <ReasoningHistoryBlock
+        {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && isLastBlock}
@@ -916,6 +937,7 @@
       />
     {:else}
       <ThinkingBlock
+        {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && isLastBlock}
@@ -936,6 +958,8 @@
     />
   {:else if block.type === 'video' && block.source}
     <ChatVideoBlock
+      {allowFileMedia}
+      canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
       source={block.source}
       name={block.fileName}
       poster={typeof block.metadata?.poster === 'string' ? block.metadata.poster : undefined}
@@ -1091,6 +1115,7 @@
       data-assistant-prose="streaming-empty"
     >
       <MarkdownViewer
+        {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content=""
         isStreaming={true}
