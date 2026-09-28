@@ -237,7 +237,7 @@ describe('workspace-transfer relay — server destination', () => {
       });
       expect(source.calls.at(-1)).toEqual({
         method: 'workspace.export.abort',
-        params: { exportId: 'export-1' },
+        params: { exportId: 'export-1', workspaceId: 'ws-1' },
       });
       expect(target.dispose).toHaveBeenCalledOnce();
     },

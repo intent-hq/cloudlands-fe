@@ -4343,7 +4343,8 @@
     if (!messageId || !ref) return;
     const getContainer = beginScrollNavigation();
     if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id)) || !getContainer()) return;
+      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id)) || !getContainer())
+        return;
       await tick();
     }
     const message = await forceRenderAndFindMessage(messageId, getContainer);

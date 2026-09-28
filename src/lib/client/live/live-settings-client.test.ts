@@ -696,63 +696,71 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     });
   });
 
-  it('round-trips independent quick-action effort fields through settings RPCs', async () => {
-    const values = {
-      defaultReasoningEffort: 'medium',
-      typeReasoningEffortOverrides: { fast: 'high' },
-      providerSettings: {
-        codex: {
-          defaultModel: '',
-          typeOverrides: { commit: '', pr: '', review: '', fast: '' },
-          defaultReasoningEffort: 'low',
-          typeReasoningEffortOverrides: { commit: 'high' },
+  it.each([undefined, 'workspace-effort'])(
+    'round-trips independent quick-action effort fields with origin %s',
+    async (workspaceId) => {
+      const values = {
+        defaultReasoningEffort: 'medium',
+        typeReasoningEffortOverrides: { fast: 'high' },
+        providerSettings: {
+          codex: {
+            defaultModel: '',
+            typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+            defaultReasoningEffort: 'low',
+            typeReasoningEffortOverrides: { commit: 'high' },
+          },
         },
-      },
-    };
-    mockedRequest.mockResolvedValueOnce({ applied: [] });
-    const client = new LiveSettingsClient();
-    await client.setBackgroundAgentSettings(values);
-    expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
-      changes: [
-        { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
-        { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'high' } },
-        { path: 'quickActions.providerSettings', value: values.providerSettings },
-      ],
-    });
-    mockedRequest.mockResolvedValueOnce({
-      settings: [
-        {
-          path: 'quickActions.defaultReasoningEffort',
-          label: '',
-          description: '',
-          category: 'agents',
-          type: 'string',
-          value: 'medium',
-        },
-        {
-          path: 'quickActions.typeReasoningEffortOverrides',
-          label: '',
-          description: '',
-          category: 'agents',
-          type: 'object',
-          value: { fast: 'high' },
-        },
-        {
-          path: 'quickActions.providerSettings',
-          label: '',
-          description: '',
-          category: 'agents',
-          type: 'object',
-          value: values.providerSettings,
-        },
-      ],
-    });
-    expect(await client.getBackgroundAgentSettings()).toEqual({
-      defaultModel: '',
-      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
-      ...values,
-    });
-  });
+      };
+      mockedRequest.mockResolvedValueOnce({ applied: [] });
+      const client = new LiveSettingsClient();
+      await client.setBackgroundAgentSettings(values);
+      expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
+        changes: [
+          { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'high' } },
+          { path: 'quickActions.providerSettings', value: values.providerSettings },
+        ],
+      });
+      mockedRequest.mockResolvedValueOnce({
+        settings: [
+          {
+            path: 'quickActions.defaultReasoningEffort',
+            label: '',
+            description: '',
+            category: 'agents',
+            type: 'string',
+            value: 'medium',
+          },
+          {
+            path: 'quickActions.typeReasoningEffortOverrides',
+            label: '',
+            description: '',
+            category: 'agents',
+            type: 'object',
+            value: { fast: 'high' },
+          },
+          {
+            path: 'quickActions.providerSettings',
+            label: '',
+            description: '',
+            category: 'agents',
+            type: 'object',
+            value: values.providerSettings,
+          },
+        ],
+      });
+      expect(await client.getBackgroundAgentSettings(workspaceId)).toEqual({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+        ...values,
+      });
+      if (workspaceId) {
+        expect(mockedRequest).toHaveBeenLastCalledWith('settings.list', { workspaceId });
+      } else {
+        expect(mockedRequest).toHaveBeenLastCalledWith('settings.list');
+      }
+    },
+  );
 
   it('getMcpServers preserves the daemon-assigned id so status events can resolve name', async () => {
     // The `mcp.servers:status-changed` bridge (§6.5) receives `{ serverId, status }`
