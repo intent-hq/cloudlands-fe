@@ -286,8 +286,8 @@ describe('traditional tab context commands', () => {
 
 describe('mounted panel header actions menu', () => {
   it('removes unregistered content sections while retaining working panel commands', async () => {
-    const onZoomToggle = vi.fn();
-    const view = renderHeader('note', { onZoomToggle });
+    const onMovePaneLeft = vi.fn();
+    const view = renderHeader('note', { onMovePaneLeft });
     const trigger = panelTrigger(view.container);
     await fireEvent.click(trigger);
     const menu = await screen.findByRole('menu');
@@ -299,8 +299,8 @@ describe('mounted panel header actions menu', () => {
     expect(within(menu).queryByTestId('content-command-action')).toBeNull();
     expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeNull();
     expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeNull();
-    await fireEvent.click(within(menu).getByRole('menuitem', { name: /Zoom Panel/i }));
-    expect(onZoomToggle).toHaveBeenCalledOnce();
+    await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Move panel left' }));
+    expect(onMovePaneLeft).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
@@ -527,25 +527,17 @@ describe('mounted panel header actions menu', () => {
   });
 
   it('runs enabled actions once and closes only the active pane', async () => {
-    const onZoomToggle = vi.fn();
     const onMovePaneLeft = vi.fn();
     const onMovePaneRight = vi.fn();
     const onClosePanel = vi.fn();
     const onTabClose = vi.fn();
     const { container } = renderHeader('browser', {
-      onZoomToggle,
       onMovePaneLeft,
       onMovePaneRight,
       onClosePanel,
       onTabClose,
     });
     const trigger = panelTrigger(container);
-
-    await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: /Zoom Panel/i }));
-    expect(onZoomToggle).toHaveBeenCalledOnce();
-
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);
     const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move panel left' });
@@ -557,7 +549,6 @@ describe('mounted panel header actions menu', () => {
     expect(onMovePaneRight).toHaveBeenCalledOnce();
 
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-    expect(onZoomToggle).toHaveBeenCalledOnce();
     await fireEvent.click(
       container.querySelector('[data-panel-tabless-header] [data-testid="panel-close-button"]')!,
     );
