@@ -3,9 +3,11 @@ import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { isUpdateChannel } from '$features/auto-update/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import { isQuickActionProviderSwitchBlocked } from '$store/renderer/middlewares/quick-action-provider-switch';
 import {
   getActiveBackendId,
   namespaceBackendKey,
@@ -114,7 +116,7 @@ import {
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   setDefaultReasoningEffort,
-  setTypeReasoningEffortOverride,
+  setTypeReasoningEffortOverrides,
   setDefaultModel,
   setTypeOverride,
   type BackgroundAgentType,
@@ -437,9 +439,11 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(selectThemePreset(String(value)));
       return true;
     case 'model.default':
+      assertSettingProviderSwitchAllowed(path, value);
       appStore.dispatch(selectModel(String(value ?? '')));
       return true;
     case 'model.defaultProvider':
+      assertSettingProviderSwitchAllowed(path, value);
       appStore.dispatch(setActiveProvider(String(value ?? '')));
       return true;
     case 'providers.enabled': {
@@ -472,11 +476,16 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setDefaultReasoningEffort(String(value ?? '')));
       return true;
     case 'quickActions.typeReasoningEffortOverrides':
-      for (const type of ['commit', 'pr', 'review', 'fast'] as BackgroundAgentType[]) {
-        appStore.dispatch(
-          setTypeReasoningEffortOverride({ type, effort: String(objectValue(value)[type] ?? '') }),
-        );
-      }
+      appStore.dispatch(
+        setTypeReasoningEffortOverrides(
+          Object.fromEntries(
+            Object.entries(objectValue(value)).map(([type, effort]) => [
+              type,
+              String(effort ?? ''),
+            ]),
+          ),
+        ),
+      );
       return true;
     case 'quickActions.defaultModel':
       appStore.dispatch(setDefaultModel(String(value ?? '')));
@@ -631,6 +640,19 @@ async function rollbackSettingsChanges(applied: PreparedSettingsChange[]): Promi
   return failures;
 }
 
+function assertSettingProviderSwitchAllowed(path: string, value: unknown): void {
+  const provider =
+    path === 'model.defaultProvider'
+      ? String(value ?? '')
+      : path === 'model.default'
+        ? splitLegacyCompoundId(String(value ?? '')).providerId
+        : undefined;
+  if (!provider) return;
+  if (isQuickActionProviderSwitchBlocked(appStore.state.backgroundAgentSettings, provider)) {
+    throw new Error(m.settings_backgroundAgent_legacySwitch_error({ provider }));
+  }
+}
+
 async function applySettingsTransaction(
   changes: SettingsChangePayload[],
   failurePrefix: string,
@@ -642,6 +664,11 @@ async function applySettingsTransaction(
 
   const applied: PreparedSettingsChange[] = [];
   try {
+    // Check all provider switches before the first mutation, irrespective of
+    // proposal order. Recheck at dispatch in case an awaited change altered state.
+    for (const change of prepared) {
+      assertSettingProviderSwitchAllowed(change.path, change.value);
+    }
     for (const change of prepared) {
       await applyPersistedSetting(change.path, change.value, change.apply);
       applied.push(change);

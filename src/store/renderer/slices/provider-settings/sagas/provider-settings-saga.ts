@@ -53,7 +53,7 @@ function* changesFor(update: ProviderSettingsUpdate) {
     // The other switch entry point may have superseded this queued request.
     if (!background?.providerId || background.providerId === update.activeProviderId) {
       changes.push({ path: 'model.defaultProvider', value: update.activeProviderId });
-      if (background?.providerId)
+      if (background?.providerSwitchPending)
         changes.push(...backgroundSettingsChanges(background, update.activeProviderId));
     }
   }
@@ -145,7 +145,7 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
                 applied: yield* call([appClient.settings, appClient.settings.update], changes),
                 revision: 0,
               };
-          if (update.activeProviderId && background?.providerId)
+          if (update.activeProviderId && background?.providerSwitchPending)
             yield* put(
               backgroundSettingsSaveSettled({
                 generation: background.persistenceGeneration ?? 0,
@@ -170,7 +170,7 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
             logger.warn('Daemon rejected provider settings write:', error);
             if (update.activeProviderId !== undefined) {
               yield* put(activeProviderPersistRejected(update.activeProviderId));
-              if (background?.providerId)
+              if (background?.providerSwitchPending)
                 yield* put(
                   backgroundSettingsSaveSettled({
                     generation: background.persistenceGeneration ?? 0,

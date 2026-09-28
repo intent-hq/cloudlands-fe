@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
+
+const { notifyError } = vi.hoisted(() => ({ notifyError: vi.fn() }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -11,6 +13,7 @@ vi.mock('$lib/client', async () => {
   return { appClient: { settings: new LiveSettingsClient() } };
 });
 
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { AppSettingChange } from '$lib/client/app-client';
 import { store } from '../../store';
@@ -24,18 +27,16 @@ import {
   setAtomicDefaultModel,
 } from '../provider-settings/provider-settings-slice';
 import {
+  backgroundProviderSwitchBlocked,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
 } from './background-agent-settings-slice';
 
 const request = vi.mocked(backendRequest);
-const tasks: Task[] = [];
+const stopSagas: (() => void)[] = [];
 let dispose: (() => void) | undefined;
 afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+  for (const stop of stopSagas.splice(0)) stop();
   dispose?.();
   vi.resetAllMocks();
 });
@@ -58,23 +59,33 @@ const initial: AppSettingChange[] = [
     },
   },
 ];
+function assertBareModels(changes: AppSettingChange[]) {
+  // Faithful to settings.rs validate_bare_model_id: the whole batch rejects.
+  for (const { path, value } of changes) {
+    const models = ['model.default', 'quickActions.defaultModel'].includes(path)
+      ? [value]
+      : ['model.providerDefaults', 'quickActions.typeOverrides'].includes(path)
+        ? Object.values(value as object)
+        : [];
+    if (models.some((model) => typeof model === 'string' && model.includes(':')))
+      throw new BackendError({
+        code: 'INVALID_PARAMS',
+        rpcCode: -32602,
+        message: `${path}: model values must be bare model ids`,
+      });
+  }
+}
+
 function start() {
   dispose = store.init();
-  const channel = stdChannel();
-  const dispatch = (action: { type: string }) => {
-    store.dispatch(action);
-    channel.put(action);
-    return action;
-  };
-  const environment = { channel, dispatch, getState: () => store.state };
   for (const saga of [
     settingsHydrationSaga,
     providerSettingsSaga,
     modelSelectionSaga,
     backgroundAgentSettingsSaga,
   ])
-    tasks.push(runSaga(environment, saga));
-  return dispatch;
+    stopSagas.push(store.runSaga(saga));
+  return (action: { type: string }) => store.dispatch(action);
 }
 
 for (const atomic of [false, true]) {
@@ -90,6 +101,7 @@ for (const atomic of [false, true]) {
       request.mockImplementation(async (method, params) => {
         if (method === 'settings.list') return { settings: initial, revision: 1 };
         const changes = (params as { changes: AppSettingChange[] }).changes;
+        assertBareModels(changes);
         writes.push(changes);
         const applied = changes.filter(
           ({ path, value }) => JSON.stringify(persisted[path]) !== JSON.stringify(value),
@@ -204,6 +216,7 @@ it.each([false, true])(
     request.mockImplementation(async (method, params) => {
       if (method === 'settings.list') return { settings: initial, revision: 1 };
       const changes = (params as { changes: AppSettingChange[] }).changes;
+      assertBareModels(changes);
       updates += 1;
       if (updates === 1)
         await new Promise<void>((resolve) => {
@@ -245,3 +258,136 @@ it.each([false, true])(
     expect(store.state.backgroundAgentSettings.providerId).toBe('codex');
   },
 );
+
+for (const path of ['quickActions.defaultModel', 'quickActions.typeOverrides']) {
+  for (const legacyModel of ['codex:balanced', 'claude-code:foreign-model']) {
+    it(`saves an ordinary default model without rewriting legacy ${path} ${legacyModel}`, async () => {
+      const legacyValue = path.endsWith('typeOverrides')
+        ? { ...emptyModels, commit: legacyModel }
+        : legacyModel;
+      const snapshot = initial.map((change) =>
+        change.path === path ? { ...change, value: legacyValue } : change,
+      );
+      const persisted = Object.fromEntries(
+        snapshot.map(({ path, value }) => [path, structuredClone(value)]),
+      );
+      let revision = 1;
+      const writes: AppSettingChange[][] = [];
+      request.mockImplementation(async (method, params) => {
+        if (method === 'settings.list') return { settings: snapshot, revision };
+        const changes = (params as { changes: AppSettingChange[] }).changes;
+        assertBareModels(changes);
+        writes.push(changes);
+        assertBareModels(changes);
+        for (const { path, value } of changes) persisted[path] = structuredClone(value);
+        return { applied: changes, revision: ++revision };
+      });
+      const dispatch = start();
+      await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+      dispatch(setAtomicDefaultModel({ providerId: 'codex', model: 'new-default' }));
+      await vi.waitFor(() => expect(writes).toHaveLength(1));
+      await vi.waitFor(() => expect(store.state.model.pendingProviderModels).toEqual({}));
+      expect(persisted['model.providerDefaults']).toEqual({ codex: 'new-default' });
+      expect(persisted[path]).toEqual(legacyValue);
+      expect(writes[0].some((change) => change.path.startsWith('quickActions.'))).toBe(false);
+      expect(store.state.backgroundAgentSettings.persistencePending ?? false).toBe(false);
+    });
+  }
+}
+
+for (const atomic of [false, true]) {
+  for (const field of ['defaultModel', 'typeOverrides']) {
+    it(`rejects an unsafe provider snapshot before optimistic state or persistence changes (atomic ${atomic}, ${field})`, async () => {
+      const unsafeSnapshot = {
+        defaultModel: field === 'defaultModel' ? 'codex:foreign-model' : 'basic',
+        typeOverrides: {
+          ...emptyModels,
+          commit: field === 'typeOverrides' ? 'codex:foreign-model' : '',
+        },
+        defaultReasoningEffort: 'high',
+      };
+      const settings = initial.map((change) =>
+        change.path === 'quickActions.providerSettings'
+          ? { ...change, value: { legacy: unsafeSnapshot } }
+          : change,
+      );
+      const persisted = Object.fromEntries(
+        settings.map(({ path, value }) => [path, structuredClone(value)]),
+      );
+      request.mockImplementation(async (method, params) => {
+        if (method === 'settings.list') return { settings, revision: 1 };
+        const changes = (params as { changes: AppSettingChange[] }).changes;
+        assertBareModels(changes);
+        for (const { path, value } of changes) persisted[path] = structuredClone(value);
+        return { applied: changes, revision: 2 };
+      });
+      start();
+      await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+      const beforeModel = store.state.model;
+      const beforeBackground = store.state.backgroundAgentSettings;
+      // Use the configured store's real middleware, not a hand-fed saga channel.
+      store.dispatch(
+        atomic
+          ? setAtomicDefaultModel({ providerId: 'legacy', model: 'new-model' })
+          : setActiveProvider('legacy'),
+      );
+      expect(store.state.model).toBe(beforeModel);
+      expect(store.state.backgroundAgentSettings).toBe(beforeBackground);
+      expect(store.state.backgroundAgentSettings.providerSettings.legacy).toEqual(unsafeSnapshot);
+      expect(request).toHaveBeenCalledTimes(1); // settings.list only; no rejected batch reaches the daemon.
+      await vi.waitFor(() =>
+        expect(notifyError).toHaveBeenCalledWith(
+          expect.stringContaining('quickActions.providerSettings'),
+        ),
+      );
+      store.dispatch(setAtomicDefaultModel({ providerId: 'codex', model: 'valid-next' }));
+      await vi.waitFor(() =>
+        expect(persisted['model.providerDefaults']).toEqual({ codex: 'valid-next' }),
+      );
+      expect(persisted['model.defaultProvider']).toBe('codex');
+      expect(persisted['quickActions.providerSettings']).toEqual({ legacy: unsafeSnapshot });
+    });
+  }
+}
+
+it('provides actionable guidance for a blocked provider switch without a settings write', async () => {
+  request.mockResolvedValue({ settings: initial, revision: 1 });
+  const dispatch = start();
+  await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+  dispatch(backgroundProviderSwitchBlocked('legacy'));
+  await vi.waitFor(() =>
+    expect(notifyError).toHaveBeenCalledWith(
+      expect.stringContaining('quickActions.providerSettings'),
+    ),
+  );
+  expect(notifyError).toHaveBeenCalledWith(expect.stringContaining('legacy'));
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+it('does not acknowledge a pending effort edit when a same-provider model-only save settles', async () => {
+  const releases: (() => void)[] = [];
+  const writes: AppSettingChange[][] = [];
+  request.mockImplementation(async (method, params) => {
+    if (method === 'settings.list') return { settings: initial, revision: 1 };
+    const changes = (params as { changes: AppSettingChange[] }).changes;
+    assertBareModels(changes);
+    writes.push(changes);
+    const revision = writes.length + 1;
+    await new Promise<void>((resolve) => releases.push(resolve));
+    return { applied: changes, revision };
+  });
+  const dispatch = start();
+  await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+  dispatch(setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' }));
+  await vi.waitFor(() => expect(writes).toHaveLength(1));
+  dispatch(setDefaultReasoningEffort('high'));
+  releases[0]();
+  await vi.waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[0].some(({ path }) => path.startsWith('quickActions.'))).toBe(false);
+  expect(store.state.backgroundAgentSettings.persistencePending).toBe(true);
+  expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('high');
+  releases[1]();
+  await vi.waitFor(() =>
+    expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+  );
+});

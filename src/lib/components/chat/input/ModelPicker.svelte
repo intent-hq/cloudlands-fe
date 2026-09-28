@@ -5,6 +5,8 @@
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { isQuickActionProviderSwitchBlocked } from '$store/renderer/middlewares/quick-action-provider-switch';
+  import { backgroundProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
   import Button from '$lib/components/ui/button/button.svelte';
   import {
@@ -957,6 +959,17 @@
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
     if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
       dropdownValue = currentDropdownValue();
+      return;
+    }
+    // A rejected global provider switch must not become an optimistic local
+    // selection or invoke the caller's model/effort reconciliation callback.
+    if (
+      updateGlobalDefault &&
+      pick &&
+      isQuickActionProviderSwitchBlocked(appStore.state.backgroundAgentSettings, pick.providerId)
+    ) {
+      dropdownValue = currentDropdownValue();
+      appStore.dispatch(backgroundProviderSwitchBlocked(pick.providerId));
       return;
     }
     const previous = pendingModelUpdate?.previous ?? {

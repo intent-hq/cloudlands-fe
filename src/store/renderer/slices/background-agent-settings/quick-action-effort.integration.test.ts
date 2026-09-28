@@ -16,6 +16,7 @@ import {
   setDefaultModel,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
+  setTypeReasoningEffortOverrides,
   resetSettings,
 } from './background-agent-settings-slice';
 
@@ -32,12 +33,12 @@ afterEach(async () => {
 const emptyModels = { commit: '', pr: '', review: '', fast: '' };
 const saved = {
   'model.defaultProvider': 'codex',
-  'quickActions.defaultModel': 'codex:balanced',
+  'quickActions.defaultModel': 'balanced',
   'quickActions.typeOverrides': emptyModels,
   'quickActions.defaultReasoningEffort': 'medium',
   'quickActions.typeReasoningEffortOverrides': { commit: 'high', review: 'low' },
   'quickActions.providerSettings': {
-    legacy: { defaultModel: 'legacy:basic', typeOverrides: emptyModels },
+    legacy: { defaultModel: 'basic', typeOverrides: emptyModels },
   },
 };
 function setup() {
@@ -72,7 +73,7 @@ for (const atomic of [false, true]) {
     expect(changes).toEqual(
       expect.arrayContaining([
         { path: 'model.defaultProvider', value: 'legacy' },
-        { path: 'quickActions.defaultModel', value: 'legacy:basic' },
+        { path: 'quickActions.defaultModel', value: 'basic' },
         { path: 'quickActions.defaultReasoningEffort', value: '' },
         { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
         {
@@ -80,7 +81,7 @@ for (const atomic of [false, true]) {
           value: {
             legacy: saved['quickActions.providerSettings'].legacy,
             codex: {
-              defaultModel: 'codex:balanced',
+              defaultModel: 'balanced',
               typeOverrides: emptyModels,
               defaultReasoningEffort: 'medium',
               typeReasoningEffortOverrides: { commit: 'high', review: 'low' },
@@ -114,7 +115,7 @@ for (const atomic of [false, true]) {
     dispose?.();
     dispose = store.init();
     applySettingsChanges(Object.entries(reloaded).map(([path, value]) => ({ path, value })));
-    expect(store.state.backgroundAgentSettings.defaultModel).toBe('codex:balanced');
+    expect(store.state.backgroundAgentSettings.defaultModel).toBe('balanced');
     expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('medium');
   });
 }
@@ -144,7 +145,7 @@ describe('partial settings and resets', () => {
     expect(store.state.backgroundAgentSettings.typeReasoningEffortOverrides).toEqual({
       fast: 'high',
     });
-    expect(store.state.backgroundAgentSettings.defaultModel).toBe('codex:balanced');
+    expect(store.state.backgroundAgentSettings.defaultModel).toBe('balanced');
     applySettingsChanges([{ path: 'quickActions.defaultReasoningEffort', value: null }]);
     expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('');
     expect(store.state.backgroundAgentSettings.providerSettings.legacy).toEqual(
@@ -262,3 +263,26 @@ for (const perAction of [false, true]) {
     });
   }
 }
+
+it('persists arbitrary effort keys, restores them across providers, and replaces the whole map', async () => {
+  const { dispatch, persisted } = setup();
+  dispatch(setTypeReasoningEffortOverrides({ walkthrough: 'high', 'custom-action': 'low' }));
+  await vi.waitFor(() =>
+    expect(persisted['quickActions.typeReasoningEffortOverrides']).toEqual({
+      walkthrough: 'high',
+      'custom-action': 'low',
+    }),
+  );
+  dispatch(setActiveProvider('legacy'));
+  await vi.waitFor(() => expect(persisted['model.defaultProvider']).toBe('legacy'));
+  dispatch(setActiveProvider('codex'));
+  await vi.waitFor(() => expect(persisted['model.defaultProvider']).toBe('codex'));
+  expect(persisted['quickActions.typeReasoningEffortOverrides']).toEqual({
+    walkthrough: 'high',
+    'custom-action': 'low',
+  });
+  dispatch(setTypeReasoningEffortOverrides({}));
+  await vi.waitFor(() =>
+    expect(persisted['quickActions.typeReasoningEffortOverrides']).toEqual({}),
+  );
+});

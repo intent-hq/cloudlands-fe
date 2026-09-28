@@ -4,7 +4,7 @@ import {
   initialState as backgroundAgentSettingsInitialState,
   setDefaultModel,
   setDefaultReasoningEffort,
-  setTypeReasoningEffortOverride,
+  setTypeReasoningEffortOverrides,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import {
   initialState as userPreferencesInitialState,
@@ -170,19 +170,11 @@ describe('settings-proposal-actions', () => {
     const action = await applySettingsProposalWork(
       makeDetail(makeProposal('quickActions.typeReasoningEffortOverrides', { fast: 'high' })),
     );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      setTypeReasoningEffortOverride({ type: 'commit', effort: '' }),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      setTypeReasoningEffortOverride({ type: 'fast', effort: 'high' }),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(setTypeReasoningEffortOverrides({ fast: 'high' }));
     mocks.dispatch.mockClear();
     await undoSettingsProposalWork(action.reverseChanges);
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      setTypeReasoningEffortOverride({ type: 'commit', effort: 'high' }),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      setTypeReasoningEffortOverride({ type: 'fast', effort: '' }),
+      setTypeReasoningEffortOverrides({ commit: 'high' }),
     );
   });
 

@@ -121,7 +121,7 @@ export function* persistSelectedModelsWorker(
           ]
         : [{ path: 'model.providerDefaults', value }];
       if (currentProviderId) {
-        if (background?.providerId)
+        if (background?.providerSwitchPending)
           changes.push(...backgroundSettingsChanges(background, currentProviderId));
       }
       const updateSnapshot = appClient.settings.updateSnapshot?.bind(appClient.settings);
@@ -132,7 +132,7 @@ export function* persistSelectedModelsWorker(
             applied: yield* call([appClient.settings, appClient.settings.update], changes),
             revision: 0,
           };
-      if (currentProviderId && background?.providerId)
+      if (currentProviderId && background?.providerSwitchPending)
         yield* put(
           backgroundSettingsSaveSettled({
             generation: background.persistenceGeneration ?? 0,
@@ -156,7 +156,7 @@ export function* persistSelectedModelsWorker(
         yield* put(providerModelsPersistRejected({ ...sessionPicks }));
         if (currentProviderId) {
           yield* put(activeProviderPersistRejected(currentProviderId));
-          if (background?.providerId)
+          if (background?.providerSwitchPending)
             yield* put(
               backgroundSettingsSaveSettled({
                 generation: background.persistenceGeneration ?? 0,

@@ -311,6 +311,7 @@
   "settings_backgroundAgent_useDefault_description": "Auf das Standardmodell für Schnellaktionen zurückgreifen",
   "settings_backgroundAgent_effortProviderNote": "Wählen Sie den Anbieter dieses Modells als Standardanbieter, um den Denkaufwand einzustellen.",
   "settings_backgroundAgent_effortRouteNote": "Dieser Anbieter unterstützt keine Aufwandseinstellung für Schnellaktionen.",
+  "settings_backgroundAgent_legacySwitch_error": "Anbieterwechsel nicht möglich. Löschen Sie die gespeicherten Modelleinträge für {provider} in quickActions.providerSettings und versuchen Sie es erneut.",
   "settings_backgroundAgent_fastAuggieOnlyNote": "Prompt-Verbesserung und Layout-Vorschläge erfordern Auggie. Wechseln Sie zu Auggie als Anbieter, um sie zu verwenden.",
   "settings_gitWorkspace_loadError": "Einstellungen konnten nicht vom Backend geladen werden.",
   "settings_gitWorkspace_saveError": "Einstellungen konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",

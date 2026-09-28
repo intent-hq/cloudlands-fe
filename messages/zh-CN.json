@@ -311,6 +311,7 @@
   "settings_backgroundAgent_useDefault_description": "回退到默认快捷操作模型",
   "settings_backgroundAgent_effortProviderNote": "请将默认提供商切换为此模型的提供商，以配置推理强度。",
   "settings_backgroundAgent_effortRouteNote": "此提供商不支持为快捷操作设置推理强度。",
+  "settings_backgroundAgent_legacySwitch_error": "无法切换提供商。请清除 quickActions.providerSettings 中为 {provider} 保存的模型条目，然后重试。",
   "settings_backgroundAgent_fastAuggieOnlyNote": "提示词增强和布局建议需要 Auggie。请将提供商切换为 Auggie 以使用这些功能。",
   "settings_gitWorkspace_loadError": "从后端加载设置失败。",
   "settings_gitWorkspace_saveError": "保存设置失败，请重试。",

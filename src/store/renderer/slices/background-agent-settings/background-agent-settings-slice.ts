@@ -61,7 +61,7 @@ export const BACKGROUND_AGENT_TYPE_INFO: Record<
 /** Shape of per-provider cached settings */
 export interface ProviderBgSettings {
   defaultReasoningEffort?: string;
-  typeReasoningEffortOverrides?: Partial<Record<BackgroundAgentType, string>>;
+  typeReasoningEffortOverrides?: Record<string, string>;
   defaultModel: string;
   typeOverrides: Record<BackgroundAgentType, string>;
 }
@@ -74,9 +74,10 @@ export type BackgroundAgentSettingsState = {
   /** Local intent protects the entire provider bundle from delayed settings echoes. */
   persistenceGeneration?: number;
   persistencePending?: boolean;
+  providerSwitchPending?: boolean;
   providerId?: string;
   defaultReasoningEffort: string;
-  typeReasoningEffortOverrides: Partial<Record<BackgroundAgentType, string>>;
+  typeReasoningEffortOverrides: Record<string, string>;
   defaultModel: string;
   typeOverrides: Record<BackgroundAgentType, string>;
   /** Per-provider settings cache (provider ID → settings snapshot). Map→Record for serialization. */
@@ -128,6 +129,12 @@ export const setDefaultReasoningEffort = createAction<[effort: string]>(
 export const setTypeReasoningEffortOverride = createAction<
   [payload: { type: BackgroundAgentType; effort: string }]
 >('backgroundAgentSettings/setTypeReasoningEffortOverride');
+export const setTypeReasoningEffortOverrides = createAction<[overrides: Record<string, string>]>(
+  'backgroundAgentSettings/setTypeReasoningEffortOverrides',
+);
+export const backgroundProviderSwitchBlocked = createAction<[providerId: string]>(
+  'backgroundAgentSettings/providerSwitchBlocked',
+);
 export const resetTypeOverride = createAction<[type: BackgroundAgentType]>(
   'backgroundAgentSettings/resetTypeOverride',
 );
@@ -298,7 +305,8 @@ function switchProvider(
   providerId: string,
 ): BackgroundAgentSettingsState {
   if (!providerId) return state;
-  if (providerId === state.providerId) return pending(state);
+  if (providerId === state.providerId)
+    return { ...state, persistencePending: state.persistencePending ?? false };
   const { defaultModel, typeOverrides, defaultReasoningEffort, typeReasoningEffortOverrides } =
     state;
   const providerSettings = { ...state.providerSettings };
@@ -313,6 +321,7 @@ function switchProvider(
   return {
     ...pending(state),
     providerId,
+    providerSwitchPending: true,
     providerSettings,
     defaultModel: next?.defaultModel ?? '',
     typeOverrides: { ...DEFAULT_TYPE_OVERRIDES, ...next?.typeOverrides },
@@ -327,8 +336,20 @@ backgroundAgentSettingsReducer.with(setAtomicDefaultModel, (state, { payload: [{
   switchProvider(state, providerId),
 );
 
+backgroundAgentSettingsReducer.with(
+  setTypeReasoningEffortOverrides,
+  (state, { payload: [overrides] }) => ({
+    ...pending(state),
+    typeReasoningEffortOverrides: normalizeEffortOverrides(overrides),
+  }),
+);
+
 backgroundAgentSettingsReducer.with(backgroundSettingsSaveSettled, (state, { payload: [ack] }) => ({
   ...state,
+  providerSwitchPending:
+    ack.generation === state.persistenceGeneration && ack.providerId === state.providerId
+      ? false
+      : state.providerSwitchPending,
   persistencePending:
     ack.generation === state.persistenceGeneration && ack.providerId === state.providerId
       ? false

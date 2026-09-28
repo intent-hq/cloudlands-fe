@@ -562,7 +562,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     defaultValue: {},
     apply: {
       kind: 'redux-action',
-      action: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
+      action: 'backgroundAgentSettings/setTypeReasoningEffortOverrides',
     },
   },
   {

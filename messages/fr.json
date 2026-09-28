@@ -311,6 +311,7 @@
   "settings_backgroundAgent_useDefault_description": "Revenir au modèle par défaut des actions rapides",
   "settings_backgroundAgent_effortProviderNote": "Sélectionnez le fournisseur de ce modèle comme fournisseur par défaut pour configurer l’effort.",
   "settings_backgroundAgent_effortRouteNote": "Ce fournisseur ne permet pas de régler l’effort pour les actions rapides.",
+  "settings_backgroundAgent_legacySwitch_error": "Impossible de changer de fournisseur. Effacez les modèles enregistrés pour {provider} dans quickActions.providerSettings, puis réessayez.",
   "settings_backgroundAgent_fastAuggieOnlyNote": "L'amélioration des prompts et les suggestions de mise en page nécessitent Auggie. Passez à Auggie comme fournisseur pour les utiliser.",
   "settings_gitWorkspace_loadError": "Impossible de charger les paramètres depuis le backend.",
   "settings_gitWorkspace_saveError": "Impossible d'enregistrer les paramètres. Veuillez réessayer.",

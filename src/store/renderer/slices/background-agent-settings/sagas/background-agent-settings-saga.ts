@@ -1,8 +1,9 @@
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from './background-settings-write-lock';
 import { buffers } from 'redux-saga';
-import { actionChannel, call, put, take } from 'typed-redux-saga';
+import { actionChannel, call, put, take, takeEvery } from 'typed-redux-saga';
 
+import { m } from '$shared/paraglide/messages.js';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectBgSettings } from '../background-agent-settings-selectors';
@@ -12,6 +13,8 @@ import {
   clearTypeOverride,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
+  setTypeReasoningEffortOverrides,
+  backgroundProviderSwitchBlocked,
   resetTypeOverride,
   resetSettings,
   setDefaultModel,
@@ -62,8 +65,20 @@ function* persistBackgroundAgentSettingsWorker() {
   }
 }
 
+async function showProviderSwitchBlocked(
+  action: ReturnType<typeof backgroundProviderSwitchBlocked>,
+) {
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(m.settings_backgroundAgent_legacySwitch_error({ provider: action.payload[0] }));
+  } catch (error) {
+    logger.error('Failed to show blocked provider switch:', error);
+  }
+}
+
 /** Unregistered until the S20 middleware cutover. */
 export function* backgroundAgentSettingsSaga() {
+  yield* takeEvery(backgroundProviderSwitchBlocked, showProviderSwitchBlocked);
   const channel = yield* actionChannel(
     [
       setDefaultModel,
@@ -72,6 +87,7 @@ export function* backgroundAgentSettingsSaga() {
       resetSettings,
       setDefaultReasoningEffort,
       setTypeReasoningEffortOverride,
+      setTypeReasoningEffortOverrides,
       resetTypeOverride,
     ],
     buffers.sliding(1),
