@@ -6765,5 +6765,15 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Désactiver le multijoueur expérimental",
   "lib_commandPalette_enableExperimentalGitlab_label": "Activer GitLab expérimental",
   "lib_commandPalette_disableExperimentalGitlab_label": "Désactiver GitLab expérimental",
-  "inviteNotice_modal_findGitlabCommand_label": "Chercher la commande GitLab"
+  "inviteNotice_modal_findGitlabCommand_label": "Chercher la commande GitLab",
+  "file_pdf_loading_label": "Chargement du PDF…",
+  "file_pdf_missing_error": "Fichier PDF introuvable.",
+  "file_pdf_large_error": "Ce PDF dépasse la limite de prévisualisation de 64 Mo.",
+  "file_pdf_invalid_error": "Ce PDF est endommagé ou non pris en charge.",
+  "file_pdf_password_error": "Ce PDF nécessite un mot de passe.",
+  "file_pdf_load_error": "Impossible de charger le PDF. Réessayez.",
+  "file_pdf_previous_label": "Page précédente",
+  "file_pdf_next_label": "Page suivante",
+  "file_pdf_page_label": "Page {page} sur {total}",
+  "file_pdf_canvas_ariaLabel": "Page {page} du document {name}"
 }

@@ -6765,5 +6765,15 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Disable experimental multiplayer",
   "lib_commandPalette_enableExperimentalGitlab_label": "Enable experimental GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "Disable experimental GitLab",
-  "inviteNotice_modal_findGitlabCommand_label": "Find GitLab command"
+  "inviteNotice_modal_findGitlabCommand_label": "Find GitLab command",
+  "file_pdf_loading_label": "Loading PDF…",
+  "file_pdf_missing_error": "PDF file not found.",
+  "file_pdf_large_error": "This PDF exceeds the 64 MB preview limit.",
+  "file_pdf_invalid_error": "This PDF is damaged or unsupported.",
+  "file_pdf_password_error": "This PDF requires a password.",
+  "file_pdf_load_error": "Could not load the PDF. Try again.",
+  "file_pdf_previous_label": "Previous page",
+  "file_pdf_next_label": "Next page",
+  "file_pdf_page_label": "Page {page} of {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, page {page}"
 }

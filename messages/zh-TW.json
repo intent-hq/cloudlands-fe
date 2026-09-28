@@ -6765,5 +6765,15 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "停用實驗性多人協作",
   "lib_commandPalette_enableExperimentalGitlab_label": "啟用實驗性 GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "停用實驗性 GitLab",
-  "inviteNotice_modal_findGitlabCommand_label": "尋找 GitLab 命令"
+  "inviteNotice_modal_findGitlabCommand_label": "尋找 GitLab 命令",
+  "file_pdf_loading_label": "正在載入 PDF…",
+  "file_pdf_missing_error": "找不到 PDF 檔案。",
+  "file_pdf_large_error": "此 PDF 超出 64 MB 的預覽限制。",
+  "file_pdf_invalid_error": "此 PDF 已損毀或不受支援。",
+  "file_pdf_password_error": "此 PDF 需要密碼。",
+  "file_pdf_load_error": "無法載入 PDF。請重試。",
+  "file_pdf_previous_label": "上一頁",
+  "file_pdf_next_label": "下一頁",
+  "file_pdf_page_label": "第 {page} 頁，共 {total} 頁",
+  "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁"
 }

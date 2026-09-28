@@ -587,6 +587,52 @@ describe('FileTabType Redux integration', () => {
     expect(screen.queryByTestId('code-editor')).toBeNull();
   });
 
+  it.each(['docs/my report #1%.pdf', '/repo/docs/my report #1%.pdf'])(
+    'sends the exact contained PDF path %s to the binary reader',
+    async (filePath) => {
+      vi.mocked(backendRequest).mockRejectedValue(new Error('offline'));
+      renderFileTab({ ...fileTab, filePath });
+      await waitFor(() =>
+        expect(backendRequest).toHaveBeenCalledWith('file.readChunk', {
+          workspaceId: 'ws-1',
+          path: 'docs/my report #1%.pdf',
+          offset: 0,
+          length: 1048576,
+        }),
+      );
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['../secret.pdf', '/elsewhere/secret.pdf', 'docs/../secret.pdf'])(
+    'does not read a PDF outside the workspace: %s',
+    async (filePath) => {
+      renderFileTab({ ...fileTab, filePath });
+      await waitFor(() => expect(screen.queryByTestId('pdf-viewer')).toBeNull());
+      expect(backendRequest).not.toHaveBeenCalled();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it('defers inactive PDFs and releases their viewer when switching tabs', async () => {
+    const tab = { ...fileTab, filePath: 'report.pdf' };
+    const view = render(FileTabTypeHarness, { tab, workspaceId: 'ws-1', isActive: false });
+    expect(backendRequest).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pdf-viewer')).toBeNull();
+    await view.rerender({ tab, workspaceId: 'ws-1', isActive: true });
+    await screen.findByTestId('pdf-viewer');
+    await view.rerender({ tab, workspaceId: 'ws-1', isActive: false });
+    expect(screen.queryByTestId('pdf-viewer')).toBeNull();
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it('opens a binary PDF without dispatching the UTF-8 reader', async () => {
+    renderFileTab({ ...fileTab, id: 'tab-pdf', title: 'report.PDF', filePath: 'docs/report.PDF' });
+    await waitFor(() => expect(screen.queryByTestId('code-editor')).toBeNull());
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('pdf-viewer')).toBeTruthy();
+  });
+
   it('keeps allowlisted binary images in FileViewer without a text read', async () => {
     mockReduxState.files['assets/logo.png'] = {
       localContent: '',
