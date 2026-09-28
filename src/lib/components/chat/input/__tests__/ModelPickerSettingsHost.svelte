@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import { onDestroy } from 'svelte';
   import SpecialistModelOptions from '../../../settings/SpecialistModelOptions.svelte';
   import DefaultAgentModelSettings from '../../../settings/DefaultAgentModelSettings.svelte';
@@ -6,10 +7,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { MOCK_PROVIDER_CATALOG } from '../../../../../test/fixtures/provider-catalog.fixture';
-  import {
-    setActiveProvider,
-    setProviderEnabled,
-  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkSingleProviderSuccess,
     checkAllProvidersComplete,
@@ -39,7 +37,7 @@
   });
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
-  store.dispatch(setActiveProvider(consumer === 'specialist' ? 'claude-code' : 'codex'));
+  store.dispatch(hydrateDefaultProvider(consumer === 'specialist' ? 'claude-code' : 'codex'));
   for (const providerId of ['codex', 'claude-code']) {
     store.dispatch(setProviderEnabled({ providerId, enabled: true }));
     store.dispatch(

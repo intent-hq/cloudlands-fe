@@ -10,6 +10,8 @@
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
+  import { isQuickActionProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/quick-action-provider-switch';
+  import { backgroundProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
   import {
     selectActiveProviderId,
     selectEnabledProviders,
@@ -442,6 +444,10 @@
   let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
 
   async function handleSelectProvider(providerId: string) {
+    if (isQuickActionProviderSwitchBlocked(appStore.state.backgroundAgentSettings, providerId)) {
+      appStore.dispatch(backgroundProviderSwitchBlocked(providerId));
+      return;
+    }
     selectingProviderId = providerId;
     const previousProviderId = $activeProviderId;
     try {
