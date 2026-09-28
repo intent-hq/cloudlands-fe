@@ -628,6 +628,24 @@ describe('completed navigation geometry', () => {
   });
 });
 
+it('does not certify a row straddling a zero-height vertical clip', () => {
+  const clip = node(10);
+  clip.style.overflowY = 'hidden';
+  vi.mocked(clip.getBoundingClientRect).mockReturnValue(new DOMRect(0, 10, 600, 0));
+  const root = node();
+  const row = node();
+  clip.append(root);
+  root.append(row);
+  panel.attach('message', root, [entry], vi.fn());
+  panel.watch(row, entry.key);
+  panel.pin(entry.key, true);
+  const requested = panel.refreshGeometry();
+  frame();
+  expect(panel.locate(entry.key)?.admitted).toBe(true);
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
+  expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(requested);
+});
+
 it('does not certify visibility through disjoint vertical clipping ancestors', () => {
   const outer = node();
   outer.style.overflowY = 'hidden';
