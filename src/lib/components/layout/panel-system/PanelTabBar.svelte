@@ -1459,7 +1459,7 @@
               variant="plain"
               size="lg"
               active={paneStackMenuOpen}
-              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-background"
+              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-muted"
               wrapContent={false}
               aria-label={selectorLabel}
               data-testid="pane-stack-selector-trigger"
@@ -1882,7 +1882,7 @@
   }
   :global(.panel-selector-button:hover),
   :global(.panel-selector-button[aria-expanded='true']) {
-    background-color: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 4%);
+    background-color: color-mix(in srgb, hsl(var(--muted)), hsl(var(--foreground)) 4%);
   }
   .panel-selector-title {
     font-size: 12px;
