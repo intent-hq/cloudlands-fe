@@ -1,17 +1,54 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
-const mocks = vi.hoisted(() => ({ reconnect: undefined as undefined | (() => void) }));
-vi.mock('../../features/backend/main/backend.ipc', () => ({
+const mocks = vi.hoisted(() => ({
+  reconnect: undefined as undefined | (() => void),
   getBackendClient: vi.fn(),
-  onBackendReconnected: (fn: () => void) => {
-    mocks.reconnect = fn;
-    return () => {};
-  },
+  onBackendReconnected: vi.fn(),
 }));
-import { fetchProviderCatalog } from './provider-catalog-accessor';
+vi.mock('../../features/backend/main/backend.ipc', () => ({
+  getBackendClient: mocks.getBackendClient,
+  onBackendReconnected: mocks.onBackendReconnected,
+}));
 
 describe('main provider catalog context cache', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mocks.reconnect = undefined;
+    mocks.onBackendReconnected.mockImplementation((fn: () => void) => {
+      mocks.reconnect = fn;
+      return () => {};
+    });
+  });
+
+  it('does not start the backend when imported or seeded for specialist configuration', async () => {
+    const accessor = await import('./provider-catalog-accessor');
+    const catalog = { providers: [] };
+    accessor.setProviderCatalogCacheForTests(catalog);
+    expect(accessor.getCachedProviderCatalog()).toBe(catalog);
+    expect(mocks.getBackendClient).not.toHaveBeenCalled();
+    expect(mocks.onBackendReconnected).not.toHaveBeenCalled();
+  });
+
+  it('registers reconnect invalidation once for direct fetches and refreshes after reconnect', async () => {
+    const { fetchProviderCatalog } = await import('./provider-catalog-accessor');
+    const first = { providers: [] };
+    const second = { providers: [] };
+    const request = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    mocks.getBackendClient.mockReturnValue({ request });
+    const cached = await fetchProviderCatalog();
+    expect(await fetchProviderCatalog()).toBe(cached);
+    expect(mocks.onBackendReconnected).toHaveBeenCalledTimes(1);
+    mocks.reconnect?.();
+    expect(await fetchProviderCatalog()).not.toBe(cached);
+    expect(request.mock.calls).toEqual([
+      ['providers.catalog', {}],
+      ['providers.catalog', {}],
+    ]);
+    expect(mocks.onBackendReconnected).toHaveBeenCalledTimes(1);
+  });
   it('keys inflight work by client and workspace and abandons old connection cache entries', async () => {
+    const { fetchProviderCatalog } = await import('./provider-catalog-accessor');
     let release!: (value: { providers: [] }) => void;
     const pending = new Promise<{ providers: [] }>((resolve) => {
       release = resolve;

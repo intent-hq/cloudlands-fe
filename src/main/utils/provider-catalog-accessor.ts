@@ -28,10 +28,18 @@ const logger = new Logger('ProviderCatalogAccessor');
 type CatalogSlot = { cached?: ProviderCatalogResult; inFlight?: Promise<ProviderCatalogResult> };
 let slots = new WeakMap<JsonRpcClient, Map<string, CatalogSlot>>();
 let testCatalog: ProviderCatalogResult | undefined;
-if (typeof onBackendReconnected === 'function')
-  onBackendReconnected(() => {
-    slots = new WeakMap();
-  });
+let reconnectRegistered = false;
+function ensureReconnectInvalidation(): void {
+  if (reconnectRegistered) return;
+  // Registering starts the local backend: defer until catalog fetching begins,
+  // so importing this module or seeding a test cache does not boot the transport.
+  if (typeof onBackendReconnected === 'function') {
+    onBackendReconnected(() => {
+      slots = new WeakMap();
+    });
+    reconnectRegistered = true;
+  }
+}
 function slotFor(client: JsonRpcClient, workspaceId?: string): CatalogSlot {
   let contexts = slots.get(client);
   if (!contexts) {
@@ -55,6 +63,7 @@ export async function fetchProviderCatalog(
   workspaceId?: string,
   client: JsonRpcClient = getBackendClient(),
 ): Promise<ProviderCatalogResult> {
+  ensureReconnectInvalidation();
   const slot = slotFor(client, workspaceId);
   if (slot.cached) return slot.cached;
   if (!slot.inFlight) {
