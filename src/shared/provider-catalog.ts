@@ -43,6 +43,7 @@ const ProviderCatalogEntrySchema = z
     // optional here so an older daemon's rows (no such RPC) still validate —
     // consumers treat absence as unsupported.
     supportsTestPrompt: z.boolean().optional(),
+    supportsFastMode: z.boolean().optional(),
   })
   .passthrough();
 

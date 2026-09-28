@@ -6775,5 +6775,8 @@
   "file_pdf_previous_label": "Previous page",
   "file_pdf_next_label": "Next page",
   "file_pdf_page_label": "Page {page} of {total}",
-  "file_pdf_canvas_ariaLabel": "{name}, page {page}"
+  "file_pdf_canvas_ariaLabel": "{name}, page {page}",
+  "settings_providers_fastMode_label": "Fast mode",
+  "settings_providers_fastMode_description": "Applies from the next turn. Higher usage and costs may apply; availability depends on your model and account.",
+  "settings_providers_fastMode_error": "Could not save Fast mode. Your saved preference was restored."
 }

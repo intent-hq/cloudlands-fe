@@ -6775,5 +6775,8 @@
   "file_pdf_previous_label": "Página anterior",
   "file_pdf_next_label": "Página siguiente",
   "file_pdf_page_label": "Página {page} de {total}",
-  "file_pdf_canvas_ariaLabel": "{name}, página {page}"
+  "file_pdf_canvas_ariaLabel": "{name}, página {page}",
+  "settings_providers_fastMode_label": "Modo rápido",
+  "settings_providers_fastMode_description": "Se aplica a partir del próximo turno. Puede aumentar el uso y el coste; la disponibilidad depende del modelo y la cuenta.",
+  "settings_providers_fastMode_error": "No se pudo guardar el modo rápido. Se ha restaurado la preferencia guardada."
 }

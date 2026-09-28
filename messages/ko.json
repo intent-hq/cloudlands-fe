@@ -6775,5 +6775,8 @@
   "file_pdf_previous_label": "이전 페이지",
   "file_pdf_next_label": "다음 페이지",
   "file_pdf_page_label": "{total}페이지 중 {page}페이지",
-  "file_pdf_canvas_ariaLabel": "{name}, {page}페이지"
+  "file_pdf_canvas_ariaLabel": "{name}, {page}페이지",
+  "settings_providers_fastMode_label": "고속 모드",
+  "settings_providers_fastMode_description": "다음 턴부터 적용됩니다. 사용량과 비용이 늘어날 수 있으며, 이용 가능 여부는 모델과 계정에 따라 다릅니다.",
+  "settings_providers_fastMode_error": "고속 모드를 저장하지 못했습니다. 저장된 설정으로 복원했습니다."
 }

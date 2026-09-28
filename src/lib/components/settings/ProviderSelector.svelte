@@ -11,11 +11,14 @@
   import { invoke, shell } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import {
+    selectFastModeSupportedProviders,
+    selectProviderFastModeValues,
     selectActiveProviderId,
     selectEnabledProviders,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
+    setProviderFastMode,
     setActiveProvider,
     setProviderEnabled,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -73,6 +76,8 @@
   let antigravityConnectOpen = $state(false);
 
   const logger = createLogger('ProviderSelector');
+  const fastModeProviders$ = selectFastModeSupportedProviders();
+  const fastModeValues$ = selectProviderFastModeValues();
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
@@ -226,6 +231,14 @@
     // Reactive via $enabledProviders$; catalog metadata read via selector.
     void $enabledProviders$;
     return selectIsProviderEnabled.select(appStore.state, providerId);
+  }
+
+  function handleToggleFastMode(providerId: string, event: Event) {
+    // Keep Redux as the only checked state: local checkbox mutation can hide a
+    // fast rejection, and cached binding values can coalesce rapid activations.
+    event.preventDefault();
+    const enabled = selectProviderFastModeValues.select(appStore.state)[providerId] ?? false;
+    appStore.dispatch(setProviderFastMode(providerId, !enabled));
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
@@ -664,7 +677,29 @@
                           }
                         }}
                       >
-                        <div class={hasWarning || needsLogin ? 'w-64' : 'w-44'}>
+                        <div
+                          class={hasWarning ||
+                          needsLogin ||
+                          $fastModeProviders$.includes(provider.id)
+                            ? 'w-64'
+                            : 'w-44'}
+                        >
+                          {#if $fastModeProviders$.includes(provider.id)}
+                            <Menu.CheckboxItem
+                              checked={$fastModeValues$[provider.id] ?? false}
+                              onSelect={(event) => handleToggleFastMode(provider.id, event)}
+                              aria-describedby={`fast-mode-description-${provider.id}`}
+                            >
+                              {m.settings_providers_fastMode_label()}
+                            </Menu.CheckboxItem>
+                            <p
+                              id={`fast-mode-description-${provider.id}`}
+                              class="px-2 py-1.5 type-caption text-muted-foreground"
+                            >
+                              {m.settings_providers_fastMode_description()}
+                            </p>
+                            <Menu.Separator />
+                          {/if}
                           {#if provider.id === 'antigravity'}
                             <Menu.Item
                               class="cursor-pointer text-foreground"

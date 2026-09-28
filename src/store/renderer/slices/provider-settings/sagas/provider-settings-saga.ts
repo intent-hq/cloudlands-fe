@@ -15,6 +15,8 @@ import {
   toggleProvider,
 } from '../provider-settings-slice';
 
+import { providerFastModeSaga } from './provider-fast-mode-saga';
+
 const logger = createLogger('ProviderSettingsSaga');
 
 type ProviderSettingsUpdate = {
@@ -159,6 +161,7 @@ export function* providerSettingsSaga() {
   try {
     yield* all([
       call(persistProviderSettingsQueue, updates),
+      call(providerFastModeSaga),
       takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
       takeEvery(toggleProvider, queueToggleProviderWorker, updates),
       takeEvery(setProviderEnabled, queueSetProviderEnabledWorker, updates),

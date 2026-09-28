@@ -1,5 +1,6 @@
 // Success actions restore visible values; loaded/check flags and epochs may remain.
 // Newly introduced availability keys settle to unavailable because no remove action exists.
+import { setupProviderFastModePreview } from '../../../test/provider-fast-mode-preview';
 import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
@@ -27,6 +28,7 @@ import ProviderSelector from './ProviderSelector.svelte';
 export const previewProviders = [
   {
     id: 'codex',
+    supportsFastMode: true,
     displayName: 'Codex',
     shortName: 'Codex',
     command: 'codex',
@@ -35,6 +37,7 @@ export const previewProviders = [
   },
   {
     id: 'claude-code',
+    supportsFastMode: true,
     displayName: 'Claude Code',
     shortName: 'Claude',
     command: 'claude',
@@ -111,7 +114,20 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   id: 'provider-selector',
   title: 'Provider selector',
   defaultState: 'mixed',
-  states: { mixed: { props: {}, setup: setupProviderSelector } },
+  states: {
+    mixed: { props: {}, setup: setupProviderSelector },
+    'fast-mode': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreFastMode = setupProviderFastModePreview();
+        return () => {
+          restoreFastMode();
+          restoreProviders();
+        };
+      },
+    },
+  },
 });
 
 export default ProviderSelector;
