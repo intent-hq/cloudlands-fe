@@ -605,13 +605,7 @@
           ? 'hover'
           : 'rest',
   );
-  const edgeShadow = $derived(
-    ringState === 'drag'
-      ? 'inset 0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
-      : ringState === 'hover'
-        ? 'inset 0 0 0 1px hsl(var(--foreground) / 0.25), var(--shadow-surface-2)'
-        : 'inset 0 0 0 1px hsl(var(--foreground) / 0.18), var(--shadow-surface-2)',
-  );
+  const edgeShadow = 'inset 0 0 0 1px hsl(var(--border))';
   const composerStyle = $derived(
     `${
       isAutoExpand
