@@ -64,9 +64,17 @@ export const initialState: ProviderSettingsState = {
   pendingEnablementOverrides: {},
 };
 
-/** Optimistically applies one provider/model default pair; persistence is one atomic batch. */
+/** Request a provider/model default pair; the owning saga validates before accepting. */
 export const setAtomicDefaultModel = createAction<[payload: { providerId: string; model: string }]>(
   'providerSettings/setAtomicDefaultModel',
+);
+
+/** Validated domain events: reducers and persistence consume accepted choices only. */
+export const atomicDefaultModelAccepted = createAction<
+  [payload: { providerId: string; model: string }]
+>('providerSettings/atomicDefaultModelAccepted');
+export const activeProviderAccepted = createAction<[providerId: string]>(
+  'providerSettings/activeProviderAccepted',
 );
 
 function canBeDisabled(state: ProviderSettingsState, providerId: string): boolean {
@@ -74,10 +82,11 @@ function canBeDisabled(state: ProviderSettingsState, providerId: string): boolea
 }
 
 /**
- * User pick of the default provider (the provider leg of the default model
+ * Request a default provider (the provider leg of the default model
  * triple). The state lives in the model slice (`ModelState.defaultProviderId`
  * with a `pendingDefaultProviderId` hydration guard); the persistence saga
- * writes `model.defaultProvider` (PROTOCOL §5.12).
+ * validates the quick-action snapshot before emitting activeProviderAccepted,
+ * then writes `model.defaultProvider` (PROTOCOL §5.12).
  */
 export const setActiveProvider = createAction<[providerId: string]>(
   'providerSettings/setActiveProvider',

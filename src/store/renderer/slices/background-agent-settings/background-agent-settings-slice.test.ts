@@ -1,7 +1,14 @@
+import {
+  setActiveProvider,
+  setAtomicDefaultModel,
+} from '../provider-settings/provider-settings-slice';
 import { describe, it, expect } from 'vitest';
 import {
   backgroundAgentSettingsReducer,
   setDefaultModel,
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverride,
+  resetTypeOverride,
   setTypeOverride,
   clearTypeOverride,
   resetSettings,
@@ -66,6 +73,7 @@ describe('backgroundAgentSettingsReducer', () => {
   describe('resetSettings', () => {
     it('should reset to initial state', () => {
       const prev: BackgroundAgentSettingsState = {
+        ...initialState,
         defaultModel: 'sonnet4.5',
         typeOverrides: {
           commit: 'haiku4.5',
@@ -166,4 +174,62 @@ describe('backgroundAgentSettingsReducer', () => {
       expect(state.typeOverrides.commit).toBe('haiku4.5');
     });
   });
+});
+
+describe('independent effort settings', () => {
+  it('keeps effort when the model is changed or cleared, and clears both on action reset', () => {
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultReasoningEffort('medium'));
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeReasoningEffortOverride({ type: 'commit', effort: 'high' }),
+    );
+    expect(state.typeOverrides.commit).toBe('');
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeOverride({ type: 'commit', model: 'other' }),
+    );
+    state = backgroundAgentSettingsReducer(state, clearTypeOverride('commit'));
+    expect(state.typeReasoningEffortOverrides.commit).toBe('high');
+    state = backgroundAgentSettingsReducer(state, resetTypeOverride('commit'));
+    expect(state.typeReasoningEffortOverrides.commit).toBeUndefined();
+    expect(state.defaultReasoningEffort).toBe('medium');
+  });
+  it('restores older provider snapshots without leaking the outgoing effort', () => {
+    const state = backgroundAgentSettingsReducer(initialState, setDefaultReasoningEffort('high'));
+    const restored = backgroundAgentSettingsReducer(
+      state,
+      restoreProviderSettings({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    expect(restored.defaultReasoningEffort).toBe('');
+    expect(restored.typeReasoningEffortOverrides).toEqual({});
+  });
+});
+
+it('hydrates blank effort as inheritance without dropping future saved candidates', () => {
+  const state = backgroundAgentSettingsReducer(
+    initialState,
+    hydrateSettings({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      defaultReasoningEffort: '  ',
+      typeReasoningEffortOverrides: { commit: ' ', fast: 'future-level' },
+    }),
+  );
+  expect(state.defaultReasoningEffort).toBe('');
+  expect(state.typeReasoningEffortOverrides).toEqual({ fast: 'future-level' });
+});
+
+it('does not mutate provider snapshots or effort for unaccepted switch requests', () => {
+  expect(backgroundAgentSettingsReducer(initialState, setActiveProvider('codex'))).toBe(
+    initialState,
+  );
+  expect(
+    backgroundAgentSettingsReducer(
+      initialState,
+      setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' }),
+    ),
+  ).toBe(initialState);
 });

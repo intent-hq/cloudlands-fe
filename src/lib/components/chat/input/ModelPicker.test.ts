@@ -943,6 +943,56 @@ describe('ModelPicker combined reasoning mode', () => {
     });
   }
 
+  it('previews compatible shared effort while keeping Auto and independent model inheritance', async () => {
+    const onReasoningChange = vi.fn();
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        defaultModelId: 'codex:gpt-5.6-sol',
+        showDefaultOption: true,
+        showReasoning: true,
+        reasoningEffort: null,
+        defaultReasoningEffort: 'medium',
+        onReasoningChange,
+        onModelChange,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await screen.findByTestId('effort-picker-trigger');
+    const listbox = await openEffortSelect();
+    expect(
+      within(listbox)
+        .getByRole('option', { name: 'Default (Medium)' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    await selectEffort(listbox, 'High');
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('high'));
+    expect(onModelChange).not.toHaveBeenCalled();
+  });
+
+  it('does not present incompatible shared effort as applied', async () => {
+    const onReasoningChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        defaultModelId: 'codex:gpt-5.6-sol',
+        showDefaultOption: true,
+        showReasoning: true,
+        defaultReasoningEffort: 'xhigh',
+        onReasoningChange,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await screen.findByTestId('effort-picker-trigger');
+    const listbox = await openEffortSelect();
+    expect(
+      within(listbox).getByRole('option', { name: 'Auto' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(within(listbox).queryByRole('option', { name: /Extra high/ })).toBeNull();
+    expect(onReasoningChange).not.toHaveBeenCalled();
+  });
+
   const triggerBranches: Array<{
     name: string;
     props: { size?: 'xs'; isLocked?: boolean };
