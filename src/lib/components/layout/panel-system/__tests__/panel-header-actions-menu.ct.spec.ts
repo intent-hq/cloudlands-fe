@@ -488,7 +488,12 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
   await expect(trigger).toBeFocused();
   await page.clock.install();
   await trigger.click();
-  await menu.getByRole('menuitem', { name: 'Move panel left', exact: true }).click();
+  const leftArrow = await menu
+    .getByRole('menuitem', { name: 'Move panel left', exact: true })
+    .locator('svg')
+    .boundingBox();
+  if (!leftArrow) throw new Error('Missing visible left arrow');
+  await page.mouse.click(leftArrow.x + leftArrow.width / 2, leftArrow.y + leftArrow.height / 2);
   await expect(component).toHaveAttribute('data-move-left-count', '1');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
