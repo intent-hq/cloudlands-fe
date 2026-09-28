@@ -612,3 +612,59 @@ it.each([false, true])(
     });
   },
 );
+
+it.each([false, true])(
+  'settles provider intent when an unrelated revision overtakes its acknowledgement (atomic %s)',
+  async (atomic) => {
+    const writes: AppSettingChange[][] = [];
+    let release!: () => void;
+    request.mockImplementation(async (method, params) => {
+      if (method === 'settings.list') return { settings: initial, revision: 7 };
+      const changes = (params as { changes: AppSettingChange[] }).changes;
+      writes.push(changes);
+      const revision = writes.length === 1 ? 8 : 11;
+      if (writes.length === 1)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return { applied: changes, revision };
+    });
+    const dispatch = start();
+    await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+    dispatch(
+      atomic
+        ? setAtomicDefaultModel({ providerId: 'legacy', model: 'basic' })
+        : setActiveProvider('legacy'),
+    );
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    dispatch(settingsChangesReceived([{ path: 'notifications.volume', value: 0.25 }], 9));
+    release();
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+    );
+    expect(store.state.model.pendingDefaultProviderId).toBeNull();
+    dispatch(
+      settingsChangesReceived(
+        [
+          { path: 'model.defaultProvider', value: 'other' },
+          { path: 'quickActions.defaultModel', value: 'other-model' },
+          { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+        ],
+        10,
+      ),
+    );
+    expect(store.state.model.defaultProviderId).toBe('other');
+    expect(store.state.backgroundAgentSettings).toMatchObject({
+      providerId: 'other',
+      defaultModel: 'other-model',
+      defaultReasoningEffort: 'high',
+    });
+    dispatch(setTypeReasoningEffortOverride({ type: 'fast', effort: 'medium' }));
+    await vi.waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes[1]).toContainEqual({ path: 'model.defaultProvider', value: 'other' });
+    expect(writes[1]).toContainEqual({
+      path: 'quickActions.defaultReasoningEffort',
+      value: 'high',
+    });
+  },
+);
