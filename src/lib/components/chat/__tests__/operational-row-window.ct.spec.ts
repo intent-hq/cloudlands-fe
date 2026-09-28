@@ -264,32 +264,39 @@ test('panel teardown releases row and window observations', async ({ mount, page
   ).toBe(0);
 });
 
-test('measuring newly admitted rows preserves the visible scroll anchor', async ({ mount }) => {
-  const host = await mount(OperationalRowWindowHost);
-  await expect(host.getByText('Inspecting 0', { exact: true })).toBeVisible();
-  const anchor = await host.evaluate(async (node) => {
-    node.scrollTop = node.scrollHeight / 2;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const viewport = node.getBoundingClientRect();
-    const row = [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')].find(
-      (row) => {
-        const box = row.getBoundingClientRect();
-        return box.top >= viewport.top && box.bottom <= viewport.bottom;
-      },
+for (const zoom of [1, 2]) {
+  test(`measuring newly admitted rows preserves the scroll anchor at ${zoom * 100}%`, async ({
+    mount,
+  }) => {
+    const host = await mount(OperationalRowWindowHost);
+    await host.evaluate((node, scale) => {
+      node.style.zoom = String(scale);
+    }, zoom);
+    await expect(host.getByText('Inspecting 0', { exact: true })).toBeVisible();
+    const anchor = await host.evaluate(async (node) => {
+      node.scrollTop = node.scrollHeight / 2;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const viewport = node.getBoundingClientRect();
+      const row = [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')].find(
+        (row) => {
+          const box = row.getBoundingClientRect();
+          return box.top >= viewport.top && box.bottom <= viewport.bottom;
+        },
+      );
+      if (!row) throw new Error('No admitted anchor row');
+      return { key: row.dataset.operationalWindowKey, top: row.getBoundingClientRect().top };
+    });
+    await host.evaluate(async () => {
+      for (let frame = 0; frame < 30; frame++) await new Promise(requestAnimationFrame);
+    });
+    const top = await host.evaluate(
+      (node, key) =>
+        [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')]
+          .find((row) => row.dataset.operationalWindowKey === key)
+          ?.getBoundingClientRect().top,
+      anchor.key,
     );
-    if (!row) throw new Error('No admitted anchor row');
-    return { key: row.dataset.operationalWindowKey, top: row.getBoundingClientRect().top };
+    expect(top).toBeDefined();
+    expect(Math.abs((top ?? Infinity) - anchor.top)).toBeLessThanOrEqual(1);
   });
-  await host.evaluate(async () => {
-    for (let frame = 0; frame < 30; frame++) await new Promise(requestAnimationFrame);
-  });
-  const top = await host.evaluate(
-    (node, key) =>
-      [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')]
-        .find((row) => row.dataset.operationalWindowKey === key)
-        ?.getBoundingClientRect().top,
-    anchor.key,
-  );
-  expect(top).toBeDefined();
-  expect(Math.abs((top ?? Infinity) - anchor.top)).toBeLessThanOrEqual(1);
-});
+}
