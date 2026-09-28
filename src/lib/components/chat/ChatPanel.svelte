@@ -180,6 +180,7 @@
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
+  import ScrollToBottomButton from './ScrollToBottomButton.svelte';
   import NewMessagesDivider from './NewMessagesDivider.svelte';
   import {
     resolveNewMessagesDividerAnchor,
@@ -730,6 +731,7 @@
   const cachedScrollRestoreTop =
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
+  let showScrollToBottom = $state(false);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
   // Full-history user-message index (agent.listUserMessages), fetched when the
   // navigator popover opens and cached for this agent (the panel is keyed per
@@ -4697,7 +4699,9 @@
   onMount(() => {
     scrollButtonVisibility = createScrollBottomButtonVisibility({
       atBottomThreshold: SCROLL_BOTTOM_THRESHOLD,
-      onVisibilityChange: () => {},
+      onVisibilityChange: (visible) => {
+        showScrollToBottom = visible;
+      },
       onRelock: flashLockConfirmation,
     });
     scrollButtonVisibility.update(distanceFromBottom);
@@ -5616,7 +5620,7 @@
     animateScrollTo(
       getContainer,
       Math.max(0, container.scrollHeight - container.clientHeight),
-      150,
+      spring.moderate.settleMs,
       () => {
         if (!getContainer()) return;
         shouldFollowBottom = true;
@@ -6980,6 +6984,16 @@
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </div>
     </div>
+    {#if isActive && showScrollToBottom && !deferTranscriptReveal}
+      <div
+        class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
+        style:padding-inline-end="{scrollbarGutterWidth}px"
+      >
+        <div class="pointer-events-auto">
+          <ScrollToBottomButton floating onclick={scrollToBottom} />
+        </div>
+      </div>
+    {/if}
     {#if showLockConfirmation}
       <!-- Transient re-lock confirmation: purely decorative feedback that
            auto-follow re-engaged on reaching the bottom. Never interactive:
