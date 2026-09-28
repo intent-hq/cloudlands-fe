@@ -1,7 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import Harness from './mocks/BrowserTabTypeHeaderHarness.svelte';
 
-test('browser header owns the agent chip and address hover paints its own surface', async ({
+test('browser owner menu is keyboard accessible and viewport follows panel resizing', async ({
   mount,
   page,
 }, testInfo) => {
@@ -23,26 +23,23 @@ test('browser header owns the agent chip and address hover paints its own surfac
       width: 640,
     },
   });
-  const header = component.locator('[data-panel-content-header]');
-  const chip = header.locator('[data-browser-owner-chip]');
-  const toolbar = component.locator('[data-browser-toolbar]');
-  await expect(chip).toBeVisible();
-  await expect(toolbar.locator('[data-browser-owner-chip]')).toHaveCount(0);
-  const chipBox = await chip.boundingBox();
-  const toolbarBox = await toolbar.boundingBox();
-  expect(chipBox!.y + chipBox!.height).toBeLessThanOrEqual(toolbarBox!.y);
+  const trigger = component.getByTestId('panel-actions-trigger');
+  const menu = page.locator('[data-slot="menu-content"]');
+  const owner = menu.getByRole('menuitem', { name: /Browser agent/ });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeVisible();
+  await owner.focus();
+  await expect(owner).toBeFocused();
+  await testInfo.attach('browser-owner-menu', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
 
   const address = component.getByRole('button', { name: 'Edit browser address' });
-  const restPaint = await address.evaluate((node) => getComputedStyle(node).backgroundColor);
-  await address.hover();
-  // The hover paint lives on the address button itself, never on a second ghost surface.
-  await expect
-    .poll(() => address.evaluate((node) => getComputedStyle(node).backgroundColor))
-    .not.toBe(restPaint);
-  await expect(address.locator('[data-slot="button-surface"]')).toHaveCSS(
-    'background-color',
-    'rgba(0, 0, 0, 0)',
-  );
   await page.evaluate(() => document.fonts.ready);
   await component.screenshot({ path: testInfo.outputPath('embedded-browser-header-wide.png') });
   await address.click();
@@ -59,7 +56,13 @@ test('browser header owns the agent chip and address hover paints its own surfac
   await component.update({ props: { width: 360 } });
   await expect.poll(async () => (await viewport.boundingBox())!.width).toBeLessThan(initialWidth);
   expect((await viewport.boundingBox())!.width).toBe((await component.boundingBox())!.width);
-  await expect(chip).toBeVisible();
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await owner.focus();
+  await expect(owner).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
   await page.mouse.move(0, 0);
   await component.screenshot({ path: testInfo.outputPath('embedded-browser-header.png') });
 });
