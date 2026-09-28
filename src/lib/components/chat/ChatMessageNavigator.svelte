@@ -325,7 +325,7 @@
     icon={faArrowDown}
     label={m.chat_chatPanel_scrollToBottom_tooltip()}
     disabled={isAtBottom}
-    onclick={onScrollToBottom}
+    onSelect={onScrollToBottom}
     data-testid="chat-scroll-to-bottom-button"
   />
 {:else}

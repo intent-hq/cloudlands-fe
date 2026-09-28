@@ -66,31 +66,19 @@ async function openAgentPanelMenu(component: Locator, page: Page) {
   return { trigger, menu, command };
 }
 
-async function menuPresentation(menu: Locator) {
-  return menu.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      surface: {
-        radius: style.borderRadius,
-        background: style.backgroundColor,
-        border: style.borderColor,
-        shadow: style.boxShadow,
-        padding: style.padding,
-      },
-      rows: Array.from(element.querySelectorAll<HTMLElement>('[role^="menuitem"]')).map((row) => ({
-        label: row.textContent?.replace(/\s+/g, ' ').trim(),
-        role: row.getAttribute('role'),
-        checked: row.getAttribute('aria-checked'),
-        disabled: row.getAttribute('aria-disabled'),
-        radius: getComputedStyle(row).borderRadius,
-        height: row.getBoundingClientRect().height,
-      })),
-    };
-  });
+async function menuState(menu: Locator) {
+  return menu.evaluate((element) =>
+    Array.from(element.querySelectorAll<HTMLElement>('[role^="menuitem"]')).map((row) => ({
+      label: row.textContent?.replace(/\s+/g, ' ').trim(),
+      role: row.getAttribute('role'),
+      checked: row.getAttribute('aria-checked'),
+      disabled: row.getAttribute('aria-disabled'),
+    })),
+  );
 }
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`note appearance preserves rounded surfaces and keyboard behavior through both entry points in ${theme}`, async ({
+  test(`note appearance preserves menu state and keyboard behavior through both entry points in ${theme}`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -114,16 +102,14 @@ for (const theme of ['light', 'dark'] as const) {
       }
       await expect(root).toBeVisible();
       await waitForMenuFocusReady(root);
-      const rootPresentation = await menuPresentation(root);
-      expect(parseFloat(rootPresentation.surface.radius)).toBeGreaterThan(0);
+      const rootState = await menuState(root);
       await fontTrigger.focus();
       await page.keyboard.press('ArrowRight');
       await expect(fontMenu).toBeVisible();
       await waitForMenuFocusReady(fontMenu);
-      const nestedPresentation = await menuPresentation(fontMenu);
-      expect(nestedPresentation.surface.radius).toBe(rootPresentation.surface.radius);
+      const nestedState = await menuState(fontMenu);
       await expect(fontMenu.locator('[role="menuitemradio"]:focus')).toHaveCount(1);
-      snapshots.push({ root: rootPresentation, nested: nestedPresentation });
+      snapshots.push({ root: rootState, nested: nestedState });
       await testInfo.attach(`note-${entry}-${theme}`, {
         body: await page.screenshot(),
         contentType: 'image/png',

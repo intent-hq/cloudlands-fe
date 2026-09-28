@@ -74,7 +74,7 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
 test('additional action dismisses the menu while header zoom and close remain accessible', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   const component = await mount(SimpleAgentPanelHeaderHost, {
     props: { fullActions: true, stackCount: 2, width: 280 },
     hooksConfig,
@@ -92,6 +92,10 @@ test('additional action dismisses the menu while header zoom and close remain ac
     'aria-disabled',
     'true',
   );
+  await testInfo.attach('scroll-action-disabled-after-selection', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await page.keyboard.press('Escape');
   await component.locator('[data-panel-tabless-header]').dblclick({ position: { x: 2, y: 2 } });
   await expect(component).toHaveAttribute('data-zoom-count', '1');

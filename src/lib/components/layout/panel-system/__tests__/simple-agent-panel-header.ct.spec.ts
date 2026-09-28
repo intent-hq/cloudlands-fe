@@ -5,42 +5,18 @@ import {
   takeConsoleErrors,
 } from '../../../../../test/ct-console-errors';
 import SimpleAgentPanelHeaderHost from './mocks/SimpleAgentPanelHeaderHost.svelte';
+import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
 
 failOnConsoleErrors(test);
 
-// The full-actions header's panel menu mounts the real WorkspaceActionsMenu,
-// which resolves its editor/reveal paths through `workspace:get`. Answer in
-// the `{ success, data }` envelope the workspaces seeder serves so the lookup
-// does not fall back on a caught UnbridgedMockIpcChannelError
-// (intent-hq/intent#5276).
-const hooksConfig = {
-  mockIpc: {
-    'workspace:get': {
-      success: true,
-      data: {
-        id: 'simple-agent-header-workspace',
-        title: 'Simple agent header workspace',
-        status: 'active',
-        worktreePath: '/tmp/simple-agent-header-workspace',
-      },
-    },
-  },
-};
-
-// Negative harness check (intent-hq/intent#5276): without the `workspace:get`
-// mock, opening the panel actions menu mounts the real WorkspaceActionsMenu,
-// whose path lookup fails, is caught, and surfaces through the console-error
-// guard.
+// Mount the lookup directly: web panel headers omit native editor commands.
 test('fails the console-error guard when the workspace:get mock is missing', async ({
   mount,
   page,
 }) => {
-  const component = await mount(SimpleAgentPanelHeaderHost, {
-    props: { fullActions: true, stackCount: 2, width: 560 },
+  await mount(WorkspaceActionsMenu, {
+    props: { workspaceId: 'simple-agent-header-workspace', filePath: '.' },
   });
-  const header = component.locator('[data-panel-tabless-header]');
-  await header.getByTestId('panel-actions-trigger').click();
-  await expect(page.getByRole('menu')).toBeVisible();
   await expect
     .poll(() => peekConsoleErrors(page).some((text) => text.includes("channel 'workspace:get'")))
     .toBe(true);
@@ -58,7 +34,6 @@ for (const width of [190, 560]) {
   test(`keeps selector and controls reachable at ${width}px`, async ({ mount, page }, testInfo) => {
     const component = await mount(SimpleAgentPanelHeaderHost, {
       props: { fullActions: true, stackCount: 2, width },
-      hooksConfig,
     });
     const header = component.locator('[data-panel-tabless-header]');
     const selector = header.getByTestId('pane-stack-selector-trigger');
