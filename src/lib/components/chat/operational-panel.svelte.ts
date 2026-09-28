@@ -344,6 +344,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
             revision: completedRevision,
             visible:
               !hidden &&
+              clipBottom > clipTop &&
+              clipRight > clipLeft &&
               !!targetRect &&
               targetRect.height > 0 &&
               targetRect.width > 0 &&
@@ -396,7 +398,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       }
       // Admission and retained heights do not certify a current node's position.
       // Publish navigation evidence only from a generation-accepted read.
-      observations = nextObservations;
+      // Anchor corrections below move the scrollport after these rectangles
+      // were read. Certify their new position in a subsequent batched read.
+      observations = corrections.size ? new Map() : nextObservations;
       for (const measurement of measurements) heights.set(measurement.key, measurement.height);
       rebuild();
       policy.measure(measurements);
@@ -416,7 +420,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       // The document timeline is the browser's shared RAF timestamp. All
       // nested roots are admitted together, after the batched geometry reads.
       policy.advanceFrame(Number(document.timeline?.currentTime ?? performance.now()));
-      if (publish().pendingKeys.length) schedule();
+      if (publish().pendingKeys.length || corrections.size) schedule();
     });
   }
   return {

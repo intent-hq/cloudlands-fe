@@ -38,6 +38,7 @@ beforeEach(() => {
     ready: (panel) => {
       vi.spyOn(panel, 'locate').mockImplementation(() => ({
         node: undefined,
+        observation: undefined,
         admitted,
         kind: 'tool',
         scrollRoot: undefined,

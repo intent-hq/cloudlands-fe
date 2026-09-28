@@ -564,6 +564,8 @@ describe('completed navigation geometry', () => {
       observation: { visible: false },
     });
     expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(requested);
+    // Model the scroll responsible for moving the actual row into the clip.
+    document.documentElement.scrollTop = 1100;
     vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 100, 600, 28));
     const afterScroll = panel.refreshGeometry();
     expect(panel.locate(entry.key)!.observation!.revision).toBeLessThanOrEqual(afterScroll);
@@ -624,4 +626,51 @@ describe('completed navigation geometry', () => {
     panel.dispose();
     expect(panel.locate(entry.key)).toBeUndefined();
   });
+});
+
+it('does not certify visibility through disjoint vertical clipping ancestors', () => {
+  const outer = node();
+  outer.style.overflowY = 'hidden';
+  vi.mocked(outer.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 50));
+  const inner = node(100);
+  inner.style.overflowY = 'hidden';
+  vi.mocked(inner.getBoundingClientRect).mockReturnValue(new DOMRect(0, 100, 600, 100));
+  const root = node();
+  const row = node();
+  vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 200));
+  outer.append(inner);
+  inner.append(root);
+  root.append(row);
+  panel.attach('message', root, [entry], vi.fn());
+  panel.watch(row, entry.key);
+  panel.pin(entry.key, true);
+  frame();
+  expect(panel.locate(entry.key)?.admitted).toBe(true);
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
+});
+
+it('refreshes navigation evidence after an anchor correction changes the read scroll position', () => {
+  const scroll = document.documentElement;
+  Object.defineProperty(document, 'scrollingElement', { configurable: true, value: scroll });
+  scroll.scrollTop = 0;
+  let layoutTop = 100;
+  const root = node();
+  const row = node();
+  for (const element of [root, row])
+    vi.mocked(element.getBoundingClientRect).mockImplementation(
+      () => new DOMRect(0, layoutTop - scroll.scrollTop, 600, 28),
+    );
+  root.append(row);
+  panel.attach('message', root, [entry], vi.fn());
+  panel.watch(row, entry.key);
+  frame();
+  const previous = panel.locate(entry.key)!.observation!.revision;
+  layoutTop = 200;
+  panel.refreshGeometry();
+  frame();
+  expect(scroll.scrollTop).toBe(100);
+  expect(panel.locate(entry.key)?.observation).toBeUndefined();
+  frame();
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
+  expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(previous);
 });
