@@ -21,9 +21,10 @@
       id: 'active',
       type: kind === 'spec' ? 'note' : kind,
       title,
+      closable: true,
       noteId: kind === 'spec' ? 'spec' : undefined,
     },
-    { id: 'other', type: 'note', title: 'Other note' },
+    { id: 'other', type: 'note', title: 'Other note', closable: true },
   ]);
 </script>
 
