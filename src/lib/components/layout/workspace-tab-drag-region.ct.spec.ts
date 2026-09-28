@@ -91,7 +91,14 @@ test('overflowing tabs leave the empty left titlebar gap draggable after scrolli
   await expectClippedRegions();
   await page.setViewportSize({ width: 660, height: 400 });
   await expectClippedRegions();
-  await component.update({ sidebarWidth: 340 });
+  const gapBeforeSidebarResize = (await dragRegionGeometry(titlebar)).gap;
+  await component.update({ props: { sidebarWidth: 340 } });
+  await component.locator('[data-titlebar-workspace-controls]').evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+  expect((await dragRegionGeometry(titlebar)).gap.right).toBeGreaterThan(
+    gapBeforeSidebarResize.right,
+  );
   await expectClippedRegions();
   await expect(component.locator('[data-titlebar-settings]')).toHaveCSS(
     '-webkit-app-region',
