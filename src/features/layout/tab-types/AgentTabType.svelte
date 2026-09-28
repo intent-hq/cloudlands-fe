@@ -12,6 +12,8 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { subscribeToAgent } from '$features/agent/browser';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
+  import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
@@ -62,6 +64,7 @@
   import {
     deleteAgentWithUndoRequested,
     retireAgentRequested,
+    agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -163,6 +166,12 @@
   const canReplaceAgent = $derived(isReplaceAgentEligible($agent$));
   let replaceAgentModalOpen = $state(false);
   let retireAgentModalOpen = $state(false);
+  const retirementSupported$ = selectAgentRetirementSupported();
+  const connectionGeneration$ = selectDaemonConnectionGeneration();
+  $effect(() => {
+    $connectionGeneration$;
+    void appStore.dispatch(agentRetirementSupportRequested());
+  });
 
   // Raw specialist id (not the display name) — interpolated into the built
   // hand-off instruction's `ws.agent.create` call shape.
@@ -345,7 +354,7 @@
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
-  {#if !$hidesAgentLifecycleActions$ && $agent$ && !$agent$.retiredAt}
+  {#if $retirementSupported$ && $agent$ && !$agent$.retiredAt}
     <Menu.CommandItem
       icon={faBoxArchive}
       iconWeight="regular"

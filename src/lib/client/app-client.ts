@@ -920,6 +920,8 @@ export interface AgentsClient {
   restore(agentId: string, workspaceId?: string): Promise<MutationResult>;
   /** Retire directly without a model turn; preserves the conversation. */
   retire(agentId: string, workspaceId?: string): Promise<AgentRetireResult>;
+  /** Explicit hello capability; independent of model peer-agent features. */
+  supportsRetirement(connectionGeneration?: number): Promise<boolean>;
   /**
    * Retry a failed agent spawn (`agent.retry`). Only valid when the agent
    * status is `error` (after spawn exhaustion); returns `{ ok: false, error }`

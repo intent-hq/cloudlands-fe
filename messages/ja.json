@@ -6770,5 +6770,5 @@
   "modals_retireAgent_description": "「{name}」を引退させますか？実行中のターンを停止し、フック、PR モニター、その他の起動サブスクリプションを解除します。会話は保持され、後でエージェントを復元できます。復元しても、解除したフックやモニターは再開されません。",
   "modals_retireAgent_confirm_label": "エージェントを引退",
   "agent_mutation_retireFailed_error": "エージェントを引退させられませんでした",
-  "agent_mutation_retireForbidden_error": "このエージェントを引退させる権限がありません。"
+  "agent_mutation_retireUnavailable_error": "このデーモンはエージェントの引退に対応していません。"
 }

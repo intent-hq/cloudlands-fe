@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   resolveProposal: vi.fn(),
   restore: vi.fn(),
   retire: vi.fn(),
+  supportsRetirement: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
   dismiss: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('$lib/client', () => ({
       resolveProposal: mocks.resolveProposal,
       restore: mocks.restore,
       retire: mocks.retire,
+      supportsRetirement: mocks.supportsRetirement,
     },
   },
 }));
@@ -65,9 +67,12 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
+import { initialState as daemonHealthInitialState } from '../../daemon-health/daemon-health-slice';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
   activateAgentRequested,
+  agentRetirementSupportRequested,
+  agentRetirementSupportReceived,
   deleteAgentWithUndoRequested,
   deleteAgentSessionRequested,
   renameAgentSessionRequested,
@@ -154,6 +159,7 @@ const GUEST_SESSION: GuestSessionRecord = {
 function windowIdentity(guest = false) {
   return {
     workspace: { ...workspaceInitialState, hasLoaded: true },
+    daemonHealth: { ...daemonHealthInitialState },
     connections: guest
       ? connectionsReducer(
           connectionsInitialState,
@@ -209,6 +215,7 @@ describe('agentMutationSaga', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.deleteAgent.mockResolvedValue({ success: true });
+    mocks.supportsRetirement.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -229,6 +236,30 @@ describe('agentMutationSaga', () => {
     expect(mocks.get).toHaveBeenCalledWith(A1);
     const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
     expect(upsert.payload[0][0]).toEqual(expect.objectContaining({ id: A1, messages }));
+    await stop(task);
+  });
+
+  it('publishes retirement support only for the probed connection', async () => {
+    let resolve!: (supported: boolean) => void;
+    mocks.supportsRetirement.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((done) => {
+          resolve = done;
+        }),
+    );
+    const { channel, dispatched, task, getState } = start();
+    const action = agentRetirementSupportRequested();
+    channel.put(action);
+    getState().daemonHealth.connectionGeneration++;
+    resolve(true);
+    await expect(action.promise).resolves.toBe(true);
+    expect(dispatched.some((a) => a.type === agentRetirementSupportReceived.type)).toBe(false);
+    const next = agentRetirementSupportRequested();
+    channel.put(next);
+    await next.promise;
+    expect(dispatched.find((a) => a.type === agentRetirementSupportReceived.type)?.payload).toEqual(
+      [1, true],
+    );
     await stop(task);
   });
 
@@ -256,8 +287,19 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('refuses retirement in a guest window without a wire request', async () => {
+  it('allows collaborators to steer retirement', async () => {
+    mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
     const { channel, task } = start(undefined, { guest: true });
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    await stop(task);
+  });
+
+  it('refuses unsupported retirement before sending the mutation', async () => {
+    mocks.supportsRetirement.mockResolvedValue(false);
+    const { channel, task } = start();
     const action = retireAgentRequested(WS, A1);
     channel.put(action);
     await expect(action.promise).rejects.toThrow();

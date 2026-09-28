@@ -5,6 +5,14 @@ import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
 
+export const selectAgentRetirementSupported = store.createSelector((state) => {
+  const support = state.workspaceAgents.retirementSupport;
+  return (
+    support?.connectionGeneration === state.daemonHealth.connectionGeneration &&
+    support?.supported === true
+  );
+});
+
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
 }

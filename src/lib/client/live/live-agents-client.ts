@@ -168,6 +168,25 @@ function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefine
 }
 
 export class LiveAgentsClient implements AgentsClient {
+  private retirementCapabilityRequest: { generation: number; promise: Promise<boolean> } | null =
+    null;
+
+  supportsRetirement(connectionGeneration = 0): Promise<boolean> {
+    if (this.retirementCapabilityRequest?.generation !== connectionGeneration) {
+      const promise = backendRequest<{
+        server?: { capabilities?: { agentRetire?: number } };
+      }>('client.hello', {})
+        .then((result) => result?.server?.capabilities?.agentRetire === 1)
+        .catch(() => false)
+        .finally(() => {
+          if (this.retirementCapabilityRequest?.promise === promise)
+            this.retirementCapabilityRequest = null;
+        });
+      this.retirementCapabilityRequest = { generation: connectionGeneration, promise };
+    }
+    return this.retirementCapabilityRequest.promise;
+  }
+
   async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;

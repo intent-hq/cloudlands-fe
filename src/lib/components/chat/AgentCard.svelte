@@ -19,10 +19,12 @@
     ensureAgentSessionLoaded,
     renameAgentSessionRequested,
     retireAgentRequested,
+    agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
     stopAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
+  import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
@@ -199,6 +201,7 @@
   // Replace Agent modal (opened from the context menu when eligible).
   let replaceAgentModalOpen = $state(false);
   let retireAgentModalOpen = $state(false);
+  const retirementSupported$ = selectAgentRetirementSupported();
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -321,11 +324,8 @@
     const position = getSidebarContextPosition(e);
     if (!position) return;
     contextMenu = position;
-    // The `agent.list` row this card renders from omits the detail-only
-    // fields (§5.5 list projection) the menu gates on — `harnessFeatures`
-    // drives both "Replace agent" and the harness modal. Pull the detail
-    // read on open (single-flight per agent in the read seam); the menu
-    // items recompute reactively once it lands.
+    void appStore.dispatch(agentRetirementSupportRequested());
+    // Read detail-only menu fields on demand; items update when they arrive.
     const wsId = $agent$?.workspaceId ?? workspace?.id;
     if (wsId) {
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
@@ -473,7 +473,7 @@
     const hidesDelete =
       !!deleteWorkspaceId &&
       selectHidesAgentLifecycleActions.select(appStore.state, deleteWorkspaceId);
-    if (!readOnly && !hidesDelete && deleteWorkspaceId && $agent$ && !$agent$.retiredAt) {
+    if ($retirementSupported$ && deleteWorkspaceId && $agent$ && !$agent$.retiredAt) {
       items.push({
         id: 'retire-agent',
         label: m.modals_retireAgent_confirm_label(),

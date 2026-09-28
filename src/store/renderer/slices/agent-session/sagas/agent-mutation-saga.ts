@@ -43,6 +43,8 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   activateAgentRequested,
+  agentRetirementSupportRequested,
+  agentRetirementSupportReceived,
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
   removeAgent,
@@ -63,6 +65,7 @@ import {
 } from '../agent-session-slice';
 import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
 import { selectAgentSession } from '../agent-session-selectors';
+import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
 import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
 
 const logger = createLogger('AgentMutationSaga');
@@ -165,12 +168,33 @@ function* restoreHiddenSession(wsId: string, session: StoredAgentSession): SagaG
   yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
 }
 
+function* loadRetirementSupport(
+  action: ReturnType<typeof agentRetirementSupportRequested>,
+): SagaGenerator<void> {
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  let supported = false;
+  try {
+    supported = yield* call([appClient.agents, appClient.agents.supportsRetirement], generation);
+    if (generation === (yield* selectDaemonConnectionGeneration.effect())) {
+      yield* put(agentRetirementSupportReceived(generation, supported));
+    }
+  } catch {
+    supported = false;
+  } finally {
+    yield* put(action.success(supported));
+  }
+}
+
 function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    if (yield* selectHidesAgentLifecycleActions.effect(wsId)) {
-      throw new Error(m.agent_mutation_retireForbidden_error());
+    const generation = yield* selectDaemonConnectionGeneration.effect();
+    if (
+      !(yield* call([appClient.agents, appClient.agents.supportsRetirement], generation)) ||
+      generation !== (yield* selectDaemonConnectionGeneration.effect())
+    ) {
+      throw new Error(m.agent_mutation_retireUnavailable_error());
     }
     const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
@@ -752,6 +776,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(restoreAgentSessionRequested, restoreAgent),
     takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
     takeEvery(retireAgentRequested, retireAgent),
+    takeEvery(agentRetirementSupportRequested, loadRetirementSupport),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
     takeEvery(renameAgentSessionRequested, renameAgent),

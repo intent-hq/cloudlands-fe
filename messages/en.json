@@ -6770,5 +6770,5 @@
   "modals_retireAgent_description": "Retire “{name}”? This stops any running turn and cancels hooks, PR monitors, and other wake subscriptions. The conversation is preserved, and you can restore the agent later. Restoring does not restart cancelled hooks or monitors.",
   "modals_retireAgent_confirm_label": "Retire Agent",
   "agent_mutation_retireFailed_error": "Failed to retire agent",
-  "agent_mutation_retireForbidden_error": "You do not have permission to retire this agent."
+  "agent_mutation_retireUnavailable_error": "This daemon does not support retiring agents."
 }

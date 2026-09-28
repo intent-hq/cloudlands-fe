@@ -123,6 +123,8 @@ export interface WorkspaceAgentState {
 export type LazyAgentListBin = Exclude<AgentListBin, 'topLevel'>;
 
 export interface WorkspaceAgentsState {
+  /** Connection-scoped read-through capability, invalidated by daemon reconnects. */
+  retirementSupport?: { connectionGeneration: number; supported: boolean };
   byWorkspaceId: Record<string, WorkspaceAgentState>;
 }
 
@@ -590,6 +592,14 @@ export const restoreAgentSessionRequested = createAsyncAction<
   AgentSession | null
 >('workspaceAgents/restoreAgentSession', 'workspaceAgents/restoreAgentSessionRequested');
 
+export const agentRetirementSupportRequested = createAsyncAction<[], boolean>(
+  'workspaceAgents/agentRetirementSupport',
+  'workspaceAgents/agentRetirementSupportRequested',
+);
+export const agentRetirementSupportReceived = createAction<
+  [connectionGeneration: number, supported: boolean]
+>('workspaceAgents/agentRetirementSupportReceived');
+
 /** Direct user lifecycle action; never sends a model message. */
 export const retireAgentRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/retireAgent',
@@ -608,6 +618,13 @@ export const restoreRetiredAgentRequested = createAsyncAction<
 >('workspaceAgents/restoreRetiredAgent', 'workspaceAgents/restoreRetiredAgentRequested');
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
+workspaceAgentsReducer.with(
+  agentRetirementSupportReceived,
+  (state, { payload: [connectionGeneration, supported] }) => ({
+    ...state,
+    retirementSupport: { connectionGeneration, supported },
+  }),
+);
 workspaceAgentsReducer.with(setAgents, (state, { payload: [wsId, agents] }) => {
   const workspaceState = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, reconcileWorkspaceAgentSnapshot(workspaceState, agents));

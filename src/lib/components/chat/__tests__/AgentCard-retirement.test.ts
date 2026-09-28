@@ -18,6 +18,8 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { agentRetirementSupportRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import {
   replaceWorkspaceList,
@@ -64,6 +66,8 @@ async function openConfirmation() {
 beforeEach(() => {
   store.init();
   backend = installMockBackend();
+  backend.onRequest('client.hello', () => ({ server: { capabilities: { agentRetire: 1 } } }));
+  store.dispatch(connectionStatusChanged('connected'));
   store.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   store.dispatch(replaceWorkspaceList([workspace]));
   store.dispatch(setWorkspaceHasLoaded(true));
@@ -81,9 +85,9 @@ describe('AgentCard direct retirement', () => {
   it('opens and cancels without a request even when model peer agents are disabled', async () => {
     render(AgentCard, { agentId, workspace });
     await openConfirmation();
-    expect(backend.requests).toEqual([]);
+    expect(backend.requests.filter((r) => r.method !== 'client.hello')).toEqual([]);
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(backend.requests).toEqual([]);
+    expect(backend.requests.filter((r) => r.method !== 'client.hello')).toEqual([]);
     expect(selectAgentSession.select(store.state, agentId)?.retiredAt).toBeUndefined();
   });
 
@@ -102,9 +106,11 @@ describe('AgentCard direct retirement', () => {
     await fireEvent.click(confirm);
     await fireEvent.click(confirm);
     expect(selectAgentSession.select(store.state, agentId)?.retiredAt).toBeUndefined();
-    expect(backend.requests).toEqual([
-      { method: 'agent.retire', params: { agentId, workspaceId: workspace.id } },
-    ]);
+    await waitFor(() =>
+      expect(backend.requests.filter((r) => r.method !== 'client.hello')).toEqual([
+        { method: 'agent.retire', params: { agentId, workspaceId: workspace.id } },
+      ]),
+    );
     resolve({ success: true, retiredAt });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(selectAgentSession.select(store.state, agentId)?.retiredAt).toBe(retiredAt);
@@ -123,19 +129,33 @@ describe('AgentCard direct retirement', () => {
     expect(selectAgentSession.select(store.state, agentId)?.retiredAt).toBeUndefined();
   });
 
-  it.each(['retired', 'collaborator', 'read-only'])(
+  it('lets a collaborator confirm retirement and surfaces authorization failures', async () => {
+    store.dispatch(replaceWorkspaceList([{ ...workspace, myRole: 'collaborator' }]));
+    backend.onRequest('agent.retire', () => {
+      throw new Error('Forbidden: membership revoked');
+    });
+    render(AgentCard, { agentId, workspace });
+    await openConfirmation();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Forbidden');
+    expect(selectAgentSession.select(store.state, agentId)?.retiredAt).toBeUndefined();
+  });
+
+  it.each(['retired', 'unsupported', 'read-only'])(
     'withholds retirement for %s cards',
     async (state) => {
       if (state === 'retired') {
         store.dispatch(removeSession(agentId));
         seed({ retiredAt });
       }
-      if (state === 'collaborator')
-        store.dispatch(replaceWorkspaceList([{ ...workspace, myRole: 'collaborator' }]));
+      if (state === 'unsupported') {
+        backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+        await store.dispatch(agentRetirementSupportRequested());
+      }
       render(AgentCard, { agentId, workspace, readOnly: state === 'read-only' });
       await openMenu();
       await waitFor(() => expect(screen.queryByText('Retire Agent')).toBeNull());
-      expect(backend.requests).toEqual([]);
+      expect(backend.requests.filter((r) => r.method !== 'client.hello')).toEqual([]);
     },
   );
 });
