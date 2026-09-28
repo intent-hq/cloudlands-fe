@@ -974,10 +974,12 @@
         isLoadingLinear = true;
       }
 
-      // Fetch both assigned and created issues for grouping
+      // Keep the default groups separate from the active search when rehydrating.
+      const query = committedQueries['linear'];
       const [assignedApplied, createdApplied] = await Promise.all([
         linearAssignedPager.refresh(''),
         linearCreatedPager.refresh(''),
+        ...(query ? [linearSearchPager.refresh(query)] : []),
       ]);
 
       // Update cache (initial unfiltered page only); only when both fetches
@@ -1001,8 +1003,10 @@
     } catch (error) {
       logger.error('Failed to load Linear issues', error as Error);
     } finally {
-      isLoadingLinear = false;
-      isRefreshingLinear = false;
+      if (context.isCurrent()) {
+        isLoadingLinear = false;
+        isRefreshingLinear = false;
+      }
     }
   }
 
@@ -1016,9 +1020,10 @@
 
       if (!isSentryAuthenticated) return;
 
-      // Check cache and populate immediately if valid
+      const query = committedQueries['sentry'];
+      // Default-list cache entries must never seed a committed search.
       const cached =
-        isCacheValid(issueCache.sentry) && issueCache.sentry.data.issues.length > 0
+        query === '' && isCacheValid(issueCache.sentry) && issueCache.sentry.data.issues.length > 0
           ? issueCache.sentry.data
           : null;
 
@@ -1029,11 +1034,11 @@
         isLoadingSentry = true;
       }
 
-      const applied = await sentryPager.refresh('');
+      const applied = await sentryPager.refresh(query);
 
       // Update cache (initial unfiltered page only); skip if this fetch
       // failed or a search superseded it while in flight
-      if (context.isCurrent() && applied && committedQueries['sentry'] === '') {
+      if (context.isCurrent() && applied && query === '' && committedQueries['sentry'] === '') {
         issueCache.sentry = {
           data: { issues: sentryPager.state.items, nextToken: sentryPager.state.nextToken },
           timestamp: Date.now(),
@@ -1044,8 +1049,10 @@
     } catch (error) {
       logger.error('Failed to load Sentry issues', error as Error);
     } finally {
-      isLoadingSentry = false;
-      isRefreshingSentry = false;
+      if (context.isCurrent()) {
+        isLoadingSentry = false;
+        isRefreshingSentry = false;
+      }
     }
   }
 
