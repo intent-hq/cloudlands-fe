@@ -2,6 +2,7 @@
 name: Tailcat native fixture controls
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
     branches: [main]
     paths:
       - '.github/workflows/tailcat-native.yml'
@@ -16,7 +17,19 @@ concurrency:
   cancel-in-progress: false
 jobs:
   saved-tailcat:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # This comparison measures one historical source pair. Check admission before
+    # allocating matrix runners; later PRs and later commits deliberately skip it.
+    # In particular, the workflow-scoping correction itself is not a new candidate.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.repository == 'intent-hq/cloudlands-fe' &&
+      (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened') &&
+      github.event.pull_request.number == 2970 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'fix/5583-native-tailcat-fixtures' &&
+      github.event.pull_request.head.sha == 'c2b9afdb49403e222c9cd616fe63e887638d6abf'
     strategy:
       fail-fast: false
       max-parallel: 1
