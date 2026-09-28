@@ -1979,6 +1979,13 @@
     height: 120px;
     margin: 6px auto 12px;
   }
+  :global(
+    .panel-actions-menu-content:has(.panel-move-pad:hover, .panel-move-direction[data-highlighted])
+      > [data-slot='menu-list-highlight']
+      [data-proximity-highlight='hover']
+  ) {
+    visibility: hidden;
+  }
   :global(.panel-actions-menu-content .panel-move-direction) {
     position: absolute;
     inset: 0;
