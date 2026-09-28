@@ -625,8 +625,18 @@
     }
     return -1;
   }
+  function projectEnteringRows(...args: Parameters<ReturnType<typeof createWindowItemProjector>>) {
+    return projectWindowItems(...args).map((item) =>
+      isStreaming && item.block.type === 'tool_use' && !enteredToolKeys.has(item.block.id)
+        ? // New live rows enter from zero height. Reserving a full summary before
+          // admission would make the transcript shrink when the entrance starts.
+          // Keep a positive one-pixel estimate until measured growth takes over.
+          { ...item, estimatedHeight: 1 }
+        : item,
+    );
+  }
   const windowItems = $derived(
-    projectWindowItems(groupedBlocks, rowScope, (block, grouped) =>
+    projectEnteringRows(groupedBlocks, rowScope, (block, grouped) =>
       grouped ? isVisibleGroupChild(block as ContentBlock) : isVisibleTopLevelBlock(block),
     ),
   );
@@ -869,7 +879,7 @@
         {:else if Array.isArray(resultPresentation.payload)}
           <OperationalWindow
             scope={`${rowScope}:result:${rowKey}`}
-            items={projectWindowItems(
+            items={projectEnteringRows(
               resultPresentation.payload as ContentBlock[],
               `${rowScope}:result:${rowKey}`,
               () => true,
@@ -1059,7 +1069,7 @@
         {#snippet children()}
           <OperationalWindow
             scope={`${rowScope}:group:${item.key}`}
-            items={projectWindowItems(
+            items={projectEnteringRows(
               group.children,
               rowScope,
               (block) => block.type === 'content_group' || isVisibleGroupChild(block),
