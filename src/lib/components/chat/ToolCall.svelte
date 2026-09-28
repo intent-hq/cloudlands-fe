@@ -13,6 +13,9 @@
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -59,6 +62,7 @@
   }: Props = $props();
 
   const toolWorkspace = selectWorkspaceById(toStore(() => workspaceId ?? ''));
+  const imageAgent = selectAgentSession(toStore(() => agentId));
   const imageVersion = createWorkspaceFileVersion();
   const localImageSource = $derived.by(() => {
     if (
@@ -70,6 +74,7 @@
     ) {
       return null;
     }
+    if (agentId && (!$imageAgent || hasNodeOwnedAgentPath($imageAgent))) return null;
     const source = resolveLocalToolImageSource(
       toolDisplay.filePath,
       workspaceId,
@@ -226,7 +231,7 @@
   function openFile(event: MouseEvent | KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
-    if (!workspaceId || !toolDisplay.filePath) return;
+    if (!workspaceId || !toolDisplay.filePath || !canOpenAgentPath(appStore.state, agentId)) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, toolDisplay.filePath, {
         line: toolDisplay.fileLine ?? undefined,
@@ -361,12 +366,13 @@
       </Button>
       {#if showImageTechnicalDetails}
         <div id={`${detailsId}-technical`}>
-          <ToolDetails input={toolUse.input} {result} {workspaceId} />
+          <ToolDetails {agentId} input={toolUse.input} {result} {workspaceId} />
         </div>
       {/if}
     </div>
   {:else}
     <ToolDetails
+      {agentId}
       input={toolUse.input}
       {result}
       {parsedResult}

@@ -54,6 +54,10 @@ import {
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { agentSessionReducer } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { sidebarNavReducer } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  initializeLayout,
+  panelLayoutReducer,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { encoderEffortSaga } from '$store/renderer/slices/hardware-console/sagas/encoder-effort-saga';
 import { watchHardwareConsoleEncoderHud } from '$store/renderer/slices/hardware-console/sagas/hardware-console-device-saga';
 import { installHardwareConsoleEncoder } from '../encoder-service';
@@ -100,6 +104,7 @@ function makeState() {
         'ws-2': { activeAgentId: 'agent-3' as string | null },
       },
     },
+    panelLayout: panelLayoutReducer(undefined, { type: 'init' }),
     workspace: {
       workspaces: createCollection('id', [
         {
@@ -119,11 +124,13 @@ function makeState() {
       ]),
     },
     model: {
+      availableModelsProviderId: 'codex',
       availableModels: createCollection('value', [
         { value: 'model-a', label: 'Model A', effortLevels: ['low', 'medium', 'high'] },
         { value: 'model-b', label: 'Model B', effortLevels: ['minimal', 'ultra'] },
       ]),
       defaultProviderId: 'codex',
+      providerModels: { codex: 'model-a' },
     },
     guestSessions: { sessions: createCollection('id', []), hasReceivedList: true },
     connections: { windowBackendId: 'local', hasReceivedList: true },
@@ -276,11 +283,37 @@ export function useEncoderEffortHarness() {
         hardwareConsole: hardwareConsoleReducer(state.hardwareConsole, action),
         agentSessions: agentSessionReducer(state.agentSessions, action),
         sidebarNav: sidebarNavReducer(state.sidebarNav, action),
+        panelLayout: panelLayoutReducer(state.panelLayout, action),
       };
       publish();
       channel.put(action);
       return action;
     });
+    for (const [workspaceId, agentIds] of [
+      ['ws-1', ['agent-1', 'agent-2']],
+      ['ws-2', ['agent-3']],
+    ] as const) {
+      mocks.dispatch(
+        initializeLayout(workspaceId, {
+          root: { type: 'panel', panelId: 'chat' },
+          focusedPanelId: 'chat',
+          panels: {
+            chat: {
+              id: 'chat',
+              activeTabId: agentIds[0],
+              tabs: agentIds.map((agentId) => ({
+                id: agentId,
+                type: 'agent',
+                title: agentId,
+                agentId,
+                workspaceId,
+                closable: true,
+              })),
+            },
+          },
+        }),
+      );
+    }
     request.mockReset().mockImplementation(async (method, params) => {
       if (method === 'settings.get') return setting();
       if (method === 'settings.update') {

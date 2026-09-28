@@ -1,16 +1,27 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { ToolUseBlock, Workspace } from '$shared/types';
+  import type { WireAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import ToolCall from '../ToolCall.svelte';
+  import { upsertSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 
-  let { width = 640 }: { width?: number } = $props();
+  let { width = 640, remoteAgent = false }: { width?: number; remoteAgent?: boolean } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
   const workspaceId = 'image-read-preview';
+  const agentId = 'image-preview-remote-agent';
+  store.dispatch(
+    upsertSession({
+      id: agentId,
+      workspaceId,
+      name: 'Remote image reader',
+      nodePath: '/work/preview',
+    } as WireAgentSession),
+  );
   store.dispatch(
     setWorkspaceEntity({
       id: workspaceId,
@@ -32,5 +43,11 @@
   style:min-height="300px"
   data-testid="image-read-example"
 >
-  <ToolCall {toolUse} {workspaceId} toolState="completed" result="Image displayed." />
+  <ToolCall
+    agentId={remoteAgent ? agentId : undefined}
+    {toolUse}
+    {workspaceId}
+    toolState="completed"
+    result="Image displayed."
+  />
 </section>

@@ -678,6 +678,8 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     const result = await client.getBackgroundAgentSettings();
     expect(mockedRequest).toHaveBeenCalledWith('settings.list');
     expect(result).toEqual({
+      defaultReasoningEffort: '',
+      typeReasoningEffortOverrides: {},
       defaultModel: 'auggie:haiku',
       typeOverrides: { commit: 'auggie:fast', pr: '', review: '', fast: '' },
       providerSettings: { auggie: { defaultModel: 'auggie:haiku' } },
@@ -691,6 +693,64 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     await client.setBackgroundAgentSettings({ defaultModel: 'auggie:opus' });
     expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
       changes: [{ path: 'quickActions.defaultModel', value: 'auggie:opus' }],
+    });
+  });
+
+  it('round-trips independent quick-action effort fields through settings RPCs', async () => {
+    const values = {
+      defaultReasoningEffort: 'medium',
+      typeReasoningEffortOverrides: { fast: 'high' },
+      providerSettings: {
+        codex: {
+          defaultModel: '',
+          typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+          defaultReasoningEffort: 'low',
+          typeReasoningEffortOverrides: { commit: 'high' },
+        },
+      },
+    };
+    mockedRequest.mockResolvedValueOnce({ applied: [] });
+    const client = new LiveSettingsClient();
+    await client.setBackgroundAgentSettings(values);
+    expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
+      changes: [
+        { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
+        { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'high' } },
+        { path: 'quickActions.providerSettings', value: values.providerSettings },
+      ],
+    });
+    mockedRequest.mockResolvedValueOnce({
+      settings: [
+        {
+          path: 'quickActions.defaultReasoningEffort',
+          label: '',
+          description: '',
+          category: 'agents',
+          type: 'string',
+          value: 'medium',
+        },
+        {
+          path: 'quickActions.typeReasoningEffortOverrides',
+          label: '',
+          description: '',
+          category: 'agents',
+          type: 'object',
+          value: { fast: 'high' },
+        },
+        {
+          path: 'quickActions.providerSettings',
+          label: '',
+          description: '',
+          category: 'agents',
+          type: 'object',
+          value: values.providerSettings,
+        },
+      ],
+    });
+    expect(await client.getBackgroundAgentSettings()).toEqual({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      ...values,
     });
   });
 

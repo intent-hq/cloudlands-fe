@@ -7,6 +7,7 @@
     interactive?: boolean;
     sidebarPanelOpen?: boolean;
     zoomFactor?: number;
+    fullTitlebar?: boolean;
   }
 
   const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
@@ -54,6 +55,7 @@
     type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
+  import WindowTitleBar from './WindowTitleBar.svelte';
 
   const timestamp = '2026-09-01T12:00:00.000Z';
   let {
@@ -62,6 +64,7 @@
     interactive = false,
     sidebarPanelOpen = true,
     zoomFactor = 1,
+    fullTitlebar = false,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
@@ -101,60 +104,64 @@
   onMount(() => reducedMotion.cleanup);
 </script>
 
-<div
-  class="window-title-bar-wrapper"
-  style:height="{getCounterScaledTitlebarHeight(zoomFactor)}px"
-  data-titlebar-geometry-root
->
+{#if fullTitlebar}
+  <WindowTitleBar />
+{:else}
   <div
-    class="window-title-bar"
-    style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
-    style:transform="scale({1 / zoomFactor})"
-    style:transform-origin="top left"
-    style:width="{100 * zoomFactor}%"
+    class="window-title-bar-wrapper"
+    style:height="{getCounterScaledTitlebarHeight(zoomFactor)}px"
+    data-titlebar-geometry-root
   >
-    <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
-      <div class="fixed-controls">
-        <span class="preview-logo" data-preview-logo>
-          <IntentNavigationIcon name="dandelion" size={16} />
-        </span>
-      </div>
-      <div class="workspace-controls" data-titlebar-workspace-controls>
-        <WorkspaceTabStrip
-          activeWorkspaceId={interactive ? undefined : activeWorkspaceId}
-          {leadingInsetPx}
-          {scrollerMarginLeftPx}
-          horizontalPositionTrackingKey={leadingInsetPx + scrollerMarginLeftPx}
-          onActiveTabBoundsChange={(bounds) => (activeTabBounds = bounds)}
-          onActiveTabTrackingChange={(tracking) => (activeTabTracking = tracking)}
-        />
-        <div
-          class="preview-launcher"
-          data-preview-launcher
-          aria-hidden="true"
-          style:translate="var(--workspace-tab-launcher-offset, 0px) 0"
-        >
-          +
+    <div
+      class="window-title-bar"
+      style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+      style:transform="scale({1 / zoomFactor})"
+      style:transform-origin="top left"
+      style:width="{100 * zoomFactor}%"
+    >
+      <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
+        <div class="fixed-controls">
+          <span class="preview-logo" data-preview-logo>
+            <IntentNavigationIcon name="dandelion" size={16} />
+          </span>
         </div>
+        <div class="workspace-controls" data-titlebar-workspace-controls>
+          <WorkspaceTabStrip
+            activeWorkspaceId={interactive ? undefined : activeWorkspaceId}
+            {leadingInsetPx}
+            {scrollerMarginLeftPx}
+            horizontalPositionTrackingKey={leadingInsetPx + scrollerMarginLeftPx}
+            onActiveTabBoundsChange={(bounds) => (activeTabBounds = bounds)}
+            onActiveTabTrackingChange={(tracking) => (activeTabTracking = tracking)}
+          />
+          <div
+            class="preview-launcher"
+            data-preview-launcher
+            aria-hidden="true"
+            style:translate="var(--workspace-tab-launcher-offset, 0px) 0"
+          >
+            +
+          </div>
+        </div>
+        <div class="drag-handle"></div>
       </div>
-      <div class="drag-handle"></div>
+      {#if activeTabBounds}
+        <div
+          class="active-tab-mask"
+          style:left={`${activeTabBounds.left}px`}
+          style:width={`${activeTabBounds.width}px`}
+          style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
+          style:transition={activeTabTracking || reducedMotion.current
+            ? 'none'
+            : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
+          data-active-tab-border-mask
+        ></div>
+      {/if}
+      <div></div>
     </div>
-    {#if activeTabBounds}
-      <div
-        class="active-tab-mask"
-        style:left={`${activeTabBounds.left}px`}
-        style:width={`${activeTabBounds.width}px`}
-        style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
-        style:transition={activeTabTracking || reducedMotion.current
-          ? 'none'
-          : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
-        data-active-tab-border-mask
-      ></div>
-    {/if}
-    <div></div>
+    <div class="preview-panel" data-preview-panel></div>
   </div>
-  <div class="preview-panel" data-preview-panel></div>
-</div>
+{/if}
 
 {#if interactive}
   <div class="preview-controls">

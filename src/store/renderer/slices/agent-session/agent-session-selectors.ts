@@ -20,7 +20,10 @@ import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text
 import type { StoredAgentSession } from './agent-session-types';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import { selectChatReceivedFirstChunk } from '../chat-state/chat-state-selectors';
-import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
+import {
+  selectEffectiveDefaultProviderId,
+  selectNormalizedProviderId,
+} from '../provider-catalog/provider-catalog-selectors';
 
 // ============================================================================
 // Internal helpers
@@ -96,6 +99,7 @@ function getCurrentStreamingText(message: AgentMessage | undefined): string {
 
 function isTerminalAgentStatus(status: AgentStatus): boolean {
   return (
+    status === AgentStatus.Halted ||
     status === AgentStatus.Completed ||
     status === AgentStatus.Error ||
     status === AgentStatus.Deleted
@@ -176,9 +180,10 @@ export const selectAgentProvider = store.createSelector(
   (state, agentId?: string): string | undefined => {
     if (!agentId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
-    return stored
+    const raw = stored
       ? getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state))
       : undefined;
+    return raw ? selectNormalizedProviderId.select(state, raw) : undefined;
   },
 );
 
@@ -375,7 +380,7 @@ export const selectAgentReasoningEffort = store.createSelector(
     if (!LEGACY_CODEX_EFFORTS.has(suffix)) return undefined;
     const base = model.slice(0, slashIndex);
     const isCodex =
-      getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state)) === 'codex' ||
+      selectAgentProvider.select(state, agentId) === 'codex' ||
       base.startsWith('codex:') ||
       LEGACY_CODEX_EFFORT_MODELS.has(base);
     return isCodex ? suffix : undefined;

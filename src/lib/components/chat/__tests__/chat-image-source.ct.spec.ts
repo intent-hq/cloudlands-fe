@@ -126,3 +126,21 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   await expect(image).toHaveCount(0);
   await expect(component.locator('[data-chat-image]')).toHaveCount(0);
 });
+
+test('remote agent image paths never load from the local workspace', async ({
+  mount,
+}, testInfo) => {
+  const component = await mount(ToolImagePreviewHost, { props: { remoteAgent: true } });
+  await component.getByTestId('tool-call-disclosure').focus();
+  await component.getByTestId('tool-call-disclosure').press('Enter');
+  await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await expect(component.locator('[data-chat-image]')).toHaveCount(0);
+  await expect(component.locator('[data-tool-detail-section="input"]')).toBeVisible();
+  await testInfo.attach('remote-image-path-details.png', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+});
