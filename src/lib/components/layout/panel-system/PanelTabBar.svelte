@@ -23,12 +23,11 @@
     faTableColumns,
     faArrowLeft,
     faArrowRight,
-    faArrowUp,
-    faArrowDown,
     faCheck,
     faComment,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { notify } from '$lib/components/patterns/notify';
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
@@ -93,6 +92,7 @@
       ? m.layout_panelTabBar_fileManagerFinder_label()
       : m.layout_panelTabBar_fileManagerGeneric_label();
   const logger = createLogger('PanelTabBar');
+  const canOpenExternalEditors = hasCapability('externalEditors');
   const copyBrowserUrlShortcut$ = effectiveShortcutReadable('panel.copy-browser-url');
   const closePaneShortcut$ = effectiveShortcutReadable('navigation.close-tab');
   const zoomPanelShortcut$ = effectiveShortcutReadable('panel.maximize');
@@ -303,28 +303,24 @@
   const paneMoveDirections = $derived([
     {
       direction: 'up',
-      icon: faArrowUp,
       label: m.layout_panelTabBar_movePanelUp_label(),
       enabled: !!onTabReorder && activePaneIndex > 0,
       move: () => onTabReorder?.(activePaneIndex, activePaneIndex - 1),
     },
     {
       direction: 'right',
-      icon: faArrowRight,
       label: m.layout_panelTabBar_movePanelRight_label(),
       enabled: !!onMovePaneRight,
       move: () => onMovePaneRight?.(),
     },
     {
       direction: 'down',
-      icon: faArrowDown,
       label: m.layout_panelTabBar_movePanelDown_label(),
       enabled: !!onTabReorder && activePaneIndex >= 0 && activePaneIndex < tabs.length - 1,
       move: () => onTabReorder?.(activePaneIndex, activePaneIndex + 1),
     },
     {
       direction: 'left',
-      icon: faArrowLeft,
       label: m.layout_panelTabBar_movePanelLeft_label(),
       enabled: !!onMovePaneLeft,
       move: () => onMovePaneLeft?.(),
@@ -1301,34 +1297,27 @@
                 close();
               }}
             >
-              <Fa icon={direction.icon} class="size-4!" />
+              <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
+                <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
+                  <path d="M3 8H12" stroke-linecap="square" />
+                  <path
+                    d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
+                    stroke-linejoin="round"
+                  />
+                </g>
+              </svg>
             </Menu.Item>
           {/each}
         </div>
       </Menu.Group>
-      <Menu.Separator />
-      <Menu.Group data-panel-actions-section="panel">
-        <Menu.CommandItem
-          icon={isZoomed ? faCompress : faExpand}
-          iconWeight="regular"
-          label={isZoomed
-            ? m.layout_panelTabBar_unzoomPanel_label()
-            : m.layout_panelTabBar_zoomPanel_label()}
-          shortcut={formatShortcut($zoomPanelShortcut$)}
-          disabled={!onZoomToggle}
-          onclick={() => {
-            onZoomToggle?.();
-            close();
-          }}
-        />
-      </Menu.Group>
-      {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
+      {#if ($isWorkspaceHostLocal$ && canOpenExternalEditors) || activeTab?.type === 'browser'}
         {#if activeTab}
           {@const externalTarget = getPanelExternalOpenTarget(
             activeTab,
             workspaceId,
             $isWorkspaceHostLocal$,
           )}
+          <Menu.Separator />
           <div data-panel-actions-section="open-in">
             {#if externalTarget.kind === 'browser'}
               <Menu.CommandItem
@@ -1369,6 +1358,12 @@
             {/if}
           </div>
         {/if}
+      {/if}
+      {#if contentActions?.additional}
+        <Menu.Separator />
+        <Menu.Group data-panel-actions-section="additional">
+          {@render contentActions.additional()}
+        </Menu.Group>
       {/if}
     {/snippet}
   </DropdownMenu>
@@ -1834,15 +1829,16 @@
   :global(.panel-header-menu) {
     border: 1px solid hsl(var(--border));
     border-radius: 9px;
-    padding: 6px;
+    padding: 4px;
     max-width: calc(100vw - 1rem);
+    box-shadow: var(--surface-shadow-3);
   }
   :global(.panel-header-menu [data-proximity-highlight='selected']),
   :global(.panel-header-menu [data-slot='menu-radio-item'][data-state='checked']) {
     background: hsl(var(--selected));
   }
   :global(.panel-header-menu [data-slot='menu-separator']) {
-    margin-inline: -6px;
+    margin-inline: -4px;
     margin-block: 6px;
   }
   :global(.panel-header-submenu) {
@@ -1850,8 +1846,10 @@
   }
 
   :global(.panel-actions-menu-content) {
-    width: 240px;
-    min-width: min(240px, calc(100vw - 1rem));
+    width: 192px;
+    min-width: min(192px, calc(100vw - 1rem));
+    border-radius: 7px;
+    padding-block: 5px;
   }
 
   /* CSS variables for panel tab bar heights */
@@ -1895,7 +1893,8 @@
     align-items: center;
     min-height: 34px;
     gap: 8px;
-    padding: 5px;
+    padding: 6px;
+    border-radius: 5px;
     font-size: 12px;
     font-weight: 400;
   }
@@ -1921,23 +1920,24 @@
     font-size: 14px;
     line-height: 1.2;
     font-weight: 400;
-    padding: 6px;
-    gap: 6px;
+    padding: 6px 10px;
+    gap: 10px;
+    border-radius: 7px;
   }
   :global(.panel-header-menu [data-slot='menu-label']) {
     font-size: 13px;
     line-height: 1.3;
     font-weight: 400;
-    padding: 6px;
+    padding: 6px 8px;
     color: hsl(var(--muted-foreground));
   }
   :global(.panel-header-menu:not(.panel-selector-menu) [data-slot='menu-item-leading']) {
-    width: 14px;
+    width: 12px;
   }
   :global(.panel-header-menu:not(.panel-selector-menu) [data-slot='menu-item-leading'] svg),
   :global(.panel-header-menu [data-slot='menu-sub-chevron'] svg) {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
   }
   :global(.panel-header-menu [data-slot='menu-command-item'] kbd) {
     font-size: 11px;
@@ -1951,8 +1951,8 @@
   }
   :global(.panel-header-menu [data-slot='menu-radio-item'] > [data-slot='menu-item-indicator']) {
     order: -1;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     margin: 0;
   }
   :global(.panel-header-menu [data-slot='menu-radio-item'] [data-slot='menu-item-indicator'] svg) {
@@ -2016,20 +2016,11 @@
   :global(.panel-move-right) {
     transform: rotate(90deg);
   }
-  :global(.panel-move-right > svg) {
-    transform: rotate(-90deg);
-  }
   :global(.panel-move-down) {
     transform: rotate(180deg);
   }
-  :global(.panel-move-down > svg) {
-    transform: rotate(-180deg);
-  }
   :global(.panel-move-left) {
     transform: rotate(270deg);
-  }
-  :global(.panel-move-left > svg) {
-    transform: rotate(-270deg);
   }
   @container (max-width: 420px) {
     .panel-header {
