@@ -12,6 +12,8 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { subscribeToAgent } from '$features/agent/browser';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
+  import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
@@ -40,6 +42,7 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
+    faBoxArchive,
     faBell,
     faBellSlash,
     faCheck,
@@ -51,6 +54,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
+  import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { agentDelegationParentOf } from '$shared/utils/agent-scope';
@@ -59,6 +63,8 @@
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     deleteAgentWithUndoRequested,
+    retireAgentRequested,
+    agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -159,6 +165,13 @@
   // top-level, non-background, not retired. Mirrors the AgentCard context menu.
   const canReplaceAgent = $derived(isReplaceAgentEligible($agent$));
   let replaceAgentModalOpen = $state(false);
+  let retireAgentModalOpen = $state(false);
+  const retirementSupported$ = selectAgentRetirementSupported();
+  const connectionGeneration$ = selectDaemonConnectionGeneration();
+  $effect(() => {
+    $connectionGeneration$;
+    void appStore.dispatch(agentRetirementSupportRequested());
+  });
 
   // Raw specialist id (not the display name) — interpolated into the built
   // hand-off instruction's `ws.agent.create` call shape.
@@ -341,6 +354,14 @@
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
+  {#if $retirementSupported$ && $agent$ && !$agent$.retiredAt}
+    <Menu.CommandItem
+      icon={faBoxArchive}
+      iconWeight="regular"
+      label={m.modals_retireAgent_confirm_label()}
+      onclick={() => (retireAgentModalOpen = true)}
+    />
+  {/if}
   {#if !$hidesAgentLifecycleActions$}
     <Menu.CommandItem
       icon={faTrash}
@@ -377,6 +398,14 @@
     bind:open={harnessModalOpen}
     version={harnessVersion}
     features={harnessFeatures}
+  />
+{/if}
+
+{#if retireAgentModalOpen && tab.agentId}
+  <RetireAgentModal
+    bind:open={retireAgentModalOpen}
+    agentName={agentSession?.name || tab.title || ''}
+    onRetire={() => appStore.dispatch(retireAgentRequested(workspaceId, tab.agentId!))}
   />
 {/if}
 
