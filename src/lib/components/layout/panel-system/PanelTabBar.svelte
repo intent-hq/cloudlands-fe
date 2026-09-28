@@ -1469,7 +1469,7 @@
               {...props}
               variant="plain"
               size="lg"
-              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-muted"
+              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-sidebar dark:bg-muted"
               wrapContent={false}
               aria-label={selectorLabel}
               data-testid="pane-stack-selector-trigger"
@@ -1930,6 +1930,9 @@
     border-radius: 9px;
   }
   :global(.panel-selector-button:hover) {
+    background-color: color-mix(in srgb, hsl(var(--sidebar)), hsl(var(--foreground)) 4%);
+  }
+  :global(.dark .panel-selector-button:hover) {
     background-color: color-mix(in srgb, hsl(var(--muted)), hsl(var(--foreground)) 4%);
   }
   .panel-selector-title {
