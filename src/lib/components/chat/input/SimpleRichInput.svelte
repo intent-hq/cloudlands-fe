@@ -606,11 +606,11 @@
           : 'rest',
   );
   const edgeShadow = $derived(
-    ringState === 'drag' || ringState === 'focus'
-      ? 'inset 0 0 0 2px hsl(var(--focus-ring)), var(--shadow-surface-2)'
+    ringState === 'drag'
+      ? 'inset 0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
       : ringState === 'hover'
-        ? 'inset 0 0 0 1px hsl(var(--foreground) / 0.45), var(--shadow-surface-2)'
-        : 'inset 0 0 0 1px hsl(var(--foreground) / 0.3), var(--shadow-surface-2)',
+        ? 'inset 0 0 0 1px hsl(var(--foreground) / 0.25), var(--shadow-surface-2)'
+        : 'inset 0 0 0 1px hsl(var(--foreground) / 0.18), var(--shadow-surface-2)',
   );
   const composerStyle = $derived(
     `${
