@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "Police",
+  "chat_taskProgress_menu_label": "Tâches",
+  "chat_messageNavigator_menu_label": "Consignes",
   "settings_devices_hostMachine_label": "Machine hôte (locale)",
   "settings_wsApi_connectionDetails_label": "Détails de connexion",
   "settings_wsApi_copyFingerprint_label": "Copier l’empreinte TLS",

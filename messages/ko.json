@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "글꼴",
+  "chat_taskProgress_menu_label": "작업",
+  "chat_messageNavigator_menu_label": "프롬프트",
   "settings_devices_hostMachine_label": "호스트 컴퓨터(로컬)",
   "settings_wsApi_connectionDetails_label": "연결 세부 정보",
   "settings_wsApi_copyFingerprint_label": "TLS 지문 복사",

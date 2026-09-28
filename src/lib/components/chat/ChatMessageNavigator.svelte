@@ -271,8 +271,12 @@
               class={cn(
                 menuItem(),
                 OPTION_LIST_ROW_CLASS,
-                'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
-                index === activeIndex && 'bg-accent text-accent-foreground',
+                'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
+                embedded
+                  ? 'hover:bg-hover hover:text-foreground'
+                  : 'hover:bg-accent/60 hover:text-accent-foreground',
+                index === activeIndex &&
+                  (embedded ? 'bg-selected text-foreground' : 'bg-accent text-accent-foreground'),
               )}
               onclick={() => void selectMessage(message.id)}
               onkeydown={(event) => {
@@ -310,7 +314,7 @@
 {#if embedded}
   <Menu.Sub bind:open onOpenChange={handleOpenChange}>
     <Menu.SubTrigger icon={faComment} data-testid="chat-message-navigator-trigger"
-      >{m.chat_messageNavigator_open_ariaLabel()}</Menu.SubTrigger
+      >{m.chat_messageNavigator_menu_label()}</Menu.SubTrigger
     >
     <Menu.SubContent
       bind:ref={contentElement}

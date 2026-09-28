@@ -499,7 +499,7 @@
 {#if tasks.length > 0 && embedded}
   <Menu.Sub bind:open onOpenChange={handleOpenChange}>
     <Menu.SubTrigger icon={faListCheck} data-testid="task-progress-trigger"
-      >{progressLabel}</Menu.SubTrigger
+      >{m.chat_taskProgress_menu_label()}</Menu.SubTrigger
     >
     <Menu.SubContent
       bind:ref={contentElement}

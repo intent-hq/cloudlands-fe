@@ -1261,10 +1261,6 @@
         wrapContent={false}
         active={panelActionsMenuOpen[location]}
         aria-label={m.ui_breadcrumb_more_label()}
-        tooltip={m.ui_breadcrumb_more_label()}
-        tooltipDisabled={panelActionsMenuOpen[location]}
-        tooltipSide="bottom"
-        tooltipDelayDuration={300}
         class="panel-header-action-button"
         data-testid="panel-actions-trigger"
       >
@@ -1837,8 +1833,12 @@
     box-shadow: var(--surface-shadow-3);
   }
   :global(.panel-header-menu [data-proximity-highlight='selected']),
-  :global(.panel-header-menu [data-slot='menu-radio-item'][data-state='checked']) {
-    background: hsl(var(--selected));
+  :global(.panel-header-submenu [data-navigation-message-id][aria-selected='true']) {
+    background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 5%);
+  }
+  :global(.panel-header-menu [data-proximity-highlight='hover']),
+  :global(.panel-header-submenu [data-navigation-message-id]:hover) {
+    background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 7%);
   }
   :global(.panel-header-menu [data-slot='menu-separator']) {
     margin-inline: -4px;

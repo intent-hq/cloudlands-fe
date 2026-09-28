@@ -73,10 +73,16 @@ for (const { width, theme } of [
     await page.keyboard.press('Enter');
     const menu = page.locator('[data-slot="menu-content"]');
     await expect(menu).toBeVisible();
-    const font = menu.getByRole('menuitemradio', { name: 'Mono' });
+    const fontTrigger = menu.getByRole('menuitem', { name: /^Font/ });
+    await fontTrigger.focus();
+    await fontTrigger.press('ArrowRight');
+    const fontMenu = page.getByRole('menu', { name: 'Font', exact: true });
+    const font = fontMenu.getByRole('menuitemradio', { name: 'Mono' });
     await font.click();
     await expect(font).toHaveAttribute('aria-checked', 'true');
     await expect(menu).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(fontTrigger).toBeFocused();
     await expect(menu.getByRole('menuitem', { name: 'Move panel up', exact: true })).toBeDisabled();
     await expect(
       menu.getByRole('menuitem', { name: 'Move panel down', exact: true }),

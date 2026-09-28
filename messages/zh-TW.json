@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "字型",
+  "chat_taskProgress_menu_label": "任務",
+  "chat_messageNavigator_menu_label": "提示詞",
   "settings_devices_hostMachine_label": "主機（本機）",
   "settings_wsApi_connectionDetails_label": "連線詳細資訊",
   "settings_wsApi_copyFingerprint_label": "複製 TLS 指紋",

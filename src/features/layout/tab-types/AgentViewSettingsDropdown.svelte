@@ -14,6 +14,9 @@
   let { embedded = false }: { embedded?: boolean } = $props();
   const fontStyle = selectAgentFontStyle();
   let open = $state(false);
+  const fontLabel = $derived(
+    $fontStyle === 'sans' ? m.settings_fontStyle_sans() : m.settings_fontStyle_mono(),
+  );
 
   function setFontStyle(value: string) {
     if (value !== 'sans' && value !== 'monospace') return;
@@ -33,8 +36,15 @@
 {/snippet}
 
 {#if embedded}
-  <Menu.Label>{m.settings_section_fontStyle()}</Menu.Label>
-  {@render fontItems()}
+  <Menu.Sub>
+    <Menu.SubTrigger>
+      <span class="min-w-0 flex-1">{m.ui_viewSettings_font_label()}</span>
+      <span class="type-caption text-muted-foreground">{fontLabel}</span>
+    </Menu.SubTrigger>
+    <Menu.SubContent aria-label={m.ui_viewSettings_font_label()}>
+      {@render fontItems()}
+    </Menu.SubContent>
+  </Menu.Sub>
 {:else}
   <Menu.Root bind:open>
     <Menu.Trigger>
@@ -53,7 +63,7 @@
         </Button>
       {/snippet}
     </Menu.Trigger>
-    <Menu.Content align="end" class="w-56" aria-label={m.settings_section_fontStyle()}>
+    <Menu.Content align="end" class="w-56" aria-label={m.ui_viewSettings_font_label()}>
       {@render fontItems()}
     </Menu.Content>
   </Menu.Root>

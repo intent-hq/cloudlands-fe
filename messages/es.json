@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "Fuente",
+  "chat_taskProgress_menu_label": "Tareas",
+  "chat_messageNavigator_menu_label": "Instrucciones",
   "settings_devices_hostMachine_label": "Equipo anfitrión (local)",
   "settings_wsApi_connectionDetails_label": "Detalles de conexión",
   "settings_wsApi_copyFingerprint_label": "Copiar huella TLS",

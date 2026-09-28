@@ -15,11 +15,17 @@ test('changes the font and runs a core action with keyboard focus restored', asy
   await trigger.press('Enter');
   const menu = page.locator('[data-slot="menu-content"]');
   await waitForMenuFocusReady(menu);
-  const mono = menu.getByRole('menuitemradio', { name: 'Mono', exact: true });
+  const fontTrigger = menu.getByRole('menuitem', { name: /^Font/ });
+  await fontTrigger.focus();
+  await fontTrigger.press('ArrowRight');
+  const fontMenu = page.getByRole('menu', { name: 'Font', exact: true });
+  await expect(fontMenu).toBeVisible();
+  await waitForMenuFocusReady(fontMenu);
+  const mono = fontMenu.getByRole('menuitemradio', { name: 'Mono', exact: true });
   await mono.focus();
   await mono.press('Enter');
   await expect(mono).toHaveAttribute('aria-checked', 'true');
-  await expect(menu.getByRole('menuitemradio', { name: 'Sans-serif' })).toHaveAttribute(
+  await expect(fontMenu.getByRole('menuitemradio', { name: 'Sans-serif' })).toHaveAttribute(
     'aria-checked',
     'false',
   );
@@ -27,14 +33,19 @@ test('changes the font and runs a core action with keyboard focus restored', asy
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+  await page.keyboard.press('ArrowLeft');
+  await expect(fontTrigger).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   await trigger.press('Enter');
   await waitForMenuFocusReady(menu);
-  await expect(menu.getByRole('menuitemradio', { name: 'Mono', exact: true })).toHaveAttribute(
+  await fontTrigger.focus();
+  await fontTrigger.press('ArrowRight');
+  await expect(fontMenu.getByRole('menuitemradio', { name: 'Mono', exact: true })).toHaveAttribute(
     'aria-checked',
     'true',
   );
+  await page.keyboard.press('ArrowLeft');
   await menu.getByRole('menuitem', { name: 'Copy conversation', exact: true }).press('Enter');
   await expect(component).toHaveAttribute('data-last-action', 'copy');
   await expect(menu).toBeHidden();
@@ -89,8 +100,8 @@ for (const theme of ['light', 'dark'] as const) {
     const header = component.locator('[data-panel-tabless-header]');
     const trigger = header.getByTestId('panel-actions-trigger');
     const root = page.locator('[data-slot="menu-content"]');
-    const fontTrigger = root.getByRole('menuitem', { name: /Font style/i });
-    const fontMenu = page.getByRole('menu', { name: 'Font Style', exact: true });
+    const fontTrigger = root.getByRole('menuitem', { name: /^Font/ });
+    const fontMenu = page.getByRole('menu', { name: 'Font', exact: true });
     const snapshots = [];
 
     for (const entry of ['overflow', 'right-click'] as const) {
@@ -475,6 +486,19 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
   await expect(component).toHaveAttribute('data-content-count', '1');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
+  await page.clock.install();
+  await trigger.click();
+  await menu.getByRole('menuitem', { name: 'Move panel left', exact: true }).click();
+  await expect(component).toHaveAttribute('data-move-left-count', '1');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.hover();
+  await page.clock.runFor(1000);
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await testInfo.attach('movement-dismissal-without-tooltip', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 for (const stackCount of [1, 5] as const) {

@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "フォント",
+  "chat_taskProgress_menu_label": "タスク",
+  "chat_messageNavigator_menu_label": "プロンプト",
   "settings_devices_hostMachine_label": "ホストマシン（ローカル）",
   "settings_wsApi_connectionDetails_label": "接続情報",
   "settings_wsApi_copyFingerprint_label": "TLSフィンガープリントをコピー",
