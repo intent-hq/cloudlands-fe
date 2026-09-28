@@ -29,6 +29,7 @@ import type {
   TransferStartParams,
   TransferStartResult,
 } from '../../../shared/types/workspace-transfer';
+import { relayErrorMessage as errText } from './json-rpc-errors';
 
 /** Structured rejection when another window owns the active session. */
 const NOT_OWNER = {
@@ -139,10 +140,6 @@ const TRANSFER_EVENT_TYPES = [
   'workspace:transfer:ready',
   'workspace:transfer:failed',
 ];
-
-function errText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function createWorkspaceTransferRelay(deps: TransferRelayDeps): WorkspaceTransferRelay {
   let session: RelaySession | null = null;
@@ -511,11 +508,12 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       // Source cleanup only applies after export starts; preflight failures
       // leave the source untouched and its agents running.
       if (current.exportId) await abortExport(source, current.exportId);
-      const cancelled = current.cancelled || errText(error) === 'cancelled';
+      const message = current.cancelled ? 'cancelled' : errText(error);
+      const cancelled = message === 'cancelled';
       if (!cancelled) {
         deps.logger.warn('workspace transfer failed', {
           workspaceId,
-          error: errText(error),
+          error: message,
         });
       }
       // An orphaned run released by a takeover must not clear its successor.
@@ -524,7 +522,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         ? { success: false, canceled: true }
         : {
             success: false,
-            error: errText(error),
+            error: message,
             failurePhase: current.sourceExportStarted ? 'post-export' : 'preflight',
           };
     } finally {
