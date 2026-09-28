@@ -78,7 +78,12 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   });
   const component = await mount(ToolImagePreviewHost);
   const image = component.getByRole('img', { name: 'desktop.png' });
+  await expect(image).toHaveCount(0);
+  await expect(component.locator('[data-chat-image]')).toHaveCount(0);
+  await component.getByTestId('tool-call-disclosure').click();
   await expect(image).toBeVisible();
+  await expect(component.locator('[data-tool-detail-section="input"]')).toHaveCount(0);
+  await expect(component.getByTestId('image-read-path')).toHaveText('/work/preview/desktop.png');
   await image.evaluate((node: HTMLImageElement) => node.decode());
   await expect(image).toHaveAttribute(
     'data-workspace-source',
@@ -93,7 +98,6 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   expect(Math.abs(cardBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
   const imageBox = await image.boundingBox();
   expect(imageBox!.width / imageBox!.height).toBeCloseTo(640 / 360, 1);
-  await component.getByTestId('tool-call-disclosure').click();
   await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
     'aria-expanded',
     'true',
@@ -115,4 +119,10 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   await component.update({ props: { width: 320 } });
   await expect(component.getByTestId('image-file-metadata')).toContainText('640 × 360 px');
   expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await component.getByRole('button', { name: 'Technical details', exact: true }).click();
+  await expect(component.locator('[data-tool-detail-section="input"]')).toBeVisible();
+  await component.getByTestId('tool-call-disclosure').focus();
+  await component.getByTestId('tool-call-disclosure').press('Enter');
+  await expect(image).toHaveCount(0);
+  await expect(component.locator('[data-chat-image]')).toHaveCount(0);
 });

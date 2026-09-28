@@ -19,7 +19,6 @@
     CHAT_OPERATIONAL_ICON_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
     OPERATIONAL_INLINE_DETAILS_CLASS,
-    OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
@@ -200,7 +199,8 @@
   const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
 
   let expanded = $state(false);
-  const isExpandable = $derived(displayModel.hasDetails);
+  let showImageTechnicalDetails = $state(false);
+  const isExpandable = $derived(displayModel.hasDetails || Boolean(localImageSource));
   const hasTrailing = $derived(
     displayModel.status === 'success' ||
       displayModel.status === 'error' ||
@@ -211,6 +211,7 @@
   function toggleExpanded() {
     if (!isExpandable) return;
     expanded = !expanded;
+    if (!expanded) showImageTechnicalDetails = false;
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: truncatedBlockIds is empty).
     if (expanded) requestHydration();
@@ -331,16 +332,51 @@
       <span>{m.chat_toolCall_loadingFullOutput_label()}</span>
     </div>
   {/if}
-  <ToolDetails
-    input={toolUse.input}
-    {result}
-    {parsedResult}
-    isError={toolState === 'error'}
-    pending={toolState === 'running'}
-    isTerminal={toolDisplay.category === 'terminal'}
-    {workspaceId}
-    suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
-  />
+  {#if localImageSource}
+    <div class="flex min-w-0 flex-col gap-3" data-testid="image-read-details">
+      <dl class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 type-caption">
+        <dt class="text-muted-foreground">{m.chat_shared_file_fallback()}</dt>
+        <dd class="min-w-0 break-words">{toolDisplay.filePath?.split('/').pop()}</dd>
+        <dt class="text-muted-foreground">{m.onboarding_dirPicker_path_ariaLabel()}</dt>
+        <dd class="min-w-0 break-all text-muted-foreground" data-testid="image-read-path">
+          {toolDisplay.filePath}
+        </dd>
+      </dl>
+      {#key localImageSource}
+        <ChatImageBlock
+          variant="file"
+          src={localImageSource}
+          mimeType={`image/${toolDisplay.filePath?.split('.').pop()?.toLowerCase().replace('jpg', 'jpeg')}`}
+          alt={toolDisplay.filePath?.split('/').pop()}
+        />
+      {/key}
+      <Button
+        variant="plain"
+        class="h-auto self-start p-0 type-caption text-muted-foreground"
+        aria-expanded={showImageTechnicalDetails}
+        aria-controls={`${detailsId}-technical`}
+        onclick={() => (showImageTechnicalDetails = !showImageTechnicalDetails)}
+      >
+        {m.chat_toolCall_technicalDetails_label()}
+      </Button>
+      {#if showImageTechnicalDetails}
+        <div id={`${detailsId}-technical`}>
+          <ToolDetails input={toolUse.input} {result} {workspaceId} />
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <ToolDetails
+      input={toolUse.input}
+      {result}
+      {parsedResult}
+      isError={toolState === 'error'}
+      pending={toolState === 'running'}
+      isTerminal={toolDisplay.category === 'terminal'}
+      {workspaceId}
+      suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
+    />
+  {/if}
 {/snippet}
 
 <!-- Special rendering for Augment Context Engine tools -->
@@ -381,19 +417,6 @@
     toolCallId={toolUse.toolCallId || undefined}
     conversationLayer="tool-activity"
   />
-
-  {#if localImageSource}
-    {#key localImageSource}
-      <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-        <ChatImageBlock
-          variant="file"
-          src={localImageSource}
-          mimeType={`image/${toolDisplay.filePath?.split('.').pop()?.toLowerCase().replace('jpg', 'jpeg')}`}
-          alt={toolDisplay.filePath?.split('/').pop()}
-        />
-      </div>
-    {/key}
-  {/if}
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}
