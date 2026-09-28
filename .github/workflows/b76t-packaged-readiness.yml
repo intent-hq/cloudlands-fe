@@ -1,0 +1,236 @@
+# UNAPPLIED PROPOSAL. Root must review the exact future control head before opening the draft PR.
+# No checkout or repository program is run. This job gathers guest facts only.
+name: B76t packaged worker readiness
+on:
+  pull_request:
+    types: [opened]
+    branches: [main]
+    paths: [.github/workflows/b76t-packaged-readiness.yml]
+permissions:
+  contents: read
+concurrency:
+  group: b76t-packaged-readiness
+  cancel-in-progress: false
+jobs:
+  readiness:
+    if: >-
+      github.repository == 'intent-hq/cloudlands-fe' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'diagnostic/b76t-packaged-readiness'
+    runs-on: gh-linux-8x
+    timeout-minutes: 8
+    steps:
+      - name: Record native result and collect allowlisted guest facts
+        id: facts
+        timeout-minutes: 2
+        shell: bash --noprofile --norc {0}
+        env:
+          B76_CONTEXT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          B76_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          B76_EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          native_exit() {
+            local primary=$?
+            trap - EXIT INT TERM
+            set +e
+            local write_status=not_attempted sync_status=not_attempted wrapper_exit=$primary
+            if [[ -n "${receipt_prefix:-}" ]]; then
+              # This is the observed pre-finalization shell status, not the future process exit.
+              printf 'primary_exit=%s\npid=%s\nended_epoch=%s\n' "$primary" "$$" "${EPOCHREALTIME:-unknown}" > "${receipt_prefix}.primary-exit.native"
+              write_status=$?
+              if [[ "$write_status" == 0 ]]; then
+                timeout 5s sync -f "${receipt_prefix}.primary-exit.native"
+                sync_status=$?
+              fi
+            fi
+            if [[ "$primary" == 0 && ( "$write_status" != 0 || "$sync_status" != 0 ) ]]; then wrapper_exit=74; fi
+            # The provider step/process result is authoritative for actual exit. This log is intent.
+            printf 'native_primary=%s receipt_write=%s receipt_sync=%s wrapper_exit_intent=%s\n' "$primary" "$write_status" "$sync_status" "$wrapper_exit"
+            local log_status=$?
+            if [[ "$wrapper_exit" == 0 && "$log_status" != 0 ]]; then wrapper_exit=74; fi
+            exit "$wrapper_exit"
+          }
+          trap native_exit EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          readonly receipt_prefix="${RUNNER_TEMP:?}/b76t-readiness-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}-${GITHUB_JOB:?}"
+          set -euo pipefail
+          set -o noclobber
+          umask 077
+          printf 'pid=%s\nstarted_epoch=%s\nrun=%s\nattempt=%s\njob=%s\n' "$$" "${EPOCHREALTIME:-unknown}" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_JOB" > "${receipt_prefix}.start.native"
+          timeout 5s sync -f "${receipt_prefix}.start.native"
+          # Native trap/start precede eligibility guards and every collector/helper invocation.
+          [[ "${RUNNER_ENVIRONMENT:-missing}" == github-hosted ]] || { printf 'Ineligible: runner is not GitHub-hosted\n'; exit 78; }
+          [[ "${B76_CONTEXT_RUNNER_ENVIRONMENT:-missing}" == "$RUNNER_ENVIRONMENT" ]] || { printf 'Ineligible: runner identity disagrees\n'; exit 78; }
+          [[ "${RUNNER_OS:-missing}" == Linux && "${RUNNER_ARCH:-missing}" == X64 ]] || { printf 'Ineligible: Linux X64 required\n'; exit 78; }
+          [[ "$GITHUB_RUN_ATTEMPT" == 1 ]] || { printf 'Ineligible: readiness reruns require a new reviewed proposal\n'; exit 78; }
+          # timeout owns the sole supervised collector; its result is not misnamed a Python exit.
+          set +e
+          timeout --signal=TERM --kill-after=5s 45s python3 -I -S -B - "$receipt_prefix" "$0" "$BASH" <<'PYCOLLECT' > "${receipt_prefix}.collector.stdout" 2> "${receipt_prefix}.collector.stderr"
+          import hashlib, json, os, pathlib, re, shutil, signal, sys, time
+          prefix, native_script, bash_path = sys.argv[1:]
+          def write_exclusive(suffix, data):
+              with open(prefix + suffix, 'x', encoding='utf-8') as output:
+                  output.write(json.dumps(data, sort_keys=True) + '\n')
+                  output.flush()
+                  os.fsync(output.fileno())
+          started = {'pid': os.getpid(), 'startedEpoch': time.time(), 'argv': sys.argv,
+                     'cwd': os.getcwd(), 'python': sys.executable,
+                     'pythonSha256': hashlib.sha256(pathlib.Path(sys.executable).read_bytes()).hexdigest(),
+                     'nativeScriptSha256': hashlib.sha256(pathlib.Path(native_script).read_bytes()).hexdigest()}
+          write_exclusive('.collector-start.json', started)
+          def interrupted(signum, frame):
+              raise SystemExit(128 + signum)
+          signal.signal(signal.SIGTERM, interrupted)
+          signal.signal(signal.SIGINT, interrupted)
+          facts = {'started': started}
+          primary = 0
+          error = None
+          try:
+              keys = ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_REPOSITORY',
+                      'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_SHA', 'GITHUB_WORKFLOW_SHA',
+                      'GITHUB_WORKFLOW_REF', 'GITHUB_ACTOR', 'GITHUB_TRIGGERING_ACTOR',
+                      'RUNNER_ENVIRONMENT', 'RUNNER_NAME', 'RUNNER_OS', 'RUNNER_ARCH',
+                      'ImageOS', 'ImageVersion']
+              identity = {key: os.environ.get(key) for key in keys}
+              event = json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+              pr = event['pull_request']
+              source = {'eventAction': event.get('action'), 'number': pr['number'], 'draft': pr['draft'],
+                        'headRepo': pr['head']['repo']['full_name'], 'headRef': pr['head']['ref'],
+                        'headSha': pr['head']['sha'], 'baseRef': pr['base']['ref'], 'baseSha': pr['base']['sha']}
+              facts.update(identity=identity, source=source)
+              assert identity['GITHUB_EVENT_NAME'] == 'pull_request' and source['eventAction'] == 'opened'
+              assert identity['GITHUB_REPOSITORY'] == source['headRepo'] == 'intent-hq/cloudlands-fe'
+              assert source['headRef'] == 'diagnostic/b76t-packaged-readiness' and source['draft'] is True
+              assert source['baseRef'] == 'main' and source['baseSha'] == '03af3f74a992453db0292452e2b09952cef7bdfb'
+              assert identity['GITHUB_RUN_ATTEMPT'] == '1'
+              assert identity['GITHUB_ACTOR'] == identity['GITHUB_TRIGGERING_ACTOR'] == 'panghy'
+              assert source['headSha'] == os.environ['B76_EVENT_HEAD_SHA']
+              assert source['baseSha'] == os.environ['B76_EVENT_BASE_SHA']
+              assert all(re.fullmatch('[a-f0-9]{40}', value or '') for value in
+                         [source['headSha'], source['baseSha'], identity['GITHUB_SHA'], identity['GITHUB_WORKFLOW_SHA']])
+              assert identity['GITHUB_REF'] == 'refs/pull/' + str(source['number']) + '/merge'
+              assert identity['GITHUB_WORKFLOW_REF'] == 'intent-hq/cloudlands-fe/.github/workflows/b76t-packaged-readiness.yml@' + identity['GITHUB_REF']
+              assert identity['GITHUB_WORKFLOW_SHA'] == identity['GITHUB_SHA']
+              assert identity['RUNNER_ENVIRONMENT'] == os.environ['B76_CONTEXT_RUNNER_ENVIRONMENT'] == 'github-hosted'
+              assert identity['RUNNER_OS'] == 'Linux' and identity['RUNNER_ARCH'] == 'X64'
+              assert identity['ImageOS'] and identity['ImageVersion'] and identity['RUNNER_NAME']
+              facts['tools'] = {}
+              for name, executable in [('bash', bash_path), ('timeout', shutil.which('timeout')), ('sync', shutil.which('sync'))]:
+                  resolved = pathlib.Path(executable).resolve(strict=True)
+                  facts['tools'][name] = {'path': str(resolved), 'sha256': hashlib.sha256(resolved.read_bytes()).hexdigest()}
+              facts['tools']['pythonVersion'] = list(sys.version_info[:3])
+              uname = os.uname()
+              cpu_count, affinity = os.cpu_count(), len(os.sched_getaffinity(0))
+              memory = next(int(line.split()[1]) * 1024 for line in pathlib.Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemTotal:'))
+              facts['guest'] = {'kernel': uname.release, 'system': uname.sysname, 'machine': uname.machine,
+                                'logicalCpuCount': cpu_count, 'affinityCpuCount': affinity, 'memTotalBytes': memory}
+              cgroup_line = next(line for line in pathlib.Path('/proc/self/cgroup').read_text().splitlines() if line.startswith('0::'))
+              cgroup_relative = pathlib.PurePosixPath(cgroup_line[3:])
+              assert cgroup_relative.is_absolute() and '..' not in cgroup_relative.parts
+              group = pathlib.Path('/sys/fs/cgroup').joinpath(*cgroup_relative.parts[1:])
+              cgroups, quotas, memories = [], [], [memory]
+              facts['guest']['cgroupLimits'] = cgroups
+              for depth in range(16):
+                  if str(group) == '/sys/fs/cgroup' and not (group / 'cpu.max').exists() and not (group / 'memory.max').exists():
+                      cgroups.append({'path': str(group), 'limitFiles': 'kernel root: limits are non-root interfaces'})
+                      break
+                  cpu_max = (group / 'cpu.max').read_text().strip()
+                  memory_max = (group / 'memory.max').read_text().strip()
+                  quota, period = cpu_max.split()
+                  if quota != 'max': quotas.append(int(quota) / int(period))
+                  if memory_max != 'max': memories.append(int(memory_max))
+                  cgroups.append({'path': str(group), 'cpuMax': cpu_max, 'memoryMax': memory_max})
+                  if str(group) == '/sys/fs/cgroup': break
+                  group = group.parent
+              else: raise ValueError('Cgroup ancestry exceeds bounded read set')
+              quota_cores = min(quotas) if quotas else None
+              effective_memory = min(memories)
+              os_release = {}
+              for line in pathlib.Path('/etc/os-release').read_text().splitlines():
+                  key, sep, value = line.partition('=')
+                  if key in ['ID', 'VERSION_ID', 'PRETTY_NAME'] and sep:
+                      os_release[key] = value.strip('"')
+              storage = {}
+              for key in ['RUNNER_TEMP', 'GITHUB_WORKSPACE']:
+                  location = os.environ[key]
+                  stat = os.statvfs(location)
+                  storage[key] = {'path': location, 'freeBytes': stat.f_bavail * stat.f_frsize,
+                                  'totalBytes': stat.f_blocks * stat.f_frsize}
+              facts['guest'].update(osRelease=os_release, effectiveQuotaCores=quota_cores,
+                                    effectiveMemoryBytes=effective_memory, storage=storage)
+              assert uname.sysname == 'Linux' and uname.machine == 'x86_64' and os_release['ID'] == 'ubuntu'
+              assert cpu_count == affinity == 8 and (quota_cores is None or quota_cores >= 8)
+              assert 30 * 1024**3 <= effective_memory and memory <= 34 * 1024**3
+              assert all(value['freeBytes'] >= 64 * 1024**3 for value in storage.values())
+          except SystemExit as failure:
+              primary, error = int(failure.code), 'signal termination'
+          except Exception as failure:
+              primary, error = 78, str(failure) or type(failure).__name__
+          facts.update(readinessExit=primary, error=error, finishedEpoch=time.time())
+          # Preserve known collection result independently from later receipt failures.
+          print(json.dumps({'readinessExit': primary, 'error': error}), flush=True)
+          actual = primary
+          try:
+              write_exclusive('.facts.json', facts)
+          except Exception as failure:
+              print('facts finalization failed: ' + str(failure), file=sys.stderr, flush=True)
+              actual = primary or 74
+          try:
+              write_exclusive('.collector-exit.json', {'exitIntentBeforeReceiptFinalization': actual, 'readinessExit': primary,
+                              'pid': os.getpid(), 'finishedEpoch': time.time()})
+          except Exception as failure:
+              print('collector exit receipt UNKNOWN: ' + str(failure), file=sys.stderr, flush=True)
+              actual = actual or 74
+          print(json.dumps({'readinessExit': primary, 'collectorExitIntent': actual}), flush=True)
+          sys.exit(actual)
+          PYCOLLECT
+          collector_supervisor_exit=$?
+          # Record the direct timeout result; it is not an invented Python or wrapper exit.
+          printf 'supervised_command=timeout-python3\nactual_exit=%s\n' "$collector_supervisor_exit" > "${receipt_prefix}.supervisor-exit.native"
+          receipt_write_exit=$?
+          receipt_sync_exit=not_attempted
+          if [[ "$receipt_write_exit" == 0 ]]; then
+            timeout 5s sync -f "${receipt_prefix}.supervisor-exit.native"
+            receipt_sync_exit=$?
+          fi
+          printf 'supervisor_primary=%s receipt_write=%s receipt_sync=%s\n' "$collector_supervisor_exit" "$receipt_write_exit" "$receipt_sync_exit"
+          receipt_log_exit=$?
+          if [[ "$collector_supervisor_exit" != 0 ]]; then exit "$collector_supervisor_exit"; fi
+          if [[ "$receipt_write_exit" != 0 || "$receipt_sync_exit" != 0 || "$receipt_log_exit" != 0 ]]; then exit 74; fi
+      - name: Preserve readiness evidence on success or failure
+        id: upload
+        if: ${{ always() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v7
+        with:
+          name: b76t-readiness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/b76t-readiness-${{ github.run_id }}-${{ github.run_attempt }}-readiness.*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Record upload outcome without replacing the collection result
+        if: ${{ always() }}
+        timeout-minutes: 1
+        shell: bash --noprofile --norc {0}
+        env:
+          B76_FACTS_OUTCOME: ${{ steps.facts.outcome }}
+          B76_UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          B76_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          B76_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          B76_ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          set -euo pipefail
+          python3 -I -S -B - <<'PYUPLOAD'
+          import json, os, sys
+          keys = ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'B76_FACTS_OUTCOME',
+                  'B76_UPLOAD_OUTCOME', 'B76_ARTIFACT_ID', 'B76_ARTIFACT_DIGEST', 'B76_ARTIFACT_URL']
+          receipt = {key: os.environ.get(key) for key in keys}
+          text = json.dumps(receipt, sort_keys=True)
+          print(text, flush=True)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Readiness upload receipt\n```json\n' + text + '\n```\n')
+              summary.flush()
+              os.fsync(summary.fileno())
+          sys.exit(0 if receipt['B76_UPLOAD_OUTCOME'] == 'success' and receipt['B76_ARTIFACT_ID'] and receipt['B76_ARTIFACT_DIGEST'] else 74)
+          PYUPLOAD
