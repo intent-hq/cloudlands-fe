@@ -2,6 +2,59 @@ import { expect, test } from '../../../../test/ct-test';
 import McpAdvancedEditor from '../mcp-advanced-editor.preview.svelte';
 import type { McpServerConfig } from '../mcp/types';
 
+for (const initiallyDisabled of [true, false]) {
+  test(`Undo restores the current enabled state after toggling a server initially disabled=${initiallyDisabled}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const saves: McpServerConfig[][] = [];
+    const root = await mount(McpAdvancedEditor, {
+      props: {
+        interactive: true,
+        servers: [
+          {
+            id: 'first',
+            name: 'Same name',
+            type: 'http',
+            url: 'http://localhost:8001/mcp',
+            disabled: initiallyDisabled,
+          },
+          { id: 'second', name: 'Same name', type: 'http', url: 'http://localhost:8002/mcp' },
+        ],
+        onPersist: (configs: McpServerConfig[]) => {
+          saves.push(configs);
+        },
+      },
+    });
+    const rows = root.locator('[data-slot="list-view-item"]');
+    const first = rows.filter({ hasText: 'http://localhost:8001/mcp' });
+    await expect(first.getByRole('switch')).toHaveAttribute(
+      'aria-checked',
+      String(!initiallyDisabled),
+    );
+    await first.getByRole('switch').click();
+    await expect
+      .poll(() => saves.at(-1)?.find((s) => s.id === 'first')?.disabled === true)
+      .toBe(!initiallyDisabled);
+    await first.getByRole('button', { name: 'Actions for Same name' }).click();
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+    await expect.poll(() => saves.at(-1)?.map((s) => s.id)).toEqual(['second']);
+    await page.getByRole('button', { name: /^Undo\b/ }).click();
+    await expect(rows).toHaveCount(2);
+    await expect.poll(() => saves.at(-1)?.find((s) => s.id === 'first')).toBeDefined();
+    expect(saves.at(-1)?.find((s) => s.id === 'first')?.disabled === true).toBe(!initiallyDisabled);
+    expect(saves.at(-1)?.find((s) => s.id === 'second')?.disabled).not.toBe(true);
+    await expect(first.getByRole('switch')).toHaveAttribute(
+      'aria-checked',
+      String(initiallyDisabled),
+    );
+    await testInfo.attach('undo-restored-current-state', {
+      body: await root.screenshot(),
+      contentType: 'image/png',
+    });
+  });
+}
+
 test('same-name server actions and JSON round trips preserve the other server', async ({
   mount,
   page,

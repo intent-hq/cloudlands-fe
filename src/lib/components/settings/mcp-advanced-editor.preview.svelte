@@ -12,6 +12,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import McpServersSettings from './McpServersSettings.svelte';
+  import PreviewNotifications from '../__tests__/PreviewNotifications.svelte';
   import {
     setupMcpSettingsPreview,
     type McpSettingsPreviewOptions,
@@ -24,4 +25,5 @@
 
 <div class="w-full min-w-0 bg-background p-4" data-testid="mcp-advanced-editor">
   <McpServersSettings />
+  {#if props.interactive}<PreviewNotifications />{/if}
 </div>

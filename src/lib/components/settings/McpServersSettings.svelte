@@ -41,7 +41,6 @@
     selectMcpLoading,
     selectMcpError,
     selectMcpEnabled,
-    selectMcpServers,
     selectMcpLastImportedCount,
     selectMcpAdvancedSaveStatus,
     selectMcpAdvancedSaveError,
@@ -180,7 +179,7 @@
 
   function handleDeleteServer(key: string) {
     // Get the server config before deleting (for undo)
-    const currentServers = selectMcpServers.select(appStore.state);
+    const currentServers = selectMcpServersWithStatus.select(appStore.state);
     const serverConfig = currentServers.find((s) => getMcpServerKey(s) === key);
     if (!serverConfig) return;
     const name = serverConfig.name;
