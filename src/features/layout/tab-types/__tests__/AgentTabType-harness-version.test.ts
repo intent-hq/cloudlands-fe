@@ -36,6 +36,7 @@ const mockState = vi.hoisted(() => {
   return {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
     hidesAgentLifecycleActions: store(false),
+    retirementSupported: store(true),
     presencePeople: store<unknown[]>([]),
     defaultModel: store('auggie:default'),
     dispatch: vi.fn(),
@@ -64,7 +65,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
   selectAgentPresencePeople: () => mockState.presencePeople,
 }));
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonConnectionGeneration: () => ({
+    subscribe: (run: (value: number) => void) => (run(0), () => {}),
+  }),
+}));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentRetirementSupported: () => mockState.retirementSupported,
   selectInitialAgentId: () => ({
     subscribe: (run: (value: string | null) => void) => (run(null), () => {}),
   }),
@@ -141,7 +148,10 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 import AgentTabType from '../AgentTabType.svelte';
 import MockTabTypeHeaderHarness from './mocks/MockTabTypeHeaderHarness.svelte';
-import { setAgentNotificationsMutedRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  retireAgentRequested,
+  setAgentNotificationsMutedRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 function seedSession(overrides: Record<string, unknown> = {}) {
   mockState.agents.set({
@@ -497,4 +507,54 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
     selectContextSelectedModel: () => mockState.defaultModel,
     selectContextSpecialists: specialists.selectSpecialists,
   };
+});
+
+describe('AgentTabType retirement', () => {
+  const mutations = () =>
+    mockState.dispatch.mock.calls
+      .map(([a]) => a)
+      .filter((a) => a.type !== 'workspaceAgents/agentRetirementSupportRequested');
+  beforeEach(() => {
+    mockState.dispatch.mockReset();
+    mockState.dispatch.mockImplementation((action) => {
+      if (action.type === retireAgentRequested.type) action.success(undefined);
+    });
+    mockState.hidesAgentLifecycleActions.set(false);
+    mockState.retirementSupported.set(true);
+    seedSession({ harnessFeatures: { peerAgents: false } });
+  });
+  afterEach(() => cleanup());
+
+  it('opens confirmation without a model turn and dispatches retirement only on confirmation', async () => {
+    mockState.hidesAgentLifecycleActions.set(true);
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(await screen.findByText('Retire Agent'));
+    await screen.findByRole('dialog');
+    expect(mutations()).toEqual([]);
+    await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mutations()).toHaveLength(1);
+    expect(mutations()[0]).toMatchObject({
+      type: retireAgentRequested.type,
+      payload: ['ws-1', 'agent-1'],
+    });
+  });
+
+  it('cancels without dispatching', async () => {
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(await screen.findByText('Retire Agent'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(mutations()).toEqual([]);
+  });
+
+  it.each(['retired', 'unsupported'])('withholds retirement for %s agents', async (state) => {
+    if (state === 'retired') seedSession({ retiredAt: '2026-09-28T08:00:00Z' });
+    else mockState.retirementSupported.set(false);
+    renderTab();
+    await openPanelActionsMenu();
+    expect(screen.queryByText('Retire Agent')).toBeNull();
+    expect(mutations()).toEqual([]);
+  });
 });

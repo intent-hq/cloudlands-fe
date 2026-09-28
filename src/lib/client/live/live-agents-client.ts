@@ -26,6 +26,7 @@ import type {
   AgentDeleteResult,
   AgentListOptions,
   AgentListResult,
+  AgentRetireResult,
   AgentsClient,
   FileBlock,
   ImageBlock,
@@ -167,6 +168,25 @@ function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefine
 }
 
 export class LiveAgentsClient implements AgentsClient {
+  private retirementCapabilityRequest: { generation: number; promise: Promise<boolean> } | null =
+    null;
+
+  supportsRetirement(connectionGeneration = 0): Promise<boolean> {
+    if (this.retirementCapabilityRequest?.generation !== connectionGeneration) {
+      const promise = backendRequest<{
+        server?: { capabilities?: { agentRetire?: number } };
+      }>('client.hello', {})
+        .then((result) => result?.server?.capabilities?.agentRetire === 1)
+        .catch(() => false)
+        .finally(() => {
+          if (this.retirementCapabilityRequest?.promise === promise)
+            this.retirementCapabilityRequest = null;
+        });
+      this.retirementCapabilityRequest = { generation: connectionGeneration, promise };
+    }
+    return this.retirementCapabilityRequest.promise;
+  }
+
   async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;
@@ -828,6 +848,18 @@ export class LiveAgentsClient implements AgentsClient {
         ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
       return { success: true, cancelled: result?.cancelled === true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async retire(agentId: string, workspaceId?: string): Promise<AgentRetireResult> {
+    const params: { agentId: string; workspaceId?: string } = { agentId };
+    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    try {
+      return await backendRequest<Extract<AgentRetireResult, { success: true }>>(
+        'agent.retire',
+        params,
+      );
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
