@@ -1,10 +1,29 @@
 import { gzipSync } from 'node:zlib';
 import type { Page, TestInfo } from '@playwright/test';
 type Frame = { time: number; mounts: number; mounted: number };
+type ObserverTarget = {
+  id: number;
+  node: WeakRef<Element>;
+  registeredAt: string;
+};
+type ObserverRecord = {
+  id: number;
+  callbackId: number;
+  callbackName: string;
+  constructorStack: string;
+  createdAt: string;
+  targets: Map<number, ObserverTarget>;
+  stages: Record<
+    string,
+    { observe: number; unobserve: number; disconnect: number; callbacks: number }
+  >;
+  lastCallback?: { stage: string; targets: number[]; detached: number };
+};
 type Probe = {
   frames: Frame[];
   longtasks: { start: number; duration: number }[];
-  observations: Map<ResizeObserver, Set<Element>>;
+  observers: Map<number, ObserverRecord>;
+  stage: string;
   observerBaseline?: number;
 };
 declare global {
@@ -13,27 +32,68 @@ declare global {
   }
 }
 
-// Install before the production panel creates observers. Count registrations, not
-// just distinct elements: two observers of one node are two retained resources.
+// Install before production creates observers. Keep only weak DOM references:
+// unmatched registrations are bookkeeping evidence, not proof of native retention.
 export async function instrument(page: Page) {
   await page.evaluate(() => {
-    const probe: Probe = { frames: [], longtasks: [], observations: new Map() };
+    const probe: Probe = { frames: [], longtasks: [], observers: new Map(), stage: 'setup' };
     window.rowScaleProbe = probe;
+    const targetIds = new WeakMap<Element, number>();
+    const callbackIds = new WeakMap<ResizeObserverCallback, number>();
+    const records = new WeakMap<ResizeObserver, ObserverRecord>();
+    let nextTarget = 0;
+    let nextCallback = 0;
+    const targetId = (node: Element) => {
+      let id = targetIds.get(node);
+      if (id === undefined) targetIds.set(node, (id = ++nextTarget));
+      return id;
+    };
+    const stage = (record: ObserverRecord) =>
+      (record.stages[probe.stage] ??= { observe: 0, unobserve: 0, disconnect: 0, callbacks: 0 });
     const Native = window.ResizeObserver;
     window.ResizeObserver = class extends Native {
+      constructor(callback: ResizeObserverCallback) {
+        let callbackId = callbackIds.get(callback);
+        if (callbackId === undefined) callbackIds.set(callback, (callbackId = ++nextCallback));
+        const record: ObserverRecord = {
+          id: probe.observers.size + 1,
+          callbackId,
+          callbackName: callback.name || '(anonymous)',
+          constructorStack: new Error('ResizeObserver owner').stack ?? '',
+          createdAt: probe.stage,
+          targets: new Map(),
+          stages: {},
+        };
+        super(function (this: ResizeObserver, entries, observer) {
+          stage(record).callbacks++;
+          record.lastCallback = {
+            stage: probe.stage,
+            targets: entries.map((entry) => targetId(entry.target)),
+            detached: entries.filter((entry) => !entry.target.isConnected).length,
+          };
+          callback.call(this, entries, observer);
+        });
+        records.set(this, record);
+        probe.observers.set(record.id, record);
+      }
       observe(node: Element, options?: ResizeObserverOptions) {
-        const nodes = probe.observations.get(this) ?? new Set<Element>();
-        nodes.add(node);
-        probe.observations.set(this, nodes);
         super.observe(node, options);
+        const record = records.get(this)!;
+        stage(record).observe++;
+        const id = targetId(node);
+        record.targets.set(id, { id, node: new WeakRef(node), registeredAt: probe.stage });
       }
       unobserve(node: Element) {
-        probe.observations.get(this)?.delete(node);
         super.unobserve(node);
+        const record = records.get(this)!;
+        stage(record).unobserve++;
+        record.targets.delete(targetId(node));
       }
       disconnect() {
-        probe.observations.delete(this);
         super.disconnect();
+        const record = records.get(this)!;
+        stage(record).disconnect++;
+        record.targets.clear();
       }
     };
     let mounts = 0;
@@ -104,7 +164,30 @@ export async function snapshot(page: Page, label: string) {
       }
       return box.bottom > top && box.top < bottom;
     }).length;
-    const targets = [...window.rowScaleProbe.observations.values()].flatMap((set) => [...set]);
+    const records = [...window.rowScaleProbe.observers.values()];
+    const targets = records.flatMap((record) =>
+      [...record.targets.values()].flatMap((target) => {
+        const node = target.node.deref();
+        return node ? [node] : [];
+      }),
+    );
+    const observerRecords = records.map(({ targets, ...record }) => ({
+      ...record,
+      targets: [...targets.values()].map(({ node: ref, ...target }) => {
+        const node = ref.deref();
+        return {
+          ...target,
+          connected: node?.isConnected ?? null,
+          collected: !node,
+          tag: node?.tagName,
+          attributes: node
+            ? Object.fromEntries([...node.attributes].map((attr) => [attr.name, attr.value]))
+            : undefined,
+        };
+      }),
+    }));
+    const precedingStage = window.rowScaleProbe.stage;
+    window.rowScaleProbe.stage = name;
     window.rowScaleProbe.observerBaseline ??= targets.length;
     return {
       label: name,
@@ -112,6 +195,11 @@ export async function snapshot(page: Page, label: string) {
       mounted: rows.length,
       visible,
       observed: targets.length,
+      observerRecords,
+      precedingStage,
+      observerReferencePolicy:
+        'weak DOM references; unmatched registrations do not prove native retention',
+      unmatchedRegistrations: records.reduce((total, record) => total + record.targets.size, 0),
       observerBaseline: window.rowScaleProbe.observerBaseline,
       observerDelta: targets.length - window.rowScaleProbe.observerBaseline,
       detachedObserved: targets.filter((node) => !node.isConnected).length,
