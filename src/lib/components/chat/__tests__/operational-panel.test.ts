@@ -857,3 +857,109 @@ it('settles an intrinsically empty root and retains zero through remount', () =>
   expect(phases.reads).toHaveLength(0);
   detach();
 });
+
+it.each([
+  { height: 0, completed: false },
+  { height: 7, completed: false },
+  { height: 0, completed: true },
+  { height: 7, completed: true },
+])(
+  'restores natural row geometry after entrance height $height, completed=$completed',
+  ({ height, completed }) => {
+    const root = node();
+    const row = node();
+    row.dataset.operationalWindowKey = entry.key;
+    const tool = document.createElement('div');
+    tool.dataset.toolEntry = '';
+    tool.style.height = `${height}px`;
+    tool.style.overflow = 'hidden';
+    row.append(tool);
+    root.append(row);
+    vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, height));
+    panel.attach('message', root, [entry], vi.fn());
+    const watcher = panel.watch(row, entry.key);
+    frame();
+    frame();
+    expect(panel.measuredHeight(entry.key)).toBe(height);
+    if (completed) {
+      tool.style.height = '';
+      vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 28));
+    }
+    watcher.destroy();
+    row.remove();
+    frame();
+    expect(panel.locate(entry.key)?.height).toBe(28);
+  },
+);
+
+it('does not discard a parent measurement for a nested row entrance', () => {
+  const root = node();
+  const row = node();
+  row.dataset.operationalWindowKey = entry.key;
+  const child = document.createElement('div');
+  child.dataset.operationalWindowKey = 'nested';
+  const tool = document.createElement('div');
+  tool.dataset.toolEntry = '';
+  tool.style.height = '7px';
+  child.append(tool);
+  row.append(child);
+  root.append(row);
+  panel.attach('message', root, [entry], vi.fn());
+  const watcher = panel.watch(row, entry.key);
+  frame();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+  watcher.destroy();
+  row.remove();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+});
+
+it('retains the last measurement when an entrance completed before eviction', () => {
+  const root = node();
+  const row = node();
+  row.dataset.operationalWindowKey = entry.key;
+  const tool = document.createElement('div');
+  tool.dataset.toolEntry = '';
+  tool.style.height = '7px';
+  vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 7));
+  row.append(tool);
+  root.append(row);
+  panel.attach('message', root, [entry], vi.fn());
+  const watcher = panel.watch(row, entry.key);
+  frame();
+  frame();
+  tool.style.height = '';
+  vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 28));
+  panel.refreshGeometry();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+  watcher.destroy();
+  row.remove();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+});
+
+it('does not let a retired entrance watcher clear a transferred row measurement', () => {
+  const root = node();
+  const row = node();
+  row.dataset.operationalWindowKey = entry.key;
+  const tool = document.createElement('div');
+  tool.dataset.toolEntry = '';
+  tool.style.height = '7px';
+  row.append(tool);
+  root.append(row);
+  panel.attach('old', root, [entry], vi.fn());
+  const watcher = panel.watch(row, entry.key);
+  frame();
+  frame();
+  const replacement = node();
+  panel.attach('new', replacement, [entry], vi.fn());
+  const replacementRow = node();
+  replacement.append(replacementRow);
+  panel.watch(replacementRow, entry.key);
+  frame();
+  frame();
+  watcher.destroy();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+});

@@ -51,6 +51,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   const policy = createOperationalRowWindow();
   const roots = new Map<string, Root>();
   const heights = new Map<string, number>();
+  const entranceMeasurements = new Map<string, HTMLElement>();
   const widths = new Map<string, number>();
   const headers = new Map<string, { height: number; offset: number }>();
   const elements = new Map<string, HTMLElement>();
@@ -172,7 +173,10 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     policy.invalidateMounts(keys);
     // Only the frame snapshot grants permission. Scope mutations may revoke it
     // immediately, without scanning every panel descriptor for a new snapshot.
-    for (const key of keys) mounted.delete(key);
+    for (const key of keys) {
+      mounted.delete(key);
+      if (entranceMeasurements.delete(key)) heights.delete(key);
+    }
   }
   function claim(scope: string, entries: Entry[]) {
     const displaced = new Set<string>();
@@ -253,7 +257,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     }
     const before: { key: string; distance: number }[] = [];
     const after: { key: string; distance: number }[] = [];
-    const measurements: { key: string; height: number }[] = [];
+    const measurements: { key: string; height: number; entranceNode?: HTMLElement }[] = [];
     for (const [scope, root] of roots) {
       const box = root.node.getBoundingClientRect();
       const scale = root.node.offsetWidth > 0 ? box.width / root.node.offsetWidth : 1;
@@ -262,6 +266,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         for (const entry of root.entries) {
           if (owners.get(entry.key) !== scope) continue;
           heights.delete(entry.key);
+          entranceMeasurements.delete(entry.key);
           headers.delete(entry.key);
         }
       }
@@ -361,7 +366,17 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
               targetRect.right > clipLeft,
           });
         const hasMeasurement = !!rowRect && !hidden && measured >= 0 && Number.isFinite(measured);
-        if (hasMeasurement) measurements.push({ key: entry.key, height: measured });
+        if (hasMeasurement) {
+          const entrance = node?.querySelector<HTMLElement>('[data-tool-entry]');
+          measurements.push({
+            key: entry.key,
+            height: measured,
+            entranceNode:
+              entrance?.closest('[data-operational-window-key]') === node && entrance?.style.height
+                ? node
+                : undefined,
+          });
+        }
         const extent = hasMeasurement ? measured : height(entry);
         const bottom = top + extent * scale;
         if (
@@ -407,9 +422,16 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       // Anchor corrections below move the scrollport after these rectangles
       // were read. Certify their new position in a subsequent batched read.
       const beforePublish = projectionRevision;
-      for (const measurement of measurements) heights.set(measurement.key, measurement.height);
+      for (const measurement of measurements) {
+        heights.set(measurement.key, measurement.height);
+        if (measurement.entranceNode)
+          entranceMeasurements.set(measurement.key, measurement.entranceNode);
+        else entranceMeasurements.delete(measurement.key);
+      }
       rebuild();
-      policy.measure(measurements.filter(({ height }) => height > 0));
+      policy.measure(
+        measurements.filter(({ height, entranceNode }) => height > 0 && !entranceNode),
+      );
       for (const [scroll, correction] of corrections) scroll.scrollTop = correction.scrollTop;
       anchors.clear();
       for (const [scroll, anchor] of nextAnchors)
@@ -622,6 +644,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       schedule();
     },
     watch(node: HTMLElement, key: string) {
+      const owner = owners.get(key);
+      const root = owner === undefined ? undefined : roots.get(owner);
       elements.set(key, node);
       let active = true;
       const current = () => active && !disposed && elements.get(key) === node;
@@ -651,6 +675,18 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           node.removeEventListener('focusin', focus);
           node.removeEventListener('focusout', leave);
           if (elements.get(key) === node) {
+            // The last read may precede completion, even if inline styles have
+            // already cleared. Never retain that partial extent after eviction.
+            if (
+              owner !== undefined &&
+              owners.get(key) === owner &&
+              roots.get(owner) === root &&
+              entranceMeasurements.get(key) === node
+            ) {
+              heights.delete(key);
+              entranceMeasurements.delete(key);
+              entriesChanged = true;
+            }
             elements.delete(key);
             focusPins.delete(key);
             syncPins();
@@ -674,6 +710,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       roots.clear();
       observations.clear();
       heights.clear();
+      entranceMeasurements.clear();
       widths.clear();
       headers.clear();
       elements.clear();
