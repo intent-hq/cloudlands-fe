@@ -1456,7 +1456,7 @@
           >
             <Button
               {...props}
-              variant="outline"
+              variant="plain"
               size="lg"
               active={paneStackMenuOpen}
               class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-background"
@@ -1880,8 +1880,12 @@
     border: 1px solid hsl(var(--border));
     border-radius: 9px;
   }
+  :global(.panel-selector-button:hover),
+  :global(.panel-selector-button[aria-expanded='true']) {
+    background-color: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 4%);
+  }
   .panel-selector-title {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 400;
     line-height: 1.2;
   }
@@ -1895,7 +1899,7 @@
     gap: 8px;
     padding: 6px;
     border-radius: 5px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 400;
   }
   :global(.panel-selector-menu [data-slot='menu-command-item'] span.truncate) {
@@ -2036,9 +2040,6 @@
       height: 26px;
       --agent-avatar-emphasized-surface-size: 26px;
       --agent-avatar-emphasized-art-size: 18px;
-    }
-    .panel-selector-title {
-      font-size: 14px;
     }
   }
 </style>
