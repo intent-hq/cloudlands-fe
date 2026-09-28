@@ -25,13 +25,15 @@ function bottomMenu(component: Locator, page: Page) {
         await expect(command).not.toHaveAttribute('aria-disabled', 'true');
       }
       await command.press('Escape');
-      await expect(command).toHaveCount(0);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(trigger).toBeFocused();
     },
     async returnToBottom() {
       await open();
       await expect(command).not.toHaveAttribute('aria-disabled', 'true');
       await command.press('Enter');
-      await expect(command).toHaveCount(0);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(trigger).toBeFocused();
     },
   };
 }
@@ -83,6 +85,7 @@ test('newer previous-message navigation wins over a pending return to bottom', a
   });
   await page.keyboard.press('Enter');
   await page.clock.runFor(800);
+  await expect(page.getByTestId('chat-scroll-to-bottom-button')).toHaveCount(0);
   const target = component.locator(`[data-message-id="${targetId}"]`);
   const offset = await target.evaluate(
     (node, container) =>
@@ -124,8 +127,9 @@ test('newer previous-message navigation wins over a pending return to bottom', a
     body: JSON.stringify({ reverseStartedAt, reverseSelectedAt, bottomDistance }),
     contentType: 'application/json',
   });
-  await component.screenshot({ path: testInfo.outputPath('return-to-bottom-settled.png') });
   await page.clock.resume();
+  await expect(page.getByTestId('chat-scroll-to-bottom-button')).toHaveCount(0);
+  await component.screenshot({ path: testInfo.outputPath('return-to-bottom-settled.png') });
 });
 
 test('previous-message action leaves bottom and stays at successive user messages', async ({

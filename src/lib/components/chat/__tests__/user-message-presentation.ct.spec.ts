@@ -21,7 +21,7 @@ for (const state of cases) {
     context,
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     const viewport = { width: state.width / state.zoom, height: 760 / state.zoom };
     const cdp = await context.newCDPSession(page);
     activeCdp = cdp;
@@ -39,7 +39,8 @@ for (const state of cases) {
     });
 
     const header = component.locator('[data-panel-content-header]');
-    await header.getByTestId('panel-actions-trigger').click();
+    const panelActions = header.getByTestId('panel-actions-trigger');
+    await panelActions.click();
     const trigger = page.getByTestId('chat-message-navigator-trigger');
     await expect(trigger).toHaveCount(1);
     await trigger.click();
@@ -58,6 +59,10 @@ for (const state of cases) {
     await expect(options).toHaveCount(0);
     await search.fill('Virtualized target six');
     await dialog.getByRole('option', { name: 'Virtualized target six', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(panelActions).toHaveAttribute('aria-expanded', 'false');
+    await expect(panelActions).toBeFocused();
 
     const target = page.locator('[data-message-id="user-6"]');
     await expect(target).toContainText('Virtualized target six');
@@ -78,5 +83,9 @@ for (const state of cases) {
     const editInput = target.getByTestId('message-input');
     await expect(editInput).toContainText('Virtualized target six');
     await expect(editInput).not.toContainText('[SYSTEM NOTE]');
+    await testInfo.attach('zoomed-message-copy-and-edit', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }
