@@ -1401,15 +1401,94 @@
     const lease = {};
     let pinned: string | undefined;
     let afterRead = operationalPanel.refreshGeometry();
+    const traceWindow = window as typeof window & {
+      __interactionNavigationTrace?: unknown[];
+      __interactionNavigationSequence?: number;
+    };
+    const traceId = (traceWindow.__interactionNavigationSequence =
+      (traceWindow.__interactionNavigationSequence ?? 0) + 1);
+    const traceGeneration = searchHighlightRequest;
+    function trace(stage: string, key?: string, attempt?: number) {
+      const location = key ? operationalPanel.locate(key) : undefined;
+      const target = location?.node;
+      const root = location?.scrollRoot;
+      const rect = (node?: Element) => {
+        const box = node?.getBoundingClientRect();
+        return (
+          box && {
+            top: box.top,
+            bottom: box.bottom,
+            left: box.left,
+            right: box.right,
+            height: box.height,
+          }
+        );
+      };
+      const ancestors = [];
+      for (let parent = target?.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (/auto|scroll|hidden|clip/.test(style.overflowY))
+          ancestors.push({
+            tag: parent.tagName,
+            className: parent.className,
+            testId: parent.dataset.testid,
+            top: parent.scrollTop,
+            height: parent.scrollHeight,
+            client: parent.clientHeight,
+            rect: rect(parent),
+          });
+      }
+      const data = {
+        stage,
+        traceId,
+        time: performance.now(),
+        frameTime: document.timeline.currentTime,
+        traceGeneration,
+        generation: searchHighlightRequest,
+        current: current(),
+        active: isActive,
+        agentId,
+        messageId,
+        path,
+        query,
+        occurrence,
+        key,
+        attempt,
+        afterRead,
+        observation: location?.observation,
+        admitted: location?.admitted,
+        cachedTop: location?.top,
+        cachedHeight: location?.height,
+        targetConnected: target?.isConnected,
+        targetRect: rect(target),
+        targetText: target?.textContent?.slice(0, 180),
+        root: root && {
+          tag: root.tagName,
+          className: root.className,
+          testId: root.dataset.testid,
+          top: root.scrollTop,
+          height: root.scrollHeight,
+          client: root.clientHeight,
+          rect: rect(root),
+        },
+        ancestors,
+      };
+      (traceWindow.__interactionNavigationTrace ??= []).push(data);
+      console.info('[interaction-navigation]', JSON.stringify(data));
+    }
+    trace('begin');
     try {
       for (let attempt = 0; attempt < 40 && current() && !isComponentDestroyed; attempt++) {
         const key =
           query === undefined
             ? operationalPanel.resolveTarget(messageId, path)
             : operationalPanel.resolveMatch(messageId, path, query, occurrence)?.key;
+        trace('resolved', key, attempt);
         if (key) {
           if (pinned !== key) {
             if (pinned) operationalPanel.pin(pinned, false, lease);
+            trace('release', pinned);
+            requestAnimationFrame(() => trace('frame-after-release', pinned));
             pinned = key;
             operationalPanel.pin(key, true, lease);
             afterRead = operationalPanel.refreshGeometry();
@@ -1422,12 +1501,15 @@
               location.admitted &&
               observation?.visible &&
               observation.revision > afterRead
-            )
+            ) {
+              trace('return', key, attempt);
               return node;
+            }
             const height =
               location.kind === 'group' ? operationalPanel.summaryHeight(key) : location.height;
             if (scrollRoot)
               scrollRoot.scrollTop = Math.max(0, top - (scrollRoot.clientHeight - height) / 2);
+            trace('after-scroll', key, attempt);
           }
         }
         // Disclosure growth can change the real scrollport without a scroll
@@ -1438,6 +1520,8 @@
       }
     } finally {
       if (pinned) operationalPanel.pin(pinned, false, lease);
+      trace('release', pinned);
+      requestAnimationFrame(() => trace('frame-after-release', pinned));
     }
     return undefined;
   }
