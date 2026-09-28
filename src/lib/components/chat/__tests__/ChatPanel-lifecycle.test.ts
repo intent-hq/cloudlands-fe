@@ -55,6 +55,7 @@ const mocks = vi.hoisted(() => {
   });
   const selector = <T>(value: T) => Object.assign(() => readable(value), { select: () => value });
   return {
+    specialistChange: null as null | ((id: string | null) => void),
     dispatch: vi.fn(),
     draftGet: vi.fn(),
     draftSet: vi.fn(),
@@ -372,6 +373,17 @@ vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
 vi.mock('$lib/utils/open-message', () => ({
   seekConversationToMessage: mocks.seekConversationToMessage,
 }));
+// Capture the callback wired by the mounted panel while retaining the real picker.
+vi.mock('../RegularAgentWelcome.svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../RegularAgentWelcome.svelte')>();
+  return {
+    ...actual,
+    default: (...args: Parameters<typeof actual.default>) => {
+      mocks.specialistChange = args[1].onSpecialistChange ?? null;
+      return actual.default(...args);
+    },
+  };
+});
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
@@ -735,6 +747,7 @@ beforeEach(() => {
   mocks.chatError.set(null);
   mocks.chatQuotaExceeded.set(null);
   mocks.storeState = {};
+  mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.transcriptHydration.set('settled');
@@ -4829,3 +4842,160 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
   });
 });
+
+describe.each(['workspace-a', 'workspace-b'])(
+  'ChatPanel specialist picker in %s',
+  (workspaceId) => {
+    it.each([
+      {
+        name: 'resolved-only model',
+        selection: 'shared',
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'explicit model before resolved preview',
+        selection: 'shared',
+        resolved: true,
+        explicit: true,
+        empty: false,
+      },
+      {
+        name: 'absent model retains session',
+        selection: 'shared',
+        resolved: false,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'empty model fields retain session',
+        selection: 'shared',
+        resolved: false,
+        explicit: false,
+        empty: true,
+      },
+      {
+        name: 'unknown specialist retains session',
+        selection: 'unknown',
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'blank selection retains session',
+        selection: null,
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+    ])('$name preserves local fields and persisted workspace', async (c) => {
+      const snapshots = Object.fromEntries(
+        ['workspace-a', 'workspace-b'].map((id) => [
+          id,
+          {
+            catalog: MOCK_PROVIDER_CATALOG,
+            settings: [],
+            readiness: {},
+            specialists: [
+              {
+                id: 'shared',
+                name: `Specialist ${id}`,
+                description: '',
+                source: 'user',
+                behaviorPrompt: `Prompt ${id}`,
+                codingAgent: 'codex',
+                resolvedProvider: 'codex',
+                ...(c.resolved ? { resolvedModel: `resolved-${id}` } : {}),
+                ...(c.explicit ? { model: `explicit-${id}` } : {}),
+                ...(c.empty ? { model: '', resolvedModel: '' } : {}),
+              },
+            ],
+          },
+        ]),
+      );
+      mocks.storeState = {
+        providerCatalog: { ...providerCatalogInitialState, byWorkspaceId: snapshots },
+        specialists: {
+          bundledSpecialists: [
+            {
+              id: 'shared',
+              name: 'Global specialist',
+              description: '',
+              defaultBehaviorPrompt: 'Global prompt',
+              defaultModel: 'global-model',
+              resolvedModel: 'global-resolved-model',
+            },
+          ],
+          userOverrides: {},
+        },
+      };
+      const metadata = {
+        unrelated: 'keep',
+        specialist: 'previous',
+        behaviorPrompt: 'Previous prompt',
+      };
+      mocks.agentSession.set({
+        id: 'agent-a',
+        workspaceId,
+        model: 'session-model',
+        codingAgent: 'codex',
+        metadata,
+        messages: [],
+        status: 'idle',
+        name: 'Agent',
+      });
+      mocks.draftGet.mockResolvedValue(null);
+      render(ChatPanel, { props: { workspace: workspace(workspaceId), agentId: 'agent-a' } });
+      await tick();
+      await tick();
+      expect(screen.getByTestId('specialist-picker-trigger')).toBeTruthy();
+      expect(mocks.specialistChange).toBeTypeOf('function');
+      mocks.dispatch.mockClear();
+      mocks.dispatch.mockResolvedValue(undefined);
+      mocks.specialistChange!(c.selection);
+      await tick();
+      const selected = c.selection === 'shared';
+      const model =
+        selected && c.explicit
+          ? `explicit-${workspaceId}`
+          : selected && c.resolved
+            ? `resolved-${workspaceId}`
+            : 'session-model';
+      const local = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'agentSessions/updateSession');
+      const save = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'workspaceAgents/saveAgentSessionRequested');
+      expect(local.payload).toEqual([
+        'agent-a',
+        {
+          model,
+          metadata: {
+            ...metadata,
+            specialist: c.selection ?? undefined,
+            behaviorPrompt: selected ? `Prompt ${workspaceId}` : '',
+            specialistName: selected ? `Specialist ${workspaceId}` : '',
+          },
+        },
+      ]);
+      expect(save.payload).toEqual([
+        workspaceId,
+        'agent-a',
+        true,
+        {
+          specialistUpdate:
+            c.selection === null
+              ? { specialist: null, systemPrompt: null }
+              : {
+                  specialist: c.selection,
+                  model,
+                  ...(selected ? { systemPrompt: `Prompt ${workspaceId}` } : {}),
+                },
+          specialistRollback: { metadata, model: 'session-model' },
+        },
+      ]);
+    });
+  },
+);

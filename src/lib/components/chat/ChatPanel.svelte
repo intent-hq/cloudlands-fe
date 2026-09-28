@@ -359,6 +359,7 @@
     selectContextReadiness,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 
+  import { selectEffectiveModel } from '$store/renderer/slices/specialists/specialists-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import {
     selectProviderAuthFailureGuidance,
@@ -5230,8 +5231,9 @@
         .select(reduxState, workspace.id)
         .find((s) => s.id === specialistId);
       behaviorPrompt = specialist ? specialist.defaultBehaviorPrompt : undefined;
-      // Use getEffectiveModel which resolves tier to actual model for current provider
-      newModel = specialist ? specialist.defaultModel || session.model : session.model;
+      // Prefer the workspace's explicit or daemon-resolved model before the current session.
+      newModel =
+        selectEffectiveModel.select(reduxState, specialistId, workspace.id) || session.model;
       specialistName = specialist?.name;
     } else {
       // Blank agent - no specialist
