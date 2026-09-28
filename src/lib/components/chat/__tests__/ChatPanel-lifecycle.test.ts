@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   transientUiReducer,
   initialState as initialTransientUi,
@@ -3319,7 +3319,7 @@ describe('ChatPanel mounted lifecycle', () => {
 
   it.each(['turn', 'query', 'close'] as const)(
     'a completed search scroll yields to %s cancellation',
-    async (cancel, { onTestFinished }) => {
+    async (cancel) => {
       installSearchHighlightSpy();
       vi.stubGlobal('Highlight', class {});
       const rangeSpy = vi.spyOn(document, 'createRange').mockImplementation(() =>
