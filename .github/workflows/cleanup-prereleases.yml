@@ -1,0 +1,109 @@
+# Cleans only cloudlands-fe + cloudlands-releases; Git tags are preserved.
+# Retention: keep every prerelease newer than 30 days and the newest 20 per repo,
+# plus stable/draft/rolling/sitter/referenced releases. Default delete batch: 20.
+#
+# Credential: PRERELEASE_CLEANUP_TOKEN needs Contents read on intent-hq/intent,
+# intent-hq/intentd and intent-hq/intentd-releases, and Contents read/write on
+# intent-hq/cloudlands-fe and intent-hq/cloudlands-releases (Metadata read is
+# implicit). No Actions, Issues, Pull requests or Workflows write is required.
+# Missing/denied credentials fail closed; never fall back to GITHUB_TOKEN.
+#
+# Activation: refresh the script pin to the final reviewed, merged monorepo SHA.
+# Merge all shared-lock writer changes, then drain every running/queued writer
+# using older definitions (including old-tag alpha runs); do not rerun old
+# definitions after activation. To rebuild an old tag, dispatch release-alpha
+# from main with its tag input. Review a manual preview audit, then an operator
+# may set PRERELEASE_CLEANUP_ENABLED=true. Until then schedules preview and
+# manual apply is rejected. Unset the variable to return schedules to preview.
+#
+# The repository-local lock covers full inventory/protection/deletion and every
+# source/mirror writer. No child workflow reacquires it. queue:max retains up to
+# 100 pending jobs/runs; overflow is cancelled by GitHub, so monitor queue depth.
+# https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+# The default token is unused; checkout uses the dedicated token without storage.
+name: Cleanup prereleases
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview candidates or apply an enabled cleanup
+        type: choice
+        default: preview
+        options: [preview, apply]
+
+permissions: {}
+
+concurrency:
+  group: cloudlands-release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  cleanup:
+    if: ${{ github.repository == 'intent-hq/cloudlands-fe' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Require cleanup credential
+        env:
+          GH_TOKEN: ${{ secrets.PRERELEASE_CLEANUP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::PRERELEASE_CLEANUP_TOKEN is required; no releases were deleted."
+            exit 1
+          fi
+
+      - name: Checkout reviewed cleanup command
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: e039b4dca2ad7fa59139a0b1d2ca2aecca558448
+          path: cleanup-source
+          token: ${{ secrets.PRERELEASE_CLEANUP_TOKEN }}
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: scripts/cleanup_prereleases.py
+          sparse-checkout-cone-mode: false
+
+      - name: Run cleanup
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PRERELEASE_CLEANUP_TOKEN }}
+          CLEANUP_ENABLED: ${{ vars.PRERELEASE_CLEANUP_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::PRERELEASE_CLEANUP_TOKEN is required; no releases were deleted."
+            exit 1
+          fi
+          mode="$REQUESTED_MODE"
+          if [ "$EVENT_NAME" = schedule ]; then
+            mode=preview
+            if [ "$CLEANUP_ENABLED" = true ]; then mode=apply; fi
+          fi
+          args=(--component cloudlands-fe)
+          case "$mode" in
+            preview) ;;
+            apply)
+              if [ "$CLEANUP_ENABLED" != true ]; then
+                echo "::error::PRERELEASE_CLEANUP_ENABLED must be true after older writer runs drain; no releases were deleted."
+                exit 1
+              fi
+              args+=(--apply)
+              ;;
+            *) echo "::error::Unknown cleanup mode; no releases were deleted."; exit 1 ;;
+          esac
+          python3 -S -B cleanup-source/scripts/cleanup_prereleases.py "${args[@]}" > cleanup-audit.json
+
+      - name: Upload cleanup audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: prerelease-cleanup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cleanup-audit.json
+          if-no-files-found: warn
+          retention-days: 30
