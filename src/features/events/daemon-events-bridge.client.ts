@@ -1,4 +1,7 @@
-import { isAgentReadWorkspaceCurrent } from '$features/agent/agent-read-ownership';
+import {
+  claimAgentReadOwnership,
+  isAgentReadWorkspaceCurrent,
+} from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 /**
  * Daemon events → renderer Redux bridge.
@@ -344,7 +347,7 @@ interface StreamState {
 const streamsByAgent = new Map<string, StreamState>();
 
 /**
- * Per-agent turn tracking for the push-applied preview digest: the last
+ * Per-workspace/agent turn tracking for the push-applied preview digest: the last
  * `agent:stream:activity` / `agent:stream:end` messageId seen. When an
  * activity ping arrives for a NEW messageId (a new turn), the previous turn's
  * `session.digest` and `lastToolUse` are cleared before the ping's own fields
@@ -361,7 +364,7 @@ const streamsByAgent = new Map<string, StreamState>();
 const previewTurnMessageIdByAgent = new Map<string, string>();
 
 /**
- * Per-agent messageId of the last turn whose terminal `agent:stream:end` was
+ * Per-workspace/agent messageId of the last turn whose terminal `agent:stream:end` was
  * applied. An activity ping is self-sufficient evidence of a live turn (it
  * opens the sticky `liveTurnOpen` bit so a never-hydrated delegated agent's
  * footer preview goes live without an `agent:status-changed` edge), but a
@@ -681,24 +684,40 @@ function applyStreamPreviewFields(
  * silently dropped rather than just deferred. `ensureAgentSession` is async
  * (it fetches + hydrates the store), so `apply` runs immediately when the
  * session is already known, otherwise it is deferred until hydration settles
- * — `ensureAgentSession` coalesces concurrent calls per agent via its
- * in-flight map and the daemon throttles activity to ≤1/s, so this cannot
- * stampede, and it never rejects (errors are swallowed/logged), so `apply`
- * always runs even after a failed fetch (a still-unknown session then makes
- * the deferred writes no-ops, same as today).
+ * — `ensureAgentSession` coalesces concurrent calls per read owner. A preview
+ * must still belong to that workspace and read lifetime when it is applied:
+ * hydration can settle after another workspace replaces the row, or after a
+ * newer read takes ownership without having published its replacement yet.
+ * A failed fetch leaves no session to update.
  */
 function withHydratedSession(
   agentId: string,
   workspaceId: string | undefined,
   apply: () => void,
 ): void {
-  if (appStore.state.agentSessions?.byAgentId[agentId]) {
+  const session = appStore.state.agentSessions?.byAgentId[agentId];
+  if (
+    (workspaceId !== undefined && session && session.workspaceId !== workspaceId) ||
+    !isAgentReadWorkspaceCurrent(agentId, workspaceId)
+  ) {
+    return;
+  }
+  if (session) {
     apply();
     return;
   }
   const generation = agentRefreshGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
   void ensureAgentSession(agentId, workspaceId).then(() => {
-    if (generation === agentRefreshGeneration) apply();
+    const hydrated = appStore.state.agentSessions?.byAgentId[agentId];
+    if (
+      generation === agentRefreshGeneration &&
+      ownership.isCurrent() &&
+      hydrated &&
+      (workspaceId === undefined || hydrated.workspaceId === workspaceId)
+    ) {
+      apply();
+    }
   });
 }
 
@@ -740,7 +759,8 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // `lastToolUse.status: "running"` that `isAgentRunningState` reads as
   // active evidence) and, for an older turn, masquerade as a new turn and
   // clear the current digest.
-  const endedMessageId = previewTurnEndedMessageIdByAgent.get(agentId);
+  const previewKey = JSON.stringify([workspaceId, agentId]);
+  const endedMessageId = previewTurnEndedMessageIdByAgent.get(previewKey);
   if (endedMessageId !== undefined && messageId <= endedMessageId) {
     return;
   }
@@ -764,9 +784,9 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // the next turn starts. The map write itself is synchronous bookkeeping
   // (no store dependency) — only the resulting agent-session dispatches below
   // wait on hydration.
-  const isNewTurn = previewTurnMessageIdByAgent.get(agentId) !== messageId;
+  const isNewTurn = previewTurnMessageIdByAgent.get(previewKey) !== messageId;
   if (isNewTurn) {
-    previewTurnMessageIdByAgent.set(agentId, messageId);
+    previewTurnMessageIdByAgent.set(previewKey, messageId);
   }
   // The ping itself proves a turn is in flight (the daemon only emits it
   // mid-turn), so open the sticky `liveTurnOpen` bit — the same one the
@@ -782,7 +802,7 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
     // the turn's terminal `agent:stream:end` may stamp the ended-turn map
     // (synchronously) in that window — a then-stale ping must not re-open
     // the liveness the terminal fold just closed.
-    const endedAtDispatch = previewTurnEndedMessageIdByAgent.get(agentId);
+    const endedAtDispatch = previewTurnEndedMessageIdByAgent.get(previewKey);
     if (endedAtDispatch !== undefined && messageId <= endedAtDispatch) {
       return;
     }
@@ -1138,16 +1158,17 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // writes and let the newer turn's own state stand; an unstamped/older
   // (falsy-comparison) terminal or one with no messageId still applies
   // (matches pre-existing behavior for daemons that omit messageId).
-  const trackedMessageId = previewTurnMessageIdByAgent.get(agentId);
+  const previewKey = JSON.stringify([workspaceId, agentId]);
+  const trackedMessageId = previewTurnMessageIdByAgent.get(previewKey);
   const isStaleTerminalForPreview =
     messageId !== undefined && trackedMessageId !== undefined && messageId < trackedMessageId;
   if (!isStaleTerminalForPreview) {
     if (messageId !== undefined) {
-      previewTurnMessageIdByAgent.set(agentId, messageId);
+      previewTurnMessageIdByAgent.set(previewKey, messageId);
       // Record the ended turn so a straggler same-turn (or older-turn)
       // activity ping cannot re-open the sticky liveTurnOpen bit the
       // terminal choreography closes — see handleStreamActivityEvent.
-      previewTurnEndedMessageIdByAgent.set(agentId, messageId);
+      previewTurnEndedMessageIdByAgent.set(previewKey, messageId);
     }
     withHydratedSession(agentId, event.workspaceId, () => {
       applyStreamPreviewFields(
