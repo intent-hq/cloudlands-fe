@@ -3292,6 +3292,79 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
   });
 
+  it('closing empty search leaves an unrelated return-to-bottom animation active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    mocks.animateScrollTo.mockClear();
+    view.component.scrollToBottom();
+    const [getContainer, , , onComplete] = mocks.animateScrollTo.mock.calls[0];
+    const container = getContainer();
+    expect(container).not.toBeNull();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    await fireEvent.keyDown(search, { key: 'Escape' });
+    await tick();
+    expect(getContainer()).toBe(container);
+    onComplete(container);
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(container);
+  });
+
+  it.each(['turn', 'query', 'close'] as const)(
+    'a completed search scroll yields to %s cancellation',
+    async (cancel, { onTestFinished }) => {
+      installSearchHighlightSpy();
+      vi.stubGlobal('Highlight', class {});
+      const rangeSpy = vi.spyOn(document, 'createRange').mockImplementation(() =>
+        Object.assign(new Range(), {
+          getBoundingClientRect: () => new DOMRect(0, 100, 20, 20),
+        }),
+      );
+      onTestFinished(() => rangeSpy.mockRestore());
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+      render(ChatPanel, {
+        props: {
+          workspace: workspace('workspace-a'),
+          agentId: 'agent-a',
+          isActive: true,
+          isPanelFocused: true,
+        },
+      });
+      await tick();
+      const container = screen.getByTestId('chat-transcript-scroll-viewport');
+      const target = container.querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+      const body = document.createElement('p');
+      body.dataset.chatSearchBlockPath = 'b:0';
+      body.textContent = 'needle';
+      target.append(body);
+      target.dataset.turnNumber = '7';
+      mocks.animateScrollTo.mockClear();
+      const search = await openChatSearch();
+      await fireEvent.input(search, { target: { value: 'needle' } });
+      await settleSearchHighlight();
+      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
+      const [getContainer] = mocks.animateScrollTo.mock.calls[0];
+      expect(getContainer()).toBe(container);
+      if (cancel === 'turn')
+        window.dispatchEvent(
+          new CustomEvent('agent:scroll-to-turn', {
+            detail: { agentId: 'agent-a', turnNumber: 7 },
+          }),
+        );
+      else if (cancel === 'query') await fireEvent.input(search, { target: { value: 'changed' } });
+      else await fireEvent.keyDown(search, { key: 'Escape' });
+      expect(getContainer()).toBeNull();
+    },
+  );
+
   it('search navigation cancels a pending return-to-bottom animation and completion', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);

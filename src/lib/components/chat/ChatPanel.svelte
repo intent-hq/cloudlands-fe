@@ -1537,26 +1537,37 @@
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
     if (!isActive) return;
-    scrollNavigationId++;
-    const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
     const isShowing = untrack(() => showSearch);
     const matches = untrack(() => allSearchMatches);
     const container = untrack(() => scrollContainer);
+    // Clearing highlights restores search-owned disclosures without taking the
+    // viewport from an unrelated navigation or disabling follow-bottom.
+    const getContainer =
+      isShowing && query.trim() && matches[index] ? beginScrollNavigation() : undefined;
+    const request = ++searchHighlightRequest;
+    const binding = searchBindingKey();
+    const current = () =>
+      isActive &&
+      !isComponentDestroyed &&
+      binding === searchBindingKey() &&
+      request === searchHighlightRequest &&
+      (!getContainer || !!getContainer());
     await tick();
-    if (!isActive || request !== searchHighlightRequest) return;
-    await revealSearchMatch(
-      isShowing ? matches[index] : undefined,
-      container,
-      () => isActive && !isComponentDestroyed && request === searchHighlightRequest,
+    if (!current()) return;
+    await revealSearchMatch(isShowing ? matches[index] : undefined, container, current, query);
+    if (!current()) return;
+    await tick();
+    if (!current() || !(await waitForActiveFrame()) || !current()) return;
+    doHighlightSearchMatches(
       query,
+      index,
+      matches,
+      isShowing,
+      container,
+      getContainer ? () => (current() ? getContainer() : null) : undefined,
     );
-    if (!isActive || request !== searchHighlightRequest) return;
-    await tick();
-    if (!isActive) return;
-    if (!(await waitForActiveFrame()) || request !== searchHighlightRequest) return;
-    doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
   // Use CSS Custom Highlight API for search highlighting
@@ -1568,6 +1579,7 @@
     matches: ChatSearchMatch[],
     isShowing: boolean,
     container: HTMLDivElement | undefined,
+    getContainer?: () => HTMLElement | null,
   ) {
     // Clear existing highlights
     CSS.highlights?.delete('search-results');
@@ -1685,7 +1697,7 @@
       CSS.highlights.set('search-results', searchHighlight);
     }
 
-    if (currentRange) {
+    if (currentRange && getContainer?.()) {
       const currentSearchHighlight = new Highlight(currentRange);
       CSS.highlights.set('current-search-result', currentSearchHighlight);
 
@@ -1695,10 +1707,7 @@
       const elementOffsetTop = rect.top - containerRect.top + container.scrollTop;
       const targetScrollTop = elementOffsetTop - containerRect.height / 2 + rect.height / 2;
 
-      container.scrollTo({
-        top: Math.max(0, targetScrollTop),
-        behavior: 'smooth',
-      });
+      smoothScrollToPosition(Math.max(0, targetScrollTop), undefined, getContainer);
     }
   }
 
