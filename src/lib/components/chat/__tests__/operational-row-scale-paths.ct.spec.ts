@@ -18,9 +18,10 @@ const transcript = (rows: number, prefix = 'scale'): AgentMessage[] => [
     role: 'assistant',
     timestamp: '2026-09-28T10:00:01Z',
     contentBlocks: Array.from({ length: rows }, (_, i) => ({
-      type: 'thinking' as const,
+      type: 'tool_result' as const,
       id: `${prefix}-row-${i}`,
-      text: `Scale reasoning ${i}\n\nDetails needle-${prefix}-${i}.`,
+      tool_use_id: `${prefix}-orphan-${i}`,
+      output: `Details needle-${prefix}-${i}.`,
     })),
   },
 ];
@@ -55,7 +56,7 @@ for (const rows of [100, 1000, 5000]) {
     });
     const watched = host
       .getByTestId('scale-agent-subscriptions')
-      .locator('[data-agent-id="chat-panel-operational-agent-alternate"]');
+      .getByTestId('agent-list-item');
     await expect(watched).toBeVisible();
     await expect(host.locator('[data-message-id="watched-assistant"]')).toHaveCount(0);
     const finish = await timeline(page);
