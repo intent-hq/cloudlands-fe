@@ -44,6 +44,46 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) {
+    const geometry = await page.locator('[data-window-scroll]').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const root = node as HTMLElement & { operationalSnapshot?: () => unknown };
+        const box = (element: Element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            right: rect.right,
+            width: rect.width,
+            height: rect.height,
+          };
+        };
+        return {
+          scrollTop: root.scrollTop,
+          scrollHeight: root.scrollHeight,
+          clientHeight: root.clientHeight,
+          box: box(root),
+          policy: root.operationalSnapshot?.(),
+          windows: [...root.querySelectorAll('[data-operational-window]')].map((window) => ({
+            scope: window.getAttribute('data-operational-window'),
+            box: box(window),
+            rows: [...window.children].map((child) => ({
+              key: child.getAttribute('data-operational-window-key'),
+              spacer: child.getAttribute('data-operational-spacer-rows'),
+              style: child.getAttribute('style'),
+              box: box(child),
+            })),
+          })),
+        };
+      }),
+    );
+    await info.attach('operational-window-geometry', {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    });
+  }
+
   const counts = await page.evaluate(
     () => (window as unknown as { operationalMountCounts: number[] }).operationalMountCounts,
   );
@@ -210,6 +250,16 @@ test('disclosure state survives parent disposal and viewport resizing', async ({
   await expect(host.locator('[data-chat-operational-row]')).toHaveCount(1);
   await disclosure.click();
   await expect(host.getByText('Inspecting 0', { exact: true })).toBeVisible();
+  // Exercise resizing after the reveal reaches its natural height. Scrolling
+  // during the reveal targets its temporary, smaller scroll extent.
+  await expect
+    .poll(() =>
+      host
+        .locator('[data-response-group-motion="height-opacity-y"]')
+        .first()
+        .evaluate((node) => (node as HTMLElement).style.height),
+    )
+    .toBe('');
   await host.evaluate((node) => {
     node.style.width = '320px';
     node.scrollTop = node.scrollHeight;

@@ -33,7 +33,16 @@
     horizontallyClipped?: boolean;
   } = $props();
   let scrollRoot = $state<HTMLElement>();
-  provideOperationalPanel(() => (documentScroll ? undefined : scrollRoot));
+  const panel = provideOperationalPanel(() => (documentScroll ? undefined : scrollRoot));
+  function diagnostics(node: HTMLElement) {
+    const target = node as HTMLElement & { operationalSnapshot?: () => unknown };
+    target.operationalSnapshot = () => panel.policy.snapshot();
+    return {
+      destroy: () => {
+        delete target.operationalSnapshot;
+      },
+    };
+  }
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(dispose);
   const content = $derived.by(() =>
@@ -71,6 +80,7 @@
 
 <div
   bind:this={scrollRoot}
+  use:diagnostics
   data-window-scroll
   style={horizontallyClipped
     ? 'height:800px;width:0;overflow:hidden'
