@@ -9,13 +9,11 @@
 </script>
 
 <script lang="ts">
+  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import { store as appStore } from '$store/renderer/store';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { checkSingleProviderSuccess } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import {
-    loadEnabledProvidersFromStorage,
-    setActiveProvider,
-  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import ProviderSelector from '../../ProviderSelector.svelte';
 
@@ -23,7 +21,7 @@
   // Keep production provider/menu/form components; seed only their data inputs.
   appStore.dispatch(providerCatalogLoaded(catalog));
   appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
-  appStore.dispatch(setActiveProvider('auggie'));
+  appStore.dispatch(hydrateDefaultProvider('auggie'));
   appStore.dispatch(checkSingleProviderSuccess('auggie', { available: true, authenticated: true }));
   appStore.dispatch(checkSingleProviderSuccess('antigravity', { available: false }));
 

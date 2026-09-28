@@ -1537,6 +1537,7 @@
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
   async function triggerHighlight() {
     if (!isActive) return;
+    scrollNavigationId++;
     const request = ++searchHighlightRequest;
     const query = untrack(() => debouncedSearchQuery);
     const index = untrack(() => currentSearchIndex);
@@ -4068,6 +4069,24 @@
     return header?.getBoundingClientRect().bottom;
   }
 
+  // A single owner spans lazy rendering and animation. Returning null cancels
+  // animateScrollTo before either its next write or its completion callback.
+  let scrollNavigationId = 0;
+  function beginScrollNavigation(): () => HTMLElement | null {
+    searchHighlightRequest++;
+    const navigationId = ++scrollNavigationId;
+    const container = scrollContainer ?? null;
+    shouldFollowBottom = false;
+    scheduleDeepOpenRelease();
+    return () =>
+      isActive &&
+      !isComponentDestroyed &&
+      navigationId === scrollNavigationId &&
+      scrollContainer === container
+        ? container
+        : null;
+  }
+
   /**
    * Smoothly scroll an element into view with a custom duration.
    * Uses easeOutCubic for a natural feel.
@@ -4076,9 +4095,13 @@
     element: HTMLElement,
     block: 'start' | 'center' | 'end' = 'center',
     duration: number = 150,
+    getContainer = beginScrollNavigation(),
   ) {
-    if (!isActive || !scrollContainer) return;
+    if (!getContainer() || !scrollContainer) return;
 
+    // Explicit navigation owns the viewport until the user returns to bottom.
+    // Programmatic scroll events intentionally do not release followBottom.
+    shouldFollowBottom = false;
     const containerRect = scrollContainer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
 
@@ -4104,15 +4127,20 @@
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
-    animateScrollTo(() => (isActive ? scrollContainer : null), targetScrollTop, duration);
+    animateScrollTo(getContainer, targetScrollTop, duration);
   }
 
   /**
    * Smoothly scroll to a specific position with the moderate motion tier.
    */
-  function smoothScrollToPosition(top: number, duration: number = spring.moderate.settleMs) {
-    if (!isActive) return;
-    animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
+  function smoothScrollToPosition(
+    top: number,
+    duration: number = spring.moderate.settleMs,
+    getContainer = beginScrollNavigation(),
+  ) {
+    if (!getContainer()) return;
+    shouldFollowBottom = false;
+    animateScrollTo(getContainer, top, duration);
   }
 
   // Navigate to a specific message by index
@@ -4124,6 +4152,7 @@
 
     // Clamp index to valid range, or -1 for "at bottom"
     if (index < 0) {
+      beginScrollNavigation();
       currentMessageIndex = -1;
       shouldFollowBottom = true;
       followToBottom(scrollContainer);
@@ -4393,6 +4422,7 @@
 
   $effect(() => {
     if (isActive) return;
+    scrollNavigationId++;
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
     deepOpenReleaseTimer = null;
     deepOpenTurnKey = null;
@@ -4403,16 +4433,21 @@
   // the deep-open force-visible key) and resolve its DOM element once rendered.
   // Drops follow so the placeholder expanding doesn't yank the viewport back
   // down. Retries across a few frames; resolves null if it never appears.
-  async function forceRenderAndFindMessage(messageId: string): Promise<HTMLElement | null> {
-    if (!isActive) return null;
+  async function forceRenderAndFindMessage(
+    messageId: string,
+    getContainer: () => HTMLElement | null,
+  ): Promise<HTMLElement | null> {
+    if (!getContainer()) return null;
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = null;
     deepOpenTurnKey = messageIdToTurnKey.get(messageId) ?? messageId;
     shouldFollowBottom = false;
     await tick();
-    if (!isActive) return null;
+    if (!getContainer()) return null;
     const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
     for (let attempt = 0; attempt < 5; attempt++) {
       await new Promise(requestAnimationFrame);
-      if (!isActive) return null;
+      if (!getContainer()) return null;
       const targetElement = scrollContainer?.querySelector(selector) as HTMLElement | null;
       if (targetElement) return targetElement;
     }
@@ -4425,16 +4460,17 @@
     const messageId = offscreenPendingProposalMessageId;
     const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
     if (!messageId || !ref) return;
+    const getContainer = beginScrollNavigation();
     if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId)) || !isActive) return;
+      if (!(await seekConversationToMessage(agentId, messageId)) || !getContainer()) return;
       await tick();
     }
-    const message = await forceRenderAndFindMessage(messageId);
-    if (!message || !isActive) return;
+    const message = await forceRenderAndFindMessage(messageId, getContainer);
+    if (!message || !getContainer()) return;
     await tick();
-    if (!isActive) return;
+    if (!getContainer()) return;
     const target = findPendingProposalCard(message, ref) ?? message;
-    smoothScrollTo(target, 'center');
+    smoothScrollTo(target, 'center', undefined, getContainer);
     target.classList.add('highlight-flash');
     scheduleHighlightRemoval(target, 'highlight-flash', 1500);
     scheduleDeepOpenRelease();
@@ -4451,8 +4487,9 @@
   // viewport down. Falls back to today's scroll-to-bottom if the anchor never
   // renders.
   async function scrollToNewMessagesDivider(anchorMessageId: string) {
-    const anchorElement = await forceRenderAndFindMessage(anchorMessageId);
-    if (!isActive || isComponentDestroyed || !scrollContainer) return;
+    const getContainer = beginScrollNavigation();
+    const anchorElement = await forceRenderAndFindMessage(anchorMessageId, getContainer);
+    if (!getContainer() || !scrollContainer) return;
     const dividerElement = scrollContainer.querySelector(
       '[data-new-messages-divider]',
     ) as HTMLElement | null;
@@ -4489,7 +4526,7 @@
     if (prefersReducedMotion()) {
       scrollContainer.scrollTop = entryScrollTop;
     } else {
-      smoothScrollToPosition(entryScrollTop);
+      smoothScrollToPosition(entryScrollTop, undefined, getContainer);
     }
     scheduleDeepOpenRelease();
   }
@@ -4540,13 +4577,11 @@
 
     // Search and deep links share one navigation generation. A slower reveal
     // must never scroll or highlight after a newer target has taken over.
+    const getContainer = beginScrollNavigation();
     const request = ++searchHighlightRequest;
     const binding = searchBindingKey();
     const current = () =>
-      isActive &&
-      !isComponentDestroyed &&
-      binding === searchBindingKey() &&
-      request === searchHighlightRequest;
+      !!getContainer() && binding === searchBindingKey() && request === searchHighlightRequest;
     pendingOpenMessageRequestIds.add(detail.requestId);
     try {
       // Force-render only the target's turn through LazyTurn; individual rows
@@ -4570,7 +4605,7 @@
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
       if (!current()) return;
-      if (!match) smoothScrollTo(targetElement, 'center');
+      if (!match) smoothScrollTo(targetElement, 'center', undefined, getContainer);
       scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
       scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
@@ -4700,29 +4735,23 @@
   // Automated rows (wakes, system, agent-origin) are skipped; when the
   // current message is itself automated, the walk starts from its position
   // in the full message order. No preceding user message → scroll to top.
-  function scrollToPreviousUserMessage(currentMessageId: string) {
-    if (!scrollContainer) return;
+  async function scrollToPreviousUserMessage(currentMessageId: string) {
+    if (!isActive || !scrollContainer) return;
+    const getContainer = beginScrollNavigation();
 
     const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
 
     if (!previousMessage) {
       // No preceding user-authored message - scroll to top
-      smoothScrollToPosition(0);
+      smoothScrollToPosition(0, undefined, getContainer);
       return;
     }
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-id="${previousMessage.id}"]`,
-    ) as HTMLElement;
-
-    if (targetElement) {
-      smoothScrollTo(targetElement, 'start');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
-    }
+    // Measure the rendered row, not its lazy placeholder, just as the header
+    // navigator does. Reuse the same follow release and force-visible lifetime.
+    const targetElement = await forceRenderAndFindMessage(previousMessage.id, getContainer);
+    if (!getContainer() || !targetElement) return;
+    smoothScrollTo(targetElement, 'start', undefined, getContainer);
+    scheduleDeepOpenRelease();
   }
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
@@ -5062,6 +5091,7 @@
     // Scroll + follow re-lock must run synchronously, before any await: a
     // stalled or rejecting drafts.clear must never delay or skip them.
     if (options.followBottom) {
+      beginScrollNavigation();
       shouldFollowBottom = true;
       if (scrollContainer) followToBottom(scrollContainer);
     }
@@ -5535,6 +5565,7 @@
     if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
+    const getContainer = beginScrollNavigation();
     if (prefersReducedMotion()) {
       shouldFollowBottom = true;
       followToBottom(container);
@@ -5542,11 +5573,11 @@
     }
     shouldFollowBottom = false;
     animateScrollTo(
-      () => (isActive && scrollContainer === container ? container : null),
+      getContainer,
       Math.max(0, container.scrollHeight - container.clientHeight),
       150,
       () => {
-        if (!isActive || scrollContainer !== container) return;
+        if (!getContainer()) return;
         shouldFollowBottom = true;
         followToBottom(container);
       },
@@ -5556,6 +5587,7 @@
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!isActive) return false;
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
+    const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
     // both). Seek the page containing it (§5.5 aroundMessageId) and replace
@@ -5565,10 +5597,11 @@
     if (agentId && !messageIdToTurnKey.has(messageId)) {
       if (!(await seekConversationToMessage(agentId, messageId))) return false;
     }
-    const targetElement = await forceRenderAndFindMessage(messageId);
-    if (!isActive || !targetElement) return false;
+    if (!getContainer()) return false;
+    const targetElement = await forceRenderAndFindMessage(messageId, getContainer);
+    if (!getContainer() || !targetElement) return false;
     currentMessageIndex = getMessageIndex(messageId);
-    smoothScrollTo(targetElement, 'start');
+    smoothScrollTo(targetElement, 'start', undefined, getContainer);
     targetElement.classList.add('message-highlight-flash');
     scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
     scheduleDeepOpenRelease();

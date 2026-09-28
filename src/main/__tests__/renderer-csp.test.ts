@@ -38,7 +38,7 @@ describe('renderer Content Security Policy', () => {
     expect(scriptSrc).toBe("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
   });
 
-  it('limits renderer connections to secure transports, local development and workspace media downloads', () => {
+  it('limits renderer connections to secure transports, local development, PDF Blobs and workspace media downloads', () => {
     const content = appHtml.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/)?.[1];
     expect(content).toBeDefined();
 
@@ -47,7 +47,13 @@ describe('renderer Content Security Policy', () => {
       .map((directive) => directive.trim())
       .find((directive) => directive.startsWith('connect-src '));
     expect(connectSrc).toBe(
-      "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* workspace-file: workspace-asset:",
+      "connect-src 'self' blob: https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* workspace-file: workspace-asset:",
+    );
+  });
+
+  it('keeps local PDF Blob reads allowed in the production-hardened CSP', () => {
+    expect(cspDirective(hardenProductionScriptCsp(appHtml), 'connect-src')?.split(' ')).toContain(
+      'blob:',
     );
   });
 

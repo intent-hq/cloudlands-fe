@@ -3292,6 +3292,97 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
   });
 
+  it('search navigation cancels a pending return-to-bottom animation and completion', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    mocks.animateScrollTo.mockClear();
+    view.component.scrollToBottom();
+    const [getContainer, , , onComplete] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).not.toBeNull();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    expect(getContainer()).toBeNull();
+    onComplete(screen.getByTestId('chat-transcript-scroll-viewport'));
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+  });
+
+  it('explicit turn navigation cancels a pending search highlight', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+    target.dataset.turnNumber = '7';
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    for (let frame = 0; frame < 45; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(highlightPasses()).toBe(0);
+  });
+
+  it('does not revive a deep-link retry superseded by explicit turn navigation', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+    target.dataset.turnNumber = '7';
+    const detail = { agentId: 'agent-a', messageId: 'message-a', requestId: 'old-request' };
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+  });
+
   it('deduplicates retry-ladder deep links before their first frame', async () => {
     mocks.draftGet.mockResolvedValue(null);
     render(ChatPanel, {

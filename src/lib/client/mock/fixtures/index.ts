@@ -285,6 +285,8 @@ export const mockMcpServers: McpServerConfig[] = [
 
 /** Background-agent model assignments for the background-agent settings panel. */
 export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {
+  defaultReasoningEffort: '',
+  typeReasoningEffortOverrides: {},
   defaultModel: 'mock-model',
   typeOverrides: { commit: 'mock-model', pr: 'mock-model', review: '', fast: '' },
   providerSettings: {},
