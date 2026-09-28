@@ -841,6 +841,27 @@ describe('ResponseGroup - collapse state model', () => {
     group.dispatchEvent(new CustomEvent('chatsearchrestore'));
     expect(btn.getAttribute('aria-expanded')).toBe('true');
   });
+
+  it('retains search expansion through eviction and restores it after remount', async () => {
+    const saved = {};
+    const props = { name: 'Searchable group', searchPath: 'b:0', saved, children };
+    const first = render(ResponseGroup, { props });
+    first.container
+      .querySelector('[data-chat-search-disclosure-id]')!
+      .dispatchEvent(new CustomEvent('chatsearchexpand'));
+    await waitFor(() => expect(header(first.container).getAttribute('aria-expanded')).toBe('true'));
+    first.unmount();
+    const second = render(ResponseGroup, { props });
+    await waitFor(() =>
+      expect(header(second.container).getAttribute('aria-expanded')).toBe('true'),
+    );
+    second.container
+      .querySelector('[data-chat-search-disclosure-id]')!
+      .dispatchEvent(new CustomEvent('chatsearchrestore'));
+    await waitFor(() =>
+      expect(header(second.container).getAttribute('aria-expanded')).toBe('false'),
+    );
+  });
 });
 
 describe('ResponseGroup - block identity', () => {

@@ -33,6 +33,7 @@
     headerHeight?: number;
     saved?: {
       expanded?: boolean;
+      searchOwnsExpansion?: boolean;
       override?: 'automatic' | 'expanded-live' | 'expanded-completed' | 'collapsed';
     };
     name: string;
@@ -83,7 +84,8 @@
   let triggerEl: HTMLButtonElement | null = $state(null);
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
-  let searchOwnsExpansion = false;
+  // svelte-ignore state_referenced_locally -- search ownership survives disposable row mounts.
+  let searchOwnsExpansion = saved?.searchOwnsExpansion ?? false;
   // svelte-ignore state_referenced_locally -- retained state seeds this disposable group.
   let disclosureOverride: 'automatic' | 'expanded-live' | 'expanded-completed' | 'collapsed' =
     saved?.override ?? 'automatic';
@@ -92,6 +94,7 @@
     desiredExpanded = nextExpanded;
     if (saved) {
       saved.expanded = nextExpanded;
+      saved.searchOwnsExpansion = searchOwnsExpansion;
       saved.override = disclosureOverride;
     }
     if (nextExpanded) {
@@ -139,6 +142,7 @@
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
+      if (searchOwnsExpansion) return;
       if (currentlyStreaming && currentlyHasPreview && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride === 'automatic') {
@@ -183,6 +187,7 @@
     clearCollapseTimer();
     if (saved) {
       saved.expanded = desiredExpanded;
+      saved.searchOwnsExpansion = searchOwnsExpansion;
       saved.override = disclosureOverride;
     }
   });

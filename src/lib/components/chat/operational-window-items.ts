@@ -15,6 +15,7 @@ import { operationalRowKey, type OperationalRowDescriptor } from './operational-
 
 export interface WindowItem {
   key: string;
+  navigation: { messageId: string; path: string };
   kind: OperationalRowDescriptor['kind'];
   estimatedHeight: number;
   mountPath: string;
@@ -154,6 +155,10 @@ function projectWindowItems(
             ? 'group'
             : 'content';
     const base = {
+      navigation: {
+        messageId: scope,
+        path: childIndex === undefined ? `b:${index}` : `b:${index}:c:${childIndex}`,
+      },
       // Freeze mutable operational fields until the attachment invalidation is
       // published. Tool-result blocks retain identity for result classification.
       block: block.type === 'thinking' || block.type === 'tool_use' ? { ...block } : block,

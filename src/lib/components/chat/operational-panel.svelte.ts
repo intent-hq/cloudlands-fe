@@ -6,7 +6,10 @@ import {
 } from './operational-row-window';
 
 const CONTEXT = Symbol('operational-panel');
-type Entry = Omit<OperationalRowDescriptor, 'scopeId'> & { mountPath?: string };
+type Entry = Omit<OperationalRowDescriptor, 'scopeId'> & {
+  mountPath?: string;
+  navigation?: { messageId: string; path: string };
+};
 export type WindowSegment = {
   key: string;
   start: number;
@@ -50,7 +53,13 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   let listeningWindow = false;
   let resize: ResizeObserver | undefined;
   let mounted = new Set<string>();
-  const pins = new Set<string>();
+  const pins = new Map<string, Set<object>>();
+  const defaultPinOwner = {};
+  const focusPins = new Set<string>();
+
+  function syncPins() {
+    policy.setPins([...focusPins, ...pins.keys()].reverse());
+  }
 
   function height(entry: Entry) {
     return heights.get(entry.key) ?? entry.estimatedHeight;
@@ -107,7 +116,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           .map((entry) => ({ ...entry, scopeId, estimatedHeight: height(entry) })),
       ),
     );
-    policy.setPins([...pins].reverse());
+    syncPins();
   }
   function ensureObserver() {
     if (!listeningWindow) {
@@ -286,6 +295,18 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   }
   return {
     policy,
+    resolveTarget(messageId: string, path: string) {
+      for (const [scope, root] of roots) {
+        const entry = root.entries.find(
+          (entry) =>
+            owners.get(entry.key) === scope &&
+            entry.navigation?.messageId === messageId &&
+            entry.navigation.path === path,
+        );
+        if (entry) return entry.key;
+      }
+      return undefined;
+    },
     locate(key: string) {
       const scope = owners.get(key);
       const root = scope ? roots.get(scope) : undefined;
@@ -295,6 +316,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         if (entry.key === key)
           return {
             node: elements.get(key),
+            admitted: entry.kind === 'content' || mounted.has(key),
+            kind: entry.kind,
             scrollRoot: root.geometry.scroll,
             top:
               root.geometry.scrollTop +
@@ -318,10 +341,17 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       }
       return value as T;
     },
-    pin(key: string, active: boolean) {
-      if (active) pins.add(key);
-      else pins.delete(key);
-      policy.setPins([...pins].reverse());
+    pin(key: string, active: boolean, owner = defaultPinOwner) {
+      if (active) {
+        const leases = pins.get(key) ?? new Set<object>();
+        leases.add(owner);
+        pins.set(key, leases);
+      } else {
+        const leases = pins.get(key);
+        leases?.delete(owner);
+        if (!leases?.size) pins.delete(key);
+      }
+      syncPins();
       schedule();
     },
     attach(scope: string, node: HTMLElement, entries: Entry[], notify: Root['notify']) {
@@ -409,15 +439,15 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       const current = () => active && !disposed && elements.get(key) === node;
       const focus = () => {
         if (!current()) return;
-        pins.delete(key);
-        pins.add(key);
-        policy.setPins([...pins].reverse());
+        focusPins.delete(key);
+        focusPins.add(key);
+        syncPins();
         schedule();
       };
       const blur = () => {
         if (current() && !node.contains(document.activeElement)) {
-          pins.delete(key);
-          policy.setPins([...pins].reverse());
+          focusPins.delete(key);
+          syncPins();
           schedule();
         }
       };
@@ -432,7 +462,11 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           active = false;
           node.removeEventListener('focusin', focus);
           node.removeEventListener('focusout', leave);
-          if (elements.get(key) === node) elements.delete(key);
+          if (elements.get(key) === node) {
+            elements.delete(key);
+            focusPins.delete(key);
+            syncPins();
+          }
           resize?.unobserve(node);
           schedule();
         },
@@ -458,6 +492,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       anchors.clear();
       retained.clear();
       pins.clear();
+      focusPins.clear();
       policy.dispose();
     },
   };

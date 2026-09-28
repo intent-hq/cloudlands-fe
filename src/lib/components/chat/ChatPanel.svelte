@@ -714,7 +714,7 @@
   }
 
   let scrollContainer = $state<HTMLDivElement>();
-  provideOperationalPanel(() => scrollContainer);
+  const operationalPanel = provideOperationalPanel(() => scrollContainer);
   let composerElement = $state<HTMLDivElement>();
   let panelHeight = $state(0);
   let composerHeight = $state(0);
@@ -1254,7 +1254,8 @@
   let searchInputRef: HTMLInputElement | null = $state(null);
   let panelElement: HTMLElement | null = $state(null);
   let currentSearchIndex = $state(0);
-  let searchOpenedDisclosures: Array<{ messageId: string; disclosureId: string }> = [];
+  let searchOpenedDisclosures: Array<{ messageId: string; disclosureId: string; key?: string }> =
+    [];
   let searchHighlightRequest = 0;
 
   // Tracks DOM focus within the panel wrapper. Combined with the `isPanelFocused`
@@ -1379,28 +1380,72 @@
     triggerHighlight();
   }
 
+  // Resolve the current catalog path to the renderer's canonical identity before
+  // scrolling. Admission still happens through the shared per-frame budget.
+  async function materializeSearchRow(messageId: string, path: string, current: () => boolean) {
+    const lease = {};
+    let pinned: string | undefined;
+    try {
+      for (let attempt = 0; attempt < 40 && current(); attempt++) {
+        const key = operationalPanel.resolveTarget(messageId, path);
+        if (key) {
+          if (pinned !== key) {
+            if (pinned) operationalPanel.pin(pinned, false, lease);
+            pinned = key;
+            operationalPanel.pin(key, true, lease);
+          }
+          const location = operationalPanel.locate(key);
+          if (location) {
+            const { node, scrollRoot, top } = location;
+            const height =
+              location.kind === 'group' ? operationalPanel.summaryHeight(key) : location.height;
+            if (scrollRoot)
+              scrollRoot.scrollTop = Math.max(0, top - (scrollRoot.clientHeight - height) / 2);
+            if (node?.isConnected && location.admitted) return node;
+          }
+        }
+        await new Promise(requestAnimationFrame);
+        await tick();
+      }
+    } finally {
+      if (pinned) operationalPanel.pin(pinned, false, lease);
+    }
+    return undefined;
+  }
+
   async function restoreSearchDisclosures(
     container: HTMLDivElement | undefined,
     keepMessageId: string | undefined,
     keep: ReadonlySet<string>,
+    current: () => boolean,
   ) {
-    if (!isActive) return;
-    if (!container) return;
-    const remaining: Array<{ messageId: string; disclosureId: string }> = [];
+    if (!current() || !container) return;
+    const remaining: typeof searchOpenedDisclosures = [];
     for (const opened of [...searchOpenedDisclosures].reverse()) {
       if (opened.messageId === keepMessageId && keep.has(opened.disclosureId)) {
         remaining.unshift(opened);
         continue;
       }
+      const node = opened.key ? operationalPanel.locate(opened.key)?.node : undefined;
       const message = container.querySelector(
         `[data-message-id="${CSS.escape(opened.messageId)}"]`,
       );
-      const disclosure = message?.querySelector(
+      const disclosure = (node ?? message)?.querySelector(
         `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
       );
       if (disclosure) requestSearchDisclosure(disclosure, false);
+      else if (opened.key) {
+        const saved = operationalPanel.state<{ expanded?: boolean; searchOwnsExpansion?: boolean }>(
+          opened.key,
+          () => ({}),
+        );
+        if (saved.searchOwnsExpansion) {
+          saved.expanded = false;
+          saved.searchOwnsExpansion = false;
+        }
+      }
       await tick();
-      if (!isActive) return;
+      if (!current()) return;
     }
     searchOpenedDisclosures = remaining;
   }
@@ -1408,15 +1453,17 @@
   async function revealSearchMatch(
     match: ChatSearchMatch | undefined,
     container: HTMLDivElement | undefined,
+    current = () => isActive,
   ) {
-    if (!isActive) return;
+    if (!current()) return;
     const required = new Set(match?.disclosurePath ?? []);
-    await restoreSearchDisclosures(container, match?.messageId, required);
-    if (!isActive || !match || !container) return;
-    const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
-    if (!message) return;
+    await restoreSearchDisclosures(container, match?.messageId, required, current);
+    if (!current() || !match || !container) return;
     for (const id of match.disclosurePath) {
-      const disclosure = message.querySelector(
+      const row = await materializeSearchRow(match.messageId, id.replace(/^group:/, ''), current);
+      if (!current()) return;
+      const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
+      const disclosure = (row ?? message)?.querySelector(
         `[data-chat-search-disclosure-id="${CSS.escape(id)}"]`,
       );
       if (!disclosure) continue;
@@ -1426,15 +1473,17 @@
           !searchOpenedDisclosures.some(
             (opened) => opened.messageId === match.messageId && opened.disclosureId === id,
           )
-        ) {
-          searchOpenedDisclosures.push({ messageId: match.messageId, disclosureId: id });
-        }
+        )
+          searchOpenedDisclosures.push({
+            messageId: match.messageId,
+            disclosureId: id,
+            key: operationalPanel.resolveTarget(match.messageId, id.replace(/^group:/, '')),
+          });
         await tick();
-        if (!isActive) return;
-        await new Promise(requestAnimationFrame);
-        if (!isActive) return;
+        if (!current()) return;
       }
     }
+    if (match.blockPath) await materializeSearchRow(match.messageId, match.blockPath, current);
   }
 
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
@@ -1448,7 +1497,11 @@
     const container = untrack(() => scrollContainer);
     await tick();
     if (!isActive || request !== searchHighlightRequest) return;
-    await revealSearchMatch(isShowing ? matches[index] : undefined, container);
+    await revealSearchMatch(
+      isShowing ? matches[index] : undefined,
+      container,
+      () => isActive && request === searchHighlightRequest,
+    );
     if (!isActive || request !== searchHighlightRequest) return;
     await tick();
     if (!isActive) return;
@@ -4426,26 +4479,26 @@
     shouldFollowBottom = false;
     await tick();
     if (!isActive) return;
-    scheduleActiveAnimationFrame(() => {
-      if (!isActive) return;
-      const targetElement = scrollContainer?.querySelector(
-        `[data-message-id="${CSS.escape(detail.messageId)}"]`,
-      ) as HTMLElement | null;
-      if (!targetElement) {
-        // Not rendered yet — leave the requestId unhandled so a later retry
-        // from the dispatch ladder can try again.
-        logger.warn('[ChatPanel] Deep-open target not rendered yet', {
-          messageId: detail.messageId,
-        });
-        return;
-      }
-      handledOpenMessageRequestIds.add(detail.requestId);
-      smoothScrollTo(targetElement, 'center');
-      scheduleDeepOpenRelease();
-      targetElement.classList.add('message-highlight-flash');
-      scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
-      if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
-    });
+    const binding = searchBindingKey();
+    const targetElement = await forceRenderAndFindMessage(detail.messageId);
+    const current = () => isActive && binding === searchBindingKey();
+    if (!current() || !targetElement) return;
+    handledOpenMessageRequestIds.add(detail.requestId);
+    const match = detail.query
+      ? findChatSearchMatches(
+          $agentMessages$.filter((message) => message.id === detail.messageId),
+          detail.query,
+          messageIdToTurnKey,
+          workspace?.ownerPrincipalId,
+        )[0]
+      : undefined;
+    if (match) await revealSearchMatch(match, scrollContainer, current);
+    if (!current()) return;
+    if (!match) smoothScrollTo(targetElement, 'center');
+    scheduleDeepOpenRelease();
+    targetElement.classList.add('message-highlight-flash');
+    scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
+    if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
   }
 
   $effect(() => {

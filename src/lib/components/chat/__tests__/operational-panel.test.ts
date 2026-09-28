@@ -66,6 +66,18 @@ describe('panel geometry lifetime', () => {
     expect(panel.policy.snapshot().pinnedKeys).toEqual([]);
   });
 
+  it('keeps focus retained when a navigation pin on the same row is released', () => {
+    panel.attach('message', node(2000), [entry], vi.fn());
+    frame();
+    const row = node();
+    row.tabIndex = 0;
+    panel.watch(row, entry.key);
+    row.focus();
+    panel.pin(entry.key, true);
+    panel.pin(entry.key, false);
+    expect(panel.policy.snapshot().pinnedKeys).toEqual([entry.key]);
+  });
+
   it('does not admit rows through a zero-width horizontal clipping ancestor', () => {
     const clip = node();
     clip.style.overflowX = 'hidden';
