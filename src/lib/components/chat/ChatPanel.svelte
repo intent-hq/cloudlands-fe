@@ -1400,6 +1400,7 @@
   ) {
     const lease = {};
     let pinned: string | undefined;
+    let afterRead = operationalPanel.refreshGeometry();
     try {
       for (let attempt = 0; attempt < 40 && current() && !isComponentDestroyed; attempt++) {
         const key =
@@ -1411,17 +1412,27 @@
             if (pinned) operationalPanel.pin(pinned, false, lease);
             pinned = key;
             operationalPanel.pin(key, true, lease);
+            afterRead = operationalPanel.refreshGeometry();
           }
           const location = operationalPanel.locate(key);
           if (location) {
-            const { node, scrollRoot, top } = location;
+            const { node, scrollRoot, top, observation } = location;
+            if (
+              node?.isConnected &&
+              location.admitted &&
+              observation?.visible &&
+              observation.revision > afterRead
+            )
+              return node;
             const height =
               location.kind === 'group' ? operationalPanel.summaryHeight(key) : location.height;
             if (scrollRoot)
               scrollRoot.scrollTop = Math.max(0, top - (scrollRoot.clientHeight - height) / 2);
-            if (node?.isConnected && location.admitted) return node;
           }
         }
+        // Disclosure growth can change the real scrollport without a scroll
+        // event. Keep the lease until a fresh read proves the row is visible.
+        afterRead = operationalPanel.refreshGeometry();
         if (!(await waitForActiveFrame())) return undefined;
         await tick();
       }

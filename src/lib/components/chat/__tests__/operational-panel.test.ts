@@ -545,3 +545,83 @@ describe('panel geometry lifetime', () => {
     expect(measure).toHaveBeenLastCalledWith([]);
   });
 });
+
+describe('completed navigation geometry', () => {
+  it('reports actual clipped row visibility instead of projected admission without layout reads', () => {
+    const clip = node();
+    clip.style.overflowY = 'hidden';
+    vi.mocked(clip.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 300));
+    const root = node();
+    const row = node(1200);
+    clip.append(root);
+    root.append(row);
+    panel.attach('message', root, [entry], vi.fn());
+    panel.watch(row, entry.key);
+    const requested = panel.refreshGeometry();
+    frame();
+    expect(panel.locate(entry.key)).toMatchObject({
+      admitted: true,
+      observation: { visible: false },
+    });
+    expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(requested);
+    vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 100, 600, 28));
+    const afterScroll = panel.refreshGeometry();
+    expect(panel.locate(entry.key)!.observation!.revision).toBeLessThanOrEqual(afterScroll);
+    frame();
+    vi.mocked(row.getBoundingClientRect).mockClear();
+    vi.mocked(root.getBoundingClientRect).mockClear();
+    vi.mocked(clip.getBoundingClientRect).mockClear();
+    expect(panel.locate(entry.key)!.observation).toMatchObject({ visible: true });
+    expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(afterScroll);
+    expect(row.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(root.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(clip.getBoundingClientRect).not.toHaveBeenCalled();
+  });
+
+  it('requires a read started after refresh and rejects a metadata update during its write gap', () => {
+    const root = node();
+    const row = node();
+    root.append(row);
+    panel.attach('message', root, [entry], vi.fn());
+    panel.watch(row, entry.key);
+    frame();
+    panel.refreshGeometry();
+    phases.reads.shift()!();
+    const requested = panel.refreshGeometry();
+    phases.writes.shift()!();
+    expect(panel.locate(entry.key)!.observation!.revision).toBeLessThanOrEqual(requested);
+    phases.reads.shift()!();
+    panel.update('message', [{ ...entry, navigation: { messageId: 'message', path: 'b:1' } }]);
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    phases.writes.shift()!();
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    frame();
+    expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(requested);
+  });
+
+  it('cannot certify a transferred or replaced row using its retired owner observation', () => {
+    const old = node();
+    const row = node();
+    old.append(row);
+    const detach = panel.attach('old', old, [entry], vi.fn());
+    panel.watch(row, entry.key);
+    frame();
+    expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
+    const replacement = node();
+    panel.attach('new', replacement, [entry], vi.fn());
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    detach();
+    frame();
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    const next = node();
+    replacement.append(next);
+    panel.watch(next, entry.key);
+    panel.refreshGeometry();
+    frame();
+    expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
+    next.remove();
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    panel.dispose();
+    expect(panel.locate(entry.key)).toBeUndefined();
+  });
+});

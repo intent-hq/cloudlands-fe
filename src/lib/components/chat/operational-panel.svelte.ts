@@ -37,6 +37,14 @@ type Root = {
 };
 
 type Anchor = { key: string; top: number; scrollTop: number; scope: string; root: Root };
+type NavigationObservation = {
+  node: HTMLElement;
+  root: Root;
+  scope: string;
+  generation: number;
+  revision: number;
+  visible: boolean;
+};
 
 /** One owner for every renderer and nested scroll region in a panel. */
 function createPanel(getScrollRoot: () => HTMLElement | undefined) {
@@ -55,6 +63,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   const retained = new Map<string, object>();
   let disposed = false;
   let generation = 0;
+  let readRevision = 0;
+  let observations = new Map<string, NavigationObservation>();
   let cancelRead: (() => void) | undefined;
   let cancelWrite: (() => void) | undefined;
   let listening: HTMLElement | undefined;
@@ -220,6 +230,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     if (disposed) return;
     ensureObserver();
     const revision = generation;
+    const completedRevision = ++readRevision;
+    const nextObservations = new Map<string, NavigationObservation>();
     const visible: string[] = [];
     const nextAnchors = new Map<HTMLElement, Anchor>();
     const corrections = new Map<HTMLElement, { delta: number; scrollTop: number }>();
@@ -309,17 +321,37 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       let top = box.top;
       for (const entry of root.entries) {
         const node = currentElement(scope, root, entry.key);
-        const measured = node ? node.getBoundingClientRect().height / scale : 0;
+        const rowRect = node?.getBoundingClientRect();
+        const measured = rowRect ? rowRect.height / scale : 0;
+        let targetRect = entry.kind === 'group' ? undefined : rowRect;
         if (node && entry.kind === 'group' && mounted.has(entry.key)) {
           const summary = node
             .querySelector('[data-operational-disclosure-row]')
             ?.getBoundingClientRect();
+          targetRect = summary;
           if (summary && summary.height > 0)
             headers.set(entry.key, {
               height: summary.height / scale,
-              offset: (summary.top - node.getBoundingClientRect().top) / scale,
+              offset: (summary.top - rowRect!.top) / scale,
             });
         }
+        if (node)
+          nextObservations.set(entry.key, {
+            node,
+            root,
+            scope,
+            generation: revision,
+            revision: completedRevision,
+            visible:
+              !hidden &&
+              !!targetRect &&
+              targetRect.height > 0 &&
+              targetRect.width > 0 &&
+              targetRect.top < clipBottom &&
+              targetRect.bottom > clipTop &&
+              targetRect.left < clipRight &&
+              targetRect.right > clipLeft,
+          });
         if (!hidden && measured > 0 && Number.isFinite(measured))
           measurements.push({ key: entry.key, height: measured });
         const extent = measured > 0 ? measured : height(entry);
@@ -362,6 +394,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         schedule();
         return;
       }
+      // Admission and retained heights do not certify a current node's position.
+      // Publish navigation evidence only from a generation-accepted read.
+      observations = nextObservations;
       for (const measurement of measurements) heights.set(measurement.key, measurement.height);
       rebuild();
       policy.measure(measurements);
@@ -386,6 +421,12 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   }
   return {
     policy,
+    refreshGeometry() {
+      schedule();
+      // An already-started read cannot satisfy this request even if its write
+      // phase is pending. Callers must observe a strictly larger revision.
+      return readRevision;
+    },
     resolveTarget(messageId: string, path: string) {
       return targetsFor(messageId, path)[0]?.key;
     },
@@ -416,8 +457,19 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       let offset = 0;
       for (const entry of root.entries) {
         if (entry.key === key) {
+          const node = currentElement(scope, root, key);
+          const observed = observations.get(key);
+          const observation =
+            observed &&
+            observed.node === node &&
+            observed.root === root &&
+            observed.scope === scope &&
+            observed.generation === generation
+              ? { revision: observed.revision, visible: observed.visible }
+              : undefined;
           return {
-            node: currentElement(scope, root, key),
+            node,
+            observation,
             admitted: entry.kind === 'content' || mounted.has(key),
             kind: entry.kind,
             scrollRoot: root.geometry.scroll,
@@ -524,8 +576,10 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
             entry.estimatedHeight === entries[index].estimatedHeight,
         )
       ) {
+        generation++;
         root.entries = entries;
         indexTargets(scope, root);
+        schedule();
         return;
       }
       generation++;
@@ -603,6 +657,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       listening?.removeEventListener('scroll', schedule, true);
       for (const root of roots.values()) root.node.removeEventListener('scroll', schedule, true);
       roots.clear();
+      observations.clear();
       heights.clear();
       widths.clear();
       headers.clear();
