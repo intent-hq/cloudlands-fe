@@ -146,27 +146,13 @@ test('switches agent panes with keyboard-accessible menu identity and current st
   await menu.getByRole('menuitem', { name: 'Preview browser. Needs attention.' }).click();
   await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
   await expect(menu).toHaveCount(0);
-  await component.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger').click();
-  const actions = page.locator('.panel-actions-menu-content');
-  await actions.getByRole('menuitem', { name: 'Move panel up', exact: true }).press('Enter');
-  await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
   await trigger.click();
-  await expect(menu.locator('[data-pane-stack-item]').first()).toHaveAttribute(
-    'data-pane-stack-item',
-    'browser-pane',
+  await expect(menu.locator('[data-pane-stack-item="browser-pane"]')).toHaveAttribute(
+    'aria-current',
+    'page',
   );
   await page.keyboard.press('Escape');
-  await component.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger').click();
-  await expect(
-    actions.getByRole('menuitem', { name: 'Move panel up', exact: true }),
-  ).toBeDisabled();
-  await actions.getByRole('menuitem', { name: 'Move panel down', exact: true }).press('Enter');
-  await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
-  await trigger.click();
-  await expect(menu.locator('[data-pane-stack-item]').nth(1)).toHaveAttribute(
-    'data-pane-stack-item',
-    'browser-pane',
-  );
+  await expect(trigger).toBeFocused();
 });
 
 test('updates pane choices as panes are added and removed without losing the selected pane', async ({

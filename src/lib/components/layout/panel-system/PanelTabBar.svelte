@@ -134,6 +134,8 @@
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
     /** Idempotently finishes the active-pane drag before layout mutation. */
     onPaneDragFinish?: () => void;
+    onMovePaneUp?: () => void;
+    onMovePaneDown?: () => void;
     onMovePaneLeft?: () => void;
     onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
@@ -170,6 +172,8 @@
     onTabReorder,
     onTabMoveToPanel,
     onPaneDragFinish,
+    onMovePaneUp,
+    onMovePaneDown,
     onMovePaneLeft,
     onMovePaneRight,
     onCloseOtherTabs,
@@ -299,13 +303,12 @@
   const inactiveAttentionCount = $derived(
     tabs.filter((tab) => tab.id !== activeTabId && attentionPaneIds.has(tab.id)).length,
   );
-  const activePaneIndex = $derived(tabs.findIndex((tab) => tab.id === activeTabId));
   const paneMoveDirections = $derived([
     {
       direction: 'up',
       label: m.layout_panelTabBar_movePanelUp_label(),
-      enabled: !!onTabReorder && activePaneIndex > 0,
-      move: () => onTabReorder?.(activePaneIndex, activePaneIndex - 1),
+      enabled: !!onMovePaneUp,
+      move: () => onMovePaneUp?.(),
     },
     {
       direction: 'right',
@@ -316,8 +319,8 @@
     {
       direction: 'down',
       label: m.layout_panelTabBar_movePanelDown_label(),
-      enabled: !!onTabReorder && activePaneIndex >= 0 && activePaneIndex < tabs.length - 1,
-      move: () => onTabReorder?.(activePaneIndex, activePaneIndex + 1),
+      enabled: !!onMovePaneDown,
+      move: () => onMovePaneDown?.(),
     },
     {
       direction: 'left',

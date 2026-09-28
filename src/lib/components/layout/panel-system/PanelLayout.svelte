@@ -1075,8 +1075,40 @@
     layoutManager.moveTabToPanel(tabId, fromPanelId, targetPanelId, insertIndex);
   }
 
+  let movedPaneToFocus = $state<string | null>(null);
+  $effect(() => {
+    const tabId = movedPaneToFocus;
+    if (!tabId || $panels$ !== selectPanels.select(appStore.state, effectiveLayoutId)) return;
+    const target = Object.values($panels$).find((panel) => panel.activeTabId === tabId);
+    if (!target || $focusedPanelId$ !== target.id) return;
+    void tick().then(() =>
+      requestAnimationFrame(() => {
+        if (movedPaneToFocus !== tabId || !panelLayoutMotionElement) return;
+        const panel = findPanelElement(panelLayoutMotionElement, target.id);
+        const trigger = panel?.querySelector<HTMLElement>(
+          '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+        );
+        if (!trigger) return;
+        // The source trigger can disappear during a split. Restore keyboard focus
+        // only after the store-driven destination header has mounted.
+        trigger.focus({ preventScroll: true });
+        movedPaneToFocus = null;
+      }),
+    );
+  });
+
   function handleMoveActivePane(panelId: string, direction: PanelCycleDirection) {
-    layoutManager.moveActivePaneToColumn(panelId, direction);
+    const tabId = layoutManager.getPanel(panelId)?.activeTabId;
+    if (layoutManager.moveActivePaneToColumn(panelId, direction) && tabId) {
+      movedPaneToFocus = tabId;
+    }
+  }
+
+  function handleMoveActivePaneVertically(panelId: string, direction: 'up' | 'down') {
+    const tabId = layoutManager.getPanel(panelId)?.activeTabId;
+    if (layoutManager.moveActivePaneVertically(panelId, direction) && tabId) {
+      movedPaneToFocus = tabId;
+    }
   }
 
   function handleTabDropToSplitHandle(
@@ -1478,6 +1510,7 @@
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
         <PanelContainer
           node={viewportOuterResizeRoot}
+          layoutRoot={$root$}
           panels={$panels$}
           panelOrder={$panelIds$}
           focusedPanelId={active ? $focusedPanelId$ : null}
@@ -1514,6 +1547,7 @@
           onPaneDropPreview={handlePaneDropPreview}
           onPaneDragFinish={finishPaneDrag}
           onMoveActivePane={handleMoveActivePane}
+          onMoveActivePaneVertically={handleMoveActivePaneVertically}
           onPanelMove={handlePanelMove}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}
           onTabRename={handleTabRename}

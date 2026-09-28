@@ -75,6 +75,8 @@
     onPaneDropPreview?: (placement: PaneDropPlacement | null) => void;
     /** Idempotently finishes the active-pane drag before layout mutation. */
     onPaneDragFinish?: () => void;
+    onMovePaneUp?: () => void;
+    onMovePaneDown?: () => void;
     onMovePaneLeft?: () => void;
     onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
@@ -118,6 +120,8 @@
     onTabMoveToPanel,
     onPaneDropPreview,
     onPaneDragFinish,
+    onMovePaneUp,
+    onMovePaneDown,
     onMovePaneLeft,
     onMovePaneRight,
     onMoveLeft,
@@ -512,6 +516,8 @@
         {onTabReorder}
         {onTabMoveToPanel}
         {onPaneDragFinish}
+        {onMovePaneUp}
+        {onMovePaneDown}
         {onMovePaneLeft}
         {onMovePaneRight}
         {onMoveLeft}
