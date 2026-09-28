@@ -82,6 +82,11 @@ export const RepositorySavedChoiceSchema = z.discriminatedUnion('mode', [
       evidenceId: identifier,
     }),
   }),
+  z.object({
+    mode: z.literal('unresolved-historical'),
+    source: z.enum(['workspace-metadata', 'registered-root-metadata']).optional(),
+    recordId: z.string().optional(),
+  }),
 ]);
 
 export const RepositorySelectionSchema = z.object({
@@ -95,7 +100,12 @@ export const RepositorySelectionSchema = z.object({
     }),
     z.object({
       state: z.literal('selection-required'),
-      reason: z.enum(['ambiguous-targets', 'unresolved-candidates', 'missing-selected-remote']),
+      reason: z.enum([
+        'ambiguous-targets',
+        'unresolved-candidates',
+        'missing-selected-remote',
+        'unresolved-historical-choice',
+      ]),
     }),
     z.object({
       state: z.literal('repository-unavailable'),
@@ -110,6 +120,7 @@ export const RepositoryAvailabilitySchema = z.enum([
   'disconnected',
   'disabled',
   'unsupported',
+  'unknown',
 ]);
 export type RepositoryAvailability = z.infer<typeof RepositoryAvailabilitySchema>;
 

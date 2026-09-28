@@ -126,6 +126,99 @@ describe('core repository-context serialization fixture', () => {
     expect(RepositorySelectionSchema.parse(selection)).toEqual(selection);
   });
 
+  // Manually composed from intent-core repository_context.rs at 6272988100d1:
+  // unknown_availability_does_not_invent_connection_or_capability and
+  // unresolved_history_serializes_only_known_source_and_record_facts.
+  it.each([
+    { mode: 'unresolved-historical' },
+    { mode: 'unresolved-historical', source: 'workspace-metadata', recordId: 'workspace-1' },
+    { mode: 'unresolved-historical', source: 'registered-root-metadata', recordId: 'root-1' },
+    { mode: 'unresolved-historical', source: 'workspace-metadata' },
+    { mode: 'unresolved-historical', recordId: 'retained-record' },
+    // Option<String> also serializes Some("") as a present empty string.
+    { mode: 'unresolved-historical', recordId: '' },
+  ])('preserves unknown availability and unresolved historical facts: %j', (saved) => {
+    const wire = {
+      ...fixture,
+      roots: [
+        {
+          ...fixture.roots[0],
+          targets: [
+            {
+              target,
+              availability: 'unknown',
+              capabilities: [{ operation: 'read-review', state: 'unknown' }],
+            },
+          ],
+          reviewSelection: {
+            saved,
+            noRemotes: false,
+            outcome: { state: 'selection-required', reason: 'unresolved-historical-choice' },
+          },
+        },
+      ],
+    };
+    // Strict equality also requires unknown connection, project ID and optional
+    // historical facts to stay absent, rather than adding undefined or defaults.
+    expect(RepositoryContextSchema.parse(wire)).toStrictEqual(wire);
+  });
+
+  it.each([
+    { mode: 'unresolved-historical' },
+    { mode: 'unresolved-historical', source: 'registered-root-metadata', recordId: 'root-1' },
+  ])('retains unresolved historical choice without remotes: %j', (saved) => {
+    const wire = {
+      ...fixture,
+      roots: [
+        {
+          root: fixture.roots[0].root,
+          remotes: [],
+          targets: [],
+          reviewSelection: {
+            saved,
+            noRemotes: true,
+            outcome: {
+              state: 'repository-unavailable',
+              reason: 'no-remote',
+              selectionRequired: true,
+            },
+          },
+        },
+      ],
+    };
+    expect(RepositoryContextSchema.parse(wire)).toStrictEqual(wire);
+  });
+
+  it.each([{ mode: 'automatic' }, { mode: 'explicit-remote', remoteName: 'upstream' }])(
+    'preserves existing saved choice: %j',
+    (saved) => {
+      expect(RepositorySavedChoiceSchema.parse(saved)).toStrictEqual(saved);
+    },
+  );
+
+  it('rejects invented historical facts and unrecognized states', () => {
+    for (const metadata of [
+      { source: 'current-remotes' },
+      { source: null },
+      { recordId: null },
+      { recordId: 17 },
+    ]) {
+      expect(
+        RepositorySavedChoiceSchema.safeParse({ mode: 'unresolved-historical', ...metadata })
+          .success,
+      ).toBe(false);
+    }
+    expect(RepositorySavedChoiceSchema.safeParse({ mode: 'historical' }).success).toBe(false);
+    expect(RepositoryAvailabilitySchema.safeParse('assumed-connected').success).toBe(false);
+    expect(
+      RepositorySelectionSchema.safeParse({
+        saved: { mode: 'automatic' },
+        noRemotes: false,
+        outcome: { state: 'selection-required', reason: 'assumed-history' },
+      }).success,
+    ).toBe(false);
+  });
+
   it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, Infinity])(
     'rejects an inexact or invalid counter: %s',
     (sequence) => {
