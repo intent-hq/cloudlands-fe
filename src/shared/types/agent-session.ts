@@ -16,6 +16,7 @@ import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { AgentMessage, MessageAuthor } from './agent-message';
 import { AgentStatus } from './agent.types';
+import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
 
 /**
@@ -179,7 +180,7 @@ export interface AgentDelegatedCounts {
  * MIGRATION NOTE: The old `sessionId` field has been renamed to `backendSessionId`
  * for clarity. Use `backendSessionId` for new code.
  */
-export interface AgentSession {
+export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
   id: AgentId;

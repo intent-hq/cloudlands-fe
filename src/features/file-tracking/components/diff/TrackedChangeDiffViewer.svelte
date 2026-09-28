@@ -63,6 +63,10 @@
     branchBaseCommitSha?: string;
     /** When true, use provided content from change.content instead of fetching from git */
     useProvidedContent?: boolean;
+    /** False for node-owned transcript paths, including lazy and refresh reads. */
+    allowHeadReads?: boolean;
+    /** Consult current provenance before each asynchronous head read. */
+    canReadHeadFiles?: () => boolean;
     /**
      * Starting line number for partial/snippet diffs (1-based). When > 1,
      * blank lines are prepended so real file line numbers are rendered in the gutter.
@@ -110,6 +114,8 @@
     branchBaseRef,
     branchBaseCommitSha,
     useProvidedContent = false,
+    allowHeadReads = true,
+    canReadHeadFiles,
     lineOffset = 1,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lineStageIndicators,
@@ -145,6 +151,7 @@
   let lastChangeFile = $state<string | undefined>(undefined);
   // Guard against duplicate loadDiffContent calls
   let isLoadingDiff = $state(false);
+  let loadController: AbortController | undefined;
   // Set when the loaded diff is a gitlink (submodule) entry — its path is a
   // directory, so working-tree file reads must be skipped (#1739).
   let isGitlinkChange = $state(false);
@@ -345,12 +352,17 @@
 
   // forceRefresh: when true, ignore useProvidedContent and fetch fresh from git
   // This is used after staging/unstaging operations to show the updated diff
-  async function loadDiffContent(forceRefresh = false) {
+  async function loadDiffContent(forceRefresh = false, replacePending = false) {
+    if (replacePending) loadController?.abort();
     // Guard against duplicate concurrent calls (onMount + $effect can race)
-    if (isLoadingDiff) {
+    if (isLoadingDiff && !replacePending) {
       logger.debug('[loadDiffContent] Skipping - already loading');
       return;
     }
+    const controller = new AbortController();
+    loadController = controller;
+    const canContinueHeadRead = () =>
+      !controller.signal.aborted && allowHeadReads && (canReadHeadFiles?.() ?? true);
     isLoadingDiff = true;
 
     loading = true;
@@ -419,7 +431,17 @@
         change.stage === 'committed' &&
         Boolean(branchBaseRef || branchBaseCommitSha);
 
-      if (shouldUseProvidedContent) {
+      if (!canContinueHeadRead()) {
+        // Transcript snippets are the only available source until checkpoint reads
+        // are wired. Missing, empty or raw-patch snippets must not query the head.
+        if (!hasProvidedContent || contentIsRawDiff) {
+          error = m.chat_inlineDiffItem_transcriptUnavailable_label();
+          return;
+        }
+        if (!checkContentSize(oldContentValue, newContentValue)) return;
+        oldContent = oldContentValue;
+        newContent = newContentValue;
+      } else if (shouldUseProvidedContent) {
         logger.info('[loadDiffContent] Using provided content', {
           reason: useProvidedContent ? 'useProvidedContent prop' : 'committed change',
           oldContentLength: oldContentValue.length,
@@ -444,10 +466,16 @@
         const wsIdForBranchBase = workspaceId || workspace?.id || '';
         const diffChunk = await batchedGitBranchBaseDiff(
           wsIdForBranchBase,
-          { baseRef: branchBaseRef, baseCommitSha: branchBaseCommitSha },
+          {
+            baseRef: branchBaseRef,
+            baseCommitSha: branchBaseCommitSha,
+            signal: controller.signal,
+            canRead: canContinueHeadRead,
+          },
           filePath,
         );
 
+        if (!canContinueHeadRead()) return;
         oldContent = diffChunk?.oldContent || '';
         newContent = diffChunk?.newContent || '';
 
@@ -470,6 +498,7 @@
           path: filePath,
           ...(gitRootId ? { gitRootId } : {}),
         });
+        if (!canContinueHeadRead()) return;
         const chunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
         if (chunk && chunk.chunks.length > 0) {
           committedPatch = chunksToUnifiedPatch(chunk, filePath);
@@ -492,14 +521,18 @@
         // flag via the batcher + show-file dedup cache. Returns true when the
         // diff chunk (or its fallback) populated both sides.
         const tryLoadAtStage = async (stagedFlag: boolean): Promise<boolean> => {
+          if (!canContinueHeadRead()) return false;
           // gitlink metadata lets the batcher skip the content reads that can
           // only fail on a status-marked submodule entry (#1739).
           const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath, {
+            signal: controller.signal,
+            canRead: canContinueHeadRead,
             gitlink: change.gitlink,
             gitRootId,
             gitRootPath,
           });
 
+          if (!canContinueHeadRead()) return false;
           if (diffChunk) {
             // Gitlink (submodule) entry (intent-hq/monorepo#1739): no blob
             // content exists for it, so skip the show-file / file:read
@@ -539,14 +572,18 @@
             const gitRef = stagedFlag ? 'HEAD' : ':0';
             const showOptions = gitRootId ? { gitRootId } : undefined;
             const oldResult = await dedupedShowFile(wsIdForDiff, gitRef, filePath, showOptions);
+            if (!canContinueHeadRead()) return false;
             if (oldResult?.success) oldContent = oldResult.data || '';
 
             if (stagedFlag) {
               const indexResult = await dedupedShowFile(wsIdForDiff, ':0', filePath, showOptions);
+              if (!canContinueHeadRead()) return false;
               if (indexResult?.success) newContent = indexResult.data || '';
             } else {
               const wsId = workspaceId || workspace?.id;
-              newContent = wsId ? await loadWorkingTreeFileContent(wsId, filePath) : '';
+              const content = wsId ? await loadWorkingTreeFileContent(wsId, filePath) : '';
+              if (!canContinueHeadRead()) return false;
+              newContent = content;
             }
             return true;
           }
@@ -554,6 +591,7 @@
         };
 
         const loadedAtRequested = await tryLoadAtStage(stagedValue);
+        if (!canContinueHeadRead()) return;
 
         if (!loadedAtRequested) {
           // git:diff returned no changes for the requested stage
@@ -568,6 +606,7 @@
           });
 
           const loadedAtOpposite = await tryLoadAtStage(oppositeStaged);
+          if (!canContinueHeadRead()) return;
           if (loadedAtOpposite) {
             logger.info('[loadDiffContent] Found changes at opposite stage', {
               instanceId,
@@ -613,11 +652,14 @@
         newContent = '';
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       logger.error('Failed to load diff content', err as Error);
       error = err instanceof Error ? err.message : m.ui_trackedDiff_loadFailed_error();
     } finally {
-      loading = false;
-      isLoadingDiff = false;
+      if (!controller.signal.aborted) {
+        loading = false;
+        isLoadingDiff = false;
+      }
     }
   }
 
@@ -1034,6 +1076,7 @@
   // Load on mount and refresh after a retained workspace surface is reactivated.
   $effect(() => {
     if (!active) return;
+    void allowHeadReads;
     logger.info('[onMount] Component mounted', {
       instanceId,
       changeId: change?.id,
@@ -1041,7 +1084,10 @@
       stage: change?.stage,
       commitHash: change?.commitHash,
     });
-    untrack(() => void loadDiffContent());
+    untrack(() => void loadDiffContent(false, true));
+    // Invalidate pending enrichment and state writes on provenance, identity,
+    // activity changes and unmount; the replacement may use transcript content.
+    return () => loadController?.abort();
   });
 
   $effect(() => {
@@ -1069,6 +1115,7 @@
       absolutePath &&
       change?.stage !== 'committed' &&
       !useProvidedContent &&
+      allowHeadReads &&
       !loading &&
       !isGitlinkChange
     ) {
@@ -1077,7 +1124,7 @@
   });
 
   $effect(() => {
-    if (!active || useProvidedContent) return;
+    if (!active || useProvidedContent || !allowHeadReads) return;
     const content = $workingTreeFileContentStore;
     if (content === null || content === lastObservedWorkingTreeContent) return;
 
@@ -1197,7 +1244,7 @@
         e.preventDefault();
 
         // Prevent multiple simultaneous operations
-        if (isProcessingLineAction || loading) {
+        if (!allowHeadReads || isProcessingLineAction || loading) {
           return;
         }
 

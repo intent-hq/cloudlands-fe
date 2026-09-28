@@ -157,6 +157,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     // Handle file:// links
     if (url.startsWith('file://')) {
+      if (options.canOpenFile?.() === false) return false;
       return await openInExternalEditor(url);
     }
 
@@ -174,8 +175,11 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
  */
 async function handleIntentLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
+    const { parseIntentLink, handleIntentLink: handleIntent } =
+      await import('$lib/utils/workspaces-link-handler');
+    if (options.canOpenFile && parseIntentLink(url).type === 'file' && !options.canOpenFile())
+      return false;
     focusSourcePanel(options);
-    const { handleIntentLink: handleIntent } = await import('$lib/utils/workspaces-link-handler');
     return await handleIntent(url, {
       workspaceId: options.workspaceId,
       sourcePanelId: options.sourcePanelId,
@@ -325,6 +329,7 @@ async function openFilePathLink(
   fromResolvedUrl: boolean,
 ): Promise<boolean> {
   try {
+    if (options.canOpenFile?.() === false) return false;
     const decodedTarget = decodePathTarget(target);
     if (!decodedTarget || decodedTarget.includes('\0')) return false;
 

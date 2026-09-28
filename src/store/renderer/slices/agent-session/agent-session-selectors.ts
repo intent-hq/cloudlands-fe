@@ -99,6 +99,7 @@ function getCurrentStreamingText(message: AgentMessage | undefined): string {
 
 function isTerminalAgentStatus(status: AgentStatus): boolean {
   return (
+    status === AgentStatus.Halted ||
     status === AgentStatus.Completed ||
     status === AgentStatus.Error ||
     status === AgentStatus.Deleted
