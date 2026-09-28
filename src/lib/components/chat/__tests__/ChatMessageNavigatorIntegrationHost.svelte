@@ -23,7 +23,10 @@
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
-  let { theme = 'light' }: { theme?: 'light' | 'dark' } = $props();
+  let {
+    theme = 'light',
+    messages: fixtureMessages,
+  }: { theme?: 'light' | 'dark'; messages?: AgentMessage[] } = $props();
 
   $effect(() => {
     const root = document.documentElement;
@@ -101,7 +104,7 @@
     isStreaming: false,
     isProcessing: false,
     isResponding: false,
-    messages,
+    messages: fixtureMessages ?? messages,
     createdAt: timestamp,
     updatedAt: timestamp,
   } as unknown as AgentSession;
@@ -162,7 +165,7 @@
           'assistant-appended',
           'assistant',
           'New streamed tail content. '.repeat(20),
-          40,
+          50,
         ),
       ),
     );
