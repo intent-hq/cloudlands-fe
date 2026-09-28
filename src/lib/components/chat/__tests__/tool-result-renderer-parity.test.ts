@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup } from '@testing-library/svelte';
+import { fireEvent, render } from './operational-renderer-test';
 import type { AgentMessage } from '$shared/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AgentMessageList from '../AgentMessageList.svelte';

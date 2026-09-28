@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
   /**
@@ -713,6 +714,7 @@
   }
 
   let scrollContainer = $state<HTMLDivElement>();
+  provideOperationalPanel(() => scrollContainer);
   let composerElement = $state<HTMLDivElement>();
   let panelHeight = $state(0);
   let composerHeight = $state(0);

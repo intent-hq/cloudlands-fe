@@ -5,8 +5,9 @@
  * A collapsed streaming group stays collapsed while new chunks arrive until the
  * user expands it again.
  */
-import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { waitFor, render as renderGroup, fireEvent as groupEvent } from '@testing-library/svelte';
+import { fireEvent, render } from './operational-renderer-test';
 import { createRawSnippet, tick } from 'svelte';
 import ResponseGroup from '../ResponseGroup.svelte';
 import {
@@ -67,6 +68,15 @@ warmImport(() => import('../MessageContent.svelte'));
 warmImport(() => import('../StreamingMessageContent.svelte'));
 
 describe('ResponseGroup - collapse state model', () => {
+  // These tests inspect intermediate animation states, before any row window
+  // is involved. Keep their native frame clock and existing motion assertions.
+  const render = renderGroup;
+  const fireEvent = groupEvent;
+  beforeEach(() => {
+    document.documentElement.removeAttribute('data-reduce-motion');
+    vi.mocked(performance.now).mockRestore?.();
+    vi.unstubAllGlobals();
+  });
   const children = createRawSnippet(() => ({
     render: () => '<div class="test-block">block</div>',
   }));

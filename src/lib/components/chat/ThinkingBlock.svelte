@@ -18,6 +18,7 @@
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
 
   interface Props {
+    saved?: { expanded?: boolean; userToggled?: boolean };
     content: string;
     isStreaming?: boolean;
     /** Auto-expand while streaming */
@@ -28,6 +29,7 @@
   }
 
   let {
+    saved,
     content,
     isStreaming = false,
     autoExpandWhileStreaming = true,
@@ -37,10 +39,12 @@
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
-  let isExpanded = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let isExpanded = $state(saved?.expanded ?? false);
 
   // Track if user has manually toggled
-  let userToggled = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let userToggled = $state(saved?.userToggled ?? false);
 
   $effect(() => {
     if (!userToggled) {
@@ -51,6 +55,10 @@
   function toggle() {
     userToggled = true;
     isExpanded = !isExpanded;
+    if (saved) {
+      saved.expanded = isExpanded;
+      saved.userToggled = true;
+    }
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {

@@ -1,6 +1,6 @@
 import { safeSlide } from '$lib/utils/animations';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
-import { extractStandaloneReasoningTitles } from './reasoning-heading';
+import { projectStandaloneReasoningTitles } from './reasoning-heading';
 
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
@@ -104,8 +104,8 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
   if (previous.type === 'thinking' && block.type === 'thinking') {
     if (compactConsecutiveThinking) return '';
     const titlesOnly =
-      extractStandaloneReasoningTitles(previous.text ?? previous.content ?? '') !== null &&
-      extractStandaloneReasoningTitles(block.text ?? block.content ?? '') !== null;
+      projectStandaloneReasoningTitles(previous.text ?? previous.content ?? '') !== null &&
+      projectStandaloneReasoningTitles(block.text ?? block.content ?? '') !== null;
     return titlesOnly ? '' : 'pt-14';
   }
   const previousIsOperational = isOperationalClusterBlock(previous);

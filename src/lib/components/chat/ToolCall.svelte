@@ -29,6 +29,7 @@
   import { cn } from '$lib/utils';
 
   interface Props {
+    saved?: { expanded?: boolean };
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
@@ -43,6 +44,7 @@
   }
 
   let {
+    saved,
     toolUse,
     toolState = 'completed',
     result = null,
@@ -173,7 +175,8 @@
   // Should render: not hidden, not empty
   const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
 
-  let expanded = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let expanded = $state(saved?.expanded ?? false);
   const isExpandable = $derived(displayModel.hasDetails);
   const hasTrailing = $derived(
     displayModel.status === 'success' ||
@@ -185,6 +188,7 @@
   function toggleExpanded() {
     if (!isExpandable) return;
     expanded = !expanded;
+    if (saved) saved.expanded = expanded;
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: truncatedBlockIds is empty).
     if (expanded) requestHydration();
@@ -320,6 +324,7 @@
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
   <ContextEngineToolCall
+    {saved}
     {toolUse}
     {toolState}
     {result}
@@ -362,9 +367,7 @@
       type="button"
       variant="plain"
       class="block w-full px-2 pb-1 cursor-pointer bg-transparent border-0 p-0 text-left"
-      onclick={() => {
-        if (isExpandable) expanded = !expanded;
-      }}
+      onclick={toggleExpanded}
     >
       <div class="overflow-hidden rounded border border-border">
         <img

@@ -1,5 +1,10 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, screen, waitFor } from '@testing-library/svelte';
+import {
+  fireEvent,
+  render,
+  settleOperationalFrames,
+} from '../../components/chat/__tests__/operational-renderer-test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
 import ChatPolishCatalogPreview from './ChatPolishCatalogPreview.svelte';
@@ -11,13 +16,14 @@ const fixture = {
   viewport: 'both' as const,
 };
 
-describe('ChatPolishCatalogPreview', () => {
+describe('ChatPolishCatalogPreview', async () => {
   beforeAll(() => appStore.init());
   afterEach(cleanup);
 
   it('renders one read-only production conversation without dispatching', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');
     const view = render(ChatPolishCatalogPreview, { props: { fixture } });
+    await settleOperationalFrames();
     expect(screen.getAllByTestId('chat-polish-conversation')).toHaveLength(1);
     expect(view.container.querySelectorAll('[data-preview-message-role="user"]')).toHaveLength(9);
     expect(screen.getByTestId('chat-message-file-chip')).toBeTruthy();
@@ -28,6 +34,7 @@ describe('ChatPolishCatalogPreview', () => {
 
   it('renders grouped, streaming, failed, and expanded production paths together', async () => {
     const view = render(ChatPolishCatalogPreview, { props: { fixture } });
+    await settleOperationalFrames();
     expect(view.container.querySelector('[data-tool-executing]')).toBeTruthy();
     expect(
       view.container.querySelectorAll('[data-testid="response-group-summary"]').length,
@@ -42,8 +49,9 @@ describe('ChatPolishCatalogPreview', () => {
     expect(view.container.textContent).toContain('Command failed with exit code 1.');
   });
 
-  it('renders both subscription cohorts with checklist-only delegated task controls', () => {
+  it('renders both subscription cohorts with checklist-only delegated task controls', async () => {
     const view = render(ChatPolishCatalogPreview, { props: { fixture } });
+    await settleOperationalFrames();
     expect(view.container.querySelectorAll('[data-subscription-cohort="after_all"]')).toHaveLength(
       2,
     );
@@ -78,8 +86,9 @@ describe('ChatPolishCatalogPreview', () => {
     }
   });
 
-  it('keeps long labels accessible while their visible row can truncate', () => {
+  it('keeps long labels accessible while their visible row can truncate', async () => {
     const view = render(ChatPolishCatalogPreview, { props: { fixture } });
+    await settleOperationalFrames();
     const longLabel = view.container.querySelector(
       '[data-tool-use-id="fixture-long-payload"] [data-testid="tool-call-disclosure"]',
     );

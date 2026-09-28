@@ -18,6 +18,8 @@
   import { streamingPulse } from './streaming-pulse';
 
   interface Props {
+    headerAdmitted?: boolean;
+    headerHeight?: number;
     leading: Snippet;
     summary: Snippet;
     trailing?: Snippet;
@@ -64,6 +66,8 @@
   }
 
   let {
+    headerAdmitted = true,
+    headerHeight = 28,
     leading,
     summary,
     trailing,
@@ -105,6 +109,13 @@
     class: className = '',
   }: Props = $props();
 
+  function attachHeaderSearch(
+    node: HTMLElement,
+    handlers: Parameters<typeof searchDisclosureEvents>[1],
+  ) {
+    return searchDisclosureEvents(node.parentElement!, handlers);
+  }
+
   // Delegates to the consumer transition when provided; the zero-duration
   // fallback keeps removal synchronous for rows without preview motion.
   function previewContentTransition(
@@ -119,7 +130,7 @@
 
 <div
   class="{CHAT_OPERATIONAL_CONTAINER_CLASS} {className}"
-  data-chat-operational-row
+  data-chat-operational-row={headerAdmitted ? '' : undefined}
   data-operational-row-container
   data-adjacent-operational-row={adjacentOperationalRow || undefined}
   data-testid={testId}
@@ -128,76 +139,84 @@
   data-conversation-layer={conversationLayer}
   data-chat-search-disclosure-id={searchDisclosureId}
   data-chat-search-expanded={searchDisclosureId ? expanded : undefined}
-  use:searchDisclosureEvents={{ onExpand: onSearchExpand, onRestore: onSearchRestore }}
 >
-  <div class={CHAT_OPERATIONAL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
-    {#if interactive}
-      <Button
-        variant="plain"
-        bind:ref={triggerElement}
-        type="button"
-        truncateLabel={false}
-        labelClass="type-body"
-        class="type-body col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2"
-        data-testid={disclosureTestId}
-        aria-label={ariaLabel}
-        aria-expanded={expanded}
-        aria-controls={controls}
-        title={title ?? ariaLabel}
-        {onclick}
-        {onkeydown}
-      >
-        <span
+  {#if headerAdmitted}
+    <div
+      class={CHAT_OPERATIONAL_ROW_CLASS}
+      data-operational-disclosure-row
+      data-compact-tool-row
+      use:attachHeaderSearch={{ onExpand: onSearchExpand, onRestore: onSearchRestore }}
+    >
+      {#if interactive}
+        <Button
+          variant="plain"
+          bind:ref={triggerElement}
+          type="button"
+          truncateLabel={false}
+          labelClass="type-body"
+          class="type-body col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2"
+          data-testid={disclosureTestId}
+          aria-label={ariaLabel}
+          aria-expanded={expanded}
+          aria-controls={controls}
+          title={title ?? ariaLabel}
+          {onclick}
+          {onkeydown}
+        >
+          <span
+            class={CHAT_OPERATIONAL_LEADING_CLASS}
+            use:streamingPulse={streaming}
+            data-operational-leading
+            data-operational-icon-box
+            data-tool-icon={toolIcon || undefined}>{@render leading()}</span
+          >
+          <span
+            class="{CHAT_OPERATIONAL_SUMMARY_CLASS} flex-1"
+            data-operational-summary
+            data-tool-sentence={toolIcon || undefined}
+            data-testid={summaryTestId}
+            data-chat-search-block-path={summarySearchPath}
+            title={summaryTitle}>{@render summary()}</span
+          >
+        </Button>
+      {:else}
+        <div
           class={CHAT_OPERATIONAL_LEADING_CLASS}
           use:streamingPulse={streaming}
           data-operational-leading
           data-operational-icon-box
-          data-tool-icon={toolIcon || undefined}>{@render leading()}</span
+          data-tool-icon={toolIcon || undefined}
         >
+          {@render leading()}
+        </div>
         <span
-          class="{CHAT_OPERATIONAL_SUMMARY_CLASS} flex-1"
+          class={CHAT_OPERATIONAL_SUMMARY_CLASS}
           data-operational-summary
           data-tool-sentence={toolIcon || undefined}
           data-testid={summaryTestId}
           data-chat-search-block-path={summarySearchPath}
-          title={summaryTitle}>{@render summary()}</span
+          aria-label={ariaLabel}
+          title={summaryTitle ?? ariaLabel}>{@render summary()}</span
         >
-      </Button>
-    {:else}
-      <div
-        class={CHAT_OPERATIONAL_LEADING_CLASS}
-        use:streamingPulse={streaming}
-        data-operational-leading
-        data-operational-icon-box
-        data-tool-icon={toolIcon || undefined}
-      >
-        {@render leading()}
-      </div>
-      <span
-        class={CHAT_OPERATIONAL_SUMMARY_CLASS}
-        data-operational-summary
-        data-tool-sentence={toolIcon || undefined}
-        data-testid={summaryTestId}
-        data-chat-search-block-path={summarySearchPath}
-        aria-label={ariaLabel}
-        title={summaryTitle ?? ariaLabel}>{@render summary()}</span
-      >
-    {/if}
-    {#if trailing || (interactive && showChevron)}
-      <span class={CHAT_OPERATIONAL_TRAILING_CLASS} data-operational-trailing>
-        {@render trailing?.()}
-        {#if interactive && showChevron}
-          <span data-operational-chevron>
-            <Fa
-              icon={faChevronDown}
-              size={16}
-              class="{CHAT_OPERATIONAL_CHEVRON_CLASS} {expanded ? '' : 'rotate-90'}"
-            />
-          </span>
-        {/if}
-      </span>
-    {/if}
-  </div>
+      {/if}
+      {#if trailing || (interactive && showChevron)}
+        <span class={CHAT_OPERATIONAL_TRAILING_CLASS} data-operational-trailing>
+          {@render trailing?.()}
+          {#if interactive && showChevron}
+            <span data-operational-chevron>
+              <Fa
+                icon={faChevronDown}
+                size={16}
+                class="{CHAT_OPERATIONAL_CHEVRON_CLASS} {expanded ? '' : 'rotate-90'}"
+              />
+            </span>
+          {/if}
+        </span>
+      {/if}
+    </div>
+  {:else}
+    <div style:height={`${headerHeight}px`} data-operational-header-spacer aria-hidden="true"></div>
+  {/if}
 
   {#if preview}
     <div class={previewClass} data-operational-preview-content out:previewContentTransition>
