@@ -278,7 +278,14 @@
 />
 
 <!-- Per-type Overrides -->
-<div class="mt-4 border-t border-border pt-6" data-testid="model-action-overrides">
+<section
+  class="mt-4 border-t border-border pt-6"
+  data-testid="model-action-overrides"
+  aria-labelledby="background-agent-overrides-title"
+>
+  <h4 id="background-agent-overrides-title" class="type-title mb-4 text-foreground">
+    {m.settings_backgroundAgent_overrides_title()}
+  </h4>
   {#snippet fastDescription()}
     <span class="block">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</span>
     {#if fastEnhanceUnavailable}
@@ -289,6 +296,7 @@
   {/snippet}
   <SettingsForm
     schema={overridesSchema}
+    embedded
     compact={false}
     custom={defineSettingsCustomControls({
       'background-agent-commit': commitControl,
@@ -297,4 +305,4 @@
     })}
     descriptions={{ 'background-agent-fast': fastDescription }}
   />
-</div>
+</section>
