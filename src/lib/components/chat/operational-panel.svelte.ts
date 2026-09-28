@@ -36,6 +36,8 @@ type Root = {
   };
 };
 
+type Anchor = { key: string; top: number; scrollTop: number; scope: string; root: Root };
+
 /** One owner for every renderer and nested scroll region in a panel. */
 function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   const policy = createOperationalRowWindow();
@@ -49,7 +51,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   let nextRootOrder = 0;
   let entriesChanged = false;
   const targetId = (messageId: string, path: string) => JSON.stringify([messageId, path]);
-  const anchors = new Map<HTMLElement, { key: string; top: number; scrollTop: number }>();
+  const anchors = new Map<HTMLElement, Anchor>();
   const retained = new Map<string, object>();
   let disposed = false;
   let generation = 0;
@@ -69,6 +71,11 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
 
   function height(entry: Entry) {
     return heights.get(entry.key) ?? entry.estimatedHeight;
+  }
+  function currentElement(scope: string, root: Root, key: string) {
+    if (owners.get(key) !== scope) return undefined;
+    const node = elements.get(key);
+    return node?.isConnected && root.node.contains(node) ? node : undefined;
   }
   function publishRoot(scope: string, root: Root) {
     const segments: WindowSegment[] = [];
@@ -214,11 +221,13 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     ensureObserver();
     const revision = generation;
     const visible: string[] = [];
-    const nextAnchors = new Map<HTMLElement, { key: string; top: number; scrollTop: number }>();
+    const nextAnchors = new Map<HTMLElement, Anchor>();
     const corrections = new Map<HTMLElement, { delta: number; scrollTop: number }>();
     for (const [scroll, anchor] of anchors) {
-      const node = elements.get(anchor.key);
-      if (node?.isConnected && scroll.scrollTop === anchor.scrollTop) {
+      const root = roots.get(anchor.scope);
+      const node =
+        root === anchor.root ? currentElement(anchor.scope, root, anchor.key) : undefined;
+      if (node && scroll.scrollTop === anchor.scrollTop) {
         const delta = node.getBoundingClientRect().top - anchor.top;
         if (Math.abs(delta) > 0.5) {
           const scale =
@@ -298,8 +307,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       root.shells.clear();
       let top = box.top;
       for (const entry of root.entries) {
-        const node = elements.get(entry.key);
-        const measured = node?.isConnected ? node.getBoundingClientRect().height / scale : 0;
+        const node = currentElement(scope, root, entry.key);
+        const measured = node ? node.getBoundingClientRect().height / scale : 0;
         if (node && entry.kind === 'group' && mounted.has(entry.key)) {
           const summary = node
             .querySelector('[data-operational-disclosure-row]')
@@ -329,7 +338,13 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           if (rowTop < clipBottom && rowBottom > clipTop) {
             visible.push(entry.key);
             if (scroll && !nextAnchors.has(scroll) && entry.kind !== 'group')
-              nextAnchors.set(scroll, { key: entry.key, top, scrollTop: scroll.scrollTop });
+              nextAnchors.set(scroll, {
+                key: entry.key,
+                top,
+                scrollTop: scroll.scrollTop,
+                scope,
+                root,
+              });
           } else if (rowBottom <= clipTop)
             before.push({ key: entry.key, distance: clipTop - rowBottom });
           else after.push({ key: entry.key, distance: top - clipBottom });
@@ -396,13 +411,12 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     locate(key: string) {
       const scope = owners.get(key);
       const root = scope ? roots.get(scope) : undefined;
-      if (!root?.geometry) return undefined;
+      if (!scope || !root?.geometry) return undefined;
       let offset = 0;
       for (const entry of root.entries) {
         if (entry.key === key) {
-          const node = elements.get(key);
           return {
-            node: node?.isConnected && root.node.contains(node) ? node : undefined,
+            node: currentElement(scope, root, key),
             admitted: entry.kind === 'content' || mounted.has(key),
             kind: entry.kind,
             scrollRoot: root.geometry.scroll,

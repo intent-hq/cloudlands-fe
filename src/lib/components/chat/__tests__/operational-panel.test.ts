@@ -177,6 +177,62 @@ describe('panel scope work', () => {
     expect(panel.resolveTarget('m', 'b:1')).toBe(entry.key);
   });
 
+  it('ignores connected retired row geometry after target ownership moves', () => {
+    const first = node();
+    const firstScroll = node();
+    firstScroll.style.overflowY = 'auto';
+    firstScroll.append(first);
+    panel.attach('first', first, [entry], vi.fn());
+    const oldRow = node();
+    first.append(oldRow);
+    panel.watch(oldRow, entry.key);
+    const second = node();
+    panel.attach('second', second, [{ ...entry, key: 'other' }], vi.fn());
+    frame();
+    expect(panel.measuredHeight(entry.key)).toBe(28);
+    panel.update('second', [entry]);
+    vi.mocked(oldRow.getBoundingClientRect).mockReturnValue(new DOMRect(0, 140, 600, 300));
+    vi.mocked(firstScroll.getBoundingClientRect).mockClear();
+    vi.mocked(oldRow.getBoundingClientRect).mockClear();
+    frame();
+    expect(oldRow.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(panel.measuredHeight(entry.key)).toBe(28);
+    expect(panel.locate(entry.key)?.height).toBe(28);
+    expect(firstScroll.scrollTop).toBe(0);
+    const replacement = node();
+    second.append(replacement);
+    vi.mocked(replacement.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 56));
+    panel.watch(replacement, entry.key);
+    frame();
+    expect(panel.measuredHeight(entry.key)).toBe(56);
+  });
+
+  it('does not accept a retired group header measurement after a scope transfer', () => {
+    const group = { ...entry, kind: 'group' as const };
+    const first = node();
+    panel.attach('first', first, [group], vi.fn());
+    const oldRow = node();
+    const oldHeader = node();
+    oldHeader.setAttribute('data-operational-disclosure-row', '');
+    oldRow.append(oldHeader);
+    first.append(oldRow);
+    panel.watch(oldRow, entry.key);
+    const second = node();
+    panel.attach('second', second, [{ ...group, key: 'other' }], vi.fn());
+    frame();
+    window.dispatchEvent(new Event('resize'));
+    frame();
+    expect(panel.summaryHeight(entry.key)).toBe(28);
+    panel.update('second', [group]);
+    vi.mocked(oldHeader.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 200));
+    vi.mocked(oldHeader.getBoundingClientRect).mockClear();
+    frame();
+    window.dispatchEvent(new Event('resize'));
+    frame();
+    expect(oldHeader.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(panel.summaryHeight(entry.key)).toBe(28);
+  });
+
   it('invalidates a replacement immediately and ignores old cleanup before the batched rebuild', () => {
     const old = node();
     const removeOld = panel.attach('same', old, [entry], vi.fn());
