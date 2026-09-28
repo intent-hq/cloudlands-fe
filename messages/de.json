@@ -6765,5 +6765,11 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Experimentellen Mehrspielermodus deaktivieren",
   "lib_commandPalette_enableExperimentalGitlab_label": "Experimentelles GitLab aktivieren",
   "lib_commandPalette_disableExperimentalGitlab_label": "Experimentelles GitLab deaktivieren",
-  "inviteNotice_modal_findGitlabCommand_label": "GitLab-Befehl suchen"
+  "inviteNotice_modal_findGitlabCommand_label": "GitLab-Befehl suchen",
+  "agent_node_halted_label": "Angehalten",
+  "agent_node_resuming_label": "Wird fortgesetzt",
+  "agent_node_provisioning_label": "Wird vorbereitet",
+  "agent_node_checkpoint_available": "Letzter erfolgreicher Prüfpunkt: {time}.",
+  "agent_node_checkpoint_unavailable": "Kein erfolgreicher Prüfpunkt verfügbar.",
+  "agent_node_transcript_diff_notice": "Diese Diffs zeigen aufgezeichnete Werkzeugänderungen, nicht den Inhalt des Prüfpunkts."
 }

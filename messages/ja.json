@@ -6765,5 +6765,11 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "実験的なマルチプレイヤーを無効にする",
   "lib_commandPalette_enableExperimentalGitlab_label": "試験的なGitLab機能を有効にする",
   "lib_commandPalette_disableExperimentalGitlab_label": "試験的なGitLab機能を無効にする",
-  "inviteNotice_modal_findGitlabCommand_label": "GitLab コマンドを検索"
+  "inviteNotice_modal_findGitlabCommand_label": "GitLab コマンドを検索",
+  "agent_node_halted_label": "停止中",
+  "agent_node_resuming_label": "再開中",
+  "agent_node_provisioning_label": "準備中",
+  "agent_node_checkpoint_available": "最後に成功したチェックポイント: {time}。",
+  "agent_node_checkpoint_unavailable": "成功したチェックポイントはありません。",
+  "agent_node_transcript_diff_notice": "この差分は記録されたツールの編集であり、チェックポイントの内容ではありません。"
 }

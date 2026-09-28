@@ -6765,5 +6765,11 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "禁用实验性多人协作",
   "lib_commandPalette_enableExperimentalGitlab_label": "启用实验性 GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "禁用实验性 GitLab",
-  "inviteNotice_modal_findGitlabCommand_label": "查找 GitLab 命令"
+  "inviteNotice_modal_findGitlabCommand_label": "查找 GitLab 命令",
+  "agent_node_halted_label": "已暂停",
+  "agent_node_resuming_label": "正在恢复",
+  "agent_node_provisioning_label": "正在准备",
+  "agent_node_checkpoint_available": "最近成功的检查点：{time}。",
+  "agent_node_checkpoint_unavailable": "没有可用的成功检查点。",
+  "agent_node_transcript_diff_notice": "这些差异显示已记录的工具编辑，而非检查点内容。"
 }

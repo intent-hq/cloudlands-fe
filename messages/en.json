@@ -6765,5 +6765,11 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Disable experimental multiplayer",
   "lib_commandPalette_enableExperimentalGitlab_label": "Enable experimental GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "Disable experimental GitLab",
-  "inviteNotice_modal_findGitlabCommand_label": "Find GitLab command"
+  "inviteNotice_modal_findGitlabCommand_label": "Find GitLab command",
+  "agent_node_halted_label": "Halted",
+  "agent_node_resuming_label": "Resuming",
+  "agent_node_provisioning_label": "Provisioning",
+  "agent_node_checkpoint_available": "Last successful checkpoint: {time}.",
+  "agent_node_checkpoint_unavailable": "No successful checkpoint available.",
+  "agent_node_transcript_diff_notice": "These diffs show recorded tool edits, not checkpoint contents."
 }

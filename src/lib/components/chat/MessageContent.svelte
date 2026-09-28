@@ -81,6 +81,7 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('MessageContent');
@@ -275,7 +276,7 @@
     sourcePanelId?: string;
   }) {
     logger.info('Opening file from message content', detail);
-    if (!workspaceId) return;
+    if (!workspaceId || !canOpenAgentPath(appStore.state, agentId)) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, detail.path, {
         line: detail.line,

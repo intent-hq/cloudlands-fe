@@ -91,6 +91,7 @@
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -123,7 +124,7 @@
   }
 
   function openChatFile(path: string, event?: MouseEvent, line?: number) {
-    if (readOnly) return;
+    if (readOnly || !canOpenAgentPath(appStore.state, agentId)) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));

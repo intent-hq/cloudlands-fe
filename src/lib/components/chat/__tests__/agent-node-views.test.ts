@@ -1,0 +1,200 @@
+/** @vitest-environment jsdom */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { store as appStore } from '$store/renderer/store';
+import {
+  bulkUpsertSessions,
+  removeSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { AgentStatus, type AgentSession } from '$shared/types';
+import AgentCard from '../AgentCard.svelte';
+import ChatChangesPanelHarness from '../ChatChangesPanelHarness.svelte';
+import ToolCall from '../ToolCall.svelte';
+import { invoke } from '$lib/electron-bridge';
+import { canOpenAgentPath } from '../agent-path-actions';
+
+const id = 'agent-node-view';
+const makeAgent = (extra: Partial<AgentSession> = {}): AgentSession => ({
+  id: AgentId(id),
+  backendSessionId: null,
+  workspaceId: WorkspaceId('preview-chat-changes'),
+  name: 'Remote builder',
+  status: AgentStatus.Halted,
+  messages: [],
+  createdAt: '2026-09-28T08:00:00Z',
+  updatedAt: '2026-09-28T08:00:00Z',
+  placement: { target: 'remote', checkout: 'isolated' },
+  nodeState: 'offline',
+  checkpoint: {
+    id: 'checkpoint-view',
+    assignmentEpoch: '1',
+    captureRevision: '3',
+    capturedAt: '2026-09-28T08:45:00Z',
+    committedAt: '2026-09-28T08:45:01Z',
+  },
+  ...extra,
+});
+const changes = [
+  {
+    filePath: '/node-only/src/file.ts',
+    action: 'modify' as const,
+    additions: 1,
+    deletions: 1,
+    toolName: 'edit_file',
+    toolCallId: 'edit-1',
+    oldContent: 'old',
+    newContent: 'new',
+  },
+];
+beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    },
+  );
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    },
+  );
+  appStore.init();
+  vi.mocked(invoke).mockClear();
+});
+afterEach(() => {
+  cleanup();
+  appStore.dispatch(removeSession(id));
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('node agents in existing views', () => {
+  it('reacts to provisioning, halt and resume while preserving legacy labels', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeAgent({ status: AgentStatus.Pending, effectiveIsolation: 'pending' }),
+      ]),
+    );
+    const view = render(AgentCard, { agentId: id, statusLabel: 'Existing label' });
+    expect(screen.getByTestId('agent-card-status').textContent).toBe('Provisioning');
+    appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+    await waitFor(() => expect(screen.getByTestId('agent-card-status').textContent).toBe('Halted'));
+    appStore.dispatch(bulkUpsertSessions([makeAgent({ status: AgentStatus.Resuming })]));
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-card-status').textContent).toBe('Resuming'),
+    );
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeAgent({
+          status: AgentStatus.RuntimeIdle,
+          placement: undefined,
+          nodeState: undefined,
+          checkpoint: undefined,
+        }),
+      ]),
+    );
+    await view.rerender({ agentId: id, statusLabel: 'Existing label' });
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-card-status').textContent).toBe('Existing label'),
+    );
+  });
+  it('separates available checkpoint time from transcript diffs and disables head path actions', async () => {
+    appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    render(ChatChangesPanelHarness, {
+      changes,
+      agentId: id,
+      isAggregate: true,
+      showStagingControls: true,
+    });
+    expect(screen.getByRole('status').textContent).toContain('2026-09-28T08:45:00Z');
+    expect(screen.getByRole('status').textContent).toContain('not checkpoint contents');
+    const open = await screen.findByRole('button', { name: 'Open file' });
+    expect(open.hasAttribute('disabled')).toBe(true);
+    await fireEvent.click(open);
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => action.type === 'workspaceNavigation/openWorkspaceFile',
+      ),
+    ).toBe(false);
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([channel]) => channel === 'git:diff' || channel === 'file:read'),
+    ).toBe(false);
+  });
+  it('does not invent a checkpoint time when no checkpoint succeeded', () => {
+    appStore.dispatch(bulkUpsertSessions([makeAgent({ checkpoint: undefined })]));
+    render(ChatChangesPanelHarness, { changes, agentId: id });
+    expect(screen.getByRole('status').textContent).toContain('No successful checkpoint');
+    expect(screen.getByRole('status').textContent).not.toContain('2026-09');
+  });
+  it('leaves ordinary local diff actions available', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeAgent({ placement: undefined, nodeState: undefined, checkpoint: undefined }),
+      ]),
+    );
+    render(ChatChangesPanelHarness, { changes, agentId: id });
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(
+      (await screen.findByRole('button', { name: 'Open file' })).hasAttribute('disabled'),
+    ).toBe(false);
+  });
+  it('blocks a tool file link after a remote placement update', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([makeAgent({ placement: undefined, nodePath: undefined })]),
+    );
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    render(ToolCall, {
+      agentId: id,
+      workspaceId: 'preview-chat-changes',
+      toolUse: {
+        type: 'tool_use',
+        id: 'read-1',
+        name: 'read_file',
+        input: { path: '/node-only/src/file.ts' },
+      },
+      toolState: 'completed',
+      result: { content: 'text' },
+    });
+    const link = screen.getByTestId('tool-call-file-link');
+    appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+    dispatch.mockClear();
+    await fireEvent.click(link);
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => action.type === 'workspaceNavigation/openWorkspaceFile',
+      ),
+    ).toBe(false);
+    appStore.dispatch(
+      bulkUpsertSessions([makeAgent({ placement: undefined, nodePath: undefined })]),
+    );
+    dispatch.mockClear();
+    await fireEvent.click(link);
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => action.type === 'workspaceNavigation/openWorkspaceFile',
+      ),
+    ).toBe(true);
+  });
+  it('checks current path provenance and rejects unknown, remote and local isolated agents', () => {
+    expect(canOpenAgentPath(appStore.state, id)).toBe(false);
+    appStore.dispatch(
+      bulkUpsertSessions([makeAgent({ placement: { target: 'local', checkout: 'shared' } })]),
+    );
+    expect(canOpenAgentPath(appStore.state, id)).toBe(true);
+    appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+    expect(canOpenAgentPath(appStore.state, id)).toBe(false);
+    appStore.dispatch(
+      bulkUpsertSessions([makeAgent({ placement: { target: 'local', checkout: 'isolated' } })]),
+    );
+    expect(canOpenAgentPath(appStore.state, id)).toBe(false);
+  });
+});

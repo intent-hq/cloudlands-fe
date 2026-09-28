@@ -260,6 +260,7 @@
   import type { TrackedChange } from '$features/file-tracking/types';
 
   import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { setViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -357,9 +358,9 @@
   let {
     changes,
     agentId = null,
-    isAggregate = false,
+    isAggregate: isAggregateProp = false,
     onOpenAgent,
-    showStagingControls = false,
+    showStagingControls: showStagingControlsProp = false,
     showCategoryFilter = false,
     onStage,
     onUnstage,
@@ -375,6 +376,14 @@
     gitRootId = undefined,
     gitRootPath = undefined,
   }: Props = $props();
+
+  const agentSession$ = $derived(selectAgentSession(agentId ?? ''));
+  const nodeOwnedPaths = $derived(
+    !!agentId && (!$agentSession$ || hasNodeOwnedAgentPath($agentSession$)),
+  );
+  const showStagingControls = $derived(showStagingControlsProp && !nodeOwnedPaths);
+  const isAggregate = $derived(isAggregateProp && !nodeOwnedPaths);
+  const offlineNode = $derived(nodeOwnedPaths && $agentSession$?.nodeState === 'offline');
 
   function toGitRootRelativePath(filePath: string, rootPath?: string): string {
     if (!rootPath) return filePath;
@@ -1606,6 +1615,7 @@
   }
 
   function openCurrentDiff(filePath: string, event?: MouseEvent) {
+    if (nodeOwnedPaths) return;
     // Find the change object for this file to get full context
     const change = changes.find((c) => c.filePath === filePath);
 
@@ -1661,6 +1671,7 @@
   }
 
   function openFile(filePath: string, event?: MouseEvent) {
+    if (nodeOwnedPaths) return;
     const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
     const panelElement = event?.target
       ? (event.target as HTMLElement)?.closest('[data-panel-id]')
@@ -1674,6 +1685,7 @@
   // Refresh diff for a single file after staging/unstaging
   // This is more performant than refreshing all file tracking data
   async function refreshFileDiff(filePath: string) {
+    if (nodeOwnedPaths) return;
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) return;
 
@@ -2541,6 +2553,14 @@
   tabindex="-1"
   onpointerdown={handlePanelPointerDown}
 >
+  {#if offlineNode}
+    <p class="px-5 py-2 text-xs text-muted-foreground" role="status">
+      {$agentSession$?.checkpoint
+        ? m.agent_node_checkpoint_available({ time: $agentSession$.checkpoint.capturedAt })
+        : m.agent_node_checkpoint_unavailable()}
+      {m.agent_node_transcript_diff_notice()}
+    </p>
+  {/if}
   {#if allChangesSearchOpen}
     <PanelFindBar
       bind:query={allChangesSearchQuery}
@@ -3054,6 +3074,7 @@
           <Button
             variant="ghost-light"
             size="icon-xs"
+            disabled={nodeOwnedPaths}
             tooltip={m.chat_changesPanel_viewCurrentDiff_tooltip()}
             onclick={(e: MouseEvent) => {
               e.stopPropagation();
@@ -3065,6 +3086,7 @@
           <Button
             variant="ghost-light"
             size="icon-xs"
+            disabled={nodeOwnedPaths}
             tooltip={m.chat_changesPanel_openFile_tooltip()}
             onclick={(e: MouseEvent) => {
               e.stopPropagation();

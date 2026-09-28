@@ -6765,5 +6765,11 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Desactivar multijugador experimental",
   "lib_commandPalette_enableExperimentalGitlab_label": "Activar GitLab experimental",
   "lib_commandPalette_disableExperimentalGitlab_label": "Desactivar GitLab experimental",
-  "inviteNotice_modal_findGitlabCommand_label": "Buscar comando de GitLab"
+  "inviteNotice_modal_findGitlabCommand_label": "Buscar comando de GitLab",
+  "agent_node_halted_label": "Detenido",
+  "agent_node_resuming_label": "Reanudando",
+  "agent_node_provisioning_label": "Preparando",
+  "agent_node_checkpoint_available": "Último punto de control correcto: {time}.",
+  "agent_node_checkpoint_unavailable": "No hay un punto de control correcto disponible.",
+  "agent_node_transcript_diff_notice": "Estas diferencias muestran ediciones registradas de herramientas, no el contenido del punto de control."
 }

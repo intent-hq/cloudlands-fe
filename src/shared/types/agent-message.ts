@@ -110,6 +110,7 @@ export interface MessageMetadata {
     | 'daemon_shutdown'
     | 'agent_stopped'
     | 'system_suspend'
+    | 'node_link_lost'
     | (string & {});
   interruptedBy?: { kind: 'user' } | { kind: 'agent'; agentId?: string; name?: string };
 
