@@ -33,6 +33,6 @@
   onConfirm={retire}
 >
   {#snippet details()}
-    {#if error}<p role="alert" class="type-body text-destructive">{error}</p>{/if}
+    {#if error}<p role="alert" class="type-body text-danger">{error}</p>{/if}
   {/snippet}
 </DestructiveConfirm>
