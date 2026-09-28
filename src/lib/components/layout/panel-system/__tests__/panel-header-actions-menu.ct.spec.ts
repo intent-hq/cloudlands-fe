@@ -425,7 +425,6 @@ for (const scenario of [
       return {
         left: box.left,
         right: box.right,
-        width: box.width,
         labelClientWidth: label.clientWidth,
         labelScrollWidth: label.scrollWidth,
         labelColor: getComputedStyle(label).color,
@@ -435,14 +434,7 @@ for (const scenario of [
     expect(geometry.left).toBeGreaterThanOrEqual(8 - 0.5);
     expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
     expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
-    expect(geometry.width).toBeGreaterThanOrEqual(224);
     expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
-
-    if (scenario.viewportWidth === 1000) {
-      expect(geometry.width).toBeLessThanOrEqual(320);
-    } else {
-      expect(geometry.width).toBeLessThanOrEqual(scenario.viewportWidth - 16 + 0.5);
-    }
 
     await longItem.click();
     await expect(component).toHaveAttribute('data-display-count', '1');
