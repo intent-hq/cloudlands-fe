@@ -623,7 +623,14 @@
   if (alternate)
     store.dispatch(
       bulkUpsertSessions(
-        [{ ...session, id: `${agentId}-alternate`, name: 'Alternate agent', messages: alternate }],
+        [
+          {
+            ...session,
+            id: `${agentId}-alternate` as AgentSession['id'],
+            name: 'Alternate agent',
+            messages: alternate,
+          },
+        ],
         { preserveExplicitRuntimeFlags: false },
       ),
     );
@@ -647,7 +654,7 @@
               ? [
                   {
                     id: 'alternate-tab',
-                    type: 'agent',
+                    type: 'agent' as const,
                     title: 'Alternate agent',
                     agentId: `${agentId}-alternate`,
                     workspaceId,
