@@ -190,15 +190,15 @@ export async function placeImageAttachment(
   try {
     for (let seq = 0; seq < totalChunks; seq++) {
       const slice = bytes.subarray(seq * chunkBytes, (seq + 1) * chunkBytes);
-      await api.sendAttachmentUploadChunk(uploadId, seq, bytesToBase64(slice));
+      await api.sendAttachmentUploadChunk(uploadId, seq, bytesToBase64(slice), workspaceId);
     }
     committing = true;
-    return await api.commitAttachmentUpload(uploadId);
+    return await api.commitAttachmentUpload(uploadId, workspaceId);
   } catch (error) {
     // Only a lost commit reply can hide a placed file behind the key.
     const recovered = committing ? await recover(error) : undefined;
     if (recovered) return recovered;
-    await api.abortAttachmentUpload(uploadId).catch(() => {
+    await api.abortAttachmentUpload(uploadId, workspaceId).catch(() => {
       // Best-effort: the daemon sweeps orphaned sessions on the next begin.
     });
     throw error;

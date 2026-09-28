@@ -71,6 +71,7 @@ import {
 import {
   initialState as catalogInitial,
   providerCatalogLoaded,
+  workspaceCatalogReceived,
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import {
@@ -92,7 +93,28 @@ const modelRequest = (providerId: string, modelId: string) => ({
   modelId,
 });
 
+function seedWorkspaceCatalog() {
+  fixture.state.providerCatalog = providerCatalogReducer(
+    fixture.state.providerCatalog,
+    workspaceCatalogReceived(
+      'model-tests',
+      {
+        catalog: { providers: Object.values(fixture.state.providerCatalog.providers.map) },
+        settings: [
+          { path: 'model.defaultProvider', value: fixture.state.model.defaultProviderId },
+          { path: 'model.providerDefaults', value: fixture.state.model.providerModels },
+          { path: 'providers.enabled', value: fixture.state.providerSettings.enabledProviders },
+        ] as never,
+        readiness: fixture.state.agentAvailability.providerStatusMap,
+        specialists: [],
+      },
+      0,
+    ),
+  );
+}
+
 function mount(overrides: Record<string, unknown> = {}) {
+  seedWorkspaceCatalog();
   return render(SimpleRichInput, {
     props: {
       value: '',
@@ -155,8 +177,20 @@ beforeEach(() => {
     },
     model: { ...modelInitial, defaultProviderId: 'auggie' },
     providerCatalog: providerCatalogReducer(
-      catalogInitial,
-      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+      providerCatalogReducer(catalogInitial, providerCatalogLoaded(MOCK_PROVIDER_CATALOG)),
+      workspaceCatalogReceived(
+        'model-tests',
+        {
+          catalog: MOCK_PROVIDER_CATALOG,
+          settings: [
+            { path: 'model.defaultProvider', value: 'auggie' },
+            { path: 'providers.enabled', value: { auggie: true, codex: true } },
+          ] as never,
+          readiness: { auggie: { available: true }, codex: { available: true } },
+          specialists: [],
+        },
+        0,
+      ),
     ),
     providerModels: modelsInitial,
     providerSettings: { enabledProviders: { auggie: true, codex: true } },
@@ -185,6 +219,7 @@ beforeEach(() => {
     fixture.state.model = modelReducer(fixture.state.model, action);
     fixture.state.providerModels = providerModelsReducer(fixture.state.providerModels, action);
     fixture.state.providerCatalog = providerCatalogReducer(fixture.state.providerCatalog, action);
+    if (action.type === providerCatalogLoaded.type) seedWorkspaceCatalog();
     emitState();
     return action;
   });

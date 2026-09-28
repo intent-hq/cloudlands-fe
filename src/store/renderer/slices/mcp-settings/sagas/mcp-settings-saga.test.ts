@@ -1,5 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { McpServerConfig } from '../mcp-settings-types';
 import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => ({
@@ -55,7 +56,7 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function harness(seed = initialState) {
+function harness(seed = initialState, scopedServers: Record<string, McpServerConfig[]> = {}) {
   const channel = stdChannel();
   let state = seed;
   const dispatched: unknown[] = [];
@@ -65,7 +66,18 @@ function harness(seed = initialState) {
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ mcpSettings: state }) },
+    {
+      channel,
+      dispatch,
+      getState: () => ({
+        mcpSettings: state,
+        providerCatalog: {
+          byWorkspaceId: Object.fromEntries(
+            Object.entries(scopedServers).map(([id, mcpServers]) => [id, { mcpServers }]),
+          ),
+        },
+      }),
+    },
     mcpSettingsSaga,
   );
   return { channel, dispatched, state: () => state, task };
@@ -884,7 +896,10 @@ describe('mcpSettingsSaga', () => {
       url: 'https://remote.test',
     };
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: true });
-    const run = harness(mcpSettingsReducer(initialState, setServers([remote])));
+    const run = harness(
+      mcpSettingsReducer(initialState, setServers([{ ...remote, id: 'global-server' }])),
+      { 'ws-1': [remote] },
+    );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
     await settle();
 
@@ -910,7 +925,7 @@ describe('mcpSettingsSaga', () => {
       mcpSettingsReducer(initialState, setServers([remote])),
       setWorkspaceMcpServerDisabled('ws-1', 'srv-remote', true),
     );
-    const run = harness(seed);
+    const run = harness(seed, { 'ws-1': [remote] });
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', true));
     await settle();
 
@@ -929,7 +944,10 @@ describe('mcpSettingsSaga', () => {
     };
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: false, error: 'not-found' });
     mocks.getWorkspaceDisabledMcpServerKeys.mockResolvedValue([]);
-    const run = harness(mcpSettingsReducer(initialState, setServers([remote])));
+    const run = harness(
+      mcpSettingsReducer(initialState, setServers([{ ...remote, id: 'global-server' }])),
+      { 'ws-1': [remote] },
+    );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
     await settle();
 
@@ -951,7 +969,10 @@ describe('mcpSettingsSaga', () => {
     };
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true });
     mocks.getWorkspaceDisabledMcpServerKeys.mockResolvedValue(['srv-remote']);
-    const run = harness(mcpSettingsReducer(initialState, setServers([remote])));
+    const run = harness(
+      mcpSettingsReducer(initialState, setServers([{ ...remote, id: 'global-server' }])),
+      { 'ws-1': [remote] },
+    );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
     await settle();
 
@@ -968,7 +989,7 @@ describe('mcpSettingsSaga', () => {
 
   it('workspace-toggle without a daemon id makes no wire call and writes no state', async () => {
     const noId = { name: 'no-id', type: 'stdio' as const, command: 'node' };
-    const run = harness(mcpSettingsReducer(initialState, setServers([noId])));
+    const run = harness(initialState, { 'ws-1': [noId] });
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'no-id', false));
     await settle();
 
@@ -1111,7 +1132,7 @@ describe('MCP identity regression contracts', () => {
 
   it('targets a workspace toggle by ID when names match', async () => {
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: true });
-    const run = harness({ ...initialState, servers: siblings });
+    const run = harness({ ...initialState, servers: siblings }, { 'ws-1': siblings });
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-b', false));
     await settle();
     expect(mocks.toggleWorkspaceMcpServer).toHaveBeenCalledWith('ws-1', 'srv-b', false);

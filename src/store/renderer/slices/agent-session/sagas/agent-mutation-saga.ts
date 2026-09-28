@@ -1,3 +1,4 @@
+import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import {
   all,
   call,
@@ -190,6 +191,13 @@ function* loadRetirementSupport(
 
 function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const initial = yield* selectAgentSession.effect(agentId);
+  // A stale workspace action may still settle its RPC, but cannot claim or
+  // publish into a row now owned by another workspace.
+  const ownership =
+    !initial || initial.workspaceId === wsId
+      ? captureAgentMutationOwnership(agentId, wsId)
+      : undefined;
   let settled = false;
   try {
     const generation = yield* selectDaemonConnectionGeneration.effect();
@@ -202,16 +210,19 @@ function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGene
     const beforeRetire = yield* selectAgentSession.effect(agentId);
     const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
-    if (
-      beforeRetire &&
-      beforeRetire === (yield* selectAgentSession.effect(agentId)) &&
-      generation === (yield* selectDaemonConnectionGeneration.effect())
-    ) {
-      yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
-    } else {
-      // Events and Restore can overtake this response. Reconcile changed rows
-      // through the existing trailing read instead of replaying an old timestamp.
-      yield* spawn(refreshAgentSessionAfterEvent, agentId);
+    const current = yield* selectAgentSession.effect(agentId);
+    if (ownership?.isCurrent(current?.workspaceId)) {
+      if (
+        beforeRetire &&
+        beforeRetire === current &&
+        generation === (yield* selectDaemonConnectionGeneration.effect())
+      ) {
+        yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+      } else {
+        // Events and Restore can overtake this response. Reconcile the same
+        // workspace through the trailing read instead of replaying an old timestamp.
+        yield* spawn(refreshAgentSessionAfterEvent, agentId, wsId);
+      }
     }
     yield* put(action.success(undefined as never));
     settled = true;
@@ -235,6 +246,13 @@ function* restoreRetiredAgent(
   action: ReturnType<typeof restoreRetiredAgentRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const initial = yield* selectAgentSession.effect(agentId);
+  // A stale workspace action may still settle its RPC, but cannot claim or
+  // publish into a row now owned by another workspace.
+  const ownership =
+    !initial || initial.workspaceId === wsId
+      ? captureAgentMutationOwnership(agentId, wsId)
+      : undefined;
   let settled = false;
   try {
     const result = yield* call([appClient.agents, appClient.agents.restore], agentId, wsId);
@@ -246,7 +264,7 @@ function* restoreRetiredAgent(
       return;
     }
     const existing = yield* selectAgentSession.effect(agentId);
-    if (existing?.retiredAt) {
+    if (existing?.retiredAt && ownership?.isCurrent(existing.workspaceId)) {
       yield* put(restoreStoredSessions([{ ...existing, retiredAt: undefined }]));
     }
     yield* put(action.success(undefined as never));
@@ -265,18 +283,30 @@ function* restoreAgent(
   action: ReturnType<typeof restoreAgentSessionRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const existing = yield* selectAgentSession.effect(agentId);
+  // A cached row from another workspace is not this restoration's session.
+  // Do not claim its ownership or hand it back to the send/activation caller.
+  if (existing && existing.workspaceId !== wsId) {
+    yield* put(action.success(null));
+    return;
+  }
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   let settled = false;
   try {
-    const existing = yield* selectAgentSession.effect(agentId);
     if (hasUsableSession(existing)) {
       yield* put(action.success(existing));
     } else {
-      const fetched = yield* call(readAgentSession, agentId);
-      if (!fetched) {
-        yield* put(action.success(existing ?? null));
+      const fetched = yield* call(readAgentSession, agentId, wsId);
+      const current = yield* selectAgentSession.effect(agentId);
+      // readAgentSession returns metadata; this consumer owns the state write.
+      // Recheck before both the persisted projection and fallback resolution.
+      if (!ownership.isCurrent(current?.workspaceId) || (fetched && fetched.workspaceId !== wsId)) {
+        yield* put(action.success(null));
+      } else if (!fetched) {
+        yield* put(action.success(current ?? null));
       } else {
         const session = {
-          ...preserveMessages(fetched, existing),
+          ...preserveMessages(fetched, current),
           workspaceId: wsId as AgentSession['workspaceId'],
         };
         yield* call(persistSession, session);
@@ -285,7 +315,11 @@ function* restoreAgent(
     }
     settled = true;
   } catch (error) {
-    yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    if (ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
+      yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    } else {
+      yield* put(action.success(null));
+    }
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
@@ -296,6 +330,7 @@ function* restoreAgent(
 
 function* activateAgent(action: ReturnType<typeof activateAgentRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   const existing = yield* selectAgentSession.effect(agentId);
   let settled = false;
   try {
@@ -312,7 +347,12 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
         activationAttempts,
       });
     }
-    const fetched = yield* call(readAgentSession, agentId);
+    const fetched = yield* call(readAgentSession, agentId, wsId);
+    if (!ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
+      yield* put(action.success(null));
+      settled = true;
+      return;
+    }
     if (fetched) {
       const source = preserveMessages(fetched, existing);
       const activated: WireAgentSession = {
@@ -339,7 +379,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
     }
     settled = true;
   } catch (error) {
-    if (existing) {
+    if (existing && ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
       yield* call(patchStoredSession, agentId, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ERROR,
@@ -414,10 +454,10 @@ function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): S
 }
 
 function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    const result = yield* call([appClient.agents, appClient.agents.stop], agentId, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_stopFailed_error());
     yield* put(action.success(undefined as never));
     settled = true;

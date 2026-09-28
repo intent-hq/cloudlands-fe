@@ -302,7 +302,7 @@ describe('ChatMessage attachment-reference thumbnails', () => {
     registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
       expect(payload).toEqual({
         method: 'file.getAttachmentInfo',
-        params: { attachmentId: 'att-thumb-1' },
+        params: { attachmentId: 'att-thumb-1', workspaceId: 'ws-thumb' },
       });
       return getAttachmentInfo();
     });
@@ -336,7 +336,7 @@ describe('ChatMessage attachment-reference thumbnails', () => {
     const statusHandlers: Array<(payload: unknown) => void> = (
       window.electronAPI as any
     )._getRegisteredHandlers(IPC_CHANNELS.BACKEND.STATUS);
-    statusHandlers.length = 0;
+    // Preserve the process-wide cache listener installed by earlier thumbnail reads.
     // Start from an empty module cache (the previous test re-cached the URL).
     evictAttachmentImageUrl('ws-thumb', 'att-thumb-1');
 

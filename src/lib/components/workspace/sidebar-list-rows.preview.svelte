@@ -26,7 +26,7 @@
   import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import { store } from '$store/renderer/store';
   import { setSkills } from '$store/renderer/slices/skills/skills-slice';
-  import { setServers } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+  import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
     bulkUpsertSessions,
     removeSession,
@@ -152,13 +152,32 @@
         },
       ]),
     );
+    const previousCatalog = store.state.providerCatalog.byWorkspaceId?.[LIST_LABELS_WORKSPACE] ?? {
+      catalog: { providers: [] },
+      settings: [],
+      specialists: [],
+      readiness: {},
+    };
     store.dispatch(
-      setServers([{ name: 'Local reference tools', type: 'stdio', command: 'echo fixture' }]),
+      workspaceCatalogReceived(
+        LIST_LABELS_WORKSPACE,
+        {
+          ...previousCatalog,
+          mcpServers: [{ name: 'Local reference tools', type: 'stdio', command: 'echo fixture' }],
+        },
+        store.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
     );
     return () => {
       agents.forEach((agent) => store.dispatch(removeSession(agent.id)));
       store.dispatch(setSkills(LIST_LABELS_WORKSPACE, []));
-      store.dispatch(setServers([]));
+      store.dispatch(
+        workspaceCatalogReceived(
+          LIST_LABELS_WORKSPACE,
+          previousCatalog,
+          store.state.providerCatalog.workspaceEpoch ?? 0,
+        ),
+      );
       dispose();
     };
   });

@@ -94,7 +94,7 @@ function closeTransport(runtime: TransportRuntime): void {
 
 async function releaseSubscription(workspaceId: string, subscriptionId: string): Promise<void> {
   try {
-    await backendUnsubscribe(subscriptionId);
+    await backendUnsubscribe(subscriptionId, workspaceId);
   } catch (error) {
     logger.warn('events.unsubscribe (hook:*) failed', { workspaceId, error });
   }

@@ -14,6 +14,7 @@ import {
 
 export interface PermissionRequest {
   requestId: string;
+  workspaceId?: string;
   sessionId: string;
   title: string;
   description?: string | null;

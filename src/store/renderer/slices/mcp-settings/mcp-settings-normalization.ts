@@ -197,3 +197,14 @@ export function normalizeMcpServersPayload(data: unknown): McpServerConfig[] {
   validateMcpServerIdentities(servers);
   return servers;
 }
+
+export function copyServerForState(source: McpServerConfig): McpServerConfig {
+  const server: McpServerConfig = { name: source.name, type: source.type };
+  if (source.id !== undefined) server.id = source.id;
+  if (source.command !== undefined) server.command = source.command;
+  if (source.args !== undefined) server.args = [...source.args];
+  if (source.url !== undefined) server.url = source.url;
+  if (source.authType !== undefined) server.authType = source.authType;
+  if (source.disabled !== undefined) server.disabled = source.disabled;
+  return server;
+}

@@ -181,9 +181,9 @@ export const selectAgentProvider = store.createSelector(
     if (!agentId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
     const raw = stored
-      ? getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state))
+      ? getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state, stored.workspaceId))
       : undefined;
-    return raw ? selectNormalizedProviderId.select(state, raw) : undefined;
+    return raw ? selectNormalizedProviderId.select(state, raw, stored?.workspaceId) : undefined;
   },
 );
 

@@ -1,5 +1,11 @@
+import { showLinkTooltip } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
+import {
+  handleLink,
+  createGlobalLinkClickHandler,
+  createLinkClickHandler,
+  createLinkTooltipHandler,
+} from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
@@ -924,4 +930,15 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
     expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
   });
+});
+
+it('captures the hovered workspace before its tooltip module resolves', async () => {
+  const { container, anchor } = buildContainerWithLink('https://github.com/org/repo/pull/1');
+  container.dataset.workspaceId = 'a';
+  const cleanup = createLinkTooltipHandler(container);
+  anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  container.dataset.workspaceId = 'b';
+  await vi.waitFor(() => expect(showLinkTooltip).toHaveBeenCalledWith(anchor, anchor.href, 'a'));
+  cleanup();
+  container.remove();
 });

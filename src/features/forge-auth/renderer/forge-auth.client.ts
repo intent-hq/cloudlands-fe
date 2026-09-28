@@ -30,12 +30,16 @@ function hostParams(
  */
 export const forgeAuthClient = {
   /** `sourceControl.authStatus { provider, host? }`; null when the probe failed. */
-  async getStatus(provider: ForgeProvider, host?: string): Promise<ForgeAuthStatus | null> {
+  async getStatus(
+    provider: ForgeProvider,
+    host?: string,
+    workspaceId?: string,
+  ): Promise<ForgeAuthStatus | null> {
     try {
-      return await invoke<ForgeAuthStatus | null>(
-        FORGE_AUTH_CHANNELS.GET_STATUS,
-        hostParams(provider, host),
-      );
+      return await invoke<ForgeAuthStatus | null>(FORGE_AUTH_CHANNELS.GET_STATUS, {
+        ...hostParams(provider, host),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
     } catch {
       return null;
     }
@@ -64,12 +68,16 @@ export const forgeAuthClient = {
   },
 
   /** `sourceControl.getUser { provider, host? }` — derived identity; null when unavailable. */
-  async getUser(provider: ForgeProvider, host?: string): Promise<ForgeUser | null> {
+  async getUser(
+    provider: ForgeProvider,
+    host?: string,
+    workspaceId?: string,
+  ): Promise<ForgeUser | null> {
     try {
-      return await invoke<ForgeUser | null>(
-        FORGE_AUTH_CHANNELS.GET_USER,
-        hostParams(provider, host),
-      );
+      return await invoke<ForgeUser | null>(FORGE_AUTH_CHANNELS.GET_USER, {
+        ...hostParams(provider, host),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
     } catch {
       return null;
     }

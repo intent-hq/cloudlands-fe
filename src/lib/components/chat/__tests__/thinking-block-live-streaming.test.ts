@@ -4,7 +4,8 @@
  * Integration test: thinking blocks update live during streaming (monorepo reasoning task).
  * Simulates the full flow from daemon deltas → ChatTranscriptReconciler → StreamingMessageContent.
  */
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, screen, waitFor } from '@testing-library/svelte';
+import { render } from './operational-renderer-test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 import { warmImport } from '../../../../test/warm-import';

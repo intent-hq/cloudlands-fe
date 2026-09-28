@@ -100,7 +100,9 @@ function buildMessageSearchBlocks(
           addText(
             child.text || child.content || '',
             chatSearchBlockPath(blockIndex, childIndex),
-            [],
+            child.type === 'thinking'
+              ? [`thinking:${chatSearchBlockPath(blockIndex, childIndex)}`]
+              : [],
           );
         }
       });

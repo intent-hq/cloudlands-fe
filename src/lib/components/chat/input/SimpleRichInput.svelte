@@ -86,8 +86,6 @@
 
   const logger = createLogger('SimpleRichInput');
 
-  const defaultProviderId$ = selectEffectiveDefaultProviderId();
-  const providerCatalogEntries$ = selectProviderCatalogEntries();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
@@ -97,11 +95,11 @@
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
     void $providerCatalogEntries$;
-    return selectNormalizedProviderId.select(appStore.state, providerId);
+    return selectNormalizedProviderId.select(appStore.state, providerId, workspace?.id);
   }
   function providerDisplayName(providerId: string): string {
     void $providerCatalogEntries$;
-    return selectProviderDisplayName.select(appStore.state, providerId);
+    return selectProviderDisplayName.select(appStore.state, providerId, workspace?.id);
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -257,6 +255,13 @@
     onHistoryNext,
   }: Props = $props();
 
+  // Selector readables are created at component init; mirror the reactive prop
+  // so a composer moved between workspaces follows that workspace's skill roster.
+  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  const defaultProviderId$ = selectEffectiveDefaultProviderId(workspaceIdStore);
+  const providerCatalogEntries$ = selectProviderCatalogEntries(workspaceIdStore);
+
   function updateValue(nextValue: string) {
     value = nextValue;
     onvaluechange?.(nextValue);
@@ -294,10 +299,6 @@
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
-  // Selector readables are created at component init; mirror the reactive prop
-  // so a composer moved between workspaces follows that workspace's skill roster.
-  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
-  const workspaceIdStore = writable(workspace?.id ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
   });

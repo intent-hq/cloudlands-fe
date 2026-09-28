@@ -10,10 +10,17 @@ export interface FileSpecialistWritePayload {
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 export type SpecialistReverseAction =
-  | { kind: 'delete'; id: string; scope: SpecialistFileScope; workspacePath?: string }
+  | {
+      kind: 'delete';
+      id: string;
+      scope: SpecialistFileScope;
+      workspacePath?: string;
+      workspaceId?: string;
+    }
   | { kind: 'save'; specialist: FileSpecialistWritePayload };
 
 export interface SpecialistProposalHistoryEntry {

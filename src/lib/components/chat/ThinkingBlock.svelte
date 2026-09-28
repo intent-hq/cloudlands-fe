@@ -18,6 +18,8 @@
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
 
   interface Props {
+    saved?: { expanded?: boolean; userToggled?: boolean; searchOwnsExpansion?: boolean };
+    searchPath?: string;
     content: string;
     isStreaming?: boolean;
     /** Auto-expand while streaming */
@@ -30,6 +32,8 @@
   }
 
   let {
+    saved,
+    searchPath,
     content,
     isStreaming = false,
     autoExpandWhileStreaming = true,
@@ -41,20 +45,51 @@
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
-  let isExpanded = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let isExpanded = $state(saved?.expanded ?? false);
 
   // Track if user has manually toggled
-  let userToggled = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let userToggled = $state(saved?.userToggled ?? false);
+
+  // svelte-ignore state_referenced_locally -- retained search ownership survives row eviction.
+  let searchOwnsExpansion = $state(saved?.searchOwnsExpansion ?? false);
 
   $effect(() => {
-    if (!userToggled) {
+    if (!userToggled && !searchOwnsExpansion) {
       isExpanded = autoExpandWhileStreaming && isStreaming;
     }
   });
 
   function toggle() {
+    searchOwnsExpansion = false;
     userToggled = true;
     isExpanded = !isExpanded;
+    if (saved) {
+      saved.expanded = isExpanded;
+      saved.userToggled = true;
+      saved.searchOwnsExpansion = false;
+    }
+  }
+
+  function expandForSearch() {
+    if (isExpanded) return;
+    searchOwnsExpansion = true;
+    isExpanded = true;
+    if (saved) {
+      saved.expanded = true;
+      saved.searchOwnsExpansion = true;
+    }
+  }
+
+  function restoreSearchExpansion() {
+    if (!searchOwnsExpansion) return;
+    searchOwnsExpansion = false;
+    isExpanded = !userToggled && autoExpandWhileStreaming && isStreaming;
+    if (saved) {
+      saved.expanded = isExpanded;
+      saved.searchOwnsExpansion = false;
+    }
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {
@@ -134,6 +169,9 @@
     {details}
     animateDetailsHeight
     interactive
+    searchDisclosureId={searchPath ? `thinking:${searchPath}` : undefined}
+    onSearchExpand={expandForSearch}
+    onSearchRestore={restoreSearchExpansion}
     expanded={isExpanded}
     controls={detailsId}
     {detailsId}
