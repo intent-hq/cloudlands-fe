@@ -2,6 +2,82 @@ import type { AgentMessage } from '$shared/types';
 import { expect, test } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
+test('newer previous-message navigation wins over a pending return to bottom', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost);
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  const down = component
+    .locator('[data-panel-content-header]')
+    .getByTestId('chat-scroll-to-bottom-button');
+  await expect(down).toBeDisabled();
+  for (const current of [24, 23, 22]) {
+    const source = component.locator(`[data-message-id="user-${current}"]`);
+    await source.hover();
+    await source.getByRole('button', { name: 'Scroll to previous message' }).click();
+    await page.waitForTimeout(700);
+  }
+
+  // Control animation time so the second trusted action always precedes the
+  // first animation's completion, even on a slow CI worker.
+  const now = Date.now();
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now + 1000);
+  await down.click();
+  await page.clock.runFor(32);
+  const targetId = await scroll.evaluate((container) => {
+    const viewport = container.getBoundingClientRect();
+    const source = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id^="user-"]'),
+    ).find((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.top >= viewport.top && rect.bottom <= viewport.bottom;
+    });
+    if (!source) throw new Error('Expected a fully visible user message');
+    const action = source.querySelector<HTMLButtonElement>(
+      '[aria-label="Scroll to previous message"]',
+    );
+    if (!action) throw new Error('Expected the previous-message action');
+    action.focus({ preventScroll: true });
+    return `user-${Number(source.dataset.messageId!.slice(5)) - 1}`;
+  });
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(800);
+  const target = component.locator(`[data-message-id="${targetId}"]`);
+  const offset = await target.evaluate(
+    (node, container) =>
+      node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
+    await scroll.elementHandle(),
+  );
+  await testInfo.attach('overlapping-navigation', {
+    body: JSON.stringify({
+      targetId,
+      offset,
+      scrollTop: await scroll.evaluate((node) => node.scrollTop),
+    }),
+    contentType: 'application/json',
+  });
+  expect(Math.abs(offset)).toBeLessThanOrEqual(3);
+  await expect(down).toBeEnabled();
+  await component.screenshot({ path: testInfo.outputPath('overlapping-navigation-settled.png') });
+
+  // Reverse the order while the lazy lookup is awaiting its first frame:
+  // the newer return-to-bottom action must supersede that pending navigation.
+  await target
+    .getByRole('button', { name: 'Scroll to previous message' })
+    .evaluate((node: HTMLButtonElement) => node.focus({ preventScroll: true }));
+  await page.keyboard.press('Enter');
+  await down.click();
+  await page.clock.runFor(800);
+  await expect(down).toBeDisabled();
+  expect(
+    await scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+  ).toBeLessThanOrEqual(2);
+  await page.clock.resume();
+});
+
 test('previous-message action leaves bottom and stays at successive user messages', async ({
   mount,
   page,
