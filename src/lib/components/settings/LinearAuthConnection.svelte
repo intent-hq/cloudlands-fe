@@ -7,7 +7,7 @@
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -16,10 +16,13 @@
     selectLinearIsAuthenticating,
     selectLinearError,
     selectLinearRequiresDaemonAuth,
+    selectLinearIsDisconnecting,
+    selectLinearAuthConsumerOperation,
   } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import {
     connectLinear,
     logoutLinear,
+    consumeLinearAuth,
   } from '$store/renderer/slices/linear-auth/linear-auth-slice';
 
   const isAuthenticated$ = selectLinearIsAuthenticated();
@@ -27,7 +30,18 @@
   const error$ = selectLinearError();
   const requiresDaemonAuth$ = selectLinearRequiresDaemonAuth();
 
-  let isDisconnectingLinear = $state(false);
+  const consumerId = crypto.randomUUID();
+  const operation$ = selectLinearAuthConsumerOperation(consumerId);
+  const isDisconnectingLinear$ = selectLinearIsDisconnecting();
+  onDestroy(() => {
+    const operation = selectLinearAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeLinearAuth(operation.requestId));
+  });
+  $effect(() => {
+    if ($operation$ && $operation$.status !== 'pending') {
+      appStore.dispatch(consumeLinearAuth($operation$.requestId));
+    }
+  });
   let issueFilter = $state<LinearIssueFilter>('all');
   let filterLoaded = $state(false);
 
@@ -71,18 +85,13 @@
   function handleSubmitApiKey() {
     const key = apiKeyDraft.trim();
     if (!key) return;
-    appStore.dispatch(connectLinear(key));
+    appStore.dispatch(connectLinear(key, { requestId: crypto.randomUUID(), consumerId }));
     showKeyInput = false;
     apiKeyDraft = '';
   }
 
   function handleLinearDisconnect() {
-    isDisconnectingLinear = true;
-    appStore.dispatch(logoutLinear());
-    // Reset local flag after a short delay since logout is async via the service
-    setTimeout(() => {
-      isDisconnectingLinear = false;
-    }, 500);
+    appStore.dispatch(logoutLinear({ requestId: crypto.randomUUID(), consumerId }));
   }
 </script>
 
@@ -123,9 +132,9 @@
           type="button"
           class="h-[22px] px-0"
           onclick={handleLinearDisconnect}
-          disabled={isDisconnectingLinear}
+          disabled={$isDisconnectingLinear$}
         >
-          {isDisconnectingLinear
+          {$isDisconnectingLinear$
             ? m.settings_connections_disconnecting()
             : m.settings_connections_disconnect()}
         </Button>

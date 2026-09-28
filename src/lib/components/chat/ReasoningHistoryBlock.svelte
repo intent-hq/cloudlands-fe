@@ -31,13 +31,12 @@
 <div class="min-w-0 max-w-full" data-reasoning-history>
   {#each history as item, index (`${item.title ?? 'body'}-${index}`)}
     {@const titleId = item.title ? `reasoning-section-title-${instanceId}-${index}` : undefined}
+    {@const followsBody = !!item.title && index > 0 && !!history[index - 1].body}
     <section
-      class="{index > 0 && item.title
-        ? NESTED_REASONING_SECTION_SEAM_CLASS
-        : ''} min-w-0 max-w-full"
+      class="{followsBody ? NESTED_REASONING_SECTION_SEAM_CLASS : ''} min-w-0 max-w-full"
       aria-labelledby={titleId}
       data-reasoning-section
-      data-reasoning-section-boundary={index > 0 && item.title ? true : undefined}
+      data-reasoning-section-boundary={followsBody ? true : undefined}
     >
       {#if item.title}
         {#snippet leading()}

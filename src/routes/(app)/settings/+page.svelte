@@ -51,7 +51,6 @@
     setAgentFontStyle,
     setChatAuroraEnabled,
     setCodeFontFamily,
-    setLabsMultiplayerEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -96,11 +95,11 @@
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
-  const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const windowIdentitySettled$ = selectWindowIdentitySettled();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -122,7 +121,6 @@
     'guest-sessions',
     'setup',
     'advanced',
-    'labs',
     'input',
     'specialists',
   ];
@@ -182,9 +180,6 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
-    labs: 'labs',
-    'labs-multiplayer': 'labs',
-    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -251,11 +246,18 @@
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>(
-    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
-  );
+  const hiddenTabs = $derived.by(() => {
+    const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
+    if (!$labsMultiplayerEnabled$) tabs.push('guest-sessions');
+    return tabs;
+  });
   $effect(() => {
-    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if (
+      hiddenTabs.includes(activeTab) &&
+      (activeTab === 'guest-sessions' || $windowIdentitySettled$)
+    ) {
+      setActiveTab('display');
+    }
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
@@ -596,7 +598,7 @@
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions'}
+        {#if activeTab === 'guest-sessions' && $labsMultiplayerEnabled$}
           <div id="guest-sessions" class="scroll-mt-20">
             <GuestSessionsSettings />
           </div>
@@ -1123,44 +1125,6 @@
               </div>
             </div>
           {/if}
-        {/if}
-
-        <!-- Labs -->
-        {#if activeTab === 'labs'}
-          <div id="labs" data-highlight-id="labs" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_labs()}
-            </h2>
-            <p class="type-body text-subtle mb-3">
-              {m.settings_labs_disclaimer_description()}
-            </p>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section
-                id="labs-multiplayer"
-                data-highlight-id="labs-multiplayer"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-labs-multiplayer-label-field"
-                  label={m.settings_labs_multiplayer_label()}
-                  description={m.settings_labs_multiplayer_description()}
-                  experimental
-                >
-                  <Switch
-                    id="labs-multiplayer-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$labsMultiplayerEnabled}
-                    onCheckedChange={(enabled) =>
-                      appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
-                    ariaLabel={m.settings_labs_multiplayer_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
-            </div>
-          </div>
         {/if}
       </main>
     </div>

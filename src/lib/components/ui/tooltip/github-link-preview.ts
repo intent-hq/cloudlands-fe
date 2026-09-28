@@ -7,7 +7,7 @@
  * request). Resolved previews are NOT cached here: the daemon's shared PR
  * cache (`prCache.maxAgeSeconds`) is the single cache, so every hover asks
  * the daemon and a failed request is retried on the next hover. Failures
- * propagate: the card renders its URL-only fallback. `createPreviewRequest`
+ * propagate: the card keeps the reference and explains the failure. `createPreviewRequest`
  * is the stale-response guard for the singleton tooltip: a late response for
  * a previous hover must never overwrite the current one.
  *
@@ -22,6 +22,19 @@ import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
 /** Discriminated details for one hovered GitHub link. */
 export type GitHubLinkPreview =
   ({ kind: 'pr' } & GitHubPullRequestDetails) | ({ kind: 'issue' } & GitHubIssueDetails);
+
+export type GitHubLinkPreviewFailure = 'rate-limited' | 'unavailable';
+
+/** Use the daemon's structured discriminator, never its raw error prose. */
+export function classifyGitHubLinkPreviewError(error: unknown): GitHubLinkPreviewFailure {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = error.data;
+    if (data && typeof data === 'object' && 'code' in data && data.code === 'rate-limited') {
+      return 'rate-limited';
+    }
+  }
+  return 'unavailable';
+}
 
 /** The slice of the integrations seam the preview loader depends on. */
 export type GitHubLinkPreviewClient = Pick<IntegrationsClient, 'githubPullRequest' | 'githubIssue'>;

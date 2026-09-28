@@ -19,6 +19,9 @@ const {
   paletteMruEntries,
   paletteFileMru,
   collaboratorState,
+  multiplayerState,
+  gitlabState,
+  storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -45,6 +48,9 @@ const {
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
     collaboratorState: { workspace: false, client: false },
+    multiplayerState: { enabled: false },
+    gitlabState: { enabled: undefined as boolean | undefined },
+    storeEvents: { emit: () => {} },
   };
 });
 
@@ -127,13 +133,19 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
 
-  return createAppStoreMockModule({
+  const module = createAppStoreMockModule({
     state: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
+      userPreferences: {
+        labsMultiplayerEnabled: multiplayerState.enabled,
+        labsGitLabEnabled: gitlabState.enabled,
+      },
     }),
     dispatch: reduxDispatchMock,
   });
+  storeEvents.emit = module.store.emitState;
+  return module;
 });
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   createAgentRequested: vi.fn((...args: any[]) => ({
@@ -216,6 +228,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faTerminal: { iconName: 'terminal' },
   faCommentDots: { iconName: 'comment-dots' },
   faFileAlt: { iconName: 'file-alt' },
+  faFlask: { iconName: 'flask' },
   faCodeBranch: { iconName: 'code-branch' },
   faPlus: { iconName: 'plus' },
   faGlobe: { iconName: 'globe' },
@@ -256,7 +269,134 @@ describe('CommandPalette new actions', () => {
     paletteFileMru.value = {};
     collaboratorState.workspace = false;
     collaboratorState.client = false;
+    multiplayerState.enabled = false;
+    gitlabState.enabled = undefined;
   });
+
+  it.each([undefined, false, true])(
+    'changes experimental GitLab from saved=%s without a workspace or an implicit preference change',
+    async (enabled) => {
+      gitlabState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, initialQuery: 'GitLab', onClose } });
+      const command = await screen.findByRole('button', {
+        name: enabled ? /Disable experimental GitLab/i : /Enable experimental GitLab/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled ? /Enable experimental GitLab/i : /Disable experimental GitLab/i,
+        }),
+      ).toBeNull();
+      expect(
+        reduxDispatchMock.mock.calls.filter(([action]) =>
+          action.type.startsWith('userPreferences/'),
+        ),
+      ).toEqual([]);
+
+      reduxDispatchMock.mockClear();
+      if (enabled) await fireEvent.click(command);
+      else await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'userPreferences/setLabsGitLabEnabled',
+        payload: [!enabled],
+      });
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('updates the GitLab command after delayed hydration without changing the saved choice', async () => {
+    render(CommandPalette, { props: { isOpen: true, initialQuery: 'GitLab', onClose: vi.fn() } });
+    await screen.findByRole('button', { name: /Enable experimental GitLab/i });
+    gitlabState.enabled = true;
+    storeEvents.emit();
+    await screen.findByRole('button', { name: /Disable experimental GitLab/i });
+    expect(screen.queryByRole('button', { name: /Enable experimental GitLab/i })).toBeNull();
+    expect(
+      reduxDispatchMock.mock.calls.filter(([action]) => action.type.startsWith('userPreferences/')),
+    ).toEqual([]);
+  });
+
+  it.each(['GitLab', ':'])(
+    'clears the visible %s query for an ordinary open while the palette remains open',
+    async (initialQuery) => {
+      const onClose = vi.fn();
+      const view = render(CommandPalette, { props: { isOpen: true, initialQuery, onClose } });
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      await waitFor(() => expect(input.value).toBe(initialQuery));
+      await fireEvent.input(input, { target: { value: `${initialQuery}42` } });
+
+      await view.rerender({ initialQuery: '' });
+
+      await waitFor(() => expect(input.value).toBe(''));
+      expect(screen.getByRole('dialog')).not.toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(
+        reduxDispatchMock.mock.calls.filter(([action]) =>
+          action.type.startsWith('userPreferences/'),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it('preserves typed text across unrelated updates and still handles go-to-line requests', async () => {
+    const onClose = vi.fn();
+    const view = render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'GitLab', onClose },
+    });
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'my search' } });
+
+    gitlabState.enabled = true;
+    storeEvents.emit();
+    await view.rerender({ workspaceId: 'ws-1' });
+    expect(input.value).toBe('my search');
+
+    await view.rerender({ initialQuery: ':' });
+    await waitFor(() => expect(input.value).toBe(':'));
+    await fireEvent.input(input, { target: { value: ':42' } });
+    const goToLine = vi.fn();
+    window.addEventListener('workspace:go-to-line', goToLine);
+    try {
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      expect(goToLine).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ detail: { line: 42 } }),
+      );
+      expect(onClose).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener('workspace:go-to-line', goToLine);
+    }
+  });
+
+  it.each([false, true])(
+    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    async (enabled) => {
+      multiplayerState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, onClose } });
+      const input = screen.getByRole('textbox');
+
+      await fireEvent.input(input, { target: { value: 'multiplayer' } });
+      const command = await screen.findByRole('button', {
+        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
+        }),
+      ).toBeNull();
+
+      reduxDispatchMock.mockClear();
+      if (enabled) await fireEvent.click(command);
+      else await fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(reduxDispatchMock).toHaveBeenCalledWith({
+        type: 'userPreferences/setLabsMultiplayerEnabled',
+        payload: [!enabled],
+      });
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
 
   it('withholds agent-creation, terminal, browser, and workspace-creation commands and results for collaborators', async () => {
     collaboratorState.workspace = true;

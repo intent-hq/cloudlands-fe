@@ -461,7 +461,7 @@
   const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
 
   const savedState = $compactFormState$;
-  const lastSubmittedAgent = $lastSubmittedAgent$;
+  const savedAgentSettings = savedState ?? $lastSubmittedAgent$;
 
   // Form state - initialize from saved state if available
   let repoPath = $state(savedState?.repoPath ?? '');
@@ -496,21 +496,17 @@
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
-      : lastSubmittedAgent?.selectedSpecialist !== undefined
-        ? lastSubmittedAgent.selectedSpecialist
+      : savedAgentSettings?.selectedSpecialist !== undefined
+        ? savedAgentSettings.selectedSpecialist
         : defaultSingleAgentSpecialist,
   );
-  // Validate saved model against current provider - stale models from a different provider
-  // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
-  // since they won't exist in the current model list and cause a flash of the wrong model.
+  // Restore agent settings as one record so an absent/cleared override cannot
+  // fall through to a stale last-submitted effort for a different model.
   // A persisted bare model id is attributed to the provider persisted alongside it;
   // only a legacy pre-triple compound id carries its own prefix.
-  const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
-  const restoredModelProvider =
-    savedState?.selectedModel !== undefined
-      ? savedState?.selectedProvider
-      : lastSubmittedAgent?.selectedProvider;
-  const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
+  const restoredModel = savedAgentSettings?.selectedModel;
+  const restoredModelProvider = savedAgentSettings?.selectedProvider;
+  const currentProviderAtInit = restoredModelProvider || $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
     !restoredModel ||
     (splitLegacyCompoundId(restoredModel).providerId ??
@@ -522,20 +518,14 @@
   );
   // Track if user explicitly overrode the model (vs using specialist default)
   let modelWasOverridden = $state<boolean>(
-    isModelForCurrentProvider
-      ? (savedState?.modelWasOverridden ?? lastSubmittedAgent?.modelWasOverridden ?? false)
-      : false,
+    isModelForCurrentProvider ? (savedAgentSettings?.modelWasOverridden ?? false) : false,
   );
   let selectedReasoningEffort = $state<string | undefined>(
-    isModelForCurrentProvider
-      ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
-      : undefined,
+    isModelForCurrentProvider ? savedAgentSettings?.selectedReasoningEffort : undefined,
   );
   // Track if team mode is selected (the orchestrator specialist coordinates).
   // Defaults to single-agent mode on first launch; a remembered choice wins.
-  let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? false,
-  );
+  let isTeamMode = $state<boolean>(savedAgentSettings?.isTeamMode ?? false);
 
   function resetUnavailableSpecialist(): void {
     selectedSpecialist = isTeamMode
@@ -543,11 +533,9 @@
       : null;
   }
   // Track which provider the user selected for the initial agent
-  // Priority: active provider store takes precedence since it's the user's
-  // explicit choice, else the settings-derived effective default. '' when
-  // neither has resolved (honestly unselected — never a fabricated auggie);
-  // the $effect below adopts the provider once settings hydration lands.
-  let selectedProvider = $state<string>($activeProviderId$ || $defaultProviderId$);
+  // Keep the remembered provider/model pair; otherwise inherit Settings.
+  // The effect below adopts a default after Settings hydration when unselected.
+  let selectedProvider = $state<string>(currentProviderAtInit);
   let prefillTitle = $state('');
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()
@@ -638,12 +626,13 @@
   // hydration (the applyAgentSettings re-application below) must not
   // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
   let modelPickedThisSession = $state(false);
+  let effortPickedThisSession = $state(false);
 
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
-    if (!settings) return;
+    if (!settings || modelPickedThisSession || effortPickedThisSession) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
-    if (modelPickedThisSession) return;
+    selectedProvider = settings.selectedProvider ?? selectedProvider;
     const model = settings.selectedModel;
     // A persisted bare model id belongs to the provider persisted with it;
     // only a legacy pre-triple compound id carries its own prefix.
@@ -651,7 +640,7 @@
       !!model &&
       (splitLegacyCompoundId(model).providerId ??
         settings.selectedProvider ??
-        $defaultProviderId$) === ($activeProviderId$ || $defaultProviderId$);
+        $defaultProviderId$) === selectedProvider;
     if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
@@ -672,7 +661,7 @@
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     // Keep the provider paired with an in-session pick: restoring a different
     // provider would trip the picker's provider-mismatch effect and clear it.
-    if (!modelPickedThisSession) {
+    if (!modelPickedThisSession && !effortPickedThisSession) {
       selectedProvider = formState.selectedProvider ?? selectedProvider;
     }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
@@ -690,8 +679,9 @@
 
   $effect(() => {
     if (!$workspaceInitializerHydrated$ || didApplyHydratedCompactState) return;
-    if ($compactFormState$ && !repoPath) {
-      applyCompactFormState($compactFormState$);
+    if ($compactFormState$) {
+      if (!repoPath) applyCompactFormState($compactFormState$);
+      else applyAgentSettings($compactFormState$);
     } else if ($lastSubmittedAgent$) {
       applyAgentSettings($lastSubmittedAgent$);
     }
@@ -789,9 +779,10 @@
 
   // Save form state through Redux whenever it changes. Persistence is handled by the saga.
   $effect(() => {
-    if (!$workspaceInitializerHydrated$) return;
+    if (!$workspaceInitializerHydrated$ && !modelPickedThisSession && !effortPickedThisSession)
+      return;
     // Only save if there's meaningful state to preserve
-    if (repoPath || selectedSpecialist || selectedModel) {
+    if (repoPath || selectedSpecialist || selectedModel || selectedReasoningEffort !== undefined) {
       const formState = {
         repoPath,
         repoType,
@@ -818,12 +809,18 @@
 
   // When the active provider changes externally (e.g. user switches in settings),
   // update the form's selected provider and clear the stale model selection.
+  let previousActiveProvider = $activeProviderId$;
   $effect(() => {
     const newProviderId = $activeProviderId$;
     const currentProvider = untrack(() => selectedProvider);
-    if (newProviderId && newProviderId !== currentProvider) {
+    if (
+      newProviderId &&
+      newProviderId !== currentProvider &&
+      (!currentProvider || (previousActiveProvider && newProviderId !== previousActiveProvider))
+    ) {
       selectedProvider = newProviderId;
     }
+    previousActiveProvider = newProviderId;
   });
 
   // A specialist can disappear while this form is closed. Only discard a
@@ -2064,6 +2061,11 @@
       const initialAgent = {
         name: agentName,
         model: resolvedModel,
+        // Omission inherits the daemon's defaults; blank explicitly clears.
+        // Persist with creation so prompt/attachment turns cannot race an update.
+        ...(selectedReasoningEffort !== undefined
+          ? { reasoningEffort: selectedReasoningEffort }
+          : {}),
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
         behaviorPrompt: resolvedBehaviorPrompt, // Pass to IPC for workspace creation
         prompt: hasStagedFiles ? undefined : initialPrompt.trim() || undefined,
@@ -2141,26 +2143,6 @@
       // The daemon assigns the initial agent's id and returns it on the
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
-
-      // workspace.create does not accept reasoningEffort on initialAgent. Apply
-      // an explicit user pick to the daemon-minted session through agent.update;
-      // omitting this mutation preserves the daemon's normal resolution chain.
-      if (selectedReasoningEffort && initialAgentId) {
-        try {
-          const effortResult = await appClient.agents.setReasoningEffort({
-            agentId: initialAgentId,
-            workspaceId: workspace.id,
-            reasoningEffort: selectedReasoningEffort,
-          });
-          if (!effortResult.success) {
-            logger.warn('Failed to set reasoning effort on initial agent', {
-              error: effortResult.error,
-            });
-          }
-        } catch (effortError) {
-          logger.warn('Failed to set reasoning effort on initial agent', { error: effortError });
-        }
-      }
 
       // Clear reused-ID state before installing the authoritative first-frame
       // layout. The panel seed owns the initial agent identity; legacy
@@ -2344,7 +2326,7 @@
     // Immediately clear the persisted daemon draft (drafts.clear under the
     // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
     clearNewWorkspaceDraft(appClient.drafts);
-    // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
+    // Keep selectedSpecialist, selectedModel, modelWasOverridden, selectedReasoningEffort, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
     showSetupScript = false;
@@ -3406,6 +3388,7 @@
               if (model) modelPickedThisSession = true;
             }}
             bind:selectedReasoningEffort
+            onReasoningEffortChange={() => (effortPickedThisSession = true)}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider

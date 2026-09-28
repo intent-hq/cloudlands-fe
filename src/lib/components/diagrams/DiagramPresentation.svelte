@@ -153,6 +153,8 @@
   }
 
   .diagram-presentation.renderer-owns-actions {
+    /* SVG fitting must not resize its host across the renderer's layout breakpoints. */
+    width: 100%;
     /* The renderer's single toolbar provides the upper separation from prose.
        Do not stack an outer margin and content inset on top of that row. */
     margin-top: 0;

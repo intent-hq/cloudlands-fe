@@ -10,6 +10,13 @@
  */
 
 import type {
+  AddConnectionParams,
+  CaptureFingerprintParams,
+  ConnectionValidationBlockedResult,
+  RotateConnectionSecretParams,
+  SelfPublishedStateResult,
+  TestConnectionParams,
+  UpdateConnectionParams,
   ConnectionRecord,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
@@ -51,6 +58,49 @@ export type {
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
+
+/** Secrets occur only in intent payloads, never in retained workflow state. */
+export type ConnectionWorkflowIntent =
+  | { kind: 'capture'; params: CaptureFingerprintParams }
+  | { kind: 'connect'; params: AddConnectionParams; enableSync: boolean }
+  | {
+      kind: 'save';
+      params: UpdateConnectionParams;
+      secret?: RotateConnectionSecretParams;
+      enableSync: boolean;
+    }
+  | { kind: 'test'; params: TestConnectionParams }
+  | { kind: 'open'; id: string; recovery?: 'settings' }
+  | { kind: 'forget' | 'updateBackend'; id: string }
+  | { kind: 'localIcon'; params: UpdateConnectionParams };
+
+export type ConnectionWorkflowOutcome =
+  | { kind: 'captured'; fingerprint: string }
+  | { kind: 'captureRejected'; statusCode?: number }
+  | { kind: 'done' }
+  | { kind: 'tested' }
+  | { kind: 'secretUnavailable' }
+  | {
+      kind: 'blocked';
+      operation: 'update' | 'secret' | 'test';
+      result: ConnectionValidationBlockedResult;
+    }
+  | { kind: 'error'; message: string }
+  | { kind: 'syncError'; message: string }
+  | { kind: 'cancelled' };
+
+export interface ConnectionWorkflow {
+  id: string;
+  requestId: string;
+  targetId: string | null;
+  kind: ConnectionWorkflowIntent['kind'];
+  phase: 'running' | 'secret' | 'sync' | 'settled';
+  secretReplaced: boolean;
+  outcome: ConnectionWorkflowOutcome | null;
+}
+
+export type SelfPublicationOperation =
+  'load' | 'publish' | 'autoPublish' | 'autoUnpublish' | 'refresh';
 
 /**
  * Connections slice state.
@@ -143,4 +193,10 @@ export interface ConnectionsState {
    * refreshed live by the `connections:sync-status-changed` push.
    */
   keychainSync: KeychainSyncStateResult | null;
+  keychainLoadError: boolean;
+  keychainSaveError: boolean;
+  keychainWritesPending: number;
+  workflows: Collection<ConnectionWorkflow, 'id'>;
+  selfPublication: SelfPublishedStateResult | null;
+  selfPublicationBusy: boolean;
 }

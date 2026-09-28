@@ -117,14 +117,54 @@ describe('link tooltip GitHub preview state', () => {
     expect(state.preview).toEqual({ status: 'ready', data: { kind: 'issue', ...ISSUE } });
   });
 
-  it('falls back to the URL-only tooltip when the daemon call fails', async () => {
+  it('retains a classified rate-limit failure after the loading preview', async () => {
+    const request = deferred<GitHubPullRequestDetails>();
+    integrations.githubPullRequest.mockReturnValue(request.promise);
+
+    await hover(pr(42).url);
+    expect(state.preview.status).toBe('loading');
+    request.reject(
+      Object.assign(new Error('source control rate limited'), {
+        rpcCode: -32603,
+        data: { code: 'rate-limited' },
+      }),
+    );
+    await flush();
+
+    expect(state.visible).toBe(true);
+    expect(state.url).toBe(pr(42).url);
+    expect(state.preview).toEqual({ status: 'error', reason: 'rate-limited' });
+  });
+
+  it('keeps an unavailable preview when the daemon call fails', async () => {
     integrations.githubPullRequest.mockRejectedValue(new Error('GitHub is not configured.'));
     showLinkTooltip(anchorFor(pr(42).url), pr(42).url);
     vi.advanceTimersByTime(SHOW_DELAY_MS);
     expect(state.preview.status).toBe('loading');
     await flush();
     expect(state.visible).toBe(true);
-    expect(state.preview).toEqual({ status: 'error' });
+    expect(state.preview).toEqual({ status: 'error', reason: 'unavailable' });
+  });
+
+  it('retries a failed hover and displays fresh details', async () => {
+    integrations.githubPullRequest.mockRejectedValueOnce({ data: { code: 'rate-limited' } });
+    await hover(pr(42).url);
+    expect(state.preview.status).toBe('error');
+    hideLinkTooltip();
+
+    const updated = { ...pr(42), title: 'Fresh details', state: 'merged' as const };
+    integrations.githubPullRequest.mockResolvedValueOnce(updated);
+    await hover(pr(42).url);
+    expect(integrations.githubPullRequest).toHaveBeenCalledTimes(2);
+    expect(state.preview).toEqual({ status: 'ready', data: { kind: 'pr', ...updated } });
+  });
+
+  it('keeps the issue reference when its details are rate limited', async () => {
+    integrations.githubIssue.mockRejectedValue({ data: { code: 'rate-limited' } });
+    await hover(ISSUE.url);
+    expect(state.visible).toBe(true);
+    expect(state.url).toBe(ISSUE.url);
+    expect(state.preview).toEqual({ status: 'error', reason: 'rate-limited' });
   });
 
   it('leaves non-GitHub links on the plain tooltip without calling the daemon', async () => {
@@ -193,7 +233,7 @@ describe('link tooltip GitHub preview state', () => {
     await flush();
     expect(state.preview.status).toBe('ready');
 
-    failing.reject(new Error('not found'));
+    failing.reject({ data: { code: 'rate-limited' } });
     await flush();
     expect(state.preview).toEqual({ status: 'ready', data: { kind: 'pr', ...pr(2) } });
   });

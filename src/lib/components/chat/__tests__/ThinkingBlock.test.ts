@@ -7,10 +7,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
-import {
-  CHAT_OPERATIONAL_ICON_CLASS,
-  CHAT_OPERATIONAL_LEADING_CLASS,
-} from '../operational-disclosure-row';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -31,20 +27,169 @@ async function renderBlock(props: { content: string; isStreaming?: boolean }) {
 }
 
 describe('ThinkingBlock — tool-call presentation', () => {
-  it('uses the compact tool-call row treatment', async () => {
-    await renderBlock({ content: 'Let me check the schema', isStreaming: false });
+  it.each([
+    ['**Checking `src/*.ts` &amp; _private**', 'Checking src/*.ts & _private'],
+    ['## Checking `src/*.ts` &amp; _private', 'Checking src/*.ts & _private'],
+    ['Checking `src/*.ts` &amp; _private\n---', 'Checking src/*.ts & _private'],
+    ['**Checking <Widget> props**', 'Checking <Widget> props'],
+    ['## Checking <Widget> props', 'Checking <Widget> props'],
+    ['Checking <Widget> props\n---', 'Checking <Widget> props'],
+    ['**Reviewing Array<T> types**', 'Reviewing Array<T> types'],
+    ['## Reviewing Array<T> types', 'Reviewing Array<T> types'],
+    ['Reviewing Array<T> types\n---', 'Reviewing Array<T> types'],
+    ['**Checking <span>label</span> nodes**', 'Checking <span>label</span> nodes'],
+    ['## Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
+    ['Checking <span>label</span> nodes\n---', 'Checking <span>label</span> nodes'],
+    ['**Checking<br>schema**', 'Checking schema'],
+    ['## Checking<br>schema', 'Checking schema'],
+    ['Checking<br>schema\n---', 'Checking schema'],
+    ['**Checking<br/>schema**', 'Checking schema'],
+    ['## Checking<br/>schema', 'Checking schema'],
+    ['Checking<br/>schema\n---', 'Checking schema'],
+  ])(
+    'preserves the literal title and original body through growth: %s',
+    async (title, expected) => {
+      const body =
+        '  Body with `src/*.ts`, _private, <Widget>, <br> and &amp;.\n\nAnother paragraph.\n';
+      const content = `${title}\n\n${body}`;
+      const view = await renderBlock({ content: title, isStreaming: true });
+      expect(screen.queryByRole('button')).toBeNull();
+      expect.soft(view.container.textContent?.trim()).toBe(expected);
 
-    const row = screen.getByTestId('reasoning-tool-call');
-    expect(row.className).toContain('tool-call-container');
-    expect(row.className).toContain('type-body');
-    expect(row.className).not.toContain('bg-muted');
-    const icon = row.querySelector('[data-icon="brain"]');
-    const iconBox = icon?.closest('[data-operational-icon-box]');
-    expect(iconBox?.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(icon?.className).toContain(CHAT_OPERATIONAL_ICON_CLASS);
-    expect(icon?.className).not.toContain('opacity-30');
-    expect(row.className).toContain('text-muted-foreground');
+      await view.rerender({ content, isStreaming: true });
+      const toggle = screen.getByRole('button');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+      expect(toggle.textContent?.trim()).toBe(expected);
+
+      await view.rerender({ content, isStreaming: false });
+      expect(toggle.textContent?.trim()).toBe(expected);
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(toggle);
+      expect(toggle.textContent?.trim()).toBe(expected);
+      expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+      view.unmount();
+
+      const reopened = await renderBlock({ content });
+      const restoredToggle = screen.getByRole('button');
+      expect(restoredToggle.textContent?.trim()).toBe(expected);
+      expect(restoredToggle.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(restoredToggle);
+      expect(restoredToggle.textContent?.trim()).toBe(expected);
+      expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+      expect(reopened.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ['Checking `src/*.ts` files', 'Checking src/*.ts files'],
+    ['Comparing a < b and c > d', 'Comparing a < b and c > d'],
+    ['Checking _private field', 'Checking _private field'],
+    ['Checking <Widget> props', 'Checking <Widget> props'],
+    ['Reviewing Array<T> types', 'Reviewing Array<T> types'],
+    ['Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
+    ['Checking<br>schema', 'Checking schema'],
+    ['Checking<br/>schema', 'Checking schema'],
+    ['Checking`<br>`schema', 'Checking<br>schema'],
+    ['Checking&lt;br&gt;schema', 'Checking<br>schema'],
+    ['Reading &amp; writing', 'Reading & writing'],
+    ['Reading `&amp;` literally', 'Reading &amp; literally'],
+    ['Checking \\*literal\\* marks', 'Checking *literal* marks'],
+  ])('preserves %s in all explicit row labels through completion', async (source, expected) => {
+    const content = `**${source}**\n\n## ${source}\n\n${source}\n---`;
+    const view = await renderBlock({ content, isStreaming: true });
+    const verify = () => {
+      const rows = [...view.container.querySelectorAll('[data-chat-operational-row]')];
+      expect(rows.map((row) => row.textContent?.trim())).toEqual([expected, expected, expected]);
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    };
+    verify();
+    await view.rerender({ content, isStreaming: false });
+    verify();
+    view.unmount();
+    const reopened = await renderBlock({ content });
+    expect(
+      [...reopened.container.querySelectorAll('[data-chat-operational-row]')].map((row) =>
+        row.textContent?.trim(),
+      ),
+    ).toEqual([expected, expected, expected]);
+    expect(screen.queryByRole('button')).toBeNull();
   });
+
+  describe.each([true, false])('explicit summaries (streaming=%s)', (isStreaming) => {
+    it.each([
+      '**Locating collection links**',
+      '# Locating collection links',
+      'Locating collection links\n---',
+    ])('renders %s as one noninteractive row without an empty body', async (content) => {
+      const view = await renderBlock({ content, isStreaming });
+      expect(view.container.textContent?.match(/Locating collection links/g)).toHaveLength(1);
+      expect(view.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+      expect(view.container.querySelector('[aria-expanded]')).toBeNull();
+    });
+
+    it.each([
+      '**Preparing task plan**\n\n**Checking duplicate tracker issue**',
+      '# Preparing task plan\n\n## Checking duplicate tracker issue',
+      'Preparing task plan\n===\n\nChecking duplicate tracker issue\n---',
+      '**Preparing task plan**\n\n## Checking duplicate tracker issue',
+    ])('renders multiple complete summaries once each in source order: %s', async (content) => {
+      const view = await renderBlock({ content, isStreaming });
+      const rows = [...view.container.querySelectorAll('[data-chat-operational-row]')];
+      expect(rows.map((row) => row.textContent?.trim())).toEqual([
+        'Preparing task plan',
+        'Checking duplicate tracker issue',
+      ]);
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    });
+  });
+
+  it('retains prose containing separate bold fragments behind its disclosure', async () => {
+    const content = '**I** will inspect **schema**';
+    await renderBlock({ content });
+    const toggle = screen.getByRole('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(content);
+  });
+
+  it.each([
+    { content: '# Plan\n\n    code\n---', body: '    code\n---' },
+    { content: '# Plan\n\n- Read source\n---', body: '- Read source\n---' },
+    { content: '** Read source**', body: '** Read source**' },
+    { content: '**Read source **', body: '**Read source **' },
+  ])('keeps body-shaped Markdown behind its disclosure: $content', async ({ content, body }) => {
+    await renderBlock({ content });
+    const toggle = screen.getByRole('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+  });
+
+  it.each([
+    '**Locating collection links',
+    '**Locating collection links** with more prose.',
+    '# Locating collection links\n\nLet me check the schema',
+    '**Locating collection links**\n\nLet me check the schema',
+    '    # Locating collection links',
+  ])(
+    'keeps incomplete headings and supplied body content behind a disclosure: %s',
+    async (content) => {
+      await renderBlock({ content, isStreaming: true });
+      expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('markdown-viewer').textContent?.trim()).not.toBe('');
+    },
+  );
 
   it('auto-expands with the localized fallback while headingless reasoning streams', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: true });

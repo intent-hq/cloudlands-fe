@@ -66,6 +66,8 @@ vi.mock('qrcode', () => ({
 const connectionState = vi.hoisted(() => ({
   activeId: 'local',
   emit: () => {},
+  start: async () => {},
+  stop: async () => {},
   syncState: { supported: true, enabled: true, status: null } as {
     supported: boolean;
     enabled: boolean;
@@ -75,16 +77,16 @@ const connectionState = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const store = createAppStoreMock({
-    state: () => ({ connections: { windowBackendId: connectionState.activeId } }),
-    dispatch: (action: { type: string }) => {
-      connectionState.dispatched.push(action);
-      return { ...action, promise: Promise.resolve(connectionState.syncState) };
-    },
-  });
-  connectionState.emit = () => store.emitState();
-  return { store };
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const harness = createConnectionsHarness(
+    () => ({ windowBackendId: connectionState.activeId }),
+    (action) => connectionState.dispatched.push(action),
+  );
+  connectionState.emit = () => harness.store.emitState();
+  connectionState.start = harness.start;
+  connectionState.stop = harness.stop;
+  return { store: harness.store };
 });
 
 // Publish-self IPC surface (renderer → main via window.electronAPI.invoke).
@@ -99,6 +101,9 @@ const ipcMocks = vi.hoisted(() => ({
 
 function installElectronApi() {
   ipcMocks.invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'connections:list')
+      return { connections: [], activeId: 'local', windowBackendId: 'local' };
+    if (channel === 'connections:sync-get-state') return connectionState.syncState;
     if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
     if (channel === 'connections:publish-self') {
       return { connection: { id: 'mock-self' } };
@@ -131,17 +136,19 @@ async function renderExpandedSettings() {
 }
 
 describe('WebSocketApiSettings', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;
     ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
     installElectronApi();
+    await connectionState.start();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await connectionState.stop();
     vi.useRealTimers();
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
@@ -650,6 +657,7 @@ describe('WebSocketApiSettings', () => {
 
     it('shows an error toast when the auto-publish fails; the toggle stays on', async () => {
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:sync-get-state') return connectionState.syncState;
         if (channel === 'connections:publish-self') throw new Error('keychain write failed');
         return { ...ipcMocks.selfState };
       });
@@ -754,6 +762,7 @@ describe('WebSocketApiSettings', () => {
     it('shows an error toast when the unpublish fails; the toggle stays off', async () => {
       ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:sync-get-state') return connectionState.syncState;
         if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
         if (channel === 'connections:unpublish-self') throw new Error('keychain delete failed');
         return { refreshed: true };
@@ -774,6 +783,7 @@ describe('WebSocketApiSettings', () => {
     it('shows no success toast when unpublish reports removed: false (stale local state)', async () => {
       ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:sync-get-state') return connectionState.syncState;
         if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
         if (channel === 'connections:unpublish-self') return { removed: false };
         return { refreshed: true };

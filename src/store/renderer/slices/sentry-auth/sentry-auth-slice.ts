@@ -8,12 +8,17 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { SentryAuthState } from './sentry-auth-types';
 import type { SentryProject } from '$features/sentry-auth/types';
+import type {
+  ProviderAuthOperation,
+  ProviderAuthRequest,
+} from '../provider-auth/provider-auth-types';
 
 // =============================================================================
 // Initial State
 // =============================================================================
 
 const initialState: SentryAuthState = {
+  operation: null,
   isAuthenticated: false,
   organization: null,
   isConnecting: false,
@@ -30,11 +35,27 @@ const initialState: SentryAuthState = {
 export const initializeSentryAuth = createAction('sentryAuth/initialize');
 
 /** Trigger: connect to Sentry with org + token */
-export const connectSentry =
-  createAction<[organization: string, apiToken: string]>('sentryAuth/connect');
+export const connectSentry = createAction(
+  'sentryAuth/connect',
+  (
+    organization: string,
+    apiToken: string,
+    request: ProviderAuthRequest = { requestId: crypto.randomUUID(), consumerId: null },
+  ) => ({ organization, apiToken, request }),
+);
 
 /** Trigger: disconnect / logout from Sentry */
-export const logoutSentry = createAction('sentryAuth/logout');
+export const logoutSentry = createAction(
+  'sentryAuth/logout',
+  (request: ProviderAuthRequest = { requestId: crypto.randomUUID(), consumerId: null }) => ({
+    request,
+  }),
+);
+
+export const settleSentryAuth =
+  createAction<[requestId: string, status: ProviderAuthOperation['status']]>('sentryAuth/settle');
+export const cancelSentryAuth = createAction<[requestId: string]>('sentryAuth/cancel');
+export const consumeSentryAuth = createAction<[requestId: string]>('sentryAuth/consume');
 
 // =============================================================================
 // State-setting actions (dispatched by sagas to update reducer)
@@ -84,6 +105,44 @@ export const setSentryLoadingProjects = createAction<[isLoading: boolean]>(
 // =============================================================================
 
 export const sentryAuthReducer = createReducer<SentryAuthState>(initialState);
+sentryAuthReducer.with(connectSentry, (state, { payload: { request } }) => ({
+  ...state,
+  operation: { ...request, kind: 'connect', status: 'pending' },
+  isConnecting: true,
+  error: null,
+}));
+sentryAuthReducer.with(logoutSentry, (state, { payload: { request } }) => ({
+  ...state,
+  operation: { ...request, kind: 'logout', status: 'pending' },
+  isConnecting: false,
+  isLoadingProjects: false,
+  error: null,
+}));
+sentryAuthReducer.with(settleSentryAuth, (state, { payload: [requestId, status] }) =>
+  state.operation?.requestId !== requestId || state.operation.status !== 'pending'
+    ? state
+    : {
+        ...state,
+        operation: { ...state.operation, status },
+        isConnecting: false,
+        isLoadingProjects: false,
+      },
+);
+sentryAuthReducer.with(cancelSentryAuth, (state, { payload: [requestId] }) =>
+  state.operation?.requestId !== requestId || state.operation.status !== 'pending'
+    ? state
+    : {
+        ...state,
+        operation: { ...state.operation, status: 'cancelled' },
+        isConnecting: false,
+        isLoadingProjects: false,
+      },
+);
+sentryAuthReducer.with(consumeSentryAuth, (state, { payload: [requestId] }) =>
+  state.operation?.requestId !== requestId
+    ? state
+    : { ...state, operation: null, isConnecting: false, isLoadingProjects: false },
+);
 sentryAuthReducer.with(setSentryAuthState, (state, { payload }) => ({
   ...state,
   isAuthenticated: payload.isAuthenticated,
@@ -106,7 +165,6 @@ sentryAuthReducer.with(setSentryConnected, (state, { payload }) => ({
   ...state,
   isAuthenticated: true,
   organization: payload.organization,
-  isConnecting: false,
   error: null,
 }));
 sentryAuthReducer.with(setSentryLoggedOut, (state) => ({

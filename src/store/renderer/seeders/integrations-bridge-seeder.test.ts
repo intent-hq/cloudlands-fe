@@ -31,6 +31,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
   __resetGitHubAuthStatusForTests,
   GITHUB_AUTH_STATUS_TTL_MS,
@@ -38,6 +39,7 @@ import {
 } from '$features/github-auth/renderer/github-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { FORGE_AUTH_CHANNELS } from '$features/forge-auth/constants';
 import { GITHUB_AUTH_CHANNELS } from '$features/github-auth/constants';
 import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
 import { SENTRY_AUTH_CHANNELS } from '$features/sentry-auth/constants';
@@ -651,6 +653,7 @@ describe('integrations-bridge-seeder', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
+          flowId: 'flow-7',
           userCode: 'ABCD-1234',
           verificationUri: 'https://github.com/login/device',
           expiresIn: 899,
@@ -662,12 +665,30 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('github.connect');
       expect(result).toEqual({
         success: true,
+        flowId: 'flow-7',
         oauthUrl: 'https://github.com/login/device',
         userCode: 'ABCD-1234',
         verificationUri: 'https://github.com/login/device',
         expiresIn: 899,
         interval: 5,
       });
+    });
+
+    it('start omits flowId when an older daemon returns none from github.connect', async () => {
+      mockedRequest
+        .mockRejectedValueOnce(new Error('GitHub is not configured.'))
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'ABCD-1234',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke<Record<string, unknown>>(GITHUB_AUTH_CHANNELS.START_AUTH);
+
+      expect(result.success).toBe(true);
+      expect(result).not.toHaveProperty('flowId');
     });
 
     it('start folds a github.connect failure to the error envelope', async () => {
@@ -865,6 +886,21 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth');
     });
 
+    it('cancel scopes github.cancelAuth to the flowId the caller started (§5.27)', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: true });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, { flowId: 'flow-7' })).toEqual({
+        success: true,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth', { flowId: 'flow-7' });
+    });
+
+    it('cancel treats a scoped no-op (cancelled: false) as a confirmed cancel', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: false });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, { flowId: 'stale' })).toEqual({
+        success: true,
+      });
+    });
+
     it('cancel maps a non-ok github.cancelAuth result to a failed envelope', async () => {
       mockedRequest.mockResolvedValueOnce({ ok: false });
       expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH)).toEqual({
@@ -893,6 +929,227 @@ describe('integrations-bridge-seeder', () => {
         success: false,
         error: 'revoke failed',
       });
+    });
+  });
+
+  describe('forge-auth:* → daemon sourceControl.* (provider-generic, host-bound)', () => {
+    const HOST = 'gitlab.example.com';
+    /** `SourceControlUser` — `id` is a string on the wire. */
+    const GITLAB_USER = { id: '7', login: 'octo', displayName: 'Octo' };
+    const STATUS = {
+      provider: 'gitlab',
+      host: HOST,
+      isConfigured: true,
+      oauthUrl: '',
+      configuredButNeedsUpdate: false,
+      updatedScopes: '',
+      deviceFlow: null,
+      method: 'pat',
+      user: GITLAB_USER,
+      deviceGrantSupported: false,
+    };
+
+    it('get-status forwards { provider, host } verbatim and returns the wire status untouched', async () => {
+      mockedRequest.mockResolvedValueOnce(STATUS);
+
+      const status = await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, {
+        provider: 'gitlab',
+        host: HOST,
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.authStatus', {
+        provider: 'gitlab',
+        host: HOST,
+      });
+      expect(status).toEqual(STATUS);
+    });
+
+    it('omits host (never sends it empty) so the daemon resolves its configured instance', async () => {
+      mockedRequest.mockResolvedValueOnce(STATUS);
+
+      await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, { provider: 'gitlab', host: '' });
+
+      expect(sentParams(0)).toEqual({ provider: 'gitlab' });
+    });
+
+    it('cancel-auth, revoke and get-user each carry the requested host to the daemon', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({ ok: true, cancelled: true })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ user: GITLAB_USER });
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CANCEL_AUTH, { provider: 'gitlab', host: HOST }),
+      ).resolves.toEqual({ success: true });
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.REVOKE, { provider: 'gitlab', host: HOST }),
+      ).resolves.toEqual({ success: true });
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.GET_USER, { provider: 'gitlab', host: HOST }),
+      ).resolves.toEqual(GITLAB_USER);
+
+      expect(mockedRequest.mock.calls).toEqual([
+        ['sourceControl.cancelAuth', { provider: 'gitlab', host: HOST }],
+        ['sourceControl.revoke', { provider: 'gitlab', host: HOST }],
+        ['sourceControl.getUser', { provider: 'gitlab', host: HOST }],
+      ]);
+    });
+
+    it('connect sends the PAT only with method "pat" and maps { ok, method } to the success envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, method: 'pat' });
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'pat',
+        token: 'glpat-secret',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'pat',
+        token: 'glpat-secret',
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it('connect drops a token supplied with the device method and surfaces the typed error code', async () => {
+      mockedRequest.mockRejectedValueOnce(
+        Object.assign(new Error('device grant unsupported'), {
+          code: 'device-grant-unsupported',
+        }),
+      );
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+        token: 'glpat-secret',
+      });
+
+      expect(sentParams(0)).toEqual({ provider: 'gitlab', host: HOST, method: 'device' });
+      expect(result).toEqual({
+        success: false,
+        error: 'device grant unsupported',
+        code: 'device-grant-unsupported',
+      });
+    });
+
+    it.each([
+      { shape: 'raw string data', data: 'Device authorization was denied by GitLab.' },
+      {
+        shape: 'normalized data.detail',
+        data: {
+          code: 'INTERNAL_ERROR',
+          detail: 'Device authorization was denied by GitLab.',
+          token: 'must-not-be-echoed',
+        },
+      },
+    ])('connect surfaces the daemon cause from $shape', async ({ data }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data,
+        }),
+      );
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+      expect(result).toEqual({
+        success: false,
+        error: 'Internal error: Device authorization was denied by GitLab.',
+        code: undefined,
+      });
+    });
+
+    it.each([
+      { shape: 'absent data', data: undefined },
+      { shape: 'null data', data: null },
+      { shape: 'empty string data', data: '' },
+      { shape: 'absent detail', data: { code: 'INTERNAL_ERROR', token: 'must-not-be-echoed' } },
+      { shape: 'empty detail', data: { detail: '' } },
+      { shape: 'non-string detail', data: { detail: { token: 'must-not-be-echoed' } } },
+    ])('connect keeps the generic fallback for $shape', async ({ data }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data,
+        }),
+      );
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'device',
+        }),
+      ).resolves.toEqual({ success: false, error: 'Internal error', code: undefined });
+    });
+
+    it.each([
+      { code: 'device-grant-unsupported', message: 'Device grant unsupported', method: 'device' },
+      { code: 'source-control-unauthorized', message: 'Invalid token', method: 'pat' },
+    ])('connect preserves the $code error and message', async ({ code, message, method }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({ code, message, data: { code, detail: 'must-not-replace-the-message' } }),
+      );
+      const params = {
+        provider: 'gitlab',
+        host: HOST,
+        method,
+        ...(method === 'pat' ? { token: 'glpat-test-only' } : {}),
+      };
+
+      await expect(mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, params)).resolves.toEqual({
+        success: false,
+        error: message,
+        code,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', params);
+    });
+
+    it('connect still returns the device flow from a successful grant', async () => {
+      const deviceFlow = {
+        userCode: 'ABCD-EFGH',
+        verificationUri: 'https://gitlab.example.com/oauth/device',
+        expiresIn: 300,
+        interval: 5,
+      };
+      mockedRequest.mockResolvedValueOnce({ ok: true, method: 'device', ...deviceFlow });
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'device',
+        }),
+      ).resolves.toEqual({ success: true, deviceFlow });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+    });
+
+    it('rejects an unknown provider without a wire call', async () => {
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.REVOKE, { provider: 'bitbucket', host: HOST }),
+      ).resolves.toEqual({ success: false, error: 'provider is required' });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 

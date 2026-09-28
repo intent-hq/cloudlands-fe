@@ -592,39 +592,46 @@ Run `pnpm vitest run eslint-rules` when changing a rule or its baseline, then ru
 ## Motion and interaction
 
 Motion communicates state and spatial continuity; it is not decoration. Use the semantic
-interaction fills and shared spring tiers instead of component-owned colors, timings, or easing
+interaction fills and shared bounded motion tiers instead of component-owned colors, timings, or easing
 curves. **Never hand-write a duration.** Use the CSS variables, matching Tailwind utilities, or the
 typed helpers from `$lib/motion` so reduced-motion behavior and later tuning stay centralized.
 
-| Tier     | Enter/settle | Crisp exit | Use for                                                    |
-| -------- | ------------ | ---------- | ---------------------------------------------------------- |
-| Fast     | 80ms         | 60ms       | Hover, press, focus, icon, and font-weight feedback        |
-| Moderate | 160ms        | 120ms      | Menus, selection geometry, and compact disclosures         |
-| Slow     | 240ms        | 160ms      | Large panels and deliberate takeover or layout transitions |
+| Tier     | Enter/settle | Crisp exit | Use for                                                                            |
+| -------- | ------------ | ---------- | ---------------------------------------------------------------------------------- |
+| Fast     | 80ms         | 60ms       | Local hover/color, press, icon, and font-weight feedback                           |
+| Moderate | 160ms        | 120ms      | Moving hover/focus backgrounds, menus, selection geometry, and compact disclosures |
+| Slow     | 240ms        | 160ms      | Large panels and deliberate takeover or layout transitions                         |
 
 Use `--spring-{fast,moderate,slow}` with the matching `--spring-*-ease`, or
 `duration-spring-*` with `ease-spring-*`. Svelte motion uses `spring.fast`, `spring.moderate`, or
-`spring.slow`; exits use the tier's `exit` tween or `crispOut`. Reduced motion must settle directly
-without an intermediate spring and CSS consumers must include `motion-reduce:transition-none` (or
+`spring.slow`; the spring names remain compatibility names, not physical spring simulations.
+**Never overshoot or bounce.** Motion approaches its target monotonically, including at low frame
+rates and after a direction change. Exits use the tier's `exit` tween or `crispOut`. Reduced motion must settle directly
+without intermediate movement and CSS consumers must include `motion-reduce:transition-none` (or
 the equivalent animation rule).
 
 Import Svelte compatibility helpers from `$lib/motion`, never from `svelte/transition` or
 `svelte/motion`. `fade`, `fly`, `slide`, `scale`, `blur`, and `draw` accept a motion `tier`; spatial
-helpers additionally accept only semantic `distance` and `axis` options. They resolve spring intros,
+helpers additionally accept only semantic `distance` and `axis` options. They resolve bounded intros,
 paired crisp outros, and reduced-motion instant settling internally, so duration, easing, and delay
 are deliberately not part of their API. Use the tier-bound `Spring`, `springValue`, or `tweenedValue`
-for continuously retargeted values.
+for continuously retargeted values. These preserve the current position when interrupted, not
+velocity toward the previous target. Repeating the same target must not restart the animation.
 
 ### Interaction rules
 
 - **Hover is preview.** `--hover` shows the pointed row or the nearest eligible row under proximity
   hover. Keyboard roving focus drives that same preview layer. Hover must not imply selection.
+  Use `ProximityHighlight` for menu and question-option lists: one persistent background eases
+  between rows with the moderate tier, including changes in row height. Only list re-entry starts
+  a fresh highlight session; do not remount the background on each item change. Sidebar and tab
+  indicators follow the same moderate, non-overshooting geometry treatment.
 - **Press collapses.** Pointer-down uses `--active` and removes the raised edge or moves it to an
   inset edge. Preserve the control's footprint; do not add layout movement to simulate depth.
 - **Selection persists.** `--selected` survives pointer departure. Adjacent selected rows merge into
   one continuous background; split the background only where the selected index set has a gap.
-- **Exits are crisp.** Enter and retarget motion use the chosen spring tier. Dismissal uses its
-  shorter paired exit rather than replaying the spring in reverse.
+- **Exits are crisp.** Enter and retarget motion use the chosen bounded tier. Dismissal uses its
+  shorter paired exit rather than replaying the entrance in reverse.
 
 ### Resize affordances
 

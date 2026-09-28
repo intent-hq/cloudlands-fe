@@ -4,20 +4,22 @@
  */
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 import {
+  classifyGitHubLinkPreviewError,
   createPreviewRequest,
   loadGitHubLinkPreview,
   type GitHubLinkPreview,
+  type GitHubLinkPreviewFailure,
 } from './github-link-preview';
 
 /**
- * Hover-card preview for GitHub issue/PR links. `idle` for every other URL
- * (and after a failed load, which renders the URL-only fallback via `error`).
+ * Hover-card preview for GitHub issue/PR links. `idle` keeps every other URL
+ * on the plain tooltip; failures retain the GitHub card and its reference.
  */
 export type LinkTooltipPreview =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'ready'; data: GitHubLinkPreview }
-  | { status: 'error' };
+  | { status: 'error'; reason: GitHubLinkPreviewFailure };
 
 export interface LinkTooltipState {
   visible: boolean;
@@ -62,9 +64,9 @@ function startPreview(url: string): void {
       if (!ticket.isCurrent) return;
       state.preview = data ? { status: 'ready', data } : { status: 'idle' };
     },
-    () => {
+    (error: unknown) => {
       if (!ticket.isCurrent) return;
-      state.preview = { status: 'error' };
+      state.preview = { status: 'error', reason: classifyGitHubLinkPreviewError(error) };
     },
   );
 }

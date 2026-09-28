@@ -32,7 +32,12 @@ export function exportFileName(card: StatsCardName, key: string): string {
  * Rejects on render failure — callers surface the error non-fatally.
  */
 export async function exportCardPng(node: HTMLElement, fileName: string): Promise<void> {
-  const url = await toPng(node, EXPORT_OPTIONS);
+  const url = await toPng(node, {
+    ...EXPORT_OPTIONS,
+    // html-to-image copies computed styles, including active hover/focus styles.
+    // Exclude interactive chrome explicitly instead of relying on visibility.
+    filter: (node) => !(node instanceof Element && node.hasAttribute('data-stats-export-exclude')),
+  });
   const anchor = document.createElement('a');
   anchor.download = fileName;
   anchor.href = url;

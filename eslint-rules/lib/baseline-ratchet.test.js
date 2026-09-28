@@ -302,8 +302,9 @@ describe('baseline directory store', () => {
 describe('readComparisonBaseline base ref', () => {
   // A throwaway repo whose two commits differ in the baseline tree, so which ref the
   // env selects is observable through the parsed contents. `bareBase` commits the base
-  // revision without any `eslint-rules/baselines/` tree.
-  function makeRepo({ bareBase = false } = {}) {
+  // revision without any `eslint-rules/baselines/` tree. Legacy documents, when
+  // provided, exist only at the base; the head uses the migrated per-file entries.
+  function makeRepo({ bareBase = false, legacyBase, legacySourceLiteral, headEntries } = {}) {
     const cwd = makeTmpDir();
     const git = (...args) =>
       execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -317,10 +318,22 @@ describe('readComparisonBaseline base ref', () => {
       "export const designSystemRules = {\n  'no-raw-controls': noRawControls,\n};\n",
     );
     if (!bareBase) writeTree(cwd, entry('base'));
+    const legacyDocuments = {
+      'eslint-rules/design-system/baseline.json': legacyBase,
+      'eslint-rules/no-source-literal-assertions-in-tests.baseline.json': legacySourceLiteral,
+    };
+    for (const [file, baseline] of Object.entries(legacyDocuments)) {
+      if (baseline !== undefined) {
+        fs.writeFileSync(path.join(cwd, file), JSON.stringify(baseline));
+      }
+    }
     git('add', '.');
     git('commit', '-q', '-m', 'base');
     git('branch', 'base');
-    writeTree(cwd, entry('head'));
+    for (const file of Object.keys(legacyDocuments)) {
+      fs.rmSync(path.join(cwd, file), { force: true });
+    }
+    writeTree(cwd, headEntries ?? entry('head'));
     git('add', '-A', '.');
     git('commit', '-q', '-m', 'head');
     return cwd;
@@ -329,6 +342,20 @@ describe('readComparisonBaseline base ref', () => {
   const expected = (reason) => ({
     'no-raw-controls': [{ owner: 'ui', reason, files: ['src/A.svelte'] }],
   });
+  const legacyBaseline = {
+    ...expected('legacy'),
+    'no-arbitrary-motion-or-color': [
+      { owner: 'ui', reason: 'Legacy colors', counts: { 'src/B.svelte': 3 } },
+    ],
+  };
+  const migratedEntries = {
+    'no-raw-controls/src/A.svelte.json': { owner: 'ui', reason: 'legacy' },
+    'no-arbitrary-motion-or-color/src/B.svelte.json': {
+      owner: 'ui',
+      reason: 'Legacy colors',
+      count: 3,
+    },
+  };
 
   it('reads LINT_BASELINE_BASE_REF, falling back to HEAD when unset', () => {
     const cwd = makeRepo();
@@ -374,6 +401,83 @@ describe('readComparisonBaseline base ref', () => {
     });
     expect(() => assertBaselineOnlyShrinks(base.baseline, headBaseline)).toThrow(
       'Baseline entries and counts may only shrink',
+    );
+  });
+
+  it('accepts a lossless migration from the legacy baseline at the comparison revision', () => {
+    const cwd = makeRepo({
+      bareBase: true,
+      legacyBase: legacyBaseline,
+      headEntries: migratedEntries,
+    });
+    const base = readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'base' } });
+    const head = readComparisonBaseline({ cwd, env: {} });
+    expect(base.baseline).toEqual(legacyBaseline);
+    expect(head.baseline).toEqual(legacyBaseline);
+    expect(loadBaseline({ cwd })).toEqual(legacyBaseline);
+    expect(() => assertBaselineOnlyShrinks(base.baseline, head.baseline)).not.toThrow();
+  });
+
+  it.each([
+    {
+      change: 'a new exemption',
+      entries: { 'no-raw-controls/src/C.svelte.json': { owner: 'ui', reason: 'New' } },
+      growth: { 'no-raw-controls': ['src/C.svelte'] },
+    },
+    {
+      change: 'a raised count',
+      entries: {
+        'no-arbitrary-motion-or-color/src/B.svelte.json': {
+          owner: 'ui',
+          reason: 'Legacy colors',
+          count: 4,
+        },
+      },
+      growth: {
+        'no-arbitrary-motion-or-color': [{ file: 'src/B.svelte', previous: 3, current: 4 }],
+      },
+    },
+  ])(
+    'rejects $change during migration from a legacy comparison baseline',
+    ({ entries, growth }) => {
+      const cwd = makeRepo({
+        bareBase: true,
+        legacyBase: legacyBaseline,
+        headEntries: { ...migratedEntries, ...entries },
+      });
+      const base = readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'base' } });
+      const head = readComparisonBaseline({ cwd, env: {} });
+      expect(findBaselineGrowth(base.baseline, head.baseline)).toEqual(growth);
+      expect(() => assertBaselineOnlyShrinks(base.baseline, head.baseline)).toThrow(
+        'Baseline entries and counts may only shrink',
+      );
+    },
+  );
+
+  it('narrows legacy entries to the requested rules', () => {
+    const cwd = makeRepo({ bareBase: true, legacyBase: legacyBaseline });
+    const env = { LINT_BASELINE_BASE_REF: 'base' };
+    expect(readComparisonBaseline({ cwd, env, rules: ['no-raw-controls'] }).baseline).toEqual(
+      expected('legacy'),
+    );
+    expect(readComparisonBaseline({ cwd, env, rules: ['no-native-dialogs'] }).baseline).toEqual({});
+  });
+
+  it('prefers a per-file tree over legacy entries even when the requested rule has no directory', () => {
+    const cwd = makeRepo({ legacyBase: legacyBaseline });
+    const env = { LINT_BASELINE_BASE_REF: 'base' };
+    expect(readComparisonBaseline({ cwd, env }).baseline).toEqual(expected('base'));
+    expect(
+      readComparisonBaseline({ cwd, env, rules: ['no-arbitrary-motion-or-color'] }).baseline,
+    ).toEqual({});
+  });
+
+  it.each([{}, { 'src/A.test.ts': 2 }])('reads legacy source-literal counts %j', (counts) => {
+    const cwd = makeRepo({ bareBase: true, legacySourceLiteral: counts });
+    const env = { LINT_BASELINE_BASE_REF: 'base' };
+    const rule = 'no-source-literal-assertions-in-tests';
+    expect(readComparisonBaseline({ cwd, env, rules: [rule] }).baseline).toEqual(
+      Object.keys(counts).length ? { [rule]: [{ counts }] } : {},
     );
   });
 

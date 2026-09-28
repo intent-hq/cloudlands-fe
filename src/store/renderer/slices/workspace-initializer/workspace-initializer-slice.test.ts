@@ -84,6 +84,32 @@ describe('workspaceInitializerReducer', () => {
     expect(hydratedState.lastSelectedRepo?.path).toBe('/persisted');
   });
 
+  it.each(['high', ''])(
+    'keeps a pending effort edit %j with its model/provider through hydration',
+    (effort) => {
+      const current = {
+        selectedModel: 'gpt-fixture',
+        selectedProvider: 'codex',
+        selectedReasoningEffort: effort,
+      };
+      const pending = workspaceInitializerReducer(
+        initialState,
+        setCompactWorkspaceInitializerFormState(current),
+      );
+      const hydrated = workspaceInitializerReducer(
+        pending,
+        hydrateWorkspaceInitializer({
+          compactFormState: {
+            selectedModel: 'old-model',
+            selectedProvider: 'auggie',
+            selectedReasoningEffort: 'low',
+          },
+        }),
+      );
+      expect(hydrated.compactFormState).toEqual(current);
+    },
+  );
+
   it('sets form state, repo selection, branch, default parent, and agent settings', () => {
     let state = workspaceInitializerReducer(
       initialState,

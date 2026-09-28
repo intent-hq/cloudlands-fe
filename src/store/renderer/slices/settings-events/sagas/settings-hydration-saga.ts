@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, delay, race, take } from 'typed-redux-saga';
+import { actionChannel, call, delay, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { AppliedSettingChange } from '$lib/client/app-client';
@@ -11,6 +11,12 @@ import { connectionsListReceived } from '../../connections/connections-slice';
 import { selectWindowIdentitySettled } from '../../guest-sessions/guest-sessions-selectors';
 import { selectIsCollaboratorOnlyClient } from '../../workspace/workspace-selectors';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
+
+import {
+  fastModeHydrationStarted,
+  fastModeSupportReceived,
+} from '../../provider-settings/provider-settings-slice';
 
 const logger = createLogger('SettingsHydrationSaga');
 
@@ -70,7 +76,13 @@ function* readSettingsSnapshotSaga() {
         }));
         // The shared apply seam emits hydration actions only. It never calls
         // settings.update, so the boot snapshot cannot echo back into persistence.
-        return { changes, revision: snapshot.revision };
+        return {
+          changes,
+          revision: snapshot.revision,
+          fastModeSupported: settings.some(
+            (s) => s.path === 'providers.fastMode' && s.type === 'object',
+          ),
+        };
       }
       if (yield* call(isKnownCollaboratorOnlyClientSaga)) {
         logger.info('settings hydration withheld from a collaborator-only client');
@@ -94,8 +106,13 @@ function* readSettingsSnapshotSaga() {
 }
 
 export function* hydrateSettingsOnceSaga() {
+  yield* put(notificationVolumeHydrationStarted());
+  yield* put(fastModeHydrationStarted());
   const snapshot = yield* call(readSettingsSnapshotSaga);
-  if (snapshot) yield* call(applySettingsChanges, snapshot.changes);
+  if (snapshot) {
+    yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+    yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
+  }
 }
 
 export function* settingsHydrationSaga() {
@@ -112,6 +129,8 @@ export function* settingsHydrationSaga() {
     let needsSnapshot = true;
     while (true) {
       if (needsSnapshot) {
+        yield* put(notificationVolumeHydrationStarted());
+        yield* put(fastModeHydrationStarted());
         const { snapshot, lifecycle } = yield* race({
           snapshot: call(readSettingsSnapshotSaga),
           lifecycle: take(lifecycleChannel),
@@ -124,7 +143,8 @@ export function* settingsHydrationSaga() {
           continue;
         }
         if (snapshot) {
-          yield* call(applySettingsChanges, snapshot.changes);
+          yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+          yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
           revision = snapshot.revision;
         }
         needsSnapshot = false;
@@ -153,7 +173,7 @@ export function* settingsHydrationSaga() {
       // Older daemons omit revisions. Accept those only until this backend has
       // demonstrated revision support, preserving additive compatibility.
       if (incomingRevision === undefined ? revision > 0 : incomingRevision < revision) continue;
-      yield* call(applySettingsChanges, settings.payload[0]);
+      yield* call(applySettingsChanges, settings.payload[0], incomingRevision);
       if (incomingRevision !== undefined) revision = incomingRevision;
     }
   } finally {

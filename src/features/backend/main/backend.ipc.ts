@@ -35,6 +35,7 @@ import {
   normalizeFingerprint as normalizeTransportFingerprint,
   PinMismatchError,
   resolveBackendConfig,
+  testWssConnection,
   type BackendConnectionConfig,
   type HostCertMismatch,
 } from './backend-connection';
@@ -3498,7 +3499,8 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
-  // Probe unsaved address values with a write-only override or the saved secret.
+  // Test saved routes unless the form specifies a different address, which
+  // must be validated explicitly. Use a write-only override or the saved secret.
   // This intentionally has no store mutation and no window hook.
   ipcMain.handle(
     CONNECTIONS.TEST,
@@ -3511,6 +3513,37 @@ function registerConnectionsHandlers(): void {
             ? ({ status: 'success', token } as const)
             : await loadSavedConnectionSecret(id);
           if (secret.status === 'secret-unavailable') return secret;
+          if (host === connection.host && port === connection.port) {
+            const { config } = await buildConfigForConnection(id, secret.token);
+            const expectedFingerprint = normalizeTransportFingerprint(config.fingerprint ?? '');
+            try {
+              await testWssConnection(config);
+              return {
+                status: 'success',
+                fingerprint: expectedFingerprint,
+              } satisfies TestConnectionResult;
+            } catch (error) {
+              if (error instanceof PinMismatchError) {
+                return error.actual
+                  ? {
+                      status: 'fingerprint-confirmation-required',
+                      expectedFingerprint,
+                      actualFingerprint: error.actual,
+                    }
+                  : { status: 'failed', reason: 'no-certificate' };
+              }
+              if (error instanceof AuthRejectedError) {
+                return { status: 'authentication-rejected', statusCode: error.statusCode };
+              }
+              return {
+                status: 'failed',
+                reason:
+                  error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT'
+                    ? 'timeout'
+                    : 'connect-failed',
+              } satisfies TestConnectionResult;
+            }
+          }
           return validateConnectionAddress(connection, host, port, secret.token);
         }),
       CONNECTIONS.TEST,

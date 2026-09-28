@@ -22,7 +22,7 @@ function sourceFiles(directory: string): string[] {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
     return /\.(svelte|ts)$/.test(entry.name) &&
-      !/\.(test(?:-harness)?|fixtures|meta)\./.test(entry.name)
+      !/\.(test(?:-harness)?|spec|fixtures|meta)\./.test(entry.name)
       ? [path]
       : [];
   });

@@ -6,6 +6,7 @@ import { store } from '../../store';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   hostedMemberKey,
+  guestWorkspaceKey,
   type GuestSessionRecord,
   type HostedRoster,
 } from './guest-sessions-types';
@@ -71,6 +72,43 @@ export const selectGuestSessionsConnectedIds = store.createSelector(
   (state) => state.guestSessions.connectedIds,
 );
 
+export const selectGuestLeavingIds = store.createSelector(
+  (state) => state.guestSessions.leavingIds,
+);
+export const selectGuestLeavingWorkspaceKeys = store.createSelector(
+  (state) => state.guestSessions.leavingWorkspaceKeys,
+);
+export const selectGuestFailedLeaves = store.createSelector((state) =>
+  selectGuestSessions
+    .select(state)
+    .filter((session) => state.guestSessions.failedLeaveIds.includes(session.id)),
+);
+export const selectGuestFailedWorkspaceLeaves = store.createSelector((state) =>
+  selectGuestSessions
+    .select(state)
+    .flatMap((session) =>
+      (session.workspaces ?? [])
+        .filter((workspace) =>
+          state.guestSessions.failedLeaveWorkspaceKeys.includes(
+            guestWorkspaceKey(session.id, workspace.id),
+          ),
+        )
+        .map((workspace) => ({ session, workspace })),
+    ),
+);
+export const selectGuestLeaveFailedIds = store.createSelector(
+  (state) => state.guestSessions.failedLeaveIds,
+);
+export const selectHostedSweepReports = store.createSelector((state) =>
+  getItems(state.guestSessions.sweepReports),
+);
+export const selectHostedSweepReport = store.createSelector((state, workspaceId: string) =>
+  getItem(state.guestSessions.sweepReports, workspaceId),
+);
+export const selectHostedClearingIds = store.createSelector(
+  (state) => state.guestSessions.clearingWorkspaceIds,
+);
+
 /**
  * Whether a workspace is in this window's list. A roster operation for a
  * workspace outside the list has nothing to render into: it fails without
@@ -114,6 +152,16 @@ export const selectHostedWorkspaces = store.createSelector((state): Workspace[] 
 export const selectHostedRoster = store.createSelector(
   (state, workspaceId: string): HostedRoster =>
     state.guestSessions.hostedRosters[workspaceId] ?? NO_ROSTER,
+);
+
+export const selectHostedFailedRemovals = store.createSelector((state, workspaceId: string) =>
+  selectHostedRoster
+    .select(state, workspaceId)
+    .members.filter((member) =>
+      state.guestSessions.failedMemberKeys.includes(
+        hostedMemberKey(workspaceId, member.principalId),
+      ),
+    ),
 );
 
 const NO_PRINCIPALS: string[] = [];

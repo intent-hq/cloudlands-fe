@@ -160,6 +160,47 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(result).toMatchObject({ id: workspace.id, title: workspace.title });
   });
 
+  it.each(['high', '', undefined])(
+    'forwards initial effort %j without a second mutation',
+    async (reasoningEffort) => {
+      const initialAgent = {
+        name: 'Developer',
+        model: 'gpt-fixture',
+        provider: 'codex',
+        prompt: 'Build the thing',
+        ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+      };
+      const agent = {
+        id: 'agent-daemon-1',
+        workspaceId: 'ws-effort',
+        name: 'Developer',
+        model: 'gpt-fixture',
+        provider: 'codex',
+        status: 'idle',
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      };
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-effort', title: 'Effort', branch: 'effort', status: 'Active' },
+        initialAgent: agent,
+      });
+      const result = await new LiveWorkspacesClient().create({
+        idempotencyKey: 'effort-create',
+        repositoryPath: '/repo',
+        initialAgent,
+      });
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith(
+        'workspace.create',
+        { idempotencyKey: 'effort-create', repositoryPath: '/repo', initialAgent },
+        { timeoutMs: 120_000 },
+      );
+      expect(result).toMatchObject({
+        success: true,
+        workspace: { id: 'ws-effort' },
+        initialAgent: agent,
+      });
+    },
+  );
+
   it('create surfaces the daemon-assigned initialAgent on the result', async () => {
     // When the request carries an `initialAgent`, the daemon assigns the
     // agent id and returns the created projection as `initialAgent` — the

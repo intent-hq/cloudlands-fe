@@ -21,7 +21,7 @@ triggers:
 ---
 # Testing — reducer, selector, and saga checks
 
-> Operational testing checklist. Human-facing examples: `@augmentcode/themis/docs/TESTING.md`. Saga effect details: `../sagas/SKILL.md`. Source: `../SKILL.md` §14.
+> Operational testing checklist. Human-facing examples: `@augmentcode/themis/docs/TESTING.md`. Saga effect details: `../sagas/SKILL.md`. Canonical checklist: [Layer rules](#layer-rules) and [Saga test setup cues](#saga-test-setup-cues).
 
 ## Use when
 
@@ -35,15 +35,15 @@ triggers:
 | --- | --- | --- |
 | Reducers | Direct function calls | Initial state, each handled action, unknown/no-op same reference, serializable state when shape changes. |
 | Collections | Reducer/selector tests | Assert via `getItem`, `getItems`, or selector helpers; include no-op reference checks. |
-| Selectors | Pure `.select(mockState, ...)` calls | Never invoke readable selector form in Vitest. Test composition separately and together. |
-| Sagas | `expectSaga` or `testSaga` | Mock `typed-redux-saga`, stub calls with `redux-saga-test-plan/matchers`, use `silentRun`. |
+| Selectors | Pure `.select(mockState, ...)` calls | Use this path for pure output tests. Test adapter subscriptions/lifecycle separately with their Store context and scheduler. |
+| Sagas | `runSaga`, manual stepping, or optional `expectSaga` / `testSaga` | Keep real typed effects; assert raw descriptors or provide controlled call results. |
 
 ## Saga test setup cues
 
-- Mock only the `typed-redux-saga` effects the file uses and map them to `redux-saga/effects` before importing the saga under test.
-- The `call` mock must branch on `Array.isArray(fnOrDescriptor)` so `[context, method]` tuple calls work.
+- Prefer no effect-module mock: real typed effects delegate to raw descriptors, so `yield*` works with manual stepping, `runSaga`, and test-plan.
+- If mocking is necessary, each typed effect must remain a generator wrapper, not a raw descriptor-returning function. Preserve context-method tuples in the `call` mock, including the `Array.isArray(fnOrDescriptor)` guard.
 - In assertions and matchers, use `redux-saga/effects` descriptors or `redux-saga-test-plan` APIs, not descriptors imported from `typed-redux-saga`.
-- Use `expectSaga` for behavior/integration and `testSaga` for order-sensitive generator steps such as root saga fork order.
+- If installed by the consumer, use `expectSaga` for behavior/integration and `testSaga` for order-sensitive generator steps such as root saga fork order. Do not assume optional test-plan is available or install it silently.
 
 ## State-integrity evidence
 
@@ -54,49 +54,37 @@ triggers:
 
 ## Don't
 
-- Do not call `selector()` in tests; use `.select(state)`.
+- Do not call `selector(mockState)` in pure selector tests; use `.select(state)`. Adapter/lifecycle tests intentionally exercise the readable/signal/observable API with its required setup and cleanup.
+- Do not replace a typed effect with a raw effect function: `yield*` requires an iterator. Do not pass `.effect()`'s generator object as a static provider key.
 - Do not use real long timers in saga tests; prefer `.silentRun(0)` or a short bounded duration.
 - Do not approve tests that assert reducer-maintained derived fields when selectors should own that value.
 - Do not omit no-op reference checks for reducers or collection updates that should preserve identity.
 - Do not leave one-line re-export/proxy wrapper files after refactors unless an adjacent compatibility comment documents the consumer, release window, and removal condition.
 
-## Example list
-
-1. Good: `typed-redux-saga` Vitest mock with the required tuple-aware `call` guard.
-2. Good: reducer tests for handled actions, async failure, and no-op reference equality.
-3. Good: selector tests that assert derived output through `.select(state, ...args)`.
-4. Good: `expectSaga` integration test that provides selector effects and API calls.
-5. Good: `testSaga` stepwise root-saga watcher assertion.
-6. Bad: realistic tests that assert stored derived state, call readable selector mode, and miss selector-effect providers.
-
-## Cases covered
-
-| Case | Example |
-| --- | --- |
-| Saga test setup maps typed effects to `redux-saga/effects` and keeps `[context, method]` calls working. | 1 |
-| Reducer tests prove handled branches and same-reference no-op behavior. | 2 |
-| Selector tests cover derived values through public `.select` instead of reducer-owned derived fields. | 3 |
-| Saga integration tests provide `selector.effect()` and API effects before asserting `put`s. | 4 |
-| Stepwise saga tests are reserved for order-sensitive watcher/root-saga checks. | 5 |
-| Bad examples teach non-trivial review failures that compile but can produce misleading tests. | 6 |
-
 ## Examples
 
 ### 1. Mock `typed-redux-saga` with a tuple-aware `call` guard
 
+Usually omit this mock entirely. When isolation requires it, `vi.doMock` below is deliberately **not hoisted**: register it before dynamically importing the saga under test (and do not statically import that saga first). The async factory imports its own dependencies. Each wrapper returns the effect's resolved value to `yield*`.
+
 ```ts
 import { vi } from "vitest";
-import * as effects from "redux-saga/effects";
 
-vi.mock("typed-redux-saga", () => ({
-  call: (fnOrDescriptor: any, ...args: any[]) =>
-    Array.isArray(fnOrDescriptor)
-      ? effects.call(fnOrDescriptor, ...args)
-      : effects.call(fnOrDescriptor, ...args),
-  put: effects.put,
-  select: effects.select,
-  takeLatest: effects.takeLatest,
-}));
+vi.doMock("typed-redux-saga", async () => {
+  const effects = await import("redux-saga/effects");
+  return {
+    call: function* (fnOrDescriptor: any, ...args: any[]): Generator<any, any, any> {
+      return yield (Array.isArray(fnOrDescriptor)
+        ? effects.call(fnOrDescriptor as [any, any], ...args)
+        : effects.call(fnOrDescriptor, ...args));
+    },
+    put: function* (...args: Parameters<typeof effects.put>): Generator<any, any, any> { return yield effects.put(...args); },
+    select: function* (...args: Parameters<typeof effects.select>): Generator<any, any, any> { return yield effects.select(...args); },
+    takeLatest: function* (...args: Parameters<typeof effects.takeLatest>): Generator<any, any, any> { return yield effects.takeLatest(...args); },
+  };
+});
+// Next: const { loadTodosWorker } = await import("./todos-saga");
+// Restore with vi.doUnmock("typed-redux-saga") after the isolated test.
 ```
 
 ### 2. Test reducer branches and no-op identity
@@ -148,23 +136,29 @@ describe("todo selectors", () => {
 ### 4. Use `expectSaga` with provided selector effects
 
 ```ts
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
+import { select } from "redux-saga/effects";
 import { fetchTodos } from "./todos-api";
-import { loadTodos, loadTodosWorker } from "./todos-saga";
+import { loadTodos } from "./todos-slice";
+import { loadTodosWorker } from "./todos-saga";
 import { selectCurrentUserId } from "./todos-selectors";
 
 describe("loadTodosWorker", () => {
-  it("loads todos for the selected user", () => {
+  it("loads todos for the selected user", async () => {
     const todos = [{ id: "t1", title: "Ship examples", completed: false }];
-    return expectSaga(loadTodosWorker, loadTodos("open"))
-      .provide([[selectCurrentUserId.effect(), "u1"], [matchers.call.fn(fetchTodos), todos]])
-      .put(loadTodos.success(todos))
+    const request = loadTodos("open");
+    await expectSaga(loadTodosWorker, request)
+      .provide([[select(selectCurrentUserId.select), "u1"], [matchers.call.fn(fetchTodos), todos]])
+      .put({ type: loadTodos.success.type, payload: { request: request.payload, response: todos } })
       .silentRun();
+    await expect(request.promise).resolves.toEqual(todos);
   });
 });
 ```
+
+The provider matches the raw SELECT yielded by `.effect()`: `.select` is the same underlying selector function. Include the same selector args in `select(selectFoo.select, ...args)` when applicable. This worker must `yield* put(action.success(todos))` to settle its **instance** request. Construct the expected action as data: calling `request.success(todos)` in test setup would settle the promise before exercising the worker and could hide a bug.
 
 ### 5. Use `testSaga` for root watcher order
 
@@ -181,27 +175,6 @@ describe("todosRootSaga", () => {
       .next()
       .isDone();
   });
-});
-```
-
-### 6. ❌ Bad: misleading selector and saga assertions
-
-```ts
-import { expect, it } from "vitest";
-import { expectSaga } from "redux-saga-test-plan";
-import * as matchers from "redux-saga-test-plan/matchers";
-
-// BAD: this test passes syntax checks but validates duplicated derived state, invokes readable mode,
-// and forgets to provide the selector effect that the worker reads before calling the API.
-it("claims the todo flow works", () => {
-  const nextState = todosReducer(state, setFilter("open"));
-  expect(nextState.visibleTodos).toEqual([todo]);
-  expect(selectVisibleTodos()).toEqual([todo]);
-
-  return expectSaga(loadTodosWorker, loadTodos("open"))
-    .provide([[matchers.call.fn(fetchTodos), []]])
-    .put(loadTodos.success([]))
-    .silentRun();
 });
 ```
 

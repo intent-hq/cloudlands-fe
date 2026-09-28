@@ -12,10 +12,12 @@
   import {
     selectSentryIsAuthenticated,
     selectSentryIsConnecting,
+    selectSentryAuthConsumerOperation,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
     initializeSentryAuth,
     connectSentry,
+    consumeSentryAuth,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -24,7 +26,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -50,7 +52,12 @@
   let isLoadingIssues = $state(false);
   let hasLoadedIssues = $state(false);
   let searchQuery = $state('');
-  let pendingConnect = $state(false);
+  const consumerId = crypto.randomUUID();
+  const operation$ = selectSentryAuthConsumerOperation(consumerId);
+  onDestroy(() => {
+    const operation = selectSentryAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeSentryAuth(operation.requestId));
+  });
 
   // Config form for unauthenticated users
   let showConfigForm = $state(false);
@@ -79,21 +86,32 @@
     }
   }
 
-  // When connect completes successfully, fetch issues
+  // Only the request owned by this picker may clear its draft. Issue loading
+  // below reacts to canonical auth state, not another panel's completion flag.
   $effect(() => {
-    if (pendingConnect && !$storeIsConnecting$) {
-      pendingConnect = false;
-      if ($isAuthenticated$) {
+    const operation = $operation$;
+    if (operation && operation.status !== 'pending') {
+      if (operation.status === 'succeeded') {
         showConfigForm = false;
-        loadIssues();
+        sentryOrg = '';
+        sentryToken = '';
       }
+      appStore.dispatch(consumeSentryAuth(operation.requestId));
     }
   });
 
   function handleConnect() {
     if (!sentryOrg || !sentryToken) return;
-    pendingConnect = true;
-    appStore.dispatch(connectSentry(sentryOrg, sentryToken));
+    appStore.dispatch(
+      connectSentry(sentryOrg, sentryToken, { requestId: crypto.randomUUID(), consumerId }),
+    );
+  }
+
+  function handleCancelConnect() {
+    const operation = selectSentryAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeSentryAuth(operation.requestId));
+    showConfigForm = false;
+    sentryToken = '';
   }
 
   function handleSelect(issue: SentryIssueResult) {
@@ -149,7 +167,7 @@
           class="h-9"
         />
         <div class="flex gap-2">
-          <Button variant="outline" onclick={() => (showConfigForm = false)} class="flex-1">
+          <Button variant="outline" onclick={handleCancelConnect} class="flex-1">
             {m.workspace_prCreator_cancel_label()}
           </Button>
           <Button

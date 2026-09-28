@@ -21,7 +21,9 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsSettingsVisible,
   selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectReduceMotionOnBattery,
@@ -46,7 +48,9 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsSettingsVisible,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -59,7 +63,9 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsSettingsVisibility,
   toggleLabsMultiplayer,
+  toggleLabsGitLab,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -78,7 +84,9 @@ const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
+const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
+const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -185,9 +193,21 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
   }
 
+  const labsSettingsVisible = yield* getLocalStorageJSON<boolean>(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+  );
+  if (typeof labsSettingsVisible === 'boolean') {
+    yield* put(setLabsSettingsVisible(labsSettingsVisible));
+  }
+
   const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
   if (typeof labsMultiplayerEnabled === 'boolean') {
     yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
+  }
+
+  const labsGitLabEnabled = yield* getLocalStorageJSON<boolean>(LABS_GITLAB_STORAGE_KEY);
+  if (typeof labsGitLabEnabled === 'boolean') {
+    yield* put(setLabsGitLabEnabled(labsGitLabEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -297,11 +317,22 @@ function* persistReduceMotionOnBatteryWorker() {
   );
 }
 
+function* persistLabsSettingsVisibilityWorker() {
+  yield* setLocalStorageJSON(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+    yield* selectLabsSettingsVisible.effect(),
+  );
+}
+
 function* persistLabsMultiplayerWorker() {
   yield* setLocalStorageJSON(
     LABS_MULTIPLAYER_STORAGE_KEY,
     yield* selectLabsMultiplayerEnabled.effect(),
   );
+}
+
+function* persistLabsGitLabWorker() {
+  yield* setLocalStorageJSON(LABS_GITLAB_STORAGE_KEY, yield* selectLabsGitLabEnabled.effect());
 }
 
 function* persistAgentFontWorker() {
@@ -382,9 +413,14 @@ function* watchUserPreferenceWrites() {
     persistReduceMotionOnBatteryWorker,
   );
   yield* takeEvery(
+    [setLabsSettingsVisible, toggleLabsSettingsVisibility],
+    persistLabsSettingsVisibilityWorker,
+  );
+  yield* takeEvery(
     [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
     persistLabsMultiplayerWorker,
   );
+  yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], persistLabsGitLabWorker);
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);

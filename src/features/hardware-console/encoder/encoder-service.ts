@@ -3,18 +3,15 @@
  *
  * Subscribes an input decoder to the shared manager's raw channel-2 stream
  * (`onRawMessage`) and wires the rotary encoder:
- * - rotate: cycles the app's active workspace across workspaces ordered by
- *   activity — one step per detent, direction honored (cw = toward more
- *   recent), clamping at the list ends — and shows a small HUD while
- *   rotating;
+ * - rotate: adjusts the current agent's effort by default; optionally cycles
+ *   workspaces ordered by activity. Both modes clamp at the ends and show a
+ *   small HUD naming the choice;
  * - click (`ENC_CLK` keydown): brings up the All-workspaces sidebar panel;
  *   clicks while it is open cycle its view mode Recent → Repo → Status.
  *
- * The HUD timer is action-driven in the device saga: `encoderHudShown` arms
- * it regardless of who dispatched it.
+ * The HUD timer is action-driven in the device saga.
  *
- * Dependency-light device service: AppClient-free, no selector imports —
- * workspace ordering reads `appStore.state` via the pure helpers.
+ * Dependency-light device service: AppClient-free; effort writes run in a saga.
  */
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -23,6 +20,8 @@ import { getItems } from '@augmentcode/themis/utils/collections/collection-utils
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   encoderHudHidden,
+  encoderEffortRotated,
+  encoderInputStopped,
   encoderHudShown,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
@@ -43,7 +42,7 @@ import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/ta
 
 const logger = createLogger('HardwareConsoleEncoder');
 
-/** The cycling HUD hides after this much rotation inactivity. */
+/** The encoder HUD hides after this much rotation inactivity. */
 export const ENCODER_HUD_HIDE_MS = 1200;
 
 export interface EncoderDeps {
@@ -134,17 +133,27 @@ export function installHardwareConsoleEncoder(
   const teardownDecoder = (): void => {
     detachDecoder?.();
     detachDecoder = null;
+    dispatch(encoderInputStopped());
     dispatch(encoderHudHidden());
   };
 
   const setupDecoder = (): void => {
-    detachDecoder?.();
+    teardownDecoder();
     const decoder = new HardwareInputDecoder({
       deviceModel: manager.connectedDevice?.model ?? 'creator-micro-2',
     });
     const offRotate = decoder.on('encoderrotate', ({ direction }) => {
       if (!isOwner()) return;
-      handleEncoderRotate(direction, deps);
+      const { encoderBehavior, encoderBehaviorHydrated } = appStore.state.hardwareConsole;
+      if (!encoderBehaviorHydrated) return;
+      if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
+      else {
+        // Calibrate effort rotation to the physical Creator Micro 2 report
+        // (intent-hq/intent#5947), shared with Codex Micro. Keep workspace
+        // navigation's existing wire direction and catalog effort order intact.
+        const effortDirection = direction === 'cw' ? 'ccw' : 'cw';
+        dispatch(encoderEffortRotated(effortDirection, resolveDeps(deps).getCurrentWorkspaceId()));
+      }
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
       if (key === 'ENC_CLK' && isOwner()) handleEncoderClick(deps);

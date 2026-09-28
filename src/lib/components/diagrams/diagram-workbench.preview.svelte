@@ -257,6 +257,7 @@
   }
   .diagram-case {
     display: grid;
+    contain: layout;
     min-width: 0;
     scroll-margin-top: 1rem;
     gap: 1.25rem;

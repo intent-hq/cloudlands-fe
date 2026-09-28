@@ -157,9 +157,7 @@ export async function applySpecialistProposalWork(
         : { kind: 'delete', id, scope, workspacePath };
 
   if (operation === 'delete') {
-    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
-    appStore.dispatch(deleteAction);
-    await deleteAction.promise;
+    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));
     return { reverse };
   }
 
@@ -203,8 +201,7 @@ export async function applySpecialistProposalWork(
     scope,
     workspacePath,
   });
-  appStore.dispatch(saveAction);
-  await saveAction.promise;
+  await appStore.dispatch(saveAction);
   if (operation === 'create') await navigateToCreatedSpecialist(id);
 
   return { reverse };
@@ -213,15 +210,11 @@ export async function applySpecialistProposalWork(
 export async function undoSpecialistProposalWork(reverse: SpecialistReverseAction): Promise<void> {
   if (reverse.kind === 'delete') {
     const { id, scope, workspacePath } = reverse;
-    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
-    appStore.dispatch(deleteAction);
-    await deleteAction.promise;
+    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath }));
     return;
   }
 
-  const saveAction = saveFileSpecialist(reverse.specialist);
-  appStore.dispatch(saveAction);
-  await saveAction.promise;
+  await appStore.dispatch(saveFileSpecialist(reverse.specialist));
 }
 
 export function undoSpecialistProposal(proposalId: string): boolean {

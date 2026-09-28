@@ -229,17 +229,12 @@
     }
   }
 
-  async function handleToggleNotificationsMuted() {
+  function handleToggleNotificationsMuted() {
     if (!tab.agentId) return;
-    const action = setAgentNotificationsMutedRequested(
-      workspaceId,
-      tab.agentId,
-      !isNotificationsMuted,
+    // The saga owns the failure toast and rollback.
+    appStore.dispatch(
+      setAgentNotificationsMutedRequested(workspaceId, tab.agentId, !isNotificationsMuted),
     );
-    appStore.dispatch(action);
-    // The saga surfaces the failure toast and rolls back; swallow here so a
-    // daemon rejection never becomes an unhandled rejection.
-    await action.promise.catch(() => {});
   }
 
   async function handleDeleteAgent() {
@@ -249,9 +244,9 @@
     isAgentDeleting = true;
     try {
       appStore.dispatch(closeTab(workspaceId, tab.id));
-      const action = deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(
+        deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName),
+      );
     } catch (error) {
       logger.error('Failed to delete agent', error);
     } finally {

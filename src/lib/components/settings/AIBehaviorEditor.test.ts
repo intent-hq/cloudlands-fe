@@ -151,7 +151,7 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 vi.mock(
   '$store/renderer/slices/provider-settings/provider-settings-slice',
   async (importOriginal) => ({
-    // Keep the real action creators/reducer (e.g. `setAtomicDefaultModel`,
+    // Keep the real action creators/reducer (e.g. `atomicDefaultModelAccepted`,
     // `activeProviderPersistRejected`) so the model-slice reducer this file
     // exercises directly in the monorepo#4102 reproduction test below stays
     // wired to its actual dependencies; only `setActiveProvider` is
@@ -245,7 +245,7 @@ import {
   initialState as modelInitialState,
   modelReducer,
 } from '$store/renderer/slices/model/model-slice';
-import { setAtomicDefaultModel } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { atomicDefaultModelAccepted } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
 import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
 
@@ -412,13 +412,13 @@ describe('DefaultAgentModelSettings Default model picker', () => {
     // Drive the REAL (unmocked) production reducer through the exact action
     // the picker's `updateGlobalDefault` dispatch resolves to
     // (`model-selection-saga` persists a cross-provider pick as one
-    // `setAtomicDefaultModel` action — see model-selection-saga.test.ts's
+    // `atomicDefaultModelAccepted` action — see model-selection-saga.test.ts's
     // "persists a cross-provider default as one revision-bearing atomic
     // batch"), so this assertion exercises the actual persistence contract
     // rather than a value poked directly into the mocked selector.
     const modelState = modelReducer(
       modelInitialState,
-      setAtomicDefaultModel({ providerId: 'codex', model: 'cross-provider-model' }),
+      atomicDefaultModelAccepted({ providerId: 'codex', model: 'cross-provider-model' }),
     );
     expect(modelState.defaultProviderId).toBe('codex');
     expect(modelState.providerModels.codex).toBe('cross-provider-model');

@@ -800,7 +800,7 @@
               >
               <Input
                 type="text"
-                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary-ink/50 placeholder:text-muted-foreground"
+                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md placeholder:text-muted-foreground"
                 placeholder={m.workspace_prSection_prTitle_placeholder()}
                 bind:value={prTitle}
               />
@@ -1298,7 +1298,7 @@
         >
         <Input
           type="text"
-          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary-ink/50 placeholder:text-muted-foreground"
+          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md placeholder:text-muted-foreground"
           placeholder={m.workspace_prSection_remoteUrl_placeholder()}
           bind:value={connectRemote.url}
           onkeydown={(e) => {

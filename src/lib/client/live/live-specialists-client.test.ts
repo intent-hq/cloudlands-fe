@@ -26,7 +26,7 @@ import {
   onBackendReconnected,
 } from './backend-transport';
 import { LiveSpecialistsClient } from './live-specialists-client';
-import type { SpecialistDef } from '../app-client';
+import type { SpecialistDef, SpecialistsClient } from '../app-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
@@ -72,6 +72,46 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it.each([undefined, 'codex'])(
+    'list forwards optional provider %j and preserves its resolved effort',
+    async (provider) => {
+      const def = {
+        ...COORDINATOR_DEF,
+        resolvedProvider: provider ?? 'auggie',
+        resolvedModel: 'shared-model-id',
+        resolvedReasoningEffort: provider === 'codex' ? 'low' : 'high',
+      };
+      mockedRequest.mockResolvedValueOnce({ specialists: [def] });
+      const client: SpecialistsClient = new LiveSpecialistsClient();
+
+      expect(await client.list(provider)).toEqual([def]);
+      expect(mockedRequest.mock.calls).toEqual([
+        provider === undefined ? ['specialist.list'] : ['specialist.list', { provider }],
+      ]);
+    },
+  );
+
+  it('keeps a default subscription independent of provider-scoped list calls', async () => {
+    const scoped = {
+      ...COORDINATOR_DEF,
+      resolvedProvider: 'codex',
+      resolvedReasoningEffort: 'low',
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [scoped] })
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+    const client: SpecialistsClient = new LiveSpecialistsClient();
+    expect(await client.list('codex')).toEqual([scoped]);
+    const handler = vi.fn();
+    const unsubscribe = client.subscribe(handler);
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledExactlyOnceWith([COORDINATOR_DEF]));
+    expect(mockedRequest.mock.calls).toEqual([
+      ['specialist.list', { provider: 'codex' }],
+      ['specialist.list'],
+    ]);
+    unsubscribe();
   });
 
   it('list folds a malformed result (no specialists array) to an empty list', async () => {

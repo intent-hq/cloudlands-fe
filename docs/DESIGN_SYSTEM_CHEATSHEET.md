@@ -61,9 +61,10 @@ navigation. `scripts/design-token-allowlist.json` caps this file at those two ar
 ## Motion
 
 - **Import:** `$lib/motion`
-- **Tiers:** `fast`, `moderate`, and `slow`; intros use the spring timing and outros use its paired crisp timing.
+- **Tiers:** `fast`, `moderate`, and `slow`; bounded easing only, never overshoot or bounce. Outros use the paired crisp timing.
 - **Transitions:** `fade`, `fly`, `slide`, `scale`, `blur`, and `draw` accept only `tier` plus semantic `distance` / `axis` options.
-- **Continuous values:** `Spring`, `springValue`, and `tweenedValue` bind updates to a tier.
+- **Continuous values:** `Spring`, `springValue`, and `tweenedValue` use bounded ease-out, preserving current position (not momentum) on interruption. Spring names are compatibility aliases.
+- **Moving focus:** use the `moderate` tier for hover/focus backgrounds and selection geometry. Keep one persistent highlight between rows; a new session is only for list re-entry.
 - **Reduced motion:** all helpers settle instantly. Never pass a duration, easing, or delay.
 
 ## Loading indicator

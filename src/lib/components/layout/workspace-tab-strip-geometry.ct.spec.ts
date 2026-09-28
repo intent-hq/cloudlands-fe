@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../test/ct-test';
 import sharp from 'sharp';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
+import WorkspaceTabMenuHarness from './WorkspaceTabMenuHarness.svelte';
 import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';
 import {
   WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
@@ -1119,3 +1120,87 @@ for (const zoomFactor of [1, 1.1, 1.25]) {
     }
   });
 }
+
+test('tab context menu stays actionable over the neighboring active tab', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 900, height: 600 });
+  const component = await mount(WorkspaceTabMenuHarness);
+  const source = component.locator('[data-workspace-tab="geometry-alpha"]');
+  const neighbor = component.locator('[data-workspace-tab="geometry-beta"]');
+  await expect(neighbor).toHaveAttribute('data-active', 'true');
+  // Open near the right edge and top of the inactive tab, so Close crosses the active tab.
+  const sourceBox = (await source.boundingBox())!;
+  await source.click({ button: 'right', position: { x: sourceBox.width - 20, y: 2 } });
+  const close = page.getByRole('menuitem', { name: 'Close', exact: true });
+  await expect(close).toBeVisible();
+  // Wait for popup positioning and actionability without invoking the action.
+  await close.click({ trial: true });
+  // A trial click moves the pointer. Clear its highlight before comparing paint:
+  // the hovered row and the active tab otherwise share the same background.
+  await page.mouse.move(850, 300);
+  await expect(close).not.toHaveAttribute('data-highlighted');
+  const [closeBox, neighborBox] = await Promise.all([close.boundingBox(), neighbor.boundingBox()]);
+  const left = Math.max(closeBox!.x, neighborBox!.x);
+  const right = Math.min(closeBox!.x + closeBox!.width, neighborBox!.x + neighborBox!.width);
+  const top = Math.max(closeBox!.y, neighborBox!.y);
+  const bottom = Math.min(closeBox!.y + closeBox!.height, neighborBox!.y + neighborBox!.height);
+  expect(right - left, 'Close overlaps the neighboring tab horizontally').toBeGreaterThan(0);
+  expect(bottom - top, 'Close overlaps the neighboring tab vertically').toBeGreaterThan(0);
+  const point = { x: (left + right) / 2, y: (top + bottom) / 2 };
+  const screenshot = await page.screenshot();
+  await testInfo.attach('tab-context-menu-overlap', {
+    body: screenshot,
+    contentType: 'image/png',
+  });
+  // Bits disables pointer events outside an open menu, so hit testing alone
+  // misses a tab that still paints over Close. Compare the row's bottom padding
+  // on either side of the tab edge, away from its text and icons.
+  const { data, info } = await sharp(screenshot)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const sample = (x: number, y: number) => {
+    const offset = (Math.floor(y) * info.width + Math.floor(x)) * info.channels;
+    return Array.from(data.subarray(offset, offset + 3));
+  };
+  const sampleY = bottom - 3;
+  expect(sample(point.x, sampleY), 'The neighboring tab must not paint over the Close row').toEqual(
+    sample(closeBox!.x + 2, sampleY),
+  );
+  expect(
+    await close.evaluate(
+      (element, point) => element.contains(document.elementFromPoint(point.x, point.y)),
+      point,
+    ),
+    'Close must receive pointer input in the overlapping region',
+  ).toBe(true);
+  await page.mouse.click(point.x, point.y);
+  await expect(source).toHaveCount(0);
+  await expect(neighbor).toHaveAttribute('data-active', 'true');
+  await expect(component.locator('[data-workspace-tab="geometry-gamma"]')).toBeVisible();
+  await expect(close).toHaveCount(0);
+});
+
+test('tab context menu dismisses and restores keyboard focus', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 900, height: 600 });
+  const component = await mount(WorkspaceTabMenuHarness);
+  const source = component.locator('[data-workspace-tab="geometry-alpha"] [role="tab"]');
+  const neighbor = component.locator('[data-workspace-tab="geometry-beta"]');
+  await source.focus();
+  await page.keyboard.press('Shift+F10');
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(source).toBeFocused();
+  await source.click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await page.mouse.click(850, 300);
+  await expect(menu).toHaveCount(0);
+  await expect(source).toBeFocused();
+  await expect(neighbor).toHaveAttribute('data-active', 'true');
+});

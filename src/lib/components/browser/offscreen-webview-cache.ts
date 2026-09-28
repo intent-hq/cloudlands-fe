@@ -14,11 +14,9 @@
  * them `now` again on the next reconcile made every evicted tab look freshly
  * backgrounded and rotate live guests out on unchanged input.
  *
- * Eviction order is by backgrounding time (FIFO), not use: recency is never
- * refreshed by agent activity, so under cap pressure the longest-backgrounded
- * tab is evicted even if an agent is actively operating on it. Feeding
- * main-process tab-lease touches back into recency is a possible follow-up
- * if the default cap proves too tight.
+ * Eviction order is by backgrounding time, except that explicit navigation
+ * recovery admits an evicted target as the newest entry. Passive layout
+ * reconciliation never refreshes recency or rotates the mounted set.
  */
 
 export const MAX_OFFSCREEN_WEBVIEWS = 8;
@@ -66,6 +64,8 @@ export function areOffscreenWebviewCachesEqual(
  *   stamp even when they were evicted by the cap, so an unchanged candidate
  *   set keeps the same live guests (intent#4650).
  * - Candidates new to the set are stamped with `now`.
+ * - An explicit recovery for an evicted candidate refreshes its stamp so
+ *   mount-on-demand can admit it without exceeding the unpinned cap.
  * - Pinned (agent-owned) candidates are always kept and never count against
  *   `maxWebviews` (monorepo#2857); the cap bounds unpinned candidates only.
  * - When over `maxWebviews`, the oldest unpinned entries are evicted; ties
@@ -80,15 +80,26 @@ export function updateOffscreenWebviewCache(
   candidates: readonly OffscreenWebviewCandidate[],
   now: number,
   maxWebviews: number = MAX_OFFSCREEN_WEBVIEWS,
+  recoveryTabIds: ReadonlySet<string> = new Set(),
 ): Map<string, number> {
   const entries: Array<{ tabId: string; timestamp: number; order: number; pinned: boolean }> = [];
   const previousBackgroundedAt = backgroundedAtByCache.get(currentCache);
   const backgroundedAt = new Map<string, number>();
+  // Strictly newer even when the initial admission and request share a clock
+  // tick (or the wall clock moves backwards). The stamp survives consumption.
+  let recoveryTimestamp = now;
+  for (const timestamp of previousBackgroundedAt?.values() ?? currentCache.values()) {
+    recoveryTimestamp = Math.max(recoveryTimestamp, timestamp + 1);
+  }
 
   candidates.forEach((candidate, order) => {
     if (backgroundedAt.has(candidate.tabId)) return;
     const timestamp =
-      currentCache.get(candidate.tabId) ?? previousBackgroundedAt?.get(candidate.tabId) ?? now;
+      recoveryTabIds.has(candidate.tabId) && !currentCache.has(candidate.tabId)
+        ? recoveryTimestamp
+        : (currentCache.get(candidate.tabId) ??
+          previousBackgroundedAt?.get(candidate.tabId) ??
+          now);
     backgroundedAt.set(candidate.tabId, timestamp);
     entries.push({
       tabId: candidate.tabId,

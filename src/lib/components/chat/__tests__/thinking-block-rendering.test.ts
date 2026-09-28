@@ -12,6 +12,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 import { findChatSearchMatches } from '../chat-search';
+import {
+  followingTitle,
+  growingHistory,
+  growthBody,
+  growthTitles,
+  titleToolHistory,
+} from './compact-reasoning-fixtures';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -60,6 +67,111 @@ async function renderStatic(content: ContentBlock[]) {
 }
 
 describe('thinking blocks — StreamingMessageContent', () => {
+  for (const [rendererName, renderer] of [
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ] as const) {
+    for (const layout of ['nested', 'standalone'] as const) {
+      it(`keeps explicit titles and paired tools once in order in ${rendererName} ${layout}`, async () => {
+        const view = await renderer(titleToolHistory(layout, true), false);
+        if (layout === 'nested')
+          await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+        const thinkingBlocks = [
+          ...view.container.querySelectorAll('[data-message-content-block="thinking"]'),
+        ];
+        const rows = thinkingBlocks.flatMap((block) => [
+          ...block.querySelectorAll('[data-chat-operational-row]'),
+        ]);
+        expect(rows.map((row) => row.textContent?.trim())).toEqual([
+          ...growthTitles,
+          followingTitle,
+          'Validating renderer output',
+        ]);
+        expect(
+          thinkingBlocks.flatMap((block) => [...block.querySelectorAll('button')]),
+        ).toHaveLength(0);
+        expect(view.container.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
+        expect(
+          view.container.querySelectorAll('[data-message-content-block="tool_result"]'),
+        ).toHaveLength(0);
+        expect(view.container.textContent).not.toContain('Paired source result');
+        const text = view.container.textContent ?? '';
+        const tool = view.container.querySelector('[data-tool-use-id]')!;
+        expect(
+          Boolean(rows[2].compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ).toBe(true);
+        expect(
+          Boolean(tool.compareDocumentPosition(rows[3]) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ).toBe(true);
+        for (const title of [...growthTitles, followingTitle, 'Validating renderer output']) {
+          expect(text.split(title)).toHaveLength(2);
+        }
+      });
+
+      for (const shape of ['single', 'multiple'] as const) {
+        it(`preserves ${shape} same-block body growth through completion, reopening and remount in ${rendererName} ${layout}`, async () => {
+          const initial = growingHistory(layout, shape, 'titles');
+          let view = await renderer(initial, true);
+          const openDetails = async () => {
+            const group = screen.queryByTestId('response-group-disclosure');
+            if (group?.getAttribute('aria-expanded') === 'false') await fireEvent.click(group);
+            if (layout === 'standalone') {
+              for (const toggle of screen.queryAllByTestId('reasoning-disclosure')) {
+                if (toggle.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
+              }
+            }
+          };
+          const assertContent = (withBody: boolean, withFollowing: boolean) => {
+            const expected = [
+              ...(shape === 'single' ? growthTitles.slice(0, 1) : growthTitles),
+              ...(withBody ? growthBody.split('\n\n') : []),
+              ...(withFollowing ? [followingTitle] : []),
+            ];
+            const text = view.container.textContent ?? '';
+            let previous = -1;
+            for (const value of expected) {
+              expect(text.split(value), value).toHaveLength(2);
+              expect(text.indexOf(value), value).toBeGreaterThan(previous);
+              previous = text.indexOf(value);
+            }
+          };
+          await openDetails();
+          assertContent(false, false);
+          // The same thinking ID gains real paragraphs before the next block is appended.
+          await view.rerender({
+            content: growingHistory(layout, shape, 'body'),
+            isStreaming: true,
+          });
+          await openDetails();
+          assertContent(true, false);
+          await view.rerender({
+            content: growingHistory(layout, shape, 'following'),
+            isStreaming: true,
+          });
+          await openDetails();
+          assertContent(true, true);
+          const completed = growingHistory(layout, shape, 'completed');
+          await view.rerender({ content: completed, isStreaming: false });
+          await openDetails();
+          assertContent(true, true);
+          const disclosure =
+            layout === 'nested'
+              ? screen.getByTestId('response-group-disclosure')
+              : screen.getAllByTestId('reasoning-disclosure')[0];
+          await fireEvent.click(disclosure);
+          expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+          expect(view.container.textContent).not.toContain(growthBody.split('\n\n')[0]);
+          await fireEvent.click(disclosure);
+          assertContent(true, true);
+          view.unmount();
+          view = await renderer(completed, false);
+          await openDetails();
+          assertContent(true, true);
+        });
+      }
+    }
+  }
+
   it('renders the daemon `text` field while streaming (auto-expanded)', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], true);
 

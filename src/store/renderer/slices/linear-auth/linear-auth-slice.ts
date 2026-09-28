@@ -1,8 +1,13 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { LinearAuthSliceState } from './linear-auth-types';
+import type {
+  ProviderAuthOperation,
+  ProviderAuthRequest,
+} from '../provider-auth/provider-auth-types';
 
 const initialState: LinearAuthSliceState = {
+  operation: null,
   isAuthenticated: false,
   requiresDaemonAuth: false,
   isAuthenticating: false,
@@ -14,26 +19,42 @@ const initialState: LinearAuthSliceState = {
 
 // --- Actions ---
 
-/** Trigger: initialize linear auth (store-service probes the daemon) */
+/** Trigger: initialize Linear auth (the saga probes the daemon). */
 export const initializeLinearAuth = createAction('linearAuth/initialize');
 
 /**
- * Trigger: connect with a pasted Linear personal API key. The store-service
+ * Trigger: connect with a pasted Linear personal API key. The saga
  * stores it via the daemon keyring path (`linear.token`, PROTOCOL §5.28) and
  * re-probes `linear.authStatus`.
  */
-export const connectLinear = createAction<[apiKey: string]>('linearAuth/connect');
+export const connectLinear = createAction(
+  'linearAuth/connect',
+  (
+    apiKey: string,
+    request: ProviderAuthRequest = { requestId: crypto.randomUUID(), consumerId: null },
+  ) => ({ apiKey, request }),
+);
 
 /**
  * Legacy trigger kept for surfaces with a one-click "Connect" button
  * (LinearPicker, IssueSuggestions). §5.28 has no OAuth flow to launch, so the
- * store-service maps this to a status re-probe; the real connect is
+ * saga maps this to a status re-probe; the real connect is
  * `connectLinear(apiKey)` from the settings panel.
  */
 export const startLinearAuth = createAction('linearAuth/startAuth');
 
 /** Trigger: logout — clears the daemon-held API key and re-probes */
-export const logoutLinear = createAction('linearAuth/logout');
+export const logoutLinear = createAction(
+  'linearAuth/logout',
+  (request: ProviderAuthRequest = { requestId: crypto.randomUUID(), consumerId: null }) => ({
+    request,
+  }),
+);
+
+export const settleLinearAuth =
+  createAction<[requestId: string, status: ProviderAuthOperation['status']]>('linearAuth/settle');
+export const cancelLinearAuth = createAction<[requestId: string]>('linearAuth/cancel');
+export const consumeLinearAuth = createAction<[requestId: string]>('linearAuth/consume');
 
 /** Set auth state from IPC response */
 export const setLinearAuthState = createAction(
@@ -56,6 +77,34 @@ export const setLinearError = createAction<[error: string | null]>('linearAuth/s
 // --- Reducer ---
 
 export const linearAuthReducer = createReducer<LinearAuthSliceState>(initialState);
+
+linearAuthReducer.with(connectLinear, (state, { payload: { request } }) => ({
+  ...state,
+  operation: { ...request, kind: 'connect', status: 'pending' },
+  isAuthenticating: true,
+  error: null,
+}));
+linearAuthReducer.with(logoutLinear, (state, { payload: { request } }) => ({
+  ...state,
+  operation: { ...request, kind: 'logout', status: 'pending' },
+  isAuthenticating: false,
+  error: null,
+}));
+linearAuthReducer.with(settleLinearAuth, (state, { payload: [requestId, status] }) =>
+  state.operation?.requestId !== requestId || state.operation.status !== 'pending'
+    ? state
+    : { ...state, operation: { ...state.operation, status }, isAuthenticating: false },
+);
+linearAuthReducer.with(cancelLinearAuth, (state, { payload: [requestId] }) =>
+  state.operation?.requestId !== requestId || state.operation.status !== 'pending'
+    ? state
+    : { ...state, operation: { ...state.operation, status: 'cancelled' }, isAuthenticating: false },
+);
+linearAuthReducer.with(consumeLinearAuth, (state, { payload: [requestId] }) =>
+  state.operation?.requestId !== requestId
+    ? state
+    : { ...state, operation: null, isAuthenticating: false },
+);
 
 linearAuthReducer.with(setLinearAuthState, (state, { payload }) => ({
   ...state,

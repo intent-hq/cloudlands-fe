@@ -10,6 +10,7 @@
  * (offline members dimmed, the owner blue).
  */
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { PresenceMember } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 
@@ -58,6 +59,13 @@ export interface PresenceIdentity {
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  /**
+   * The forge the person is identified by (`Principal.identity`), carried by
+   * a membership row of a daemon that serves the identity seam. The presence
+   * roster (`presence:changed`) has no such field, so a roster-only person
+   * stays neutral.
+   */
+  identity?: PrincipalIdentity;
 }
 
 /**

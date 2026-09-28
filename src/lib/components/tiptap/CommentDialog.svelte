@@ -126,7 +126,7 @@
         bind:value={content}
         placeholder={m.tiptap_commentDialog_content_placeholder()}
         onkeydown={handleKeyDown}
-        class="w-full p-2 text-xs rounded bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 resize-none border-0"
+        class="w-full p-2 text-xs rounded bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 resize-none border-0"
         rows={3}
       ></Textarea>
     </div>

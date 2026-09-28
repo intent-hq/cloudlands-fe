@@ -1914,6 +1914,8 @@ export interface SpecialistDef {
    */
   resolvedModel?: string;
   resolvedProvider?: string;
+  /** Effort from the matching model option or specialist, before Settings fallback. */
+  resolvedReasoningEffort?: string;
 }
 
 export interface SpecialistsClient {

@@ -32,8 +32,7 @@ describe('Menu keyboard and focus behavior', () => {
     );
     Object.defineProperty(menu, 'clientHeight', { configurable: true, value: 80 });
     enabledItems.forEach((item, index) => {
-      item.getBoundingClientRect = () =>
-        ({ top: index * 20, bottom: index * 20 + 20, height: 20 }) as DOMRect;
+      item.getBoundingClientRect = () => new DOMRect(0, index * 20, 100, 20);
     });
     expect(enabledItems.filter((item) => item.tabIndex === 0)).toEqual([apple]);
     await fireEvent.keyDown(apple, { key: 'ArrowDown' });

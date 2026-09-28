@@ -687,6 +687,10 @@ ${source}`;
     let labels: SVGTextElement[] = [];
     for (const child of svg.children) {
       if (child.matches('text.messageText')) labels.push(child as SVGTextElement);
+      if (child.matches('path.messageLine0, path.messageLine1')) {
+        labels = [];
+        continue;
+      }
       if (!child.matches('line.messageLine0, line.messageLine1')) continue;
       groups.push({ labels, line: child as SVGLineElement });
       labels = [];
@@ -1339,7 +1343,8 @@ ${source}`;
     padMermaidEdgeLabels(svg);
     addMermaidLabelKnockouts(svg);
     addMermaidLabelFeathers(svg);
-    reserveFlowchartClusterHeaderBands(svg, clusterMembership);
+    if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2')
+      reserveFlowchartClusterHeaderBands(svg, clusterMembership);
     repairEntityDividers(svg);
     refineMermaidCylinderNodes(svg);
     repairFlowchartNodeOutlines(svg);
@@ -1347,6 +1352,25 @@ ${source}`;
     if (flowchart)
       svg.dataset.flowchartDirection =
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
+    // Keep native ranks and routes together; source-order stacking separates branches from joins.
+    if (flowchart) {
+      const bounds = svg.getBBox();
+      const padding = 16;
+      const width = Math.ceil(bounds.width + padding * 2);
+      const height = Math.ceil(bounds.height + padding * 2);
+      svg.setAttribute('viewBox', `${bounds.x - padding} ${bounds.y - padding} ${width} ${height}`);
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      setReadableMermaidWidth(svg, width);
+      applyMermaidTerminalGaps(svg);
+      if (!prefersReducedMotion(svg.ownerDocument)) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 64));
+      }
+      if (generation !== renderGeneration || fit !== fitGeneration) return false;
+      svg.dataset.layoutGeneration = String(generation);
+      svg.dataset.layoutSettled = 'true';
+      return true;
+    }
     const rendererWidth = rendererElement?.clientWidth ?? 0;
     const compactRendererLayout = rendererWidth > 0 ? rendererWidth <= 620 : compactLayout;
     if (flowchart && !compactRendererLayout && svg.querySelectorAll('g.cluster').length >= 2) {
@@ -1590,13 +1614,22 @@ ${source}`;
       // Our own final-error UI owns failures; Mermaid must not paint an error into the document.
       config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
-      config.layout = usesStateDiagram ? 'elk' : 'dagre';
+      const usesEntityDiagram = /^\s*erDiagram\b/m.test(renderCode);
+      config.layout = usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
+      if (usesHtmlLabels) {
+        config.flowchart = {
+          ...config.flowchart,
+          curve: 'basis',
+          nodeSpacing: 48,
+          rankSpacing: 64,
+        };
+      }
       if (compactLayout) {
         config.flowchart = {
           ...config.flowchart,
-          nodeSpacing: 4,
+          nodeSpacing: 48,
           padding: 9,
-          rankSpacing: 24,
+          rankSpacing: 48,
           wrappingWidth: narrowLayout && /\bsubgraph\b/.test(renderCode) ? 80 : 120,
         };
         if (narrowLayout) {
@@ -1713,10 +1746,13 @@ ${source}`;
 
   onMount(() => {
     mounted = true;
+    let observedWidth: number | undefined;
     const resizeObserver =
       typeof ResizeObserver === 'undefined'
         ? undefined
         : new ResizeObserver(([entry]) => {
+            if (entry.contentRect.width === observedWidth) return;
+            observedWidth = entry.contentRect.width;
             compactLayout = entry.contentRect.width <= 620;
             narrowLayout = narrowLayout
               ? entry.contentRect.width < 440

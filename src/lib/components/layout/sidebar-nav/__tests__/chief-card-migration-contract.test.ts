@@ -13,7 +13,7 @@ import {
   bulkUpsertSessions,
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { m } from '$shared/paraglide/messages.js';
@@ -61,7 +61,7 @@ describe('Chief card migration contract', () => {
   beforeEach(() => {
     appStore.init();
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
     appStore.dispatch(setChiefActiveAgentId(null));
 
     launchActions = [];
@@ -70,7 +70,7 @@ describe('Chief card migration contract', () => {
       if (action?.type === LAUNCH_TYPE) {
         launchActions.push(action);
         action.success({ id: 'agent-chief-created' } as unknown as AgentSession);
-        return action;
+        return action.promise;
       }
       return originalDispatch(action);
     });

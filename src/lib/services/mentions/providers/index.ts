@@ -5,6 +5,7 @@
 import type { Provider, MentionCandidate, SearchContext, MentionType } from '../types';
 import { SPECIAL_MENTIONS } from '../types';
 import { FileProvider } from './file-provider';
+import { MemberProvider } from './member-provider';
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch } from '$lib/services/mentions/fuzzy-matcher';
 import {
@@ -736,9 +737,19 @@ class ProviderRegistry {
     this.register(new ScriptProvider());
     this.register(new AgentProvider());
     this.register(new SpecialistProvider());
+    this.register(new MemberProvider());
 
     // Set default providers
-    this.defaultProviders = ['file', 'folder', 'note', 'terminal', 'script', 'agent', 'specialist'];
+    this.defaultProviders = [
+      'file',
+      'folder',
+      'note',
+      'terminal',
+      'script',
+      'agent',
+      'specialist',
+      'member',
+    ];
   }
 
   register(provider: Provider) {

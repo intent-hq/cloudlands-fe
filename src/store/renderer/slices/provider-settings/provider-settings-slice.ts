@@ -3,7 +3,38 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 
+type ProviderFastModeState = {
+  supported: boolean;
+  confirmed: Record<string, boolean>;
+  pending: Record<string, { enabled: boolean; editId: number }>;
+  nextEditId: number;
+  revision: number;
+};
+
+const emptyFastMode: ProviderFastModeState = {
+  supported: false,
+  confirmed: {},
+  pending: {},
+  nextEditId: 0,
+  revision: -1,
+};
+
+export const fastModeHydrationStarted = createAction('providerSettings/fastModeHydrationStarted');
+export const fastModeSupportReceived = createAction<[supported: boolean]>(
+  'providerSettings/fastModeSupportReceived',
+);
+export const hydrateProviderFastMode = createAction<
+  [value: Record<string, boolean>, revision?: number]
+>('providerSettings/hydrateFastMode');
+export const setProviderFastMode = createAction<[providerId: string, enabled: boolean]>(
+  'providerSettings/setFastMode',
+);
+export const fastModeWriteSettled = createAction<[providerId: string, editId: number]>(
+  'providerSettings/fastModeWriteSettled',
+);
+
 export type ProviderSettingsState = {
+  fastMode: ProviderFastModeState;
   enabledProviders: Record<string, boolean>;
   /**
    * Registry metadata snapshotted from `providerCatalogLoaded` (reducers only
@@ -27,14 +58,23 @@ export type ProviderSettingsState = {
 };
 
 export const initialState: ProviderSettingsState = {
+  fastMode: emptyFastMode,
   enabledProviders: {},
   nonDisableableProviderIds: [],
   pendingEnablementOverrides: {},
 };
 
-/** Optimistically applies one provider/model default pair; persistence is one atomic batch. */
+/** Request a provider/model default pair; the owning saga validates before accepting. */
 export const setAtomicDefaultModel = createAction<[payload: { providerId: string; model: string }]>(
   'providerSettings/setAtomicDefaultModel',
+);
+
+/** Validated domain events: reducers and persistence consume accepted choices only. */
+export const atomicDefaultModelAccepted = createAction<
+  [payload: { providerId: string; model: string }]
+>('providerSettings/atomicDefaultModelAccepted');
+export const activeProviderAccepted = createAction<[providerId: string]>(
+  'providerSettings/activeProviderAccepted',
 );
 
 function canBeDisabled(state: ProviderSettingsState, providerId: string): boolean {
@@ -42,10 +82,11 @@ function canBeDisabled(state: ProviderSettingsState, providerId: string): boolea
 }
 
 /**
- * User pick of the default provider (the provider leg of the default model
+ * Request a default provider (the provider leg of the default model
  * triple). The state lives in the model slice (`ModelState.defaultProviderId`
  * with a `pendingDefaultProviderId` hydration guard); the persistence saga
- * writes `model.defaultProvider` (PROTOCOL §5.12).
+ * validates the quick-action snapshot before emitting activeProviderAccepted,
+ * then writes `model.defaultProvider` (PROTOCOL §5.12).
  */
 export const setActiveProvider = createAction<[providerId: string]>(
   'providerSettings/setActiveProvider',
@@ -155,4 +196,45 @@ providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload:
     enabledProviders: { ...providers, ...pending },
     pendingEnablementOverrides: pending,
   };
+});
+
+// Keep confirmed daemon state separate from queued local intent. An older echo or
+// rejected write must never retire a newer click for the same provider.
+providerSettingsReducer.with(fastModeHydrationStarted, (state) => ({
+  ...state,
+  fastMode: emptyFastMode,
+}));
+providerSettingsReducer.with(fastModeSupportReceived, (state, { payload: [supported] }) => ({
+  ...state,
+  fastMode: { ...state.fastMode, supported },
+}));
+providerSettingsReducer.with(
+  hydrateProviderFastMode,
+  (state, { payload: [confirmed, revision] }) => {
+    const fastMode = state.fastMode;
+    if (revision === undefined ? fastMode.revision > 0 : revision < fastMode.revision) return state;
+    return {
+      ...state,
+      fastMode: { ...fastMode, confirmed, revision: revision ?? fastMode.revision },
+    };
+  },
+);
+providerSettingsReducer.with(setProviderFastMode, (state, { payload: [providerId, enabled] }) => {
+  const fastMode = state.fastMode;
+  if (!fastMode.supported || !['claude-code', 'codex'].includes(providerId)) return state;
+  const editId = fastMode.nextEditId + 1;
+  return {
+    ...state,
+    fastMode: {
+      ...fastMode,
+      nextEditId: editId,
+      pending: { ...fastMode.pending, [providerId]: { enabled, editId } },
+    },
+  };
+});
+providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerId, editId] }) => {
+  if (state.fastMode.pending[providerId]?.editId !== editId) return state;
+  const pending = { ...state.fastMode.pending };
+  delete pending[providerId];
+  return { ...state, fastMode: { ...state.fastMode, pending } };
 });

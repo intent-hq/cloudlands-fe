@@ -6,12 +6,14 @@
  * flow is observable without real IPC.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  start: async () => {},
+  stop: async () => {},
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   openConnectionRequested: vi.fn(),
@@ -29,23 +31,16 @@ vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
-  captureFingerprintRequested: mocks.captureFingerprintRequested,
-  addConnectionRequested: mocks.addConnectionRequested,
-  openConnectionRequested: mocks.openConnectionRequested,
-  loadKeychainSyncStateRequested: mocks.loadKeychainSyncStateRequested,
-  setKeychainSyncEnabledRequested: mocks.setKeychainSyncEnabledRequested,
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-selectors', async () => {
-  const { readable } = await import('svelte/store');
-  return {
-    selectKeychainSyncState: () => readable(mocks.syncState.value),
-  };
+vi.mock('$store/renderer/store', async () => {
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const harness = createConnectionsHarness(
+    () => ({ keychainSync: mocks.syncState.value }),
+    mocks.dispatch,
+  );
+  mocks.start = harness.start;
+  mocks.stop = harness.stop;
+  return { store: harness.store };
 });
 
 vi.mock('$lib/utils/open-external', () => ({
@@ -66,7 +61,7 @@ async function fillDetails() {
 }
 
 describe('ConnectBackendModal', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.syncState.value = null;
     mocks.captureFingerprintRequested.mockImplementation((params) => ({
@@ -99,7 +94,27 @@ describe('ConnectBackendModal', () => {
       payload: [id],
       promise: Promise.resolve({ status: 'opened', id }),
     }));
+    window.electronAPI = {
+      ...window.electronAPI,
+      on: vi.fn(() => 'listener'),
+      offById: vi.fn(),
+      invoke: vi.fn((channel: string, params?: any) => {
+        if (channel === 'connections:list')
+          return Promise.resolve({ connections: [], activeId: 'local', windowBackendId: 'local' });
+        if (channel === 'connections:capture-fingerprint')
+          return mocks.captureFingerprintRequested(params).promise;
+        if (channel === 'connections:add') return mocks.addConnectionRequested(params).promise;
+        if (channel === 'connections:open') return mocks.openConnectionRequested(params.id).promise;
+        if (channel === 'connections:sync-get-state')
+          return mocks.loadKeychainSyncStateRequested().promise;
+        if (channel === 'connections:sync-set-enabled')
+          return mocks.setKeychainSyncEnabledRequested(params.enabled).promise;
+        throw new Error(`Unexpected channel ${channel}`);
+      }),
+    } as Window['electronAPI'];
+    await mocks.start();
   });
+  afterEach(() => mocks.stop());
 
   it('captures the fingerprint on Continue and shows the confirm step', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;

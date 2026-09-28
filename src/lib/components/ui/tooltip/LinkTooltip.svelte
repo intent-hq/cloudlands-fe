@@ -38,13 +38,8 @@
   const isMailto = $derived(tooltip.url.startsWith('mailto:'));
   // GitHub issue/PR links open the action menu on plain click, not the browser
   const isGitHubIssueOrPr = $derived(parseGitHubIssueOrPrUrl(tooltip.url) !== null);
-  // The hover card takes over while details load or once they arrive;
-  // `idle` / `error` keep the plain URL tooltip.
-  const cardPreview = $derived(
-    tooltip.preview.status === 'loading' || tooltip.preview.status === 'ready'
-      ? tooltip.preview
-      : null,
-  );
+  // Keep the GitHub card through loading, success, and failure.
+  const cardPreview = $derived(tooltip.preview.status !== 'idle' ? tooltip.preview : null);
   const hintText = $derived(
     isMailto
       ? m.ui_linkTooltip_copyHint_tooltip({ key: modifierKey })

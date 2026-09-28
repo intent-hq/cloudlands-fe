@@ -20,15 +20,12 @@
  * Saga orchestration lives in the hardware-console slice; this module owns
  * only the daemon settings parsing and read-modify-write operations.
  */
-import { appClient } from '$lib/client';
+import {
+  HARDWARE_CONSOLE_SETTINGS_PATH,
+  readHardwareConsoleSettingsBag,
+  persistHardwareConsoleSettingsPatch,
+} from '../settings-bag';
 import { normalizeExcludedWorkspaceIds, normalizeKeyPins } from './key-assignment';
-
-/** Shared daemon settings bag for hardware-console state (opaque to the daemon). */
-export const HARDWARE_CONSOLE_SETTINGS_PATH = 'hardwareConsole.state';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /** Extract a tolerant pins array from the bag's `keyPins` field. */
 function parseKeyPins(value: unknown): (string | null)[] {
@@ -36,39 +33,19 @@ function parseKeyPins(value: unknown): (string | null)[] {
   return normalizeKeyPins(raw.map((pin) => (typeof pin === 'string' ? pin : null)));
 }
 
-async function readBag(): Promise<Record<string, unknown> | null> {
-  const setting = await appClient.settings.get(HARDWARE_CONSOLE_SETTINGS_PATH);
-  if (setting === null) return null;
-  return isRecord(setting.value) ? setting.value : {};
-}
-
-/** Read the bag for a read-modify-write, failing when the read failed so a persist can never wipe sibling fields. */
-async function readBagForPersist(): Promise<Record<string, unknown>> {
-  const bag = await readBag();
-  if (bag === null) {
-    throw new Error(
-      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed; skipping persist to avoid wiping the bag`,
-    );
-  }
-  return bag;
-}
-
 /** Read-modify-write: replace only `keyPins` + `excludedWorkspaceIds`, preserving sibling fields. */
 export async function persistHardwareConsoleKeyPins(
   keyPins: (string | null)[],
   excludedWorkspaceIds: string[],
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, keyPins, excludedWorkspaceIds } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ keyPins, excludedWorkspaceIds });
 }
 
 export async function loadHardwareConsoleKeyPins(): Promise<{
   keyPins: (string | null)[];
   excludedWorkspaceIds: string[];
 }> {
-  const bag = await readBag();
+  const bag = await readHardwareConsoleSettingsBag();
   if (bag === null) {
     throw new Error(
       `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,

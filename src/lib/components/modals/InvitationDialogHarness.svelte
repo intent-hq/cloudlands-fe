@@ -2,7 +2,14 @@
   import { Button } from '$lib/components/ui/button';
   import InviteConsentModal from './InviteConsentModal.svelte';
   import InviteNoticeModal from './InviteNoticeModal.svelte';
-  let { kind = 'notice' }: { kind?: 'notice' | 'consent' | 'sign-in' } = $props();
+  import type { InviteFailureReason } from '$shared/ipc/invite-notice';
+  let {
+    kind = 'notice',
+    noticeReason = 'expired',
+  }: {
+    kind?: 'notice' | 'consent' | 'sign-in';
+    noticeReason?: InviteFailureReason;
+  } = $props();
   let open = $state(false);
   let responses = $state<string[]>([]);
 </script>
@@ -12,7 +19,7 @@
 {#if kind === 'notice'}
   <InviteNoticeModal
     bind:open
-    payload={{ requestId: 'audit', kind: 'failed', reason: 'expired' }}
+    payload={{ requestId: 'audit', kind: 'failed', reason: noticeReason }}
     onAcknowledge={() => (responses = [...responses, 'acknowledged'])}
   />
 {:else}

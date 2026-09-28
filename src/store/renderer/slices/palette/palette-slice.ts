@@ -15,7 +15,7 @@ export const initialState: PaletteState = {
   fileMru: {},
 };
 
-export const openPalette = createAction('palette/open');
+export const openPalette = createAction<[query?: string]>('palette/open');
 export const closePalette = createAction('palette/close');
 export const openGoToLine = createAction('palette/openGoToLine');
 export const togglePalette = createAction('palette/toggle');
@@ -25,10 +25,10 @@ export const recordPaletteFileMru =
   createAction<[path: string, timestamp: number]>('palette/recordFileMru');
 
 export const paletteReducer = createReducer<PaletteState>(initialState);
-paletteReducer.with(openPalette, (state) => ({
+paletteReducer.with(openPalette, (state, { payload: [query] }) => ({
   ...state,
   isOpen: true,
-  query: '',
+  query: query ?? '',
 }));
 paletteReducer.with(closePalette, (state) => ({
   ...state,

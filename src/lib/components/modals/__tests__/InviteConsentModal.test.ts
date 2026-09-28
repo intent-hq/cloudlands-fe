@@ -2,16 +2,34 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
+
+const labs = vi.hoisted(() => ({ enabled: false, dispatch: vi.fn() }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ userPreferences: { labsGitLabEnabled: labs.enabled } }),
+    dispatch: labs.dispatch,
+  });
+});
+beforeEach(() => {
+  labs.enabled = false;
+  vi.clearAllMocks();
+});
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
 
-const { handleLink } = vi.hoisted(() => ({ handleLink: vi.fn(() => Promise.resolve()) }));
+const { handleLink, navigateToSettings } = vi.hoisted(() => ({
+  handleLink: vi.fn(() => Promise.resolve()),
+  navigateToSettings: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
+vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings }));
 
 /** The guest's own sign-in (`sign-in-required`): device code + URL, "Open GitHub" primary. */
 const PAYLOAD: InviteConsentShowPayload = {
@@ -34,10 +52,25 @@ const PROVE_PAYLOAD: InviteConsentShowPayload = {
   hostLabel: 'host.example',
 };
 
+/** First join proved with the guest's GitLab connection (no GitHub one). */
+const PROVE_GITLAB_PAYLOAD: InviteConsentShowPayload = {
+  ...PROVE_PAYLOAD,
+  requestId: 'req-4',
+  identity: { provider: 'gitlab', host: 'gitlab.example.com' },
+};
+
 const CONFIRM_PAYLOAD: InviteConsentShowPayload = {
   requestId: 'req-2',
   mode: 'confirm',
   login: 'octocat',
+  workspaceTitle: 'Alpha',
+  hostLabel: 'host.example',
+};
+
+/** No forge connected at all (`connect-forge`): choose GitHub or GitLab before any device code. */
+const CONNECT_FORGE_PAYLOAD: InviteConsentShowPayload = {
+  requestId: 'req-5',
+  mode: 'connect-forge',
   workspaceTitle: 'Alpha',
   hostLabel: 'host.example',
 };
@@ -54,6 +87,40 @@ async function loadModal() {
 }
 
 describe('InviteConsentModal', () => {
+  it('opens command search if GitLab is disabled before its already-visible setup link is activated', async () => {
+    labs.enabled = true;
+    const onRespond = vi.fn();
+    const Modal = await loadModal();
+    render(Modal, { props: { open: true, payload: CONNECT_FORGE_PAYLOAD, onRespond } });
+    const link = screen.getByTestId('invite-consent-open-connections');
+    labs.enabled = false;
+    await fireEvent.click(link);
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(navigateToSettings).not.toHaveBeenCalled();
+    expect(labs.dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: 'palette/open',
+      payload: ['GitLab'],
+    });
+  });
+
+  it.each([PAYLOAD, CONNECT_FORGE_PAYLOAD])(
+    'keeps GitHub usable without offering hidden GitLab setup in $mode',
+    async (payload) => {
+      const onRespond = vi.fn();
+      const Modal = await loadModal();
+      render(Modal, { props: { open: true, payload, onRespond } });
+      expect(screen.queryByTestId('invite-consent-open-connections')).toBeNull();
+      expect(screen.queryByTestId('invite-consent-connect-gitlab')).toBeNull();
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: payload.mode === 'connect-forge' ? 'Sign in to GitHub' : 'Open GitHub',
+        }),
+      );
+      expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
+      expect(navigateToSettings).not.toHaveBeenCalled();
+    },
+  );
+
   it('sign-in-required: shows the workspace, host, device code and verification URL, no Join button', async () => {
     const InviteConsentModal = await loadModal();
 
@@ -232,6 +299,77 @@ describe('InviteConsentModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('prove mode: names the GitLab instance the proof is made on, and GitHub without an identity', async () => {
+    const InviteConsentModal = await loadModal();
+
+    const { rerender } = render(InviteConsentModal, {
+      props: { open: true, payload: PROVE_GITLAB_PAYLOAD, onRespond: vi.fn() },
+    });
+    const identity = screen.getByTestId('invite-consent-identity');
+    expect(identity.getAttribute('data-provider')).toBe('gitlab');
+    expect(identity.textContent).toContain('@octocat');
+    expect(identity.textContent).toContain('gitlab.example.com');
+    expect(screen.getByText(/snippet on gitlab\.example\.com/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Join' })).toBeTruthy();
+
+    // Older main builds send no `identity`: the line stays GitHub.
+    await rerender({ open: true, payload: PROVE_PAYLOAD, onRespond: vi.fn() });
+    const github = screen.getByTestId('invite-consent-identity');
+    expect(github.getAttribute('data-provider')).toBe('github');
+    expect(github.textContent).not.toContain('gitlab.example.com');
+    expect(screen.queryByText(/snippet on/)).toBeNull();
+  });
+
+  it('sign-in-required (not connected): the GitLab alternative cancels the join and opens Connections', async () => {
+    labs.enabled = true;
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, { props: { open: true, payload: PAYLOAD, onRespond } });
+    await fireEvent.click(screen.getByTestId('invite-consent-connect-gitlab'));
+
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(navigateToSettings).toHaveBeenCalledWith({ tab: 'connections', hash: 'integrations' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('sign-in-required (scope missing): offers no GitLab alternative, the GitHub connection just needs re-consent', async () => {
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: { ...PAYLOAD, reason: 'scope-missing' }, onRespond: vi.fn() },
+    });
+
+    expect(screen.queryByTestId('invite-consent-connect-gitlab')).toBeNull();
+  });
+
+  it('connect-forge: offers Connections (cancels the join) and Sign in to GitHub (open) with no device code asked for', async () => {
+    labs.enabled = true;
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: CONNECT_FORGE_PAYLOAD, onRespond },
+    });
+
+    await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+    expect(screen.getByTestId('invite-consent-connect-forge')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
+
+    const signIn = screen.getByRole('button', { name: 'Sign in to GitHub' });
+    await fireEvent.click(signIn);
+    await fireEvent.click(signIn);
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(handleLink).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByTestId('invite-consent-open-connections'));
+    expect(onRespond.mock.calls).toEqual([['open'], ['cancel']]);
+    expect(navigateToSettings).toHaveBeenCalledWith({ tab: 'connections', hash: 'integrations' });
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 

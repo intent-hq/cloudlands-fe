@@ -62,8 +62,16 @@ export const selectReduceMotionOnBattery = store.createSelector((state) => {
   return state.userPreferences?.reduceMotionOnBattery ?? false;
 });
 
+export const selectLabsSettingsVisible = store.createSelector((state) => {
+  return state.userPreferences?.labsSettingsVisible ?? false;
+});
+
 export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsMultiplayerEnabled ?? false;
+});
+
+export const selectLabsGitLabEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsGitLabEnabled === true;
 });
 
 export const selectCounterScale = store.createSelector((state) => {
@@ -148,6 +156,13 @@ export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
 
 export const selectNotificationVolume = store.createSelector((state) => {
   return state.userPreferences.volume;
+});
+
+export const selectNotificationVolumeWrite = store.createSelector((state) => {
+  return {
+    editId: state.userPreferences.pendingNotificationVolumeEditId,
+    hydrationEpoch: state.userPreferences.notificationVolumeHydrationEpoch,
+  };
 });
 
 export const selectActivityLogPresets = store.createSelector((state) => {

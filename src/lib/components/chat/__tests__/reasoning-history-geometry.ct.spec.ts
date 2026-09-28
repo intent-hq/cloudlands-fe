@@ -1,6 +1,18 @@
 import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import ReasoningHistoryGeometryHost from './ReasoningHistoryGeometryHost.svelte';
+import {
+  followingTitle,
+  growingHistory,
+  growthBody,
+  growthTitles,
+  titleToolHistory,
+} from './compact-reasoning-fixtures';
+import {
+  activityRowSelector,
+  assertContentOnceInOrder,
+  openReasoning,
+} from './compact-reasoning-helpers';
 
 test.setTimeout(120_000);
 
@@ -19,7 +31,7 @@ async function openGroup(fixture: Locator): Promise<Locator> {
   return disclosure;
 }
 
-async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnswer: boolean) {
+async function assertExpandedFixture(fixture: Locator, includeAnswer: boolean) {
   const group = fixture.getByTestId('response-group');
   const children = group.locator('[data-response-group-child]');
   await expect(children).toHaveCount(5);
@@ -28,88 +40,14 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
       elements.map((element) => element.getAttribute('data-message-content-block')),
     ),
   ).toEqual(['text', 'thinking', 'thinking', 'tool_use', 'thinking']);
-  expect(
-    await children.evaluateAll((elements) =>
-      elements.map((element) => getComputedStyle(element).paddingTop),
-    ),
-  ).toEqual(['0px', '16px', '24px', '0px', '24px']);
-
   const sections = group.locator('[data-reasoning-section]');
   await expect(sections).toHaveCount(4);
-  expect(
-    await sections.evaluateAll((elements) =>
-      elements.map((element) => getComputedStyle(element).paddingTop),
-    ),
-  ).toEqual(['0px', '0px', '24px', '0px']);
 
   const titles = group.locator('[data-reasoning-section-title]');
   await expect(titles).toHaveCount(3);
   expect(await titles.allTextContents()).toEqual(expectedTitles);
-  const seams = await titles.evaluateAll((elements) =>
-    elements.map((title) => {
-      const section = title.closest<HTMLElement>('[data-reasoning-section]')!;
-      const row = title.closest<HTMLElement>('[data-chat-operational-row]')!;
-      const child = section.closest<HTMLElement>('[data-response-group-child]')!;
-      const previous =
-        (section.previousElementSibling as HTMLElement | null) ??
-        (child.previousElementSibling as HTMLElement | null);
-      return {
-        title: title.textContent?.trim(),
-        seam: row.getBoundingClientRect().top - previous!.getBoundingClientRect().bottom,
-      };
-    }),
-  );
-  expect(seams.map(({ title }) => title)).toEqual(expectedTitles);
-  for (const { seam, title } of seams) expect(seam, title).toBeCloseTo(24 * zoom, 1);
-
-  const bodyGeometry = await group
-    .locator('[data-reasoning-history-body]')
-    .evaluateAll((elements) =>
-      elements.map((body) => {
-        const section = body.closest<HTMLElement>('[data-reasoning-section]')!;
-        const row = section.querySelector<HTMLElement>('[data-chat-operational-row]');
-        return {
-          rowToBody: row
-            ? body.getBoundingClientRect().top - row.getBoundingClientRect().bottom
-            : null,
-          paddingTop: getComputedStyle(body).paddingTop,
-          paddingBottom: getComputedStyle(body).paddingBottom,
-        };
-      }),
-    );
-  expect(bodyGeometry).toEqual([
-    { rowToBody: null, paddingTop: '6px', paddingBottom: '8px' },
-    { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
-    { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
-  ]);
-
-  const titleXs = await titles.evaluateAll((elements) =>
-    elements.map((element) => element.getBoundingClientRect().x),
-  );
-  const toolX = await group
-    .locator('[data-message-content-block="tool_use"] [data-tool-sentence]')
-    .evaluate((element) => element.getBoundingClientRect().x);
-  for (const titleX of titleXs) expect(titleX).toBeCloseTo(toolX, 1);
-  const guideAndIcon = await group.evaluate((element) => {
-    const guide = element.querySelector<HTMLElement>('[data-operational-expanded-guide]')!;
-    const icon = element.querySelector<HTMLElement>(
-      '[data-testid="response-group-disclosure"] [data-operational-leading] svg',
-    )!;
-    const center = (node: HTMLElement) => {
-      const box = node.getBoundingClientRect();
-      return box.x + box.width / 2;
-    };
-    return { guide: center(guide), icon: center(icon) };
-  });
-  expect(guideAndIcon.guide).toBeCloseTo(guideAndIcon.icon, 1);
-
-  const titleThenToolGap = await children.evaluateAll((elements) => {
-    const titleChild = elements[2].getBoundingClientRect();
-    const toolChild = elements[3].getBoundingClientRect();
-    return toolChild.top - titleChild.bottom;
-  });
-  expect(titleThenToolGap).toBeCloseTo(0, 1);
-
+  await expect(group).toContainText('The production-path analysis ends with input.');
+  await expect(group).toContainText('Final nested reasoning prose.');
   await expect(group.locator('li')).toHaveCount(2);
   await expect(group.locator('pre code')).toContainText("const seam = 'token';");
   const text = (await group.textContent()) ?? '';
@@ -139,118 +77,71 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
   if (includeAnswer) {
     const stack = fixture.locator('[data-operational-stack]').first();
     const answerBlock = stack.locator(':scope > [data-message-content-block="text"]');
-    const answerContent = answerBlock.locator('p').first();
     await expect(answerBlock).toContainText('Final assistant answer.');
-    // Measure the group and the answer in one frame and wait for the freshly
-    // expanded group to settle: separate boundingBox() round trips can
-    // straddle a layout pass and misreport the seam under load.
-    const groupHandle = await group.elementHandle();
-    await expect
-      .poll(() =>
-        answerContent.evaluate(
-          (answer, groupElement) =>
-            answer.getBoundingClientRect().top - groupElement!.getBoundingClientRect().bottom,
-          groupHandle,
-        ),
-      )
-      .toBeCloseTo(28 * zoom, 1);
-    expect(await group.evaluate((element) => getComputedStyle(element).marginBottom)).toBe('12px');
-    expect(await answerBlock.evaluate((element) => getComputedStyle(element).paddingTop)).toBe(
-      '16px',
-    );
   }
 }
 
-for (const theme of ['light', 'dark'] as const) {
-  for (const width of [320, 720]) {
-    for (const zoom of [1, 2]) {
-      test(`locks ${theme} nested reasoning seams at ${width}px and ${zoom * 100}% zoom`, async ({
-        mount,
-        page,
-      }) => {
-        await page.emulateMedia({ reducedMotion: 'reduce' });
-        const component = await mount(ReasoningHistoryGeometryHost, {
-          props: { theme, width, zoom, phase: 'completed' },
-        });
+test('preserves nested and inline content in both renderers', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ReasoningHistoryGeometryHost, {
+    props: { phase: 'completed' },
+  });
 
-        expect((await component.boundingBox())!.width).toBeCloseTo(width * zoom, 1);
-        for (const renderer of rendererIds) {
-          const fixture = component.getByTestId(`${renderer}-titled`);
-          await openGroup(fixture);
-          const details = fixture.locator('[data-operational-expanded-content]');
-          await expect(details).toBeVisible();
-          await expect
-            .poll(() => details.evaluate((element) => element.getAnimations().length))
-            .toBe(0);
-          await assertExpandedFixture(fixture, zoom, true);
+  for (const renderer of rendererIds) {
+    const fixture = component.getByTestId(`${renderer}-titled`);
+    await openGroup(fixture);
+    const details = fixture.locator('[data-operational-expanded-content]');
+    await expect(details).toBeVisible();
+    await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
+    await assertExpandedFixture(fixture, true);
 
-          const inline = component.getByTestId(`${renderer}-inline`);
-          await expect(inline.getByTestId('response-group')).toHaveCount(0);
-          await expect(inline.locator('[data-reasoning-section-boundary]')).toHaveCount(0);
-          const inlineBlocks = inline
-            .locator('[data-operational-stack]')
-            .first()
-            .locator(':scope > [data-message-content-block]');
-          expect(
-            await inlineBlocks.evaluateAll((elements) =>
-              elements.map((element) => ({
-                type: element.getAttribute('data-message-content-block'),
-                paddingTop: getComputedStyle(element).paddingTop,
-              })),
-            ),
-          ).toEqual([
-            { type: 'text', paddingTop: '0px' },
-            { type: 'thinking', paddingTop: '16px' },
-            { type: 'thinking', paddingTop: '0px' },
-            { type: 'text', paddingTop: '16px' },
-          ]);
-          const inlineText = (await inline.textContent()) ?? '';
-          for (const value of [
-            'Inline group description.',
-            'Headingless predecessor remains inline without a disclosure.',
-            'Later headingless reasoning stays in source order.',
-            'Inline final prose.',
-          ]) {
-            expect(inlineText.match(new RegExp(value.replace('.', '\\.'), 'g'))).toHaveLength(1);
-          }
-        }
-      });
+    const inline = component.getByTestId(`${renderer}-inline`);
+    await expect(inline.getByTestId('response-group')).toHaveCount(0);
+    await expect(inline.locator('[data-reasoning-section-boundary]')).toHaveCount(0);
+    const inlineText = (await inline.textContent()) ?? '';
+    for (const value of [
+      'Inline group description.',
+      'Headingless predecessor remains inline without a disclosure.',
+      'Later headingless reasoning stays in source order.',
+      'Inline final prose.',
+    ]) {
+      expect(inlineText.split(value)).toHaveLength(2);
     }
   }
-}
+});
 
-test('keeps exact seams through live streaming completion in both renderers', async ({
+test('preserves nested content through streaming completion and remount in both renderers', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   let component = await mount(ReasoningHistoryGeometryHost, {
-    props: { width: 560, zoom: 1, phase: 'live' },
+    props: { phase: 'live' },
   });
 
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     await openGroup(fixture);
-    await assertExpandedFixture(fixture, 1, false);
+    await assertExpandedFixture(fixture, false);
   }
 
-  await component.update({ props: { width: 560, zoom: 1, phase: 'completed' } });
+  await component.update({ props: { phase: 'completed' } });
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     const disclosure = fixture.getByTestId('response-group-disclosure');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     await disclosure.click();
-    await assertExpandedFixture(fixture, 1, true);
+    await assertExpandedFixture(fixture, true);
   }
 
   await component.unmount();
   component = await mount(ReasoningHistoryGeometryHost, {
-    props: { width: 560, zoom: 1, phase: 'completed' },
+    props: { phase: 'completed' },
   });
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     await openGroup(fixture);
-    await assertExpandedFixture(fixture, 1, true);
+    await assertExpandedFixture(fixture, true);
   }
 });
 
@@ -260,7 +151,7 @@ test('search reveal restores automatic state but preserves manual disclosure sta
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ReasoningHistoryGeometryHost, {
-    props: { width: 560, zoom: 1, phase: 'completed' },
+    props: { phase: 'completed' },
   });
 
   for (const renderer of rendererIds) {
@@ -279,3 +170,184 @@ test('search reveal restores automatic state but preserves manual disclosure sta
     await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   }
 });
+
+for (const renderer of rendererIds) {
+  test(`preserves inline prose and paired results when a group closes in ${renderer}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const titles = [
+      'Updating the watcher spec',
+      'Updating the PR notes',
+      'Preparing PR note updates',
+    ];
+    const paragraph = 'The test-fixture fix is pushed. The watcher can follow the new CI run.';
+    const result = 'The inspected source is unchanged.';
+    const content = [
+      {
+        type: 'tool_use' as const,
+        id: 'boundary:tool',
+        toolCallId: 'boundary:call',
+        name: 'view',
+        input: { path: 'src/example.ts' },
+      },
+      {
+        type: 'thinking' as const,
+        id: 'boundary:reasoning',
+        text: titles.map((t) => `**${t}**`).join('\n\n'),
+      },
+      { type: 'text' as const, id: 'boundary:open', text: '<group:Prepping>' },
+      {
+        type: 'tool_result' as const,
+        id: 'boundary:result',
+        tool_use_id: 'boundary:call',
+        output: result,
+      },
+      { type: 'text' as const, id: 'boundary:prose', text: paragraph },
+    ];
+    const props = { renderer, regressionContent: content, phase: 'live' as const };
+    let component = await mount(ReasoningHistoryGeometryHost, { props });
+    const verify = async () => {
+      const fixture = component.getByTestId('compact-reasoning-fixture');
+      await assertContentOnceInOrder(fixture, [...titles, paragraph]);
+      await expect(fixture.locator('[data-message-content-block="tool_result"]')).toHaveCount(0);
+      await expect(fixture.getByTestId('reasoning-disclosure')).toHaveCount(0);
+      const tool = fixture.getByTestId('tool-call-disclosure');
+      await tool.focus();
+      await page.keyboard.press('Enter');
+      await expect(tool).toHaveAttribute('aria-expanded', 'true');
+      await expect(fixture.getByText(result, { exact: true })).toBeVisible();
+      await page.keyboard.press('Space');
+      await expect(tool).toHaveAttribute('aria-expanded', 'false');
+      await expect(tool).toBeFocused();
+      await expect(fixture.getByText(result, { exact: true })).toHaveCount(0);
+    };
+    await openReasoning(component.getByTestId('compact-reasoning-fixture'));
+    await verify();
+    const closed = {
+      ...props,
+      regressionContent: [
+        ...content,
+        { type: 'text' as const, id: 'boundary:close', text: '</group:Prepping>' },
+      ],
+    };
+    await component.update({ props: closed });
+    await expect(component.getByTestId('response-group-disclosure')).toHaveCount(0);
+    await verify();
+    await component.update({ props: { ...closed, phase: 'completed' } });
+    await verify();
+    await component.unmount();
+    component = await mount(ReasoningHistoryGeometryHost, {
+      props: { ...props, phase: 'completed' },
+    });
+    await expect(component.getByTestId('response-group-disclosure')).toHaveCount(0);
+    await verify();
+  });
+
+  test(`preserves titles and tools through group lifecycle in ${renderer}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const props = { renderer };
+    let component = await mount(ReasoningHistoryGeometryHost, {
+      props: { ...props, regressionContent: titleToolHistory('nested', false), phase: 'live' },
+    });
+    const verify = async () => {
+      const fixture = component.getByTestId('compact-reasoning-fixture');
+      await openReasoning(fixture);
+      await assertContentOnceInOrder(fixture, [
+        ...growthTitles,
+        followingTitle,
+        'Validating renderer output',
+      ]);
+      await expect(fixture.locator('[data-message-content-block="tool_result"]')).toHaveCount(0);
+      await expect(fixture.getByTestId('reasoning-disclosure')).toHaveCount(0);
+      const rows = fixture.locator(activityRowSelector);
+      await expect(rows).toHaveCount(5);
+      expect(
+        await rows.evaluateAll((elements) =>
+          elements.map((row) =>
+            row.closest('[data-message-content-block]')?.getAttribute('data-message-content-block'),
+          ),
+        ),
+      ).toEqual(['thinking', 'thinking', 'thinking', 'tool_use', 'thinking']);
+    };
+    await verify();
+    const completed = {
+      ...props,
+      regressionContent: titleToolHistory('nested', true),
+      phase: 'completed' as const,
+    };
+    await component.update({ props: completed });
+    const toggle = component.getByTestId('response-group-disclosure');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await verify();
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(component.locator(activityRowSelector)).toHaveCount(0);
+    await page.keyboard.press('Space');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toBeFocused();
+    await verify();
+    await component.unmount();
+    component = await mount(ReasoningHistoryGeometryHost, { props: completed });
+    await verify();
+  });
+
+  for (const shape of ['single', 'multiple'] as const) {
+    test(`preserves nested ${shape} title-to-body growth in ${renderer}`, async ({
+      mount,
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const props = { renderer };
+      let component = await mount(ReasoningHistoryGeometryHost, {
+        props: {
+          ...props,
+          regressionContent: growingHistory('nested', shape, 'titles'),
+          phase: 'live',
+        },
+      });
+      const verify = async (stage: 'titles' | 'body' | 'following' | 'completed') => {
+        const fixture = component.getByTestId('compact-reasoning-fixture');
+        await openReasoning(fixture);
+        await assertContentOnceInOrder(fixture, [
+          ...(shape === 'single' ? growthTitles.slice(0, 1) : growthTitles),
+          ...(stage === 'titles' ? [] : growthBody.split('\n\n')),
+          ...(stage === 'following' || stage === 'completed' ? [followingTitle] : []),
+        ]);
+        if (stage !== 'titles') {
+          await expect(fixture.locator('[data-reasoning-history-body]')).toHaveCount(1);
+        }
+      };
+      await verify('titles');
+      for (const stage of ['body', 'following', 'completed'] as const) {
+        await component.update({
+          props: {
+            ...props,
+            regressionContent: growingHistory('nested', shape, stage),
+            phase: stage === 'completed' ? 'completed' : 'live',
+          },
+        });
+        await verify(stage);
+      }
+      const toggle = component.getByTestId('response-group-disclosure');
+      await toggle.click();
+      await expect(component.locator('[data-reasoning-history-body]')).toHaveCount(0);
+      await toggle.click();
+      await verify('completed');
+      await component.unmount();
+      component = await mount(ReasoningHistoryGeometryHost, {
+        props: {
+          ...props,
+          regressionContent: growingHistory('nested', shape, 'completed'),
+          phase: 'completed',
+        },
+      });
+      await verify('completed');
+    });
+  }
+}

@@ -1,14 +1,35 @@
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { buildLegacyReasoningEffortModelId } from '$features/agent/utils/legacy-reasoning-effort';
+import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
+import { selectCurrentWorkspaceTabId } from '../tab-state/tab-state-selectors';
+import { selectActiveTab } from '../panel-layout/panel-layout-selectors';
+import { selectAgentProvider } from '../agent-session/agent-session-selectors';
+import { selectAgentModelEffortLevels, selectSelectedModel } from '../model/model-selectors';
+import type { EncoderEffortTarget } from './hardware-console-types';
+
 import { store } from '../../store';
 import { buildHardwareLedSnapshot } from '$features/hardware-console/led/snapshot';
 import {
   isKeyAssignableWorkspace,
   resolveKeySlots,
 } from '$features/hardware-console/assignment/key-assignment';
-import { selectWorkspaceItems } from '../workspace/workspace-selectors';
+import {
+  selectIsWorkspaceCollaborator,
+  selectWorkspaceItems,
+} from '../workspace/workspace-selectors';
 
 /** Whether the hardware-console integration is enabled (device panel toggle). */
 export const selectHardwareConsoleEnabled = store.createSelector<[], boolean>(
   (state) => state.hardwareConsole.enabled,
+);
+
+/** Shared left-encoder behavior, read on each input so a choice applies immediately. */
+export const selectHardwareConsoleEncoderBehavior = store.createSelector(
+  (state) => state.hardwareConsole.encoderBehavior,
+);
+
+export const selectHardwareConsoleEncoderBehaviorSaveFailed = store.createSelector(
+  (state) => state.hardwareConsole.encoderBehaviorSaveFailed,
 );
 
 /**
@@ -122,3 +143,59 @@ export const selectVoiceTranscribing = store.createSelector(
 export const selectHardwareLedSnapshot = store.createSelector((state) =>
   buildHardwareLedSnapshot(state),
 );
+
+/** Identity for local reconciliation, independent of permission to send new writes. */
+export const selectEncoderAgentIdentity = store.createSelector(
+  (state, workspaceId: string, agentId: string): EncoderEffortTarget | null => {
+    const session = state.agentSessions.byAgentId[agentId];
+    if (!session || session.workspaceId !== workspaceId) return null;
+    const levels = selectAgentModelEffortLevels.select(state, agentId);
+    if (!levels?.length) return null;
+    const provider = selectAgentProvider.select(state, agentId);
+    const model = session.model ?? selectSelectedModel.select(state, provider);
+    const protocolVersion = state.daemonHealth.stats?.protocolVersion;
+    // Legacy effort echoes change the suffix, not the selected base model.
+    const modelIdentity =
+      protocolVersion && !supportsReasoningEffortProtocol(protocolVersion)
+        ? buildLegacyReasoningEffortModelId(model, null, levels)
+        : model;
+    return {
+      key: JSON.stringify([workspaceId, agentId, provider, modelIdentity, levels]),
+      workspaceId,
+      agentId,
+      levels,
+    };
+  },
+);
+
+/** Target the conversation selected in the focused panel, as the chat controls do. */
+export const selectEncoderEffortTarget = store.createSelector(
+  (state): EncoderEffortTarget | null => {
+    const hardware = state.hardwareConsole;
+    if (
+      !hardware.enabled ||
+      !hardware.isConsoleOwner ||
+      !hardware.encoderBehaviorHydrated ||
+      hardware.encoderBehavior !== 'agent-effort'
+    )
+      return null;
+    const workspaceId = selectCurrentWorkspaceTabId.select(state);
+    if (!workspaceId || workspaceId === CHIEF_WORKSPACE_ID) return null;
+    if (selectIsWorkspaceCollaborator.select(state, workspaceId)) return null;
+    // Conversation tab clicks update panelLayout, not workspaceAgents.activeAgentId.
+    // Falling back to that loader-owned field can silently edit another conversation.
+    const tab = selectActiveTab.select(state, workspaceId);
+    if (tab?.type !== 'agent' || !tab.agentId) return null;
+    if (tab.workspaceId && tab.workspaceId !== workspaceId) return null;
+    return selectEncoderAgentIdentity.select(state, workspaceId, tab.agentId);
+  },
+);
+
+/** Never announce a failed write, another agent, or a replaced model's value. */
+export const selectEncoderEffortFeedback = store.createSelector((state) => {
+  const feedback = state.hardwareConsole.encoderEffortFeedback;
+  if (!feedback || selectEncoderEffortTarget.select(state)?.key !== feedback.target.key)
+    return null;
+  const effort = state.agentSessions.byAgentId[feedback.target.agentId]?.reasoningEffort ?? null;
+  return effort === feedback.effort ? feedback : null;
+});

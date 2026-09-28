@@ -1,5 +1,10 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  resetOnboarding,
+  setOnboardingFullFlowRequested,
+  goToStep,
+} from '../../onboarding/onboarding-slice';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +44,9 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  toggleLabsGitLab,
+  setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -52,6 +60,7 @@ import {
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleLabsMultiplayer,
+  toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -177,7 +186,9 @@ describe('userPreferencesPersistenceSaga', () => {
       'chat:auroraEnabled': false,
       'appearance:shellTransparencyEnabled': false,
       'appearance:reduceMotionOnBattery': false,
+      'labs:settingsVisible': true,
       'labs:multiplayerEnabled': true,
+      'labs:gitlabEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -202,7 +213,9 @@ describe('userPreferencesPersistenceSaga', () => {
       [setChatAuroraEnabled(false)],
       [setShellTransparencyEnabled(false)],
       [setReduceMotionOnBattery(false)],
+      [setLabsSettingsVisible(true)],
       [setLabsMultiplayerEnabled(true)],
+      [setLabsGitLabEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -248,6 +261,130 @@ describe('userPreferencesPersistenceSaga', () => {
       expect(hydrated.labsMultiplayerEnabled).toBe(stored);
     },
   );
+
+  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+    'keeps the GitLab lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:gitlabEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
+      expect(mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:gitlabEnabled')).toEqual([]);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])(
+    'persists GitLab %s across onboarding reruns and restart',
+    async (enabled) => {
+      const storage: Record<string, unknown> = {};
+      mocks.getJSON.mockImplementation((key: string) => storage[key]);
+      mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+        storage[key] = value;
+      });
+      const first = startPreferenceStore();
+      await settle();
+      first.dispatch(setLabsGitLabEnabled(!enabled));
+      first.dispatch(toggleLabsGitLab());
+      first.dispatch(setOnboardingFullFlowRequested(true));
+      first.dispatch(resetOnboarding());
+      first.dispatch(goToStep('forge'));
+      await settle();
+      expect(first.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      expect(storage['labs:gitlabEnabled']).toBe(enabled);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      await first.stop();
+      const restarted = startPreferenceStore();
+      await settle();
+      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      restarted.dispatch(resetOnboarding());
+      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      await restarted.stop();
+    },
+  );
+
+  it('keeps GitLab off until delayed preference hydration finishes without resetting it on rerun', async () => {
+    let finish!: (enabled: boolean) => void;
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:gitlabEnabled'
+        ? new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    const run = startPreferenceStore();
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
+    run.dispatch(resetOnboarding());
+    finish(true);
+    await settle();
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    run.dispatch(setOnboardingFullFlowRequested(true));
+    run.dispatch(resetOnboarding());
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    await run.stop();
+  });
+
+  it.each([true, false])('hydrates Labs visibility saved as %s', async (visible) => {
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:settingsVisible' ? visible : undefined,
+    );
+    const store = startPreferenceStore();
+    await settle();
+    expect(store.getUserPreferences().labsSettingsVisible).toBe(visible);
+    await store.stop();
+  });
+
+  it.each([undefined, null, 'true', 'false', 1, [], {}])(
+    'keeps Labs hidden when saved visibility is missing or invalid: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:settingsVisible' ? stored : undefined,
+      );
+      const store = startPreferenceStore();
+      await settle();
+      expect(store.getUserPreferences().labsSettingsVisible).toBe(false);
+      await store.stop();
+    },
+  );
+
+  it('restores both visibility choices across launches without changing experiments', async () => {
+    const stored: Record<string, unknown> = {
+      'labs:multiplayerEnabled': true,
+      'labs:gitlabEnabled': true,
+    };
+    mocks.getJSON.mockImplementation((key: string) => stored[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      stored[key] = value;
+    });
+
+    const first = startPreferenceStore();
+    await settle();
+    first.dispatch(setLabsSettingsVisible(true));
+    await settle();
+    expect(stored['labs:settingsVisible']).toBe(true);
+    await first.stop();
+
+    const second = startPreferenceStore();
+    await settle();
+    expect(second.getUserPreferences().labsSettingsVisible).toBe(true);
+    expect(second.getUserPreferences().labsMultiplayerEnabled).toBe(true);
+    expect(second.getUserPreferences().labsGitLabEnabled).toBe(true);
+    second.dispatch(toggleLabsSettingsVisibility());
+    await settle();
+    expect(stored['labs:settingsVisible']).toBe(false);
+    await second.stop();
+
+    const third = startPreferenceStore();
+    await settle();
+    expect(third.getUserPreferences().labsSettingsVisible).toBe(false);
+    expect(third.getUserPreferences().labsMultiplayerEnabled).toBe(true);
+    expect(third.getUserPreferences().labsGitLabEnabled).toBe(true);
+    expect(stored['labs:gitlabEnabled']).toBe(true);
+    expect(stored['labs:multiplayerEnabled']).toBe(true);
+    await third.stop();
+  });
 
   it('persists an agent font action and restores it in a fresh store', async () => {
     const stored: Record<string, unknown> = {};

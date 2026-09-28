@@ -196,6 +196,7 @@ export function collectRun({ runId, repo, attempt, runner }) {
   }
   let artifacts;
   const shards = jobs.map((job) => {
+    if (job.status !== 'completed') return { ...job, source: null, cases: [], pending: true };
     if (job.conclusion === 'success') return { ...job, source: null, cases: [] };
     const name = `playwright-ct-report-${job.shard}-of-${job.shardCount}`;
     let artifact;

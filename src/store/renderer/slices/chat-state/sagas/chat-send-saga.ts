@@ -649,11 +649,9 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
     // setModel has by then moved the session to a different provider, and
     // `model.value` would be sent against the wrong live provider. Calling
     // here keeps switch + redrive atomic per handler. `retryLastMessage`
-    // settles the synthetic action itself and never throws; nothing awaits
-    // its promise, so swallow the rejection a failed (self-reporting) retry
-    // would otherwise raise as unhandled.
+    // settles the synthetic action itself and reports retry failures; this
+    // handler only awaits the inline worker, not its request promise.
     const redrive = agentSessionRetryWithModelRequested(agentId, wsId, model.value);
-    void redrive.promise.catch(() => undefined);
     yield* call(retryLastMessage, redrive, model.value);
     yield* put(action.success(undefined as void));
     settled = true;

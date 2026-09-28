@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   canRequestDeviceUpdate: null as
     (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate'] | null,
   dispatch: vi.fn(),
+  start: async () => {},
+  stop: async () => {},
   update: vi.fn(),
   test: vi.fn(),
   rotate: vi.fn(),
@@ -51,20 +53,26 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
-  selectCurrentConnectionId: () => mocks.readable(() => mocks.currentConnectionId),
-  selectConnections: () => mocks.readable(() => mocks.connections),
-  selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
-  selectRemoteConnections: () =>
-    mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
-  selectKeychainSyncState: () => mocks.readable(() => mocks.keychainSync),
-  selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
-  selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const { createCollection } =
+    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const harness = createConnectionsHarness(
+    () => ({
+      windowBackendId: mocks.currentConnectionId,
+      connections: createCollection('id', mocks.connections),
+      hasReceivedList: mocks.loaded,
+      keychainSync: mocks.keychainSync,
+      pinnedVersion: mocks.pinnedVersion,
+      connectedIds: mocks.connectedIds,
+    }),
+    mocks.dispatch,
+  );
+  mocks.start = harness.start;
+  mocks.stop = harness.stop;
+  return { store: harness.store };
+});
 
 vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/utils/device-update-eligibility')>();
@@ -80,19 +88,6 @@ vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
         : actual.canRequestDeviceUpdate(...args),
   };
 });
-
-vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
-  updateConnectionRequested: (params: unknown) => mocks.update(params),
-  testConnectionRequested: (params: unknown) => mocks.test(params),
-  rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
-  openConnectionRequested: (id: string) => mocks.open(id),
-  forgetConnectionRequested: (id: string) => mocks.forget(id),
-  updateBackendRequested: (id: string) => mocks.updateBackend(id),
-  captureFingerprintRequested: vi.fn(),
-  addConnectionRequested: vi.fn(),
-  loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
-  setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
-}));
 
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.toastError, success: vi.fn() },
@@ -128,7 +123,7 @@ const remote: ConnectionRecord = {
 };
 
 describe('DevicesSettings', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.settingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: false },
@@ -192,9 +187,43 @@ describe('DevicesSettings', () => {
       payload: [enabled],
       promise: Promise.resolve({ supported: true, enabled, status: null }),
     }));
+    window.electronAPI = {
+      ...window.electronAPI,
+      on: vi.fn(() => 'listener'),
+      offById: vi.fn(),
+      invoke: vi.fn((channel: string, params?: any) => {
+        if (channel === 'connections:list')
+          return Promise.resolve({
+            connections: mocks.connections,
+            activeId: 'local',
+            windowBackendId: 'local',
+          });
+        if (channel === 'connections:update') return mocks.update(params).promise;
+        if (channel === 'connections:test') return mocks.test(params).promise;
+        if (channel === 'connections:rotate-secret') return mocks.rotate(params).promise;
+        if (channel === 'connections:open') return mocks.open(params.id).promise;
+        if (channel === 'connections:forget') return mocks.forget(params.id).promise;
+        if (channel === 'connections:update-backend') return mocks.updateBackend(params.id).promise;
+        if (channel === 'connections:sync-get-state')
+          return Promise.resolve(
+            mocks.keychainSync ?? { supported: false, enabled: false, status: null },
+          );
+        if (channel === 'connections:sync-set-enabled')
+          return mocks.setSyncEnabled(params.enabled).promise;
+        if (channel === 'connections:self-published-state')
+          return Promise.resolve({ published: false, suppressed: false, selfConnectionId: null });
+        if (channel === 'connections:refresh-self') return Promise.resolve({ refreshed: false });
+        throw new Error(`Unexpected channel ${channel}`);
+      }),
+    } as Window['electronAPI'];
+    await mocks.start();
+    mocks.dispatch.mockClear();
   });
 
-  afterEach(cleanup);
+  afterEach(async () => {
+    cleanup();
+    await mocks.stop();
+  });
 
   it('shows named remotes without duplicating their address or visible status text', () => {
     render(DevicesSettings);
@@ -204,7 +233,8 @@ describe('DevicesSettings', () => {
     expect(screen.getByRole('status', { name: 'Status: Not open' }).textContent).toBe('');
     expect(screen.getByText('This machine (local)')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('shows only the raw version beside the name when connected', () => {
@@ -304,9 +334,7 @@ describe('DevicesSettings', () => {
     await openAction('Connect');
 
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'connections/openRequested', payload: [remote.id] }),
-    );
+    expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:open', { id: remote.id });
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
@@ -472,12 +500,9 @@ describe('DevicesSettings', () => {
       await openAction('Update');
 
       expect(mocks.updateBackend).toHaveBeenCalledWith('remote-1');
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'connections/updateBackendRequested',
-          payload: ['remote-1'],
-        }),
-      );
+      expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:update-backend', {
+        id: 'remote-1',
+      });
       expect(mocks.update).not.toHaveBeenCalled();
     });
 
@@ -597,12 +622,9 @@ describe('DevicesSettings', () => {
 
       await fireEvent.click(screen.getByRole('menuitem', { name: 'Update' }));
       expect(mocks.updateBackend).toHaveBeenCalledWith('local');
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'connections/updateBackendRequested',
-          payload: ['local'],
-        }),
-      );
+      expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:update-backend', {
+        id: 'local',
+      });
     });
   });
 
@@ -1109,9 +1131,7 @@ describe('DevicesSettings', () => {
     await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBeNull());
     expect(within(form).getByRole('status')).toBeTruthy();
     expect(mocks.update).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: expect.stringMatching(/open/i) }),
-    );
+    expect(mocks.open).not.toHaveBeenCalled();
   });
 
   it('announces a failed connection test and leaves the action available to retry', async () => {

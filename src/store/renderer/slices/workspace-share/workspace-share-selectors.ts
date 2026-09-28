@@ -61,7 +61,7 @@ export const selectShareInvites = store.createSelector((state) =>
 /**
  * Guests already authed on this host that are not yet on the roster
  * (`principal.list` minus `workspace.members.list`), in daemon order: the
- * candidates of the "Invite an existing GitHub user" dropdown.
+ * candidates of the "Invite an existing user" dropdown.
  */
 export const selectShareInvitablePrincipals = store.createSelector((state) => {
   const { principals, members } = state.workspaceShare;

@@ -18,23 +18,23 @@ triggers:
 
 > Use native redux-saga `takeEvery(channel, worker)` for every-event `EventChannel<T>` consumption and `takeLatest(channel, worker)` when each new event should cancel the previous worker.
 
-Source: redux-saga channel watcher effects, `../SKILL.md §5 (Channel Effects)`.
+Source: redux-saga channel watcher effects, [Native channel watchers](#native-channel-watchers).
 
 ## Imports
 
 ```typescript
 import type { EventChannel } from "redux-saga";
-import { takeEvery, takeLatest } from "redux-saga/effects";
+import { call, join, take, takeEvery, takeLatest } from "typed-redux-saga";
 ```
 
 ## Native channel watchers
 
 ```typescript
-takeEvery(channel, worker);
-takeLatest(channel, worker);
+const watcher = yield* takeEvery(channel, worker); // or takeLatest
+yield* join(watcher); // keep the resource owner's try block alive
 ```
 
-For every-event handling, call redux-saga's `takeEvery(channel, worker)` directly. For latest-only handling, call redux-saga's `takeLatest(channel, worker)` directly. Native watcher effects do not own app-created channel resources; wrap usage in `try/finally` and close the channel yourself.
+Use typed effects with `yield*`; raw `redux-saga/effects` descriptors are not iterable. `takeEvery` and `takeLatest` fork an attached watcher and return its Task immediately. They do not own app-created channels. Keep the owner's `try` block alive with `join(watcher)` and close the channel in `finally`; otherwise it closes at startup, before later events arrive. Parent cancellation cancels attached workers and enters the owner's cleanup. Channel END finishes the watcher after attached workers finish.
 
 ## Core Patterns
 
@@ -44,15 +44,16 @@ For every-event handling, call redux-saga's `takeEvery(channel, worker)` directl
 // createAppEventChannel is app-provided and returns EventChannel<MyEvent>
 const channel = createAppEventChannel<MyEvent>("my:event");
 try {
-  yield* takeEvery(channel, function* (data) {
-    yield* put(handleEvent(data));
+  const watcher = yield* takeEvery(channel, function* (data) {
+    yield* call(handleEvent, data);
   });
+  yield* join(watcher);
 } finally {
   channel.close();
 }
 ```
 
-Every event spawns a new worker concurrently — use when events are independent. Keep ownership of app-created channels explicit and close them in `finally`.
+Every delivered event spawns a new worker concurrently — use when events are independent. Keep ownership of app-created channels explicit and close them in `finally`.
 
 ### 2. Cancel the previous worker for each new event
 
@@ -60,9 +61,10 @@ Every event spawns a new worker concurrently — use when events are independent
 // createAppEventChannel is app-provided and returns EventChannel<MyEvent>
 const channel = createAppEventChannel<MyEvent>("my:event");
 try {
-  yield* takeLatest(channel, function* (data) {
+  const watcher = yield* takeLatest(channel, function* (data) {
     yield* call(expensiveOperation, data);
   });
+  yield* join(watcher);
 } finally {
   channel.close();
 }
@@ -70,11 +72,10 @@ try {
 
 Use native redux-saga `takeLatest(channel, worker)` when only the **latest** event matters (e.g., streaming progress, latest search). Keep ownership of app-created channels explicit and close them in `finally`.
 
-### 3. Replace a hand-rolled `while (true) + take(channel)` loop
+### 3. Keep a serial `while (true) + take(channel)` loop when ordering matters
 
 ```typescript
-// Before — easy to forget channel.close() on error
-// createAppEventChannel is app-provided and returns EventChannel<MyEvent>
+// Valid serial alternative: finish one operation before taking another event.
 const channel = createAppEventChannel<MyEvent>("my:event");
 try {
   while (true) {
@@ -85,22 +86,15 @@ try {
   channel.close();
 }
 
-// After
-const channel = createAppEventChannel<MyEvent>("my:event");
-try {
-  yield* takeEvery(channel, function* (data) {
-    yield* call(handleEvent, data);
-  });
-} finally {
-  channel.close();
-}
 ```
+
+This loop is not equivalent to `takeEvery`: it is serial rather than concurrent. Choose deliberately. An unbuffered `eventChannel` drops events while no taker is waiting (including while a serial worker runs). Configure the app's channel factory with an explicit buffer/overflow policy if those events must be retained; a bounded buffer also needs a deliberate overflow policy. Closing a channel unsubscribes; it does not by itself cancel already-forked workers.
 
 ## Common Mistakes
 
-### ❌ Hand-rolling the take-loop + finally close
+### ❌ Omitting cleanup or closing immediately after forking a watcher
 
-**Mechanism:** Manual loops repeatedly forget the try/finally and leak the underlying subscription on cancellation. Prefer redux-saga `takeEvery(channel, worker)` for every-event handling, while keeping channel cleanup explicit.
+**Mechanism:** A loop without `finally` leaks its subscription on cancellation. A watcher fork without a blocking owner enters `finally` too early. Use the serial loop above or keep the forked watcher joined; the loop itself is not a mistake.
 
 ```typescript
 // WRONG
@@ -115,7 +109,8 @@ while (true) {
 // CORRECT
 const ch = createAppEventChannel<Evt>("e");
 try {
-  yield* takeEvery(ch, worker);
+  const watcher = yield* takeEvery(ch, worker);
+  yield* join(watcher);
 } finally {
   ch.close();
 }
@@ -144,3 +139,4 @@ Source context: package-internal store-utility saga implementation. Public selec
 
 - `core/selector-channels` — for selector-derived channels (the right tool for state changes).
 - `core/sagas` — core saga patterns, `takeEvery` / `takeLatest` for actions.
+

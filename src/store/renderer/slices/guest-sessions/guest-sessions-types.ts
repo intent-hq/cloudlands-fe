@@ -10,6 +10,7 @@
  * Safe to import from any process.
  */
 
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { WorkspaceRole } from '$shared/types';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -28,12 +29,17 @@ export type {
  */
 export interface WorkspaceMember {
   principalId: string;
-  /** GitHub login; null for a principal without a resolved identity. */
+  /** Forge handle; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   role: WorkspaceRole;
   addedAt: string;
+  /**
+   * The provider-neutral identity triple (`Principal.identity`); absent from
+   * a daemon that predates the identity seam or for an unlinked principal.
+   */
+  identity?: PrincipalIdentity;
 }
 
 /** `workspace.members.list` result. */
@@ -167,6 +173,12 @@ export interface GuestSessionsState {
   leavingIds: string[];
   /** `${sessionId}:${workspaceId}` keys with a per-workspace *Leave* in flight. */
   leavingWorkspaceKeys: string[];
+  /** Retryable failures of confirmed operations; confirmation dialogs never retarget these. */
+  failedLeaveIds: string[];
+  failedLeaveWorkspaceKeys: string[];
+  failedMemberKeys: string[];
+  /** Historical reports survive a membership delta removing a row from the hosting list. */
+  sweepReports: Collection<HostedSweepReport, 'workspaceId'>;
   /**
    * Owner-side rosters of the current window's shared workspaces, keyed by
    * workspace id — a read-through view of `workspace.members.list`, refetched
@@ -177,6 +189,16 @@ export interface GuestSessionsState {
   removingMemberKeys: string[];
   /** Hosted workspace ids with a *Remove all guests* sweep in flight. */
   clearingWorkspaceIds: string[];
+}
+
+export interface HostedSweepReport {
+  workspaceId: string;
+  workspaceTitle: string;
+  /** Labels captured before mutation, not a second copy of workspace/member entities. */
+  memberLabels: Record<string, string>;
+  failedMemberIds: string[];
+  failedInviteLabels: string[];
+  invitesUnavailable: boolean;
 }
 
 export function hostedMemberKey(workspaceId: string, principalId: string): string {

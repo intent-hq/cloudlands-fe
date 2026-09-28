@@ -5,6 +5,7 @@
   import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
   import type { ConnectionsListResult } from '$shared/types/connections';
+  import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
 
   function setup(remote = false) {
     const state = appStore.state.connections;
@@ -72,7 +73,11 @@
         ],
       }),
     );
-    return () => appStore.dispatch(connectionsListReceived(previous));
+    const stopPublication = setupUnavailablePublicationPreview();
+    return () => {
+      stopPublication();
+      appStore.dispatch(connectionsListReceived(previous));
+    };
   }
 
   export const preview = definePreview({

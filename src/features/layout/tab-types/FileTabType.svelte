@@ -41,6 +41,7 @@
   import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
+  import PdfViewer from '$features/file/components/PdfViewer.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Button } from '$lib/components/ui/button';
@@ -178,6 +179,7 @@
         : `${repoPath}/${tab.filePath}`
       : null,
   );
+  const isPdfPath = $derived(!!tab.filePath && /\.pdf$/i.test(tab.filePath));
   const isAllowlistedMediaPath = $derived(
     !!tab.filePath && /\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(tab.filePath),
   );
@@ -213,7 +215,7 @@
           segment.includes('\\'),
       ) ||
       /^[A-Za-z]:/.test(segments[0]) ||
-      !/\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(segments[segments.length - 1])
+      !/\.(?:png|jpe?g|gif|webp|mp4|webm|pdf)$/i.test(segments[segments.length - 1])
     ) {
       return null;
     }
@@ -236,7 +238,7 @@
   // rendering until this completes so an incorrect workspace-file URL is not
   // committed before a unique candidate can retarget the owning tab.
   $effect(() => {
-    if (!isActive) return;
+    if (!isActive || isPdfPath) return;
     const requestedPath = workspaceMediaPath;
     const sourceFilePath = tab.filePath;
     const wsId = workspaceId;
@@ -341,6 +343,7 @@
       wsId &&
       !isOutsideWorkspace &&
       !isAllowlistedMediaPath &&
+      !isPdfPath &&
       !waitingForAbsoluteRoot
     ) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
@@ -546,6 +549,14 @@
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
         <p>{m.layout_fileTab_outsideWorkspace_label()}</p>
         <p class="text-xs">{tab.filePath}</p>
+      </div>
+    {:else if isPdfPath && workspaceMediaPath}
+      {#if isActive}
+        <PdfViewer {workspaceId} filePath={workspaceMediaPath} />
+      {/if}
+    {:else if isPdfPath}
+      <div class="flex h-full items-center justify-center p-4 text-subtle">
+        <p role="alert">{m.file_pdf_load_error()}</p>
       </div>
     {:else if workspaceMediaUrl}
       <FileViewer

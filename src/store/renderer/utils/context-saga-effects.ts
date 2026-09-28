@@ -1,5 +1,5 @@
 import type { ActionMatchingPattern, ActionPattern, Saga } from '@redux-saga/types';
-import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import type { StoreAction } from '@augmentcode/themis/types';
 import type { TakeableChannel, Task } from 'redux-saga';
 import { call, cancel, cancelled, fork, take, type SagaGenerator } from 'typed-redux-saga';
 

@@ -1,7 +1,7 @@
 /**
  * Invite-notice IPC payload contract (main ⇄ renderer).
  *
- * The main process (`src/main/invite-notice.ts`) renders the two one-button
+ * The main process (`src/main/invite-notice.ts`) renders the two acknowledgement
  * notices of an `intent://invite` join (`features/deeplink/main/invite-deep-link.ts`)
  * in the renderer instead of native message boxes: the "could not join" failure
  * and the "credential stored without encryption" warning. Same shape as the
@@ -42,8 +42,9 @@ type InviteNoticeKind = 'failed' | 'plaintext';
  * Host refusals mirror the daemon's documented `invite.challenge` /
  * `invite.prove` / `invite.accept` codes, transport codes mirror
  * `InviteTransportError.transportCode`, the `proof-*` codes are the guest's
- * own daemon refusing to publish the identity proof, `github-rate-limited` is
- * the guest's own daemon being rate limited by GitHub (probe or proof), `denied` /
+ * own daemon refusing to publish the identity proof, `github-rate-limited` /
+ * `gitlab-rate-limited` are the guest's own daemon being rate limited by that
+ * forge (probe or proof), `denied` /
  * `flow-expired` / `sign-in-failed` / `launch-failed` are the guest's own
  * GitHub sign-in ending without a token, and the rest are local failure
  * classes; `generic` covers everything else.
@@ -53,9 +54,11 @@ export type InviteFailureReason =
   | 'revoked'
   | 'redeemed'
   | 'pin-mismatch'
+  | 'identity-unavailable'
   | 'proof-invalid'
   | 'proof-expired'
   | 'host-github-unreachable'
+  | 'identity-unverifiable'
   | 'workspace-full'
   | 'owner-self-join'
   | 'denied'
@@ -65,8 +68,12 @@ export type InviteFailureReason =
   | 'proof-not-connected'
   | 'proof-scope-missing'
   | 'proof-github-unreachable'
+  | 'proof-gitlab-not-connected'
+  | 'proof-gitlab-scope-missing'
+  | 'proof-gitlab-unreachable'
   | 'proof-failed'
   | 'github-rate-limited'
+  | 'gitlab-rate-limited'
   | 'cert-mismatch'
   | 'tailcat-unavailable'
   | 'tunnel-failed'
@@ -87,6 +94,10 @@ export interface InviteNoticeShowPayload {
   workspaceTitle?: string;
   /** Host (or tunnel address) of the daemon, when the dial got that far. */
   hostLabel?: string;
+  /** For `identity-unverifiable`: the forge instance the host could not read the proof on. */
+  identityHost?: string;
+  /** Display-only account recovery hint; never used to select a pin, account, or proof. */
+  accountProvider?: 'github' | 'gitlab';
 }
 
 /** `invite-notice:ack` payload (renderer → main invoke). */

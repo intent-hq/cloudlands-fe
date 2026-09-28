@@ -12,7 +12,12 @@
  * async actions and the `connections:cert-mismatch` push.
  */
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  upsertItem,
+  removeItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -39,7 +44,12 @@ import type {
   ConnectionCertWarningsEvent,
   ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
+  ConnectionWorkflow,
+  ConnectionWorkflowIntent,
+  ConnectionWorkflowOutcome,
+  SelfPublicationOperation,
 } from './connections-types';
+import type { SelfPublishedStateResult } from '$shared/types/connections';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -61,6 +71,12 @@ export const initialState: ConnectionsState = {
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
   keychainSync: null,
+  keychainLoadError: false,
+  keychainSaveError: false,
+  keychainWritesPending: 0,
+  workflows: createCollection<ConnectionWorkflow, 'id'>('id'),
+  selfPublication: null,
+  selfPublicationBusy: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -262,11 +278,128 @@ export const setKeychainSyncEnabledRequested = createAsyncAction<
   KeychainSyncStateResult
 >('connections/setKeychainSyncEnabled', 'connections/setKeychainSyncEnabledRequested');
 
+export const connectionWorkflowRequested = createAction(
+  'connections/workflowRequested',
+  (consumerId: string, intent: ConnectionWorkflowIntent) => ({
+    consumerId,
+    requestId: crypto.randomUUID(),
+    intent,
+  }),
+);
+export const connectionWorkflowCleared = createAction<[consumerId: string]>(
+  'connections/workflowCleared',
+);
+export const connectionWorkflowProgress = createAction<
+  [
+    consumerId: string,
+    requestId: string,
+    phase: ConnectionWorkflow['phase'],
+    secretReplaced?: boolean,
+  ]
+>('connections/workflowProgress');
+export const connectionWorkflowFinished = createAction<
+  [consumerId: string, requestId: string, outcome: ConnectionWorkflowOutcome]
+>('connections/workflowFinished');
+
+/** Compatibility action for the WSS settings caller; execution remains saga-owned. */
+export const selfPublicationRequested = createAsyncAction<
+  [operation: SelfPublicationOperation],
+  void
+>('connections/selfPublication', 'connections/selfPublicationRequested');
+export const selfPublicationReceived = createAction<[state: SelfPublishedStateResult | null]>(
+  'connections/selfPublicationReceived',
+);
+export const selfPublicationBusyChanged = createAction<[busy: boolean]>(
+  'connections/selfPublicationBusyChanged',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const connectionsReducer = createReducer<ConnectionsState>(initialState);
+connectionsReducer.with(connectionWorkflowRequested, (state, { payload }) => ({
+  ...state,
+  workflows: upsertItem(state.workflows, {
+    id: payload.consumerId,
+    requestId: payload.requestId,
+    targetId:
+      'id' in payload.intent
+        ? payload.intent.id
+        : 'id' in payload.intent.params
+          ? payload.intent.params.id
+          : null,
+    kind: payload.intent.kind,
+    phase: 'running',
+    secretReplaced: false,
+    outcome: null,
+  }),
+}));
+connectionsReducer.with(connectionWorkflowCleared, (state, { payload: [id] }) => {
+  if (!getItem(state.workflows, id)) return state;
+  return { ...state, workflows: removeItem(state.workflows, id) };
+});
+connectionsReducer.with(
+  connectionWorkflowProgress,
+  (state, { payload: [id, requestId, phase, secretReplaced] }) => {
+    const current = getItem(state.workflows, id);
+    if (!current || current.requestId !== requestId) return state;
+    return {
+      ...state,
+      workflows: upsertItem(state.workflows, {
+        ...current,
+        phase,
+        secretReplaced: secretReplaced ?? current.secretReplaced,
+      }),
+    };
+  },
+);
+connectionsReducer.with(
+  connectionWorkflowFinished,
+  (state, { payload: [id, requestId, outcome] }) => {
+    const current = getItem(state.workflows, id);
+    if (!current || current.requestId !== requestId) return state;
+    return {
+      ...state,
+      workflows: upsertItem(state.workflows, { ...current, phase: 'settled', outcome }),
+    };
+  },
+);
+connectionsReducer.with(loadKeychainSyncStateRequested, (state) => ({
+  ...state,
+  keychainLoadError: false,
+}));
+connectionsReducer.with(loadKeychainSyncStateRequested.failure, (state) => ({
+  ...state,
+  keychainLoadError: true,
+}));
+connectionsReducer.with(loadKeychainSyncStateRequested.success, (state) => ({
+  ...state,
+  keychainLoadError: false,
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested, (state) => ({
+  ...state,
+  keychainWritesPending: state.keychainWritesPending + 1,
+  keychainSaveError: false,
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested.success, (state) => ({
+  ...state,
+  keychainWritesPending: Math.max(0, state.keychainWritesPending - 1),
+  keychainSaveError: false,
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested.failure, (state) => ({
+  ...state,
+  keychainWritesPending: Math.max(0, state.keychainWritesPending - 1),
+  keychainSaveError: true,
+}));
+connectionsReducer.with(selfPublicationReceived, (state, { payload: [selfPublication] }) => ({
+  ...state,
+  selfPublication,
+}));
+connectionsReducer.with(
+  selfPublicationBusyChanged,
+  (state, { payload: [selfPublicationBusy] }) => ({ ...state, selfPublicationBusy }),
+);
 connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
   const next: ConnectionsState = {
     ...state,
