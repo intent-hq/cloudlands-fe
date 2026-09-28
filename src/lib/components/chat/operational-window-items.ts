@@ -96,7 +96,7 @@ function projectWindowItems(
   blocks: readonly RenderContentBlock[],
   scope: string,
   visible: (block: RenderContentBlock, grouped?: boolean) => boolean,
-  group?: ContentBlockGroup,
+  group: ContentBlockGroup | undefined,
   groupIndex = 0,
   nested: boolean,
   groupKey: (block: ContentBlockGroup) => string,
