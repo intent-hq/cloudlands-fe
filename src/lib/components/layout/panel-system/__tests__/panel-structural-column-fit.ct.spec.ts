@@ -6,11 +6,7 @@ async function addColumn(component: Locator, count: number) {
   await component.getByTestId('panel-workspace-inset').evaluate((inset) => {
     inset.scrollLeft = inset.scrollWidth;
   });
-  await component
-    .locator('[data-panel-tabless-header]')
-    .last()
-    .click({ position: { x: 2, y: 2 } });
-  await component.page().keyboard.press('ControlOrMeta+Backslash');
+  await component.getByTestId('add-column-fixture').click();
   await expect(component.locator('[data-panel-id]')).toHaveCount(count);
 }
 

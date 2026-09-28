@@ -15,15 +15,11 @@ async function actionButtonOwners(component: Locator) {
     );
 }
 
-async function createColumnToRight(component: Locator) {
-  await component
-    .locator('[data-panel-tabless-header]')
-    .last()
-    .click({ position: { x: 2, y: 2 } });
-  await component.page().keyboard.press('ControlOrMeta+Backslash');
+async function addColumn(component: Locator) {
+  await component.getByTestId('add-column-fixture').click();
 }
 
-test('keeps populated and empty panel focus geometry stable as keyboard-created columns grow', async ({
+test('keeps populated and empty panel focus geometry stable as the column count grows', async ({
   mount,
   page,
 }) => {
@@ -45,7 +41,7 @@ test('keeps populated and empty panel focus geometry stable as keyboard-created 
   });
   expect(singlePanelStyle).toEqual({ color: 'rgba(0, 0, 0, 0)', width: '1px' });
 
-  await createColumnToRight(component);
+  await addColumn(component);
   await expect(layoutState).toHaveAttribute('data-column-count', '2');
   const idsAtTwo = await panelIds(component);
   expect(idsAtTwo).toHaveLength(2);
@@ -55,7 +51,7 @@ test('keeps populated and empty panel focus geometry stable as keyboard-created 
   await expect(emptyAtTwo).toHaveAttribute('data-empty-panel-surface', 'true');
   await expect(emptyAtTwo.locator('[data-empty-panel-header]')).toHaveCount(1);
 
-  await createColumnToRight(component);
+  await addColumn(component);
   await expect(layoutState).toHaveAttribute('data-column-count', '3');
   const idsAtThree = await panelIds(component);
   expect(idsAtThree).toHaveLength(3);
@@ -142,7 +138,7 @@ test('keeps populated and empty panel focus geometry stable as keyboard-created 
   const emptyHeader = rightmost.locator('[data-empty-panel-header]');
   await expect(emptyHeader).toHaveCount(1);
 
-  await createColumnToRight(component);
+  await addColumn(component);
   await expect(layoutState).toHaveAttribute('data-column-count', '4');
   const idsAtFour = await panelIds(component);
   expect(idsAtFour).toHaveLength(4);
@@ -165,9 +161,7 @@ test('keeps populated and empty panel focus geometry stable as keyboard-created 
   }
 });
 
-test('adds and focuses empty rightmost columns by keyboard until the four-column limit', async ({
-  mount,
-}) => {
+test('adds and focuses empty rightmost columns until the four-column limit', async ({ mount }) => {
   const component = await mount(PanelRightmostColumnSelectorHarness);
   const actionButtons = component.locator(
     '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
@@ -175,7 +169,7 @@ test('adds and focuses empty rightmost columns by keyboard until the four-column
   const layoutState = component.getByTestId('panel-layout-state');
 
   for (const count of [2, 3, 4]) {
-    await createColumnToRight(component);
+    await addColumn(component);
     await expect(layoutState).toHaveAttribute('data-column-count', String(count));
     const ids = await panelIds(component);
     const rightmostPanelId = ids.at(-1)!;
@@ -189,7 +183,7 @@ test('adds and focuses empty rightmost columns by keyboard until the four-column
   }
 
   await expect(actionButtons).toHaveCount(4);
-  await createColumnToRight(component);
+  await expect(component.getByTestId('add-column-fixture')).toBeDisabled();
   await expect(layoutState).toHaveAttribute('data-column-count', '4');
   expect(await panelIds(component)).toHaveLength(4);
 });
