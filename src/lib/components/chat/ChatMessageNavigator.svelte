@@ -150,6 +150,11 @@
     searchInput?.focus();
   }
 
+  async function handleSubmenuSelect() {
+    await tick();
+    if (open) searchInput?.focus();
+  }
+
   function isNavigatorContentTarget(target: Node): boolean {
     if (contentElement?.contains(target)) return true;
     if (!(target instanceof Element)) return false;
@@ -316,9 +321,13 @@
 
 {#if embedded}
   <Menu.Sub bind:open onOpenChange={handleOpenChange}>
-    <Menu.SubTrigger icon={faComment} data-testid="chat-message-navigator-trigger"
-      >{m.chat_messageNavigator_menu_label()}</Menu.SubTrigger
+    <Menu.SubTrigger
+      icon={faComment}
+      onSelect={handleSubmenuSelect}
+      data-testid="chat-message-navigator-trigger"
     >
+      {m.chat_messageNavigator_menu_label()}
+    </Menu.SubTrigger>
     <Menu.SubContent
       bind:ref={contentElement}
       class="w-[28rem] max-w-[calc(100vw-1rem)]"
