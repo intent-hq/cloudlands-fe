@@ -6775,5 +6775,8 @@
   "file_pdf_previous_label": "上一頁",
   "file_pdf_next_label": "下一頁",
   "file_pdf_page_label": "第 {page} 頁，共 {total} 頁",
-  "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁"
+  "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁",
+  "settings_providers_fastMode_label": "快速模式",
+  "settings_providers_fastMode_description": "從下一輪開始生效。用量與費用可能增加；是否可用取決於模型和帳戶。",
+  "settings_providers_fastMode_error": "無法儲存快速模式。已還原先前儲存的偏好設定。"
 }

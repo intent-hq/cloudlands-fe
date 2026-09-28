@@ -25,6 +25,7 @@ import { store as appStore } from '$store/renderer/store';
 import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
+  hydrateProviderFastMode,
   ensureEnabledIfUnset,
   loadEnabledProvidersFromStorage,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -62,6 +63,15 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
       // over a stale snapshot/echo until the daemon confirms it.
       if (typeof value === 'string' && value.length > 0) {
         appStore.dispatch(hydrateDefaultProvider(value));
+      }
+      return;
+    }
+    case 'providers.fastMode': {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const entries = Object.entries(value).filter(
+          ([id, enabled]) => ['claude-code', 'codex'].includes(id) && typeof enabled === 'boolean',
+        );
+        appStore.dispatch(hydrateProviderFastMode(Object.fromEntries(entries), revision));
       }
       return;
     }
