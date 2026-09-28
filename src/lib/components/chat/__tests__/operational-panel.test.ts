@@ -7,7 +7,7 @@ import { groupContentBlocks } from '$lib/utils/messageParser';
 import { normalizeResponseGroups } from '../response-group-blocks';
 import { createWindowItemProjector } from '../operational-window-items';
 import { findChatSearchMatches } from '../chat-search';
-import type { provideOperationalPanel } from '../operational-panel.svelte';
+import type { provideOperationalPanel, WindowSegment } from '../operational-panel.svelte';
 
 // eslint-disable-next-line themis/collection-state-shape -- Local test scheduler queues, not Redux state.
 const phases = vi.hoisted(() => ({ reads: [] as (() => void)[], writes: [] as (() => void)[] }));
@@ -698,6 +698,49 @@ it('does not certify visibility through disjoint vertical clipping ancestors', (
   frame();
   expect(panel.locate(entry.key)?.admitted).toBe(true);
   expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
+});
+
+it('invalidates height-only publication and settles unchanged visible geometry', () => {
+  const clip = node();
+  clip.style.overflowY = 'hidden';
+  vi.mocked(clip.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 300));
+  const root = node();
+  const row = node();
+  clip.append(root);
+  root.append(row);
+  const notify = vi.fn((segments: WindowSegment[]) => {
+    if (segments[0]?.height === 56) {
+      for (const element of [root, row])
+        vi.mocked(element.getBoundingClientRect).mockReturnValue(new DOMRect(0, 500, 600, 56));
+      document.documentElement.scrollTop = 1;
+    }
+  });
+  panel.attach('message', root, [entry], notify);
+  panel.watch(row, entry.key);
+  panel.pin(entry.key, true);
+  frame();
+  frame();
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
+  const previousSegments = notify.mock.calls.at(-1)![0];
+  vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 56));
+  panel.refreshGeometry();
+  frame();
+  expect(notify.mock.calls.at(-1)![0]).toEqual([{ ...previousSegments[0], height: 56 }]);
+  expect(panel.locate(entry.key)?.observation).toBeUndefined();
+  frame();
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
+  for (const element of [root, row])
+    vi.mocked(element.getBoundingClientRect).mockReturnValue(new DOMRect(0, 100, 600, 56));
+  document.documentElement.scrollTop = 2;
+  const requested = panel.refreshGeometry();
+  const publications = notify.mock.calls.length;
+  frame();
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
+  expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(requested);
+  panel.refreshGeometry();
+  frame();
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
+  expect(notify).toHaveBeenCalledTimes(publications);
 });
 
 it('refreshes navigation evidence after an anchor correction changes the read scroll position', () => {
