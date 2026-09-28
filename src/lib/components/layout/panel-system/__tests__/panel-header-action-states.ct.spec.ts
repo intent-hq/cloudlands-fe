@@ -71,12 +71,12 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   await expect(trigger).toBeFocused();
 });
 
-test('additional action dismisses the menu while header zoom and close remain accessible', async ({
+test('additional action dismisses the menu while header expansion and close remain accessible', async ({
   mount,
   page,
 }, testInfo) => {
   const component = await mount(SimpleAgentPanelHeaderHost, {
-    props: { fullActions: true, stackCount: 2, width: 280 },
+    props: { fullActions: true, stackCount: 2, width: 280, initialColumnCount: 2 },
     hooksConfig,
   });
   const trigger = component
@@ -97,8 +97,11 @@ test('additional action dismisses the menu while header zoom and close remain ac
     contentType: 'image/png',
   });
   await page.keyboard.press('Escape');
+  await expect(component).toHaveAttribute('data-expanded-panel-id', '');
   await component.locator('[data-panel-tabless-header]').dblclick({ position: { x: 2, y: 2 } });
-  await expect(component).toHaveAttribute('data-zoom-count', '1');
+  await expect(component).toHaveAttribute('data-expanded-panel-id', 'simple-agent-header-panel');
+  await component.locator('[data-panel-tabless-header]').dblclick({ position: { x: 2, y: 2 } });
+  await expect(component).toHaveAttribute('data-expanded-panel-id', '');
   await component
     .locator('[data-panel-tabless-header]')
     .getByTestId('panel-close-button')
