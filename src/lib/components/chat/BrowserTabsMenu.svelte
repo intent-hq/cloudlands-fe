@@ -127,7 +127,7 @@
   // A mirror is closed on its host; `force` tombstones the daemon row when
   // that host is offline (same as the viewer's "Close anyway").
   function closeMirror(tab: PanelTab) {
-    const host = selectBrowserTabHost.select(appStore.state, tab.hostClientId ?? '');
+    const host = selectBrowserTabHost.select(appStore.state, tab.hostClientId ?? '', workspaceId);
     appStore.dispatch(closeBrowserTabRequested(tab.id, !host.connected));
   }
 

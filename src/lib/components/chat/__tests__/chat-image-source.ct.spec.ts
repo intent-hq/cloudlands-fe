@@ -121,10 +121,36 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await component.getByRole('button', { name: 'Technical details', exact: true }).click();
   await expect(component.locator('[data-tool-detail-section="input"]')).toBeVisible();
+  // Row eviction destroys ToolCall; the retained row state survives its replacement.
+  await component.update({ props: { width: 320, mountKey: 1 } });
+  await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await expect(
+    component.getByRole('button', { name: 'Technical details', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true');
+  await expect(component.locator('[data-tool-detail-section="input"]')).toBeVisible();
   await component.getByTestId('tool-call-disclosure').focus();
   await component.getByTestId('tool-call-disclosure').press('Enter');
   await expect(image).toHaveCount(0);
   await expect(component.locator('[data-chat-image]')).toHaveCount(0);
+  await component.update({ props: { width: 320, mountKey: 2 } });
+  await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await component.getByTestId('tool-call-disclosure').focus();
+  await component.getByTestId('tool-call-disclosure').press('Enter');
+  await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await expect(image).toBeVisible();
+  await expect(
+    component.getByRole('button', { name: 'Technical details', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.locator('[data-tool-detail-section="input"]')).toHaveCount(0);
 });
 
 test('remote agent image paths never load from the local workspace', async ({

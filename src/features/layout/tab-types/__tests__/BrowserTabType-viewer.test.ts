@@ -54,7 +54,7 @@ const laptop: LiveClient = {
 
 function seedClients(live: LiveClient[]) {
   let state = browserClientsReducer(browserClientsInitialState, ownClientIdReceived('cli-desk'));
-  state = browserClientsReducer(state, liveClientsReceived(live));
+  state = browserClientsReducer(state, liveClientsReceived(live, 'workspace-1'));
   mockState.browserClients = state;
 }
 

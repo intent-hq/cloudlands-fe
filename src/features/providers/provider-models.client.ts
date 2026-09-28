@@ -116,7 +116,7 @@ async function invokeModelChannel<T>(channel: string, data?: unknown): Promise<T
  */
 export async function getProviderModels(
   providerId: string,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; workspaceId?: string } = {},
 ): Promise<ProviderModelsResult> {
   // Skip in Node.js environment (backend)
   if (typeof window === 'undefined') {
@@ -139,7 +139,12 @@ export async function getProviderModels(
     });
     const result = await invokeModelChannel<GetModelsEnvelope>(
       channel,
-      options.forceRefresh === true ? { forceRefresh: true } : undefined,
+      options.forceRefresh === true || options.workspaceId
+        ? {
+            ...(options.forceRefresh === true ? { forceRefresh: true } : {}),
+            ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+          }
+        : undefined,
     );
 
     if (!result?.success) {

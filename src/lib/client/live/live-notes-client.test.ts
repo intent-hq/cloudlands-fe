@@ -836,7 +836,9 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
     workspaceIds = ['ws-1'];
     fireWorkspaceSetEvent('workspace:deleted');
     await vi.waitFor(() => {
-      expect(requestsFor('note.unsubscribe')).toEqual([{ subscriptionId: 'chan-2' }]);
+      expect(requestsFor('note.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
+      ]);
     });
     const evicted = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(evicted.map((n) => n.id)).toEqual(['a']);
@@ -901,7 +903,9 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
         { workspaceId: 'ws-1' },
         { workspaceId: 'ws-2' },
       ]);
-      expect(requestsFor('note.unsubscribe')).toEqual([{ subscriptionId: 'chan-4' }]);
+      expect(requestsFor('note.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-4', workspaceId: 'ws-2' },
+      ]);
     });
 
     // The surviving ws-1 channel's recovery snapshot re-populates with only
@@ -921,8 +925,8 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
 
     unsubscribe();
     expect(requestsFor('note.unsubscribe')).toEqual([
-      { subscriptionId: 'chan-1' },
-      { subscriptionId: 'chan-2' },
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+      { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
   });
 });

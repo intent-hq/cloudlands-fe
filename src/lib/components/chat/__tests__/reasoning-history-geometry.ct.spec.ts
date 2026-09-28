@@ -34,12 +34,12 @@ async function openGroup(fixture: Locator): Promise<Locator> {
 async function assertExpandedFixture(fixture: Locator, includeAnswer: boolean) {
   const group = fixture.getByTestId('response-group');
   const children = group.locator('[data-response-group-child]');
-  await expect(children).toHaveCount(5);
+  await expect(children).toHaveCount(6);
   expect(
     await children.evaluateAll((elements) =>
       elements.map((element) => element.getAttribute('data-message-content-block')),
     ),
-  ).toEqual(['text', 'thinking', 'thinking', 'tool_use', 'thinking']);
+  ).toEqual(['text', 'thinking', 'thinking', 'thinking', 'tool_use', 'thinking']);
   const sections = group.locator('[data-reasoning-section]');
   await expect(sections).toHaveCount(4);
 
@@ -76,7 +76,9 @@ async function assertExpandedFixture(fixture: Locator, includeAnswer: boolean) {
 
   if (includeAnswer) {
     const stack = fixture.locator('[data-operational-stack]').first();
-    const answerBlock = stack.locator(':scope > [data-message-content-block="text"]');
+    const answerBlock = stack.locator(
+      ':scope > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="text"]',
+    );
     await expect(answerBlock).toContainText('Final assistant answer.');
   }
 }
@@ -294,6 +296,7 @@ for (const renderer of rendererIds) {
     await verify();
     await component.unmount();
     component = await mount(ReasoningHistoryGeometryHost, { props: completed });
+    await expect(component.getByTestId('response-group-disclosure')).toBeVisible();
     await verify();
   });
 
@@ -347,6 +350,7 @@ for (const renderer of rendererIds) {
           phase: 'completed',
         },
       });
+      await expect(component.getByTestId('response-group-disclosure').first()).toBeVisible();
       await verify('completed');
     });
   }

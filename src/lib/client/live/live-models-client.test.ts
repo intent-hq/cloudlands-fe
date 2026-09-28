@@ -131,3 +131,12 @@ describe('LiveModelsClient (fake transport)', () => {
     );
   });
 });
+
+it('sends the originating workspace alongside provider selection', async () => {
+  mockedRequest.mockResolvedValue({ providerId: 'codex', models: [] });
+  await new LiveModelsClient().list('codex', 'workspace-A');
+  expect(mockedRequest).toHaveBeenCalledWith('models.list', {
+    providerId: 'codex',
+    workspaceId: 'workspace-A',
+  });
+});

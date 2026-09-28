@@ -317,25 +317,25 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       2,
       'file.attachmentUpload.chunk',
-      { uploadId: 'upload-1', seq: 0, data: 'b64-chunk-0' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1', seq: 0, data: 'b64-chunk-0' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       3,
       'file.attachmentUpload.chunk',
-      { uploadId: 'upload-1', seq: 1, data: 'b64-chunk-1' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1', seq: 1, data: 'b64-chunk-1' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       4,
       'file.attachmentUpload.chunk',
-      { uploadId: 'upload-1', seq: 2, data: 'b64-chunk-2' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1', seq: 2, data: 'b64-chunk-2' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       5,
       'file.attachmentUpload.commit',
-      { uploadId: 'upload-1' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenCalledTimes(5);
@@ -396,6 +396,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     ).rejects.toThrow('received bytes exceed the declared attachment size');
 
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
     const commitCalls = backendRequestMock.mock.calls.filter(
@@ -424,6 +425,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
       placeAttachmentViaTransport('ws-1', 'big.bin', { sourcePath: '/home/user/big.bin' }),
     ).rejects.toThrow('attachment checksum mismatch');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
   });
@@ -479,6 +481,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     ).toHaveLength(1);
     expect(methods).not.toContain('file.attachmentUpload.commit');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
   });
@@ -843,6 +846,7 @@ describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (ke
       }),
     ).rejects.toThrow('Request timed out');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
   });

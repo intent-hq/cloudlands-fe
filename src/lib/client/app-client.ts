@@ -600,7 +600,7 @@ export interface AgentsClient {
    * is the per-bin count triple, absent on daemons predating `scope`.
    */
   listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult>;
-  get(agentId: string): Promise<AgentSession | null>;
+  get(agentId: string, workspaceId?: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
    * Returns AgentMessage-granular messages (role/turn structure preserved) — the
@@ -631,6 +631,7 @@ export interface AgentsClient {
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
+    workspaceId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
@@ -649,7 +650,12 @@ export interface AgentsClient {
    * carry the original `data`, never the thumbnail. Unknown message/block ids
    * reject with `-32602`; errors propagate as rejections.
    */
-  getMessageBlock(agentId: string, messageId: string, blockId: string): Promise<ContentBlock>;
+  getMessageBlock(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    workspaceId?: string,
+  ): Promise<ContentBlock>;
   /**
    * The full user-message index of one agent (`agent.listUserMessages`,
    * §5.5): every **user-role** message as a lightweight
@@ -661,7 +667,11 @@ export interface AgentsClient {
    * transport/daemon failure as `{ ok: false, unsupported: false, error }`,
    * so callers can ignore the failure and fall back to tail-derived items.
    */
-  listUserMessages(agentId: string, previewChars?: number): Promise<UserMessageIndexResult>;
+  listUserMessages(
+    agentId: string,
+    previewChars?: number,
+    workspaceId?: string,
+  ): Promise<UserMessageIndexResult>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in
@@ -671,7 +681,7 @@ export interface AgentsClient {
    * Transport / daemon errors propagate as rejections.
    */
   create(request: AgentCreateRequest): Promise<AgentSession>;
-  send(agentId: string, message: string): Promise<MutationResult>;
+  send(agentId: string, message: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Edit a past **user** message and regenerate from that point
    * (`agent.editAndRegenerate`, §5.5 catalog-parity extension). The daemon
@@ -707,6 +717,7 @@ export interface AgentsClient {
     agentId: string,
     message: string,
     options?: {
+      workspaceId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -726,6 +737,7 @@ export interface AgentsClient {
     messageId: string,
     content: string,
     editing?: boolean,
+    workspaceId?: string,
   ): Promise<MutationResult>;
   /**
    * Send a queued message immediately (`agent.sendQueuedMessageNow`, §5.5):
@@ -754,7 +766,7 @@ export interface AgentsClient {
    * messageMetadata? }`) verbatim; `[]` when the queue is empty. Transport /
    * daemon errors propagate as rejections, like the other reads.
    */
-  getQueue(agentId: string): Promise<QueuedMessage[]>;
+  getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]>;
   /**
    * Remove a queued message (`agent.removeQueuedMessage`, §5.5). The daemon is
    * **idempotent** — it always returns `{ success: true }` even when the queue
@@ -763,14 +775,14 @@ export interface AgentsClient {
    * optimistic delete back. Emits `agent:queue:updated` (§6.5) only when the
    * queue actually changed.
    */
-  removeQueued(agentId: string, messageId: string): Promise<MutationResult>;
+  removeQueued(agentId: string, messageId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
    * just an ack (`{ success: true }`); the daemon cancels the current turn
    * and emits the terminal `agent:stream:end` (§7), which is the signal that
    * converges the FE streaming state.
    */
-  stop(agentId: string): Promise<MutationResult>;
+  stop(agentId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Cancel the agent's completion watches / delegation groups
    * (`agent.cancelSubscriptions`, §5.5). Unscoped (neither optional param)
@@ -960,6 +972,7 @@ export interface AgentsClient {
   respondPermission(
     requestId: string,
     outcome: PermissionOutcome,
+    workspaceId?: string,
   ): Promise<RespondPermissionResult>;
   /**
    * List agents that were interrupted by an intentd restart
@@ -1051,6 +1064,7 @@ export interface ChatClient {
 
 /** Options for `ChatClient.subscribe` (PROTOCOL §7.1 resume). */
 export interface ChatSubscribeOptions {
+  workspaceId?: string;
   /**
    * Resume anchor: the last known (fully persisted) message id. The daemon
    * replies with a delta snapshot (`resumed: true`) when it knows the id,
@@ -1121,16 +1135,21 @@ export interface TerminalsClient {
    */
   create(params: TerminalCreateParams): Promise<MutationResult>;
   /** `terminal.write` — `data` is plain text; the live client base64-encodes it. */
-  write(terminalId: string, data: string): Promise<MutationResult>;
+  write(terminalId: string, data: string, workspaceId?: string): Promise<MutationResult>;
   /** `terminal.resize`. */
-  resize(terminalId: string, cols: number, rows: number): Promise<MutationResult>;
+  resize(
+    terminalId: string,
+    cols: number,
+    rows: number,
+    workspaceId?: string,
+  ): Promise<MutationResult>;
   /** `terminal.kill` — signals the PTY; the daemon then emits `terminal:exit`. */
-  kill(terminalId: string): Promise<MutationResult>;
+  kill(terminalId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * `terminal.getBuffer` — base64 scrollback for replay on (re)connect. The
    * live client decodes the base64 payload so callers receive a plain string.
    */
-  getBuffer(terminalId: string, maxBytes?: number): Promise<string>;
+  getBuffer(terminalId: string, maxBytes?: number, workspaceId?: string): Promise<string>;
   /**
    * Ported `terminal.readOutput` — plaintext convenience read for MCP-style
    * callers. The daemon router (§5.13) requires `workspaceId` in addition to
@@ -1139,7 +1158,11 @@ export interface TerminalsClient {
    */
   output(workspaceId: string, terminalId: string): Promise<string>;
   /** Subscribe to `terminal:*` events scoped to a single terminalId. */
-  subscribeEvents(terminalId: string, handlers: TerminalEventHandlers): Unsubscribe;
+  subscribeEvents(
+    terminalId: string,
+    handlers: TerminalEventHandlers,
+    workspaceId?: string,
+  ): Unsubscribe;
   subscribe(handler: SubscriptionHandler<TerminalTab[]>): Unsubscribe;
 }
 
@@ -1203,39 +1226,42 @@ export interface UserRuleState {
 
 export interface SettingsClient {
   /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
-  list(): Promise<SettingDefinitionWithValue[]>;
-  listSnapshot?(): Promise<SettingsSnapshot>;
+  list(workspaceId?: string): Promise<SettingDefinitionWithValue[]>;
+  listSnapshot?(workspaceId?: string): Promise<SettingsSnapshot>;
   /** `settings.get` (§5.12). Returns the single setting + its definition; `null` when the daemon rejects the path. */
-  get(path: string): Promise<SettingDefinitionWithValue | null>;
+  get(path: string, workspaceId?: string): Promise<SettingDefinitionWithValue | null>;
   /** `settings.update` (§5.12). Atomic batch update; emits `settings:changed` on success. */
   update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
   updateSnapshot?(changes: AppSettingChange[]): Promise<SettingsUpdateResult>;
   /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
   reset(path: string): Promise<AppliedSettingChange | null>;
   /** `rules.get` (§5.21). Reads one global user-override rule type; `null` when the probe fails. */
-  getUserRule(ruleType: string): Promise<UserRuleState | null>;
+  getUserRule(ruleType: string, workspaceId?: string): Promise<UserRuleState | null>;
   /** `rules.update` (§5.21). Upserts the global user-override body (+ `enabled`) for one rule type. */
   updateUserRule(ruleType: string, content: string, enabled?: boolean): Promise<MutationResult>;
   getUserPreferences(): Promise<UserPreferencesState | null>;
   setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
-  getProviderSettings(): Promise<PersistedProviderSettings | null>;
+  getProviderSettings(workspaceId?: string): Promise<PersistedProviderSettings | null>;
   setProviderSettings(settings: Partial<PersistedProviderSettings>): Promise<MutationResult>;
-  getMcpServers(): Promise<McpServerConfig[]>;
+  getMcpServers(workspaceId?: string): Promise<McpServerConfig[]>;
   setMcpServers(servers: McpServerConfig[]): Promise<MutationResult>;
   /**
    * `mcp.servers.getStatus` (§5.22) fanned out per server id. Returns the
    * daemon-reported runtime statuses keyed by `serverId`; ids whose point read
    * fails are omitted (live updates arrive via `mcp.servers:status-changed`).
    */
-  getMcpServerStatuses(serverIds: string[]): Promise<McpServerRuntimeStatus[]>;
+  getMcpServerStatuses(
+    serverIds: string[],
+    workspaceId?: string,
+  ): Promise<McpServerRuntimeStatus[]>;
   /** `mcp.servers.restart` (§5.22). Restarts/re-probes one daemon-owned server. */
   restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus>;
   /**
    * Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable). Returns
-   * the names of servers whose entry carries `workspaceDisabled: true`; `null`
+   * the identity keys (ID, or legacy name) of servers whose entry carries `workspaceDisabled: true`; `null`
    * when the read fails (callers keep their current state).
    */
-  getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null>;
+  getWorkspaceDisabledMcpServerKeys(workspaceId: string): Promise<string[] | null>;
   /**
    * Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable): sets
    * (`enabled: false`) or clears (`enabled: true`) the per-workspace disabled
@@ -1252,7 +1278,7 @@ export interface SettingsClient {
     workspaceId: string,
     settings: Partial<SingleWorkspaceSettings>,
   ): Promise<MutationResult>;
-  getBackgroundAgentSettings(): Promise<BackgroundAgentSettingsState | null>;
+  getBackgroundAgentSettings(workspaceId?: string): Promise<BackgroundAgentSettingsState | null>;
   setBackgroundAgentSettings(
     settings: Partial<BackgroundAgentSettingsState>,
   ): Promise<MutationResult>;
@@ -1387,7 +1413,11 @@ export interface GitClient {
    * repo path BEFORE a workspace exists. Errors fold to `null` so callers can
    * surface a friendly fallback instead of crashing.
    */
-  getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null>;
+  getBranches(
+    repoPath: string,
+    includeRemote: boolean,
+    workspaceId?: string,
+  ): Promise<GitBranchesResult | null>;
   /**
    * Path-based branch status (`git.branchStatus`, §5.6). Used by the
    * workspace-initializer `BranchSelector` to surface ahead/behind +
@@ -1395,7 +1425,11 @@ export interface GitClient {
    * workspace exists. Errors fold to `null` so callers can surface a friendly
    * fallback without crashing on `result.success` against undefined.
    */
-  branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null>;
+  branchStatus(
+    repoPath: string,
+    branchName: string,
+    workspaceId?: string,
+  ): Promise<GitBranchStatusResult | null>;
   /**
    * Path-based pull (`git.pull`, §5.6) — ports the legacy `git:pullBranch` IPC
    * used by the workspace-create auto-pull, which runs against an arbitrary
@@ -1404,7 +1438,7 @@ export interface GitClient {
    * `{ ok: false, error }` result, folded into `{ success: false, error }`;
    * transport/validation errors fold the same way. Never throws.
    */
-  pull(repoPath: string, branchName: string): Promise<MutationResult>;
+  pull(repoPath: string, branchName: string, workspaceId?: string): Promise<MutationResult>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
@@ -1927,12 +1961,12 @@ export interface SpecialistDef {
 
 export interface SpecialistsClient {
   /**
-   * Merged bundled + user + project definitions (`specialist.list`, PROTOCOL
+   * Merged bundled + user definitions (`specialist.list`, PROTOCOL
    * §5.11). The optional `provider` supplies the resolution context for the
    * `resolvedModel`/`resolvedProvider` preview fields (defaults to the
    * daemon's default provider; unknown provider → -32602).
    */
-  list(provider?: string): Promise<SpecialistDef[]>;
+  list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]>;
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
   /**
    * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).
@@ -1943,6 +1977,7 @@ export interface SpecialistsClient {
     spec: SpecialistDef,
     scope?: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef>;
   /**
    * Edit an existing specialist definition (`specialist.edit`, PROTOCOL §5.11).
@@ -1953,29 +1988,35 @@ export interface SpecialistsClient {
     spec: SpecialistDef,
     scope: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef>;
   /**
    * Delete a specialist definition (`specialist.delete`, PROTOCOL §5.11).
    * Errors if the specialist does not exist in the target scope.
    * Bundled definitions are read-only and cannot be deleted.
    */
-  delete(id: string, scope: 'project' | 'user', workspacePath?: string): Promise<{ success: true }>;
+  delete(
+    id: string,
+    scope: 'project' | 'user',
+    workspacePath?: string,
+    workspaceId?: string,
+  ): Promise<{ success: true }>;
 }
 
 export interface ModelsClient {
-  list(providerId?: string): Promise<AuggieModel[]>;
+  list(providerId?: string, workspaceId?: string): Promise<AuggieModel[]>;
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
 }
 
 /**
  * Provider registry domain (`providers.catalog`, PROTOCOL §5.38).
- * Daemon-global: no `workspaceId`. Returns the full static provider registry
+ * Daemon-owned, with optional workspace routing context. Returns the full static provider registry
  * (gated-off rows included, in registry order).
  * THROWS on transport/daemon failure so the seeder can decide the fallback
  * (keep the last hydrated catalog rather than wiping it).
  */
 export interface ProvidersClient {
-  catalog(): Promise<ProviderCatalogResult>;
+  catalog(workspaceId?: string): Promise<ProviderCatalogResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
@@ -2140,7 +2181,7 @@ export interface BrowserClient {
  */
 export interface ClientsClient {
   /** `client.list` → every connected logical client. */
-  list(): Promise<LiveClient[]>;
+  list(workspaceId?: string): Promise<LiveClient[]>;
   /** The stable `clientId` the daemon confirmed for this connection. */
   ownClientId(): Promise<string>;
 }
@@ -2225,19 +2266,29 @@ export interface GitHubIssueDetails {
 }
 
 export interface IntegrationsClient {
-  githubUser(): Promise<GitHubUser | null>;
+  githubUser(workspaceId?: string): Promise<GitHubUser | null>;
   /**
    * One pull request by number (`github.pulls.get`, §5.27). THROWS on
    * transport/daemon errors (e.g. "GitHub is not configured.") and when the
    * daemon reports no such PR, so the link hover card renders an explicit
    * URL-only fallback — never a fabricated card.
    */
-  githubPullRequest(owner: string, repo: string, number: number): Promise<GitHubPullRequestDetails>;
+  githubPullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+    workspaceId?: string,
+  ): Promise<GitHubPullRequestDetails>;
   /**
    * One issue by number (`github.issues.get`, §5.27). Same THROWS contract as
    * `githubPullRequest`.
    */
-  githubIssue(owner: string, repo: string, number: number): Promise<GitHubIssueDetails>;
+  githubIssue(
+    owner: string,
+    repo: string,
+    number: number,
+    workspaceId?: string,
+  ): Promise<GitHubIssueDetails>;
   /**
    * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
    * with the default branch from `github.repos.get` (best-effort). Unlike the
@@ -2247,7 +2298,12 @@ export interface IntegrationsClient {
    * `prefix` narrows the listing server-side (GitHub's `refs/heads/{prefix}`
    * matching-refs semantics) so branches beyond the first page are findable.
    */
-  githubBranches(owner: string, repo: string, prefix?: string): Promise<GitHubBranchListing>;
+  githubBranches(
+    owner: string,
+    repo: string,
+    prefix?: string,
+    workspaceId?: string,
+  ): Promise<GitHubBranchListing>;
   /**
    * Branch names from the daemon's local repo cache — or its `git ls-remote`
    * fallback on a cache miss (`github.branches.listCached`, §5.27) — purely
@@ -2255,7 +2311,11 @@ export interface IntegrationsClient {
    * to a cold-cache miss (`{ cached: false, branches: [] }`) so
    * `githubBranches` stays the only error authority.
    */
-  githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing>;
+  githubBranchesCached(
+    owner: string,
+    repo: string,
+    workspaceId?: string,
+  ): Promise<GitHubCachedBranchListing>;
   /**
    * The repo's committed `.intent/config.json` (`github.repoConfig.get`,
    * §5.27) for a GitHub repo without a local checkout. `ref` defaults to
@@ -2263,9 +2323,14 @@ export interface IntegrationsClient {
    * transport/daemon errors (e.g. unauthenticated private repo); the
    * setup-script probe folds failures to "no script" at the call site.
    */
-  githubRepoConfig(owner: string, repo: string, ref?: string): Promise<GitHubRepoConfigResult>;
-  linearIssues(): Promise<LinearIssueResult[]>;
-  sentryIssues(): Promise<SentryIssueResult[]>;
+  githubRepoConfig(
+    owner: string,
+    repo: string,
+    ref?: string,
+    workspaceId?: string,
+  ): Promise<GitHubRepoConfigResult>;
+  linearIssues(workspaceId?: string): Promise<LinearIssueResult[]>;
+  sentryIssues(workspaceId?: string): Promise<SentryIssueResult[]>;
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;
 }
 
@@ -2278,7 +2343,7 @@ export interface SystemCapabilities {
 export interface SystemClient {
   status(): Promise<SystemStatusState>;
   /** `system.capabilities` (§5.7) — machine capabilities independent of any workspace. */
-  capabilities(): Promise<SystemCapabilities>;
+  capabilities(workspaceId?: string): Promise<SystemCapabilities>;
   releaseNotes(): Promise<ReleaseNotes | null>;
   autoUpdate(): Promise<AutoUpdateState | null>;
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;

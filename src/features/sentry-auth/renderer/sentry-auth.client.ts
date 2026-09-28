@@ -20,9 +20,12 @@ export const sentryAuthClient = {
   /**
    * Check if user is authenticated with Sentry
    */
-  async isAuthenticated(): Promise<boolean> {
+  async isAuthenticated(workspaceId?: string): Promise<boolean> {
     try {
-      return await invoke<boolean>(SENTRY_AUTH_CHANNELS.IS_AUTHENTICATED);
+      return await invoke<boolean>(
+        SENTRY_AUTH_CHANNELS.IS_AUTHENTICATED,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return false;
     }
@@ -41,9 +44,12 @@ export const sentryAuthClient = {
   /**
    * Get full authentication state for UI
    */
-  async getAuthState(): Promise<SentryAuthState> {
+  async getAuthState(workspaceId?: string): Promise<SentryAuthState> {
     try {
-      return await invoke<SentryAuthState>(SENTRY_AUTH_CHANNELS.GET_AUTH_STATE);
+      return await invoke<SentryAuthState>(
+        SENTRY_AUTH_CHANNELS.GET_AUTH_STATE,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return { isAuthenticated: false };
     }
@@ -59,9 +65,12 @@ export const sentryAuthClient = {
   /**
    * Fetch projects for the configured organization
    */
-  async fetchProjects(): Promise<SentryProject[]> {
+  async fetchProjects(workspaceId?: string): Promise<SentryProject[]> {
     try {
-      return await invoke<SentryProject[]>(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS);
+      return await invoke<SentryProject[]>(
+        SENTRY_AUTH_CHANNELS.FETCH_PROJECTS,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return [];
     }
@@ -100,7 +109,7 @@ export const sentryAuthClient = {
   async searchIssuesPage(
     query: string,
     project?: string,
-    options?: { limit?: number; nextToken?: string },
+    options?: { limit?: number; nextToken?: string; workspaceId?: string },
   ): Promise<SentryIssuePage> {
     try {
       return await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, {
@@ -116,9 +125,13 @@ export const sentryAuthClient = {
   /**
    * Get a specific issue by ID
    */
-  async getIssue(issueId: string): Promise<SentryIssueResult | null> {
+  async getIssue(issueId: string, workspaceId?: string): Promise<SentryIssueResult | null> {
     try {
-      return await invoke<SentryIssueResult | null>(SENTRY_AUTH_CHANNELS.GET_ISSUE, issueId);
+      return await invoke<SentryIssueResult | null>(
+        SENTRY_AUTH_CHANNELS.GET_ISSUE,
+        issueId,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return null;
     }

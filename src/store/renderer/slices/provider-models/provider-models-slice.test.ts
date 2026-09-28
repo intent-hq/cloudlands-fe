@@ -159,3 +159,15 @@ describe('provider-models selectors', () => {
     expect(selectProviderModelsClearEpoch.select({} as unknown as StoreState)).toBe(0);
   });
 });
+
+it('keeps A, B and direct provider catalogs in separate cache entries and rejects pre-reconnect writes', () => {
+  const a = { models: [{ value: 'A', label: 'A' }] };
+  const b = { models: [{ value: 'B', label: 'B' }] };
+  let state = providerModelsReducer(initialState, providerModelsLoaded('codex', b, 0, 'B'));
+  state = providerModelsReducer(state, providerModelsLoaded('codex', a, 0, 'A'));
+  expect(state.byWorkspaceId?.A.codex.models).toEqual(a.models);
+  expect(state.byWorkspaceId?.B.codex.models).toEqual(b.models);
+  expect(state.byProviderId).toEqual({});
+  state = providerModelsReducer(state, providerModelsCacheCleared());
+  expect(providerModelsReducer(state, providerModelsLoaded('codex', a, 0, 'A'))).toEqual(state);
+});

@@ -1088,7 +1088,10 @@ describe('workspaceNavigationTabSaga', () => {
       channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'report.md'));
       await flush();
 
-      expect(mocks.getAttachmentInfo).toHaveBeenCalledWith('att-1');
+      expect(mocks.getAttachmentInfo).toHaveBeenCalledWith({
+        attachmentId: 'att-1',
+        workspaceId: 'ws-1',
+      });
       expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
         type: 'workspaceNavigation/openWorkspaceFile',
         payload: ['ws-1', '.intent/attachments/report.md'],

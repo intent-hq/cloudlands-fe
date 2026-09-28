@@ -1,7 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IpcMainInvokeEvent } from 'electron';
 
-type ModelHandler = (event: IpcMainInvokeEvent, params?: { forceRefresh?: boolean }) => unknown;
+type ModelHandler = (
+  event: IpcMainInvokeEvent,
+  params?: { forceRefresh?: boolean; workspaceId?: string },
+) => unknown;
 
 const mocks = vi.hoisted(() => ({
   handle: vi.fn<(channel: string, handler: ModelHandler) => void>(),
@@ -61,7 +64,10 @@ function windowFor(transport: Transport): object {
   }
   return {
     electronAPI: {
-      invoke: async (channel: string, params?: { forceRefresh?: boolean }) => {
+      invoke: async (
+        channel: string,
+        params?: { forceRefresh?: boolean; workspaceId?: string },
+      ) => {
         const registration = mocks.handle.mock.calls.find(([name]) => name === channel);
         if (!registration) throw new Error(`No Electron handler: ${channel}`);
         return registration[1](event, params);
@@ -112,6 +118,16 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
         models: [model],
         warning: 'Using the saved catalog',
         stale: true,
+      });
+    });
+
+    it('carries an explicit workspace through the renderer and transport handler', async () => {
+      mocks.request.mockResolvedValue({ providerId: 'antigravity', models: [wireModel] });
+      await getProviderModels('antigravity', { workspaceId: 'workspace-A', forceRefresh: true });
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', {
+        providerId: 'antigravity',
+        workspaceId: 'workspace-A',
+        forceRefresh: true,
       });
     });
 

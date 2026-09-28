@@ -3840,3 +3840,32 @@ describe('LiveChatClient.subscribe text-block media sidecar (§7.1)', () => {
     off();
   });
 });
+
+it('captures chat workspace for reconnect and cleanup after caller options change', async () => {
+  mockChatSubscribe('origin');
+  const options = { workspaceId: 'workspace-a', sinceMessageId: 'last-message' };
+  const dispose = new LiveChatClient().subscribe('agent-a', vi.fn(), undefined, options);
+  await flush();
+  options.workspaceId = 'workspace-b';
+  emitReconnect();
+  await flush();
+  dispose();
+  const requests = mockedRequest.mock.calls.filter(
+    ([method]) => method === 'chat.subscribe' || method === 'chat.unsubscribe',
+  );
+  expect(
+    requests.map(([method, params]) => [method, (params as { workspaceId: string }).workspaceId]),
+  ).toEqual([
+    ['chat.subscribe', 'workspace-a'],
+    ['chat.subscribe', 'workspace-a'],
+    ['chat.unsubscribe', 'workspace-a'],
+  ]);
+  expect(requests[0][1]).toEqual({
+    agentId: 'agent-a',
+    workspaceId: 'workspace-a',
+    sinceMessageId: 'last-message',
+    deltaEncoding: 'incremental',
+    projection: 'slim',
+  });
+  expect(requests.at(-1)![1]).toEqual({ subscriptionId: 'origin-2', workspaceId: 'workspace-a' });
+});

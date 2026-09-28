@@ -34,12 +34,13 @@ export const initialState: ProviderModelsState = {
  * flight, so the rows came from the pre-restart daemon.
  */
 export const providerModelsLoaded = createAction<
-  [providerId: string, result: ProviderModelsFetchResult, epoch: number],
-  [providerId: string, entry: ProviderModelsCacheEntry, epoch: number]
->('providerModels/providerModelsLoaded', (providerId, result, epoch) => [
+  [providerId: string, result: ProviderModelsFetchResult, epoch: number, workspaceId?: string],
+  [providerId: string, entry: ProviderModelsCacheEntry, epoch: number, workspaceId?: string]
+>('providerModels/providerModelsLoaded', (providerId, result, epoch, workspaceId) => [
   providerId,
   { ...result, fetchedAt: new Date().toISOString() },
   epoch,
+  workspaceId,
 ]);
 
 /**
@@ -54,16 +55,24 @@ export const providerModelsReducer = createReducer<ProviderModelsState>(initialS
 
 providerModelsReducer.with(
   providerModelsLoaded,
-  (state, { payload: [providerId, entry, epoch] }) =>
+  (state, { payload: [providerId, entry, epoch, workspaceId] }) =>
     epoch !== state.clearEpoch
       ? state
-      : {
-          ...state,
-          byProviderId: {
-            ...state.byProviderId,
-            [providerId]: entry,
+      : workspaceId
+        ? {
+            ...state,
+            byWorkspaceId: {
+              ...state.byWorkspaceId,
+              [workspaceId]: { ...state.byWorkspaceId?.[workspaceId], [providerId]: entry },
+            },
+          }
+        : {
+            ...state,
+            byProviderId: {
+              ...state.byProviderId,
+              [providerId]: entry,
+            },
           },
-        },
 );
 providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
   byProviderId: {},
