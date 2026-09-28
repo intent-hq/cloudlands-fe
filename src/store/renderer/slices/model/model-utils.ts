@@ -31,9 +31,11 @@ type ProviderModelsWithWarning = {
  */
 async function fetchProviderModelsWithWarning(
   providerId: string,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; workspaceId?: string } = {},
 ): Promise<ProviderModelsWithWarning> {
-  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
+  const normalizedId = options.workspaceId
+    ? providerId
+    : selectNormalizedProviderId.select(appStore.state, providerId);
   if (normalizedId === 'mock') {
     return { models: [] };
   }
@@ -46,13 +48,15 @@ export async function fetchModelsForProvider(providerId: string): Promise<Provid
 
 export async function getModelsForProviderForLoadingState(
   providerId: string,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; workspaceId?: string } = {},
 ): Promise<{
   models: AuggieModel[];
   warning?: string;
   stale?: boolean;
 }> {
-  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
+  const normalizedId = options.workspaceId
+    ? providerId
+    : selectNormalizedProviderId.select(appStore.state, providerId);
   const result = await fetchProviderModelsWithWarning(normalizedId, options);
   return {
     // Catalog rows keep their bare daemon-served ids; provider provenance is
@@ -69,6 +73,9 @@ export async function getModelsForProviderForLoadingState(
  * Unlike the load-models saga, this does NOT update Redux state.
  * Used by ModelPicker when an agent's provider differs from the global active provider.
  */
-export async function getModelsForProvider(providerId: string): Promise<AuggieModel[]> {
-  return (await getModelsForProviderForLoadingState(providerId)).models;
+export async function getModelsForProvider(
+  providerId: string,
+  workspaceId?: string,
+): Promise<AuggieModel[]> {
+  return (await getModelsForProviderForLoadingState(providerId, { workspaceId })).models;
 }

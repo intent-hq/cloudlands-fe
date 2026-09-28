@@ -64,6 +64,12 @@ function asRecord(arg: unknown): Record<string, unknown> {
   return arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {};
 }
 
+/** Explicit routing metadata on approved integration variants only. */
+function workspaceParams(arg: unknown): { workspaceId?: string } {
+  const { workspaceId } = asRecord(arg);
+  return typeof workspaceId === 'string' ? { workspaceId } : {};
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -71,43 +77,49 @@ function errorMessage(error: unknown): string {
 // ── GitHub auth & identity (PROTOCOL §5.27) ──
 
 /** `github.authStatus` — probes the env PAT via GET /user; null = probe failed. */
-async function githubAuthStatus(): Promise<GitHubAuthStatus | null> {
+async function githubAuthStatus(workspaceId?: string): Promise<GitHubAuthStatus | null> {
   try {
-    return await readGitHubAuthStatus();
+    return await readGitHubAuthStatus(false, workspaceId);
   } catch {
     return null;
   }
 }
 
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED, async () => {
-  const status = await githubAuthStatus();
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED, async (arg) => {
+  const status = await githubAuthStatus(workspaceParams(arg).workspaceId);
   return status?.isConfigured === true;
 });
 
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_USER, async () => liveIntegrations.githubUser());
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_USER, async (arg) =>
+  liveIntegrations.githubUser(workspaceParams(arg).workspaceId),
+);
 
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<GitHubAuthState> => {
-  const status = await githubAuthStatus();
-  const isConfigured = status?.isConfigured === true;
-  const user = isConfigured ? await liveIntegrations.githubUser() : null;
-  return {
-    isAuthenticated: isConfigured && user !== null,
-    requiresDaemonAuth: false,
-    user,
-    needsScopeUpdate: status?.configuredButNeedsUpdate === true,
-    // While a device flow is live, `authStatus.oauthUrl` carries the
-    // verification URI (§5.27); empty otherwise.
-    oauthUrl: status?.oauthUrl || undefined,
-    // Surface a still-pending flow so a reconnecting client resumes it
-    // (§5.27: "the flow survives client refreshes").
-    deviceFlow: status?.deviceFlow?.status === 'pending' ? status.deviceFlow : null,
-  };
-});
+registerMockIpcHandler(
+  GITHUB_AUTH_CHANNELS.GET_AUTH_STATE,
+  async (arg): Promise<GitHubAuthState> => {
+    const workspaceId = workspaceParams(arg).workspaceId;
+    const status = await githubAuthStatus(workspaceId);
+    const isConfigured = status?.isConfigured === true;
+    const user = isConfigured ? await liveIntegrations.githubUser(workspaceId) : null;
+    return {
+      isAuthenticated: isConfigured && user !== null,
+      requiresDaemonAuth: false,
+      user,
+      needsScopeUpdate: status?.configuredButNeedsUpdate === true,
+      // While a device flow is live, `authStatus.oauthUrl` carries the
+      // verification URI (§5.27); empty otherwise.
+      oauthUrl: status?.oauthUrl || undefined,
+      // Surface a still-pending flow so a reconnecting client resumes it
+      // (§5.27: "the flow survives client refreshes").
+      deviceFlow: status?.deviceFlow?.status === 'pending' ? status.deviceFlow : null,
+    };
+  },
+);
 
 registerMockIpcHandler(
   GITHUB_AUTH_CHANNELS.GET_STATUS,
-  async (): Promise<GitHubAuthStatus> =>
-    (await githubAuthStatus()) ?? {
+  async (arg): Promise<GitHubAuthStatus> =>
+    (await githubAuthStatus(workspaceParams(arg).workspaceId)) ?? {
       isConfigured: false,
       oauthUrl: '',
       configuredButNeedsUpdate: false,
@@ -291,7 +303,10 @@ registerMockIpcHandler(
     const params = forgeHostParams(arg);
     if (!params) return null;
     try {
-      return await backendRequest<ForgeAuthStatus>('sourceControl.authStatus', params);
+      return await backendRequest<ForgeAuthStatus>('sourceControl.authStatus', {
+        ...params,
+        ...workspaceParams(arg),
+      });
     } catch {
       return null;
     }
@@ -302,10 +317,10 @@ registerMockIpcHandler(FORGE_AUTH_CHANNELS.GET_USER, async (arg): Promise<ForgeU
   const params = forgeHostParams(arg);
   if (!params) return null;
   try {
-    const result = await backendRequest<{ user?: ForgeUser | null }>(
-      'sourceControl.getUser',
-      params,
-    );
+    const result = await backendRequest<{ user?: ForgeUser | null }>('sourceControl.getUser', {
+      ...params,
+      ...workspaceParams(arg),
+    });
     const user = result?.user;
     return user && typeof user.login === 'string' && user.login.length > 0 ? user : null;
   } catch {
@@ -414,9 +429,12 @@ function toLegacyRepo(repo: GithubRepoWire): GithubRepo {
 // The legacy channel pages with `{ page }`; the daemon paginates with an
 // opaque `nextToken` cursor, so the first daemon page (default limit 50)
 // serves every legacy page request.
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LIST_REPOS, async () => {
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LIST_REPOS, async (arg) => {
   try {
-    const result = await backendRequest<{ repos?: GithubRepoWire[] }>('github.repos.list');
+    const result = await backendRequest<{ repos?: GithubRepoWire[] }>(
+      'github.repos.list',
+      ...(workspaceParams(arg).workspaceId === undefined ? [] : [workspaceParams(arg)]),
+    );
     return { success: true, data: (result?.repos ?? []).map(toLegacyRepo) };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -430,6 +448,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async (arg) => {
   }
   try {
     const result = await backendRequest<{ repos?: GithubRepoWire[] }>('github.repos.search', {
+      ...workspaceParams(arg),
       query,
     });
     return { success: true, data: (result?.repos ?? []).map(toLegacyRepo) };
@@ -466,7 +485,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_USERS, async (arg) => {
   try {
     const result = await backendRequest<{ users?: GithubUserSearchHitWire[] }>(
       'github.users.search',
-      { query },
+      { query, ...workspaceParams(arg) },
     );
     return { success: true, data: (result?.users ?? []).map(toUserSearchHit) };
   } catch (error) {
@@ -532,6 +551,7 @@ function asRepoRef(value: unknown): GithubRepoRef | null {
 
 /** Legacy search params sent by IssueSuggestions: `{ owner, repo, options }`. */
 function searchParams(arg: unknown): {
+  workspaceId?: string;
   owner: string;
   repo: string;
   filter?: string;
@@ -552,6 +572,7 @@ function searchParams(arg: unknown): {
   return {
     owner,
     repo,
+    ...workspaceParams(arg),
     filter: typeof options.filter === 'string' ? options.filter : undefined,
     state: typeof options.state === 'string' ? options.state : undefined,
     query: typeof options.query === 'string' && options.query ? options.query : undefined,
@@ -653,7 +674,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, async (arg)
   try {
     const result = await backendRequest<{
       repos?: (GithubRepoRef & { path: string })[];
-    }>('github.relatedRepos.list', ref);
+    }>('github.relatedRepos.list', { ...ref, ...workspaceParams(arg) });
     return { success: true, data: result?.repos ?? [] };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -674,6 +695,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.GET_PULL_REQUEST, async (arg) =
   }
   try {
     const result = await backendRequest<{ pull?: GithubPullWire | null }>('github.pulls.get', {
+      ...workspaceParams(arg),
       owner,
       repo,
       number,
@@ -699,9 +721,10 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.GET_PULL_REQUEST, async (arg) =
 // ── Linear (PROTOCOL §5.28 — cursor-paginated { issues, nextToken } envelope) ──
 
 /** Optional `{ limit, nextToken }` pagination forwarded from the clients. */
-function pageParams(arg: unknown): { limit?: number; nextToken?: string } {
+function pageParams(arg: unknown): { limit?: number; nextToken?: string; workspaceId?: string } {
   const options = asRecord(arg);
   return {
+    ...workspaceParams(arg),
     ...(typeof options.limit === 'number' ? { limit: options.limit } : {}),
     ...(typeof options.nextToken === 'string' && options.nextToken
       ? { nextToken: options.nextToken }
@@ -710,27 +733,32 @@ function pageParams(arg: unknown): { limit?: number; nextToken?: string } {
 }
 
 /** `linear.authStatus` probe → boolean; a failed probe is "not connected". */
-async function linearAuthenticated(): Promise<boolean> {
+async function linearAuthenticated(workspaceId?: string): Promise<boolean> {
   try {
-    const status = await backendRequest<{ authenticated?: boolean }>('linear.authStatus');
+    const status = await backendRequest<{ authenticated?: boolean }>(
+      'linear.authStatus',
+      ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+    );
     return status?.authenticated === true;
   } catch {
     return false;
   }
 }
 
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, () => linearAuthenticated());
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, (arg) =>
+  linearAuthenticated(workspaceParams(arg).workspaceId),
+);
 
 // There is no Linear OAuth flow in the env-key model (§5.28): `oauthUrl` is
 // omitted and `requiresDaemonAuth` is always false — connect = set
 // LINEAR_API_KEY and restart.
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
-  isAuthenticated: await linearAuthenticated(),
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async (_force, arg) => ({
+  isAuthenticated: await linearAuthenticated(workspaceParams(arg).workspaceId),
   requiresDaemonAuth: false,
 }));
 
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => ({
-  isConfigured: await linearAuthenticated(),
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_STATUS, async (arg) => ({
+  isConfigured: await linearAuthenticated(workspaceParams(arg).workspaceId),
   oauthUrl: '',
 }));
 
@@ -776,27 +804,33 @@ interface SentryAuthStatusWire {
 }
 
 /** `sentry.authStatus` probe; null = probe failed ("not connected"). */
-async function sentryAuthStatus(): Promise<SentryAuthStatusWire | null> {
+async function sentryAuthStatus(workspaceId?: string): Promise<SentryAuthStatusWire | null> {
   try {
-    return await backendRequest<SentryAuthStatusWire>('sentry.authStatus');
+    return await backendRequest<SentryAuthStatusWire>(
+      'sentry.authStatus',
+      ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+    );
   } catch {
     return null;
   }
 }
 
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.IS_AUTHENTICATED, async () => {
-  const status = await sentryAuthStatus();
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.IS_AUTHENTICATED, async (arg) => {
+  const status = await sentryAuthStatus(workspaceParams(arg).workspaceId);
   return status?.authenticated === true;
 });
 
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<SentryAuthState> => {
-  const status = await sentryAuthStatus();
-  return {
-    isAuthenticated: status?.authenticated === true,
-    organization: status?.organization,
-    error: status?.error,
-  };
-});
+registerMockIpcHandler(
+  SENTRY_AUTH_CHANNELS.GET_AUTH_STATE,
+  async (arg): Promise<SentryAuthState> => {
+    const status = await sentryAuthStatus(workspaceParams(arg).workspaceId);
+    return {
+      isAuthenticated: status?.authenticated === true,
+      organization: status?.organization,
+      error: status?.error,
+    };
+  },
+);
 
 // Settings catalog paths for the Sentry credential pair (PROTOCOL §5.12):
 // `accounts.sentry.token` is the sensitive API token consumed by the
@@ -863,9 +897,12 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.LOGOUT, async () => {
   ]);
 });
 
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async () => {
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async (arg) => {
   try {
-    const projects = await backendRequest<SentryProject[]>('sentry.listProjects');
+    const projects = await backendRequest<SentryProject[]>(
+      'sentry.listProjects',
+      ...(workspaceParams(arg).workspaceId === undefined ? [] : [workspaceParams(arg)]),
+    );
     return Array.isArray(projects) ? projects : [];
   } catch {
     return [];
@@ -918,16 +955,16 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async (arg) => {
 // UUID/numeric ids and `{ shortId }` for `WEB-1`-style short ids. Failures
 // fold to null — the same "not found" value sentryAuthClient.getIssue
 // already catches into.
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_ISSUE, async (arg) => {
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_ISSUE, async (arg, context) => {
   const raw = typeof arg === 'string' ? arg.trim() : '';
   if (!raw) return null;
   const isPlainId =
     /^[0-9]+$/.test(raw) || /^[0-9a-f]{32}$/i.test(raw) || /^[0-9a-f-]{36}$/i.test(raw);
   try {
-    return await backendRequest<SentryIssueResult>(
-      'sentry.getIssue',
-      isPlainId ? { id: raw } : { shortId: raw },
-    );
+    return await backendRequest<SentryIssueResult>('sentry.getIssue', {
+      ...(isPlainId ? { id: raw } : { shortId: raw }),
+      ...workspaceParams(context),
+    });
   } catch {
     return null;
   }

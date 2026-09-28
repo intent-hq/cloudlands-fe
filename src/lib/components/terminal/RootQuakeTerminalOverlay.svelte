@@ -233,7 +233,7 @@
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
     appStore.dispatch(removeTerminal(ROOT_WORKSPACE_ID, termId));
-    terminalManager.disposeTerminal(termId);
+    terminalManager.disposeTerminal(termId, ROOT_WORKSPACE_ID);
   }
 
   function clearActiveTerminal() {

@@ -19,6 +19,7 @@ import {
   RESERVED_MCP_SERVER_NAMES,
 } from '$shared/config/mcp-constants';
 import {
+  copyServerForState,
   mapDaemonMcpState,
   normalizeMcpServersPayload,
   toMcpErrorMessage,
@@ -66,17 +67,6 @@ export const ADVANCED_SAVED_RESET_MS = 2_000;
 // The existing full-list settings seam still carries credentials through the renderer transiently.
 // Main-process/keychain-owned MCP credential CRUD is tracked by monorepo#1181; never retain them here or in Redux.
 type CredentialInput = [config: McpServerConfig, previousName?: string];
-
-function copyServerForState(source: McpServerConfig): McpServerConfig {
-  const server: McpServerConfig = { name: source.name, type: source.type };
-  if (source.id !== undefined) server.id = source.id;
-  if (source.command !== undefined) server.command = source.command;
-  if (source.args !== undefined) server.args = [...source.args];
-  if (source.url !== undefined) server.url = source.url;
-  if (source.authType !== undefined) server.authType = source.authType;
-  if (source.disabled !== undefined) server.disabled = source.disabled;
-  return server;
-}
 
 function copyServerForWire(
   source: McpServerConfig,
@@ -402,7 +392,7 @@ function* toggleForWorkspace(
   enabled: boolean,
 ): SagaGenerator<void> {
   if (!workspaceId) return;
-  const servers: McpServerConfig[] = yield* selectMcpServers.effect();
+  const servers: McpServerConfig[] = yield* selectMcpServers.effect(workspaceId);
   const serverId = servers.find((server) => server.name === serverName)?.id;
   if (!serverId) {
     logger.warn('Cannot workspace-toggle an MCP server without a daemon id', { serverName });

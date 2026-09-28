@@ -108,13 +108,39 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({
-      providerCatalog,
+      providerCatalog: {
+        ...providerCatalog,
+        byWorkspaceId: Object.fromEntries(
+          ['ws-1', 'A', 'B'].map((workspaceId) => [
+            workspaceId,
+            {
+              catalog: MOCK_PROVIDER_CATALOG,
+              settings: [
+                { path: 'model.defaultProvider', value: mockModelState.defaultProviderId },
+              ],
+              specialists: [],
+              readiness: {},
+            },
+          ]),
+        ),
+      },
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: mockModelState.defaultProviderId },
       providerModels: {
         byProviderId: mockProviderModelsState.byProviderId,
+        byWorkspaceId: {
+          'ws-1': {
+            [mockModelState.availableModels[0]?.value.includes(':')
+              ? mockModelState.availableModels[0].value.split(':')[0]
+              : mockModelState.availableModelsProviderId]: {
+              models: mockModelState.availableModels,
+              fetchedAt: '2026-09-28T00:00:00Z',
+            },
+            ...mockProviderModelsState.byProviderId,
+          },
+        },
         clearEpoch: mockProviderModelsState.clearEpoch,
       },
       ...mockRoleState.current,
@@ -463,7 +489,9 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(button.getAttribute('title')).toContain('workspace owner');
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        workspaceId: 'ws-1',
+      });
     });
     await waitFor(() => {
       expect(button.textContent).toContain('Sonnet 4.6');
@@ -491,7 +519,9 @@ describe('ModelPicker guest / collaborator lock', () => {
 
     const button = screen.getByRole('button');
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        workspaceId: 'ws-1',
+      });
     });
     await new Promise((r) => setTimeout(r, 50));
 
@@ -524,7 +554,9 @@ describe('ModelPicker guest / collaborator lock', () => {
     const button = screen.getByRole('button');
     expect(button.hasAttribute('disabled')).toBe(true);
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('antigravity');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('antigravity', {
+        workspaceId: 'ws-1',
+      });
     });
     await waitFor(() => {
       expect(button.textContent).toContain('Gemini 3.7 Flash (High)');
@@ -612,6 +644,7 @@ describe('ModelPicker guest / collaborator lock', () => {
     const { agentClient } = await import('$features/agent/agent.client');
     withWorkspaceRole('owner');
     twoModelCatalog();
+    mockModelState.availableModels = hostCatalog;
     let resolveConfirm!: (confirmed: boolean) => void;
     const confirmModelChange = vi.fn(
       () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
@@ -1249,7 +1282,9 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(screen.getByRole('button'));
 
@@ -1561,8 +1596,12 @@ describe('ModelPicker combined reasoning mode', () => {
       });
 
       await waitFor(() => {
-        expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
-        expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+        expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+          workspaceId: 'ws-1',
+        });
+        expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+          workspaceId: 'ws-1',
+        });
       });
       await fireEvent.click(screen.getByRole('button'));
 
@@ -1623,6 +1662,54 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
+  it('keeps a new workspace refresh pending when the old workspace reply arrives', async () => {
+    type Result = { models: { value: string; label: string }[] };
+    const releases: Record<string, (result: Result) => void> = {};
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      async (_provider, options) => {
+        const origin = options?.workspaceId ?? 'direct';
+        if (options?.forceRefresh)
+          return new Promise<Result>((resolve) => {
+            releases[origin] = resolve;
+          });
+        return { models: [{ value: 'codex:gpt-5.6-sol', label: `Catalog ${origin}` }] };
+      },
+    );
+    const props = {
+      selectedModel: 'codex:gpt-5.6-sol',
+      providerId: 'codex',
+      workspaceId: 'A',
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Catalog A/ })).toBeTruthy();
+    expect(
+      vi
+        .mocked(getModelsForProviderForLoadingState)
+        .mock.calls.filter(([id, options]) => id === 'codex' && !options?.forceRefresh),
+    ).toHaveLength(1);
+    await fireEvent.click(screen.getByTestId('model-provider-refresh-button'));
+    await waitFor(() => expect(releases.A).toBeDefined());
+    await rerender({ ...props, workspaceId: 'B' });
+    expect(await screen.findByRole('option', { name: /Catalog B/ })).toBeTruthy();
+    await fireEvent.click(screen.getByTestId('model-provider-refresh-button'));
+    await waitFor(() => expect(releases.B).toBeDefined());
+    releases.A({ models: [{ value: 'codex:gpt-5.6-sol', label: 'Stale A' }] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByTestId('model-provider-refresh-button').getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    expect(screen.queryByRole('option', { name: /Stale A/ })).toBeNull();
+    releases.B({ models: [{ value: 'codex:gpt-5.6-sol', label: 'Fresh B' }] });
+    expect(await screen.findByRole('option', { name: /Fresh B/ })).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('model-provider-refresh-button').getAttribute('aria-busy'),
+      ).not.toBe('true'),
+    );
+  });
+
   it('force-refreshes and replaces the active provider list from the tab row', async () => {
     let resolveRefresh!: (result: {
       models: { value: string; label: string; description: string }[];
@@ -1655,7 +1742,9 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(screen.getByRole('button'));
     expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
@@ -1668,6 +1757,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
         forceRefresh: true,
+        workspaceId: 'ws-1',
       });
     });
     expect(refreshButton.hasAttribute('disabled')).toBe(true);
@@ -1766,7 +1856,9 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(screen.getByRole('button'));
     expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
@@ -1775,12 +1867,15 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
         forceRefresh: true,
+        workspaceId: 'ws-1',
       });
     });
 
     enabledProviderIds$.set(['auggie', 'codex', 'claude-code']);
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+        workspaceId: 'ws-1',
+      });
     });
     expect(
       vi
@@ -3058,7 +3153,9 @@ describe('ModelPicker unlocked agent provider handling', () => {
     enabledProviderIds$.set(['auggie', 'codex']);
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(await screen.findByRole('tab', { name: /Codex/ }));
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
@@ -3162,7 +3259,9 @@ describe('ModelPicker unlocked agent provider handling', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(screen.getByRole('button'));
 
@@ -3868,7 +3967,9 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 4\.8/ }));
@@ -3914,7 +4015,9 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
 
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
@@ -4393,7 +4496,9 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
 
     // The background revalidation fetch did start (stale-while-revalidate).
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        workspaceId: 'ws-1',
+      });
     });
     await new Promise((r) => setTimeout(r, 0));
     // Still resolved after the debounced background revalidation kicked off.
@@ -4656,8 +4761,12 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     // (it prunes codex from its local map synchronously before fetching), and
     // the 'codex' call proves the agent-provider revalidation still fired.
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        workspaceId: 'ws-1',
+      });
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+        workspaceId: 'ws-1',
+      });
     });
     await new Promise((r) => setTimeout(r, 0));
     // A resolved label + no spinner proves the agent path rendered the cached
@@ -4747,4 +4856,24 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
       expect((writeThrough![0].payload as [string, unknown])[0]).toBe('auggie');
     });
   });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { selectProviderCatalogEntries } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  return {
+    selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextDefaultProvider: () => readable(mockModelState.defaultProviderId),
+    selectContextSelectedModel: () => readable(mockModelState.selectedModel),
+    selectContextEnabledProviders: () => enabledProvidersMap$,
+    selectContextAvailableProviderIds: () => availableEnabledProviderIds$,
+    selectContextModelProviderIds: () =>
+      derived(
+        [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
+        ([checked, enabled, available]) => (checked ? available : enabled),
+      ),
+    selectContextReadinessLoaded: () => hasCheckedOnce$,
+    selectContextProviderWarnings: () => providerWarnings$,
+    selectContextProviderStaleFlags: () => providerStaleFlags$,
+  };
 });

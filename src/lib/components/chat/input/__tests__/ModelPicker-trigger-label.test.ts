@@ -162,7 +162,17 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       sessions,
-      providerCatalog,
+      providerCatalog: {
+        ...providerCatalog,
+        byWorkspaceId: {
+          'ws-1': {
+            catalog: { providers: Object.values(providerCatalog.providers.map) },
+            settings: [{ path: 'model.defaultProvider', value: 'auggie' }],
+            specialists: [],
+            readiness: {},
+          },
+        },
+      },
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
       // The picker's guest/collaborator gate reads the caller role: a settled
@@ -612,7 +622,9 @@ describe('ModelPicker trigger label regressions', () => {
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
       'claude-code',
     );
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+      workspaceId: 'ws-1',
+    });
   });
 
   it('attributes a bare session model to the agent provider when that provider is outside the enabled set (guest window)', async () => {
@@ -647,7 +659,9 @@ describe('ModelPicker trigger label regressions', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     await tick();
 
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+      workspaceId: 'ws-1',
+    });
     expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
       'claude-code',
@@ -877,4 +891,20 @@ describe('ModelPicker trigger label regressions', () => {
     expect(text).toContain('Auggie Butler');
     expect(text).not.toContain('default');
   });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { selectProviderCatalogEntries } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  return {
+    selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextDefaultProvider: () => readable('auggie'),
+    selectContextSelectedModel: () => selectedModel$,
+    selectContextEnabledProviders: () => readable({}),
+    selectContextAvailableProviderIds: () => enabledProviderIds$,
+    selectContextModelProviderIds: () => enabledProviderIds$,
+    selectContextReadinessLoaded: () => readable(true),
+    selectContextProviderWarnings: () => providerWarnings$,
+    selectContextProviderStaleFlags: () => readable({}),
+  };
 });

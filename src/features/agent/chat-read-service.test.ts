@@ -1,6 +1,16 @@
+import { ensureAgentSession } from './agent-read-service';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession, AgentMessage } from '$shared/types';
+
+const reconnectCallbacks = vi.hoisted(() => new Set<() => void>());
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  onBackendReconnected: vi.fn((callback: () => void) => {
+    reconnectCallbacks.add(callback);
+    return () => reconnectCallbacks.delete(callback);
+  }),
+}));
 
 // FAKE seam: appClient.agents.get + agents.getConversation are stubbed so no
 // daemon call (and never a mutation) happens. The service runs against the
@@ -101,8 +111,15 @@ describe('chatReadService (fake seam, real store)', () => {
 
     await loadChatTranscript(AGENT);
 
-    expect(agentsApi.get).toHaveBeenCalledWith(AGENT);
-    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, 50, undefined);
+    expect(agentsApi.get).toHaveBeenCalledWith(AGENT, undefined);
+    expect(agentsApi.getConversation).toHaveBeenCalledWith(
+      AGENT,
+      50,
+      undefined,
+      undefined,
+      undefined,
+      WS,
+    );
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(['m1']);
   });
 
@@ -200,7 +217,7 @@ describe('chatReadService (fake seam, real store)', () => {
       conversation([makeMessage('after', 'a')]) as never,
     );
     await loadChatTranscript(agentId);
-    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId, undefined);
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(['after']);
   });
 
@@ -216,7 +233,7 @@ describe('chatReadService (fake seam, real store)', () => {
 
     await loadChatTranscript(agentId);
 
-    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId, undefined);
     expect(agentsApi.getConversation).not.toHaveBeenCalled();
     expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
     expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
@@ -432,9 +449,33 @@ describe('chatReadService (fake seam, real store)', () => {
 
     // Verify three calls with correct pagination.
     expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 50, undefined);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(2, agentId, 50, 'page2');
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, 50, 'page3');
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
+      1,
+      agentId,
+      50,
+      undefined,
+      undefined,
+      undefined,
+      WS,
+    );
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
+      2,
+      agentId,
+      50,
+      'page2',
+      undefined,
+      undefined,
+      WS,
+    );
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
+      3,
+      agentId,
+      50,
+      'page3',
+      undefined,
+      undefined,
+      WS,
+    );
 
     // All 125 messages should be in the store, oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);
@@ -471,8 +512,24 @@ describe('chatReadService (fake seam, real store)', () => {
     // 4 pages accumulate 200 >= MAX_MESSAGES_PER_AGENT — the fifth page is
     // never requested.
     expect(agentsApi.getConversation).toHaveBeenCalledTimes(4);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, 50, undefined);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(4, agentId, 50, 'page4');
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
+      1,
+      agentId,
+      50,
+      undefined,
+      undefined,
+      undefined,
+      WS,
+    );
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
+      4,
+      agentId,
+      50,
+      'page4',
+      undefined,
+      undefined,
+      WS,
+    );
 
     // The store keeps the newest 200 (the slice's prune cap), oldest-first.
     const stored = selectAgentMessages.select(appStore.state, agentId);
@@ -831,4 +888,96 @@ describe('chatReadService (fake seam, real store)', () => {
       'trunc-user',
     ]);
   });
+});
+
+it('drops old connection transcript pages without replaying a trailing request', async () => {
+  appStore.init();
+  const agentId = 'transcript-connection-agent';
+  agentsApi.get.mockClear();
+  agentsApi.getConversation.mockClear();
+  agentsApi.get.mockResolvedValue(makeSession({ id: agentId }));
+  let finish!: (page: ReturnType<typeof conversation>) => void;
+  agentsApi.getConversation.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const oldRead = loadChatTranscript(agentId, WS);
+  await flush();
+  const trailing = loadChatTranscript(agentId, WS);
+  for (const callback of reconnectCallbacks) callback();
+  agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage('new', 'new')]));
+  await loadChatTranscript(agentId, WS);
+  finish(conversation([makeMessage('old', 'old')], 'more-old-pages'));
+  await Promise.all([oldRead, trailing]);
+  expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(['new']);
+  expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
+  expect(agentsApi.getConversation).toHaveBeenLastCalledWith(
+    agentId,
+    50,
+    undefined,
+    undefined,
+    undefined,
+    WS,
+  );
+});
+
+describe('workspace transcript ownership', () => {
+  beforeAll(() => appStore.init());
+  it.each(['a-first', 'b-first'])(
+    'keeps only the latest workspace transcript with %s completion',
+    async (order) => {
+      const id = `transcript-${order}`;
+      const finishes: Array<(page: ReturnType<typeof conversation>) => void> = [];
+      agentsApi.get.mockImplementation(async (agentId: string, workspaceId: string) =>
+        makeSession({ id: agentId, workspaceId }),
+      );
+      agentsApi.getConversation.mockImplementation(
+        () => new Promise((resolve) => finishes.push(resolve)),
+      );
+      const a = loadChatTranscript(id, 'workspace-a');
+      await flush();
+      const b = loadChatTranscript(id, 'workspace-b');
+      await flush();
+      const finishA = async () => {
+        finishes[0](conversation([makeMessage('a-message', 'A')]));
+        await a;
+      };
+      const finishB = async () => {
+        finishes[1](conversation([makeMessage('b-message', 'B')]));
+        await b;
+      };
+      if (order === 'a-first') {
+        await finishA();
+        await finishB();
+      } else {
+        await finishB();
+        await finishA();
+      }
+      const stored = selectAgentSession.select(appStore.state, id);
+      expect(stored?.workspaceId).toBe('workspace-b');
+      expect(stored?.messages.map((m) => m.id)).toEqual(['b-message']);
+    },
+  );
+});
+
+it('keeps a newer transcript owner when an older metadata hydrate finishes', async () => {
+  appStore.init();
+  const id = 'cross-service-owner';
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const old = ensureAgentSession(id, 'workspace-a');
+  agentsApi.get.mockResolvedValueOnce(makeSession({ id, workspaceId: 'workspace-b' }));
+  agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage('b-only', 'B')]));
+  await loadChatTranscript(id, 'workspace-b');
+  finish(makeSession({ id, workspaceId: 'workspace-a' }));
+  await old;
+  expect(selectAgentSession.select(appStore.state, id)?.workspaceId).toBe('workspace-b');
+  expect(selectAgentMessages.select(appStore.state, id).map((row) => row.id)).toEqual(['b-only']);
 });

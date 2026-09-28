@@ -478,3 +478,14 @@ describe('electron-ipc-transport param serialization (structured clone)', () => 
     expect(received).toEqual([{ events: ['task:*'] }]);
   });
 });
+
+it('carries workspace context through Electron subscription cleanup and preserves direct omission', async () => {
+  const api = installFakeApi();
+  const transport = createElectronIpcBackendTransport();
+  await transport.unsubscribe('sub-a', 'workspace-a');
+  await transport.unsubscribe('direct');
+  expect(api.invoke.mock.calls).toEqual([
+    [IPC_CHANNELS.BACKEND.UNSUBSCRIBE, { subscriptionId: 'sub-a', workspaceId: 'workspace-a' }],
+    [IPC_CHANNELS.BACKEND.UNSUBSCRIBE, { subscriptionId: 'direct' }],
+  ]);
+});

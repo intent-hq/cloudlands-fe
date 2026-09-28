@@ -68,7 +68,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         rows: 24,
         cwd: '/repo',
       });
-      expect(terminals.write).toHaveBeenCalledExactlyOnceWith('term-42', 'pnpm test\r');
+      expect(terminals.write).toHaveBeenCalledExactlyOnceWith('term-42', 'pnpm test\r', 'ws-1');
       expect(response).toEqual({ ok: true, terminalId: 'term-42' });
       // PanelLayout listens for `terminal:created` and reloads the workspace's
       // terminal list from the daemon.
@@ -107,6 +107,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
       expect(terminals.subscribeEvents).toHaveBeenCalledWith(
         'term-9',
         expect.objectContaining({ onExit: expect.any(Function) }),
+        'ws-1',
       );
       handlers?.onExit?.({ terminalId: 'term-9', exitCode: 1 });
       offExit();
@@ -152,6 +153,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
       expect(terminals.write).toHaveBeenCalledExactlyOnceWith(
         'paste-terminal',
         'claude auth login',
+        '__root__',
       );
     });
 
@@ -177,7 +179,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
           expect(response).toEqual({ ok: false, error: 'write failed' });
           expect(created).not.toHaveBeenCalled();
           expect(unsubscribe).toHaveBeenCalledOnce();
-          expect(terminals.kill).toHaveBeenCalledExactlyOnceWith('failed-terminal');
+          expect(terminals.kill).toHaveBeenCalledExactlyOnceWith('failed-terminal', '__root__');
         } finally {
           offCreated();
         }
@@ -194,7 +196,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         data: 'brew install rtk\n',
       });
 
-      expect(terminals.write).toHaveBeenCalledWith('term-42', 'brew install rtk\n');
+      expect(terminals.write).toHaveBeenCalledWith('term-42', 'brew install rtk\n', undefined);
       expect(response).toEqual({ success: true });
     });
 

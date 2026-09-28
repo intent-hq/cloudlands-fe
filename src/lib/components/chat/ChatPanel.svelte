@@ -350,25 +350,24 @@
   } from './chat-queue-edge-layout';
   import { invoke, listenSync } from '$lib/electron-bridge';
   import {
-    selectSpecialists,
-    selectEffectiveBehaviorPrompt,
-    selectEffectiveModel,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
+    selectContextSpecialists,
+    selectContextQuotaRetryProviderIds,
+    selectContextDefaultProvider,
+    selectContextProviderEntries,
+    selectWorkspaceCatalogEpoch,
+    selectContextEnabledProviders,
+    selectContextModelProviderIds,
+    selectContextReadiness,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 
+  import { selectEffectiveModel } from '$store/renderer/slices/specialists/specialists-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import {
-    selectEffectiveDefaultProviderId,
     selectProviderAuthFailureGuidance,
-    selectProviderCatalogEntries,
     selectProviderCatalogLoaded,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    selectAvailableEnabledProviderIds,
-    selectEnabledProviders,
-    selectQuotaRetryProviderIds,
-  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -534,13 +533,14 @@
   // other slices. The raw flags are anchored separately because the picker set
   // always admits the default provider, so toggling it leaves that array
   // shallow-equal and the selector stream deduplicates the change away.
-  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
-  const enabledProviders$ = selectEnabledProviders();
-  const providerStatusMap$ = selectProviderStatusMap();
+  const availableEnabledProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
+  const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
+  const providerStatusMap$ = selectContextReadiness(workspaceIdStore);
   // Read purely as a reactivity anchor for the display-name derivation below:
   // provider display names come from the catalog, which hydrates
   // asynchronously and can land after the quota failure does.
-  const providerCatalogEntries$ = selectProviderCatalogEntries();
+  const providerCatalogEntries$ = selectContextProviderEntries(workspaceIdStore);
+  const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
@@ -2408,7 +2408,7 @@
   // Hydrated input model — uses session model when available, falls back to agentModel prop
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
-  const catalogDefaultProviderId$ = selectEffectiveDefaultProviderId();
+  const catalogDefaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
   const providerCatalogLoaded$ = selectProviderCatalogLoaded();
 
   // Provider ID for the input — resolved from the agent session
@@ -3916,7 +3916,7 @@
       // `agent:queue:updated` (e.g. while this panel was unmounted or during a
       // reconnect gap) would otherwise leave stale drained rows rendered
       // forever (monorepo#1749).
-      void hydrateAgentQueue(agentId);
+      void hydrateAgentQueue(agentId, workspace?.id);
 
       // Reconstruct onboarding context entirely from workspace + agent session.
       // No external storage needed — all essential data lives on the workspace object.
@@ -4075,7 +4075,7 @@
 
     // Reconcile the queued-messages mirror alongside the transcript re-init
     // (monorepo#1749).
-    void hydrateAgentQueue(agentId);
+    void hydrateAgentQueue(agentId, workspace?.id);
 
     // The saga is fire-and-forget from the component's perspective.
     // End rebind tracking immediately — the saga handles its own cancellation.
@@ -4488,7 +4488,8 @@
     if (!messageId || !ref) return;
     const getContainer = beginScrollNavigation();
     if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId)) || !getContainer()) return;
+      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id)) || !getContainer())
+        return;
       await tick();
     }
     const message = await forceRenderAndFindMessage(messageId, getContainer);
@@ -4950,7 +4951,15 @@
   // Handle editing a queued message. The client seam folds transport errors
   // into `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    const result = await appClient.agents.editQueued(agentId, messageId, content, editing);
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace?.id;
+    const result = await appClient.agents.editQueued(
+      originAgentId,
+      messageId,
+      content,
+      editing,
+      originWorkspaceId,
+    );
     if (!result.success) {
       logger.error('Failed to edit queued message', { messageId, error: result.error });
     } else {
@@ -4960,7 +4969,7 @@
       // the authoritative echoed queuedMessage.content over the local arg so
       // the record can't drift from the daemon's entry.
       const persistedText = result.queuedMessage?.content ?? content;
-      appStore.dispatch(chatQueuedRetryRecordUpdated(agentId, messageId, persistedText));
+      appStore.dispatch(chatQueuedRetryRecordUpdated(originAgentId, messageId, persistedText));
     }
     return result;
   }
@@ -5354,9 +5363,13 @@
     void $availableEnabledProviderIds$;
     void $enabledProviders$;
     void $providerStatusMap$;
-    return selectQuotaRetryProviderIds
-      .select(appStore.state, quota.providerId)
-      .map((id) => ({ id, displayName: selectProviderDisplayName.select(appStore.state, id) }));
+    void $workspaceCatalogEpoch$;
+    return selectContextQuotaRetryProviderIds
+      .select(appStore.state, quota.providerId, workspace?.id)
+      .map((id) => ({
+        id,
+        displayName: $providerCatalogEntries$.find((p) => p.id === id)?.displayName ?? id,
+      }));
   });
 
   // Handle changing the specialist for an agent
@@ -5377,14 +5390,13 @@
     if (specialistId) {
       // Direct specialist selected
       const reduxState = appStore.state;
-      const specialist = selectSpecialists.select(reduxState).find((s) => s.id === specialistId);
-      behaviorPrompt = specialist
-        ? selectEffectiveBehaviorPrompt.select(reduxState, specialist.id)
-        : undefined;
-      // Use getEffectiveModel which resolves tier to actual model for current provider
-      newModel = specialist
-        ? selectEffectiveModel.select(reduxState, specialist.id) || session.model
-        : session.model;
+      const specialist = selectContextSpecialists
+        .select(reduxState, workspace.id)
+        .find((s) => s.id === specialistId);
+      behaviorPrompt = specialist ? specialist.defaultBehaviorPrompt : undefined;
+      // Prefer the workspace's explicit or daemon-resolved model before the current session.
+      newModel =
+        selectEffectiveModel.select(reduxState, specialistId, workspace.id) || session.model;
       specialistName = specialist?.name;
     } else {
       // Blank agent - no specialist
@@ -5624,7 +5636,7 @@
     // / seek rejected) the helper logs and we bail, leaving the conversation
     // where it is. Resident rows scroll directly, keeping the tail intact.
     if (agentId && !messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId))) return false;
+      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id))) return false;
     }
     if (!getContainer()) return false;
     const targetElement = await forceRenderAndFindMessage(messageId, getContainer);
@@ -5646,11 +5658,13 @@
   export function refreshUserMessageIndex(): void {
     if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
       return;
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace?.id;
     userMessageIndexFetchInFlight = true;
     void appClient.agents
-      .listUserMessages(agentId)
+      .listUserMessages(originAgentId, undefined, originWorkspaceId)
       .then((result) => {
-        if (!isActive) return;
+        if (!isActive || agentId !== originAgentId || workspace?.id !== originWorkspaceId) return;
         if (result.ok) {
           userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
         } else if (result.unsupported) {
@@ -5660,7 +5674,8 @@
         }
       })
       .finally(() => {
-        userMessageIndexFetchInFlight = false;
+        if (agentId === originAgentId && workspace?.id === originWorkspaceId)
+          userMessageIndexFetchInFlight = false;
       });
   }
 
@@ -5998,6 +6013,7 @@
           <!-- Welcome page: settled hydration + zero messages + no durable conversation evidence. -->
           <div class="mt-16"></div>
           <RegularAgentWelcome
+            workspaceId={workspace?.id}
             onSpecialistChange={handleSpecialistChange}
             session={$agentSession$}
           />
@@ -6662,6 +6678,7 @@
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
+                            workspaceId={workspace?.id}
                             {notice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
@@ -6678,6 +6695,7 @@
                       {:else if rehomeNotice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ProviderRehomedNotice
+                            workspaceId={workspace?.id}
                             notice={rehomeNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />

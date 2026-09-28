@@ -35,6 +35,7 @@ function request(
   return {
     requestId,
     sessionId: 'agent-1',
+    workspaceId: 'ws-1',
     title: 'Run command',
     description: 'desc',
     options,
@@ -82,10 +83,10 @@ describe('permissionResponseSaga', () => {
     await settle();
 
     expect(mocks.respondPermission.mock.calls).toEqual([
-      ['request-1', { outcome: 'selected', optionId: 'allow-custom' }],
-      ['request-1', { outcome: 'selected', optionId: 'deny-custom' }],
-      ['request-1', { outcome: 'cancelled' }],
-      ['request-1', { outcome: 'selected', optionId: 'allow-always' }],
+      ['request-1', { outcome: 'selected', optionId: 'allow-custom' }, 'ws-1'],
+      ['request-1', { outcome: 'selected', optionId: 'deny-custom' }, 'ws-1'],
+      ['request-1', { outcome: 'cancelled' }, 'ws-1'],
+      ['request-1', { outcome: 'selected', optionId: 'allow-always' }, 'ws-1'],
     ]);
     expect(resolvers).toHaveLength(4);
     expect(run.hasRequest('request-1')).toBe(true);
@@ -118,10 +119,10 @@ describe('permissionResponseSaga', () => {
     await settle();
 
     expect(mocks.respondPermission.mock.calls).toEqual([
-      ['approve-first', { outcome: 'selected', optionId: 'first-destructive' }],
-      ['approve-empty', { outcome: 'selected', optionId: 'allow_once' }],
-      ['deny-last', { outcome: 'selected', optionId: 'last-safe' }],
-      ['deny-empty', { outcome: 'selected', optionId: 'reject_once' }],
+      ['approve-first', { outcome: 'selected', optionId: 'first-destructive' }, 'ws-1'],
+      ['approve-empty', { outcome: 'selected', optionId: 'allow_once' }, 'ws-1'],
+      ['deny-last', { outcome: 'selected', optionId: 'last-safe' }, 'ws-1'],
+      ['deny-empty', { outcome: 'selected', optionId: 'reject_once' }, 'ws-1'],
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -133,10 +134,14 @@ describe('permissionResponseSaga', () => {
     run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
     await settle();
 
-    expect(mocks.respondPermission).toHaveBeenCalledWith('request-1', {
-      outcome: 'selected',
-      optionId: 'allow-custom',
-    });
+    expect(mocks.respondPermission).toHaveBeenCalledWith(
+      'request-1',
+      {
+        outcome: 'selected',
+        optionId: 'allow-custom',
+      },
+      'ws-1',
+    );
     expect(run.hasRequest('request-1')).toBe(false);
     expect(
       run.dispatch.mock.calls.filter(

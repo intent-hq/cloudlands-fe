@@ -265,10 +265,24 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } =
     await import('../../../../test/fixtures/provider-catalog.fixture');
-  mockReduxState.providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
+  mockReduxState.providerCatalog = {
+    ...providerCatalogReducer(initialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG)),
+    get byWorkspaceId() {
+      return {
+        'ws-1': {
+          catalog: MOCK_PROVIDER_CATALOG,
+          settings: [
+            {
+              path: 'model.defaultProvider',
+              value: mockReduxState.providerSettings.activeProviderId,
+            },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      };
+    },
+  };
 
   return createAppStoreMockModule({
     state: () => mockReduxState,

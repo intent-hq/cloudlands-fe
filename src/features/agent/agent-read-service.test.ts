@@ -2,6 +2,15 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types/agent-session';
 
+const reconnectCallbacks = vi.hoisted(() => new Set<() => void>());
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  onBackendReconnected: vi.fn((callback: () => void) => {
+    reconnectCallbacks.add(callback);
+    return () => reconnectCallbacks.delete(callback);
+  }),
+}));
+
 // FAKE seam: appClient.agents.get is stubbed so no daemon call (and never a
 // mutation) happens. The service runs against the REAL configured store so the
 // ensureAgentSessionLoaded middleware, refresh dedup, and upsert hydration are
@@ -89,7 +98,7 @@ describe('agentReadService (fake seam, real store)', () => {
 
     await ensureAgentSession(AGENT);
 
-    expect(agentsApi.get).toHaveBeenCalledWith(AGENT);
+    expect(agentsApi.get).toHaveBeenCalledWith(AGENT, undefined);
     expect(selectAgentSession.select(appStore.state, AGENT)?.name).toBe('fetched');
   });
 
@@ -153,7 +162,7 @@ describe('agentReadService (fake seam, real store)', () => {
     // Once the pending entry is gone (undo or commit), loads work again.
     agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId, name: 'revived' }) as never);
     await ensureAgentSession(agentId);
-    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId, undefined);
   });
 
   // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
@@ -168,7 +177,7 @@ describe('agentReadService (fake seam, real store)', () => {
 
     await ensureAgentSession(agentId);
 
-    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId, undefined);
     expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
   });
 
@@ -534,7 +543,7 @@ describe('agentReadService (fake seam, real store)', () => {
       } as never);
       await refreshAgentSessionAfterEvent(agentId);
 
-      expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+      expect(agentsApi.get).toHaveBeenCalledWith(agentId, WS);
       const stored = selectAgentSession.select(appStore.state, agentId);
       expect(stored?.name).toBe('renamed by agent:updated');
       expect(stored?.processQueueHint).toEqual(HINT);
@@ -636,4 +645,113 @@ describe('agentReadService (fake seam, real store)', () => {
     const stored = selectAgentMessages.select(appStore.state, agentId);
     expect(stored).toEqual([]);
   });
+});
+
+it('keeps concurrent reads of an opaque agent id separate by workspace', async () => {
+  const resolve: Array<(session: AgentSession) => void> = [];
+  agentsApi.get.mockImplementation(() => new Promise((r) => resolve.push(r)));
+  const a = readAgentSession('shared-id', 'workspace-a');
+  const b = readAgentSession('shared-id', 'workspace-b');
+  expect(agentsApi.get).toHaveBeenCalledWith('shared-id', 'workspace-a');
+  expect(agentsApi.get).toHaveBeenCalledWith('shared-id', 'workspace-b');
+  resolve[1](makeSession({ id: 'shared-id', workspaceId: 'workspace-b' } as Partial<AgentSession>));
+  resolve[0](makeSession({ id: 'shared-id', workspaceId: 'workspace-a' } as Partial<AgentSession>));
+  expect((await a)?.workspaceId).toBe('workspace-a');
+  expect((await b)?.workspaceId).toBe('workspace-b');
+});
+
+it('drops a prior connection response and its scheduled trailing read', async () => {
+  appStore.init();
+  const agentId = 'connection-agent';
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockClear();
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const oldRead = readAgentSession(agentId, 'workspace-a');
+  const trailing = refreshAgentSessionAfterEvent(agentId, 'workspace-a');
+  for (const callback of reconnectCallbacks) callback();
+  agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId, name: 'new connection' }));
+  const fresh = await readAgentSession(agentId, 'workspace-a');
+  finish(makeSession({ id: agentId, name: 'old connection' }));
+  expect(await oldRead).toBeNull();
+  await trailing;
+  expect(fresh?.name).toBe('new connection');
+  expect(agentsApi.get).toHaveBeenCalledTimes(2);
+  expect(agentsApi.get).toHaveBeenLastCalledWith(agentId, 'workspace-a');
+});
+
+describe('workspace result ownership', () => {
+  beforeAll(() => appStore.init());
+  it.each(['a-first', 'b-first'])(
+    'keeps the latest workspace metadata with %s completion',
+    async (order) => {
+      const id = `metadata-${order}`;
+      const finishes: Array<(session: AgentSession) => void> = [];
+      agentsApi.get.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)));
+      const a = ensureAgentSession(id, 'workspace-a');
+      const b = ensureAgentSession(id, 'workspace-b');
+      const finishA = async () => {
+        finishes[0](makeSession({ id, workspaceId: 'workspace-a', name: 'A' }));
+        await a;
+      };
+      const finishB = async () => {
+        finishes[1](makeSession({ id, workspaceId: 'workspace-b', name: 'B' }));
+        await b;
+        appStore.dispatch(
+          bulkUpsertSessions([
+            makeSession({
+              id,
+              workspaceId: 'workspace-b',
+              messages: [{ id: 'b-message', role: 'user', timestamp: '2026-09-28T00:00:00Z' }],
+            }),
+          ]),
+        );
+      };
+      if (order === 'a-first') {
+        await finishA();
+        await finishB();
+      } else {
+        await finishB();
+        await finishA();
+      }
+      const stored = selectAgentSession.select(appStore.state, id);
+      expect(stored?.workspaceId).toBe('workspace-b');
+      expect(stored?.messages.map((m) => m.id)).toEqual(['b-message']);
+    },
+  );
+});
+
+it('never projects workspace A question markers into a pending workspace B read', async () => {
+  appStore.init();
+  const id = 'scoped-marker';
+  appStore.dispatch(
+    bulkUpsertSessions([
+      makeSession({
+        id,
+        workspaceId: 'workspace-a',
+        metadata: { pendingQuestionsMessageId: 'a-marker' },
+      }),
+    ]),
+  );
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const read = readAgentSession(id, 'workspace-b');
+  notePendingQuestionMarkerProjection(id, 'workspace-a');
+  finish(
+    makeSession({
+      id,
+      workspaceId: 'workspace-b',
+      metadata: { pendingQuestionsMessageId: 'b-marker' },
+    }),
+  );
+  expect((await read)?.metadata?.pendingQuestionsMessageId).toBe('b-marker');
 });

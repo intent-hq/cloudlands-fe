@@ -29,13 +29,14 @@
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
+    workspaceId?: string;
     /** Saved options from the resolved specialist view (wire `modelOptions`). */
     savedOptions?: SpecialistModelOption[];
     /** Persist the committed (model-bearing) rows. */
     onCommit: (options: SpecialistModelOption[]) => void;
   }
 
-  let { savedOptions, onCommit }: Props = $props();
+  let { savedOptions, onCommit, workspaceId }: Props = $props();
 
   // Local rows: saved options plus any draft rows (model === ''). Hints are
   // committed on blur (the input is not two-way bound), so typing never
@@ -82,7 +83,12 @@
     effort: string | undefined,
   ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
+    const levels = selectProviderModelEffortLevels.select(
+      appStore.state,
+      providerId,
+      modelId,
+      workspaceId,
+    );
     return levels?.includes(effort) ? effort : undefined;
   }
 
@@ -179,6 +185,7 @@
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <div class="min-w-0 max-w-full">
           <ModelPicker
+            {workspaceId}
             selectedModel={pickerModelId(row) || undefined}
             onModelChange={(model, pick) => handleModelChange(index, model, pick)}
             showDefaultOption={false}

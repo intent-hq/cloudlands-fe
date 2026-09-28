@@ -799,7 +799,10 @@
 
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
-  <div class="h-full w-full relative">
+  <div
+    class="h-full w-full relative"
+    data-workspace-id={workspaceId === 'new' ? undefined : workspaceId}
+  >
     {#if showOnboarding && $windowGuestSession$}
       <GuestEmptyState session={$windowGuestSession$} />
     {:else if showOnboarding}
