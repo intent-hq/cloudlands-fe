@@ -85,10 +85,10 @@
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
-    isProviderDisabledInSettings,
-    isProviderEnabled,
+    isProviderDisabledInSettings as isProviderDisabledInSettingsForContext,
+    isProviderEnabled as isProviderEnabledForContext,
     isUserProviderSettled,
-    normalizeModelIdForMatch,
+    normalizeModelIdForMatch as normalizeModelIdForMatchForContext,
     toDropdownOptions,
   } from './model-picker-utils';
   import { cn } from '$lib/utils';
@@ -114,6 +114,15 @@
   // Catalog-backed local shims for the legacy provider-config helpers, so the
   // picker's many call sites keep their shape. Reads are reactive via the
   // defaultProviderId$ subscription above plus the appStore.state lookups.
+  function isProviderEnabled(ids: string[], id: string) {
+    return isProviderEnabledForContext(ids, id, workspaceId);
+  }
+  function isProviderDisabledInSettings(enabled: Record<string, boolean>, id: string) {
+    return isProviderDisabledInSettingsForContext(enabled, id, workspaceId);
+  }
+  function normalizeModelIdForMatch(id: string, provider?: string) {
+    return normalizeModelIdForMatchForContext(id, provider, workspaceId);
+  }
   function normalizeProviderId(providerId: string): string {
     void $providerCatalogEntries$;
     return (
@@ -1974,6 +1983,7 @@
 
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
     return findModelFallbackOption({
+      workspaceId,
       options: flatModelOptions,
       excludeValue: USE_DEFAULT_VALUE,
       restrictToProvider,
@@ -2004,6 +2014,7 @@
     const modelProvider = normalizeProviderId(rawModelProvider);
     if (
       !isUserProviderSettled({
+        workspaceId,
         agentProviderModels,
         agentProviderError,
         enabledProviderIds: $availableEnabledProviderIds$,

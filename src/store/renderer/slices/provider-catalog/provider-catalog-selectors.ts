@@ -23,8 +23,13 @@ export const selectProviderCatalogLoaded = store.createSelector(
 );
 
 /** All rows in the daemon's registry order (gated-off rows included). */
-export const selectProviderCatalogEntries = store.createSelector((state): ProviderCatalogEntry[] =>
-  state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
+export const selectProviderCatalogEntries = store.createSelector(
+  (state, workspaceId?: string): ProviderCatalogEntry[] =>
+    workspaceId
+      ? (state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.providers ?? [])
+      : state.providerCatalog
+        ? getItems(state.providerCatalog.providers)
+        : [],
 );
 
 /** All provider ids in registry order. */
@@ -45,23 +50,35 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * Provider provenance lives in the triple's provider leg — model ids in the
  * store are always bare and never consulted here.
  */
-export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
-  return state.model?.defaultProviderId ?? '';
-});
+export const selectEffectiveDefaultProviderId = store.createSelector(
+  (state, workspaceId?: string): string => {
+    if (workspaceId) {
+      const value = state.providerCatalog?.byWorkspaceId?.[workspaceId]?.settings.find(
+        (s) => s.path === 'model.defaultProvider',
+      )?.value;
+      return typeof value === 'string' ? value : '';
+    }
+    return state.model?.defaultProviderId ?? '';
+  },
+);
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
 export const selectProviderCatalogEntry = store.createSelector(
-  (state, providerId: string): ProviderCatalogEntry | undefined =>
-    state.providerCatalog ? getItem(state.providerCatalog.providers, providerId) : undefined,
+  (state, providerId: string, workspaceId?: string): ProviderCatalogEntry | undefined =>
+    workspaceId
+      ? selectProviderCatalogEntries.select(state, workspaceId).find((p) => p.id === providerId)
+      : state.providerCatalog
+        ? getItem(state.providerCatalog.providers, providerId)
+        : undefined,
 );
 
 /** Canonical ID first, then only aliases explicitly advertised by the daemon. */
 export const selectResolvedProviderCatalogEntry = store.createSelector(
-  (state, providerId: string): ProviderCatalogEntry | undefined => {
-    const exact = selectProviderCatalogEntry.select(state, providerId);
+  (state, providerId: string, workspaceId?: string): ProviderCatalogEntry | undefined => {
+    const exact = selectProviderCatalogEntry.select(state, providerId, workspaceId);
     if (exact || !providerId) return exact;
     return selectProviderCatalogEntries
-      .select(state)
+      .select(state, workspaceId)
       .find((entry) => entry.legacyAliases?.includes(providerId));
   },
 );
@@ -98,8 +115,8 @@ export const selectProviderEnabledFromCatalog = store.createSelector(
  * Settings defaults, row order and availability never determine alias identity.
  */
 export const selectNormalizedProviderId = store.createSelector(
-  (state, providerId: string): string =>
-    selectResolvedProviderCatalogEntry.select(state, providerId)?.id ?? providerId,
+  (state, providerId: string, workspaceId?: string): string =>
+    selectResolvedProviderCatalogEntry.select(state, providerId, workspaceId)?.id ?? providerId,
 );
 
 /**
@@ -107,8 +124,9 @@ export const selectNormalizedProviderId = store.createSelector(
  * (or the catalog) is missing — safe for labels before hydration.
  */
 export const selectProviderDisplayName = store.createSelector(
-  (state, providerId: string): string =>
-    selectResolvedProviderCatalogEntry.select(state, providerId)?.displayName ?? providerId,
+  (state, providerId: string, workspaceId?: string): string =>
+    selectResolvedProviderCatalogEntry.select(state, providerId, workspaceId)?.displayName ??
+    providerId,
 );
 
 /**

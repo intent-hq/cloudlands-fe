@@ -135,10 +135,25 @@ describe('workspace catalog ownership', () => {
       await settle();
       expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B', 'A', 'B']);
       expect(selectContextDefaultProvider.select(state as StoreState, 'B')).toBe('B');
+      mocks.notification?.({
+        method: 'events.event',
+        params: {
+          event: {
+            type: 'workspace:updated',
+            workspaceId: 'A',
+            data: {
+              workspaceId: 'A',
+              changes: { mcpServerToggled: { serverId: 'server-A', workspaceDisabled: true } },
+            },
+          },
+        },
+      });
+      await settle();
+      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B', 'A', 'B', 'A', 'B']);
       dispatch(workspaceCatalogRequested('B'));
       mocks.reconnect?.();
       await settle();
-      expect(state.providerCatalog.workspaceEpoch).toBe(2);
+      expect(state.providerCatalog.workspaceEpoch).toBe(3);
     } finally {
       task.cancel();
       await task.toPromise();

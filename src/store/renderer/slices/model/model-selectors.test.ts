@@ -619,3 +619,45 @@ describe('selectAgentModelEffortLevels', () => {
     expect(selectAgentModelEffortLevels.select(state, 'empty')).toEqual(['low', 'high']);
   });
 });
+
+it.each(['acp', 'default', 'augment'])(
+  'normalizes inherited %s against each workspace catalog',
+  (alias) => {
+    const state = mockState();
+    const scoped = (provider: string) => ({
+      catalog: { providers: [{ id: provider, legacyAliases: [alias] }] },
+      settings: [
+        { path: 'model.defaultProvider', value: provider },
+        { path: 'model.providerDefaults', value: { [provider]: 'same-model' } },
+      ],
+      specialists: [],
+      readiness: {},
+    });
+    state.providerCatalog.byWorkspaceId = {
+      A: scoped('auggie'),
+      B: scoped('codex'),
+    } as unknown as NonNullable<StoreState['providerCatalog']['byWorkspaceId']>;
+    state.providerModels.byWorkspaceId = {
+      A: {
+        auggie: {
+          models: [{ value: 'same-model', label: 'A', effortLevels: ['low', 'high'] }],
+          fetchedAt: 'now',
+        },
+      },
+      B: {
+        codex: {
+          models: [{ value: 'same-model', label: 'B', effortLevels: ['medium', 'max'] }],
+          fetchedAt: 'now',
+        },
+      },
+    };
+    state.agentSessions = {
+      byAgentId: {
+        a: { id: 'a', workspaceId: 'A', provider: alias, model: null },
+        b: { id: 'b', workspaceId: 'B', provider: alias, model: null },
+      },
+    } as unknown as StoreState['agentSessions'];
+    expect(selectAgentModelEffortLevels.select(state, 'a')).toEqual(['low', 'high']);
+    expect(selectAgentModelEffortLevels.select(state, 'b')).toEqual(['medium', 'max']);
+  },
+);

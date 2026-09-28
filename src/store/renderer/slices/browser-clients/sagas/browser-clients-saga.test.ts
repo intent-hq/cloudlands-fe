@@ -708,3 +708,30 @@ describe('browserClientsSaga', () => {
     });
   });
 });
+
+it('workspace routing regression: global invalidation cannot race a workspace list', async () => {
+  const old = deferred<LiveClient[]>();
+  mocks.list
+    .mockReset()
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValue([{ ...desk, clientId: 'current' }]);
+  mocks.ownClientId.mockResolvedValue('cli-desk');
+  mocks.getBrowserClient.mockResolvedValue({
+    source: 'default',
+    resolved: { clientId: 'cli-desk' },
+  });
+  const run = startWithReducer();
+  try {
+    run.dispatch(workspaceMounted('A'));
+    for (let i = 0; i < 20; i++) await settle();
+    run.dispatch(refreshLiveClientsRequested());
+    for (let i = 0; i < 20; i++) await settle();
+    expect(run.entry('A').liveClients?.ids).toEqual(['current']);
+    old.resolve([{ ...desk, clientId: 'stale' }]);
+    for (let i = 0; i < 20; i++) await settle();
+    expect(run.entry('A').liveClients?.ids).toEqual(['current']);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
+});

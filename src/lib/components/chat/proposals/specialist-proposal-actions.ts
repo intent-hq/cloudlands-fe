@@ -7,7 +7,7 @@ import {
 } from '$shared/specialist-file-types';
 import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
-import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+import { selectContextSelectedModel } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { selectSpecialistProposalAppliedState } from '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors';
 import type {
@@ -89,10 +89,16 @@ function buildCurrentSpecialistPayload(
     name: current.name,
     description: current.description,
     codingAgent:
-      fileSpec?.codingAgent ?? current.codingAgent ?? selectEffectiveCodingAgent.select(state, id),
-    model: fileSpec?.model ?? current.defaultModel ?? selectEffectiveModel.select(state, id),
+      fileSpec?.codingAgent ??
+      current.codingAgent ??
+      selectEffectiveCodingAgent.select(state, id, workspaceId),
+    model:
+      fileSpec?.model ??
+      current.defaultModel ??
+      selectEffectiveModel.select(state, id, workspaceId),
     roleReminder: fileSpec?.roleReminder ?? current.roleReminder,
-    behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
+    behaviorPrompt:
+      fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id, workspaceId),
     scope,
     workspacePath,
     workspaceId,
@@ -124,7 +130,8 @@ export async function applySpecialistProposalWork(
   const state = appStore.state;
   const payload = getPayload(proposal);
   const operation = payload.operation ?? payload.action ?? 'edit';
-  const existingSpecialists = selectSpecialists.select(state);
+  const readWorkspaceId = payload.scope === 'project' ? detail.workspaceId : undefined;
+  const existingSpecialists = selectSpecialists.select(state, readWorkspaceId);
   const requestedId = typeof payload.id === 'string' ? payload.id : '';
   const current = requestedId
     ? existingSpecialists.find((specialist) => specialist.id === requestedId)
@@ -136,7 +143,7 @@ export async function applySpecialistProposalWork(
       name || 'specialist',
       existingSpecialists.map((specialist) => specialist.id),
     );
-  const fileSpec = selectGetFileSpecialist.select(state, id);
+  const fileSpec = selectGetFileSpecialist.select(state, id, readWorkspaceId);
   const scope = getScope(payload.scope, fileSpec?.source);
   const workspaceId = scope === 'project' ? detail.workspaceId : undefined;
   const workspacePath =
@@ -165,15 +172,15 @@ export async function applySpecialistProposalWork(
   }
 
   const fallbackModel = current
-    ? selectEffectiveModel.select(state, current.id)
-    : selectSelectedModel.select(state);
+    ? selectEffectiveModel.select(state, current.id, workspaceId)
+    : selectContextSelectedModel.select(state, workspaceId);
   // Writes emit bare model ids only (PROTOCOL §5.11): a legacy compound
   // proposal/fallback model splits into the bare id plus its provider, the
   // prefix winning as the codingAgent (`|| fallback` so a malformed empty
   // prefix never propagates as a "real" provider id).
   const rawModel = stringField(proposal, detail, 'model', fallbackModel).trim();
   const { providerId: modelProviderId, modelId: model } = splitLegacyCompoundId(rawModel);
-  const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(state, workspaceId);
   const providerId = modelProviderId || defaultProviderId;
   const description = stringField(
     proposal,
@@ -185,7 +192,7 @@ export async function applySpecialistProposalWork(
     proposal,
     detail,
     'prompt',
-    current ? selectEffectiveBehaviorPrompt.select(state, current.id) : '',
+    current ? selectEffectiveBehaviorPrompt.select(state, current.id, workspaceId) : '',
   );
 
   const saveAction = saveFileSpecialist({
@@ -197,7 +204,7 @@ export async function applySpecialistProposalWork(
     codingAgent:
       modelProviderId ||
       (payload.codingAgent ??
-        (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId)),
+        (current ? selectEffectiveCodingAgent.select(state, current.id, workspaceId) : providerId)),
     model,
     roleReminder: payload.roleReminder ?? current?.roleReminder,
     behaviorPrompt: prompt,

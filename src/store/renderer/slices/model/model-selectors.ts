@@ -288,11 +288,11 @@ export const selectAgentModelEffortLevels = store.createSelector(
         : ''
       : selectEffectiveDefaultProviderId.select(state);
     const rawProviderId = getAgentProvider(session, fallbackProvider);
-    const providerId = settings
-      ? (rawProviderId ?? fallbackProvider)
-      : rawProviderId
-        ? selectNormalizedProviderId.select(state, rawProviderId)
-        : fallbackProvider;
+    const providerId = selectNormalizedProviderId.select(
+      state,
+      rawProviderId ?? fallbackProvider,
+      session.workspaceId,
+    );
     const defaults = settings?.find((entry) => entry.path === 'model.providerDefaults')?.value;
     const configuredModel =
       defaults && typeof defaults === 'object'

@@ -1,3 +1,4 @@
+import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession, Note } from '$shared/types';
@@ -5410,7 +5411,19 @@ describe('daemonEventsBridge (wire contract — mcpServerToggled on workspace:up
   afterEach(() => vi.clearAllMocks());
 
   function seedMcpServer(id: string, name: string): void {
-    appStore.dispatch(setServers([{ id, name, type: 'stdio', command: 'npx' }]));
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        WS_TOGGLE,
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [{ id, name, type: 'stdio', command: 'npx' }],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
   }
 
   function toggledNotification(changes: Record<string, unknown>) {
@@ -13538,3 +13551,53 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(cleared);
   });
 });
+
+it.each(['server-workspace', 'server-direct'])(
+  'workspace routing regression: MCP toggle resolves %s in its workspace',
+  async (serverId) => {
+    appStore.init();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    const workspaceId = 'workspace-independent-mcp';
+    appStore.dispatch(
+      setServers([{ id: 'server-direct', name: 'direct', type: 'stdio', command: 'npx' }]),
+    );
+    const { workspaceCatalogReceived } =
+      await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        workspaceId,
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [{ id: serverId, name: 'workspace-server', type: 'stdio', command: 'npx' }],
+          mcpStatuses: [],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
+    appStore.dispatch(setWorkspaceDisabledMcpServers(workspaceId, {}));
+    await primeBridge();
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-independent-mcp',
+          workspaceId,
+          timestamp: '2026-09-28T06:00:00.000Z',
+          type: 'workspace:updated',
+          actor: { type: 'system', id: 'daemon' },
+          data: {
+            workspaceId,
+            changes: { mcpServerToggled: { serverId, workspaceDisabled: true } },
+          },
+        },
+      },
+    });
+    expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual({
+      'workspace-server': true,
+    });
+  },
+);

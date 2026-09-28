@@ -130,6 +130,9 @@ function makeState() {
         ['ws-1', 'ws-2'].map((id) => [
           id,
           {
+            catalog: { providers: [] },
+            specialists: [],
+            readiness: {},
             settings: [
               { path: 'model.defaultProvider', value: 'codex' },
               { path: 'model.providerDefaults', value: { codex: 'model-a' } },

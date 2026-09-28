@@ -105,7 +105,7 @@ function browserClientReadContext(action: BrowserClientReadAction) {
  * calls: one read is in flight and at most one trailing read follows it.
  */
 function* readLiveClients(
-  connection: { epoch: number },
+  connection: { epoch: number; nextRead: number; reads: Map<string, number> },
   action:
     | ReturnType<typeof refreshLiveClientsRequested>
     | ReturnType<typeof workspaceUnmounted>
@@ -123,12 +123,15 @@ function* readLiveClients(
       if (epoch === connection.epoch) yield* put(liveClientsReceived(clients));
     }
     for (const wsId of mounted) {
+      const version = ++connection.nextRead;
+      connection.reads.set(wsId, version);
       const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
       const read = yield* untilWorkspaceCleanup(
         wsId,
         call([appClient.clients, appClient.clients.list], wsId),
       );
-      if (read.cleanup || epoch !== connection.epoch) continue;
+      if (read.cleanup || epoch !== connection.epoch || connection.reads.get(wsId) !== version)
+        continue;
       yield* put(liveClientsReceived(read.result, wsId));
       if (presenceChange) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
     }
@@ -317,7 +320,13 @@ function* watchClientConnection(connection: { epoch: number }) {
 
 export function* browserClientsSaga(): SagaGenerator<void> {
   const pinWriteEpochs: PinWriteEpochs = {};
-  const connection = { epoch: 0 };
+  const connection = { epoch: 0, nextRead: 0, reads: new Map<string, number>() };
+  yield* takeEvery(
+    [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
+    function* (action) {
+      connection.reads.delete(action.payload[0]);
+    },
+  );
   yield* fork(watchClientConnection, connection);
   yield* takeEvery(workspaceMounted, onWorkspaceMounted);
   yield* takeSingleFlightInContext(

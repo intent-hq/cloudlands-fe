@@ -75,21 +75,7 @@ export const selectContextAvailableProviderIds = store.createSelector(
       : selectAvailableEnabledProviderIds.select(state),
 );
 export const selectContextSpecialists = store.createSelector(
-  (state, workspaceId?: string): Specialist[] => {
-    if (!workspaceId) return selectSpecialists.select(state);
-    return (selectWorkspaceCatalog.select(state, workspaceId)?.specialists ?? []).map((def) => ({
-      ...def,
-      defaultModel: def.model,
-      defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
-      defaultAgentType: def.agentType,
-      source:
-        def.source === 'project'
-          ? ('project' as const)
-          : def.source === 'user'
-            ? ('user' as const)
-            : ('bundled' as const),
-    }));
-  },
+  (state, workspaceId?: string): Specialist[] => selectSpecialists.select(state, workspaceId),
 );
 
 export const selectContextReadinessLoaded = store.createSelector(

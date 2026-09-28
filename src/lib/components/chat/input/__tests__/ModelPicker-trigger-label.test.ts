@@ -162,7 +162,17 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       sessions,
-      providerCatalog,
+      providerCatalog: {
+        ...providerCatalog,
+        byWorkspaceId: {
+          'ws-1': {
+            catalog: { providers: Object.values(providerCatalog.providers.map) },
+            settings: [{ path: 'model.defaultProvider', value: 'auggie' }],
+            specialists: [],
+            readiness: {},
+          },
+        },
+      },
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
       // The picker's guest/collaborator gate reads the caller role: a settled

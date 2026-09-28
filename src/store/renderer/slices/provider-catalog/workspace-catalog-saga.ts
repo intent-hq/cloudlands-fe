@@ -113,7 +113,9 @@ function* watchInvalidations() {
         type === 'specialists:changed' ||
         type === 'provider:auth-changed' ||
         type?.startsWith('mcp.servers:') ||
-        type === 'mcpServerToggled'
+        (type === 'workspace:updated' &&
+          !!(event as { data?: { changes?: { mcpServerToggled?: unknown } } })?.data?.changes
+            ?.mcpServerToggled)
       ) {
         // An unqualified daemon event invalidates every context; never attribute its payload to focus.
         emit(true);

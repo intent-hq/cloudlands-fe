@@ -108,7 +108,22 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({
-      providerCatalog,
+      providerCatalog: {
+        ...providerCatalog,
+        byWorkspaceId: Object.fromEntries(
+          ['ws-1', 'A', 'B'].map((workspaceId) => [
+            workspaceId,
+            {
+              catalog: MOCK_PROVIDER_CATALOG,
+              settings: [
+                { path: 'model.defaultProvider', value: mockModelState.defaultProviderId },
+              ],
+              specialists: [],
+              readiness: {},
+            },
+          ]),
+        ),
+      },
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },

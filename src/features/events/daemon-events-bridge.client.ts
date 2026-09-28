@@ -1,3 +1,4 @@
+import { selectMcpServers } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -2724,7 +2725,7 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
   if (typeof serverId !== 'string' || !serverId || typeof workspaceDisabled !== 'boolean') {
     return;
   }
-  const servers = appStore.state.mcpSettings.servers;
+  const servers = selectMcpServers.select(appStore.state, workspaceId);
   const match = servers.find((s) => s.id === serverId);
   if (!match) return;
   appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, match.name, workspaceDisabled));
