@@ -1,3 +1,12 @@
+const reconnectHandlers = vi.hoisted(() => new Set<() => void>());
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  onBackendReconnected: (h: () => void) => {
+    reconnectHandlers.add(h);
+    return () => reconnectHandlers.delete(h);
+  },
+  onBackendNotification: () => () => {},
+}));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
@@ -284,7 +293,7 @@ it('keeps pull completion tied to the workspace that started it', async () => {
   await fireEvent.click(view.getByTestId('pr-pull-button'));
   expect(appClient.git.pull).toHaveBeenCalledWith('/repo-a', 'feature/branch', 'a');
   await view.rerender({ workspaceId: 'b' });
-  mocks.dispatch.mockClear();
+  mocks.dispatch.mockReset();
   finish({ success: true });
   await waitFor(() =>
     expect(mocks.dispatch).toHaveBeenCalledWith(
@@ -347,7 +356,7 @@ warmImport(() => import('../PRSection.svelte'));
 
 describe('PRSection', () => {
   beforeEach(() => {
-    mocks.dispatch.mockClear();
+    mocks.dispatch.mockReset();
     mockCreatePR.mockClear();
     mockCreatePR.mockResolvedValue({ success: true });
     mockExecute.mockReset().mockResolvedValue({ success: true });
@@ -356,6 +365,111 @@ describe('PRSection', () => {
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
   });
+
+  it('retires the pulling flag after reconnect interrupts a pull', async () => {
+    const { appClient } = await import('$lib/client');
+    const { gitReducer, initialState, getGitWorkspaceState } = await vi.importActual<
+      typeof import('$store/renderer/slices/git/git-slice')
+    >('$store/renderer/slices/git/git-slice');
+    const { backendReconnected } =
+      await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+    let gitState = initialState;
+    mocks.dispatch.mockImplementation((action) => {
+      gitState = gitReducer(gitState, action);
+      return action;
+    });
+    let finish!: (v: { success: boolean }) => void;
+    vi.mocked(appClient.git.pull).mockImplementationOnce(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    mocks.workspaceEntity.path = '/repo-a';
+    const view = await renderPR({
+      workspaceId: 'a',
+      hasOpenPR: true,
+      isBehind: true,
+      behindCount: 1,
+    });
+    await fireEvent.click(view.getByTestId('pr-pull-button'));
+    expect(appClient.git.pull).toHaveBeenCalledWith('/repo-a', 'feature/branch', 'a');
+    expect(getGitWorkspaceState(gitState, 'a').gitOperations.isPulling).toBe(true);
+    gitState = gitReducer(gitState, backendReconnected());
+    for (const h of [...reconnectHandlers]) h();
+    finish({ success: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getGitWorkspaceState(gitState, 'a').gitOperations.isPulling).toBe(false);
+  });
+
+  it.each(['success', 'error', 'rejection'] as const)(
+    'protects replacement and other-workspace pulls from late old %s',
+    async (outcome) => {
+      const { appClient } = await import('$lib/client');
+      const { gitReducer, initialState, getGitWorkspaceState } = await vi.importActual<
+        typeof import('$store/renderer/slices/git/git-slice')
+      >('$store/renderer/slices/git/git-slice');
+      const { backendReconnected } =
+        await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+      let state = initialState;
+      mocks.dispatch.mockImplementation((action) => {
+        state = gitReducer(state, action);
+        return action;
+      });
+      const pending: Array<{
+        resolve: (value: { success: boolean; error?: string }) => void;
+        reject: (error: Error) => void;
+      }> = [];
+      vi.mocked(appClient.git.pull).mockImplementation(
+        () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
+      );
+      mocks.workspaceEntity.path = '/repo-a';
+      const a = await renderPR({
+        workspaceId: 'a',
+        hasOpenPR: true,
+        isBehind: true,
+        behindCount: 1,
+      });
+      await fireEvent.click(a.getByTestId('pr-pull-button'));
+      state = gitReducer(state, backendReconnected());
+      for (const handler of [...reconnectHandlers]) handler();
+      expect(getGitWorkspaceState(state, 'a').gitOperations.isPulling).toBe(false);
+      await fireEvent.click(a.getByTestId('pr-pull-button'));
+      const b = await renderPR({
+        workspaceId: 'b',
+        hasOpenPR: true,
+        isBehind: true,
+        behindCount: 1,
+      });
+      await fireEvent.click(b.container.querySelector('[data-testid="pr-pull-button"]')!);
+      const finishOld = pending[0];
+      if (outcome === 'rejection') finishOld.reject(new Error('old failure'));
+      else finishOld.resolve({ success: outcome === 'success', error: 'old failure' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(getGitWorkspaceState(state, 'a').gitOperations.isPulling).toBe(true);
+      expect(getGitWorkspaceState(state, 'b').gitOperations.isPulling).toBe(true);
+      pending[1].resolve({ success: outcome === 'success', error: 'new failure' });
+      await waitFor(() =>
+        expect(getGitWorkspaceState(state, 'a').gitOperations.isPulling).toBe(false),
+      );
+      expect(getGitWorkspaceState(state, 'b').gitOperations.isPulling).toBe(true);
+      b.unmount();
+      expect(getGitWorkspaceState(state, 'b').gitOperations.isPulling).toBe(false);
+      const replacement = await renderPR({
+        workspaceId: 'b',
+        hasOpenPR: true,
+        isBehind: true,
+        behindCount: 1,
+      });
+      await fireEvent.click(replacement.container.querySelector('[data-testid="pr-pull-button"]')!);
+      pending[2].resolve({ success: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(getGitWorkspaceState(state, 'b').gitOperations.isPulling).toBe(true);
+      pending[3].resolve({ success: true });
+      await waitFor(() =>
+        expect(getGitWorkspaceState(state, 'b').gitOperations.isPulling).toBe(false),
+      );
+      vi.mocked(appClient.git.pull).mockResolvedValue({ success: true });
+    },
+  );
 
   it('affirms the linked PR action in every required visual state', async () => {
     const observed = await exerciseVisualStates(async () => {
@@ -429,7 +543,7 @@ describe('PRSection', () => {
       unpushedCount: 1,
       commits: [makePushedCommit('abc')],
     });
-    mocks.dispatch.mockClear();
+    mocks.dispatch.mockReset();
     const push = await waitFor(() => {
       const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
         candidate.textContent?.includes('Push 1 Commit'),

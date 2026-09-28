@@ -8,7 +8,10 @@
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { invoke } from '$shared/generated/ipc-client';
 
-  import { captureIntegrationContext } from '$features/integrations-request-context';
+  import {
+    captureIntegrationContext,
+    integrationReconnectSettled,
+  } from '$features/integrations-request-context';
   import { onBackendReconnected } from '$lib/client/live/backend-transport';
 
   const preloadLogger = createLogger('IssueSuggestions:preload');
@@ -1164,7 +1167,12 @@
           // when the fetch failed or a newer refresh (e.g. a committed
           // search) superseded it; the committed-query re-check guards the
           // window after apply where a search commits before this write.
-          if (applied && query === '' && committedQueries['github-issues'] === '') {
+          if (
+            context.isCurrent() &&
+            applied &&
+            query === '' &&
+            committedQueries['github-issues'] === ''
+          ) {
             issueCache.github = {
               data: {
                 issues: githubIssuesPager.state.items,
@@ -1179,8 +1187,10 @@
             count: githubIssuesPager.state.items.length,
           });
         } finally {
-          isLoadingGitHub = false;
-          isRefreshingGitHub = false;
+          if (context.isCurrent()) {
+            isLoadingGitHub = false;
+            isRefreshingGitHub = false;
+          }
         }
       }
     } catch (error) {
@@ -1295,6 +1305,7 @@
   async function loadGitHubPRs(
     filter: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves' = githubPRFilter,
   ) {
+    const context = actionContext();
     try {
       if (!isGitHubAuthenticated) {
         return;
@@ -1327,6 +1338,7 @@
           // query + filter re-checks guard the window after apply where a
           // search or filter switch commits before this write.
           if (
+            context.isCurrent() &&
             applied &&
             query === '' &&
             committedQueries['github-prs'] === '' &&
@@ -1346,8 +1358,10 @@
             filter,
           });
         } finally {
-          isLoadingGitHubPRs = false;
-          _isRefreshingGitHubPRs = false;
+          if (context.isCurrent()) {
+            isLoadingGitHubPRs = false;
+            _isRefreshingGitHubPRs = false;
+          }
         }
       }
     } catch (error) {
@@ -1598,11 +1612,15 @@
     githubPRsPager.reset();
   };
   const stopReconnect = onBackendReconnected(() => {
-    connectionRevision += 1;
     resetPages();
-    void loadLinearIssues();
-    void loadSentryIssues();
-    void loadGitHubIssues();
+    relatedRepos = [];
+    void integrationReconnectSettled().then(() => {
+      if (disposed) return;
+      connectionRevision += 1;
+      void loadLinearIssues();
+      void loadSentryIssues();
+      void loadGitHubIssues();
+    });
   });
   $effect(() => {
     workspaceId;
@@ -1610,6 +1628,7 @@
     repositoryName;
     untrack(() => {
       resetPages();
+      relatedRepos = [];
       void loadLinearIssues();
       void loadSentryIssues();
       void loadGitHubIssues();
@@ -1660,6 +1679,8 @@
     const owner = repositoryOwner;
     const repo = repositoryName;
     const authed = isGitHubAuthenticated;
+    workspaceId;
+    connectionRevision;
     // Only reload if we have both and are authenticated
     if (owner && repo && authed) {
       // Use untrack to prevent infinite loop - the load functions update state

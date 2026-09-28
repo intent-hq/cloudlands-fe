@@ -18,3 +18,10 @@ export function captureIntegrationContext(workspaceId?: string) {
     isCurrent: () => originConnection === connection,
   };
 }
+
+/** Let all synchronous reconnect observers invalidate old state before starting fresh reads.
+ * The connection observer stays lazy and may have been registered after a consumer.
+ */
+export function integrationReconnectSettled(): Promise<void> {
+  return Promise.resolve();
+}

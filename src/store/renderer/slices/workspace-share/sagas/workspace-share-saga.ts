@@ -36,7 +36,10 @@ import { clearGithubUserSearch } from '../../github-user-search/github-user-sear
 import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
 import { forgeAuthClient } from '$features/forge-auth/renderer/forge-auth.client';
-import { captureIntegrationContext } from '$features/integrations-request-context';
+import {
+  captureIntegrationContext,
+  integrationReconnectSettled,
+} from '$features/integrations-request-context';
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -485,6 +488,7 @@ function* loadIntegrationAuth(
 }
 
 export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {
+  yield* call(integrationReconnectSettled);
   yield* put(clearGithubUserSearch());
   const target = yield* selectShareTarget.effect();
   if (!target) return;
