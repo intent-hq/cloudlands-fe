@@ -155,6 +155,31 @@ describe('active pane column movement', () => {
     expect(result.panels[result.focusedPanelId!].tabs).toEqual([movedPane]);
   });
 
+  it.each(['prev', 'next'] as const)('detaches a single-tab row toward %s', (direction) => {
+    setup({ above: ['stay'], source: ['move'] });
+    workspace().root = {
+      type: 'split',
+      direction: 'vertical',
+      sizes: [40, 60],
+      children: [
+        { type: 'panel', panelId: 'above' },
+        { type: 'panel', panelId: 'source' },
+      ],
+    };
+    workspace().columnCount = 1;
+    expect(adapter.moveActivePaneToColumn('source', direction)).toBe(true);
+    const result = workspace();
+    expect(result.columnCount).toBe(2);
+    expect(result.root).toMatchObject({ direction: 'horizontal' });
+    expect(getPanelOrder(result.root)).toEqual(
+      direction === 'prev' ? ['source', 'above'] : ['above', 'source'],
+    );
+    expect(result.panels.source.tabs).toEqual([movedPane]);
+    expect(result.panels.above.tabs.map((tab) => tab.id)).toEqual(['stay']);
+    expect(result.focusedPanelId).toBe('source');
+    expect(result.pendingFocusTabId).toBe('move');
+  });
+
   it.each(['prev', 'next'] as const)(
     'uses an existing %s neighbor even at four columns',
     (direction) => {

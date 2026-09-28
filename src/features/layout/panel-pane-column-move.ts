@@ -31,7 +31,7 @@ export function resolvePaneColumnMove(
   const targetPanelId = columns[index + (direction === 'next' ? 1 : -1)]?.[0];
   if (targetPanelId) return { kind: 'neighbor', tabId, targetPanelId };
 
-  // A sole pane is already in its own edge column; there is nothing to split off.
-  if (columns.length >= 4 || panel.tabs.length < 2) return null;
+  // A single-tab row can leave its column when another row remains.
+  if (columns.length >= 4 || (panel.tabs.length < 2 && columns[index].length < 2)) return null;
   return { kind: 'edge', tabId, position: direction === 'next' ? 'after' : 'before' };
 }

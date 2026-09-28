@@ -1413,6 +1413,7 @@ function moveTabIntoFixedColumn(
     root: projection.root,
     panels: projection.panels,
     focusedPanelId: projection.destinationPanelId,
+    pendingFocusTabId: tabId,
     columnCount: isPanelColumnCount(columnCount) ? columnCount : saved.columnCount,
     columnCountInitialized: isPanelColumnCount(columnCount) ? true : saved.columnCountInitialized,
     canvasWidth: projection.canvasWidth ?? null,
@@ -4503,7 +4504,11 @@ panelLayoutReducer.with(moveTabToSplitLevel, (state, { payload }) => {
   if (!panelIds) return state;
   let targetPanelId: string | undefined;
   if (splitPath.length === 0) {
-    targetPanelId = position === 'before' ? panelIds[0] : panelIds.at(-1);
+    const targets =
+      workspace.panels[fromPanelId]?.tabs.length === 1
+        ? panelIds.filter((id) => id !== fromPanelId)
+        : panelIds;
+    targetPanelId = position === 'before' ? targets[0] : targets.at(-1);
   } else if (splitPath.length === 1 && workspace.root.type === 'split') {
     const target = workspace.root.children[splitPath[0]];
     targetPanelId = target ? getPanelOrder(target)[0] : undefined;

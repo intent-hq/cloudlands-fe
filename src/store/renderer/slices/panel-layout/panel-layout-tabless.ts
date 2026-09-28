@@ -278,7 +278,7 @@ export function resolvePaneVerticalMove(
   };
 }
 
-/** Detach the active content into a visible row or reorder its existing row. */
+/** Combine with a neighboring row, or detach active content at the column edge. */
 export function projectPaneVerticalMove(
   layout: PaneMoveLayout,
   panelId: string,
@@ -288,17 +288,14 @@ export function projectPaneVerticalMove(
   const panel = layout.panels[panelId];
   const move = resolvePaneVerticalMove(layout.root, panel, direction);
   if (!move || !layout.panels[move.targetPanelId]) return null;
-  if (panel.tabs.length === 1) {
-    const root = movePanelInLayout(layout.root, panelId, move.targetPanelId, move.position);
-    return root
-      ? {
-          ...layout,
-          root,
-          canvasWidth: layout.canvasWidth,
-          destinationPanelId: panelId,
-          changed: true,
-        }
-      : null;
+  if (move.targetPanelId !== panelId) {
+    return projectPaneMoveInLayout(
+      layout,
+      move.tabId,
+      panelId,
+      { kind: 'panel', targetPanelId: move.targetPanelId, position: 'center' },
+      move.targetPanelId,
+    );
   }
   if (layout.panels[newPanelId]) return null;
   const inserted = insertPanelNode(layout.root, newPanelId, move.targetPanelId, move.position);

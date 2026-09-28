@@ -107,23 +107,40 @@ describe('visible vertical movement contract', () => {
     },
   );
 
-  it('moves past a visible sibling and never hides the selected pane in its selector', () => {
-    const split = move(initial());
-    const moved = move(split, 'left', 'down', 'next-row');
-    const ws = moved.byWorkspaceId[WS];
-    expect(getPanelOrder(ws.root)).toEqual(['left', 'row', 'next-row', 'right']);
-    expect(ws.panels['next-row'].activeTabId).toBe('c');
-    expect(ws.panels.row.tabs.map((t) => t.id)).toEqual(['b']);
-    expect(tabs(moved)).toEqual(['a', 'b', 'c', 'd']);
-    const reordered = move(moved, 'next-row', 'up');
-    expect(getPanelOrder(reordered.byWorkspaceId[WS].root)).toEqual([
-      'left',
-      'next-row',
-      'row',
-      'right',
-    ]);
-    expect(tabs(reordered)).toEqual(['a', 'b', 'c', 'd']);
-  });
+  it.each(['up', 'down'] as const)(
+    'combines into the %s row with history and persistence',
+    (direction) => {
+      const split = move(initial(), 'left', direction);
+      const moved = move(split, 'left', direction, 'unused');
+      const ws = moved.byWorkspaceId[WS];
+      expect(getPanelOrder(ws.root)).toEqual(getPanelOrder(split.byWorkspaceId[WS].root));
+      expect(ws.panels.row.tabs.map((t) => t.id)).toEqual(['b', 'c']);
+      expect(ws.panels.row.activeTabId).toBe('c');
+      expect(ws.panels.left.tabs.map((t) => t.id)).toEqual(['a']);
+      expect(ws.focusedPanelId).toBe('row');
+      expect(ws.pendingFocusTabId).toBe('c');
+      const combined = move(moved, 'left', direction);
+      const result = combined.byWorkspaceId[WS];
+      expect(getPanelOrder(result.root)).toEqual(['row', 'right']);
+      expect(result.panels.left).toBeUndefined();
+      expect(result.panels.row.tabs.map((t) => t.id)).toEqual(['b', 'c', 'a']);
+      expect(result.root).toMatchObject({ sizes: [35, 65] });
+      expect(result.canvasWidth).toBe(1400);
+      expect(tabs(combined)).toEqual(['a', 'b', 'c', 'd']);
+      const undone = reduce(combined, goBack(WS, 200));
+      expect(undone.byWorkspaceId[WS].root).toEqual(ws.root);
+      expect(undone.byWorkspaceId[WS].panels).toEqual(ws.panels);
+      const redone = reduce(undone, goForward(WS));
+      expect(redone.byWorkspaceId[WS].root).toEqual(result.root);
+      expect(redone.byWorkspaceId[WS].panels).toEqual(result.panels);
+      const restored = migratePanelLayoutForWorkspace(WS, {
+        ...result,
+        version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      });
+      expect(restored.root).toEqual(result.root);
+      expect(restored.panels).toEqual(result.panels);
+    },
+  );
 
   it('disables lone edge panes and rejects missing or stale active panes', () => {
     const before = initial();

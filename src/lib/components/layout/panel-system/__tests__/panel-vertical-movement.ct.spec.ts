@@ -170,3 +170,85 @@ for (const direction of ['up', 'down'] as const) {
     });
   });
 }
+
+for (const direction of ['up', 'down'] as const) {
+  test(`combines a single-tab row ${direction} and restores the combined content`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(PanelVerticalMovementHarness);
+    const state = component.getByTestId('vertical-layout-state');
+    const alpha = pane(component, 'alpha');
+    const original = await geometry(alpha);
+    await move(page, alpha, direction === 'up' ? 'down' : 'up');
+    await move(page, alpha, direction);
+    await expect(component.locator('[data-panel-id]')).toHaveCount(1);
+    await expect(alpha).toHaveAttribute('data-focused', 'true');
+    await expect
+      .poll(() => alpha.evaluate((node) => node.contains(document.activeElement)))
+      .toBe(true);
+    await expect
+      .poll(async () => Math.abs((await geometry(alpha)).height - original.height))
+      .toBeLessThan(1);
+    const combined = JSON.parse((await state.textContent())!);
+    expect(combined.panels.source.tabs.map((tab: { id: string }) => tab.id)).toEqual([
+      'beta',
+      'gamma',
+      'alpha',
+    ]);
+    expect(combined.panels.source.activeTabId).toBe('alpha');
+    await component
+      .getByTestId('restore-layout')
+      .evaluate((node: HTMLButtonElement) => node.click());
+    await expect(alpha).toBeVisible();
+    await expect(component.locator('[data-panel-id]')).toHaveCount(1);
+    await testInfo.attach(`combined-${direction}.png`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
+  });
+}
+
+for (const direction of ['left', 'right'] as const) {
+  test(`moves a single-tab lower row ${direction} into a side column`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(PanelVerticalMovementHarness);
+    const alpha = pane(component, 'alpha');
+    await move(page, alpha, 'down');
+    const beta = pane(component, 'beta');
+    await move(page, alpha, direction);
+    await expect(component.getByTestId('vertical-layout-state')).toHaveAttribute(
+      'data-columns',
+      '2',
+    );
+    await expect(alpha).toHaveAttribute('data-focused', 'true');
+    await expect
+      .poll(() => alpha.evaluate((node) => node.contains(document.activeElement)))
+      .toBe(true);
+    await expect
+      .poll(async () => {
+        const a = await geometry(alpha);
+        const b = await geometry(beta);
+        return (
+          Math.abs(a.y - b.y) < 1 &&
+          (direction === 'left' ? a.x + a.width <= b.x : b.x + b.width <= a.x)
+        );
+      })
+      .toBe(true);
+    await component
+      .getByTestId('restore-layout')
+      .evaluate((node: HTMLButtonElement) => node.click());
+    await expect(alpha).toBeVisible();
+    await expect(beta).toBeVisible();
+    await expect(component.getByTestId('vertical-layout-state')).toHaveAttribute(
+      'data-columns',
+      '2',
+    );
+    await testInfo.attach(`single-row-${direction}.png`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
+  });
+}
