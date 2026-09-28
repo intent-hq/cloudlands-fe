@@ -24,6 +24,7 @@ import {
   hydrateSettings,
   backgroundSettingsHydrationRequested,
   backgroundSettingsMigrationRequested,
+  backgroundSettingsSaveSettled,
   BG_MODEL_MIGRATION_MARKER_KEY,
 } from '../background-agent-settings-slice';
 
@@ -88,18 +89,17 @@ function* hydrateBackgroundSettings(
   action: ReturnType<typeof backgroundSettingsHydrationRequested>,
 ) {
   const [settings] = action.payload;
+  // Only the daemon snapshot is authoritative; the migration is local intent
+  // until the ordered persistence owner accepts it.
+  yield* put(hydrateSettings(settings));
   const marker = yield* call(
     [safeLocalStorage, safeLocalStorage.getItemWithStatus],
     BG_MODEL_MIGRATION_MARKER_KEY,
   );
   const needsMigration = !marker.hadError && marker.value !== '1';
-  if (!needsMigration) {
-    yield* put(hydrateSettings(settings));
-    return;
-  }
+  if (!needsMigration) return;
   const strip = (value: string) => (value === 'haiku4.5' ? '' : value);
   const migrated = {
-    ...settings,
     defaultModel: strip(settings.defaultModel),
     typeOverrides: {
       commit: strip(settings.typeOverrides.commit),
@@ -108,17 +108,39 @@ function* hydrateBackgroundSettings(
       fast: strip(settings.typeOverrides.fast),
     },
   };
-  yield* put(hydrateSettings(migrated));
   const changed =
     migrated.defaultModel !== settings.defaultModel ||
     Object.entries(migrated.typeOverrides).some(
       ([type, value]) =>
         value !== settings.typeOverrides[type as keyof typeof settings.typeOverrides],
     );
+  if (!changed) {
+    // Partial deltas can inherit optimistic migrated models while a write is
+    // pending. They must not bypass that write's acknowledgement.
+    if (!(yield* selectBgSettings.effect()).persistencePending)
+      yield* call(setLocalStorageItem, BG_MODEL_MIGRATION_MARKER_KEY, '1');
+    return;
+  }
   // The existing ordered owner reads the live snapshot, not this potentially
-  // obsolete migration payload, once earlier writes finish.
-  if (changed) yield* put(backgroundSettingsMigrationRequested());
-  yield* call(setLocalStorageItem, BG_MODEL_MIGRATION_MARKER_KEY, '1');
+  // obsolete migration payload, once earlier writes finish. Buffer settlement
+  // before dispatch so even a synchronous acknowledgement cannot be missed.
+  const acknowledgements = yield* actionChannel(backgroundSettingsSaveSettled, buffers.expanding());
+  try {
+    yield* put(backgroundSettingsMigrationRequested(migrated));
+    const { persistenceGeneration = 0 } = yield* selectBgSettings.effect();
+    while (true) {
+      const {
+        payload: [ack],
+      } = yield* take(acknowledgements);
+      // A newer queued edit may replace the migration trigger in the sliding
+      // buffer, but its full snapshot still covers this migration generation.
+      if (ack.generation < persistenceGeneration) continue;
+      if (ack.savedValues) yield* call(setLocalStorageItem, BG_MODEL_MIGRATION_MARKER_KEY, '1');
+      return;
+    }
+  } finally {
+    acknowledgements.close();
+  }
 }
 
 function* persistLoop() {

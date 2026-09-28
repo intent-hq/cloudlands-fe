@@ -416,7 +416,7 @@
     const errors: Record<string, ProviderLoadError> = {};
     for (const pid of catalogProviderIds) {
       const request = $providerRequests$[pid];
-      if (request?.status === 'error' && request.mode !== 'silentRetry' && request.error) {
+      if (request?.error) {
         errors[pid] = formatProviderLoadError(pid, request.error);
       }
     }
@@ -426,7 +426,8 @@
     Object.fromEntries(
       catalogProviderIds.map((pid) => [
         pid,
-        $providerRequests$[pid]?.status === 'loading' ||
+        ($providerRequests$[pid]?.status === 'loading' &&
+          $providerRequests$[pid]?.mode !== 'silentRetry') ||
           (!$providerCatalogs$[pid] && !allProviderErrors[pid]),
       ]),
     ),
@@ -493,10 +494,7 @@
   );
   const agentProviderError = $derived.by(() => {
     const request = $providerRequests$[effectiveProviderId];
-    return usesAgentProviderFetch &&
-      request?.status === 'error' &&
-      request.mode !== 'silentRetry' &&
-      request.error
+    return usesAgentProviderFetch && request?.error
       ? formatProviderLoadError(effectiveProviderId, request.error).displayText
       : null;
   });
@@ -1328,8 +1326,23 @@
   });
 
   // Display groups — every picker browses one provider at a time.
-  const displayGroups = $derived.by(() =>
-    groupedModelOptions
+  const displayGroups = $derived.by(() => {
+    // Once every catalog attempt settles without usable models, use the
+    // existing terminal error/Retry surface rather than disabled error rows.
+    // Pending retries and partial/cached success keep their groups/default row.
+    if (
+      !hasLoadedModelOptions &&
+      blockingLoadError &&
+      allProvidersLoaded &&
+      !agentProviderLoading &&
+      observedProviderIds.every(
+        (pid) =>
+          $providerRequests$[pid]?.status !== 'loading' &&
+          ($providerCatalogs$[pid]?.models.length ?? 0) === 0,
+      )
+    )
+      return [];
+    return groupedModelOptions
       .filter((group) => {
         const providerKey = group.parentKey ?? group.key;
         return (
@@ -1346,8 +1359,8 @@
             : providerTabsEnabled || !collapsedGroups.has(group.key)
               ? group.options
               : [],
-      })),
-  );
+      }));
+  });
 
   // True while a settled fetch result for the selected model's own provider is
   // still outstanding but expected. `allProvidersLoaded` is not enough: on boot

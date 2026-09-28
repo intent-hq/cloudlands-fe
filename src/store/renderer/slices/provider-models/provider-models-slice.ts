@@ -28,16 +28,20 @@ import type {
 
 export const initialState: ProviderModelsState = {
   byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
   clearEpoch: 0,
   requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
   observers: createCollection<ProviderModelsObserver, 'id'>('id'),
 };
 
 export const providerModelsObserved =
-  createAction<[id: string, providerIds: string[]]>('providerModels/observed');
+  createAction<[id: string, providerIds: string[], workspaceId?: string]>(
+    'providerModels/observed',
+  );
 export const providerModelsReleased = createAction<[id: string]>('providerModels/released');
 export const providerModelsRequested = createAction<
-  [providerId: string, mode: ProviderModelsRequestMode]
+  [providerId: string, mode: ProviderModelsRequestMode, workspaceId?: string]
 >('providerModels/requested');
 export const providerModelsRequestStarted = createAction<[request: ProviderModelsRequest]>(
   'providerModels/requestStarted',
@@ -79,51 +83,93 @@ export const providerModelsReducer = createReducer<ProviderModelsState>(initialS
 
 providerModelsReducer.with(
   providerModelsLoaded,
-  (state, { payload: [providerId, entry, epoch, workspaceId] }) =>
-    epoch !== state.clearEpoch
-      ? state
-      : workspaceId
-        ? {
-            ...state,
-            byWorkspaceId: {
-              ...state.byWorkspaceId,
-              [workspaceId]: { ...state.byWorkspaceId?.[workspaceId], [providerId]: entry },
-            },
-          }
-        : {
-            ...state,
-            byProviderId: {
-              ...state.byProviderId,
-              [providerId]: entry,
-            },
-          },
+  (state, { payload: [providerId, entry, epoch, workspaceId] }) => {
+    if (epoch !== state.clearEpoch) return state;
+    const requests = workspaceId ? state.requestsByWorkspaceId?.[workspaceId] : state.requests;
+    const request = requests && getItem(requests, providerId);
+    const recovered = request?.error
+      ? upsertItem(requests!, { ...request, error: undefined })
+      : requests;
+    if (workspaceId)
+      return {
+        ...state,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [workspaceId]: { ...state.byWorkspaceId?.[workspaceId], [providerId]: entry },
+        },
+        ...(recovered && {
+          requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: recovered },
+        }),
+      };
+    return {
+      ...state,
+      byProviderId: {
+        ...state.byProviderId,
+        [providerId]: entry,
+      },
+      requests: recovered ?? state.requests,
+    };
+  },
 );
 providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
   ...state,
   byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
   requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
   clearEpoch: state.clearEpoch + 1,
 }));
 
-providerModelsReducer.with(providerModelsObserved, (state, { payload: [id, providerIds] }) => {
-  const previous = getItem(state.observers, id);
-  if (previous?.providerIds.join('\0') === providerIds.join('\0')) return state;
-  return { ...state, observers: upsertItem(state.observers, { id, providerIds }) };
-});
+providerModelsReducer.with(
+  providerModelsObserved,
+  (state, { payload: [id, providerIds, workspaceId] }) => {
+    const previous = getItem(state.observers, id);
+    if (
+      previous?.workspaceId === workspaceId &&
+      previous?.providerIds.join('\0') === providerIds.join('\0')
+    )
+      return state;
+    return { ...state, observers: upsertItem(state.observers, { id, providerIds, workspaceId }) };
+  },
+);
 providerModelsReducer.with(providerModelsReleased, (state, { payload: [id] }) => {
   if (!getItem(state.observers, id)) return state;
   return { ...state, observers: removeItem(state.observers, id) };
 });
-providerModelsReducer.with(providerModelsRequestStarted, (state, { payload: [request] }) =>
-  request.epoch !== state.clearEpoch
-    ? state
-    : {
-        ...state,
-        requests: upsertItem(state.requests, { ...request, error: undefined }),
-      },
-);
+providerModelsReducer.with(providerModelsRequestStarted, (state, { payload: [request] }) => {
+  if (request.epoch !== state.clearEpoch) return state;
+  const { workspaceId } = request;
+  const requests = workspaceId
+    ? (state.requestsByWorkspaceId?.[workspaceId] ??
+      createCollection<ProviderModelsRequest, 'providerId'>('providerId'))
+    : state.requests;
+  const previous = getItem(requests, request.providerId);
+  const next = upsertItem(requests, {
+    ...request,
+    error: request.mode === 'silentRetry' ? previous?.error : undefined,
+  });
+  return {
+    ...state,
+    ...(workspaceId
+      ? { requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: next } }
+      : { requests: next }),
+  };
+});
 providerModelsReducer.with(providerModelsRequestSettled, (state, { payload: [request] }) => {
-  const current = getItem(state.requests, request.providerId);
+  const { workspaceId } = request;
+  const requests = workspaceId ? state.requestsByWorkspaceId?.[workspaceId] : state.requests;
+  const current = requests && getItem(requests, request.providerId);
   if (request.epoch !== state.clearEpoch || current?.requestId !== request.requestId) return state;
-  return { ...state, requests: upsertItem(state.requests, request) };
+  const next = upsertItem(requests!, {
+    ...request,
+    // Silent failures/empty results only toast. Keep the prior actionable
+    // failure until providerModelsLoaded supplies an actual catalog.
+    error: request.mode === 'silentRetry' ? current.error : request.error,
+  });
+  return {
+    ...state,
+    ...(workspaceId
+      ? { requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: next } }
+      : { requests: next }),
+  };
 });

@@ -16,7 +16,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   const module = createAppStoreMockModule({
-    state: () => fixture.state,
+    state: () => ({ ...fixture.state }),
     dispatch: fixture.dispatch,
     // Match production selectors instead of re-emitting unchanged catalogs.
     dedupeEmits: true,
@@ -250,7 +250,17 @@ beforeEach(() => {
   expect(catalogTask?.isRunning() ?? false).toBe(false);
   catalogChannel = stdChannel();
   catalogTask = runSaga(
-    { channel: catalogChannel, dispatch: fixture.dispatch, getState: () => fixture.state },
+    {
+      channel: catalogChannel,
+      dispatch: fixture.dispatch,
+      getState: () => store.state,
+      context: {
+        reduxStore: {
+          getState: () => store.state,
+          subscribe: (listener: () => void) => store.getReadableState().subscribe(listener),
+        },
+      },
+    },
     modelReloadSaga,
   );
   expect(catalogTask.isRunning()).toBe(true);

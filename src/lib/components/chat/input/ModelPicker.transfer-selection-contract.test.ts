@@ -82,18 +82,28 @@ console.info('Transfer-selection renderer input:', JSON.stringify(artifact.prove
 function hydrateFixtureState(codexEnabled: boolean, workspaceId: string) {
   store.dispatch(providerCatalogLoaded(contract.providersCatalog));
   store.dispatch(
-    workspaceCatalogReceived(workspaceId, {
-      catalog: contract.providersCatalog,
-      settings: [
-        { path: 'model.defaultProvider', value: contract.destinationDefaults.provider },
-        { path: 'model.default', value: contract.destinationDefaults.model },
-        { path: 'providers.enabled', value: { ...contract.enabledProviders, codex: codexEnabled } },
-      ] as never,
-      specialists: [],
-      readiness: Object.fromEntries(
-        contract.providersCatalog.providers.map(({ id }: { id: string }) => [id, { available: true }]),
-      ),
-    }, store.state.providerCatalog.workspaceEpoch),
+    workspaceCatalogReceived(
+      workspaceId,
+      {
+        catalog: contract.providersCatalog,
+        settings: [
+          { path: 'model.defaultProvider', value: contract.destinationDefaults.provider },
+          { path: 'model.default', value: contract.destinationDefaults.model },
+          {
+            path: 'providers.enabled',
+            value: { ...contract.enabledProviders, codex: codexEnabled },
+          },
+        ] as never,
+        specialists: [],
+        readiness: Object.fromEntries(
+          contract.providersCatalog.providers.map(({ id }: { id: string }) => [
+            id,
+            { available: true },
+          ]),
+        ),
+      },
+      store.state.providerCatalog.workspaceEpoch ?? 0,
+    ),
   );
   store.dispatch(
     loadEnabledProvidersFromStorage({ ...contract.enabledProviders, codex: codexEnabled }),

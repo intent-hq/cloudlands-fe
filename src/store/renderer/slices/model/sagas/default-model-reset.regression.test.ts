@@ -148,7 +148,26 @@ for (const legacyEmptyKey of [true, false]) {
       await Promise.resolve();
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelSelectionSaga));
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, providerSettingsSaga));
-      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelReloadSaga));
+      tasks.push(
+        runSaga(
+          {
+            channel,
+            dispatch,
+            getState: () => store.state,
+            context: {
+              reduxStore: {
+                getState: () => store.state,
+                subscribe: (listener: () => void) => {
+                  const stream = store.getStoreStateStream();
+                  stream.onValue(listener);
+                  return () => stream.offValue(listener);
+                },
+              },
+            },
+          },
+          modelReloadSaga,
+        ),
+      );
       // The action emitted by the Settings ModelPicker's updateGlobalDefault path.
       dispatch(selectModel('grok4.5', 'grok'));
       await vi.waitFor(() => expect(releaseCatalog).toBeTypeOf('function'));

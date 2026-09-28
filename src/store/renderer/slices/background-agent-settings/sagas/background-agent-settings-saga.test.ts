@@ -36,6 +36,7 @@ describe('backgroundAgentSettingsSaga', () => {
 
   it('orders migration behind an active user write without replacing a newer queued pick', async () => {
     let release!: () => void;
+    let acceptMigration!: () => void;
     let state = { backgroundAgentSettings: initialState };
     const channel = stdChannel();
     const dispatch = (action: { type: string }) => {
@@ -54,21 +55,28 @@ describe('backgroundAgentSettingsSaga', () => {
           release = resolve;
         }),
       )
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          acceptMigration = resolve;
+        }),
+      )
       .mockResolvedValue([]);
     const task = runSaga({ channel, dispatch, getState: () => state }, backgroundAgentSettingsSaga);
     dispatch(setDefaultModel('first'));
     dispatch(setDefaultModel('newest'));
-    dispatch(setDefaultReasoningEffort('high'));
     dispatch(
       backgroundSettingsHydrationRequested({
         defaultModel: 'haiku4.5',
         typeOverrides: { commit: '', pr: '', review: '', fast: '' },
       }),
     );
+    // Replaces the migration trigger in the sliding buffer, but the eventual
+    // complete snapshot still covers that migration generation.
+    dispatch(setDefaultReasoningEffort('high'));
     expect(state.backgroundAgentSettings.defaultModel).toBe('newest');
     expect(state.backgroundAgentSettings.defaultReasoningEffort).toBe('high');
     expect(mocks.update).toHaveBeenCalledTimes(1);
-    expect(localStorage.setItem).toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
     release();
     await settle();
     expect(mocks.update.mock.calls.map(([changes]) => changes[0])).toEqual([
@@ -79,8 +87,47 @@ describe('backgroundAgentSettingsSaga', () => {
       path: 'quickActions.defaultReasoningEffort',
       value: 'high',
     });
+    // The earlier write's acknowledgement cannot commit the migration marker.
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
+    acceptMigration();
+    await settle();
+    expect(localStorage.setItem).toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
     task.cancel();
     await task.toPromise();
+  });
+
+  it('does not commit a pending migration after the saga owner is cancelled', async () => {
+    let release!: () => void;
+    let state = { backgroundAgentSettings: initialState };
+    const channel = stdChannel();
+    const dispatch = (action: { type: string }) => {
+      state = {
+        backgroundAgentSettings: backgroundAgentSettingsReducer(
+          state.backgroundAgentSettings,
+          action as never,
+        ),
+      };
+      channel.put(action);
+    };
+    vi.mocked(localStorage.getItem).mockReturnValue(null);
+    mocks.update.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const task = runSaga({ channel, dispatch, getState: () => state }, backgroundAgentSettingsSaga);
+    dispatch(
+      backgroundSettingsHydrationRequested({
+        defaultModel: 'haiku4.5',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+    release();
+    await settle();
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
   });
 
   it('atomically serializes current snapshots and retains only the latest queued write', async () => {

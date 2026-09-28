@@ -212,9 +212,9 @@ function pending(
 export const backgroundSettingsHydrationRequested = createAction<
   [settings: Parameters<typeof hydrateSettings>[0]]
 >('backgroundAgentSettings/hydrationRequested');
-export const backgroundSettingsMigrationRequested = createAction(
-  'backgroundAgentSettings/migrationRequested',
-);
+export const backgroundSettingsMigrationRequested = createAction<
+  [settings: Pick<ProviderBgSettings, 'defaultModel' | 'typeOverrides'>]
+>('backgroundAgentSettings/migrationRequested');
 
 /** Hydrate provider settings snapshots from the daemon */
 export const hydrateProviderSettings = createAction<
@@ -238,8 +238,14 @@ export const restoreProviderSettings = createAction<[payload: ProviderBgSettings
 export const backgroundAgentSettingsReducer =
   createReducer<BackgroundAgentSettingsState>(initialState);
 
-backgroundAgentSettingsReducer.with(backgroundSettingsMigrationRequested, (state) =>
-  pending(state),
+backgroundAgentSettingsReducer.with(
+  backgroundSettingsMigrationRequested,
+  (state, { payload: [migrated] }) => ({
+    ...pending(state),
+    // A migration must neither replace newer local picks nor masquerade as a
+    // daemon snapshot: rejection rolls back to the unmodified authority.
+    ...(state.persistencePending ? {} : migrated),
+  }),
 );
 backgroundAgentSettingsReducer.with(setDefaultModel, (state, { payload: [model] }) => ({
   ...pending(state, ['defaultModel']),

@@ -9,6 +9,7 @@
  */
 import { store } from '../../store';
 import type { ProviderModelsCacheEntry, ProviderModelsRequest } from './provider-models-types';
+import { providerModelsContextKey } from './provider-models-utils';
 
 /**
  * The full cache map keyed by normalized provider id. `{}` before any fetch
@@ -45,13 +46,25 @@ export const selectProviderModelsClearEpoch = store.createSelector(
 );
 
 export const selectProviderModelsRequests = store.createSelector(
-  (state): Record<string, ProviderModelsRequest> => state.providerModels?.requests?.map ?? {},
+  (state, workspaceId?: string): Record<string, ProviderModelsRequest> =>
+    (workspaceId
+      ? state.providerModels?.requestsByWorkspaceId?.[workspaceId]?.map
+      : state.providerModels?.requests?.map) ?? {},
 );
 
-export const selectObservedModelProviderIds = store.createSelector((state): string[] => [
-  ...new Set(
-    Object.values(state.providerModels?.observers?.map ?? {}).flatMap(
-      (observer) => observer.providerIds,
+export const selectObservedModelProviders = store.createSelector(
+  (state): Record<string, { providerId: string; workspaceId?: string }> =>
+    Object.fromEntries(
+      Object.values(state.providerModels?.observers?.map ?? {}).flatMap(
+        ({ providerIds, workspaceId }) =>
+          providerIds.map((providerId) => [
+            providerModelsContextKey(providerId, workspaceId),
+            { providerId, workspaceId },
+          ]),
+      ),
     ),
-  ),
-]);
+);
+
+export const selectObservedModelProviderKeys = store.createSelector((state): string[] =>
+  Object.keys(selectObservedModelProviders.select(state)).sort(),
+);

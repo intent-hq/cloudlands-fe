@@ -4,6 +4,7 @@ import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/sv
 import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
+import type { SettingsSnapshot, SettingsUpdateResult } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => ({
   backend: vi.fn(),
@@ -63,6 +64,7 @@ describe('API settings wire contract', () => {
     async (connectionId) => {
       mocks.activeId = connectionId;
       let port = 5181;
+      let revision = 0;
       mocks.backend.mockImplementation(
         async (
           method: string,
@@ -70,11 +72,30 @@ describe('API settings wire contract', () => {
         ) => {
           if (method === 'settings.list')
             return {
+              revision,
               settings: [
-                { path: 'server.wsApi.enabled', value: true, type: 'boolean' },
-                { path: 'server.wsApi.port', value: port, type: 'number' },
+                {
+                  path: 'server.wsApi.enabled',
+                  value: true,
+                  label: 'WebSocket API',
+                  description: 'Enable the WebSocket API listener',
+                  category: 'server',
+                  type: 'boolean',
+                  defaultValue: false,
+                  origin: 'file',
+                },
+                {
+                  path: 'server.wsApi.port',
+                  value: port,
+                  label: 'Port',
+                  description: 'WebSocket API listener port',
+                  category: 'server',
+                  type: 'number',
+                  defaultValue: 5181,
+                  origin: revision === 0 ? 'default' : 'file',
+                },
               ],
-            };
+            } satisfies SettingsSnapshot;
           if (method === 'server.pairingInfo')
             return {
               token: 'synthetic-token',
@@ -86,7 +107,10 @@ describe('API settings wire contract', () => {
             };
           if (method === 'settings.update') {
             port = params!.changes![0].value;
-            return { applied: params!.changes };
+            return {
+              revision: ++revision,
+              applied: params!.changes!.map((change) => ({ ...change, origin: 'file' })),
+            } satisfies SettingsUpdateResult;
           }
           if (method === 'server.rotateToken') return { token: 'synthetic-rotated-token' };
           throw new Error('Unexpected test wire method');

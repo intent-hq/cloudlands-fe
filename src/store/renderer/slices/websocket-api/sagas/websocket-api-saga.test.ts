@@ -197,18 +197,17 @@ describe('API request lifetime', () => {
     dispatch(websocketApiRequested(load, { kind: 'load', connectionId: 'local' }));
     await vi.waitFor(() => expect(mocks.pairing).toHaveBeenCalledTimes(1));
     dispatch(settingsFormClosed(identity));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual({
+        type: settingsFormRequestSettled.type,
+        payload: [load, { status: 'cancelled' }],
+      }),
+    );
     late.resolve(fixture);
-    await Promise.resolve();
-    await Promise.resolve();
+    // Let the credential wrapper consume the late transport result after cancellation.
+    await late.promise;
     expect(readWebsocketToken(load)).toBe('');
     expect(publications).toHaveLength(0);
-    expect(
-      actions.some(
-        (action) =>
-          action.type === settingsFormRequestSettled.type &&
-          action.payload[1].status === 'cancelled',
-      ),
-    ).toBe(true);
   });
 
   it('does not notify a closed form after its active token publication completes', async () => {
@@ -216,9 +215,22 @@ describe('API request lifetime', () => {
     dispatch(websocketApiRequested(request('rotate'), { kind: 'rotate', connectionId: 'local' }));
     await vi.waitFor(() => expect(publications).toHaveLength(1));
     dispatch(settingsFormClosed(identity));
+    const next = { ...identity, sessionId: 'next' };
+    dispatch(settingsFormOpened(next, 'websocket-api'));
+    const following = { ...next, requestId: 'after-rotation', resource: 'save' };
+    // This non-notifying validation failure can settle only after the FIFO rotation returns.
+    dispatch(websocketApiRequested(following, { kind: 'port', port: 0, connectionId: 'local' }));
+    expect(selectSettingsFormOperation.select(state as never, next, 'save')).toMatchObject({
+      requestId: following.requestId,
+      status: 'pending',
+    });
     dispatch(publications[0].success(undefined));
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() =>
+      expect(selectSettingsFormOperation.select(state as never, next, 'save')).toMatchObject({
+        requestId: following.requestId,
+        status: 'failed',
+      }),
+    );
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(readWebsocketToken(request('read'))).toBe('');
   });

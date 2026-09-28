@@ -20,16 +20,19 @@ export type ProviderModelsRequestMode = 'background' | 'refresh' | 'retry' | 'si
 
 export interface ProviderModelsRequest {
   providerId: string;
+  workspaceId?: string;
   requestId: string;
   epoch: number;
   mode: ProviderModelsRequestMode;
   status: 'loading' | 'success' | 'error' | 'cancelled';
+  /** Last actionable load failure; silent retries retain it until a catalog is cached. */
   error?: string;
 }
 
 export interface ProviderModelsObserver {
   id: string;
   providerIds: string[];
+  workspaceId?: string;
 }
 
 /** Successful `getModelsForProviderForLoadingState`-shaped fetch result. */
@@ -53,6 +56,7 @@ export interface ProviderModelsState {
   byProviderId: Record<string, ProviderModelsCacheEntry>;
   byWorkspaceId?: Record<string, Record<string, ProviderModelsCacheEntry>>;
   requests: Collection<ProviderModelsRequest, 'providerId'>;
+  requestsByWorkspaceId?: Record<string, Collection<ProviderModelsRequest, 'providerId'>>;
   observers: Collection<ProviderModelsObserver, 'id'>;
   /**
    * Monotonic clear counter, bumped by `providerModelsCacheCleared`. Writers

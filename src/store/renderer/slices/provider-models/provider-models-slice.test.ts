@@ -15,7 +15,7 @@ import {
   selectProviderModelsCacheMap,
   selectProviderModelsClearEpoch,
   selectProviderModelsRequests,
-  selectObservedModelProviderIds,
+  selectObservedModelProviders,
 } from './provider-models-selectors';
 import {
   initialState,
@@ -52,7 +52,9 @@ describe('providerModelsReducer', () => {
       initialState,
       providerModelsObserved('picker-1', ['codex']),
     );
-    expect(selectObservedModelProviderIds.select(storeWith(observed))).toEqual(['codex']);
+    expect(Object.values(selectObservedModelProviders.select(storeWith(observed)))).toEqual([
+      { providerId: 'codex' },
+    ]);
     expect(providerModelsReducer(observed, providerModelsObserved('picker-1', ['codex']))).toBe(
       observed,
     );
@@ -61,9 +63,14 @@ describe('providerModelsReducer', () => {
       changed,
       providerModelsObserved('picker-2', ['auggie', 'codex']),
     );
-    expect(selectObservedModelProviderIds.select(storeWith(joined))).toEqual(['auggie', 'codex']);
+    expect(Object.values(selectObservedModelProviders.select(storeWith(joined)))).toEqual([
+      { providerId: 'auggie' },
+      { providerId: 'codex' },
+    ]);
     const released = providerModelsReducer(joined, providerModelsReleased('picker-2'));
-    expect(selectObservedModelProviderIds.select(storeWith(released))).toEqual(['auggie']);
+    expect(Object.values(selectObservedModelProviders.select(storeWith(released)))).toEqual([
+      { providerId: 'auggie' },
+    ]);
     expect(providerModelsReducer(released, providerModelsReleased('missing'))).toBe(released);
     expect(JSON.parse(JSON.stringify(released))).toEqual(released);
   });
@@ -117,6 +124,97 @@ describe('providerModelsReducer', () => {
   it('starts empty', () => {
     const state = providerModelsReducer(undefined, { type: '@@INIT' });
     expect(state.byProviderId).toEqual({});
+  });
+
+  it('retains actionable failures through silent retries until a catalog arrives', () => {
+    const background = {
+      providerId: 'codex',
+      requestId: 'background',
+      epoch: 0,
+      mode: 'background',
+      status: 'loading',
+    } as const;
+    const other = { ...background, providerId: 'auggie', requestId: 'other' };
+    let state = providerModelsReducer(initialState, providerModelsRequestStarted(other));
+    state = providerModelsReducer(
+      state,
+      providerModelsRequestSettled({
+        ...other,
+        status: 'error',
+        error: 'other failure',
+      }),
+    );
+    const otherRequest = selectProviderModelsRequests.select(storeWith(state)).auggie;
+    state = providerModelsReducer(state, providerModelsRequestStarted(background));
+    state = providerModelsReducer(
+      state,
+      providerModelsRequestSettled({
+        ...background,
+        status: 'error',
+        error: 'actionable background failure',
+      }),
+    );
+
+    for (const status of ['error', 'success', 'cancelled'] as const) {
+      const silent = { ...background, requestId: status, mode: 'silentRetry' } as const;
+      state = providerModelsReducer(state, providerModelsRequestStarted(silent));
+      expect(selectProviderModelsRequests.select(storeWith(state)).codex).toMatchObject({
+        status: 'loading',
+        error: 'actionable background failure',
+      });
+      state = providerModelsReducer(
+        state,
+        providerModelsRequestSettled({
+          ...silent,
+          status,
+          error: status === 'error' ? 'silent failure' : undefined,
+        }),
+      );
+      expect(selectProviderModelsRequests.select(storeWith(state)).codex).toMatchObject({
+        status,
+        error: 'actionable background failure',
+      });
+      expect(selectProviderModelsRequests.select(storeWith(state)).auggie).toBe(otherRequest);
+      expect(state.byProviderId.codex).toBeUndefined();
+    }
+
+    const recovered = { ...background, requestId: 'recovered', mode: 'silentRetry' } as const;
+    state = providerModelsReducer(state, providerModelsRequestStarted(recovered));
+    expect(providerModelsReducer(state, providerModelsLoaded('codex', PI_RESULT, -1))).toBe(state);
+    state = providerModelsReducer(state, providerModelsLoaded('codex', PI_RESULT, 0));
+    state = providerModelsReducer(
+      state,
+      providerModelsRequestSettled({
+        ...recovered,
+        status: 'success',
+      }),
+    );
+    expect(selectProviderModelsRequests.select(storeWith(state)).codex.error).toBeUndefined();
+    expect(selectProviderModelsRequests.select(storeWith(state)).auggie).toBe(otherRequest);
+    expect(state.byProviderId.codex.models).toEqual(PI_RESULT.models);
+  });
+
+  it('does not promote a silent-only failure to an actionable error', () => {
+    const request = {
+      providerId: 'codex',
+      requestId: 'silent',
+      epoch: 0,
+      mode: 'silentRetry',
+      status: 'loading',
+    } as const;
+    const pending = providerModelsReducer(initialState, providerModelsRequestStarted(request));
+    const failed = providerModelsReducer(
+      pending,
+      providerModelsRequestSettled({
+        ...request,
+        status: 'error',
+        error: 'silent failure',
+      }),
+    );
+    expect(selectProviderModelsRequests.select(storeWith(failed)).codex).toMatchObject({
+      status: 'error',
+      error: undefined,
+    });
   });
 
   it('providerModelsLoaded caches the result under the provider id with fetchedAt', () => {

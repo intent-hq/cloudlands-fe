@@ -159,12 +159,18 @@ function startCatalogOwner() {
     }),
   );
   appStore.dispatch(hydrateDefaultProvider('auggie'));
-  appStore.dispatch(workspaceCatalogReceived('ws-1', {
-    catalog: { providers: Object.values(appStore.state.providerCatalog.providers.map) },
-    settings: [{ path: 'model.defaultProvider', value: 'auggie' }] as never,
-    specialists: [],
-    readiness: {},
-  }, appStore.state.providerCatalog.workspaceEpoch));
+  appStore.dispatch(
+    workspaceCatalogReceived(
+      'ws-1',
+      {
+        catalog: { providers: Object.values(appStore.state.providerCatalog.providers.map) },
+        settings: [{ path: 'model.defaultProvider', value: 'auggie' }] as never,
+        specialists: [],
+        readiness: {},
+      },
+      appStore.state.providerCatalog.workspaceEpoch ?? 0,
+    ),
+  );
   // Keep these label regressions on the settled owner-window path.
   appStore.dispatch(
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
@@ -271,7 +277,10 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
-import { providerCatalogLoaded, workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import {
+  providerCatalogLoaded,
+  workspaceCatalogReceived,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
