@@ -8951,7 +8951,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Attachments"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="attachments" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="file-picker drop-target file-tiles remove-file max-files" data-catalog-renderer-fixture="attachments">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9080,7 +9080,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Basic"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="basic" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="empty draft history-recall auto-resize hover focus" data-catalog-renderer-fixture="basic">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9166,7 +9166,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Disabled"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="disabled" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="disabled" data-catalog-renderer-fixture="disabled">
-              <div class="bg-surface-2 duration-spring-fast ease-spring-fast flex flex-col opacity-50 p-2 pointer-events-none rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border duration-spring-fast ease-spring-fast flex flex-col opacity-50 p-2 pointer-events-none rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9252,7 +9252,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Left slot only"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="left-slot-only" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="left-slot" data-catalog-renderer-fixture="left-slot-only">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9351,7 +9351,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Playground"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="playground" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="idle streaming-stop streaming-queue compact light dark" data-catalog-renderer-fixture="playground">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9457,7 +9457,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Queued messages"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="queued-messages" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="queue edit delete keyboard-reorder drag-reorder auto-dispatch" data-catalog-renderer-fixture="queued-messages">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9577,7 +9577,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Right slot only"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="right-slot-only" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="right-slot" data-catalog-renderer-fixture="right-slot-only">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9672,7 +9672,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Send handler"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="send-handler" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="send action-feedback" data-catalog-renderer-fixture="send-handler">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9763,7 +9763,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Suggestions"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="suggestions" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="placeholder-suggestion tab-fill listbox keyboard-highlight" data-catalog-renderer-fixture="suggestions">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
