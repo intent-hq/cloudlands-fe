@@ -323,8 +323,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       const entries = navigationTargets.get(targetId(messageId, path)) ?? [];
       const first = entries[0];
       if (!first) return undefined;
-      if (entries.length === 1 || !query) return { key: first.key, occurrenceInRow: occurrence };
-      const needle = query.toLowerCase();
+      const needle = query.trim().toLowerCase();
+      if (entries.length === 1 || !needle) return { key: first.key, occurrenceInRow: occurrence };
       let remaining = occurrence;
       for (const entry of entries) {
         const text = entry.navigation?.text?.toLowerCase() ?? '';

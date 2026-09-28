@@ -288,8 +288,19 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
         }),
       )
       .toBe('Reasoning target-10-end');
-    await input.fill('Reasoning target-90-end');
+    await input.fill(
+      shape === 'one-history-block' ? ' Reasoning target-90-end ' : 'Reasoning target-90-end',
+    );
     await expect(host.getByText('Reasoning target-90-end', { exact: true })).toBeInViewport();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const ranges = CSS.highlights?.get('current-search-result') as
+            Iterable<Range> | undefined;
+          return ranges ? Array.from(ranges)[0]?.toString() : undefined;
+        }),
+      )
+      .toBe('Reasoning target-90-end');
     await input.press('Escape');
   });
 }

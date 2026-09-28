@@ -1571,7 +1571,7 @@
       return;
     }
 
-    const lowerQuery = query.toLowerCase();
+    const lowerQuery = query.trim().toLowerCase();
     const allRanges: Range[] = [];
     let currentRange: Range | null = null;
 

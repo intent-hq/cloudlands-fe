@@ -2,6 +2,11 @@
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import OperationalPanelHost from './OperationalPanelHost.svelte';
+import type { AgentMessage } from '$shared/types';
+import { groupContentBlocks } from '$lib/utils/messageParser';
+import { normalizeResponseGroups } from '../response-group-blocks';
+import { createWindowItemProjector } from '../operational-window-items';
+import { findChatSearchMatches } from '../chat-search';
 import type { provideOperationalPanel } from '../operational-panel.svelte';
 
 // eslint-disable-next-line themis/collection-state-shape -- Local test scheduler queues, not Redux state.
@@ -53,6 +58,40 @@ afterEach(() => {
 });
 
 describe('panel geometry lifetime', () => {
+  it('maps a trimmed catalog query to the real emitted reasoning fragment', () => {
+    const message: AgentMessage = {
+      id: 'message',
+      role: 'assistant',
+      timestamp: '2026-09-28T10:00:00Z',
+      contentBlocks: [
+        { type: 'text', text: '<group:Prepping>Visible description.' },
+        {
+          type: 'thinking',
+          id: 'history',
+          text: Array.from({ length: 100 }, (_, i) => `**Reasoning target-${i}-end**`).join('\n\n'),
+        },
+        { type: 'text', text: '</group:Prepping>' },
+      ],
+    };
+    const groups = normalizeResponseGroups(
+      groupContentBlocks(message.contentBlocks!, false),
+      false,
+    );
+    const group = groups[0];
+    if (group.type !== 'content_group') throw new Error('Expected a real parsed reasoning group');
+    const rows = createWindowItemProjector()(group.children, message.id, () => true, group);
+    panel.attach('message', node(), rows, vi.fn());
+    const expected = rows.find((row) => row.navigation.text?.includes('Reasoning target-90-end'));
+    expect(expected).toBeDefined();
+    for (const query of ['Reasoning target-90-end', ' Reasoning target-90-end ']) {
+      const [match] = findChatSearchMatches([message], query, new Map([[message.id, 'turn']]));
+      expect(match).toBeDefined();
+      expect(
+        panel.resolveMatch(message.id, match.blockPath, query, match.occurrenceInBlock),
+      ).toEqual({ key: expected!.key, occurrenceInRow: 0 });
+    }
+  });
+
   it('maps repeated block matches to the correct emitted fragment and local occurrence', () => {
     const entries = ['needle', 'other', 'needle needle'].map((text, index) => ({
       ...entry,
