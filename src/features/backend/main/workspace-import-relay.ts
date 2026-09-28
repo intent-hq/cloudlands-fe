@@ -24,6 +24,7 @@ import type {
 } from '../../../shared/types/workspace-transfer';
 import type { RelayRpcClient } from './workspace-transfer-relay';
 import { readZipManifest, type ZipByteSource } from './zip-manifest';
+import { relayErrorMessage as errText } from './json-rpc-errors';
 
 /** Random-access handle over the picked archive (injectable for tests). */
 export interface ImportFileSource extends ZipByteSource {
@@ -73,10 +74,6 @@ export interface WorkspaceImportRelay {
     ownerId: number,
   ): Promise<ImportStartResult>;
   cancel(ownerId: number): Promise<ImportCancelResult>;
-}
-
-function errText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Structured rejection when another window owns the active session. */
@@ -273,13 +270,12 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         throw error;
       }
     } catch (error) {
-      const cancelled = current.cancelled || errText(error) === 'cancelled';
+      const message = current.cancelled ? 'cancelled' : errText(error);
+      const cancelled = message === 'cancelled';
       if (!cancelled) {
-        deps.logger.warn('workspace import failed', { filePath, error: errText(error) });
+        deps.logger.warn('workspace import failed', { filePath, error: message });
       }
-      return cancelled
-        ? { success: false, canceled: true }
-        : { success: false, error: errText(error) };
+      return cancelled ? { success: false, canceled: true } : { success: false, error: message };
     } finally {
       await file?.close().catch(() => undefined);
       // An orphaned run released by a takeover must not clear its successor.
