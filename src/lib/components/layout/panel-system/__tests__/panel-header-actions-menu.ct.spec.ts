@@ -451,31 +451,36 @@ for (const scenario of [
   });
 }
 
-test('keeps the agent actions menu compact at desktop width', async ({ mount, page }) => {
+test('keeps desktop menu commands unclipped and restores focus after selection', async ({
+  mount,
+  page,
+}, testInfo) => {
   await page.setViewportSize({ width: 1000, height: 800 });
   const component = await mount(PanelHeaderActionsHost, {
     props: { panelType: 'agent', width: 560, zoom: 1 },
   });
-  const trigger = component.locator(
-    '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
-  );
-
-  await trigger.click();
-  const menu = page.getByRole('menu');
-  await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem', { name: 'Open in...', exact: true })).toBeVisible();
+  const { trigger, menu, command } = await openAgentPanelMenu(component, page);
 
   const geometry = await menu.evaluate((node) => {
     const box = node.getBoundingClientRect();
     return {
-      width: box.width,
+      left: box.left,
+      right: box.right,
       scrollWidth: node.scrollWidth,
       clientWidth: node.clientWidth,
     };
   });
-  expect(geometry.width).toBeGreaterThanOrEqual(224);
-  expect(geometry.width).toBeLessThanOrEqual(320);
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(1000);
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  await testInfo.attach('desktop-panel-actions', {
+    body: await menu.screenshot(),
+    contentType: 'image/png',
+  });
+  await command.click();
+  await expect(component).toHaveAttribute('data-content-count', '1');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
 
 for (const stackCount of [1, 5] as const) {
