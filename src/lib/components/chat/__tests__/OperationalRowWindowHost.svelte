@@ -18,6 +18,7 @@
     generation = 0,
     contentOverride,
     documentScroll = false,
+    horizontallyClipped = false,
   }: {
     live?: boolean;
     nestedResult?: boolean;
@@ -29,6 +30,7 @@
     generation?: number;
     contentOverride?: ContentBlock[];
     documentScroll?: boolean;
+    horizontallyClipped?: boolean;
   } = $props();
   let scrollRoot = $state<HTMLElement>();
   provideOperationalPanel(() => (documentScroll ? undefined : scrollRoot));
@@ -70,7 +72,11 @@
 <div
   bind:this={scrollRoot}
   data-window-scroll
-  style={documentScroll ? 'width:600px' : 'height:360px;width:600px;overflow:auto'}
+  style={horizontallyClipped
+    ? 'height:800px;width:0;overflow:hidden'
+    : documentScroll
+      ? 'width:600px'
+      : 'height:360px;width:600px;overflow:auto'}
 >
   {#if shown}
     {#key generation}

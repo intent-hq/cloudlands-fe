@@ -378,3 +378,40 @@ for (const zoom of [1, 2]) {
     expect(Math.abs((top ?? Infinity) - anchor.top)).toBeLessThanOrEqual(1);
   });
 }
+
+test('zero-width clipping ancestors admit no operational rows', async ({ mount }) => {
+  const host = await mount(OperationalRowWindowHost, {
+    props: { count: 20, horizontallyClipped: true },
+  });
+  await host.evaluate(async () => {
+    for (let frame = 0; frame < 20; frame++) await new Promise(requestAnimationFrame);
+  });
+  await expect(host.locator('[data-chat-operational-row]')).toHaveCount(0);
+});
+
+test('a prepended same-name group cannot take the active group disclosure', async ({ mount }) => {
+  const original: ContentBlock[] = [
+    { type: 'text', text: '<group:Work>' },
+    { type: 'tool_use', id: 'a', name: 'inspect', input: {} },
+  ];
+  const host = await mount(OperationalRowWindowHost, {
+    props: { live: true, contentOverride: original },
+  });
+  const groups = host.getByTestId('response-group-disclosure');
+  await expect(groups).toHaveCount(1);
+  await expect(groups.first()).toHaveAttribute('aria-expanded', 'false');
+  await groups.first().click();
+  await expect(groups.first()).toHaveAttribute('aria-expanded', 'true');
+  await host.update({
+    props: {
+      live: true,
+      contentOverride: [
+        { type: 'text', text: '<group:Work>Earlier unrelated description</group>' },
+        ...original,
+      ],
+    },
+  });
+  await expect(groups).toHaveCount(2);
+  await expect(groups.nth(0)).toHaveAttribute('aria-expanded', 'false');
+  await expect(groups.nth(1)).toHaveAttribute('aria-expanded', 'true');
+});

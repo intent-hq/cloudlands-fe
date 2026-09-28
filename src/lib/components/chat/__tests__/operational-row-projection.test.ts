@@ -28,9 +28,50 @@ let projectWindowItems: ReturnType<typeof createWindowItemProjector>;
 beforeEach(() => {
   projectWindowItems = createWindowItemProjector();
 });
-import type { ContentBlockGroup } from '$lib/utils/messageParser';
+import { groupContentBlocks, type ContentBlockGroup } from '$lib/utils/messageParser';
+import type { ContentBlock } from '$shared/types';
 
 describe('canonical renderer rows', () => {
+  it('continues an unanchored streaming tag after a closed same-name group is prepended', () => {
+    const initial = projectWindowItems(
+      groupContentBlocks([{ type: 'text', text: '<group:Work>' }], true),
+      'message',
+      () => true,
+    );
+    const updated = projectWindowItems(
+      groupContentBlocks(
+        [
+          { type: 'text', text: '<group:Work>Earlier unrelated description</group>' },
+          { type: 'text', text: '<group:Work>' },
+          { type: 'tool_use', id: 'a', name: 'inspect', input: {} },
+        ],
+        true,
+      ),
+      'message',
+      () => true,
+    );
+    expect(updated[1].key).toBe(initial[0].key);
+    expect(updated[0].key).not.toBe(initial[0].key);
+  });
+
+  it('reserves a surviving source anchor before a new same-name group can claim it', () => {
+    const original: ContentBlock[] = [
+      { type: 'text', text: '<group:Work>' },
+      { type: 'tool_use', id: 'a', name: 'inspect', input: {} },
+    ];
+    const initial = projectWindowItems(groupContentBlocks(original, true), 'message', () => true);
+    const updated = projectWindowItems(
+      groupContentBlocks(
+        [{ type: 'text', text: '<group:Work>Earlier unrelated description</group>' }, ...original],
+        true,
+      ),
+      'message',
+      () => true,
+    );
+    expect(updated[1].key).toBe(initial[0].key);
+    expect(updated[0].key).not.toBe(initial[0].key);
+  });
+
   it('preserves group identity through prose insertion and child regrouping, but not replacement', () => {
     const a: ContentBlockGroup = {
       type: 'content_group',

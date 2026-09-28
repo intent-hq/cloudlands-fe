@@ -53,6 +53,23 @@ afterEach(() => {
 });
 
 describe('panel geometry lifetime', () => {
+  it('does not admit rows through a zero-width horizontal clipping ancestor', () => {
+    const clip = node();
+    clip.style.overflowX = 'hidden';
+    vi.mocked(clip.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 0, 800));
+    const root = node();
+    clip.append(root);
+    panel.attach(
+      'message',
+      root,
+      Array.from({ length: 40 }, (_, index) => ({ ...entry, key: `row${index}` })),
+      vi.fn(),
+    );
+    frame();
+    expect(panel.policy.snapshot().visibleKeys).toEqual([]);
+    expect(panel.policy.snapshot().mountedKeys).toEqual([]);
+  });
+
   it('ignores an old row blur after a same-key replacement takes focus', async () => {
     const root = node(2000);
     panel.attach('message', root, [entry], vi.fn());

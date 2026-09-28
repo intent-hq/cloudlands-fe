@@ -161,6 +161,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           headers.delete(entry.key);
         }
       }
+      let clipLeft = 0;
+      let clipRight = window.innerWidth;
       let clipTop = 0;
       let clipBottom = window.innerHeight;
       // A spacer-only shrink-to-fit parent can have zero intrinsic width until
@@ -176,12 +178,26 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         )
           hidden = true;
         if (!scroll && /(auto|scroll)/.test(style.overflowY)) scroll = parent;
-        if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
+        const clipsX = /(auto|scroll|hidden|clip)/.test(style.overflowX);
+        const clipsY = /(auto|scroll|hidden|clip)/.test(style.overflowY);
+        if (clipsX || clipsY) {
           const clip = parent.getBoundingClientRect();
-          clipTop = Math.max(clipTop, clip.top);
-          clipBottom = Math.min(clipBottom, clip.bottom);
+          if (clipsX) {
+            clipLeft = Math.max(clipLeft, clip.left);
+            clipRight = Math.min(clipRight, clip.right);
+          }
+          if (clipsY) {
+            clipTop = Math.max(clipTop, clip.top);
+            clipBottom = Math.min(clipBottom, clip.bottom);
+          }
         }
       }
+      // A zero-width intrinsic root may grow when admitted, but a clipped
+      // ancestor cannot: only project rows where its horizontal clip is open.
+      hidden ||=
+        clipRight <= clipLeft ||
+        box.left >= clipRight ||
+        (box.width > 0 ? box.right <= clipLeft : box.left < clipLeft);
       const documentScroll = (document.scrollingElement ?? document.documentElement) as HTMLElement;
       scroll ??= documentScroll;
       const scrollBox = scroll.getBoundingClientRect();

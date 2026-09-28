@@ -60,32 +60,55 @@ export function createWindowItemProjector() {
       const groups = blocks.filter(
         (block): block is ContentBlockGroup => block.type === 'content_group',
       );
-      const records = groups.map((block, ordinal) => {
-        const anchors = new Set(
+      const records = groups.map((block) => ({
+        block,
+        anchors: new Set(
           block.children.flatMap((child) => (child.id ? [`${child.type}:${child.id}`] : [])),
-        );
-        const signature = JSON.stringify([block.sourceName ?? block.name, block.children]);
-        const candidates = [...available];
-        // Prefer source identity over mutable names, order, or first-child position.
-        const match =
-          candidates.find((old) => old.block === block) ??
-          candidates.find((old) => [...anchors].some((id) => old.anchors.has(id))) ??
-          candidates.find((old) => old.signature === signature) ??
-          candidates.find((old) => {
-            if (!old.block.isStreaming || (old.anchors.size > 0 && anchors.size > 0)) return false;
-            const oldName = old.block.sourceName ?? old.block.name;
-            const name = block.sourceName ?? block.name;
-            // A tag-first group has no immutable child anchor yet. Continue only
-            // its streaming slot; inserted prose does not change group ordinals.
-            return oldName === name || (!oldName && previous.get(scope)?.[ordinal] === old);
-          });
-        if (match) {
-          available.delete(match);
-          identities.set(block, match.key);
+        ),
+        signature: JSON.stringify([block.sourceName ?? block.name, block.children]),
+        match: undefined as GroupIdentity | undefined,
+      }));
+      const reserve = (
+        matches: (record: (typeof records)[number], old: GroupIdentity) => boolean,
+      ) => {
+        for (const record of records) {
+          if (record.match) continue;
+          const match = [...available].find((old) => matches(record, old));
+          if (match) {
+            available.delete(match);
+            record.match = match;
+          }
         }
-        return { key: keyFor(block), block, anchors, signature };
-      });
-      previous.set(scope, records);
+      };
+      // Reserve every strong source match before a tag-first continuation can
+      // claim a slot. A newly prepended same-name group must not steal a survivor.
+      reserve((record, old) => old.block === record.block);
+      reserve((record, old) => [...record.anchors].some((id) => old.anchors.has(id)));
+      reserve((record, old) => old.signature === record.signature);
+      for (const [ordinal, record] of records.entries()) {
+        record.match ??= [...available].find((old) => {
+          if (!old.block.isStreaming || old.anchors.size > 0) return false;
+          const sameSlot = previous.get(scope)?.[ordinal] === old;
+          const finalizingSlot = sameSlot && groups.length === previous.get(scope)?.length;
+          if (!record.block.isStreaming && !finalizingSlot) return false;
+          const oldName = old.block.sourceName ?? old.block.name;
+          const name = record.block.sourceName ?? record.block.name;
+          return oldName === name || (!oldName && sameSlot);
+        });
+        if (record.match) {
+          available.delete(record.match);
+          identities.set(record.block, record.match.key);
+        }
+      }
+      previous.set(
+        scope,
+        records.map(({ block, anchors, signature }) => ({
+          key: keyFor(block),
+          block,
+          anchors,
+          signature,
+        })),
+      );
     }
     return projectWindowItems(blocks, scope, visible, group, groupIndex, nested, keyFor);
   };
