@@ -53,6 +53,33 @@ afterEach(() => {
 });
 
 describe('panel geometry lifetime', () => {
+  it('resolves current source paths to canonical rows without synchronous geometry reads', () => {
+    const root = node();
+    const original = { ...entry, navigation: { messageId: 'message', path: 'b:2' } };
+    panel.attach('message', root, [original], vi.fn());
+    frame();
+    vi.mocked(root.getBoundingClientRect).mockClear();
+    expect(panel.resolveTarget('message', 'b:2')).toBe(entry.key);
+    expect(panel.resolveTarget('other-message', 'b:2')).toBeUndefined();
+    panel.update('message', [{ ...original, navigation: { messageId: 'message', path: 'b:3' } }]);
+    expect(panel.resolveTarget('message', 'b:2')).toBeUndefined();
+    expect(panel.resolveTarget('message', 'b:3')).toBe(entry.key);
+    expect(root.getBoundingClientRect).not.toHaveBeenCalled();
+  });
+
+  it('does not let a cancelled navigation release a newer lease on the same row', () => {
+    panel.attach('message', node(2000), [entry], vi.fn());
+    frame();
+    const first = {};
+    const second = {};
+    panel.pin(entry.key, true, first);
+    panel.pin(entry.key, true, second);
+    panel.pin(entry.key, false, first);
+    expect(panel.policy.snapshot().pinnedKeys).toEqual([entry.key]);
+    panel.pin(entry.key, false, second);
+    expect(panel.policy.snapshot().pinnedKeys).toEqual([]);
+  });
+
   it('releases the focus pin when its row is destroyed without a blur event', () => {
     panel.attach('message', node(2000), [entry], vi.fn());
     frame();

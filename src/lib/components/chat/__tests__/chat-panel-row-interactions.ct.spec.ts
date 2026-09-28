@@ -198,10 +198,9 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
             {
               type: 'thinking',
               id: 'history',
-              text: Array.from(
-                { length: 100 },
-                (_, i) => `## Evidence ${i}\n\nReasoning target-${i}-end.`,
-              ).join('\n\n'),
+              text: Array.from({ length: 100 }, (_, i) => `**Reasoning target-${i}-end.**`).join(
+                '\n\n',
+              ),
             },
             { type: 'text', id: 'history-close', text: '</group:Prepping>' },
             { type: 'text', id: 'history-after', text: 'End of completed history.' },
@@ -214,7 +213,7 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
     await page.keyboard.press('ControlOrMeta+f');
     const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
     await input.fill('Reasoning target-10-end.');
-    await expect(host.getByText('Reasoning target-10-end.', { exact: true })).toBeVisible();
+    await expect(host.getByText('Reasoning target-10-end.', { exact: true })).toBeInViewport();
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -225,7 +224,7 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
       )
       .toBe('Reasoning target-10-end.');
     await input.fill('Reasoning target-90-end.');
-    await expect(host.getByText('Reasoning target-90-end.', { exact: true })).toBeVisible();
+    await expect(host.getByText('Reasoning target-90-end.', { exact: true })).toBeInViewport();
     await input.press('Escape');
   });
 }
@@ -437,4 +436,33 @@ test('streaming growth and completion follow only while the user follows the tai
     props: { liveMessages: live(140, false), liveStreaming: false, height: 600, width: 380 },
   });
   await expect.poll(() => viewport.evaluate((n) => n.scrollTop)).toBeCloseTo(before, 0);
+});
+
+test('search restores its canonical disclosure after a group is prepended', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const source = messages();
+  const host = await mount(ChatPanelOperationalGeometryHost, {
+    props: { liveMessages: source, detachedStatus: true },
+  });
+  await host.getByTestId('chat-transcript-scroll-viewport').click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press('ControlOrMeta+f');
+  const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
+  await input.fill('Hidden tool marker-10-end.');
+  const disclosure = host
+    .getByTestId('response-group-disclosure')
+    .filter({ hasText: 'Inspect 10' });
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  const prepended = structuredClone(source);
+  prepended[1].contentBlocks!.unshift({
+    type: 'text',
+    id: 'prepended-open',
+    text: '<group:Prepended>New group description</group:Prepended>',
+  });
+  await host.update({ props: { liveMessages: prepended, detachedStatus: true } });
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await input.press('Escape');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 });
