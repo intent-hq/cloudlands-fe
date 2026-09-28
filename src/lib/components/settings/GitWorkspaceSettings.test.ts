@@ -6,6 +6,19 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import GitWorkspaceSettings from './GitWorkspaceSettings.svelte';
 import { warmImport } from '../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
@@ -31,13 +44,14 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.mockDispatch },
-}));
-
-vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
-  refreshAutoCommitSettings: () => ({ type: 'workspaceSettings/refreshAutoCommitSettings' }),
-}));
+beforeEach(() => {
+  const dispatch = store.dispatch.bind(store);
+  vi.spyOn(store, 'dispatch').mockImplementation((action) => {
+    mocks.mockDispatch(action);
+    return dispatch(action);
+  });
+});
+afterEach(() => vi.restoreAllMocks());
 
 vi.mock('$lib/directory-picker-service', () => ({
   pickDirectory: mocks.pickDirectory,
@@ -344,7 +358,7 @@ describe('GitWorkspaceSettings — default shell select', () => {
     render(GitWorkspaceSettings);
 
     const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
-    expect(trigger.textContent).toContain('/opt/homebrew/bin/nu');
+    await waitFor(() => expect(trigger.textContent).toContain('/opt/homebrew/bin/nu'));
   });
 
   it('persists a selection via settings.update with the exact payload', async () => {
@@ -465,6 +479,7 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     const clearWorktrees = within(worktreesInput.parentElement!).getByRole('button', {
       name: 'Clear path and restore default',
     });
+    await waitFor(() => expect((clearWorktrees as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(clearWorktrees);
 
     await waitFor(() => {
@@ -502,6 +517,7 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     const clearSsh = within(sshKeyInput.parentElement!).getByRole('button', {
       name: 'Clear path and restore default',
     });
+    await waitFor(() => expect((clearSsh as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(clearSsh);
 
     await waitFor(() => {

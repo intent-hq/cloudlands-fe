@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('$lib/client', () => ({ appClient: { settings: { get: vi.fn(), update: vi.fn() } } }));
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { modelSelectionSaga } from '../model/sagas/model-selection-saga';
+import { backgroundAgentSettingsSaga } from './sagas/background-agent-settings-saga';
 import { store } from '$store/renderer/store';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import {
@@ -9,9 +10,11 @@ import {
   undoSettingsProposalWork,
 } from '$lib/components/chat/proposals/settings-proposal-actions';
 let stopSaga: (() => void) | undefined;
+let stopBackground: (() => void) | undefined;
 let dispose: (() => void) | undefined;
 afterEach(() => {
   stopSaga?.();
+  stopBackground?.();
   dispose?.();
   vi.restoreAllMocks();
   vi.resetAllMocks();
@@ -19,6 +22,7 @@ afterEach(() => {
 for (const initial of [{}, { walkthrough: 'low' }]) {
   it(`applies the complete free-form effort map for a settings proposal from ${JSON.stringify(initial)}`, async () => {
     dispose = store.init();
+    stopBackground = store.runSaga(backgroundAgentSettingsSaga);
     applySettingsChanges([
       { path: 'model.defaultProvider', value: 'codex' },
       { path: 'quickActions.typeReasoningEffortOverrides', value: initial },
@@ -47,6 +51,7 @@ for (const path of ['model.defaultProvider', 'model.default']) {
     for (const switchFirst of [true, false]) {
       it(`rejects a blocked provider proposal before any changes (${path}, undo ${undo}, switch first ${switchFirst})`, async () => {
         dispose = store.init();
+        stopBackground = store.runSaga(backgroundAgentSettingsSaga);
         applySettingsChanges([
           { path: 'model.defaultProvider', value: 'codex' },
           { path: 'quickActions.defaultModel', value: 'balanced' },

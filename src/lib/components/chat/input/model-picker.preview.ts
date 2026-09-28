@@ -20,6 +20,7 @@ import {
   selectModelPickerCollapsedGroups,
 } from '$store/renderer/slices/model/model-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import {
   hydrateDefaultProvider,
   setAvailableModels,
@@ -76,11 +77,13 @@ function setupModels(populated: boolean) {
       appStore.dispatch(providerModelsLoaded(providerId, { models: rows }, epoch));
       if (providerId === 'codex') appStore.dispatch(setAvailableModels(rows, providerId));
     }
+    const cancelCatalog = appStore.runSaga(modelReloadSaga);
     let disposed = false;
     const cleanup = () => {
       if (disposed) return;
       disposed = true;
       if (activeCleanup === cleanup) activeCleanup = undefined;
+      cancelCatalog();
       if (bridge && originalInvoke) bridge.invoke = originalInvoke;
       for (const restoreHandler of restoreModelHandlers) restoreHandler();
       appStore.dispatch(providerModelsCacheCleared());
