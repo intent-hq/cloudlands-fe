@@ -6770,5 +6770,15 @@
   "modals_retireAgent_description": "¿Retirar a «{name}»? Se detendrá cualquier turno en curso y se cancelarán los hooks, monitores de PR y otras suscripciones de activación. La conversación se conserva y podrás restaurar al agente más adelante. Restaurarlo no reinicia los hooks ni los monitores cancelados.",
   "modals_retireAgent_confirm_label": "Retirar agente",
   "agent_mutation_retireFailed_error": "No se pudo retirar al agente",
-  "agent_mutation_retireUnavailable_error": "Este daemon no permite retirar agentes."
+  "agent_mutation_retireUnavailable_error": "Este daemon no permite retirar agentes.",
+  "file_pdf_loading_label": "Cargando PDF…",
+  "file_pdf_missing_error": "No se encontró el archivo PDF.",
+  "file_pdf_large_error": "Este PDF supera el límite de vista previa de 64 MB.",
+  "file_pdf_invalid_error": "Este PDF está dañado o no es compatible.",
+  "file_pdf_password_error": "Este PDF requiere una contraseña.",
+  "file_pdf_load_error": "No se pudo cargar el PDF. Inténtalo de nuevo.",
+  "file_pdf_previous_label": "Página anterior",
+  "file_pdf_next_label": "Página siguiente",
+  "file_pdf_page_label": "Página {page} de {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, página {page}"
 }

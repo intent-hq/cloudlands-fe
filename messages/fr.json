@@ -6770,5 +6770,15 @@
   "modals_retireAgent_description": "Retirer « {name} » ? Cela arrête tout tour en cours et annule les hooks, les suivis de PR et les autres abonnements de réveil. La conversation est conservée et vous pourrez restaurer l’agent plus tard. La restauration ne relance pas les hooks ni les suivis annulés.",
   "modals_retireAgent_confirm_label": "Retirer l’agent",
   "agent_mutation_retireFailed_error": "Impossible de retirer l’agent",
-  "agent_mutation_retireUnavailable_error": "Ce daemon ne permet pas de retirer des agents."
+  "agent_mutation_retireUnavailable_error": "Ce daemon ne permet pas de retirer des agents.",
+  "file_pdf_loading_label": "Chargement du PDF…",
+  "file_pdf_missing_error": "Fichier PDF introuvable.",
+  "file_pdf_large_error": "Ce PDF dépasse la limite de prévisualisation de 64 Mo.",
+  "file_pdf_invalid_error": "Ce PDF est endommagé ou non pris en charge.",
+  "file_pdf_password_error": "Ce PDF nécessite un mot de passe.",
+  "file_pdf_load_error": "Impossible de charger le PDF. Réessayez.",
+  "file_pdf_previous_label": "Page précédente",
+  "file_pdf_next_label": "Page suivante",
+  "file_pdf_page_label": "Page {page} sur {total}",
+  "file_pdf_canvas_ariaLabel": "Page {page} du document {name}"
 }

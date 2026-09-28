@@ -6770,5 +6770,15 @@
   "modals_retireAgent_description": "„{name}“ stilllegen? Dadurch werden laufende Durchläufe gestoppt und Hooks, PR-Monitore sowie andere Aufweck-Abonnements beendet. Die Unterhaltung bleibt erhalten und der Agent kann später wiederhergestellt werden. Beendete Hooks oder Monitore werden dabei nicht neu gestartet.",
   "modals_retireAgent_confirm_label": "Agent stilllegen",
   "agent_mutation_retireFailed_error": "Agent konnte nicht stillgelegt werden",
-  "agent_mutation_retireUnavailable_error": "Dieser Daemon unterstützt das Stilllegen von Agenten nicht."
+  "agent_mutation_retireUnavailable_error": "Dieser Daemon unterstützt das Stilllegen von Agenten nicht.",
+  "file_pdf_loading_label": "PDF wird geladen…",
+  "file_pdf_missing_error": "PDF-Datei nicht gefunden.",
+  "file_pdf_large_error": "Diese PDF überschreitet die Vorschaugrenze von 64 MB.",
+  "file_pdf_invalid_error": "Diese PDF ist beschädigt oder wird nicht unterstützt.",
+  "file_pdf_password_error": "Diese PDF erfordert ein Passwort.",
+  "file_pdf_load_error": "Die PDF konnte nicht geladen werden. Versuchen Sie es erneut.",
+  "file_pdf_previous_label": "Vorherige Seite",
+  "file_pdf_next_label": "Nächste Seite",
+  "file_pdf_page_label": "Seite {page} von {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, Seite {page}"
 }

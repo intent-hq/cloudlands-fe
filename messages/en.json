@@ -6770,5 +6770,15 @@
   "modals_retireAgent_description": "Retire “{name}”? This stops any running turn and cancels hooks, PR monitors, and other wake subscriptions. The conversation is preserved, and you can restore the agent later. Restoring does not restart cancelled hooks or monitors.",
   "modals_retireAgent_confirm_label": "Retire Agent",
   "agent_mutation_retireFailed_error": "Failed to retire agent",
-  "agent_mutation_retireUnavailable_error": "This daemon does not support retiring agents."
+  "agent_mutation_retireUnavailable_error": "This daemon does not support retiring agents.",
+  "file_pdf_loading_label": "Loading PDF…",
+  "file_pdf_missing_error": "PDF file not found.",
+  "file_pdf_large_error": "This PDF exceeds the 64 MB preview limit.",
+  "file_pdf_invalid_error": "This PDF is damaged or unsupported.",
+  "file_pdf_password_error": "This PDF requires a password.",
+  "file_pdf_load_error": "Could not load the PDF. Try again.",
+  "file_pdf_previous_label": "Previous page",
+  "file_pdf_next_label": "Next page",
+  "file_pdf_page_label": "Page {page} of {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, page {page}"
 }

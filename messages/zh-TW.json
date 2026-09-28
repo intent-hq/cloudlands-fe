@@ -6770,5 +6770,15 @@
   "modals_retireAgent_description": "要將「{name}」退役嗎？這會停止正在執行的回合，並取消掛鉤、PR 監控及其他喚醒訂閱。對話將會保留，你可以稍後還原代理。還原不會重新啟動已取消的掛鉤或監控。",
   "modals_retireAgent_confirm_label": "退役代理",
   "agent_mutation_retireFailed_error": "無法退役代理",
-  "agent_mutation_retireUnavailable_error": "此常駐程式不支援退役代理。"
+  "agent_mutation_retireUnavailable_error": "此常駐程式不支援退役代理。",
+  "file_pdf_loading_label": "正在載入 PDF…",
+  "file_pdf_missing_error": "找不到 PDF 檔案。",
+  "file_pdf_large_error": "此 PDF 超出 64 MB 的預覽限制。",
+  "file_pdf_invalid_error": "此 PDF 已損毀或不受支援。",
+  "file_pdf_password_error": "此 PDF 需要密碼。",
+  "file_pdf_load_error": "無法載入 PDF。請重試。",
+  "file_pdf_previous_label": "上一頁",
+  "file_pdf_next_label": "下一頁",
+  "file_pdf_page_label": "第 {page} 頁，共 {total} 頁",
+  "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁"
 }

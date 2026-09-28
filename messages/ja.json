@@ -6770,5 +6770,15 @@
   "modals_retireAgent_description": "「{name}」を引退させますか？実行中のターンを停止し、フック、PR モニター、その他の起動サブスクリプションを解除します。会話は保持され、後でエージェントを復元できます。復元しても、解除したフックやモニターは再開されません。",
   "modals_retireAgent_confirm_label": "エージェントを引退",
   "agent_mutation_retireFailed_error": "エージェントを引退させられませんでした",
-  "agent_mutation_retireUnavailable_error": "このデーモンはエージェントの引退に対応していません。"
+  "agent_mutation_retireUnavailable_error": "このデーモンはエージェントの引退に対応していません。",
+  "file_pdf_loading_label": "PDF を読み込み中…",
+  "file_pdf_missing_error": "PDF ファイルが見つかりません。",
+  "file_pdf_large_error": "この PDF はプレビューの上限 64 MB を超えています。",
+  "file_pdf_invalid_error": "この PDF は破損しているか、対応していません。",
+  "file_pdf_password_error": "この PDF にはパスワードが必要です。",
+  "file_pdf_load_error": "PDF を読み込めませんでした。再試行してください。",
+  "file_pdf_previous_label": "前のページ",
+  "file_pdf_next_label": "次のページ",
+  "file_pdf_page_label": "{page} / {total} ページ",
+  "file_pdf_canvas_ariaLabel": "{name}、{page} ページ"
 }
