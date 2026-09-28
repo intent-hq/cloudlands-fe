@@ -284,7 +284,7 @@
 <style>
   .window-title-bar-wrapper {
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     overflow: visible;
     background: transparent;
     -webkit-app-region: drag;
