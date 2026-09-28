@@ -770,3 +770,90 @@ it('refreshes navigation evidence after an anchor correction changes the read sc
   expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
   expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(previous);
 });
+
+it('retains zero-height current rows without shifting later navigation or scroll anchors', () => {
+  const root = node();
+  const empty = node();
+  const positive = node();
+  vi.mocked(empty.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 0));
+  root.append(empty, positive);
+  const next = { ...entry, key: 'positive' };
+  panel.attach('message', root, [entry, next], vi.fn());
+  panel.watch(empty, entry.key);
+  panel.watch(positive, next.key);
+  frame();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(0);
+  expect(panel.locate(next.key)?.top).toBe(0);
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
+  expect(panel.locate(next.key)?.observation?.visible).toBe(true);
+  // A descriptor refresh must retain its positive policy estimate while the
+  // adapter continues using the actual zero extent for navigation geometry.
+  panel.update('message', [entry, { ...next }]);
+  expect(() => frame()).not.toThrow();
+  panel.refreshGeometry();
+  frame();
+  expect(document.documentElement.scrollTop).toBe(0);
+  expect(panel.locate(next.key)?.top).toBe(0);
+});
+
+it('does not replace retained row geometry with a hidden ancestor zero measurement', () => {
+  const clip = node();
+  const root = node();
+  const row = node();
+  clip.append(root);
+  root.append(row);
+  panel.attach('message', root, [entry], vi.fn());
+  panel.watch(row, entry.key);
+  frame();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+  clip.style.display = 'none';
+  vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 0, 0));
+  panel.refreshGeometry();
+  frame();
+  expect(panel.measuredHeight(entry.key)).toBe(28);
+});
+
+it('settles an intrinsically empty root and retains zero through remount', () => {
+  const root = node();
+  let rootHeight = 28;
+  let row: HTMLElement | undefined;
+  let watcher: ReturnType<typeof panel.watch> | undefined;
+  let mounts = 0;
+  vi.mocked(root.getBoundingClientRect).mockImplementation(
+    () => new DOMRect(0, 0, 600, rootHeight),
+  );
+  const notify = (segments: WindowSegment[]) => {
+    const admitted = segments.some((segment) => segment.type === 'row' && segment.admitted);
+    if (admitted && !row) {
+      row = node();
+      vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 0));
+      root.append(row);
+      watcher = panel.watch(row, entry.key);
+      mounts++;
+    } else if (!admitted && row) {
+      watcher?.destroy();
+      row.remove();
+      row = undefined;
+    }
+    rootHeight = admitted ? 0 : segments.reduce((height, segment) => height + segment.height, 0);
+  };
+  let detach = panel.attach('message', root, [entry], notify);
+  for (let count = 0; count < 8; count++) frame();
+  expect(panel.measuredHeight(entry.key)).toBe(0);
+  expect(rootHeight).toBe(0);
+  expect(mounts).toBe(1);
+  expect(phases.reads).toHaveLength(0);
+  detach();
+  watcher?.destroy();
+  row?.remove();
+  row = undefined;
+  detach = panel.attach('message', root, [entry], notify);
+  for (let count = 0; count < 8; count++) frame();
+  expect(panel.measuredHeight(entry.key)).toBe(0);
+  expect(rootHeight).toBe(0);
+  expect(mounts).toBeLessThanOrEqual(2);
+  expect(phases.reads).toHaveLength(0);
+  detach();
+});

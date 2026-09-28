@@ -1403,10 +1403,17 @@
     let afterRead = operationalPanel.refreshGeometry();
     try {
       for (let attempt = 0; attempt < 40 && current() && !isComponentDestroyed; attempt++) {
-        const key =
+        const targetKey =
           query === undefined
             ? operationalPanel.resolveTarget(messageId, path)
             : operationalPanel.resolveMatch(messageId, path, query, occurrence)?.key;
+        // A live preview's child scope does not exist until its parent group is
+        // admitted. Reveal that canonical parent without opening its disclosure,
+        // then transfer the same lease to the actual child on the next read.
+        const parentPath = path.includes(':c:') ? path.split(':c:')[0] : undefined;
+        const key =
+          targetKey ??
+          (parentPath ? operationalPanel.resolveTarget(messageId, parentPath) : undefined);
         if (key) {
           if (pinned !== key) {
             if (pinned) operationalPanel.pin(pinned, false, lease);
@@ -1418,6 +1425,7 @@
           if (location) {
             const { node, scrollRoot, top, observation } = location;
             if (
+              targetKey &&
               node?.isConnected &&
               location.admitted &&
               observation?.visible &&
@@ -1456,8 +1464,10 @@
         (opened.key
           ? [...keep].some(
               (id) =>
-                operationalPanel.resolveTarget(keepMessageId, id.replace(/^group:/, '')) ===
-                opened.key,
+                operationalPanel.resolveTarget(
+                  keepMessageId,
+                  id.replace(/^(?:group|thinking):/, ''),
+                ) === opened.key,
             )
           : keep.has(opened.disclosureId))
       ) {
@@ -1501,7 +1511,11 @@
     await restoreSearchDisclosures(container, match?.messageId, required, current);
     if (!current() || !match || !container) return;
     for (const id of match.disclosurePath) {
-      const row = await materializeSearchRow(match.messageId, id.replace(/^group:/, ''), current);
+      const row = await materializeSearchRow(
+        match.messageId,
+        id.replace(/^(?:group|thinking):/, ''),
+        current,
+      );
       if (!current()) return;
       const message = container.querySelector(`[data-message-id="${CSS.escape(match.messageId)}"]`);
       const disclosure = (row ?? message)?.querySelector(
@@ -1518,7 +1532,10 @@
           searchOpenedDisclosures.push({
             messageId: match.messageId,
             disclosureId: id,
-            key: operationalPanel.resolveTarget(match.messageId, id.replace(/^group:/, '')),
+            key: operationalPanel.resolveTarget(
+              match.messageId,
+              id.replace(/^(?:group|thinking):/, ''),
+            ),
           });
         await tick();
         if (!current()) return;
@@ -4614,7 +4631,10 @@
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
       if (!current()) return;
-      if (!match) smoothScrollTo(targetElement, 'center', undefined, getContainer);
+      if (!match?.blockPath)
+        smoothScrollTo(targetElement, 'center', undefined, () =>
+          current() ? getContainer() : null,
+        );
       scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
       scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);

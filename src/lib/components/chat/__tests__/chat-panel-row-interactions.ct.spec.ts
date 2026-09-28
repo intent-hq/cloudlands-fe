@@ -845,3 +845,91 @@ test('watched reasoning search retains the body until the actual scrollport reve
     expect(visible).toEqual(Array(60).fill(true));
   }
 });
+
+test('query deep link scrolls to an offscreen user message', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const host = await mount(ChatPanelOperationalGeometryHost, {
+    props: { liveMessages: messages(), detachedStatus: true },
+  });
+  const viewport = host.getByTestId('chat-transcript-scroll-viewport');
+  await expect
+    .poll(() => viewport.evaluate((n) => n.scrollHeight - n.clientHeight - n.scrollTop))
+    .toBeLessThanOrEqual(2);
+  const user = host.locator('[data-message-id="interaction-user"]');
+  await expect(user).not.toBeInViewport();
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'chat-panel-operational-agent',
+          messageId: 'interaction-user',
+          query: 'interaction history',
+          requestId: 'user-query-link',
+        },
+      }),
+    ),
+  );
+  await expect(user).toBeInViewport();
+  expect(
+    await page.evaluate(() =>
+      Array.from((CSS.highlights?.get('deep-open-match') as Iterable<Range>) ?? [], (r) =>
+        r.toString(),
+      ).join(' '),
+    ),
+  ).toContain('interaction history');
+});
+
+for (const kind of ['text', 'thinking', 'completed-thinking'] as const) {
+  test(`search materializes an offscreen live group ${kind} child`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const source = messages();
+    source[1].isStreaming = true;
+    const tool: ContentBlock = {
+      type: 'tool_use',
+      id: 'live-tool',
+      name: 'view',
+      input: { path: 'src/example.ts' },
+    };
+    const needle: ContentBlock = {
+      type: kind === 'text' ? 'text' : 'thinking',
+      id: 'live-needle',
+      text: 'live-search-unique-needle',
+    };
+    source[1].contentBlocks!.push(
+      { type: 'text', id: 'live-open', text: '<group:Live inspection>' },
+      ...(kind === 'completed-thinking' ? [needle, tool] : [tool, needle]),
+    );
+    const host = await mount(ChatPanelOperationalGeometryHost, {
+      props: { liveMessages: source, liveStreaming: true, detachedStatus: true },
+    });
+    const viewport = host.getByTestId('chat-transcript-scroll-viewport');
+    await expect
+      .poll(() => viewport.evaluate((n) => n.scrollHeight - n.clientHeight - n.scrollTop))
+      .toBeLessThanOrEqual(2);
+    await viewport.hover();
+    await page.mouse.wheel(0, -100000);
+    await expect.poll(() => viewport.evaluate((n) => n.scrollTop)).toBeLessThan(2);
+    await expect(host.getByText('live-search-unique-needle', { exact: true })).toHaveCount(0);
+    await viewport.click({ position: { x: 4, y: 4 } });
+    await page.keyboard.press('ControlOrMeta+f');
+    const search = host.getByRole('search', { name: 'Find in panel' });
+    await search.getByRole('textbox').fill('live-search-unique-needle');
+    await expect(search).toContainText('1 / 1');
+    await expect(host.getByText('live-search-unique-needle', { exact: true })).toBeInViewport();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Array.from((CSS.highlights?.get('current-search-result') as Iterable<Range>) ?? [], (r) =>
+            r.toString(),
+          ).join(' '),
+        ),
+      )
+      .toBe('live-search-unique-needle');
+    await search.getByRole('textbox').press('Escape');
+    if (kind === 'completed-thinking') {
+      await expect(host.getByText('live-search-unique-needle', { exact: true })).toHaveCount(0);
+    } else {
+      await expect(host.getByText('live-search-unique-needle', { exact: true })).toBeInViewport();
+    }
+  });
+}

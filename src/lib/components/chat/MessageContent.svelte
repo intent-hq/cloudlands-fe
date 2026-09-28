@@ -663,6 +663,7 @@
       />
     {:else}
       <ThinkingBlock
+        {searchPath}
         saved={operationalPanel.state(rowKey, () => ({}))}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && !nested && blockIndex === groupedBlocks.length - 1}

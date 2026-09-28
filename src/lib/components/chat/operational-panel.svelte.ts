@@ -202,7 +202,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
             key: entry.key,
             kind: entry.kind,
             scopeId,
-            estimatedHeight: height(entry),
+            estimatedHeight: height(entry) > 0 ? height(entry) : entry.estimatedHeight,
           })),
       ),
     );
@@ -271,7 +271,10 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       let clipBottom = window.innerHeight;
       // A spacer-only shrink-to-fit parent can have zero intrinsic width until
       // its first admitted row renders. Its positive flow height is still visible.
-      let hidden = box.height <= 0;
+      // An intrinsically empty row window is measurable: zero is real layout,
+      // not evidence that an ancestor has hidden the subtree.
+      const rootStyle = getComputedStyle(root.node);
+      let hidden = rootStyle.display === 'none' || rootStyle.visibility === 'hidden';
       let scroll: HTMLElement | undefined;
       let scrollCandidate: HTMLElement | undefined;
       for (let parent = root.node.parentElement; parent; parent = parent.parentElement) {
@@ -357,9 +360,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
               targetRect.left < clipRight &&
               targetRect.right > clipLeft,
           });
-        if (!hidden && measured > 0 && Number.isFinite(measured))
-          measurements.push({ key: entry.key, height: measured });
-        const extent = measured > 0 ? measured : height(entry);
+        const hasMeasurement = !!rowRect && !hidden && measured >= 0 && Number.isFinite(measured);
+        if (hasMeasurement) measurements.push({ key: entry.key, height: measured });
+        const extent = hasMeasurement ? measured : height(entry);
         const bottom = top + extent * scale;
         if (
           !hidden &&
@@ -373,7 +376,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           const rowTop = entry.kind === 'group' ? top + (summary?.offset ?? 0) * scale : top;
           const rowBottom =
             entry.kind === 'group' ? rowTop + (summary?.height ?? 28) * scale : bottom;
-          if (rowTop < clipBottom && rowBottom > clipTop) {
+          if (rowBottom > rowTop && rowTop < clipBottom && rowBottom > clipTop) {
             visible.push(entry.key);
             if (scroll && !nextAnchors.has(scroll) && entry.kind !== 'group')
               nextAnchors.set(scroll, {
@@ -406,7 +409,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       const beforePublish = projectionRevision;
       for (const measurement of measurements) heights.set(measurement.key, measurement.height);
       rebuild();
-      policy.measure(measurements);
+      policy.measure(measurements.filter(({ height }) => height > 0));
       for (const [scroll, correction] of corrections) scroll.scrollTop = correction.scrollTop;
       anchors.clear();
       for (const [scroll, anchor] of nextAnchors)
