@@ -94,6 +94,7 @@
   let moveRightCount = $state(0);
   let closeCount = $state(0);
   let openedExternalUrl = $state('');
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only IPC boundary records the external-open command without launching a browser.
   const restoreExternalOpen = overrideMockIpcHandler('shell:openExternal', (payload) => {
     openedExternalUrl = (payload as { url: string }).url;
     return { success: true };
