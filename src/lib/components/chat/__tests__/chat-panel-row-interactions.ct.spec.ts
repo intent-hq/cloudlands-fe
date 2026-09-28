@@ -611,6 +611,41 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       await page.evaluate(async () => {
         for (let frame = 0; frame < 8; frame++) await new Promise(requestAnimationFrame);
       });
+      await info.attach('existing-entrance-animations-before-append', {
+        body: JSON.stringify(
+          await viewport.evaluate((node) =>
+            node
+              .getAnimations({ subtree: true })
+              .filter(
+                (animation) =>
+                  animation.playState === 'running' &&
+                  animation.effect?.getComputedTiming().iterations !== Infinity,
+              )
+              .map((animation) => ({
+                name: animation instanceof CSSAnimation ? animation.animationName : null,
+                currentTime: animation.currentTime,
+                duration: animation.effect?.getComputedTiming().duration,
+              })),
+          ),
+        ),
+        contentType: 'application/json',
+      });
+      // Existing history must finish its own entrance before it becomes the
+      // anchor for measuring a later append. Observe every frame of the append.
+      await expect
+        .poll(() =>
+          viewport.evaluate(
+            (node) =>
+              node
+                .getAnimations({ subtree: true })
+                .filter(
+                  (animation) =>
+                    animation.playState === 'running' &&
+                    animation.effect?.getComputedTiming().iterations !== Infinity,
+                ).length,
+          ),
+        )
+        .toBe(0);
       const before = await viewport.evaluate((node) => node.scrollHeight);
       const initialTop = await viewport.evaluate((node) => node.scrollTop);
       await viewport.evaluate((node) => {
