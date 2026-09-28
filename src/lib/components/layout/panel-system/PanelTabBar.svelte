@@ -1154,7 +1154,7 @@
   }
 
   /**
-   * Start inline renaming for a tab (triggered by double-click)
+   * Start inline renaming from a tab or the panel action menu
    */
   async function startInlineRename(tab: PanelTab) {
     if (!isTabRenameable(tab) || !onTabRename) return;
@@ -1267,6 +1267,19 @@
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
+      {#if activeTab && isTabRenameable(activeTab) && onTabRename}
+        <Menu.CommandItem
+          label={m.workspace_notes_rename_label()}
+          onclick={async () => {
+            const tab = activeTab;
+            close();
+            // Let the menu restore trigger focus before mounting the editor.
+            await tick();
+            await startInlineRename(tab);
+          }}
+        />
+        <Menu.Separator />
+      {/if}
       {#if contentActions?.display}
         <Menu.Group data-panel-actions-section="display">
           {@render contentActions.display()}
@@ -1775,9 +1788,15 @@
           class="min-w-0 flex-1"
           aria-label={m.ui_editableName_rename_tooltip()}
           onblur={saveInlineRename}
-          onkeydown={(event) => {
+          onkeydown={async (event) => {
+            if (event.key !== 'Enter' && event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            const header = event.currentTarget.closest('[data-panel-tabless-header]');
             if (event.key === 'Enter') saveInlineRename();
-            if (event.key === 'Escape') cancelInlineRename();
+            else cancelInlineRename();
+            await tick();
+            header?.querySelector<HTMLButtonElement>('[data-pane-stack-selector-trigger]')?.focus();
           }}
         />
       {:else}
