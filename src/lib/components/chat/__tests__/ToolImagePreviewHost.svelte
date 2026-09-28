@@ -8,7 +8,12 @@
   import ToolCall from '../ToolCall.svelte';
   import { upsertSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 
-  let { width = 640, remoteAgent = false }: { width?: number; remoteAgent?: boolean } = $props();
+  let {
+    width = 640,
+    remoteAgent = false,
+    mountKey = 0,
+  }: { width?: number; remoteAgent?: boolean; mountKey?: number } = $props();
+  const saved: { expanded?: boolean; showImageTechnicalDetails?: boolean } = {};
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
@@ -43,11 +48,14 @@
   style:min-height="300px"
   data-testid="image-read-example"
 >
-  <ToolCall
-    agentId={remoteAgent ? agentId : undefined}
-    {toolUse}
-    {workspaceId}
-    toolState="completed"
-    result="Image displayed."
-  />
+  {#key mountKey}
+    <ToolCall
+      {saved}
+      agentId={remoteAgent ? agentId : undefined}
+      {toolUse}
+      {workspaceId}
+      toolState="completed"
+      result="Image displayed."
+    />
+  {/key}
 </section>

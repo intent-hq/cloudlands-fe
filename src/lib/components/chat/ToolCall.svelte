@@ -37,6 +37,7 @@
   import ChatImageBlock from './ChatImageBlock.svelte';
 
   interface Props {
+    saved?: { expanded?: boolean; showImageTechnicalDetails?: boolean };
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
@@ -51,6 +52,7 @@
   }
 
   let {
+    saved,
     toolUse,
     toolState = 'completed',
     result = null,
@@ -203,8 +205,10 @@
   // Should render: not hidden, not empty
   const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
 
-  let expanded = $state(false);
-  let showImageTechnicalDetails = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let expanded = $state(saved?.expanded ?? false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let showImageTechnicalDetails = $state(saved?.showImageTechnicalDetails ?? false);
   const isExpandable = $derived(displayModel.hasDetails || Boolean(localImageSource));
   const hasTrailing = $derived(
     displayModel.status === 'success' ||
@@ -216,7 +220,11 @@
   function toggleExpanded() {
     if (!isExpandable) return;
     expanded = !expanded;
-    if (!expanded) showImageTechnicalDetails = false;
+    if (saved) saved.expanded = expanded;
+    if (!expanded) {
+      showImageTechnicalDetails = false;
+      if (saved) saved.showImageTechnicalDetails = false;
+    }
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: truncatedBlockIds is empty).
     if (expanded) requestHydration();
@@ -360,7 +368,10 @@
         class="h-auto self-start p-0 type-caption text-muted-foreground"
         aria-expanded={showImageTechnicalDetails}
         aria-controls={`${detailsId}-technical`}
-        onclick={() => (showImageTechnicalDetails = !showImageTechnicalDetails)}
+        onclick={() => {
+          showImageTechnicalDetails = !showImageTechnicalDetails;
+          if (saved) saved.showImageTechnicalDetails = showImageTechnicalDetails;
+        }}
       >
         {m.chat_toolCall_technicalDetails_label()}
       </Button>
@@ -388,6 +399,7 @@
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
   <ContextEngineToolCall
+    {saved}
     {toolUse}
     {toolState}
     {result}
@@ -430,9 +442,7 @@
       type="button"
       variant="plain"
       class="block w-full px-2 pb-1 cursor-pointer bg-transparent border-0 p-0 text-left"
-      onclick={() => {
-        if (isExpandable) expanded = !expanded;
-      }}
+      onclick={toggleExpanded}
     >
       <div class="overflow-hidden rounded border border-border">
         <img

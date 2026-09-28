@@ -75,6 +75,7 @@ export function extractStandaloneReasoningTitle(content: string): string | null 
 function extractLeadingStrongReasoningTitle(
   content: string,
   singleSpanOnly = false,
+  readable = true,
 ): { title: string; body: string } | null {
   const leading = content.match(/^(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
   const candidate = content.slice(leading.length);
@@ -97,9 +98,26 @@ function extractLeadingStrongReasoningTitle(
   const title = markdownInlineToPlainText(strongTitle[1]);
   if (!isShortTitleLike(strongTitle[0], title)) return null;
   return {
-    title: singleSpanOnly ? markdownInlineToReadableText(strongTitle[1]) : title,
+    title: singleSpanOnly && readable ? markdownInlineToReadableText(strongTitle[1]) : title,
     body: bodyAfterHeading(content, leading.length + strongTitle[0].length),
   };
+}
+
+/** DOM-free row projection. Keep source Markdown so admitted rows retain entity,
+ * code, and escape semantics when they produce their accessible labels. */
+export function projectStandaloneReasoningTitles(content: string): string[] | null {
+  const fragments: string[] = [];
+  let remainder = content;
+  while (remainder.trim()) {
+    const markdown = extractMarkdownReasoningHeading(remainder, true);
+    const explicit = markdown.heading
+      ? { body: markdown.body }
+      : extractLeadingStrongReasoningTitle(remainder, true, false);
+    if (!explicit) return null;
+    fragments.push(remainder.slice(0, remainder.length - explicit.body.length));
+    remainder = explicit.body;
+  }
+  return fragments.length ? fragments : null;
 }
 
 /** Null retains the body disclosure; plain-line history titles never qualify. */
