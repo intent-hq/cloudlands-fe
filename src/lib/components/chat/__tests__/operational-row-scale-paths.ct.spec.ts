@@ -27,7 +27,7 @@ const transcript = (rows: number, prefix = 'scale'): AgentMessage[] => [
             ...Array.from({ length: rows - 1 }, (_, i): ContentBlock => ({
               type: 'thinking',
               id: `${prefix}-row-${i}`,
-              text: `Scale reasoning ${i}\n\nDetails needle-${prefix}-${i}.`,
+              text: `**Scale reasoning ${i}**\n\nDetails needle-${prefix}-${i}.`,
             })),
             { type: 'text', id: `${prefix}-close`, text: '</group:Prepping>' },
             { type: 'text', id: `${prefix}-end`, text: 'End of completed inspection.' },
@@ -89,6 +89,7 @@ for (const rows of [100, 1000, 5000]) {
       ).toBeVisible();
       await frames(page);
       samples.push(await snapshot(page, 'watched-search-disclosure'));
+      expect(samples[2].mounted).toBeGreaterThan(1);
       for (const sample of samples.slice(1)) {
         expect(sample.mounted).toBeGreaterThan(0);
         expect(sample.mounted - sample.visible).toBeLessThanOrEqual(26);
@@ -134,6 +135,12 @@ test('two-message forced history remains anchored after 200-message prepend', as
     },
   });
   const viewport = host.getByTestId('chat-transcript-scroll-viewport');
+  const disclosure = host.getByTestId('response-group-disclosure');
+  if ((await disclosure.getAttribute('aria-expanded')) !== 'true') await disclosure.click();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect
+    .poll(() => viewport.evaluate((node) => node.scrollHeight - node.clientHeight))
+    .toBeGreaterThan(400);
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
     .toBeLessThanOrEqual(2);
@@ -147,7 +154,12 @@ test('two-message forced history remains anchored after 200-message prepend', as
     const row = [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')].find(
       (row) => {
         const r = row.getBoundingClientRect();
-        return r.top >= box.top && r.bottom <= box.bottom;
+        return (
+          row.hasAttribute('data-chat-operational-row') &&
+          !row.dataset.operationalWindowKey?.includes('group-header') &&
+          r.top >= box.top &&
+          r.bottom <= box.bottom
+        );
       },
     );
     if (!row) throw new Error('Missing history anchor');
@@ -157,6 +169,7 @@ test('two-message forced history remains anchored after 200-message prepend', as
   const finish = await timeline(page);
   try {
     const samples = [await snapshot(page, 'before-prepend')];
+    expect(samples[0].mounted).toBeGreaterThan(1);
     await host.update({
       props: {
         liveMessages: [...older, ...tail],
