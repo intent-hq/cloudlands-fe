@@ -467,15 +467,28 @@ export class LiveSettingsClient implements SettingsClient {
 
   async getBackgroundAgentSettings(): Promise<BackgroundAgentSettingsState | null> {
     const settings = await this.list();
+    const defaultReasoningEffort = readString(settings, 'quickActions.defaultReasoningEffort');
+    const typeReasoningEffortOverrides = readObject(
+      settings,
+      'quickActions.typeReasoningEffortOverrides',
+    ) as BackgroundAgentSettingsState['typeReasoningEffortOverrides'] | null;
     const defaultModel = readString(settings, 'quickActions.defaultModel');
     const typeOverrides = readObject(settings, 'quickActions.typeOverrides') as
       BackgroundAgentSettingsState['typeOverrides'] | null;
     const providerSettings = readObject(settings, 'quickActions.providerSettings') as
       BackgroundAgentSettingsState['providerSettings'] | null;
-    if (defaultModel === null && typeOverrides === null && providerSettings === null) {
+    if (
+      defaultModel === null &&
+      typeOverrides === null &&
+      providerSettings === null &&
+      defaultReasoningEffort === null &&
+      typeReasoningEffortOverrides === null
+    ) {
       return null;
     }
     return {
+      defaultReasoningEffort: defaultReasoningEffort ?? '',
+      typeReasoningEffortOverrides: typeReasoningEffortOverrides ?? {},
       defaultModel: defaultModel ?? '',
       typeOverrides:
         typeOverrides ??
@@ -494,6 +507,8 @@ export class LiveSettingsClient implements SettingsClient {
   ): Promise<MutationResult> {
     return runMutation('settings.update', {
       changes: changesFrom({
+        'quickActions.defaultReasoningEffort': settings.defaultReasoningEffort,
+        'quickActions.typeReasoningEffortOverrides': settings.typeReasoningEffortOverrides,
         'quickActions.defaultModel': settings.defaultModel,
         'quickActions.typeOverrides': settings.typeOverrides,
         'quickActions.providerSettings': settings.providerSettings,

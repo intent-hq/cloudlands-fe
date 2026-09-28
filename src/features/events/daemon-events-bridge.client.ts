@@ -4205,6 +4205,7 @@ export function routeDaemonEventsNotification(
  */
 export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'agent:*',
+  'hub:checkpoint',
   // `file:*` is deliberately ABSENT: system-actor watcher bursts from every
   // open workspace would otherwise reach every window. The daemon-events-saga
   // carries file events on a separate subscription scoped to the active

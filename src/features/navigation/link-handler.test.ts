@@ -11,7 +11,8 @@ const TEST_WORKTREE_ROOT = '/repo/root';
 
 const handleIntentLinkMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 // Mock the dynamic imports used by handleLink
-vi.mock('$lib/utils/workspaces-link-handler', () => ({
+vi.mock('$lib/utils/workspaces-link-handler', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/workspaces-link-handler')>()),
   handleIntentLink: handleIntentLinkMock,
 }));
 

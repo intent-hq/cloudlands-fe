@@ -13,6 +13,11 @@ import { selectIsCollaboratorOnlyClient } from '../../workspace/workspace-select
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
 
+import {
+  fastModeHydrationStarted,
+  fastModeSupportReceived,
+} from '../../provider-settings/provider-settings-slice';
+
 const logger = createLogger('SettingsHydrationSaga');
 
 type LifecycleAction =
@@ -71,7 +76,13 @@ function* readSettingsSnapshotSaga() {
         }));
         // The shared apply seam emits hydration actions only. It never calls
         // settings.update, so the boot snapshot cannot echo back into persistence.
-        return { changes, revision: snapshot.revision };
+        return {
+          changes,
+          revision: snapshot.revision,
+          fastModeSupported: settings.some(
+            (s) => s.path === 'providers.fastMode' && s.type === 'object',
+          ),
+        };
       }
       if (yield* call(isKnownCollaboratorOnlyClientSaga)) {
         logger.info('settings hydration withheld from a collaborator-only client');
@@ -96,8 +107,12 @@ function* readSettingsSnapshotSaga() {
 
 export function* hydrateSettingsOnceSaga() {
   yield* put(notificationVolumeHydrationStarted());
+  yield* put(fastModeHydrationStarted());
   const snapshot = yield* call(readSettingsSnapshotSaga);
-  if (snapshot) yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+  if (snapshot) {
+    yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+    yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
+  }
 }
 
 export function* settingsHydrationSaga() {
@@ -115,6 +130,7 @@ export function* settingsHydrationSaga() {
     while (true) {
       if (needsSnapshot) {
         yield* put(notificationVolumeHydrationStarted());
+        yield* put(fastModeHydrationStarted());
         const { snapshot, lifecycle } = yield* race({
           snapshot: call(readSettingsSnapshotSaga),
           lifecycle: take(lifecycleChannel),
@@ -128,6 +144,7 @@ export function* settingsHydrationSaga() {
         }
         if (snapshot) {
           yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+          yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
           revision = snapshot.revision;
         }
         needsSnapshot = false;

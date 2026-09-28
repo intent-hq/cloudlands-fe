@@ -13,6 +13,7 @@
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -199,7 +200,7 @@
   function openFile(event: MouseEvent | KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
-    if (!workspaceId || !toolDisplay.filePath) return;
+    if (!workspaceId || !toolDisplay.filePath || !canOpenAgentPath(appStore.state, agentId)) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, toolDisplay.filePath, {
         line: toolDisplay.fileLine ?? undefined,
@@ -306,6 +307,7 @@
     </div>
   {/if}
   <ToolDetails
+    {agentId}
     input={toolUse.input}
     {result}
     {parsedResult}

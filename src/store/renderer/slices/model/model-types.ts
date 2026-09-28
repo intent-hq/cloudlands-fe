@@ -48,7 +48,7 @@ export type ModelState = {
   /**
    * Default provider id — the provider leg of the default model triple
    * (`model.defaultProvider`, PROTOCOL §5.12; '' before hydration). Set by
-   * `setActiveProvider`/`setAtomicDefaultModel` (user picks), hydrated by
+   * `activeProviderAccepted`/`atomicDefaultModelAccepted` (validated user picks), hydrated by
    * `hydrateDefaultProvider`, with a first-catalog-row fallback at
    * `providerCatalogLoaded` — the registry itself carries no default.
    * Ids are validated against `catalogProviderIds` once the catalog lands.

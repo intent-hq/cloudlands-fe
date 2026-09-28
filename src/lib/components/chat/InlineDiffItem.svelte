@@ -26,6 +26,9 @@
   interface Props {
     change: ChatFileChange | LocalFileChange;
     foldUnchanged?: boolean;
+    /** Node-owned paths must never fall back to head workspace content. */
+    allowHeadReads?: boolean;
+    canReadHeadFiles?: () => boolean;
     lineWrapping?: boolean;
     /** @deprecated - scrollToLine is not supported by the new DiffViewer */
     scrollToLine?: number;
@@ -58,6 +61,8 @@
   let {
     change,
     foldUnchanged = true,
+    allowHeadReads = true,
+    canReadHeadFiles,
     lineWrapping = false,
 
     scrollToLine: _scrollToLine,
@@ -232,6 +237,8 @@
       {onStageHunk}
       {onUnstageHunk}
       useProvidedContent={true}
+      {allowHeadReads}
+      {canReadHeadFiles}
       {lineOffset}
       {virtualizer}
       {gitRootId}

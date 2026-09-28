@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.186.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.4...v2.186.0) (2026-09-28)
+
+
+### 🚀 Features
+
+* add daemon-backed provider fast mode menus ([#2948](https://github.com/intent-hq/cloudlands-fe/issues/2948)) ([825f296](https://github.com/intent-hq/cloudlands-fe/commit/825f296a763dfdf93f24f1fb9da27e5bc791a807))
+* configure reasoning effort for quick actions ([#2947](https://github.com/intent-hq/cloudlands-fe/issues/2947)) ([da3f0d1](https://github.com/intent-hq/cloudlands-fe/commit/da3f0d15fcbfbc5effc8cf189ab08d15c58ce469))
+* render workspace PDFs inline ([#2945](https://github.com/intent-hq/cloudlands-fe/issues/2945)) ([a0dc9ab](https://github.com/intent-hq/cloudlands-fe/commit/a0dc9ab7cd2b32bd204af3477813e4ab68108006))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.114 ([#2957](https://github.com/intent-hq/cloudlands-fe/issues/2957)) ([2de2d44](https://github.com/intent-hq/cloudlands-fe/commit/2de2d4475a8e1b29176b314a165a2a522826471d))
+* **hud:** remove instance selector resting shade ([#2953](https://github.com/intent-hq/cloudlands-fe/issues/2953)) ([94b59ef](https://github.com/intent-hq/cloudlands-fe/commit/94b59ef3d514e1169007f9ec2fa078873798c65b))
+* keep previous-message navigation at its destination ([#2952](https://github.com/intent-hq/cloudlands-fe/issues/2952)) ([710afdc](https://github.com/intent-hq/cloudlands-fe/commit/710afdc0311a43fd3bb32886d908f8182fbaea3a))
+* keep workspace tab menus above the titlebar ([#2946](https://github.com/intent-hq/cloudlands-fe/issues/2946)) ([2dd8af2](https://github.com/intent-hq/cloudlands-fe/commit/2dd8af209a3bca42be241209e8f0edd52fbb25e6))
+* repair hourly token controls and theme stats cards ([#2951](https://github.com/intent-hq/cloudlands-fe/issues/2951)) ([171af0c](https://github.com/intent-hq/cloudlands-fe/commit/171af0c4787db5b71867c1925112119ed4f1dee0))
+
 ## [2.185.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.3...v2.185.4) (2026-09-28)
 
 

@@ -301,6 +301,8 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
     await waitFor(() =>
       expect(testState.batchedGitDiffMock).toHaveBeenCalledWith('ws-1', false, 'src/app.ts', {
         gitlink: undefined,
+        signal: expect.any(AbortSignal),
+        canRead: expect.any(Function),
         gitRootId: 'root-9',
         gitRootPath: '/repo/packages/sub',
       }),

@@ -3,8 +3,12 @@ import { definePreview } from '$lib/component-catalog/preview-definition';
 import ChatChangesPanelHarness from './ChatChangesPanelHarness.svelte';
 import type { LocalFileChange } from './types';
 import { store as appStore } from '$store/renderer/store';
-import { WorkspaceStatus } from '$shared/types';
-import { WorkspaceId } from '$shared/types/branded-ids';
+import {
+  bulkUpsertSessions,
+  removeSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { AgentStatus, type AgentSession, WorkspaceStatus } from '$shared/types';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   setWorkspaceEntity,
@@ -53,6 +57,41 @@ export const preview = definePreview<ComponentProps<typeof ChatChangesPanelHarne
   title: 'Chat changes panel',
   defaultState: 'populated',
   states: {
+    'remote-offline': {
+      props: {
+        changes: changes.map((change, index) =>
+          index === 0 ? { ...change, oldContent: undefined, newContent: undefined } : change,
+        ),
+        agentId: 'preview-remote-diff',
+        isAggregate: true,
+      },
+      setup: () => {
+        appStore.dispatch(
+          bulkUpsertSessions([
+            {
+              id: AgentId('preview-remote-diff'),
+              backendSessionId: null,
+              workspaceId: WorkspaceId('preview-chat-changes'),
+              name: 'Remote builder',
+              status: AgentStatus.Halted,
+              messages: [],
+              createdAt: '2026-09-28T08:00:00Z',
+              updatedAt: '2026-09-28T08:00:00Z',
+              placement: { target: 'remote', checkout: 'isolated' },
+              nodeState: 'offline',
+              checkpoint: {
+                id: 'preview-checkpoint',
+                assignmentEpoch: '1',
+                captureRevision: '4',
+                capturedAt: '2026-09-28T08:45:00Z',
+                committedAt: '2026-09-28T08:45:01Z',
+              },
+            } satisfies AgentSession,
+          ]),
+        );
+        return () => appStore.dispatch(removeSession('preview-remote-diff'));
+      },
+    },
     'populated-linked': {
       props: {
         changes,
