@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import type { ContentBlock } from '$shared/types';
 import OperationalRowWindowHost from './OperationalRowWindowHost.svelte';
 
 test.setTimeout(120_000);
@@ -284,6 +285,83 @@ for (const zoom of [1, 2]) {
         },
       );
       if (!row) throw new Error('No admitted anchor row');
+      return { key: row.dataset.operationalWindowKey, top: row.getBoundingClientRect().top };
+    });
+    await host.evaluate(async () => {
+      for (let frame = 0; frame < 30; frame++) await new Promise(requestAnimationFrame);
+    });
+    const top = await host.evaluate(
+      (node, key) =>
+        [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')]
+          .find((row) => row.dataset.operationalWindowKey === key)
+          ?.getBoundingClientRect().top,
+      anchor.key,
+    );
+    expect(top).toBeDefined();
+    expect(Math.abs((top ?? Infinity) - anchor.top)).toBeLessThanOrEqual(1);
+  });
+}
+
+for (const renderer of ['streaming', 'settled'] as const) {
+  test(`${renderer}: group disclosure belongs to its source after prose insertion and replacement`, async ({
+    mount,
+  }) => {
+    const group = (name: string, id: string): ContentBlock[] => [
+      { type: 'text', text: `<group:${name}>` },
+      { type: 'thinking', id, text: `## ${name} thought\n\nDetails.` },
+      { type: 'text', text: '</group>' },
+    ];
+    const a = group('Alpha', 'a');
+    const b = group('Beta', 'b');
+    const host = await mount(OperationalRowWindowHost, {
+      props: { renderer, contentOverride: [...a, ...b] },
+    });
+    const alpha = host.getByTestId('response-group-disclosure').filter({ hasText: 'Alpha' });
+    const beta = host.getByTestId('response-group-disclosure').filter({ hasText: 'Beta' });
+    await expect(alpha).toHaveAttribute('aria-expanded', 'false');
+    await alpha.click();
+    await expect(alpha).toHaveAttribute('aria-expanded', 'true');
+    await expect(beta).toHaveAttribute('aria-expanded', 'true');
+    await beta.click();
+    await expect(beta).toHaveAttribute('aria-expanded', 'false');
+    await host.update({
+      props: { renderer, contentOverride: [{ type: 'text', text: 'Inserted prose' }, ...a, ...b] },
+    });
+    await expect(alpha).toHaveAttribute('aria-expanded', 'true');
+    await expect(beta).toHaveAttribute('aria-expanded', 'false');
+    await host.update({
+      props: { renderer, contentOverride: [...group('Alpha', 'replacement'), ...b] },
+    });
+    await expect(alpha).toHaveAttribute('aria-expanded', 'false');
+    await expect(beta).toHaveAttribute('aria-expanded', 'false');
+  });
+}
+
+for (const zoom of [1, 2]) {
+  test(`document scrolling preserves measured row anchors at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }) => {
+    const host = await mount(OperationalRowWindowHost, { props: { documentScroll: true } });
+    await page.evaluate(() => {
+      document.documentElement.style.overflow = 'auto';
+      document.body.style.overflow = 'visible';
+      document.body.style.height = 'auto';
+    });
+    await host.evaluate((node, scale) => {
+      node.style.zoom = String(scale);
+    }, zoom);
+    await expect(host.getByText('Inspecting 0', { exact: true })).toBeVisible();
+    const anchor = await host.evaluate(async (node) => {
+      window.scrollTo(0, node.scrollHeight / 2);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const row = [...node.querySelectorAll<HTMLElement>('[data-operational-window-key]')].find(
+        (row) => {
+          const box = row.getBoundingClientRect();
+          return box.top >= 0 && box.bottom <= window.innerHeight;
+        },
+      );
+      if (!row) throw new Error('No admitted document anchor');
       return { key: row.dataset.operationalWindowKey, top: row.getBoundingClientRect().top };
     });
     await host.evaluate(async () => {

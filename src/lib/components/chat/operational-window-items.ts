@@ -27,14 +27,79 @@ export interface WindowItem {
   historyItem?: { title: string | null; body: string };
 }
 
+type GroupIdentity = {
+  key: string;
+  block: ContentBlockGroup;
+  anchors: Set<string>;
+  signature: string;
+};
+
+/** Retained by the panel, so group identity survives disposable renderer mounts. */
+export function createWindowItemProjector() {
+  let nextIdentity = 0;
+  const previous = new Map<string, GroupIdentity[]>();
+  const identities = new WeakMap<ContentBlockGroup, string>();
+  return (
+    blocks: readonly RenderContentBlock[],
+    scope: string,
+    visible: (block: RenderContentBlock, grouped?: boolean) => boolean,
+    group?: ContentBlockGroup,
+    groupIndex = 0,
+    nested = true,
+  ): WindowItem[] => {
+    const keyFor = (block: ContentBlockGroup) => {
+      let key = identities.get(block);
+      if (!key) {
+        key = `group-header:${nextIdentity++}`;
+        identities.set(block, key);
+      }
+      return key;
+    };
+    if (!group) {
+      const available = new Set(previous.get(scope) ?? []);
+      const groups = blocks.filter(
+        (block): block is ContentBlockGroup => block.type === 'content_group',
+      );
+      const records = groups.map((block, ordinal) => {
+        const anchors = new Set(
+          block.children.flatMap((child) => (child.id ? [`${child.type}:${child.id}`] : [])),
+        );
+        const signature = JSON.stringify([block.sourceName ?? block.name, block.children]);
+        const candidates = [...available];
+        // Prefer source identity over mutable names, order, or first-child position.
+        const match =
+          candidates.find((old) => old.block === block) ??
+          candidates.find((old) => [...anchors].some((id) => old.anchors.has(id))) ??
+          candidates.find((old) => old.signature === signature) ??
+          candidates.find((old) => {
+            if (!old.block.isStreaming || (old.anchors.size > 0 && anchors.size > 0)) return false;
+            const oldName = old.block.sourceName ?? old.block.name;
+            const name = block.sourceName ?? block.name;
+            // A tag-first group has no immutable child anchor yet. Continue only
+            // its streaming slot; inserted prose does not change group ordinals.
+            return oldName === name || (!oldName && previous.get(scope)?.[ordinal] === old);
+          });
+        if (match) {
+          available.delete(match);
+          identities.set(block, match.key);
+        }
+        return { key: keyFor(block), block, anchors, signature };
+      });
+      previous.set(scope, records);
+    }
+    return projectWindowItems(blocks, scope, visible, group, groupIndex, nested, keyFor);
+  };
+}
+
 /** No component construction or readable-heading DOM parsing occurs here. */
-export function projectWindowItems(
+function projectWindowItems(
   blocks: readonly RenderContentBlock[],
   scope: string,
   visible: (block: RenderContentBlock, grouped?: boolean) => boolean,
   group?: ContentBlockGroup,
   groupIndex = 0,
-  nested = true,
+  nested: boolean,
+  groupKey: (block: ContentBlockGroup) => string,
 ): WindowItem[] {
   const result: WindowItem[] = [];
   function append(
@@ -51,12 +116,12 @@ export function projectWindowItems(
     }
     const blockId =
       block.type === 'content_group'
-        ? `group-header:${index}`
+        ? groupKey(block)
         : getIdBackedContentBlockKey(block) ||
             getToolUseContentBlockKey(block) ||
             getToolResultContentBlockKey(block)
           ? getResponseGroupBlockKey(block, childIndex ?? index)
-          : `${owner ? `group-child:${index}:` : ''}${getResponseGroupBlockKey(block, childIndex ?? index)}`;
+          : `${owner ? `group-child:${groupKey(owner)}:` : ''}${getResponseGroupBlockKey(block, childIndex ?? index)}`;
     const kind =
       block.type === 'tool_use'
         ? 'tool'

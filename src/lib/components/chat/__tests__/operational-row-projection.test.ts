@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   projectStandaloneReasoningTitles,
   extractStandaloneReasoningTitles,
@@ -23,10 +23,51 @@ describe('reasoning row projection', () => {
   });
 });
 
-import { projectWindowItems } from '../operational-window-items';
+import { createWindowItemProjector } from '../operational-window-items';
+let projectWindowItems: ReturnType<typeof createWindowItemProjector>;
+beforeEach(() => {
+  projectWindowItems = createWindowItemProjector();
+});
 import type { ContentBlockGroup } from '$lib/utils/messageParser';
 
 describe('canonical renderer rows', () => {
+  it('preserves group identity through prose insertion and child regrouping, but not replacement', () => {
+    const a: ContentBlockGroup = {
+      type: 'content_group',
+      name: 'A',
+      isStreaming: false,
+      children: [{ type: 'tool_use', id: 'a', name: 'inspect', input: {} }],
+    };
+    const b: ContentBlockGroup = {
+      type: 'content_group',
+      name: 'B',
+      isStreaming: false,
+      children: [{ type: 'tool_use', id: 'b', name: 'inspect', input: {} }],
+    };
+    const initial = projectWindowItems([a, b], 'message', () => true);
+    const state = new Map(initial.map((item, index) => [item.key, { expanded: index === 0 }]));
+    const inserted = projectWindowItems(
+      [{ type: 'text', text: 'Intro' }, { ...a }, { ...b }],
+      'message',
+      () => true,
+    );
+    expect(inserted.slice(1).map((x) => x.key)).toEqual(initial.map((x) => x.key));
+    expect(state.get(inserted[1].key)?.expanded).toBe(true);
+    const regrouped = projectWindowItems(
+      [{ ...a, children: [...a.children, ...b.children] }],
+      'message',
+      () => true,
+    );
+    expect(regrouped[0].key).toBe(initial[0].key);
+    const replacement = projectWindowItems(
+      [{ ...a, children: [{ type: 'tool_use', id: 'new', name: 'inspect', input: {} }] }],
+      'message',
+      () => true,
+    );
+    expect(replacement[0].key).not.toBe(initial[0].key);
+    expect(state.has(replacement[0].key)).toBe(false);
+  });
+
   it('keeps tools stable through updates and regrouping without heading DOM', () => {
     const create = vi.spyOn(document, 'createElement');
     const tool = { type: 'tool_use' as const, id: 'tool-1', name: 'inspect', input: {} };

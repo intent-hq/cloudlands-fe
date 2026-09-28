@@ -182,13 +182,15 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           clipBottom = Math.min(clipBottom, clip.bottom);
         }
       }
-      const scrollBox = scroll?.getBoundingClientRect();
+      const documentScroll = (document.scrollingElement ?? document.documentElement) as HTMLElement;
+      scroll ??= documentScroll;
+      const scrollBox = scroll.getBoundingClientRect();
       root.geometry = {
         top: box.top,
         scale,
         scroll,
         scrollTop: scroll?.scrollTop ?? 0,
-        scrollRectTop: scrollBox?.top ?? 0,
+        scrollRectTop: scroll === documentScroll ? 0 : scrollBox.top,
         scrollScale:
           scroll && scroll.offsetWidth > 0 ? (scrollBox?.width ?? 0) / scroll.offsetWidth || 1 : 1,
       };
@@ -387,14 +389,17 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     },
     watch(node: HTMLElement, key: string) {
       elements.set(key, node);
+      let active = true;
+      const current = () => active && !disposed && elements.get(key) === node;
       const focus = () => {
+        if (!current()) return;
         pins.delete(key);
         pins.add(key);
         policy.setPins([...pins].reverse());
         schedule();
       };
       const blur = () => {
-        if (!node.contains(document.activeElement)) {
+        if (current() && !node.contains(document.activeElement)) {
           pins.delete(key);
           policy.setPins([...pins].reverse());
           schedule();
@@ -408,6 +413,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       schedule();
       return {
         destroy() {
+          active = false;
           node.removeEventListener('focusin', focus);
           node.removeEventListener('focusout', leave);
           if (elements.get(key) === node) elements.delete(key);

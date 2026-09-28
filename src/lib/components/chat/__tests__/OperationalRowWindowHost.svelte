@@ -16,6 +16,8 @@
     grouped = false,
     shown = true,
     generation = 0,
+    contentOverride,
+    documentScroll = false,
   }: {
     live?: boolean;
     nestedResult?: boolean;
@@ -25,13 +27,16 @@
     grouped?: boolean;
     shown?: boolean;
     generation?: number;
+    contentOverride?: ContentBlock[];
+    documentScroll?: boolean;
   } = $props();
   let scrollRoot = $state<HTMLElement>();
-  provideOperationalPanel(() => scrollRoot);
+  provideOperationalPanel(() => (documentScroll ? undefined : scrollRoot));
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(dispose);
   const content = $derived.by(() =>
     Array.from({ length: messages }, (_, message) => {
+      if (contentOverride) return contentOverride;
       const rows: ContentBlock[] = Array.from({ length: count }, (_, index) => ({
         type: 'thinking',
         id: `m${message}-r${index}`,
@@ -62,7 +67,11 @@
   );
 </script>
 
-<div bind:this={scrollRoot} data-window-scroll style="height:360px;width:600px;overflow:auto">
+<div
+  bind:this={scrollRoot}
+  data-window-scroll
+  style={documentScroll ? 'width:600px' : 'height:360px;width:600px;overflow:auto'}
+>
   {#if shown}
     {#key generation}
       {#each content as blocks, index (index)}

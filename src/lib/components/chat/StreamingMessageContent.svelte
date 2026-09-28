@@ -1,7 +1,7 @@
 <script lang="ts">
   import OperationalWindow from './OperationalWindow.svelte';
   import { useOperationalPanel } from './operational-panel.svelte';
-  import { projectWindowItems, type WindowItem } from './operational-window-items';
+  import { createWindowItemProjector, type WindowItem } from './operational-window-items';
   import type { ReasoningHistoryItem } from './reasoning-heading';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
   import type { TextBlockMedia } from '$shared/types/content-block';
@@ -126,6 +126,11 @@
   const operationalPanel = useOperationalPanel();
   const rendererId = $props.id();
   const rowScope = $derived(messageId ?? rendererId);
+  const projectWindowItems = $derived(
+    operationalPanel.state(`projection:${rowScope}`, () => ({
+      project: createWindowItemProjector(),
+    })).project,
+  );
 
   // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): substitute cached full blocks for slim-truncated

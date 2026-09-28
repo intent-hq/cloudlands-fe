@@ -48,9 +48,57 @@ afterEach(() => {
   cleanup();
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(document, 'scrollingElement');
+  document.documentElement.scrollTop = 0;
 });
 
 describe('panel geometry lifetime', () => {
+  it('ignores an old row blur after a same-key replacement takes focus', async () => {
+    const root = node(2000);
+    panel.attach('message', root, [entry], vi.fn());
+    frame();
+    const old = node();
+    old.tabIndex = 0;
+    const watch = panel.watch(old, entry.key);
+    old.focus();
+    old.dispatchEvent(new FocusEvent('focusout'));
+    watch.destroy();
+    old.remove();
+    const replacement = node();
+    replacement.tabIndex = 0;
+    panel.watch(replacement, entry.key);
+    replacement.focus();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(replacement);
+    expect(panel.policy.snapshot().pinnedKeys).toEqual([entry.key]);
+  });
+
+  for (const zoom of [1, 2]) {
+    it(`locates and restores document scroll anchors at zoom ${zoom}`, () => {
+      const scroll = document.documentElement;
+      const offset = vi.spyOn(scroll, 'offsetWidth', 'get').mockReturnValue(600);
+      vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, -500 * zoom, 600 * zoom, 4000),
+      );
+      Object.defineProperty(document, 'scrollingElement', { configurable: true, value: scroll });
+      scroll.scrollTop = 500;
+      const root = node(100);
+      vi.spyOn(root, 'offsetWidth', 'get').mockReturnValue(600 / zoom);
+      const row = node(100);
+      root.append(row);
+      panel.attach('message', root, [entry], vi.fn());
+      panel.watch(row, entry.key);
+      frame();
+      expect(panel.locate(entry.key)).toMatchObject({ scrollRoot: scroll, top: 500 + 100 / zoom });
+      vi.mocked(root.getBoundingClientRect).mockReturnValue(new DOMRect(0, 140, 600, 28));
+      vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 140, 600, 28));
+      window.dispatchEvent(new Event('resize'));
+      frame();
+      expect(scroll.scrollTop).toBe(500 + 40 / zoom);
+      offset.mockRestore();
+    });
+  }
+
   it('admits spacer-only rows in a zero-width shrink-to-fit container', () => {
     const root = node();
     vi.mocked(root.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 0, 28));
