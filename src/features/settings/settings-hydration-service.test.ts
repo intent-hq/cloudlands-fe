@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { updateSpy, catalogSpy } = vi.hoisted(() => ({
   updateSpy: vi.fn(),
@@ -39,11 +39,9 @@ import {
 } from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
-  beforeAll(() => {
-    appStore.init();
-  });
-
+  let dispose: (() => void) | undefined;
   beforeEach(() => {
+    dispose = appStore.init();
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
     catalogSpy.mockReset();
@@ -51,7 +49,10 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     localStorage.removeItem(BG_MODEL_MIGRATION_MARKER_KEY);
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    dispose?.();
+    vi.clearAllMocks();
+  });
 
   it('hydrates the default provider and enablement map from model.defaultProvider / providers.enabled', async () => {
     applySettingsChanges([

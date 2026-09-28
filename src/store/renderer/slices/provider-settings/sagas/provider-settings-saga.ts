@@ -1,3 +1,6 @@
+import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
+import { backgroundSettingsSaveSettled } from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers, channel, type Channel } from 'redux-saga';
@@ -46,10 +49,13 @@ function* changesFor(update: ProviderSettingsUpdate) {
   if (update.activeProviderId !== undefined) {
     // Provider leg of the default model triple — `providers.active` is
     // deprecated (unread by the daemon).
-    changes.push({ path: 'model.defaultProvider', value: update.activeProviderId });
     const background = yield* selectBgSettings.effect();
-    if (background?.providerId)
-      changes.push(...backgroundSettingsChanges(background, update.activeProviderId));
+    // The other switch entry point may have superseded this queued request.
+    if (!background?.providerId || background.providerId === update.activeProviderId) {
+      changes.push({ path: 'model.defaultProvider', value: update.activeProviderId });
+      if (background?.providerId)
+        changes.push(...backgroundSettingsChanges(background, update.activeProviderId));
+    }
   }
   if (update.enabledProviderDelta !== undefined) {
     const { providerId, enabled } = update.enabledProviderDelta;
@@ -125,35 +131,72 @@ export const PROVIDER_SETTINGS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const
 function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>) {
   while (true) {
     const update = yield* take(updates);
-    const changes = yield* call(changesFor, update);
-    if (changes.length === 0) continue;
-    let attempt = 0;
-    while (true) {
-      try {
-        yield* call([appClient.settings, appClient.settings.update], changes);
-        break;
-      } catch (error) {
-        if (isDaemonErrorResponse(error)) {
-          logger.warn('Daemon rejected provider settings write:', error);
-          if (update.activeProviderId !== undefined) {
-            yield* put(activeProviderPersistRejected(update.activeProviderId));
-          }
-          if (update.enabledProviderDelta !== undefined) {
-            // Retire the click's pending override: a rejected write must not
-            // keep masking later daemon-originated hydrations for the
-            // provider (the override would otherwise never be confirmed).
-            yield* put(enablementPersistRejected(update.enabledProviderDelta.providerId));
-          }
+    yield* take(backgroundSettingsWriteLock);
+    try {
+      const background = yield* selectBgSettings.effect();
+      const changes = yield* call(changesFor, update);
+      if (changes.length === 0) continue;
+      let attempt = 0;
+      while (true) {
+        try {
+          const result = appClient.settings.updateSnapshot
+            ? yield* call([appClient.settings, appClient.settings.updateSnapshot], changes)
+            : {
+                applied: yield* call([appClient.settings, appClient.settings.update], changes),
+                revision: 0,
+              };
+          if (update.activeProviderId && background?.providerId)
+            yield* put(
+              backgroundSettingsSaveSettled({
+                generation: background.persistenceGeneration ?? 0,
+                providerId: update.activeProviderId,
+              }),
+            );
+          if (appClient.settings.updateSnapshot)
+            yield* put(
+              settingsChangesReceived(
+                [
+                  ...changes.filter(
+                    (change) => !result.applied.some(({ path }) => path === change.path),
+                  ),
+                  ...result.applied,
+                ],
+                result.revision,
+              ),
+            );
           break;
+        } catch (error) {
+          if (isDaemonErrorResponse(error)) {
+            logger.warn('Daemon rejected provider settings write:', error);
+            if (update.activeProviderId !== undefined) {
+              yield* put(activeProviderPersistRejected(update.activeProviderId));
+              if (background?.providerId)
+                yield* put(
+                  backgroundSettingsSaveSettled({
+                    generation: background.persistenceGeneration ?? 0,
+                    providerId: update.activeProviderId,
+                  }),
+                );
+            }
+            if (update.enabledProviderDelta !== undefined) {
+              // Retire the click's pending override: a rejected write must not
+              // keep masking later daemon-originated hydrations for the
+              // provider (the override would otherwise never be confirmed).
+              yield* put(enablementPersistRejected(update.enabledProviderDelta.providerId));
+            }
+            break;
+          }
+          logger.error('Failed to persist provider settings:', error);
         }
-        logger.error('Failed to persist provider settings:', error);
+        yield* delay(
+          PROVIDER_SETTINGS_RETRY_DELAYS_MS[
+            Math.min(attempt, PROVIDER_SETTINGS_RETRY_DELAYS_MS.length - 1)
+          ],
+        );
+        attempt += 1;
       }
-      yield* delay(
-        PROVIDER_SETTINGS_RETRY_DELAYS_MS[
-          Math.min(attempt, PROVIDER_SETTINGS_RETRY_DELAYS_MS.length - 1)
-        ],
-      );
-      attempt += 1;
+    } finally {
+      yield* put(backgroundSettingsWriteLock, true);
     }
   }
 }

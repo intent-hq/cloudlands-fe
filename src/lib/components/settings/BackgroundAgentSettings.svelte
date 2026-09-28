@@ -26,6 +26,7 @@
     selectEffectiveDefaultProviderId,
     selectProviderCatalogLoaded,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectIsActiveProviderAvailable } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
@@ -47,6 +48,12 @@
   const hasFastOverride$ = selectHasOverride('fast');
   const effectiveProviderId$ = selectEffectiveDefaultProviderId();
   const catalogLoaded$ = selectProviderCatalogLoaded();
+  const providerAvailable$ = selectIsActiveProviderAvailable();
+  // agent.completeOnce uses ACP effort only for these routes (§5.32).
+  // Auggie --print has no effort channel, even if ordinary models advertise it.
+  const supportsQuickActionEffort = $derived(
+    ['codex', 'claude-code', 'pi'].includes($effectiveProviderId$),
+  );
 
   // §5.31 gate mirror: prompt enhancement and layout suggestions stays auggie-only even though
   // `agent.completeOnce` (§5.32) is provider-neutral. Gated on catalog
@@ -58,9 +65,13 @@
     $catalogLoaded$ && !isEnhancePromptAvailable($effectiveProviderId$),
   );
 
-  function effortAvailable(model: string) {
+  function usesActiveProvider(model: string) {
     const providerId = splitLegacyCompoundId(model).providerId;
     return !providerId || providerId === $effectiveProviderId$;
+  }
+
+  function effortAvailable(model: string) {
+    return usesActiveProvider(model) && supportsQuickActionEffort && $providerAvailable$;
   }
 
   function changeDefaultEffort(effort: string | null) {
@@ -137,12 +148,16 @@
 </script>
 
 {#snippet effortNotice(model: string)}
-  {#if $catalogLoaded$ && !effortAvailable(model)}
+  {#if $catalogLoaded$ && !usesActiveProvider(model)}
     <p
       class="mt-2 type-caption text-muted-foreground"
       data-testid="quick-action-effort-provider-note"
     >
       {m.settings_backgroundAgent_effortProviderNote()}
+    </p>
+  {:else if $catalogLoaded$ && $effectiveProviderId$ && !supportsQuickActionEffort}
+    <p class="mt-2 type-caption text-muted-foreground" data-testid="quick-action-effort-route-note">
+      {m.settings_backgroundAgent_effortRouteNote()}
     </p>
   {/if}
 {/snippet}

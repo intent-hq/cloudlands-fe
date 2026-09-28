@@ -116,3 +116,30 @@ for (const action of ['default', 'commit', 'pr', 'fast']) {
     await expect(trigger).toBeFocused();
   });
 }
+
+test('Auggie catalog effort remains available for ordinary agents but not quick actions', async ({
+  mount,
+  page,
+}) => {
+  const root = await mount(Preview, {
+    props: {
+      quickActionProvider: 'auggie',
+      quickActionDefaultModel: 'auggie-preview-balanced',
+      quickActionEffort: 'medium',
+    },
+  });
+  const main = root.locator('#default-agent-model button[aria-haspopup="listbox"]');
+  await main.click();
+  await expect(page.getByTestId('effort-picker-trigger')).toBeVisible();
+  await page.keyboard.press('Escape');
+  for (const action of ['default', 'commit', 'pr', 'fast']) {
+    const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
+    await expect(trigger).not.toContainText('Medium');
+    await trigger.click();
+    await expect(page.getByTestId('effort-picker-trigger')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+  }
+  await expect(root.getByTestId('quick-action-effort-route-note')).toHaveCount(4);
+  await expect(root.getByTestId('defaults-state')).toContainText('"quickEffort":"medium"');
+  await expect(root.getByTestId('defaults-state')).toContainText('"quickEffortOverrides":{}');
+});

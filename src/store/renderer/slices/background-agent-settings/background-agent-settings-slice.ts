@@ -71,6 +71,9 @@ export interface ProviderBgSettings {
 // ============================================================================
 
 export type BackgroundAgentSettingsState = {
+  /** Local intent protects the entire provider bundle from delayed settings echoes. */
+  persistenceGeneration?: number;
+  persistencePending?: boolean;
   providerId?: string;
   defaultReasoningEffort: string;
   typeReasoningEffortOverrides: Partial<Record<BackgroundAgentType, string>>;
@@ -141,6 +144,20 @@ export const hydrateSettings = createAction<
   ]
 >('backgroundAgentSettings/hydrateSettings');
 
+export const backgroundSettingsSaveSettled = createAction<
+  [payload: { generation: number; providerId?: string }]
+>('backgroundAgentSettings/saveSettled');
+
+// Every local edit/switch advances the bundle's intent. A response may retire
+// only the intent it saved, never another click that arrived during the request.
+function pending(state: BackgroundAgentSettingsState) {
+  return {
+    ...state,
+    persistenceGeneration: (state.persistenceGeneration ?? 0) + 1,
+    persistencePending: true,
+  };
+}
+
 /** Hydrate provider settings snapshots from the daemon */
 export const hydrateProviderSettings = createAction<
   [providerSettings: Record<string, ProviderBgSettings>]
@@ -164,18 +181,19 @@ export const backgroundAgentSettingsReducer =
   createReducer<BackgroundAgentSettingsState>(initialState);
 
 backgroundAgentSettingsReducer.with(setDefaultModel, (state, { payload: [model] }) => ({
-  ...state,
+  ...pending(state),
   defaultModel: model,
 }));
 backgroundAgentSettingsReducer.with(setTypeOverride, (state, { payload: [{ type, model }] }) => ({
-  ...state,
+  ...pending(state),
   typeOverrides: { ...state.typeOverrides, [type]: model },
 }));
 backgroundAgentSettingsReducer.with(clearTypeOverride, (state, { payload: [type] }) => ({
-  ...state,
+  ...pending(state),
   typeOverrides: { ...state.typeOverrides, [type]: '' },
 }));
 backgroundAgentSettingsReducer.with(resetSettings, (state) => ({
+  ...pending(state),
   providerId: state.providerId,
   ...initialState,
   typeOverrides: { ...initialState.typeOverrides },
@@ -197,20 +215,23 @@ backgroundAgentSettingsReducer.with(
         },
       ],
     },
-  ) => ({
-    ...state,
-    providerId: providerId ?? state.providerId,
-    providerSettings: providerSettings ?? state.providerSettings,
-    defaultReasoningEffort: defaultReasoningEffort?.trim() || '',
-    typeReasoningEffortOverrides: normalizeEffortOverrides(typeReasoningEffortOverrides),
-    defaultModel: defaultModel || DEFAULT_BACKGROUND_MODEL,
-    typeOverrides: {
-      commit: typeOverrides?.commit || '',
-      pr: typeOverrides?.pr || '',
-      review: typeOverrides?.review || '',
-      fast: typeOverrides?.fast || '',
-    },
-  }),
+  ) =>
+    state.persistencePending
+      ? state
+      : {
+          ...state,
+          providerId: providerId ?? state.providerId,
+          providerSettings: providerSettings ?? state.providerSettings,
+          defaultReasoningEffort: defaultReasoningEffort?.trim() || '',
+          typeReasoningEffortOverrides: normalizeEffortOverrides(typeReasoningEffortOverrides),
+          defaultModel: defaultModel || DEFAULT_BACKGROUND_MODEL,
+          typeOverrides: {
+            commit: typeOverrides?.commit || '',
+            pr: typeOverrides?.pr || '',
+            review: typeOverrides?.review || '',
+            fast: typeOverrides?.fast || '',
+          },
+        },
 );
 backgroundAgentSettingsReducer.with(
   hydrateProviderSettings,
@@ -250,7 +271,7 @@ backgroundAgentSettingsReducer.with(
 );
 
 backgroundAgentSettingsReducer.with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
-  ...state,
+  ...pending(state),
   defaultReasoningEffort: effort.trim(),
 }));
 backgroundAgentSettingsReducer.with(
@@ -259,14 +280,14 @@ backgroundAgentSettingsReducer.with(
     const overrides = { ...state.typeReasoningEffortOverrides };
     if (effort.trim()) overrides[type] = effort.trim();
     else delete overrides[type];
-    return { ...state, typeReasoningEffortOverrides: overrides };
+    return { ...pending(state), typeReasoningEffortOverrides: overrides };
   },
 );
 backgroundAgentSettingsReducer.with(resetTypeOverride, (state, { payload: [type] }) => {
   const overrides = { ...state.typeReasoningEffortOverrides };
   delete overrides[type];
   return {
-    ...state,
+    ...pending(state),
     typeOverrides: { ...state.typeOverrides, [type]: '' },
     typeReasoningEffortOverrides: overrides,
   };
@@ -276,7 +297,8 @@ function switchProvider(
   state: BackgroundAgentSettingsState,
   providerId: string,
 ): BackgroundAgentSettingsState {
-  if (!providerId || providerId === state.providerId) return state;
+  if (!providerId) return state;
+  if (providerId === state.providerId) return pending(state);
   const { defaultModel, typeOverrides, defaultReasoningEffort, typeReasoningEffortOverrides } =
     state;
   const providerSettings = { ...state.providerSettings };
@@ -289,7 +311,7 @@ function switchProvider(
     };
   const next = providerSettings[providerId];
   return {
-    ...state,
+    ...pending(state),
     providerId,
     providerSettings,
     defaultModel: next?.defaultModel ?? '',
@@ -304,3 +326,11 @@ backgroundAgentSettingsReducer.with(setActiveProvider, (state, { payload: [provi
 backgroundAgentSettingsReducer.with(setAtomicDefaultModel, (state, { payload: [{ providerId }] }) =>
   switchProvider(state, providerId),
 );
+
+backgroundAgentSettingsReducer.with(backgroundSettingsSaveSettled, (state, { payload: [ack] }) => ({
+  ...state,
+  persistencePending:
+    ack.generation === state.persistenceGeneration && ack.providerId === state.providerId
+      ? false
+      : state.persistencePending,
+}));

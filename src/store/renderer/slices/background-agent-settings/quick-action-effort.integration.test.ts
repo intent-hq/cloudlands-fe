@@ -111,7 +111,8 @@ for (const atomic of [false, true]) {
     });
     // Reload the daemon's saved snapshot, not the outgoing provider's UI state.
     const reloaded = structuredClone(persisted);
-    dispatch(resetSettings());
+    dispose?.();
+    dispose = store.init();
     applySettingsChanges(Object.entries(reloaded).map(([path, value]) => ({ path, value })));
     expect(store.state.backgroundAgentSettings.defaultModel).toBe('codex:balanced');
     expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('medium');
@@ -176,3 +177,88 @@ describe('partial settings and resets', () => {
     expect(persisted['quickActions.providerSettings']).toEqual({});
   });
 });
+
+for (const perAction of [false, true]) {
+  it(`retains newer ${perAction ? 'per-action' : 'shared'} effort after an older partial save event`, async () => {
+    const { dispatch } = setup();
+    let acknowledge!: (changes: unknown[]) => void;
+    update.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const choose = (effort: string) =>
+      perAction
+        ? setTypeReasoningEffortOverride({ type: 'fast', effort })
+        : setDefaultReasoningEffort(effort);
+    const path = perAction
+      ? 'quickActions.typeReasoningEffortOverrides'
+      : 'quickActions.defaultReasoningEffort';
+    const value = (effort: string) =>
+      perAction ? { commit: 'high', review: 'low', fast: effort } : effort;
+    dispatch(choose('low'));
+    await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    dispatch(choose('high'));
+    const applied = [{ path, value: value('low') }];
+    applySettingsChanges(applied, 1);
+    acknowledge(applied);
+    await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update.mock.calls[1][0]).toContainEqual({ path, value: value('high') });
+    expect(
+      perAction
+        ? store.state.backgroundAgentSettings.typeReasoningEffortOverrides.fast
+        : store.state.backgroundAgentSettings.defaultReasoningEffort,
+    ).toBe('high');
+  });
+  for (const atomic of [false, true]) {
+    it(`orders a delayed ${perAction ? 'per-action' : 'shared'} effort save before provider switch (atomic ${atomic})`, async () => {
+      const { dispatch, persisted } = setup();
+      let acknowledge!: (changes: unknown[]) => void;
+      update.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            acknowledge = resolve;
+          }),
+      );
+      dispatch(
+        perAction
+          ? setTypeReasoningEffortOverride({ type: 'fast', effort: 'high' })
+          : setDefaultReasoningEffort('high'),
+      );
+      await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+      dispatch(
+        atomic
+          ? setAtomicDefaultModel({ providerId: 'legacy', model: 'basic' })
+          : setActiveProvider('legacy'),
+      );
+      expect(update).toHaveBeenCalledTimes(1);
+      const applied = [
+        {
+          path: perAction
+            ? 'quickActions.typeReasoningEffortOverrides'
+            : 'quickActions.defaultReasoningEffort',
+          value: perAction ? { fast: 'high' } : 'high',
+        },
+      ];
+      applySettingsChanges(applied, 1);
+      expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('');
+      expect(store.state.backgroundAgentSettings.typeReasoningEffortOverrides).toEqual({});
+      acknowledge(applied);
+      await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+      expect(persisted['model.defaultProvider']).toBe('legacy');
+      expect(persisted['quickActions.defaultReasoningEffort']).toBe('');
+      expect(persisted['quickActions.typeReasoningEffortOverrides']).toEqual({});
+      const snapshots = persisted['quickActions.providerSettings'] as Record<
+        string,
+        { defaultReasoningEffort: string; typeReasoningEffortOverrides: Record<string, string> }
+      >;
+      expect(
+        perAction
+          ? snapshots.codex.typeReasoningEffortOverrides.fast
+          : snapshots.codex.defaultReasoningEffort,
+      ).toBe('high');
+      expect(snapshots.legacy).toEqual(saved['quickActions.providerSettings'].legacy);
+    });
+  }
+}
