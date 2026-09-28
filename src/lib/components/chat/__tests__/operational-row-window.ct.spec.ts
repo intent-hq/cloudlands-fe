@@ -203,6 +203,7 @@ test('visible children remain reachable after their group summary scrolls far aw
 
 test('two clipped streaming previews share overscan while each retains local scroll history', async ({
   mount,
+  page,
 }) => {
   const host = await mount(OperationalRowWindowHost, {
     props: { grouped: true, live: true, messages: 2, count: 300 },
@@ -232,9 +233,9 @@ test('two clipped streaming previews share overscan while each retains local scr
     });
   await expect.poll(counts).toBeLessThanOrEqual(24);
   const scrollers = host.locator('.cylinder-scroller');
-  await scrollers.first().evaluate((node) => {
-    node.scrollTop = 0;
-  });
+  await scrollers.first().hover();
+  await page.mouse.wheel(0, -100000);
+  await expect.poll(() => scrollers.first().evaluate((node) => node.scrollTop)).toBeLessThan(2);
   await expect(host.getByText('Inspecting 0', { exact: true })).toHaveCount(1);
   await expect(host.getByText('Checking 299', { exact: true })).toHaveCount(1);
   await expect.poll(counts).toBeLessThanOrEqual(24);
