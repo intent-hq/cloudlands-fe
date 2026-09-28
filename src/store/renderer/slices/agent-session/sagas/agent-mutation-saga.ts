@@ -1,3 +1,4 @@
+import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import {
   all,
   call,
@@ -235,6 +236,7 @@ function* restoreAgent(
 
 function* activateAgent(action: ReturnType<typeof activateAgentRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   const existing = yield* selectAgentSession.effect(agentId);
   let settled = false;
   try {
@@ -252,6 +254,11 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
       });
     }
     const fetched = yield* call(readAgentSession, agentId, wsId);
+    if (!ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
+      yield* put(action.success(null));
+      settled = true;
+      return;
+    }
     if (fetched) {
       const source = preserveMessages(fetched, existing);
       const activated: WireAgentSession = {
@@ -278,7 +285,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
     }
     settled = true;
   } catch (error) {
-    if (existing) {
+    if (existing && ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
       yield* call(patchStoredSession, agentId, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ERROR,
