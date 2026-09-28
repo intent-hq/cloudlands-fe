@@ -19,6 +19,7 @@ import {
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -40,6 +41,7 @@ import {
   toggleChatAurora,
   toggleLabsMultiplayer,
   toggleLabsGitLab,
+  toggleLabsRemoteAgents,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -66,6 +68,7 @@ import {
   selectIsNoteMonospace,
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
+  selectLabsRemoteAgentsEnabled,
   selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -516,6 +519,16 @@ describe('userPreferencesReducer', () => {
       expect(enabled.labsGitLabEnabled).toBe(true);
       expect(disabled.labsGitLabEnabled).toBe(false);
     });
+    it('defaults the RemoteAgents lab to disabled', () => {
+      expect(initialState.labsRemoteAgentsEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsRemoteAgentsEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsRemoteAgentsEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsRemoteAgents());
+      expect(enabled.labsRemoteAgentsEnabled).toBe(true);
+      expect(disabled.labsRemoteAgentsEnabled).toBe(false);
+    });
   });
 
   describe('language preference actions', () => {
@@ -620,6 +633,42 @@ describe('userPreferencesReducer', () => {
         } as any),
       ).toBe(true);
       expect(selectLabsGitLabEnabled.select({} as any)).toBe(false);
+    });
+
+    it('selects labsRemoteAgentsEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsRemoteAgentsEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsRemoteAgentsEnabled.select({
+          userPreferences: { ...initialState, labsRemoteAgentsEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsRemoteAgentsEnabled.select({} as any)).toBe(false);
+    });
+
+    it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+      'keeps remote entry points off for malformed state: %j',
+      (value) => {
+        expect(
+          selectLabsRemoteAgentsEnabled.select({
+            userPreferences: {
+              ...initialState,
+              labsRemoteAgentsEnabled: value,
+            },
+          } as any),
+        ).toBe(false);
+      },
+    );
+
+    it('reads the current remote opt-in after disabling, independently of Labs visibility', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsRemoteAgentsEnabled(true));
+      const hidden = userPreferencesReducer(enabled, setLabsSettingsVisible(false));
+      expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: hidden } as any)).toBe(true);
+      const disabled = userPreferencesReducer(hidden, setLabsRemoteAgentsEnabled(false));
+      expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: disabled } as any)).toBe(
+        false,
+      );
+      expect(disabled.labsMultiplayerEnabled).toBe(false);
+      expect(disabled.labsGitLabEnabled).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

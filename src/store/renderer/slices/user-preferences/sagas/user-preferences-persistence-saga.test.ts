@@ -45,7 +45,9 @@ import {
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   toggleLabsGitLab,
+  toggleLabsRemoteAgents,
   setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
@@ -189,6 +191,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'labs:settingsVisible': true,
       'labs:multiplayerEnabled': true,
       'labs:gitlabEnabled': true,
+      'labs:remoteAgentsEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -216,6 +219,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setLabsSettingsVisible(true)],
       [setLabsMultiplayerEnabled(true)],
       [setLabsGitLabEnabled(true)],
+      [setLabsRemoteAgentsEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -323,6 +327,72 @@ describe('userPreferencesPersistenceSaga', () => {
     run.dispatch(setOnboardingFullFlowRequested(true));
     run.dispatch(resetOnboarding());
     expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    await run.stop();
+  });
+
+  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+    'keeps the RemoteAgents lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:remoteAgentsEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(false);
+      expect(
+        mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:remoteAgentsEnabled'),
+      ).toEqual([]);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])(
+    'persists RemoteAgents %s across onboarding reruns and restart',
+    async (enabled) => {
+      const storage: Record<string, unknown> = {};
+      mocks.getJSON.mockImplementation((key: string) => storage[key]);
+      mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+        storage[key] = value;
+      });
+      const first = startPreferenceStore();
+      await settle();
+      first.dispatch(setLabsRemoteAgentsEnabled(!enabled));
+      first.dispatch(toggleLabsRemoteAgents());
+      first.dispatch(setOnboardingFullFlowRequested(true));
+      first.dispatch(resetOnboarding());
+      first.dispatch(goToStep('forge'));
+      await settle();
+      expect(first.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
+      expect(storage['labs:remoteAgentsEnabled']).toBe(enabled);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      await first.stop();
+      const restarted = startPreferenceStore();
+      await settle();
+      expect(restarted.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
+      restarted.dispatch(resetOnboarding());
+      expect(restarted.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
+      await restarted.stop();
+    },
+  );
+
+  it('keeps RemoteAgents off until delayed preference hydration finishes without resetting it on rerun', async () => {
+    let finish!: (enabled: boolean) => void;
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:remoteAgentsEnabled'
+        ? new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    const run = startPreferenceStore();
+    expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(false);
+    run.dispatch(resetOnboarding());
+    finish(true);
+    await settle();
+    expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(true);
+    run.dispatch(setOnboardingFullFlowRequested(true));
+    run.dispatch(resetOnboarding());
+    expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(true);
     await run.stop();
   });
 

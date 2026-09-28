@@ -74,6 +74,16 @@ export const selectLabsGitLabEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsGitLabEnabled === true;
 });
 
+/**
+ * Entry-point policy for NEW remote setup and placement, not runtime capability.
+ * Subscribe for visibility; re-read `.select(appStore.state)` at submission (and
+ * after awaits) so disabling Labs also rejects stale controls/persisted choices.
+ * Never use this to gate existing-session management, local execution or path/media safety.
+ */
+export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsRemoteAgentsEnabled === true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

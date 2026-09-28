@@ -6769,6 +6769,8 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "실험적 멀티플레이어 비활성화",
   "lib_commandPalette_enableExperimentalGitlab_label": "실험적 GitLab 활성화",
   "lib_commandPalette_disableExperimentalGitlab_label": "실험적 GitLab 비활성화",
+  "lib_commandPalette_enableExperimentalRemoteAgents_label": "실험적 원격 에이전트 활성화",
+  "lib_commandPalette_disableExperimentalRemoteAgents_label": "실험적 원격 에이전트 비활성화",
   "inviteNotice_modal_findGitlabCommand_label": "GitLab 명령 찾기",
   "agent_node_halted_label": "중단됨",
   "agent_node_resuming_label": "재개 중",

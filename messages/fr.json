@@ -6769,6 +6769,8 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Désactiver le multijoueur expérimental",
   "lib_commandPalette_enableExperimentalGitlab_label": "Activer GitLab expérimental",
   "lib_commandPalette_disableExperimentalGitlab_label": "Désactiver GitLab expérimental",
+  "lib_commandPalette_enableExperimentalRemoteAgents_label": "Activer les agents distants expérimentaux",
+  "lib_commandPalette_disableExperimentalRemoteAgents_label": "Désactiver les agents distants expérimentaux",
   "inviteNotice_modal_findGitlabCommand_label": "Chercher la commande GitLab",
   "agent_node_halted_label": "Suspendu",
   "agent_node_resuming_label": "Reprise",

@@ -6769,6 +6769,8 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "禁用实验性多人协作",
   "lib_commandPalette_enableExperimentalGitlab_label": "启用实验性 GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "禁用实验性 GitLab",
+  "lib_commandPalette_enableExperimentalRemoteAgents_label": "启用实验性远程智能体",
+  "lib_commandPalette_disableExperimentalRemoteAgents_label": "禁用实验性远程智能体",
   "inviteNotice_modal_findGitlabCommand_label": "查找 GitLab 命令",
   "agent_node_halted_label": "已暂停",
   "agent_node_resuming_label": "正在恢复",

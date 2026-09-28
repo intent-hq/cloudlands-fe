@@ -19,6 +19,17 @@ describe('app settings schema', () => {
     });
   });
 
+  it('exposes remote agents as a local, default-off Labs preference', () => {
+    expect(findAppSettingDefinition('labs.remoteAgents')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:remoteAgentsEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
+    });
+  });
+
   it('defines the persisted Open In editor order setting', () => {
     expect(findAppSettingDefinition('openIn.editorOrder')).toMatchObject({
       type: 'array',
