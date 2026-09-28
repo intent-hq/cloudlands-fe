@@ -23,12 +23,14 @@ export const initialState: AgentQueueState = {
   byAgentId: {},
 };
 
-export const hydrateAgentQueueRequested = createAction<[agentId: string]>(
+export const hydrateAgentQueueRequested = createAction<[agentId: string, workspaceId?: string]>(
   'agentQueue/hydrateRequested',
 );
 
 export const replaceAgentQueue =
-  createAction<[agentId: string, messages: QueuedMessage[]]>('agentQueue/replaceQueue');
+  createAction<[agentId: string, messages: QueuedMessage[], workspaceId?: string]>(
+    'agentQueue/replaceQueue',
+  );
 
 /** Fold one daemon-persisted mutation result into the queue without changing stable order. */
 export const upsertQueuedMessageInAgentQueue = createAction<
@@ -91,10 +93,27 @@ function suppressRecentlyRemovedMessages(
     : filtered.map((message, position) => ({ ...message, position }));
 }
 
+function scopedEntry(
+  state: AgentQueueState,
+  agentId: string,
+  workspaceId?: string,
+): AgentQueueEntryState {
+  const current = state.byAgentId[agentId];
+  if (
+    workspaceId !== undefined &&
+    current?.workspaceId !== undefined &&
+    current.workspaceId !== workspaceId
+  ) {
+    return { ...createEmptyAgentQueueEntry(), workspaceId };
+  }
+  const entry = current ?? createEmptyAgentQueueEntry();
+  return workspaceId === undefined ? entry : { ...entry, workspaceId };
+}
+
 export const agentQueueReducer = createReducer<AgentQueueState>(initialState);
 
-agentQueueReducer.with(hydrateAgentQueueRequested, (state, { payload: [agentId] }) => {
-  const current = state.byAgentId[agentId] ?? createEmptyAgentQueueEntry();
+agentQueueReducer.with(hydrateAgentQueueRequested, (state, { payload: [agentId, workspaceId] }) => {
+  const current = scopedEntry(state, agentId, workspaceId);
   return setAgentQueueEntry(state, agentId, {
     ...current,
     recentlyRemovedMessageIds: current.recentlyRemovedMessageIds ?? [],
@@ -102,18 +121,21 @@ agentQueueReducer.with(hydrateAgentQueueRequested, (state, { payload: [agentId] 
     error: null,
   });
 });
-agentQueueReducer.with(replaceAgentQueue, (state, { payload: [agentId, messages] }) => {
-  const current = state.byAgentId[agentId] ?? createEmptyAgentQueueEntry();
-  const recentlyRemovedMessageIds = current.recentlyRemovedMessageIds ?? [];
-  const visibleMessages = suppressRecentlyRemovedMessages(messages, recentlyRemovedMessageIds);
-  return setAgentQueueEntry(state, agentId, {
-    ...current,
-    recentlyRemovedMessageIds,
-    messages: createCollection<QueuedMessage, 'id'>('id', visibleMessages),
-    isHydrating: false,
-    error: null,
-  });
-});
+agentQueueReducer.with(
+  replaceAgentQueue,
+  (state, { payload: [agentId, messages, workspaceId] }) => {
+    const current = scopedEntry(state, agentId, workspaceId);
+    const recentlyRemovedMessageIds = current.recentlyRemovedMessageIds ?? [];
+    const visibleMessages = suppressRecentlyRemovedMessages(messages, recentlyRemovedMessageIds);
+    return setAgentQueueEntry(state, agentId, {
+      ...current,
+      recentlyRemovedMessageIds,
+      messages: createCollection<QueuedMessage, 'id'>('id', visibleMessages),
+      isHydrating: false,
+      error: null,
+    });
+  },
+);
 agentQueueReducer.with(
   upsertQueuedMessageInAgentQueue,
   (state, { payload: [agentId, message] }) => {

@@ -343,7 +343,7 @@ async function hydrateHudWorkspaceAgents(
     const pointReadRows = await Promise.all(
       pointReadIds.map(async (agentId) => {
         try {
-          return await appClient.agents.get(agentId);
+          return await appClient.agents.get(agentId, workspaceId);
         } catch (error) {
           logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
             workspaceId,

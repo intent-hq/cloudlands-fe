@@ -152,6 +152,15 @@ describe('LiveSystemClient', () => {
       });
     });
 
+    it('carries the originating workspace on capability reads', async () => {
+      mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: false } });
+      expect(await client.capabilities('workspace-A')).toEqual({ cowSupported: false });
+      expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+        method: 'system.capabilities',
+        params: { workspaceId: 'workspace-A' },
+      });
+    });
+
     it('maps a PROTOCOL-shaped response with cowSupported', async () => {
       mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: false } });
 

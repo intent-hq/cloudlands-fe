@@ -315,6 +315,7 @@ describe('AIBehaviorEditor workspace ownership', () => {
           behaviorPrompt: 'updated project prompt',
           scope: 'project',
           workspacePath: '/projects/example',
+          workspaceId: 'workspace-project',
         },
       ],
     });
@@ -594,6 +595,7 @@ describe('DefaultAgentModelSettings reset all to default', () => {
           model: undefined,
           scope: 'project',
           workspacePath: '/projects/example',
+          workspaceId: 'workspace-project',
         }),
       ],
     });

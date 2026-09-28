@@ -101,7 +101,7 @@
         }),
       );
       store.dispatch(ownClientIdReceived(PREVIEW_OWN_CLIENT_ID));
-      store.dispatch(liveClientsReceived(clients));
+      store.dispatch(liveClientsReceived(clients, PREVIEW_WORKSPACE_ID));
       store.dispatch(workspaceBrowserClientReceived(PREVIEW_WORKSPACE_ID, browserClient));
     };
   }

@@ -67,7 +67,7 @@ function stateWith({
   hydration?: 'loading' | 'settled';
 }) {
   return {
-    agentSessions: { byAgentId: { 'agent-1': { messages } } },
+    agentSessions: { byAgentId: { 'agent-1': { messages, workspaceId: 'ws-1' } } },
     chatState: {
       byAgentId: hydration ? { 'agent-1': { transcriptHydration: hydration } } : {},
     },
@@ -222,7 +222,14 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
     await done;
 
-    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 50, undefined, 'msg-1');
+    expect(mockGetConversation).toHaveBeenCalledWith(
+      'agent-1',
+      50,
+      undefined,
+      'msg-1',
+      undefined,
+      'ws-1',
+    );
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'agentSessions/replaceMessages',
       payload: ['agent-1', seekPage.messages],
@@ -300,7 +307,14 @@ describe('seekConversationToMessage', () => {
 
     await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(true);
 
-    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 50, undefined, 'msg-target');
+    expect(mockGetConversation).toHaveBeenCalledWith(
+      'agent-1',
+      50,
+      undefined,
+      'msg-target',
+      undefined,
+      'ws-1',
+    );
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'agentSessions/replaceMessages',
       payload: ['agent-1', seekPage.messages],

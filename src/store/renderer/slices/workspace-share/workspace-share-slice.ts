@@ -78,6 +78,7 @@ export const initialRosterState: WorkspaceRosterState = {
 };
 
 export interface WorkspaceShareState {
+  integrationAuth: { github: boolean; gitlab: boolean };
   /** Hover-card rosters by workspace id; absent until a card asks for one. */
   byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
@@ -136,6 +137,7 @@ export interface WorkspaceShareState {
 }
 
 export const initialState: WorkspaceShareState = {
+  integrationAuth: { github: false, gitlab: false },
   byWorkspaceId: {},
   open: false,
   workspaceId: null,
@@ -491,4 +493,18 @@ workspaceShareReducer.with(
       actionError: error,
     };
   },
+);
+
+export const shareIntegrationAuthRequested = createAction<
+  [workspaceId: string, gitlabHost?: string]
+>('workspaceShare/integrationAuthRequested');
+export const shareIntegrationAuthLoaded = createAction<
+  [target: WorkspaceShareTarget, auth: { github: boolean; gitlab: boolean }]
+>('workspaceShare/integrationAuthLoaded');
+workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
+  ...state,
+  integrationAuth: { github: false, gitlab: false },
+}));
+workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) =>
+  targets(state, target) ? { ...state, integrationAuth: auth } : state,
 );

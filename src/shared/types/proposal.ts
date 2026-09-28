@@ -136,6 +136,8 @@ export type Proposal =
   | BulkOperationProposal;
 
 export interface ProposalActionDetail {
+  /** Workspace owning the proposal; captured by the rendering surface. */
+  workspaceId?: string;
   proposal: Proposal;
   editedFields: Record<string, unknown>;
   selectedBulkItemIds: string[];

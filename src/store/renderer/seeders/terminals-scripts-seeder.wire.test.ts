@@ -32,7 +32,10 @@ it('routes root Claude login through a default shell and base64-framed terminal 
 
   expect(vi.mocked(backendRequest).mock.calls).toEqual([
     ['terminal.create', { workspaceId: '__root__', cols: 80, rows: 24 }],
-    ['terminal.write', { terminalId: 'login-terminal', data: 'Y2xhdWRlIGF1dGggbG9naW4N' }],
+    [
+      'terminal.write',
+      { workspaceId: '__root__', terminalId: 'login-terminal', data: 'Y2xhdWRlIGF1dGggbG9naW4N' },
+    ],
   ]);
   expect(result).toEqual({ ok: true, terminalId: 'login-terminal' });
 });

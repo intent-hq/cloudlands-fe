@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { screen } from '@testing-library/svelte';
+import { fireEvent, render } from './__tests__/operational-renderer-test';
 import { readable } from 'svelte/store';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock, ToolUseBlock } from '$shared/types';

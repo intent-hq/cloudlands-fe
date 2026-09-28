@@ -16,6 +16,21 @@ vi.mock('$store/renderer/store', async () => {
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
+  for (const [id, provider] of [
+    ['A', 'auggie'],
+    ['B', 'codex'],
+  ]) {
+    const entry = MOCK_PROVIDER_CATALOG.providers.find((row) => row.id === provider)!;
+    providerCatalog.byWorkspaceId ??= {};
+    providerCatalog.byWorkspaceId[id] = {
+      catalog: {
+        providers: [{ ...entry, legacyAliases: ['shared-alias'], canBeDisabled: id === 'A' }],
+      },
+      settings: [{ path: 'model.defaultProvider', value: provider }] as never,
+      specialists: [],
+      readiness: {},
+    };
+  }
   return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
 });
 
@@ -25,6 +40,7 @@ import {
   findModelFallbackOption,
   isDefaultPseudoModelId,
   isProviderDisabledInSettings,
+  isProviderEnabled,
   isUserProviderSettled,
   normalizeModelIdForMatch,
   toDropdownOptions,
@@ -313,4 +329,34 @@ describe('filterDefaultPseudoOptions', () => {
   it('keeps the pseudo-row when it is the only row (D1)', () => {
     expect(filterDefaultPseudoOptions([opt('auggie:default')])).toEqual([opt('auggie:default')]);
   });
+});
+
+it('uses workspace alias metadata for model matching, provider gates, and fallback ownership', () => {
+  expect(normalizeModelIdForMatch('shared-alias:model', undefined, 'A')).toBe('auggie:model');
+  expect(normalizeModelIdForMatch('shared-alias:model', undefined, 'B')).toBe('codex:model');
+  expect(isProviderEnabled(['shared-alias'], 'auggie', 'A')).toBe(true);
+  expect(isProviderEnabled(['shared-alias'], 'auggie', 'B')).toBe(false);
+  expect(isProviderDisabledInSettings({ auggie: false, codex: false }, 'shared-alias', 'A')).toBe(
+    true,
+  );
+  expect(isProviderDisabledInSettings({ auggie: false, codex: false }, 'shared-alias', 'B')).toBe(
+    false,
+  );
+  const option = { value: 'model', label: 'Model' };
+  expect(
+    findModelFallbackOption({ options: [option], restrictToProvider: 'codex', workspaceId: 'A' }),
+  ).toBeUndefined();
+  expect(
+    findModelFallbackOption({ options: [option], restrictToProvider: 'codex', workspaceId: 'B' }),
+  ).toBe(option);
+  expect(
+    isUserProviderSettled({
+      agentProviderModels: null,
+      agentProviderError: null,
+      enabledProviderIds: ['shared-alias'],
+      allProviderModels: { codex: [sampleModel] },
+      modelProvider: 'codex',
+      workspaceId: 'B',
+    }),
+  ).toBe(true);
 });

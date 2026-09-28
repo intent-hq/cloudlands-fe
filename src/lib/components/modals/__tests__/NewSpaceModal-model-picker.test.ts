@@ -735,3 +735,26 @@ describe('NewSpaceModal model-picker composition', () => {
     }
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const providers =
+    await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
+  const models = await import('$store/renderer/slices/model/model-selectors');
+  const catalog =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  const specialists = await import('$store/renderer/slices/specialists/specialists-selectors');
+  const availability =
+    await import('$store/renderer/slices/agent-availability/agent-availability-selectors');
+  return {
+    selectContextProviderEntries: catalog.selectProviderCatalogEntries,
+    selectContextDefaultProvider: providers.selectActiveProviderId,
+    selectContextSelectedModel: models.selectSelectedModel,
+    selectContextEnabledProviders: providers.selectEnabledProviders,
+    selectContextAvailableProviderIds: providers.selectAvailableEnabledProviderIds,
+    selectContextModelProviderIds: providers.selectModelFetchProviderIds,
+    selectContextReadinessLoaded: availability.selectHasCheckedOnce,
+    selectContextProviderWarnings: models.selectAllProviderWarnings,
+    selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextSpecialists: specialists.selectSpecialists,
+  };
+});

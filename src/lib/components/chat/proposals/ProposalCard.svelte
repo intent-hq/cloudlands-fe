@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   /* eslint-disable max-lines -- sibling mode remains in the single shared proposal renderer */
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -808,8 +809,11 @@
     };
   }
 
+  const workspaceContext = getWorkspaceRouteContext();
+
   function buildDetail(): ProposalActionDetail {
     return {
+      workspaceId: workspaceContext?.workspaceId ?? undefined,
       proposal,
       editedFields: isWorkspaceCreate ? buildWorkspaceEditedFields() : fieldValues,
       selectedBulkItemIds,

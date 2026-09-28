@@ -217,7 +217,12 @@
     effort: string | undefined,
   ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
+    const levels = selectProviderModelEffortLevels.select(
+      appStore.state,
+      providerId,
+      modelId,
+      currentSpecialist?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
+    );
     return levels?.includes(effort) ? effort : undefined;
   }
 
@@ -255,9 +260,19 @@
           { ignoreModelPin: true },
         )
       ) {
-        appStore.dispatch(deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }));
+        appStore.dispatch(
+          deleteFileSpecialistAction({
+            id: fileSpec.id,
+            scope: fileSpec.source,
+            workspaceId:
+              fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
+            workspacePath: fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined,
+          }),
+        );
         return;
       }
+      const workspaceId =
+        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       appStore.dispatch(
         saveFileSpecialist({
@@ -272,6 +287,7 @@
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
+          workspaceId,
         }),
       );
       return;
@@ -296,6 +312,8 @@
       // Already a file specialist (user or project) — update in place
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (fileSpec) {
+        const workspaceId =
+          fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
         appStore.dispatch(
           saveFileSpecialist({
@@ -310,6 +328,7 @@
             behaviorPrompt: fileSpec.behaviorPrompt,
             scope: fileSpec.source,
             workspacePath,
+            workspaceId,
           }),
         );
       }
@@ -351,6 +370,8 @@
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (!fileSpec) return;
+      const workspaceId =
+        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       if (!effort && !fileSpec.model && !fileSpec.codingAgent) {
         const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
@@ -361,7 +382,12 @@
           )
         ) {
           appStore.dispatch(
-            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source, workspacePath }),
+            deleteFileSpecialistAction({
+              id: fileSpec.id,
+              scope: fileSpec.source,
+              workspacePath,
+              workspaceId,
+            }),
           );
           return;
         }
@@ -379,6 +405,7 @@
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
+          workspaceId,
         }),
       );
       return;
@@ -430,6 +457,8 @@
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (fileSpec) {
+        const workspaceId =
+          fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
         appStore.dispatch(
           saveFileSpecialist({
@@ -444,6 +473,7 @@
             behaviorPrompt: prompt,
             scope: fileSpec.source,
             workspacePath,
+            workspaceId,
           }),
         );
       }
@@ -488,6 +518,8 @@
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (!fileSpec) return;
+      const workspaceId =
+        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       if (!next && !fileSpec.model && !fileSpec.codingAgent) {
         const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
@@ -495,7 +527,12 @@
           isRedundantBuiltInOverride({ ...fileSpec, modelOptions: undefined }, bundledSpecialists)
         ) {
           appStore.dispatch(
-            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source, workspacePath }),
+            deleteFileSpecialistAction({
+              id: fileSpec.id,
+              scope: fileSpec.source,
+              workspacePath,
+              workspaceId,
+            }),
           );
           return;
         }
@@ -513,6 +550,7 @@
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
+          workspaceId,
         }),
       );
       return;
@@ -565,6 +603,7 @@
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
+        workspaceId: fileSpec?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
       }),
     );
   }
@@ -590,6 +629,7 @@
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
+        workspaceId: fileSpec?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
       }),
     );
   }
@@ -616,6 +656,7 @@
         id: specialistId,
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
+        workspaceId: fileSpec?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
       }),
     );
     onSpecialistDeleted?.();
@@ -810,6 +851,9 @@
               {m.settings_aiBehavior_model_label()}
             </span>
             <ModelPicker
+              workspaceId={currentSpecialist.source === 'project'
+                ? (routeWorkspaceId ?? undefined)
+                : undefined}
               selectedModel={specialistModelValue}
               onModelChange={handleSpecialistModelChange}
               showDefaultOption={true}
@@ -838,6 +882,9 @@
           >
             {#key currentSpecialist.id}
               <SpecialistModelOptions
+                workspaceId={currentSpecialist.source === 'project'
+                  ? (routeWorkspaceId ?? undefined)
+                  : undefined}
                 savedOptions={savedModelOptions}
                 onCommit={handleModelOptionsCommit}
               />

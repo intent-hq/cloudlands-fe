@@ -1128,10 +1128,10 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(await client.rename('agent-1', 'New Name', 'ws-1')).toEqual({ success: true });
     expect(backend.requests[0]).toEqual({
       method: 'agent.rename',
-      params: { agentId: 'agent-1', name: 'New Name' },
+      params: { agentId: 'agent-1', name: 'New Name', workspaceId: 'ws-1' },
     });
     expect(backend.requests[0]?.params).not.toHaveProperty('skipIfExplicitlySet');
-    expect(backend.requests[0]?.params).not.toHaveProperty('workspaceId');
+    expect(backend.requests[0]?.params).toHaveProperty('workspaceId', 'ws-1');
   });
 
   it('rename forwards skipIfExplicitlySet: true when a caller opts into the §5.5 rename guard', async () => {
@@ -1208,7 +1208,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
     expect(backend.requests[0]).toEqual({
       method: 'agent.delete',
-      params: { agentId: 'agent-1', undoDelayMs: 15_000 },
+      params: { agentId: 'agent-1', undoDelayMs: 15_000, workspaceId: 'ws-1' },
     });
   });
 
@@ -1219,7 +1219,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(await client.delete('agent-1', 'ws-1', { undoDelayMs: 0 })).toEqual({ success: true });
     expect(backend.requests[0]).toEqual({
       method: 'agent.delete',
-      params: { agentId: 'agent-1' },
+      params: { agentId: 'agent-1', workspaceId: 'ws-1' },
     });
   });
 
@@ -1606,6 +1606,83 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     const agents = await client.list('ws-1', { scope: 'delegated' });
     expect(agents[0]).toMatchObject({ id: 'agent-child', parentAgentId: 'agent-parent' });
     expect(agents[1].parentAgentId).toBeUndefined();
+  });
+
+  it.each([false, true])(
+    'retire forwards the direct contract (already retired: %s)',
+    async (alreadyRetired) => {
+      const response = {
+        success: true,
+        retiredAt: '2026-09-28T08:00:00Z',
+        ...(alreadyRetired ? { alreadyRetired: true } : {}),
+      };
+      backend.onRequest('agent.retire', () => response);
+      expect(await new LiveAgentsClient().retire('agent-1', 'ws-1')).toEqual(response);
+      expect(backend.requests).toEqual([
+        {
+          method: 'agent.retire',
+          params: { agentId: 'agent-1', workspaceId: 'ws-1' },
+        },
+      ]);
+    },
+  );
+
+  it('retire preserves errors and omits an absent workspace id without sending a message', async () => {
+    backend.onRequest('agent.retire', () => {
+      throw new BackendError(buildErrorPayload(-32003, 'Forbidden'));
+    });
+    expect(await new LiveAgentsClient().retire('agent-1')).toEqual({
+      success: false,
+      error: expect.stringContaining('Forbidden'),
+    });
+    expect(backend.requests).toEqual([{ method: 'agent.retire', params: { agentId: 'agent-1' } }]);
+  });
+
+  it.each([undefined, 0, 1, true, '1'])(
+    'requires explicit retirement capability %s',
+    async (capability) => {
+      backend.onRequest('client.hello', () => ({
+        server: { capabilities: { agentRetire: capability } },
+      }));
+      const client = new LiveAgentsClient();
+      expect(await Promise.all([client.supportsRetirement(), client.supportsRetirement()])).toEqual(
+        [capability === 1, capability === 1],
+      );
+      expect(backend.requests).toEqual([{ method: 'client.hello', params: {} }]);
+    },
+  );
+
+  it('does not share a pending capability probe with a replacement connection', async () => {
+    let resolveOld!: (value: unknown) => void;
+    backend.onRequest(
+      'client.hello',
+      () =>
+        new Promise((done) => {
+          resolveOld = done;
+        }),
+    );
+    const client = new LiveAgentsClient();
+    const old = client.supportsRetirement(1);
+    backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+    expect(await client.supportsRetirement(2)).toBe(false);
+    resolveOld({ server: { capabilities: { agentRetire: 1 } } });
+    expect(await old).toBe(true);
+    expect(backend.requests).toEqual([
+      { method: 'client.hello', params: {} },
+      { method: 'client.hello', params: {} },
+    ]);
+  });
+
+  it('does not retain support across a failed hello or a changed daemon', async () => {
+    const client = new LiveAgentsClient();
+    backend.onRequest('client.hello', () => {
+      throw new Error('offline');
+    });
+    expect(await client.supportsRetirement()).toBe(false);
+    backend.onRequest('client.hello', () => ({ server: { capabilities: { agentRetire: 1 } } }));
+    expect(await client.supportsRetirement()).toBe(true);
+    backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+    expect(await client.supportsRetirement()).toBe(false);
   });
 
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
@@ -2617,7 +2694,9 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
     workspaceIds = ['ws-1'];
     backend.pushEvent({ type: 'workspace:deleted' });
     await vi.waitFor(() => {
-      expect(requestsFor('agent.unsubscribe')).toEqual([{ subscriptionId: 'chan-2' }]);
+      expect(requestsFor('events.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
+      ]);
     });
     const evicted = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(evicted.map((a) => a.id)).toEqual(['agent-a']);
@@ -2678,7 +2757,9 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
         { workspaceId: 'ws-1' },
         { workspaceId: 'ws-2' },
       ]);
-      expect(requestsFor('agent.unsubscribe')).toEqual([{ subscriptionId: 'chan-4' }]);
+      expect(requestsFor('events.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-4', workspaceId: 'ws-2' },
+      ]);
     });
 
     // The surviving ws-1 channel's recovery snapshot re-populates with only
@@ -2697,54 +2778,116 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
     await flush();
 
     unsubscribe();
-    expect(requestsFor('agent.unsubscribe')).toEqual([
-      { subscriptionId: 'chan-1' },
-      { subscriptionId: 'chan-2' },
+    expect(requestsFor('events.unsubscribe')).toEqual([
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+      { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
+  });
+});
+
+describe('explicit agent resource origin', () => {
+  afterEach(() => resetMockBackend());
+  it('routes cold agent actions and permission replies without a resource-only lookup', async () => {
+    const backend = installMockBackend();
+    for (const method of [
+      'agent.sendMessage',
+      'agent.queueMessage',
+      'agent.editQueuedMessage',
+      'agent.removeQueuedMessage',
+      'agent.stop',
+      'agent.respondPermission',
+      'agent.cancelDelete',
+    ]) {
+      backend.onRequest(method, () => ({ success: true, resolved: true, cancelled: true }));
+    }
+    const client = new LiveAgentsClient();
+    expect((await client.send('cold-agent', 'hello', 'workspace-a')).success).toBe(true);
+    await client.queue('cold-agent', 'later', { workspaceId: 'workspace-a' });
+    await client.editQueued('cold-agent', 'queued-1', 'edited', true, 'workspace-a');
+    await client.removeQueued('cold-agent', 'queued-1', 'workspace-a');
+    await client.stop('cold-agent', 'workspace-a');
+    expect(
+      await client.respondPermission('permission-1', { outcome: 'cancelled' }, 'workspace-a'),
+    ).toEqual({ success: true, resolved: true });
+    await client.cancelDelete('cold-agent', 'workspace-a');
+    expect(backend.requests.map((r) => r.method)).toEqual([
+      'agent.sendMessage',
+      'agent.queueMessage',
+      'agent.editQueuedMessage',
+      'agent.removeQueuedMessage',
+      'agent.stop',
+      'agent.respondPermission',
+      'agent.cancelDelete',
+    ]);
+    for (const request of backend.requests)
+      expect(request.params).toMatchObject({ workspaceId: 'workspace-a' });
+    expect(backend.requests[1].params).toEqual({
+      agentId: 'cold-agent',
+      content: 'later',
+      workspaceId: 'workspace-a',
+    });
+    expect(backend.requests[2].params).toEqual({
+      agentId: 'cold-agent',
+      messageId: 'queued-1',
+      content: 'edited',
+      editing: true,
+      workspaceId: 'workspace-a',
+    });
+    expect(backend.requests[5].params).toEqual({
+      requestId: 'permission-1',
+      outcome: { outcome: 'cancelled' },
+      workspaceId: 'workspace-a',
+    });
   });
 });
 
 describe('node agent wire compatibility', () => {
   afterEach(() => resetMockBackend());
-  it('uses unchanged get/list requests and preserves remote and legacy projections', async () => {
-    const backend = installMockBackend();
-    const remote = {
-      id: 'agent-node-wire',
-      workspaceId: 'ws-node-wire',
-      status: 'halted',
-      placement: {
-        target: 'remote',
-        checkout: 'isolated',
-        os: 'linux',
+  it.each([undefined, 'ws-node-wire'])(
+    'preserves remote and legacy projections with get origin %s',
+    async (workspaceId) => {
+      const backend = installMockBackend();
+      const remote = {
+        id: 'agent-node-wire',
+        workspaceId: 'ws-node-wire',
+        status: 'halted',
+        placement: {
+          target: 'remote',
+          checkout: 'isolated',
+          os: 'linux',
+          nodeId: 'node-build',
+          exclusive: true,
+        },
         nodeId: 'node-build',
-        exclusive: true,
-      },
-      nodeId: 'node-build',
-      leaseId: 'lease-build',
-      nodeState: 'offline',
-      effectiveIsolation: 'isolated',
-      nodePath: '/node/checkout',
-      checkpoint: {
-        id: 'checkpoint-wire',
-        assignmentEpoch: '1',
-        captureRevision: '10',
-        capturedAt: '2026-09-28T09:00:00Z',
-        committedAt: '2026-09-28T09:00:01Z',
-      },
-    };
-    const legacy = { id: 'agent-local-wire', workspaceId: 'ws-node-wire', status: 'idle' };
-    backend.onRequest('agent.list', () => ({ agents: [remote, legacy] }));
-    backend.onRequest('agent.get', () => ({ agent: remote }));
-    const client = new LiveAgentsClient();
-    const rows = await client.list('ws-node-wire', { scope: 'topLevel' });
-    const detail = await client.get('agent-node-wire');
-    expect(backend.requests).toEqual([
-      { method: 'agent.list', params: { workspaceId: 'ws-node-wire', scope: 'topLevel' } },
-      { method: 'agent.get', params: { agentId: 'agent-node-wire' } },
-    ]);
-    expect(rows[0]).toMatchObject(remote);
-    expect(rows[1]).toMatchObject(legacy);
-    expect(rows[1]).not.toHaveProperty('placement');
-    expect(detail).toMatchObject(remote);
-  });
+        leaseId: 'lease-build',
+        nodeState: 'offline',
+        effectiveIsolation: 'isolated',
+        nodePath: '/node/checkout',
+        checkpoint: {
+          id: 'checkpoint-wire',
+          assignmentEpoch: '1',
+          captureRevision: '10',
+          capturedAt: '2026-09-28T09:00:00Z',
+          committedAt: '2026-09-28T09:00:01Z',
+        },
+      };
+      const legacy = { id: 'agent-local-wire', workspaceId: 'ws-node-wire', status: 'idle' };
+      backend.onRequest('agent.list', () => ({ agents: [remote, legacy] }));
+      backend.onRequest('agent.get', () => ({ agent: remote }));
+      const client = new LiveAgentsClient();
+      const rows = await client.list('ws-node-wire', { scope: 'topLevel' });
+      const detail = await client.get('agent-node-wire', workspaceId);
+      expect(backend.requests).toEqual([
+        { method: 'agent.list', params: { workspaceId: 'ws-node-wire', scope: 'topLevel' } },
+        {
+          method: 'agent.get',
+          params: { agentId: 'agent-node-wire', ...(workspaceId ? { workspaceId } : {}) },
+        },
+      ]);
+      expect(rows[0]).toMatchObject(remote);
+      expect(rows[1]).toMatchObject(legacy);
+      expect(rows[1]).not.toHaveProperty('placement');
+      expect(detail).toMatchObject(remote);
+    },
+  );
 });

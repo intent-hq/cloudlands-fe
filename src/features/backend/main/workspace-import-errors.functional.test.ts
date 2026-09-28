@@ -241,6 +241,7 @@ describe('workspace import failure surfaces', () => {
           expect(disposeTarget).toHaveBeenCalledOnce();
           expect(sourceRequest).toHaveBeenCalledWith('workspace.export.abort', {
             exportId: 'export-1',
+            workspaceId: 'ws-1',
           });
           expect(listeners.size).toBe(0);
         }

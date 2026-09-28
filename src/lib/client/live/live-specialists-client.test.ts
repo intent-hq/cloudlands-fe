@@ -638,3 +638,25 @@ describe('LiveSpecialistsClient (fake transport)', () => {
     });
   });
 });
+
+it('routes list and project mutations without changing user-library writes', async () => {
+  mockedRequest.mockResolvedValue({ specialists: [], specialist: { id: 'custom' }, success: true });
+  const client = new LiveSpecialistsClient();
+  await client.list('codex', 'workspace-A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list', {
+    provider: 'codex',
+    workspaceId: 'workspace-A',
+  });
+  await client.delete('custom', 'project', '/repo', 'workspace-A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('specialist.delete', {
+    id: 'custom',
+    scope: 'project',
+    workspacePath: '/repo',
+    workspaceId: 'workspace-A',
+  });
+  await client.delete('custom', 'user', undefined, 'workspace-A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('specialist.delete', {
+    id: 'custom',
+    scope: 'user',
+  });
+});

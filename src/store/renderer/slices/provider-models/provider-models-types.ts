@@ -34,6 +34,7 @@ export interface ProviderModelsCacheEntry extends ProviderModelsFetchResult {
 export interface ProviderModelsState {
   /** Cached entries keyed by normalized provider id. */
   byProviderId: Record<string, ProviderModelsCacheEntry>;
+  byWorkspaceId?: Record<string, Record<string, ProviderModelsCacheEntry>>;
   /**
    * Monotonic clear counter, bumped by `providerModelsCacheCleared`. Writers
    * capture it (via `selectProviderModelsClearEpoch`) when their fetch STARTS

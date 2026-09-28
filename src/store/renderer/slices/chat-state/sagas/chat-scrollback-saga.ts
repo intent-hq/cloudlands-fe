@@ -1,3 +1,4 @@
+import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 /**
  * Chat scrollback saga — on-demand history page fetches driven by UI request
  * actions, feeding the bounded scrollback HISTORY SEGMENT (agent-session
@@ -187,6 +188,7 @@ function* fetchPage(
   agentId: string,
   token: string | null,
   anchor: string | undefined,
+  workspaceId: string,
 ): SagaGenerator<ConversationPage> {
   if (token) {
     return yield* call(
@@ -194,6 +196,9 @@ function* fetchPage(
       agentId,
       PAGE_LIMIT,
       token,
+      undefined,
+      undefined,
+      workspaceId,
     );
   }
   return yield* call(
@@ -202,13 +207,15 @@ function* fetchPage(
     PAGE_LIMIT,
     undefined,
     anchor,
+    undefined,
+    workspaceId,
   );
 }
 
 function* fetchOlderPageWorker(
   action: ReturnType<typeof olderHistoryPageRequested>,
 ): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [workspaceId, agentId] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.fetchingOlderHistory) return;
@@ -237,7 +244,7 @@ function* fetchOlderPageWorker(
   yield* put(scrollbackFetchStarted(agentId, 'older'));
   let continuation: string | null = null;
   try {
-    const page = yield* fetchPage(agentId, token, anchor);
+    const page = yield* fetchPage(agentId, token, anchor, workspaceId);
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // A §7.1 discard landed while the wire call was in flight: the page was
     // fetched against the discarded transcript — drop it entirely (the
@@ -263,7 +270,7 @@ function* fetchOlderPageWorker(
 function* fetchGapFillWorker(
   action: ReturnType<typeof historyGapFillRequested>,
 ): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [workspaceId, agentId] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.fetchingGapFill) return;
@@ -279,7 +286,7 @@ function* fetchGapFillWorker(
   yield* put(scrollbackFetchStarted(agentId, 'gap'));
   let continuation: string | null = null;
   try {
-    const page = yield* fetchPage(agentId, token, anchor);
+    const page = yield* fetchPage(agentId, token, anchor, workspaceId);
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // Mid-flight §7.1 discard: drop the stale page (see fetchOlderPageWorker).
     if (yield* discardedSince(agentId, epoch)) return;
@@ -312,7 +319,7 @@ function isInvalidParamsError(error: unknown): boolean {
 }
 
 function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): SagaGenerator<void> {
-  const [, agentId, targetOrdinal] = action.payload;
+  const [workspaceId, agentId, targetOrdinal] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.fetchingHistorySeek || chat.historySeekUnsupported) return;
@@ -336,6 +343,7 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
       undefined,
       undefined,
       target,
+      workspaceId,
     );
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // Mid-flight §7.1 discard: the landing was fetched against the discarded
@@ -420,6 +428,7 @@ function* recoverPendingQuestionWorker(
     return;
   }
 
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
   inFlight.add(key);
   try {
     for (let attempt = 0; attempt <= MARKED_QUESTION_RETRY_DELAYS_MS.length; attempt++) {
@@ -431,6 +440,8 @@ function* recoverPendingQuestionWorker(
             MARKED_QUESTION_LIMIT,
             undefined,
             messageId,
+            undefined,
+            workspaceId,
           ),
           stopped: take((action: ObservedAction) =>
             stopsPendingQuestionRecovery(action, agentId, messageId),
@@ -532,6 +543,7 @@ function* recoverPendingProposalWorker(
     return;
   }
 
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
   inFlight.add(key);
   try {
     for (let attempt = 0; attempt <= MARKED_QUESTION_RETRY_DELAYS_MS.length; attempt++) {
@@ -543,6 +555,8 @@ function* recoverPendingProposalWorker(
             MARKED_QUESTION_LIMIT,
             undefined,
             messageId,
+            undefined,
+            workspaceId,
           ),
           stopped: take((action: ObservedAction) =>
             stopsPendingProposalRecovery(action, agentId, messageId),

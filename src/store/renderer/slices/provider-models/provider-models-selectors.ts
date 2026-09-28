@@ -15,21 +15,23 @@ import type { ProviderModelsCacheEntry } from './provider-models-types';
  * lands (fresh session / after a reconnect clear).
  */
 export const selectProviderModelsCacheMap = store.createSelector(
-  (state): Record<string, ProviderModelsCacheEntry> => state.providerModels?.byProviderId ?? {},
+  (state, workspaceId?: string): Record<string, ProviderModelsCacheEntry> =>
+    (workspaceId
+      ? state.providerModels?.byWorkspaceId?.[workspaceId]
+      : state.providerModels?.byProviderId) ?? {},
 );
 
 /**
  * One provider's cached catalog; `undefined` on a cache miss (never fetched
  * this session, or the cache was cleared on reconnect).
  *
- * Hydration consumes only `entry.models`; cached `warning`/`stale` are NOT
- * replayed on mount — warning notices live in the renderer-global
- * loading-state slice (`setLoadingStateForProvider`), which survives remounts
- * on its own. The fields are stored verbatim per the fetch-result contract.
+ * Workspace pickers also read warning/stale fields from their own entries.
+ * Direct pickers retain the global loading-state slice. The fields are
+ * stored verbatim per the fetch-result contract.
  */
 export const selectProviderModelsCacheEntry = store.createSelector(
-  (state, providerId: string): ProviderModelsCacheEntry | undefined =>
-    state.providerModels?.byProviderId[providerId],
+  (state, providerId: string, workspaceId?: string): ProviderModelsCacheEntry | undefined =>
+    selectProviderModelsCacheMap.select(state, workspaceId)[providerId],
 );
 
 /**

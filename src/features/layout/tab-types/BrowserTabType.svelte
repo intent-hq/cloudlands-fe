@@ -91,7 +91,7 @@
   );
   const hostClientIdStore = writable(untrack(() => tab.hostClientId ?? ''));
   $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
-  const tabHost$ = selectBrowserTabHost(hostClientIdStore);
+  const tabHost$ = selectBrowserTabHost(hostClientIdStore, workspaceIdStore);
 </script>
 
 {#snippet connectedAgent()}
