@@ -1,3 +1,4 @@
+import { backgroundSettingsSaveSettled } from '../background-agent-settings/background-agent-settings-slice';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -229,6 +230,18 @@ modelReducer.with(hydrateDefaultProvider, (state, { payload: [providerId] }) => 
   return {
     ...state,
     defaultProviderId: providerId ? defaultProviderId : '',
+    pendingDefaultProviderId: null,
+  };
+});
+modelReducer.with(backgroundSettingsSaveSettled, (state, { payload: [ack] }) => {
+  if (!ack.authoritativeProviderId) return state;
+  return {
+    ...state,
+    defaultProviderId: validatedDefaultProviderId(
+      ack.authoritativeProviderId,
+      state.catalogProviderIds,
+      state.defaultProviderId,
+    ),
     pendingDefaultProviderId: null,
   };
 });

@@ -1,10 +1,8 @@
+import { settleBackgroundSettings } from '../../background-agent-settings/sagas/settle-background-settings';
 import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
-import {
-  backgroundProviderSwitchBlocked,
-  backgroundSettingsSaveSettled,
-} from '../../background-agent-settings/background-agent-settings-slice';
+import { backgroundProviderSwitchBlocked } from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers, channel, type Channel } from 'redux-saga';
@@ -158,11 +156,15 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
                 revision: 0,
               };
           if (update.activeProviderId && background?.providerSwitchPending)
-            yield* put(
-              backgroundSettingsSaveSettled({
+            yield* call(
+              settleBackgroundSettings,
+              {
+                revision: result.revision,
                 generation: background.persistenceGeneration ?? 0,
                 providerId: update.activeProviderId,
-              }),
+              },
+              background,
+              result.applied,
             );
           if (appClient.settings.updateSnapshot)
             yield* put(
@@ -183,12 +185,10 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
             if (update.activeProviderId !== undefined) {
               yield* put(activeProviderPersistRejected(update.activeProviderId));
               if (background?.providerSwitchPending)
-                yield* put(
-                  backgroundSettingsSaveSettled({
-                    generation: background.persistenceGeneration ?? 0,
-                    providerId: update.activeProviderId,
-                  }),
-                );
+                yield* call(settleBackgroundSettings, {
+                  generation: background.persistenceGeneration ?? 0,
+                  providerId: update.activeProviderId,
+                });
             }
             if (update.enabledProviderDelta !== undefined) {
               // Retire the click's pending override: a rejected write must not

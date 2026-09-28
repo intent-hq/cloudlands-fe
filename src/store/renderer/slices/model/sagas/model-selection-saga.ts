@@ -1,9 +1,7 @@
+import { settleBackgroundSettings } from '../../background-agent-settings/sagas/settle-background-settings';
 import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
-import {
-  backgroundProviderSwitchBlocked,
-  backgroundSettingsSaveSettled,
-} from '../../background-agent-settings/background-agent-settings-slice';
+import { backgroundProviderSwitchBlocked } from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers } from 'redux-saga';
@@ -152,11 +150,15 @@ export function* persistSelectedModelsWorker(
             revision: 0,
           };
       if (currentProviderId && background?.providerSwitchPending)
-        yield* put(
-          backgroundSettingsSaveSettled({
+        yield* call(
+          settleBackgroundSettings,
+          {
+            revision: result.revision,
             generation: background.persistenceGeneration ?? 0,
             providerId: currentProviderId,
-          }),
+          },
+          background,
+          result.applied,
         );
       // A successful update acknowledges the batch. `applied` contains only
       // changed paths, possibly including a daemon-resolved model.default;
@@ -176,12 +178,10 @@ export function* persistSelectedModelsWorker(
         if (currentProviderId) {
           yield* put(activeProviderPersistRejected(currentProviderId));
           if (background?.providerSwitchPending)
-            yield* put(
-              backgroundSettingsSaveSettled({
-                generation: background.persistenceGeneration ?? 0,
-                providerId: currentProviderId,
-              }),
-            );
+            yield* call(settleBackgroundSettings, {
+              generation: background.persistenceGeneration ?? 0,
+              providerId: currentProviderId,
+            });
         }
         return 'rejected' satisfies PersistenceResult;
       }

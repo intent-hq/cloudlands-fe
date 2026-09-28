@@ -30,6 +30,7 @@ import {
   backgroundProviderSwitchBlocked,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
+  setTypeReasoningEffortOverrides,
 } from './background-agent-settings-slice';
 
 const request = vi.mocked(backendRequest);
@@ -391,3 +392,223 @@ it('does not acknowledge a pending effort edit when a same-provider model-only s
     expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
   );
 });
+
+it.each(['partial', 'full', 'rejected', 'no-op'] as const)(
+  'reconciles newer external authority after a delayed %s save result',
+  async (response) => {
+    const writes: AppSettingChange[][] = [];
+    let release!: () => void;
+    request.mockImplementation(async (method, params) => {
+      if (method === 'settings.list') return { settings: initial, revision: 7 };
+      const changes = (params as { changes: AppSettingChange[] }).changes;
+      writes.push(changes);
+      if (writes.length === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (response === 'rejected')
+          throw new BackendError({ code: 'INVALID_PARAMS', rpcCode: -32602, message: 'rejected' });
+        return {
+          applied:
+            response === 'no-op'
+              ? []
+              : response === 'full'
+                ? changes
+                : changes.filter(({ path }) => path === 'quickActions.defaultReasoningEffort'),
+          revision: response === 'no-op' ? 7 : 8,
+        };
+      }
+      return { applied: changes, revision: 10 };
+    });
+    const dispatch = start();
+    await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+    dispatch(setDefaultReasoningEffort(response === 'no-op' ? 'medium' : 'low'));
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    dispatch(
+      settingsChangesReceived([{ path: 'quickActions.defaultReasoningEffort', value: 'high' }], 9),
+    );
+    release();
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+    );
+    expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('high');
+    dispatch(setTypeReasoningEffortOverride({ type: 'fast', effort: 'medium' }));
+    await vi.waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes[1]).toContainEqual({
+      path: 'quickActions.defaultReasoningEffort',
+      value: 'high',
+    });
+  },
+);
+
+it.each(['entry', 'clear', 'replace', 'shared'] as const)(
+  'rebases queued %s effort on multiple newer partial authoritative deltas',
+  async (edit) => {
+    const writes: AppSettingChange[][] = [];
+    let release!: () => void;
+    request.mockImplementation(async (method, params) => {
+      if (method === 'settings.list') return { settings: initial, revision: 7 };
+      const changes = (params as { changes: AppSettingChange[] }).changes;
+      writes.push(changes);
+      if (writes.length === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { applied: changes, revision: 8 };
+      }
+      return { applied: changes, revision: 11 };
+    });
+    const dispatch = start();
+    await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+    dispatch(setDefaultReasoningEffort('low'));
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    dispatch(
+      edit === 'shared'
+        ? setDefaultReasoningEffort('medium')
+        : edit === 'replace'
+          ? setTypeReasoningEffortOverrides({ walkthrough: 'medium' })
+          : setTypeReasoningEffortOverride({
+              type: 'fast',
+              effort: edit === 'clear' ? '' : 'high',
+            }),
+    );
+    dispatch(
+      settingsChangesReceived([{ path: 'quickActions.defaultReasoningEffort', value: 'high' }], 9),
+    );
+    dispatch(
+      settingsChangesReceived(
+        [
+          {
+            path: 'quickActions.typeReasoningEffortOverrides',
+            value: { commit: 'low', fast: 'low' },
+          },
+        ],
+        10,
+      ),
+    );
+    release();
+    await vi.waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes[1]).toContainEqual({
+      path: 'quickActions.defaultReasoningEffort',
+      value: edit === 'shared' ? 'medium' : 'high',
+    });
+    expect(writes[1]).toContainEqual({
+      path: 'quickActions.typeReasoningEffortOverrides',
+      value:
+        edit === 'replace'
+          ? { walkthrough: 'medium' }
+          : edit === 'clear'
+            ? { commit: 'low' }
+            : { commit: 'low', fast: edit === 'shared' ? 'low' : 'high' },
+    });
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+    );
+  },
+);
+
+it.each(
+  ['effort', 'provider', 'atomic'].flatMap((lane) =>
+    ['full', 'partial', 'rejected'].map((response) => ({ lane, response })),
+  ),
+)('reconciles a newer remote provider after $lane $response', async ({ lane, response }) => {
+  const writes: AppSettingChange[][] = [];
+  let release!: () => void;
+  request.mockImplementation(async (method, params) => {
+    if (method === 'settings.list') return { settings: initial, revision: 7 };
+    const changes = (params as { changes: AppSettingChange[] }).changes;
+    writes.push(changes);
+    if (writes.length === 1) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (response === 'rejected')
+        throw new BackendError({ code: 'INVALID_PARAMS', rpcCode: -32602, message: 'rejected' });
+    }
+    const applied =
+      response === 'partial'
+        ? changes.filter(
+            ({ path, value }) =>
+              JSON.stringify(initial.find((entry) => entry.path === path)?.value) !==
+              JSON.stringify(value),
+          )
+        : changes;
+    return { applied, revision: writes.length === 1 ? 8 : 11 };
+  });
+  const dispatch = start();
+  await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+  dispatch(
+    lane === 'effort'
+      ? setDefaultReasoningEffort('low')
+      : lane === 'atomic'
+        ? setAtomicDefaultModel({ providerId: 'legacy', model: 'basic' })
+        : setActiveProvider('legacy'),
+  );
+  await vi.waitFor(() => expect(writes).toHaveLength(1));
+  dispatch(
+    settingsChangesReceived(
+      [
+        { path: 'model.defaultProvider', value: 'other' },
+        { path: 'quickActions.defaultModel', value: 'other-model' },
+        { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+      ],
+      9,
+    ),
+  );
+  dispatch(
+    settingsChangesReceived(
+      [{ path: 'quickActions.typeReasoningEffortOverrides', value: { walkthrough: 'low' } }],
+      10,
+    ),
+  );
+  release();
+  await vi.waitFor(() =>
+    expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+  );
+  expect(store.state.model.defaultProviderId).toBe('other');
+  expect(store.state.model.pendingDefaultProviderId).toBeNull();
+  expect(store.state.backgroundAgentSettings.providerId).toBe('other');
+  expect(store.state.backgroundAgentSettings.defaultModel).toBe('other-model');
+  expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('high');
+  dispatch(setTypeReasoningEffortOverride({ type: 'fast', effort: 'medium' }));
+  await vi.waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1]).toContainEqual({ path: 'model.defaultProvider', value: 'other' });
+  expect(writes[1]).toContainEqual({
+    path: 'quickActions.typeReasoningEffortOverrides',
+    value: { walkthrough: 'low', fast: 'medium' },
+  });
+});
+
+it.each([false, true])(
+  'attributes a quick-action-only external delta after local switch settlement (rejected %s)',
+  async (rejected) => {
+    let release!: () => void;
+    request.mockImplementation(async (method, params) => {
+      if (method === 'settings.list') return { settings: initial, revision: 7 };
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (rejected)
+        throw new BackendError({ code: 'INVALID_PARAMS', rpcCode: -32602, message: 'rejected' });
+      return { applied: (params as { changes: AppSettingChange[] }).changes, revision: 8 };
+    });
+    const dispatch = start();
+    await vi.waitFor(() => expect(store.state.backgroundAgentSettings.providerId).toBe('codex'));
+    dispatch(setActiveProvider('legacy'));
+    await vi.waitFor(() => expect(release).toBeDefined());
+    // A partial event has no provider label; ownership follows the committed provider revision.
+    dispatch(
+      settingsChangesReceived([{ path: 'quickActions.defaultReasoningEffort', value: 'high' }], 9),
+    );
+    release();
+    await vi.waitFor(() =>
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false),
+    );
+    expect(store.state.model.defaultProviderId).toBe(rejected ? 'codex' : 'legacy');
+    expect(store.state.backgroundAgentSettings).toMatchObject({
+      providerId: rejected ? 'codex' : 'legacy',
+      defaultModel: rejected ? 'balanced' : 'basic',
+      defaultReasoningEffort: 'high',
+    });
+  },
+);

@@ -1,3 +1,4 @@
+import { settleBackgroundSettings } from './settle-background-settings';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from './background-settings-write-lock';
 import { buffers } from 'redux-saga';
@@ -9,7 +10,6 @@ import { createLogger } from '$lib/utils/client-logger';
 import { selectBgSettings } from '../background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../background-agent-settings-persistence';
 import {
-  backgroundSettingsSaveSettled,
   clearTypeOverride,
   setDefaultReasoningEffort,
   setTypeReasoningEffortOverride,
@@ -36,11 +36,15 @@ function* persistBackgroundAgentSettingsWorker() {
           applied: yield* call([appClient.settings, appClient.settings.update], changes),
           revision: 0,
         };
-    yield* put(
-      backgroundSettingsSaveSettled({
+    yield* call(
+      settleBackgroundSettings,
+      {
+        revision: result.revision,
         generation: settings.persistenceGeneration ?? 0,
         providerId: settings.providerId,
-      }),
+      },
+      settings,
+      result.applied,
     );
     if (appClient.settings.updateSnapshot)
       yield* put(
@@ -54,12 +58,10 @@ function* persistBackgroundAgentSettingsWorker() {
       );
   } catch (error) {
     logger.error('Failed to persist background agent settings:', error);
-    yield* put(
-      backgroundSettingsSaveSettled({
-        generation: settings.persistenceGeneration ?? 0,
-        providerId: settings.providerId,
-      }),
-    );
+    yield* call(settleBackgroundSettings, {
+      generation: settings.persistenceGeneration ?? 0,
+      providerId: settings.providerId,
+    });
   } finally {
     yield* put(backgroundSettingsWriteLock, true);
   }

@@ -320,7 +320,7 @@ function seedDefaultProviderEnablement(): void {
  * Background-agent settings reconcile two dotted paths in one dispatch.
  * Only called when the delta actually includes at least one quickActions.* key.
  */
-function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
+function applyBackgroundAgentBundle(byPath: Map<string, unknown>, revision?: number): void {
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
@@ -328,15 +328,24 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
   // bundle while the model slice is protecting a newer provider choice.
   const incomingProvider = byPath.get('model.defaultProvider');
   if (
+    !currentState.persistencePending &&
     typeof incomingProvider === 'string' &&
     incomingProvider !== appStore.state.model.defaultProviderId
   )
     return;
+  const providerId =
+    typeof incomingProvider === 'string'
+      ? incomingProvider
+      : (currentState.authoritativeSettings?.providerId ?? appStore.state.model.defaultProviderId);
+  const providerChanged = typeof incomingProvider === 'string';
   if (![...byPath.keys()].some((path) => path.startsWith('quickActions.'))) {
     appStore.dispatch(
       hydrateBackgroundAgentSettings({
         ...currentState,
-        providerId: appStore.state.model.defaultProviderId,
+        revision,
+        changedFields: [],
+        providerId,
+        providerChanged,
       }),
     );
     return;
@@ -367,7 +376,18 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
     appStore.dispatch(
       hydrateBackgroundAgentSettings({
         ...migrated,
-        providerId: appStore.state.model.defaultProviderId,
+        revision,
+        changedFields: (
+          [
+            'defaultModel',
+            'typeOverrides',
+            'defaultReasoningEffort',
+            'typeReasoningEffortOverrides',
+            'providerSettings',
+          ] as const
+        ).filter((field) => byPath.has(`quickActions.${field}`)),
+        providerId,
+        providerChanged,
         defaultReasoningEffort: byPath.has('quickActions.defaultReasoningEffort')
           ? ((byPath.get('quickActions.defaultReasoningEffort') as string | null) ?? '')
           : currentState.defaultReasoningEffort,
@@ -412,7 +432,7 @@ export function applySettingsChanges(
   }
   // Only reconcile quick-action bundle when the delta contains at least one quickActions.* key
   if (hasBackgroundAgentPaths) {
-    applyBackgroundAgentBundle(bundle);
+    applyBackgroundAgentBundle(bundle, revision);
   }
   // Seed the default provider's enablement entry when the hydrated map lacks
   // one (upgrade migration, monorepo#1947).
