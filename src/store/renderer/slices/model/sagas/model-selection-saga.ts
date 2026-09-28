@@ -1,8 +1,14 @@
+import { settleBackgroundSettings } from '../../background-agent-settings/sagas/settle-background-settings';
+import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
+import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
+import { backgroundProviderSwitchBlocked } from '../../background-agent-settings/background-agent-settings-slice';
+import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
+import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { SettingsUpdateResult } from '$lib/client/app-client';
+import type { AppSettingChange, SettingsUpdateResult } from '$lib/client/app-client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -14,6 +20,7 @@ import { selectActiveProviderId } from '../../provider-settings/provider-setting
 import {
   activeProviderPersistRejected,
   setAtomicDefaultModel,
+  atomicDefaultModelAccepted,
 } from '../../provider-settings/provider-settings-slice';
 import { selectProviderModels } from '../model-selectors';
 import {
@@ -26,6 +33,17 @@ import {
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 
 const logger = createLogger('ModelSelectionSaga');
+
+function* acceptAtomicDefaultModel(action: ReturnType<typeof setAtomicDefaultModel>) {
+  const pick = action.payload[0];
+  const background = yield* selectBgSettings.effect();
+  if (isQuickActionProviderSwitchBlocked(background, pick.providerId)) {
+    yield* put(backgroundProviderSwitchBlocked(pick.providerId));
+    return false;
+  }
+  yield* put(atomicDefaultModelAccepted(pick));
+  return true;
+}
 
 export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   const [rawModel, explicitProviderId] = action.payload;
@@ -60,8 +78,11 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   // run, so if the reload were requested first it would fetch the PREVIOUS
   // provider's catalog and leave the newly picked provider without models
   // until another reload happened to fire.
-  yield* put(setAtomicDefaultModel({ providerId, model }));
-  if (shouldReload) {
+  const accepted = yield* call(
+    acceptAtomicDefaultModel,
+    setAtomicDefaultModel({ providerId, model }),
+  );
+  if (accepted && shouldReload) {
     yield* put(reloadModelsForProvider());
   }
 }
@@ -93,54 +114,88 @@ export function* persistSelectedModelsWorker(
   sessionPicks: Record<string, string>,
   atomicProviderId?: string,
 ) {
-  const providerModels = yield* selectProviderModels.effect();
-  // Store values and session picks are bare model ids keyed by provider —
-  // persisted as-is; the daemon rejects compound ids on the wire (-32602).
-  const value = { ...providerModels };
-  for (const [providerId, model] of Object.entries(sessionPicks)) {
-    value[providerId] = splitLegacyCompoundId(model).modelId;
-  }
+  yield* take(backgroundSettingsWriteLock);
   try {
-    const changes = atomicProviderId
-      ? [
-          { path: 'model.defaultProvider', value: atomicProviderId },
-          { path: 'model.providerDefaults', value },
-        ]
-      : [{ path: 'model.providerDefaults', value }];
-    const updateSnapshot = appClient.settings.updateSnapshot?.bind(appClient.settings);
-    const hasRevisionClient = updateSnapshot !== undefined;
-    const result: SettingsUpdateResult = updateSnapshot
-      ? yield* call(updateSnapshot, changes)
-      : {
-          applied: yield* call([appClient.settings, appClient.settings.update], changes),
-          revision: 0,
-        };
-    // A successful update acknowledges the batch. `applied` contains only
-    // changed paths, possibly including a daemon-resolved model.default;
-    // its length does not indicate rejection (structured errors do).
-    if (hasRevisionClient) {
-      const acknowledged = [
-        ...changes.filter((change) => !result.applied.some(({ path }) => path === change.path)),
-        ...result.applied,
-      ];
-      yield* put(settingsChangesReceived(acknowledged, result.revision));
+    const background = yield* selectBgSettings.effect();
+    // Keep the provider's model preference, but do not replay a provider switch
+    // superseded through the other settings control while this writer waited.
+    const currentProviderId =
+      !background?.providerId || background.providerId === atomicProviderId
+        ? atomicProviderId
+        : undefined;
+    const providerModels = yield* selectProviderModels.effect();
+    // Store values and session picks are bare model ids keyed by provider —
+    // persisted as-is; the daemon rejects compound ids on the wire (-32602).
+    const value = { ...providerModels };
+    for (const [providerId, model] of Object.entries(sessionPicks)) {
+      value[providerId] = splitLegacyCompoundId(model).modelId;
     }
-    return 'persisted' satisfies PersistenceResult;
-  } catch (error) {
-    if (isDaemonErrorResponse(error)) {
-      logger.warn('Daemon rejected model.providerDefaults write', { error });
-      yield* put(providerModelsPersistRejected({ ...sessionPicks }));
-      if (atomicProviderId) yield* put(activeProviderPersistRejected(atomicProviderId));
-      return 'rejected' satisfies PersistenceResult;
+    try {
+      const changes: AppSettingChange[] = currentProviderId
+        ? [
+            { path: 'model.defaultProvider', value: currentProviderId },
+            { path: 'model.providerDefaults', value },
+          ]
+        : [{ path: 'model.providerDefaults', value }];
+      if (currentProviderId) {
+        if (background?.providerSwitchPending)
+          changes.push(...backgroundSettingsChanges(background, currentProviderId));
+      }
+      const updateSnapshot = appClient.settings.updateSnapshot?.bind(appClient.settings);
+      const hasRevisionClient = updateSnapshot !== undefined;
+      const result: SettingsUpdateResult = updateSnapshot
+        ? yield* call(updateSnapshot, changes)
+        : {
+            applied: yield* call([appClient.settings, appClient.settings.update], changes),
+            revision: 0,
+          };
+      if (currentProviderId && background?.providerSwitchPending)
+        yield* call(
+          settleBackgroundSettings,
+          {
+            revision: result.revision,
+            generation: background.persistenceGeneration ?? 0,
+            providerId: currentProviderId,
+          },
+          background,
+          result.applied,
+        );
+      // A successful update acknowledges the batch. `applied` contains only
+      // changed paths, possibly including a daemon-resolved model.default;
+      // its length does not indicate rejection (structured errors do).
+      if (hasRevisionClient) {
+        const acknowledged = [
+          ...changes.filter((change) => !result.applied.some(({ path }) => path === change.path)),
+          ...result.applied,
+        ];
+        yield* put(settingsChangesReceived(acknowledged, result.revision));
+      }
+      return 'persisted' satisfies PersistenceResult;
+    } catch (error) {
+      if (isDaemonErrorResponse(error)) {
+        logger.warn('Daemon rejected model.providerDefaults write', { error });
+        yield* put(providerModelsPersistRejected({ ...sessionPicks }));
+        if (currentProviderId) {
+          yield* put(activeProviderPersistRejected(currentProviderId));
+          if (background?.providerSwitchPending)
+            yield* call(settleBackgroundSettings, {
+              generation: background.persistenceGeneration ?? 0,
+              providerId: currentProviderId,
+            });
+        }
+        return 'rejected' satisfies PersistenceResult;
+      }
+      logger.error('Failed to persist model.providerDefaults', { error });
+      return 'retry' satisfies PersistenceResult;
     }
-    logger.error('Failed to persist model.providerDefaults', { error });
-    return 'retry' satisfies PersistenceResult;
+  } finally {
+    yield* put(backgroundSettingsWriteLock, true);
   }
 }
 
 function* watchSelectedModelPersistence() {
   const channel = yield* actionChannel(
-    [setAtomicDefaultModel, setSelectedModel],
+    [atomicDefaultModelAccepted, setSelectedModel],
     buffers.sliding(1),
   );
   // Newest pick per provider made this session. Session-scoped on purpose:
@@ -157,7 +212,7 @@ function* watchSelectedModelPersistence() {
       const result = yield* call(
         persistSelectedModelsWorker,
         sessionPicks,
-        action.type === setAtomicDefaultModel.type ? providerId : undefined,
+        action.type === atomicDefaultModelAccepted.type ? providerId : undefined,
       );
       if (result !== 'retry') {
         if (result === 'rejected') {
@@ -221,5 +276,6 @@ function* watchDefaultReasoningEffortPersistence() {
 
 export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
+  yield* takeEvery(setAtomicDefaultModel, acceptAtomicDefaultModel);
   yield* all([call(watchSelectedModelPersistence), call(watchDefaultReasoningEffortPersistence)]);
 }

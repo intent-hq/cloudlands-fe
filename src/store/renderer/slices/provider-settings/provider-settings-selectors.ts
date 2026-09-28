@@ -133,3 +133,23 @@ export const selectIsActiveProviderAvailable = store.createSelector((state): boo
   const activeProviderId = selectActiveProviderId.select(state);
   return selectAvailableEnabledProviderIds.select(state).includes(activeProviderId);
 });
+
+export const selectProviderFastModeState = store.createSelector(
+  (state) => state.providerSettings.fastMode,
+);
+
+export const selectProviderFastModeValues = store.createSelector(
+  (state): Record<string, boolean> => {
+    const fastMode = state.providerSettings.fastMode;
+    const values = { ...fastMode?.confirmed };
+    for (const [id, edit] of Object.entries(fastMode?.pending ?? {})) values[id] = edit.enabled;
+    return values;
+  },
+);
+
+export const selectFastModeSupportedProviders = store.createSelector((state): string[] => {
+  if (!state.providerSettings.fastMode?.supported) return [];
+  return ['claude-code', 'codex'].filter(
+    (id) => selectProviderCatalogEntry.select(state, id)?.supportsFastMode === true,
+  );
+});

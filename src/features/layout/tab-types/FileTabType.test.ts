@@ -6,6 +6,10 @@ import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { FileNode } from '$shared/types';
 
+vi.mock('$features/file/components/PdfViewer.svelte', async () => ({
+  default: (await import('../../file/__tests__/MockPdfViewer.svelte')).default,
+}));
+
 const {
   actionMocks,
   createMockSelector,
@@ -585,6 +589,46 @@ describe('FileTabType Redux integration', () => {
     expect(viewer.getAttribute('data-language')).toBe('xml');
     expect(viewer.getAttribute('data-is-binary')).toBe('false');
     expect(screen.queryByTestId('code-editor')).toBeNull();
+  });
+
+  it.each(['docs/my report #1%.pdf', '/repo/docs/my report #1%.pdf'])(
+    'passes the exact contained PDF path %s to its viewer',
+    async (filePath) => {
+      renderFileTab({ ...fileTab, filePath });
+      const viewer = await screen.findByTestId('pdf-viewer');
+      expect(viewer.getAttribute('data-workspace-id')).toBe('ws-1');
+      expect(viewer.getAttribute('data-file-path')).toBe('docs/my report #1%.pdf');
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['../secret.pdf', '/elsewhere/secret.pdf', 'docs/../secret.pdf'])(
+    'does not read a PDF outside the workspace: %s',
+    async (filePath) => {
+      renderFileTab({ ...fileTab, filePath });
+      await waitFor(() => expect(screen.queryByTestId('pdf-viewer')).toBeNull());
+      expect(backendRequest).not.toHaveBeenCalled();
+      expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    },
+  );
+
+  it('defers inactive PDFs and releases their viewer when switching tabs', async () => {
+    const tab = { ...fileTab, filePath: 'report.pdf' };
+    const view = render(FileTabTypeHarness, { tab, workspaceId: 'ws-1', isActive: false });
+    expect(backendRequest).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pdf-viewer')).toBeNull();
+    await view.rerender({ tab, workspaceId: 'ws-1', isActive: true });
+    await screen.findByTestId('pdf-viewer');
+    await view.rerender({ tab, workspaceId: 'ws-1', isActive: false });
+    expect(screen.queryByTestId('pdf-viewer')).toBeNull();
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it('opens a binary PDF without dispatching the UTF-8 reader', async () => {
+    renderFileTab({ ...fileTab, id: 'tab-pdf', title: 'report.PDF', filePath: 'docs/report.PDF' });
+    await waitFor(() => expect(screen.queryByTestId('code-editor')).toBeNull());
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('pdf-viewer')).toBeTruthy();
   });
 
   it('keeps allowlisted binary images in FileViewer without a text read', async () => {

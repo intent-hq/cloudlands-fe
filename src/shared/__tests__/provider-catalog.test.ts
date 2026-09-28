@@ -29,3 +29,23 @@ describe('providers.catalog additive alias wire metadata', () => {
     },
   );
 });
+
+describe('providers.catalog Fast mode capability', () => {
+  it('accepts older rows and preserves explicit supported and unsupported values', () => {
+    expect(
+      ProviderCatalogResponseSchema.parse({ providers: [row] }).providers[0].supportsFastMode,
+    ).toBeUndefined();
+    for (const supportsFastMode of [true, false]) {
+      expect(
+        ProviderCatalogResponseSchema.parse({ providers: [{ ...row, supportsFastMode }] })
+          .providers[0].supportsFastMode,
+      ).toBe(supportsFastMode);
+    }
+  });
+  it.each([null, 'true', 1])('rejects malformed Fast mode capability %j', (supportsFastMode) => {
+    expect(
+      ProviderCatalogResponseSchema.safeParse({ providers: [{ ...row, supportsFastMode }] })
+        .success,
+    ).toBe(false);
+  });
+});
