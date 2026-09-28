@@ -9,7 +9,7 @@ import {
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
-interface PdfPreview {
+export interface PdfPreview {
   id: string;
   requestId: string;
   workspaceId: string;
