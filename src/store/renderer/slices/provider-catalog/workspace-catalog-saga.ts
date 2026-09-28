@@ -22,6 +22,7 @@ import {
 } from './provider-catalog-slice';
 import { selectWorkspaceCatalogEpoch } from './workspace-catalog-selectors';
 
+import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import { copyServerForState } from '../mcp-settings/mcp-settings-normalization';
 
 const logger = createLogger('WorkspaceCatalog');
@@ -29,7 +30,8 @@ const logger = createLogger('WorkspaceCatalog');
 type CatalogAction =
   | ReturnType<typeof workspaceCatalogRequested>
   | ReturnType<typeof workspaceUnmounted>
-  | ReturnType<typeof workspaceDeleted>;
+  | ReturnType<typeof workspaceDeleted>
+  | ReturnType<typeof removeWorkspaceEntity>;
 function* readCatalog(action: CatalogAction) {
   if (action.type !== workspaceCatalogRequested.type) return;
   const [workspaceId] = action.payload;
@@ -101,6 +103,7 @@ function* onMount(action: ReturnType<typeof workspaceMounted>) {
 }
 
 function* watchInvalidations() {
+  let connectionChanged = false;
   const channel = eventChannel<true>((emit) => {
     const offNotification = onBackendNotification((notification) => {
       const params = notification.params as
@@ -121,7 +124,10 @@ function* watchInvalidations() {
         emit(true);
       }
     });
-    const offReconnect = onBackendReconnected(() => emit(true));
+    const offReconnect = onBackendReconnected(() => {
+      connectionChanged = true;
+      emit(true);
+    });
     return () => {
       offNotification();
       offReconnect();
@@ -130,7 +136,9 @@ function* watchInvalidations() {
   try {
     while (true) {
       yield* take(channel);
-      yield* put(workspaceCatalogInvalidated());
+      const resetIdentity = connectionChanged;
+      connectionChanged = false;
+      yield* put(workspaceCatalogInvalidated(resetIdentity));
       const mounted = yield* selectMountedWorkspaceIds.effect();
       // Invalidating the generation abandons all old responses, so refresh all mounted contexts.
       for (const workspaceId of mounted) yield* put(workspaceCatalogRequested(workspaceId));
@@ -142,7 +150,7 @@ function* watchInvalidations() {
 
 export function* workspaceCatalogSaga() {
   yield* takeSingleFlightInContext(
-    [workspaceCatalogRequested, workspaceUnmounted, workspaceDeleted],
+    [workspaceCatalogRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
     (action: CatalogAction) =>
       action.type === workspaceCatalogRequested.type
         ? action.payload[0]

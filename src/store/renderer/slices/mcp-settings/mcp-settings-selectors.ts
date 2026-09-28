@@ -16,6 +16,16 @@ export const selectMcpServers = store.createSelector(
       : state.mcpSettings.servers,
 );
 
+/** Resolve event IDs while configuration is invalidated, without a global fallback. */
+export const selectWorkspaceMcpServerName = store.createSelector(
+  (state, workspaceId: string, serverId: string): string | undefined => {
+    const snapshot = state.providerCatalog?.byWorkspaceId?.[workspaceId];
+    return snapshot
+      ? snapshot.mcpServers?.find((server) => server.id === serverId)?.name
+      : state.providerCatalog?.mcpServerNamesByWorkspaceId?.[workspaceId]?.[serverId];
+  },
+);
+
 /** Select loading state */
 export const selectMcpLoading = store.createSelector(
   (state) => state.mcpSettings.loading as boolean,

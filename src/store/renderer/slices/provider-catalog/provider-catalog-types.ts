@@ -18,6 +18,8 @@ export type { ProviderCatalogEntry } from '$shared/provider-catalog';
 export interface ProviderCatalogState {
   byWorkspaceId?: Record<string, WorkspaceCatalogSnapshot>;
   workspaceEpoch?: number;
+  /** Event identity only; retained during refresh, cleared on connection/lifetime changes. */
+  mcpServerNamesByWorkspaceId?: Record<string, Record<string, string>>;
   /** Wire rows, id-keyed with `ids` preserving the registry order. */
   providers: Collection<ProviderCatalogEntry, 'id'>;
   /** Flips true once the first `providers.catalog` hydration lands. */

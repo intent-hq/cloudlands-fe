@@ -13601,3 +13601,130 @@ it.each(['server-workspace', 'server-direct'])(
     });
   },
 );
+
+it.each([
+  [true, 'server-A', false],
+  [true, 'shared-id', true],
+  [false, 'shared-id', false],
+] as const)(
+  'workspace lifecycle regression: MCP toggle burst starting %s for %s (saga first=%s)',
+  async (firstDisabled, serverId, sagaFirst) => {
+    const { runSaga, stdChannel } = await import('redux-saga');
+    const { workspaceCatalogSaga } =
+      await import('$store/renderer/slices/provider-catalog/workspace-catalog-saga');
+    const { workspaceMounted } =
+      await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+    const { appClient } = await import('$lib/client');
+    appStore.init();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    const workspaceId = 'mcp-burst-A';
+    const server = {
+      id: serverId,
+      name: 'workspace-server',
+      type: 'stdio' as const,
+      command: 'npx',
+    };
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        workspaceId,
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [server],
+          mcpStatuses: [],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
+    appStore.dispatch(
+      setWorkspaceDisabledMcpServers(
+        workspaceId,
+        firstDisabled ? {} : { 'workspace-server': true },
+      ),
+    );
+    appStore.dispatch(setServers([{ ...server, name: 'global-server' }]));
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        'mcp-burst-B',
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [{ ...server, name: 'B-server' }],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
+    appStore.dispatch(setWorkspaceDisabledMcpServers('mcp-burst-B', {}));
+    appStore.dispatch(workspaceMounted(workspaceId));
+    let release!: (value: { providers: [] }) => void;
+    const pending = new Promise<{ providers: [] }>((resolve) => (release = resolve));
+    const spies = [
+      vi
+        .spyOn(appClient.providers, 'catalog')
+        .mockResolvedValue({ providers: [] })
+        .mockReturnValueOnce(pending),
+      vi.spyOn(appClient.settings, 'list').mockResolvedValue([]),
+      vi.spyOn(appClient.specialists, 'list').mockResolvedValue([]),
+      vi.spyOn(appClient.settings, 'getMcpServers').mockResolvedValue([server]),
+      vi.spyOn(appClient.settings, 'getMcpServerStatuses').mockResolvedValue([]),
+    ];
+    backendRequestSpy.mockImplementation(() => Promise.resolve({ providers: [] }));
+    await primeBridge();
+    const channel = stdChannel();
+    const dispatch = (action: any) => {
+      appStore.dispatch(action);
+      channel.put(action);
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => appStore.state },
+      workspaceCatalogSaga,
+    );
+    const emitToggle = (disabled: boolean) => {
+      for (const h of sagaFirst ? [...capturedHandlers].reverse() : [...capturedHandlers])
+        h({
+          method: 'events.event',
+          params: {
+            event: {
+              id: 'mcp-burst-' + disabled,
+              workspaceId,
+              timestamp: '2026-09-28T07:55:00.000Z',
+              type: 'workspace:updated',
+              actor: { type: 'system', id: 'daemon' },
+              data: {
+                workspaceId,
+                changes: { mcpServerToggled: { serverId: server.id, workspaceDisabled: disabled } },
+              },
+            },
+          },
+        });
+    };
+    try {
+      emitToggle(firstDisabled);
+      await flush();
+      expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
+        firstDisabled ? { 'workspace-server': true } : {},
+      );
+      expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]).toBeUndefined();
+      emitToggle(!firstDisabled);
+      await flush();
+      release({ providers: [] });
+      for (let i = 0; i < 20; i++) await flush();
+      expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]?.mcpServers).toEqual([
+        server,
+      ]);
+      expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
+        firstDisabled ? {} : { 'workspace-server': true },
+      );
+      expect(appStore.state.mcpSettings.byWorkspaceId['mcp-burst-B']?.disabledServers).toEqual({});
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      for (const spy of spies) spy.mockRestore();
+    }
+  },
+);

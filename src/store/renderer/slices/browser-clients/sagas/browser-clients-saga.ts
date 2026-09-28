@@ -122,9 +122,15 @@ function* readLiveClients(
       const clients = yield* call([appClient.clients, appClient.clients.list]);
       if (epoch === connection.epoch) yield* put(liveClientsReceived(clients));
     }
-    for (const wsId of mounted) {
+    // Own every target before awaiting another workspace. Cleanup/remount must
+    // invalidate queued targets as well as requests already in flight.
+    const targets = mounted.map((wsId) => {
       const version = ++connection.nextRead;
       connection.reads.set(wsId, version);
+      return { wsId, version };
+    });
+    for (const { wsId, version } of targets) {
+      if (epoch !== connection.epoch || connection.reads.get(wsId) !== version) continue;
       const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
       const read = yield* untilWorkspaceCleanup(
         wsId,

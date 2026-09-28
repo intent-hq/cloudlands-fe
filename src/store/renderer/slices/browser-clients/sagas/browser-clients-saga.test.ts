@@ -735,3 +735,107 @@ it('workspace routing regression: global invalidation cannot race a workspace li
     await run.task.toPromise();
   }
 });
+
+it.each([
+  ['unmount', workspaceUnmounted],
+  ['delete', workspaceDeleted],
+  ['remove entity', removeWorkspaceEntity],
+])(
+  'workspace lifecycle regression: global refresh skips B after %s while waiting on A',
+  async (_label, cleanupAction) => {
+    mocks.list.mockReset().mockResolvedValue([desk]);
+    mocks.ownClientId.mockResolvedValue('cli-desk');
+    mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+    const run = startWithReducer();
+    try {
+      run.dispatch(workspaceMounted('A'));
+      run.dispatch(workspaceMounted('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      const blocked = deferred<LiveClient[]>();
+      mocks.list
+        .mockReset()
+        .mockImplementation((id: string) =>
+          id === 'A' ? blocked.promise : Promise.resolve([{ ...desk, clientId: 'resurrected-B' }]),
+        );
+      run.dispatch(refreshLiveClientsRequested());
+      for (let i = 0; i < 20; i++) await settle();
+      expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A']);
+      run.dispatch(cleanupAction('B'));
+      expect(run.entry('B')).toBeUndefined();
+      blocked.resolve([desk]);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(run.entry('B')).toBeUndefined();
+      expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A']);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);
+
+it.each([workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity])(
+  'global fan-out cannot take ownership from a remounted B (%s)',
+  async (cleanupAction) => {
+    mocks.list.mockReset().mockResolvedValue([desk]);
+    mocks.ownClientId.mockResolvedValue('cli-desk');
+    mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+    const run = startWithReducer();
+    try {
+      run.dispatch(workspaceMounted('A'));
+      run.dispatch(workspaceMounted('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      const blocked = deferred<LiveClient[]>();
+      let bReads = 0;
+      mocks.list
+        .mockReset()
+        .mockImplementation((id: string) =>
+          id === 'A'
+            ? blocked.promise
+            : Promise.resolve([
+                { ...desk, clientId: ++bReads === 1 ? 'remounted-B' : 'obsolete-fanout-B' },
+              ]),
+        );
+      run.dispatch(refreshLiveClientsRequested());
+      await settle();
+      run.dispatch(cleanupAction('B'));
+      run.dispatch(workspaceMounted('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      expect(run.entry('B')?.liveClients.ids).toEqual(['remounted-B']);
+      blocked.resolve([desk]);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
+      expect(run.entry('B')?.liveClients.ids).toEqual(['remounted-B']);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);
+
+it('reconnect abandons the queued targets of a blocked global client refresh', async () => {
+  mocks.list.mockReset().mockResolvedValue([desk]);
+  mocks.ownClientId.mockResolvedValue('cli-desk');
+  mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+  const run = startWithReducer();
+  try {
+    run.dispatch(workspaceMounted('A'));
+    run.dispatch(workspaceMounted('B'));
+    for (let i = 0; i < 20; i++) await settle();
+    const blocked = deferred<LiveClient[]>();
+    mocks.list
+      .mockReset()
+      .mockReturnValueOnce(blocked.promise)
+      .mockResolvedValue([{ ...desk, clientId: 'new-connection' }]);
+    run.dispatch(refreshLiveClientsRequested());
+    await settle();
+    mocks.reconnect?.();
+    blocked.resolve([{ ...desk, clientId: 'old-connection' }]);
+    for (let i = 0; i < 30; i++) await settle();
+    expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A', 'A', 'B']);
+    expect(run.entry('A')?.liveClients.ids).toEqual(['new-connection']);
+    expect(run.entry('B')?.liveClients.ids).toEqual(['new-connection']);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
+});
