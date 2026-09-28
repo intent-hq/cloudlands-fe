@@ -185,16 +185,7 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     return new WebSocketDuplex(new NodeWebSocket(config.wsUrl));
   }
   if (config.transport === 'wss') {
-    const hosts = candidateWssHosts(config);
-    const attempts: RaceAttempt[] = hosts.map((host) => ({
-      host,
-      create: () => createWssSocket({ ...config, host }),
-    }));
-    const tunnelAttempt = tunnelRaceAttempt(config);
-    if (tunnelAttempt) attempts.push(tunnelAttempt);
-    if (attempts.length === 0 && isTcAddress(config.host ?? '')) {
-      throw new Error('tailcat binary unavailable; cannot connect through the tunnel');
-    }
+    const attempts = wssRaceAttempts(config);
     if (attempts.length > 1) {
       return raceDuplexSockets(attempts);
     }
@@ -204,6 +195,41 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     // i18n-ignore (developer-facing config error naming env vars; surfaces in logs, not UI)
     'Legacy INTENTD_TCP transport is disabled because authenticated remote transport is not implemented; use INTENTD_SOCKET or INTENTD_WS_URL',
   );
+}
+
+/** Shared route selection for a live connection and a temporary saved-device test. */
+function wssRaceAttempts(config: BackendConnectionConfig): RaceAttempt[] {
+  const attempts: RaceAttempt[] = candidateWssHosts(config).map((host) => ({
+    host,
+    create: () => createWssSocket({ ...config, host }),
+  }));
+  const tunnelAttempt = tunnelRaceAttempt(config);
+  if (tunnelAttempt) attempts.push(tunnelAttempt);
+  if (attempts.length === 0 && isTcAddress(config.host ?? '')) {
+    throw new Error('tailcat binary unavailable; cannot connect through the tunnel');
+  }
+  return attempts;
+}
+
+/**
+ * Test saved routes without creating a pooled/retrying client or sending RPCs.
+ * A connect means the pinned TLS handshake AND authenticated upgrade succeeded.
+ * Race even a single route so every test has one overall deadline; destroying
+ * the race also closes the winning socket and any temporary tailcat forwarder.
+ */
+export async function testWssConnection(
+  config: BackendConnectionConfig,
+  options: { timeoutMs?: number } = {},
+): Promise<void> {
+  const socket = raceDuplexSockets(wssRaceAttempts(config), options);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('connect', resolve);
+      socket.on('error', reject);
+    });
+  } finally {
+    socket.destroy();
+  }
 }
 
 /** Human-readable description of a connection target (for logs). */
@@ -554,8 +580,8 @@ export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt 
  *   errors with a {@link PinMismatchError} aggregating every per-host
  *   mismatch — preferred over the generic last failure (including on race
  *   timeout) so a cert problem is surfaced as a cert error.
- * - If every candidate fails without a pin mismatch, the facade errors with
- *   the last candidate failure.
+ * - Without a pin mismatch, prefer authentication/cap refusals and timeouts
+ *   over generic failures; otherwise surface the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
  *   set cannot hang the client's connect (the reconnect loop retries).
  * - The facade's `'connect'` event carries a {@link RaceConnectInfo} naming
@@ -575,6 +601,8 @@ export function raceDuplexSockets(
   // cadence on this class, so it must survive later generic failures (and the
   // race timeout) from the other candidates.
   let limitError: ConnectionLimitError | null = null;
+  let authError: AuthRejectedError | null = null;
+  let timeoutError: Error | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
   const candidateVias = new Map<Duplex, ConnectedVia>();
@@ -635,6 +663,7 @@ export function raceDuplexSockets(
         if (candidate !== winner) teardownCandidate(candidate);
       }
       winner?.removeAllListeners();
+      winner?.on('error', () => {});
       winner?.destroy();
       callback(error);
     },
@@ -653,16 +682,23 @@ export function raceDuplexSockets(
   // Prefer surfacing observed cert mismatches over a generic failure when the
   // race produces no winner (#1746): the aggregate carries every per-host
   // mismatch, with expected/actual mirroring the first one. Failing that, a
-  // typed connection-limit refusal beats a generic failure.
+  // typed authentication/cap refusal or timeout beats a generic failure.
   const preferTypedError = (fallback: Error): Error => {
     if (mismatches.length > 0) {
       return new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches]);
     }
-    return limitError ?? fallback;
+    return authError ?? limitError ?? timeoutError ?? fallback;
   };
 
   const timer = setTimeout(
-    () => failRace(preferTypedError(new Error(`connection race timed out after ${timeoutMs}ms`))),
+    () =>
+      failRace(
+        preferTypedError(
+          Object.assign(new Error(`connection race timed out after ${timeoutMs}ms`), {
+            code: 'ETIMEDOUT',
+          }),
+        ),
+      ),
     timeoutMs,
   );
   timer.unref?.();
@@ -676,6 +712,8 @@ export function raceDuplexSockets(
       recordMismatch(host, error);
     } else {
       if (error instanceof ConnectionLimitError) limitError ??= error;
+      if (error instanceof AuthRejectedError) authError ??= error;
+      if ('code' in error && error.code === 'ETIMEDOUT') timeoutError ??= error;
       lastError = error;
     }
     pendingCount -= 1;

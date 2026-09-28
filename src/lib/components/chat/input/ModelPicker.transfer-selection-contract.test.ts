@@ -209,14 +209,17 @@ describe('imported public sessions preserve the ModelPicker selection', () => {
     });
   }
 
-  it('detects an equivalent historical alias response through the renderer, without hash checks', async () => {
+  it('preserves an unresolved historical alias from an older catalog without guessing the default', async () => {
     const row = artifact.cases.find(({ id }) => id === 'acp:direct:codex=false');
-    // Deliberately bypass fixture validation for this control alone. A valid
-    // daemon response is changed only at the historical public identity seam.
+    // This older catalog carries no alias metadata. Bypass fixture validation
+    // only to exercise the historical identity, which must remain unresolved.
     const session = { ...row.session, provider: 'acp' };
     const trigger = await mountSession(session, false);
-    expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(/disabled/);
+    expect(getAgentProvider(session, contract.destinationDefaults.provider)).toBe('acp');
+    expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(/no longer available/);
+    expect(trigger.querySelector('[title]')?.getAttribute('title')).not.toMatch(/Codex|disabled/);
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
     expect(() => assertSelection(trigger, contract.expectations.explicit.renderer.label)).toThrow();
+    assertNoChanges();
   });
 });

@@ -6784,5 +6784,15 @@
   "chat_transfer_approve_label": "Aprobar transferencia",
   "chat_transfer_sourceUnknown_label": "Dispositivo de origen no disponible",
   "chat_transfer_active_error": "Finaliza la transferencia activa desde su tarjeta de aprobación antes de iniciar otra.",
-  "chat_transfer_sessionLost_error": "La aplicación ya no tiene esta sesión de transferencia. Abre el proyecto importado en el destino y archiva el origen manualmente."
+  "chat_transfer_sessionLost_error": "La aplicación ya no tiene esta sesión de transferencia. Abre el proyecto importado en el destino y archiva el origen manualmente.",
+  "file_pdf_loading_label": "Cargando PDF…",
+  "file_pdf_missing_error": "No se encontró el archivo PDF.",
+  "file_pdf_large_error": "Este PDF supera el límite de vista previa de 64 MB.",
+  "file_pdf_invalid_error": "Este PDF está dañado o no es compatible.",
+  "file_pdf_password_error": "Este PDF requiere una contraseña.",
+  "file_pdf_load_error": "No se pudo cargar el PDF. Inténtalo de nuevo.",
+  "file_pdf_previous_label": "Página anterior",
+  "file_pdf_next_label": "Página siguiente",
+  "file_pdf_page_label": "Página {page} de {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, página {page}"
 }

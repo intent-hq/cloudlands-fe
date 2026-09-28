@@ -6784,5 +6784,15 @@
   "chat_transfer_approve_label": "Approve transfer",
   "chat_transfer_sourceUnknown_label": "Source device unavailable",
   "chat_transfer_active_error": "Finish the active transfer from its approval card before starting another.",
-  "chat_transfer_sessionLost_error": "The desktop no longer has this transfer session. Open the imported project on the destination, then archive the source manually."
+  "chat_transfer_sessionLost_error": "The desktop no longer has this transfer session. Open the imported project on the destination, then archive the source manually.",
+  "file_pdf_loading_label": "Loading PDF…",
+  "file_pdf_missing_error": "PDF file not found.",
+  "file_pdf_large_error": "This PDF exceeds the 64 MB preview limit.",
+  "file_pdf_invalid_error": "This PDF is damaged or unsupported.",
+  "file_pdf_password_error": "This PDF requires a password.",
+  "file_pdf_load_error": "Could not load the PDF. Try again.",
+  "file_pdf_previous_label": "Previous page",
+  "file_pdf_next_label": "Next page",
+  "file_pdf_page_label": "Page {page} of {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, page {page}"
 }

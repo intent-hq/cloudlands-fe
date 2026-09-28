@@ -6784,5 +6784,15 @@
   "chat_transfer_approve_label": "Übertragung genehmigen",
   "chat_transfer_sourceUnknown_label": "Quellgerät nicht verfügbar",
   "chat_transfer_active_error": "Schließe die aktive Übertragung über ihre Bestätigungskarte ab, bevor du eine weitere startest.",
-  "chat_transfer_sessionLost_error": "Die Übertragungssitzung ist in der Desktop-App nicht mehr vorhanden. Öffne das importierte Projekt auf dem Ziel und archiviere die Quelle manuell."
+  "chat_transfer_sessionLost_error": "Die Übertragungssitzung ist in der Desktop-App nicht mehr vorhanden. Öffne das importierte Projekt auf dem Ziel und archiviere die Quelle manuell.",
+  "file_pdf_loading_label": "PDF wird geladen…",
+  "file_pdf_missing_error": "PDF-Datei nicht gefunden.",
+  "file_pdf_large_error": "Diese PDF überschreitet die Vorschaugrenze von 64 MB.",
+  "file_pdf_invalid_error": "Diese PDF ist beschädigt oder wird nicht unterstützt.",
+  "file_pdf_password_error": "Diese PDF erfordert ein Passwort.",
+  "file_pdf_load_error": "Die PDF konnte nicht geladen werden. Versuchen Sie es erneut.",
+  "file_pdf_previous_label": "Vorherige Seite",
+  "file_pdf_next_label": "Nächste Seite",
+  "file_pdf_page_label": "Seite {page} von {total}",
+  "file_pdf_canvas_ariaLabel": "{name}, Seite {page}"
 }

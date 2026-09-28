@@ -600,7 +600,8 @@ export function isPendingAgentSession(
 /**
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
- * Filters out the legacy 'acp' value (protocol name, not a real provider).
+ * Explicit identities, including historical aliases, are preserved verbatim.
+ * Renderer consumers resolve aliases against the daemon's provider catalog.
  * Falls back to inferring provider from the model ID if available —
  * `defaultProviderId` (the settings-derived effective default provider)
  * attributes bare model ids.
@@ -610,10 +611,9 @@ export function getAgentProvider(
   defaultProviderId: string,
 ): string | undefined {
   const explicit =
-    session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
+    session.provider || session.metadata?.provider || (session as any).config?.provider;
 
-  // 'acp' is the protocol name, not a provider ID -- treat it as unset
-  if (explicit && explicit !== 'acp') {
+  if (explicit) {
     return explicit;
   }
 

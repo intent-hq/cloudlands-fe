@@ -832,6 +832,7 @@
       {#key singleAgentModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}
+          providerId={selectedProvider}
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
@@ -907,6 +908,7 @@
         {#key teamModeModel}
           <ModelPicker
             selectedModel={modelWasOverridden ? selectedModel : undefined}
+            providerId={selectedProvider}
             onModelChange={handleModelChange}
             variant="ghost-light"
             size="xs"

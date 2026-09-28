@@ -6784,5 +6784,15 @@
   "chat_transfer_approve_label": "Approuver le transfert",
   "chat_transfer_sourceUnknown_label": "Appareil source indisponible",
   "chat_transfer_active_error": "Terminez le transfert actif depuis sa carte d’approbation avant d’en lancer un autre.",
-  "chat_transfer_sessionLost_error": "L’application ne possède plus cette session de transfert. Ouvrez le projet importé sur la destination, puis archivez manuellement la source."
+  "chat_transfer_sessionLost_error": "L’application ne possède plus cette session de transfert. Ouvrez le projet importé sur la destination, puis archivez manuellement la source.",
+  "file_pdf_loading_label": "Chargement du PDF…",
+  "file_pdf_missing_error": "Fichier PDF introuvable.",
+  "file_pdf_large_error": "Ce PDF dépasse la limite de prévisualisation de 64 Mo.",
+  "file_pdf_invalid_error": "Ce PDF est endommagé ou non pris en charge.",
+  "file_pdf_password_error": "Ce PDF nécessite un mot de passe.",
+  "file_pdf_load_error": "Impossible de charger le PDF. Réessayez.",
+  "file_pdf_previous_label": "Page précédente",
+  "file_pdf_next_label": "Page suivante",
+  "file_pdf_page_label": "Page {page} sur {total}",
+  "file_pdf_canvas_ariaLabel": "Page {page} du document {name}"
 }

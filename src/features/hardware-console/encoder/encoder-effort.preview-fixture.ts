@@ -5,7 +5,10 @@ import {
   bulkUpsertSessions,
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  clearPanelLayout,
+  initializeLayout,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   openWorkspaceTab,
   loadWorkspaceTabsState,
@@ -36,7 +39,28 @@ export function setupEncoderEffortPreview() {
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   appStore.dispatch(hydrateHardwareConsoleEncoderBehavior('agent-effort'));
   appStore.dispatch(openWorkspaceTab(workspaceId));
-  appStore.dispatch(setActiveAgentId(workspaceId, agentId));
+  appStore.dispatch(
+    initializeLayout(workspaceId, {
+      root: { type: 'panel', panelId: 'encoder-preview-panel' },
+      focusedPanelId: 'encoder-preview-panel',
+      panels: {
+        'encoder-preview-panel': {
+          id: 'encoder-preview-panel',
+          activeTabId: 'encoder-preview-tab',
+          tabs: [
+            {
+              id: 'encoder-preview-tab',
+              type: 'agent',
+              agentId,
+              workspaceId,
+              title: 'Preview agent',
+              closable: true,
+            },
+          ],
+        },
+      },
+    }),
+  );
   appStore.dispatch(
     bulkUpsertSessions([
       {
@@ -60,7 +84,7 @@ export function setupEncoderEffortPreview() {
   return () => {
     appStore.dispatch(encoderHudHidden());
     appStore.dispatch(removeSession(agentId));
-    appStore.dispatch(setActiveAgentId(workspaceId, null));
+    appStore.dispatch(clearPanelLayout(workspaceId));
     appStore.dispatch(loadWorkspaceTabsState(previous.tabs));
     appStore.dispatch(guestSessionsListReceived(previous.guests));
     appStore.dispatch(hydrateHardwareConsoleEncoderBehavior(previous.behavior));

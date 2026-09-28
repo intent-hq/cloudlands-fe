@@ -6784,5 +6784,15 @@
   "chat_transfer_approve_label": "核准傳輸",
   "chat_transfer_sourceUnknown_label": "來源裝置無法使用",
   "chat_transfer_active_error": "開始新的傳輸前，請在核准卡片中完成目前的傳輸。",
-  "chat_transfer_sessionLost_error": "桌面應用程式中已無此傳輸工作階段。請在目標裝置上開啟已匯入的專案，然後手動封存來源專案。"
+  "chat_transfer_sessionLost_error": "桌面應用程式中已無此傳輸工作階段。請在目標裝置上開啟已匯入的專案，然後手動封存來源專案。",
+  "file_pdf_loading_label": "正在載入 PDF…",
+  "file_pdf_missing_error": "找不到 PDF 檔案。",
+  "file_pdf_large_error": "此 PDF 超出 64 MB 的預覽限制。",
+  "file_pdf_invalid_error": "此 PDF 已損毀或不受支援。",
+  "file_pdf_password_error": "此 PDF 需要密碼。",
+  "file_pdf_load_error": "無法載入 PDF。請重試。",
+  "file_pdf_previous_label": "上一頁",
+  "file_pdf_next_label": "下一頁",
+  "file_pdf_page_label": "第 {page} 頁，共 {total} 頁",
+  "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁"
 }

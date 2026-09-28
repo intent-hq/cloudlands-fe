@@ -1,6 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
-  import { onMount, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
@@ -73,6 +73,8 @@
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
+    selectResolvedProviderCatalogEntry,
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -110,14 +112,17 @@
   const logger = createLogger('ModelPicker');
 
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
+  const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   // Catalog-backed local shims for the legacy provider-config helpers, so the
   // picker's many call sites keep their shape. Reads are reactive via the
   // defaultProviderId$ subscription above plus the appStore.state lookups.
   function normalizeProviderId(providerId: string): string {
+    void $providerCatalogEntries$;
     return selectNormalizedProviderId.select(appStore.state, providerId);
   }
   function providerDisplayName(providerId: string): string {
+    void $providerCatalogEntries$;
     return selectProviderDisplayName.select(appStore.state, providerId);
   }
   function parseCompoundModelId(compoundModelId: string): {
@@ -128,13 +133,25 @@
     return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
+  function hasResolvedProvider(providerId: string): boolean {
+    void $providerCatalogEntries$;
+    return !!selectResolvedProviderCatalogEntry.select(appStore.state, providerId);
+  }
+
   const activeProviderId$ = selectActiveProviderId();
   const modelFetchProviderIds$ = selectModelFetchProviderIds();
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
   // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
   // host catalog regardless (`isGuestLocked` is declared with the props below
   // and only read once the picker is rendering).
-  function canUseProviderModels(providerId: string): boolean {
+  function canUseProviderModels(providerId: string, allowLoadedCatalog = false): boolean {
+    // An existing models.list response has its own provider provenance. Keep
+    // its labels during registry hydration; writes still require a registry row.
+    if (
+      !hasResolvedProvider(providerId) &&
+      !(allowLoadedCatalog && providerId && providerId === $availableModelsProviderId$)
+    )
+      return false;
     return (
       normalizeProviderId(providerId) !== 'antigravity' ||
       $antigravityModelsAllowed$ ||
@@ -183,7 +200,7 @@
     confirmModelChange?: (
       from: string | null | undefined,
       to: string | null,
-      labels?: { from: string; to: string },
+      labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
     isCompact?: boolean;
@@ -290,7 +307,26 @@
 
   const agentSession$ = useAgentSession(() => agentId);
 
-  let pendingModelUpdate = $state<string | null>(null);
+  type ModelPick = { providerId: string; modelId: string };
+  type ModelChange = {
+    pick: ModelPick;
+    previous: { model: string | null | undefined; providerId: string };
+    agentId: string;
+    workspaceId: string;
+    revision: number;
+  };
+  let pendingModelUpdate = $state<ModelChange | null>(null);
+  let isApplyingModelUpdate = $state(false);
+  let localPickedProviderId = $state<string | null>(null);
+  let modelChangeRevision = 0;
+  let confirmationRevision = 0;
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+    modelChangeRevision++;
+    confirmationRevision++;
+    pendingModelUpdate = null;
+  });
 
   // Provider from the prop or agent session, or null when neither determines
   // one (fetching then uses the active provider; the trigger icon prefers the
@@ -323,7 +359,7 @@
   const effectiveLocked = $derived(isLocked || isGuestLocked);
   // Every agent-session mutation goes through this funnel; it re-reads the
   // live lock on each call, so no call site needs to re-check after an await.
-  const mutate = createAgentModelMutator({ isLocked: () => isGuestLocked });
+  const mutate = createAgentModelMutator({ isLocked: () => effectiveLocked || destroyed });
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -413,7 +449,7 @@
   }
 
   async function fetchAllProviderModels(enabledIds: string[]) {
-    enabledIds = enabledIds.filter(canUseProviderModels);
+    enabledIds = enabledIds.filter((id) => canUseProviderModels(id));
     const key = enabledIds.slice().sort().join(',');
     if (key === lastFetchedProviderIds && allProvidersLoaded) return;
     lastFetchedProviderIds = key;
@@ -629,6 +665,7 @@
   const availableModels = $derived(
     !canUseProviderModels(
       agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
+      true,
     ) || agentProviderLoading
       ? []
       : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
@@ -757,156 +794,194 @@
     }
 
     localModel = selectedModel;
+    localPickedProviderId = null;
+    pendingModelUpdate = null;
+    modelChangeRevision++;
+    confirmationRevision++;
     userChangedModel = false;
     propModelAtLocalChange = undefined;
+  });
+
+  function currentSessionSelection(): ModelChange['previous'] | undefined {
+    const session = $agentSession$;
+    if (!agentId || !workspaceId || !session) return undefined;
+    const provider = getAgentProvider(session, $defaultProviderId$);
+    if (!provider) return undefined;
+    // An omitted model on a present session is authoritative Auto, not missing data.
+    return { model: session.model, providerId: normalizeProviderId(provider) };
+  }
+
+  // The parent mirrors optimistic picks, so only the session can acknowledge
+  // an agent selection. Once acknowledged, follow later provider-only updates.
+  $effect(() => {
+    if (!localPickedProviderId || pendingModelUpdate) return;
+    const selection = currentSessionSelection();
+    if (
+      selection?.providerId === localPickedProviderId &&
+      (selection.model === localModel ||
+        (selection.model &&
+          localModel &&
+          splitLegacyCompoundId(selection.model).modelId ===
+            splitLegacyCompoundId(localModel).modelId))
+    ) {
+      localPickedProviderId = null;
+    }
   });
 
   // A live owner → collaborator role change must not let a deferred update
   // queued during streaming reach the backend once streaming ends.
   $effect(() => {
-    if (isGuestLocked && pendingModelUpdate) {
-      logger.info('Dropping deferred model update (picker guest-locked):', { agentId });
+    if (effectiveLocked && pendingModelUpdate) {
+      restoreLocalSelection(pendingModelUpdate);
       pendingModelUpdate = null;
+      modelChangeRevision++;
     }
   });
 
   $effect(() => {
-    if (!deferUpdate && pendingModelUpdate) {
-      const model = pendingModelUpdate;
+    if (!deferUpdate && !isApplyingModelUpdate && pendingModelUpdate) {
+      const change = pendingModelUpdate;
       pendingModelUpdate = null;
-      logger.info('Applying deferred model update:', { model, agentId });
-      void applyBackendModelUpdate(model);
+      void applyBackendModelUpdate(change);
     }
   });
 
-  // Resolve the provider owning a picked row. Catalog groups carry bare ids
-  // for every provider, so a bare pick is attributed to the loaded group that
-  // contains the row rather than blanket-attributed to the default provider.
-  // A legacy compound prefix (persisted ids) still wins outright; when several
-  // groups own the same bare id the default provider keeps priority (the
-  // intent-hq/monorepo#1657 contract). The per-agent group — the effective
-  // provider's models when that provider is outside the enabled set (disabled
-  // locally, or never enabled in a guest window, where the host's settings
-  // are administrator-only and `providers.enabled` never hydrates) — is
-  // consulted too, so a pick from it attributes to the agent's provider. With
-  // no owning group, an agent-bound picker attributes the bare id to the
-  // session's own provider (what the daemon resolves a bare `agent.setModel`
-  // id against when `providerId` is absent); otherwise the default provider.
-  function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
+  // Keep the selected row's provider through confirmation and asynchronous work.
+  // Persisted compound IDs still carry an explicit provider at the input boundary.
+  function resolvePickedTriple(model: string, rowProviderId?: string): ModelPick {
     const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
-    if (legacyProviderId) return { providerId: legacyProviderId, modelId };
-    const matchesIn = (rowProviderId: string, options: { value: string }[] | undefined) =>
-      Boolean(
-        options?.some(
-          (opt) =>
-            normalizeModelIdForMatch(opt.value, rowProviderId) ===
-            normalizeModelIdForMatch(modelId, rowProviderId),
-        ),
-      );
-    const defaultNormalized = normalizeProviderId($defaultProviderId$);
-    if (defaultNormalized && matchesIn(defaultNormalized, allProviderModels[defaultNormalized])) {
-      return { providerId: defaultNormalized, modelId };
-    }
-    for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
-      if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
-    }
-    if (agentProviderModels && matchesIn(effectiveProviderId, agentProviderModels)) {
-      return { providerId: normalizeProviderId(effectiveProviderId), modelId };
-    }
-    return { providerId: explicitProviderId ?? $defaultProviderId$, modelId };
+    return {
+      providerId: normalizeProviderId(legacyProviderId || rowProviderId || effectiveProviderId),
+      modelId,
+    };
   }
 
-  async function applyBackendModelUpdate(model: string) {
-    if (agentId && workspaceId) {
-      try {
-        // Send the picked model's provider explicitly: the owning catalog
-        // group's provider (legacy compound prefix wins). Without it the
-        // daemon resolves a bare id against the session's current provider,
-        // rejecting cross-provider picks.
-        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await mutate.setModel(agentId, model, workspaceId, pickedProviderId);
-        // A locked skip is not an RPC failure: nothing to toast or warn about.
-        if (isSkippedMutation(result)) return;
-        if (result.ok && result.data.success) {
-          logger.info('Updated agent model via IPC:', { agentId, model });
-          const targetOption = flatModelOptions.find(
-            (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(model),
-          );
-          const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
-          const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await mutate.reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts);
-        } else {
-          const errorMsg = result.ok ? result.data.error : result.error;
-          logger.warn('Failed to update agent model:', {
-            agentId,
-            model,
-            error: errorMsg,
-          });
-          if (errorMsg) {
-            notify.error(errorMsg, { duration: 6000 });
+  function isCurrentModelChange(change: ModelChange): boolean {
+    return (
+      !destroyed &&
+      change.revision === modelChangeRevision &&
+      change.agentId === agentId &&
+      change.workspaceId === workspaceId
+    );
+  }
+
+  function restoreLocalSelection(change: ModelChange) {
+    if (!isCurrentModelChange(change)) return;
+    // A rejected request must not restore an old snapshot over a newer
+    // authoritative selection received while the request was in flight.
+    const selection = currentSessionSelection() ?? change.previous;
+    localModel = selection.model;
+    localPickedProviderId = selection.providerId;
+    propModelAtLocalChange = selectedModel;
+    userChangedModel = true;
+    dropdownValue = currentDropdownValue();
+    onModelChange?.(
+      localModel ?? '',
+      localModel
+        ? {
+            providerId: selection.providerId,
+            modelId: splitLegacyCompoundId(localModel).modelId,
           }
-        }
-      } catch (error) {
-        logger.error('Error updating agent model:', { agentId, model, error });
+        : undefined,
+    );
+  }
+
+  async function applyBackendModelUpdate(change: ModelChange) {
+    if (!isCurrentModelChange(change) || isApplyingModelUpdate) return;
+    if (!hasResolvedProvider(change.pick.providerId)) {
+      restoreLocalSelection(change);
+      return;
+    }
+    isApplyingModelUpdate = true;
+    let modelAccepted = false;
+    try {
+      const { providerId: pickedProviderId, modelId } = change.pick;
+      const result = await mutate.setModel(
+        change.agentId,
+        modelId,
+        change.workspaceId,
+        pickedProviderId,
+      );
+      if (!isCurrentModelChange(change)) return;
+      if (isSkippedMutation(result)) {
+        restoreLocalSelection(change);
+        return;
       }
+      if (!result.ok || !result.data.success) {
+        restoreLocalSelection(change);
+        const error = result.ok ? result.data.error : result.error;
+        if (error) notify.error(error, { duration: 6000 });
+        return;
+      }
+      // Only the accepted selection reaches shared session state. Failed or
+      // deferred picks stay local, so they cannot leave a partial provider/model.
+      if (!mutate.setSessionModel(change.agentId, modelId, pickedProviderId)) {
+        restoreLocalSelection(change);
+        return;
+      }
+      modelAccepted = true;
+      const targetOption = findCatalogOption(modelId, pickedProviderId);
+      const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
+      const currentEffort = selectAgentReasoningEffort.select(appStore.state, change.agentId);
+      await mutate.reconcileEffort(
+        change.agentId,
+        change.workspaceId,
+        currentEffort,
+        supportedEfforts,
+        () => isCurrentModelChange(change),
+      );
+    } catch (error) {
+      if (!isCurrentModelChange(change)) return;
+      if (!modelAccepted) restoreLocalSelection(change);
+      logger.error('Error updating agent model:', { agentId: change.agentId, error });
+      notify.error(
+        error instanceof Error
+          ? error.message
+          : m.chat_richInput_switchFailed_error({
+              provider: providerDisplayName(change.pick.providerId),
+            }),
+      );
+    } finally {
+      isApplyingModelUpdate = false;
     }
   }
 
-  async function handleModelSelect(model: string | undefined) {
-    if (isGuestLocked) {
-      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+  async function handleModelSelect(model: string | undefined, picked?: ModelPick) {
+    if (effectiveLocked || destroyed || isApplyingModelUpdate) {
+      dropdownValue = currentDropdownValue();
       return;
     }
-    if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
-      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+    const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
+    if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
+      dropdownValue = currentDropdownValue();
       return;
     }
-    logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
-    logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
-    // An explicit pick while the agent's provider is disabled is the user's
-    // own switch: the daemon's re-home must not be announced (intent#5737).
+    const previous = pendingModelUpdate?.previous ?? {
+      model: localModel,
+      providerId: selectedModelProviderId || effectiveProviderId,
+    };
+    const revision = ++modelChangeRevision;
     if (isEffectiveProviderDisabled || disabledProviderSnapshot) {
       disabledProviderSnapshot = null;
       reHomeAnnouncementSuppressed = true;
     }
-    // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
     localModel = model;
+    localPickedProviderId = pick?.providerId ?? null;
 
-    if (model === undefined) {
-      // "Use default" picked — notify the parent with an empty string so it
-      // can clear an explicit pin (consumers with explicit-model semantics
-      // guard on falsy values; no agent/global updates apply to "default").
-      // Drop any deferred update queued during streaming so it cannot apply
-      // later and override this selection.
+    if (!pick || model === undefined) {
       pendingModelUpdate = null;
       onModelChange?.('');
       return;
     }
-
-    // Resolve the pick's triple legs once at the emit boundary: the legacy
-    // compound prefix when present, else the provider whose loaded catalog
-    // group owns the picked bare row.
-    const { providerId: pickedProviderId, modelId: pickedModelId } = resolvePickedTriple(model);
-    onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
-
-    await tick();
-
-    if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
-    if (!updateGlobalStore) return;
-
-    if (agentId && workspaceId) {
-      if (!mutate.setSessionModel(agentId, model)) return;
-      logger.debug('Updated local session model:', { agentId, model });
-
-      if (deferUpdate) {
-        pendingModelUpdate = model;
-        logger.info('Model update deferred until streaming ends:', { model, agentId });
-      } else {
-        await applyBackendModelUpdate(model);
-      }
-    }
+    onModelChange?.(model, pick);
+    if (effectiveLocked || destroyed) return;
+    if (updateGlobalDefault) appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+    if (!updateGlobalStore || !agentId || !workspaceId) return;
+    const change: ModelChange = { pick, previous, agentId, workspaceId, revision };
+    if (deferUpdate) pendingModelUpdate = change;
+    else await applyBackendModelUpdate(change);
   }
 
   // Whether a model is explicitly selected (vs using default)
@@ -932,10 +1007,13 @@
   // exact-id miss the base model's label is rendered with the effort suffix
   // appended — existing sessions with a stored compound id keep a sensible
   // label instead of the raw id.
-  function getModelLabel(modelId: string | undefined): string | undefined {
+  function getModelLabel(
+    modelId: string | undefined,
+    provider = selectedModelProviderId || effectiveProviderId,
+  ): string | undefined {
     if (!modelId) return undefined;
     const lookup = (id: string): string | undefined => {
-      const target = normalizeModelIdForMatch(id, effectiveProviderId);
+      const target = normalizeModelIdForMatch(splitLegacyCompoundId(id).modelId, provider);
       for (const [rowProviderId, models] of Object.entries(allProviderModels)) {
         const found = models.find(
           (m) => normalizeModelIdForMatch(m.value, rowProviderId) === target,
@@ -1057,7 +1135,16 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
-      const resolvedLabel = defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId);
+      const resolvedLabel =
+        defaultModelIdMappedOption?.label ??
+        getModelLabel(
+          defaultModelId,
+          normalizeProviderId(
+            splitLegacyCompoundId(defaultModelId).providerId ||
+              fallbackProviderId ||
+              effectiveProviderId,
+          ),
+        );
       if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
       return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
     }
@@ -1069,9 +1156,8 @@
 
   const triggerProviderId = $derived.by(() => {
     if (localModel && hasExplicitModel) {
-      // Catalog-ownership attribution so a bare cross-provider selection
-      // shows its own provider's icon, not the default provider's.
-      return resolvePickedTriple(localModel).providerId;
+      // Provider identity belongs to the selection, including colliding bare IDs.
+      return selectedModelProviderId;
     }
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
@@ -1141,6 +1227,38 @@
       : toDropdownOptions(availableModels)),
   ]);
 
+  function findCatalogOption(
+    modelId: string,
+    bareProviderId = selectedModelProviderId || effectiveProviderId,
+  ): DropdownOption | undefined {
+    const lookup = (id: string) => {
+      const target = normalizeModelIdForMatch(splitLegacyCompoundId(id).modelId, bareProviderId);
+      for (const providerId of selectableProviderIds) {
+        const rowProviderId = normalizeProviderId(providerId);
+        const found = allProviderModels[rowProviderId]?.find(
+          (option) => normalizeModelIdForMatch(option.value, rowProviderId) === target,
+        );
+        if (found) return found;
+      }
+      if (
+        !isEffectiveProviderAvailable &&
+        !isEffectiveProviderDisabled &&
+        fallbackModelsMatchEffectiveProvider
+      ) {
+        return toDropdownOptions(availableModels).find(
+          (option) => normalizeModelIdForMatch(option.value, availableModelsProviderId) === target,
+        );
+      }
+      return undefined;
+    };
+    // Persisted effort-suffixed pins refer to today's base catalog row. An
+    // exact match wins so provider model IDs containing slashes stay intact.
+    return (
+      lookup(modelId) ??
+      lookup(modelId.replace(/\/(?:none|minimal|low|medium|high|xhigh|max|ultra)$/i, ''))
+    );
+  }
+
   const selectedCatalogOption = $derived.by(() => {
     const selectedId = hasExplicitModel ? localModel : defaultModelId;
     if (!selectedId) return catalogDefaultFallbackOption;
@@ -1148,8 +1266,15 @@
     // resolve to the hidden pseudo-row when an older daemon still serves one.
     const mappedOption = hasExplicitModel ? legacyDefaultMappedOption : defaultModelIdMappedOption;
     if (mappedOption) return mappedOption;
-    return flatModelOptions.find(
-      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
+    return findCatalogOption(
+      selectedId,
+      hasExplicitModel
+        ? selectedModelProviderId
+        : normalizeProviderId(
+            splitLegacyCompoundId(selectedId).providerId ||
+              fallbackProviderId ||
+              effectiveProviderId,
+          ),
     );
   });
 
@@ -1300,16 +1425,31 @@
   // A legacy `<provider>:default` selection has no catalog row of its own,
   // so the mapped isDefault row shows as selected instead.
   let dropdownValue = $state(untrack(() => localModel ?? USE_DEFAULT_VALUE));
+  function currentDropdownValue() {
+    if (
+      hasExplicitModel &&
+      activeBrowseProviderId &&
+      selectedModelProviderId &&
+      activeBrowseProviderId !== selectedModelProviderId
+    )
+      return '';
+    return legacyDefaultMappedOption?.value ?? localModel ?? USE_DEFAULT_VALUE;
+  }
   $effect(() => {
-    dropdownValue = legacyDefaultMappedOption?.value ?? localModel ?? USE_DEFAULT_VALUE;
+    dropdownValue = currentDropdownValue();
   });
 
-  // Provider the explicitly selected model belongs to ('' when inheriting).
-  // Catalog rows are bare for every provider, so ownership is resolved from
-  // the loaded groups (legacy compound prefix wins) — not by parsing the id.
+  // Keep an explicit local choice until the daemon/parent has caught up.
+  // Existing bare session IDs belong to that session's provider, even when
+  // another provider advertises the same model ID.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? normalizeProviderId(resolvePickedTriple(localModel).providerId)
+      ? (localPickedProviderId ??
+          normalizeProviderId(
+            explicitProviderId ||
+              splitLegacyCompoundId(localModel).providerId ||
+              effectiveProviderId,
+          ))
       : '',
   );
 
@@ -1320,7 +1460,10 @@
   const selectedModelGateProviderId = $derived.by(() => {
     const legacyProviderId =
       hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
-    return normalizeProviderId(legacyProviderId || effectiveProviderId);
+    return (
+      localPickedProviderId ??
+      normalizeProviderId(explicitProviderId || legacyProviderId || effectiveProviderId)
+    );
   });
 
   // The provider the selected model is sent through was disabled in settings —
@@ -1417,10 +1560,7 @@
     // not missing, it renders as that model.
     if (legacyDefaultMappedOption) return false;
 
-    const values = new Set(
-      flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value, effectiveProviderId)),
-    );
-    return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
+    return !selectedCatalogOption;
   });
 
   // Follow the daemon's re-home (intent#5737): while the agent's provider is
@@ -1554,7 +1694,10 @@
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
-      isGuestLocked ||
+      effectiveLocked ||
+      !hasResolvedProvider(selectedModelGateProviderId) ||
+      isApplyingModelUpdate ||
+      pendingModelUpdate !== null ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
@@ -1758,6 +1901,7 @@
     // A disabled provider is re-homed by the daemon on the next send; the FE
     // must not `agent.setModel` its way around the gate (intent#5737).
     if (isSelectedModelProviderDisabled) return;
+    if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
@@ -1789,9 +1933,7 @@
     // Get the name of the unavailable model for the notification
     const unavailableModelName = localModel || m.chat_modelPicker_selectedModel_fallback();
 
-    const unavailableProvider = localModel
-      ? parseCompoundModelId(localModel).providerId
-      : effectiveProviderId;
+    const unavailableProvider = selectedModelGateProviderId;
 
     // Find a same-provider fallback using the preference list, then the globally selected model,
     // then first available as a last resort.
@@ -1842,7 +1984,10 @@
       // Switch to the fallback model — only when the model genuinely disappeared.
       // During a provider switch the model isn't really missing, so skip the silent
       // switch to avoid clobbering a valid compound/bare model ID round-trip.
-      handleModelSelect(fallbackOption.value);
+      handleModelSelect(
+        fallbackOption.value,
+        resolvePickedTriple(fallbackOption.value, unavailableProvider),
+      );
     } else {
       logger.debug('Skipping auto-fallback (provider switch detected)', {
         unavailableModel: unavailableModelName,
@@ -1868,14 +2013,12 @@
   $effect(() => {
     if (!silentFallback) return;
     if (isGuestLocked) return;
+    if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
 
-    const rawCurrentProvider = localModel
-      ? parseCompoundModelId(localModel).providerId
-      : effectiveProviderId;
-    const currentProvider = normalizeProviderId(rawCurrentProvider);
+    const currentProvider = selectedModelGateProviderId;
 
     // Try same-provider fallback first
     const fallbackOption = findFallbackOption(currentProvider);
@@ -1885,7 +2028,10 @@
         fallbackModel: fallbackOption.value,
         provider: currentProvider,
       });
-      handleModelSelect(fallbackOption.value);
+      handleModelSelect(
+        fallbackOption.value,
+        resolvePickedTriple(fallbackOption.value, currentProvider),
+      );
       return;
     }
 
@@ -1939,19 +2085,23 @@
     });
   });
 
-  /** Clear any pending deferred model update. Used when the parent handles the IPC call itself. */
-  export function clearPendingUpdate() {
-    pendingModelUpdate = null;
-  }
-
   /** Clear the fallback warning - call when user sends a message or explicitly selects a model */
   export function clearFallbackWarning() {
     clearFallbackInfo();
   }
 
   async function handleModelChange(value: string | string[], event?: MouseEvent) {
-    if (effectiveLocked) return;
+    if (effectiveLocked || destroyed || isApplyingModelUpdate) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
     const modelValue = value as string;
+    const pick =
+      modelValue === USE_DEFAULT_VALUE
+        ? undefined
+        : resolvePickedTriple(modelValue, activeBrowseProviderId);
+    const fromProviderId = selectedModelProviderId || effectiveProviderId;
+    const confirmation = ++confirmationRevision;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
     // the current model is never gated; picking "Default model" while an
@@ -1961,29 +2111,32 @@
       modelValue === USE_DEFAULT_VALUE
         ? hasExplicitModel
         : !localModel ||
-          normalizeModelIdForMatch(modelValue, effectiveProviderId) !==
-            normalizeModelIdForMatch(localModel, effectiveProviderId);
+          pick?.providerId !== fromProviderId ||
+          normalizeModelIdForMatch(modelValue, pick?.providerId ?? effectiveProviderId) !==
+            normalizeModelIdForMatch(localModel, fromProviderId);
     if (isActualChange && confirmModelChange) {
       const confirmed = await confirmModelChange(
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
         {
           from: currentModelLabel,
+          fromProviderId,
+          toProviderId: pick?.providerId ?? fromProviderId,
           to:
             modelValue === USE_DEFAULT_VALUE
               ? m.chat_modelPicker_defaultModel_label()
-              : (getModelLabel(modelValue) ?? parseCompoundModelId(modelValue).modelId),
+              : (getModelLabel(modelValue, pick?.providerId) ??
+                parseCompoundModelId(modelValue).modelId),
         },
       );
-      if (!confirmed) {
-        // Revert the dropdown's internal selection back to the current model.
-        dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      if (!confirmed || confirmation !== confirmationRevision || effectiveLocked || destroyed) {
+        dropdownValue = currentDropdownValue();
         return;
       }
     }
-    // Keyboard selection removes the focused search/listbox. Return to its
-    // trigger instead of leaving focus on body; pointer callers keep their policy.
-    if (modalAware || !event) {
+    // Combined model/effort pickers keep the panel for the next choice. When
+    // closing a model-only picker, restore keyboard/modal focus to its trigger.
+    if (!showReasoning && (modalAware || !event)) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -1993,9 +2146,9 @@
     clearFallbackInfo();
     // Convert USE_DEFAULT_VALUE back to undefined
     if (modelValue === USE_DEFAULT_VALUE) {
-      handleModelSelect(undefined as unknown as string);
+      void handleModelSelect(undefined);
     } else {
-      handleModelSelect(modelValue);
+      void handleModelSelect(modelValue, pick);
     }
   }
 
@@ -2138,6 +2291,7 @@
     bind:open={dropdownOpen}
     groups={displayGroups}
     onchange={handleModelChange}
+    closeOnSelect={!showReasoning}
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}

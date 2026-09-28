@@ -6784,5 +6784,15 @@
   "chat_transfer_approve_label": "批准传输",
   "chat_transfer_sourceUnknown_label": "源设备不可用",
   "chat_transfer_active_error": "开始新的传输前，请在批准卡片中完成当前传输。",
-  "chat_transfer_sessionLost_error": "桌面应用中已无此传输会话。请在目标设备上打开已导入的项目，然后手动归档源项目。"
+  "chat_transfer_sessionLost_error": "桌面应用中已无此传输会话。请在目标设备上打开已导入的项目，然后手动归档源项目。",
+  "file_pdf_loading_label": "正在加载 PDF…",
+  "file_pdf_missing_error": "找不到 PDF 文件。",
+  "file_pdf_large_error": "此 PDF 超出 64 MB 的预览限制。",
+  "file_pdf_invalid_error": "此 PDF 已损坏或不受支持。",
+  "file_pdf_password_error": "此 PDF 需要密码。",
+  "file_pdf_load_error": "无法加载 PDF。请重试。",
+  "file_pdf_previous_label": "上一页",
+  "file_pdf_next_label": "下一页",
+  "file_pdf_page_label": "第 {page} 页，共 {total} 页",
+  "file_pdf_canvas_ariaLabel": "{name}，第 {page} 页"
 }
