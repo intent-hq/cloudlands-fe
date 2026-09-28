@@ -17,6 +17,7 @@
  */
 import type { GitHubIssueDetails, GitHubPullRequestDetails, IntegrationsClient } from '$lib/client';
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
+import { captureIntegrationContext } from '$features/integrations-request-context';
 import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
 
 /** Discriminated details for one hovered GitHub link. */
@@ -42,10 +43,13 @@ export type GitHubLinkPreviewClient = Pick<IntegrationsClient, 'githubPullReques
 export interface LoadGitHubLinkPreviewOptions {
   /** Rejects the caller's promise on abort; the shared request keeps running for the other hovers sharing it. */
   signal?: AbortSignal;
+  workspaceId?: string;
   /** Injection seam (tests); defaults to the process-wide `appClient.integrations`. */
   client?: GitHubLinkPreviewClient;
 }
 
+const clientIds = new WeakMap<GitHubLinkPreviewClient, number>();
+let nextClientId = 0;
 const inFlight = new Map<string, Promise<GitHubLinkPreview>>();
 
 function requestKey(ref: GitHubIssueOrPrRef): string {
@@ -55,13 +59,24 @@ function requestKey(ref: GitHubIssueOrPrRef): string {
 async function fetchPreview(
   ref: GitHubIssueOrPrRef,
   injected: GitHubLinkPreviewClient | undefined,
+  workspaceId?: string,
 ): Promise<GitHubLinkPreview> {
   const client = injected ?? (await import('$lib/client')).appClient.integrations;
   if (ref.kind === 'pr') {
-    const details = await client.githubPullRequest(ref.owner, ref.repo, ref.number);
+    const details = await client.githubPullRequest(
+      ref.owner,
+      ref.repo,
+      ref.number,
+      ...(workspaceId === undefined ? [] : [workspaceId]),
+    );
     return { kind: 'pr', ...details };
   }
-  const details = await client.githubIssue(ref.owner, ref.repo, ref.number);
+  const details = await client.githubIssue(
+    ref.owner,
+    ref.repo,
+    ref.number,
+    ...(workspaceId === undefined ? [] : [workspaceId]),
+  );
   return { kind: 'issue', ...details };
 }
 
@@ -96,10 +111,17 @@ export async function loadGitHubLinkPreview(
   const ref = parseGitHubIssueOrPrUrl(url);
   if (!ref) return null;
 
-  const key = requestKey(ref);
+  const context = captureIntegrationContext(options.workspaceId);
+  const client = options.client ?? (await import('$lib/client')).appClient.integrations;
+  let clientId = clientIds.get(client);
+  if (clientId === undefined) {
+    clientId = ++nextClientId;
+    clientIds.set(client, clientId);
+  }
+  const key = JSON.stringify([context.key, clientId, requestKey(ref)]);
   let pending = inFlight.get(key);
   if (!pending) {
-    pending = fetchPreview(ref, options.client).finally(() => {
+    pending = fetchPreview(ref, client, context.workspaceId).finally(() => {
       if (inFlight.get(key) === pending) inFlight.delete(key);
     });
     inFlight.set(key, pending);

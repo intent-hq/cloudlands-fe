@@ -265,6 +265,37 @@ async function renderPR(overrides: Partial<Record<string, unknown>> = {}) {
   return { ...r, onMergeDrawerToggle };
 }
 
+it('keeps pull completion tied to the workspace that started it', async () => {
+  const { appClient } = await import('$lib/client');
+  let finish!: (value: { success: boolean }) => void;
+  vi.mocked(appClient.git.pull).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  mocks.workspaceEntity.path = '/repo-a';
+  const view = await renderPR({
+    workspaceId: 'a',
+    hasOpenPR: true,
+    isBehind: true,
+    behindCount: 1,
+  });
+  await fireEvent.click(view.getByTestId('pr-pull-button'));
+  expect(appClient.git.pull).toHaveBeenCalledWith('/repo-a', 'feature/branch', 'a');
+  await view.rerender({ workspaceId: 'b' });
+  mocks.dispatch.mockClear();
+  finish({ success: true });
+  await waitFor(() =>
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: ['a', 'isPulling', false] }),
+    ),
+  );
+  expect(mocks.dispatch).not.toHaveBeenCalledWith(
+    expect.objectContaining({ payload: ['b', 'isPulling', false] }),
+  );
+});
+
 const testPR = {
   number: 7,
   title: 'feat: something',

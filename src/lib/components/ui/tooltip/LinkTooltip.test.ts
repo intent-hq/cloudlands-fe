@@ -5,7 +5,14 @@ import { flushSync } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
+const reconnect = vi.hoisted(() => new Set<() => void>());
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  onBackendReconnected: (handler: () => void) => {
+    reconnect.add(handler);
+    return () => reconnect.delete(handler);
+  },
+}));
 vi.mock('$lib/client', async () => {
   const { LiveIntegrationsClient } = await import('$lib/client/live/live-integrations-client');
   return { appClient: { integrations: new LiveIntegrationsClient() } };
@@ -43,10 +50,10 @@ const PULL = {
   changedFiles: 1,
 };
 
-async function hover(url: string) {
+async function hover(url: string, workspaceId?: string) {
   const anchor = document.createElement('a');
   anchor.href = url;
-  showLinkTooltip(anchor, url);
+  showLinkTooltip(anchor, url, workspaceId);
   await vi.advanceTimersByTimeAsync(300);
   await vi.dynamicImportSettled();
   await vi.advanceTimersByTimeAsync(0);
@@ -74,6 +81,33 @@ describe('LinkTooltip with the live integrations seam', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it('keeps reused preview IDs separate across workspaces and reconnects', async () => {
+    let resolveOld!: (value: unknown) => void;
+    request.mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)));
+    render(LinkTooltip);
+    await hover(PR_URL, 'a');
+    expect(request).toHaveBeenLastCalledWith('github.pulls.get', {
+      owner: 'octo',
+      repo: 'intent',
+      number: 42,
+      workspaceId: 'a',
+    });
+    for (const handler of reconnect) handler();
+    request.mockResolvedValueOnce({ pull: { ...PULL, title: 'Workspace B' } });
+    await hover(PR_URL, 'b');
+    expect(request).toHaveBeenLastCalledWith('github.pulls.get', {
+      owner: 'octo',
+      repo: 'intent',
+      number: 42,
+      workspaceId: 'b',
+    });
+    resolveOld({ pull: { ...PULL, title: 'Late workspace A' } });
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+    expect(screen.getByText('Workspace B')).toBeTruthy();
+    expect(screen.queryByText('Late workspace A')).toBeNull();
   });
 
   it.each(['queued', 'merged'] as const)(

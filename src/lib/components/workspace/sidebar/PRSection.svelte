@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { captureIntegrationContext } from '$features/integrations-request-context';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -600,7 +601,9 @@
   }
 
   async function handlePull() {
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
+    const originWorkspaceId = workspaceId;
+    const context = captureIntegrationContext(originWorkspaceId);
+    appStore.dispatch(setGitOperationFlag(originWorkspaceId, 'isPulling', true));
     try {
       // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient seam.
       // The wire method is path-based (repoPath + branchName), replacing the
@@ -611,15 +614,17 @@
         notify.error(m.workspace_prSection_pullUnavailable_error());
         return;
       }
-      const result = await appClient.git.pull(repoPath, branch);
+      const result = await appClient.git.pull(repoPath, branch, originWorkspaceId);
+      if (!context.isCurrent()) return;
       if (result.success) {
         notify.success(m.workspace_prSection_pullSuccess_label());
-        gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
-        appStore.dispatch(loadGitStatus(workspaceId, true));
+        gitCache.invalidateWorkspace(originWorkspaceId as WorkspaceId);
+        appStore.dispatch(loadGitStatus(originWorkspaceId, true));
       } else {
         notify.error(m.workspace_prSection_pullFailed_error({ error: result.error ?? '' }));
       }
     } catch (error) {
+      if (!context.isCurrent()) return;
       notify.error(
         m.workspace_prSection_pullFailedDetail_error({
           error:
@@ -627,7 +632,8 @@
         }),
       );
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', false));
+      if (context.isCurrent())
+        appStore.dispatch(setGitOperationFlag(originWorkspaceId, 'isPulling', false));
     }
   }
 

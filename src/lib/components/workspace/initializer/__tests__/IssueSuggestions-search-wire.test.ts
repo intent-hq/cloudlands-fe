@@ -13,6 +13,23 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
+vi.unmock('$lib/electron-bridge');
+const integrationWire = vi.hoisted(() => ({
+  request: vi.fn(),
+  reconnect: [] as Array<() => void>,
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: integrationWire.request,
+  onBackendNotification: () => () => {},
+  onBackendReconnected: (handler: () => void) => {
+    integrationWire.reconnect.push(handler);
+    return () => {
+      integrationWire.reconnect = integrationWire.reconnect.filter((h) => h !== handler);
+    };
+  },
+}));
+import { WORKSPACE_ROUTE_CONTEXT } from '$lib/utils/workspace-route-context';
+
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
     subscribe(run: (v: T) => void) {
@@ -211,6 +228,72 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
   async function settle(ms = 200): Promise<void> {
     await vi.advanceTimersByTimeAsync(ms);
   }
+
+  it('sends actual workspace picker searches through the bridge and isolates repeated repositories', async () => {
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    const { __resetGitHubAuthStatusForTests } =
+      await import('$features/github-auth/renderer/github-auth-status.client');
+    __resetGitHubAuthStatusForTests();
+    let resolveA!: (value: unknown) => void;
+    const pendingA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    integrationWire.request.mockImplementation(
+      async (method: string, params?: { workspaceId?: string }) => {
+        if (method === 'github.authStatus') return { isConfigured: true };
+        if (method === 'github.issues.search') {
+          if (params?.workspaceId === 'a') return pendingA;
+          return {
+            issues: [{ ...ghIssueIn('o', 'r', 1), title: 'Workspace B issue' }],
+            nextToken: null,
+          };
+        }
+        if (method === 'github.relatedRepos.list') return { repos: [] };
+        return { pulls: [], nextToken: null };
+      },
+    );
+    const props = {
+      repositoryOwner: 'o',
+      repositoryName: 'r',
+      initiallyExpanded: true,
+      initialSource: 'github-issues' as const,
+      hideSourceTabs: true,
+    };
+    const a = render(IssueSuggestions, {
+      props,
+      context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'a' }]]),
+    });
+    await settle();
+    expect(integrationWire.request).toHaveBeenCalledWith(
+      'github.issues.search',
+      expect.objectContaining({ workspaceId: 'a', owner: 'o', repo: 'r' }),
+    );
+    a.unmount();
+    render(IssueSuggestions, {
+      props,
+      context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'b' }]]),
+    });
+    await settle();
+    expect(integrationWire.request).toHaveBeenCalledWith(
+      'github.issues.search',
+      expect.objectContaining({ workspaceId: 'b', owner: 'o', repo: 'r' }),
+    );
+    expect(screen.getByText('Workspace B issue')).toBeTruthy();
+    resolveA({
+      issues: [{ ...ghIssueIn('o', 'r', 1), title: 'Late workspace A' }],
+      nextToken: null,
+    });
+    await settle();
+    expect(screen.queryByText('Late workspace A')).toBeNull();
+    integrationWire.request.mockClear();
+    for (const reconnect of [...integrationWire.reconnect]) reconnect();
+    await settle();
+    expect(integrationWire.request).toHaveBeenCalledWith('github.authStatus', { workspaceId: 'b' });
+    expect(integrationWire.request).toHaveBeenCalledWith(
+      'github.issues.search',
+      expect.objectContaining({ workspaceId: 'b' }),
+    );
+  });
 
   it('debounced typing sends a server search with the exact request shape (GH issues)', async () => {
     const issueCalls: unknown[] = [];

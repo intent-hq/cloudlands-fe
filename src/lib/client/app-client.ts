@@ -1406,7 +1406,11 @@ export interface GitClient {
    * repo path BEFORE a workspace exists. Errors fold to `null` so callers can
    * surface a friendly fallback instead of crashing.
    */
-  getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null>;
+  getBranches(
+    repoPath: string,
+    includeRemote: boolean,
+    workspaceId?: string,
+  ): Promise<GitBranchesResult | null>;
   /**
    * Path-based branch status (`git.branchStatus`, §5.6). Used by the
    * workspace-initializer `BranchSelector` to surface ahead/behind +
@@ -1414,7 +1418,11 @@ export interface GitClient {
    * workspace exists. Errors fold to `null` so callers can surface a friendly
    * fallback without crashing on `result.success` against undefined.
    */
-  branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null>;
+  branchStatus(
+    repoPath: string,
+    branchName: string,
+    workspaceId?: string,
+  ): Promise<GitBranchStatusResult | null>;
   /**
    * Path-based pull (`git.pull`, §5.6) — ports the legacy `git:pullBranch` IPC
    * used by the workspace-create auto-pull, which runs against an arbitrary
@@ -1423,7 +1431,7 @@ export interface GitClient {
    * `{ ok: false, error }` result, folded into `{ success: false, error }`;
    * transport/validation errors fold the same way. Never throws.
    */
-  pull(repoPath: string, branchName: string): Promise<MutationResult>;
+  pull(repoPath: string, branchName: string, workspaceId?: string): Promise<MutationResult>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
@@ -2251,19 +2259,29 @@ export interface GitHubIssueDetails {
 }
 
 export interface IntegrationsClient {
-  githubUser(): Promise<GitHubUser | null>;
+  githubUser(workspaceId?: string): Promise<GitHubUser | null>;
   /**
    * One pull request by number (`github.pulls.get`, §5.27). THROWS on
    * transport/daemon errors (e.g. "GitHub is not configured.") and when the
    * daemon reports no such PR, so the link hover card renders an explicit
    * URL-only fallback — never a fabricated card.
    */
-  githubPullRequest(owner: string, repo: string, number: number): Promise<GitHubPullRequestDetails>;
+  githubPullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+    workspaceId?: string,
+  ): Promise<GitHubPullRequestDetails>;
   /**
    * One issue by number (`github.issues.get`, §5.27). Same THROWS contract as
    * `githubPullRequest`.
    */
-  githubIssue(owner: string, repo: string, number: number): Promise<GitHubIssueDetails>;
+  githubIssue(
+    owner: string,
+    repo: string,
+    number: number,
+    workspaceId?: string,
+  ): Promise<GitHubIssueDetails>;
   /**
    * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
    * with the default branch from `github.repos.get` (best-effort). Unlike the
@@ -2273,7 +2291,12 @@ export interface IntegrationsClient {
    * `prefix` narrows the listing server-side (GitHub's `refs/heads/{prefix}`
    * matching-refs semantics) so branches beyond the first page are findable.
    */
-  githubBranches(owner: string, repo: string, prefix?: string): Promise<GitHubBranchListing>;
+  githubBranches(
+    owner: string,
+    repo: string,
+    prefix?: string,
+    workspaceId?: string,
+  ): Promise<GitHubBranchListing>;
   /**
    * Branch names from the daemon's local repo cache — or its `git ls-remote`
    * fallback on a cache miss (`github.branches.listCached`, §5.27) — purely
@@ -2281,7 +2304,11 @@ export interface IntegrationsClient {
    * to a cold-cache miss (`{ cached: false, branches: [] }`) so
    * `githubBranches` stays the only error authority.
    */
-  githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing>;
+  githubBranchesCached(
+    owner: string,
+    repo: string,
+    workspaceId?: string,
+  ): Promise<GitHubCachedBranchListing>;
   /**
    * The repo's committed `.intent/config.json` (`github.repoConfig.get`,
    * §5.27) for a GitHub repo without a local checkout. `ref` defaults to
@@ -2289,9 +2316,14 @@ export interface IntegrationsClient {
    * transport/daemon errors (e.g. unauthenticated private repo); the
    * setup-script probe folds failures to "no script" at the call site.
    */
-  githubRepoConfig(owner: string, repo: string, ref?: string): Promise<GitHubRepoConfigResult>;
-  linearIssues(): Promise<LinearIssueResult[]>;
-  sentryIssues(): Promise<SentryIssueResult[]>;
+  githubRepoConfig(
+    owner: string,
+    repo: string,
+    ref?: string,
+    workspaceId?: string,
+  ): Promise<GitHubRepoConfigResult>;
+  linearIssues(workspaceId?: string): Promise<LinearIssueResult[]>;
+  sentryIssues(workspaceId?: string): Promise<SentryIssueResult[]>;
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;
 }
 

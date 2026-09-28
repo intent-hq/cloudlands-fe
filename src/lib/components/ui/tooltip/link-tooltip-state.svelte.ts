@@ -2,6 +2,7 @@
  * Singleton link tooltip state.
  * Call `showLinkTooltip` / `hideLinkTooltip` from anywhere to control it.
  */
+import { captureIntegrationContext } from '$features/integrations-request-context';
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 import {
   classifyGitHubLinkPreviewError,
@@ -52,20 +53,21 @@ const previewRequest = createPreviewRequest();
  * Start loading the GitHub hover card for `url`. A newer hover (or a hide)
  * retires the ticket so a late response never overwrites the current tooltip.
  */
-function startPreview(url: string): void {
+function startPreview(url: string, workspaceId?: string): void {
+  const context = captureIntegrationContext(workspaceId);
   const ticket = previewRequest.next();
   if (!parseGitHubIssueOrPrUrl(url)) {
     state.preview = { status: 'idle' };
     return;
   }
   state.preview = { status: 'loading' };
-  loadGitHubLinkPreview(url).then(
+  loadGitHubLinkPreview(url, { workspaceId }).then(
     (data) => {
-      if (!ticket.isCurrent) return;
+      if (!ticket.isCurrent || !context.isCurrent()) return;
       state.preview = data ? { status: 'ready', data } : { status: 'idle' };
     },
     (error: unknown) => {
-      if (!ticket.isCurrent) return;
+      if (!ticket.isCurrent || !context.isCurrent()) return;
       state.preview = { status: 'error', reason: classifyGitHubLinkPreviewError(error) };
     },
   );
@@ -102,7 +104,11 @@ export function formatUrlForDisplay(url: string): string {
 /**
  * Show the link tooltip near the given anchor element after a delay.
  */
-export function showLinkTooltip(anchor: HTMLAnchorElement, url: string): void {
+export function showLinkTooltip(
+  anchor: HTMLAnchorElement,
+  url: string,
+  workspaceId?: string,
+): void {
   // Clear any pending show
   if (showTimeout) clearTimeout(showTimeout);
 
@@ -120,7 +126,7 @@ export function showLinkTooltip(anchor: HTMLAnchorElement, url: string): void {
     state.x = rect.left + rect.width / 2;
     state.y = rect.top;
     state.anchorBottom = rect.bottom;
-    startPreview(url);
+    startPreview(url, workspaceId);
   }, 300);
 }
 

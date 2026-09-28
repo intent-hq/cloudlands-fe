@@ -16,8 +16,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
+vi.unmock('$lib/electron-bridge');
+
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.request,
+  onBackendReconnected: () => () => {},
+  onBackendNotification: () => () => {},
+}));
 
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { clearInviteLinks, readInviteLink } from '$features/workspace-sharing/invite-link-vault';
@@ -35,6 +41,7 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import {
+  shareIntegrationAuthRequested,
   closeShareDialog,
   getRosterState,
   initialState,
@@ -231,6 +238,39 @@ describe('workspaceShareSaga', () => {
     mocks.request.mockReset();
     consoleSpies.warn.mockClear();
     consoleSpies.error.mockClear();
+  });
+
+  it('reads forge credentials for the dialog origin and drops a late prior-session result', async () => {
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    const { __resetGitHubAuthStatusForTests } =
+      await import('$features/github-auth/renderer/github-auth-status.client');
+    __resetGitHubAuthStatusForTests();
+    let resolveA!: (value: unknown) => void;
+    mocks.request.mockImplementation((method: string, params: { workspaceId?: string }) => {
+      if (method === 'github.authStatus' && params.workspaceId === 'a')
+        return new Promise((resolve) => {
+          resolveA = resolve;
+        });
+      if (method === 'github.authStatus') return Promise.resolve({ isConfigured: false });
+      if (method === 'sourceControl.authStatus') return Promise.resolve({ isConfigured: true });
+      return Promise.resolve({ members: [], invites: [], principals: [] });
+    });
+    const h = harness(opened('a'));
+    h.dispatch(shareIntegrationAuthRequested('a', 'forge-a.example'));
+    await settle();
+    expect(calls('github.authStatus').at(-1)).toEqual(['github.authStatus', { workspaceId: 'a' }]);
+    h.dispatch(openShareDialog({ workspaceId: 'b', workspaceTitle: 'B' }));
+    h.dispatch(shareIntegrationAuthRequested('b', 'forge-b.example'));
+    await settle();
+    expect(calls('sourceControl.authStatus').at(-1)).toEqual([
+      'sourceControl.authStatus',
+      { provider: 'gitlab', host: 'forge-b.example', workspaceId: 'b' },
+    ]);
+    resolveA({ isConfigured: true });
+    await settle();
+    expect(h.state().integrationAuth).toEqual({ github: false, gitlab: true });
+    h.task.cancel();
+    __resetGitHubAuthStatusForTests();
   });
 
   it('reads the roster and open invites for the target when the dialog opens', async () => {

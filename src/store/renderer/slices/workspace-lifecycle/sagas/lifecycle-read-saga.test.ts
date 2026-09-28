@@ -1,3 +1,4 @@
+import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
 import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -128,6 +129,7 @@ const settle = async () => {
 function state(currentTabId: string | null = null, eventsNextToken: string | null = null) {
   return {
     tabState: { currentTabId },
+    workspaceShare: workspaceShareInitialState,
     workspaceTasks: { byWorkspaceId: {} },
     changes: { agentStats: {}, agentLineStatsRequests: {} },
     workspace: { workspaces: createCollection('id', []) },
@@ -1405,6 +1407,23 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(run.actions).toEqual([{ type: 'context/hydrateContextItems', payload: [WS, fresh] }]);
+    await stop(run.task);
+  });
+
+  it('drops a prior-connection PR refresh completion with a reused workspace ID', async () => {
+    let resolveOld!: (value: unknown) => void;
+    mocks.git.prRefresh.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    const run = start();
+    run.channel.put(refreshPRStatusRequested(WS, true, false));
+    await settle();
+    run.channel.put(backendReconnected());
+    resolveOld({ outcome: 'updated', prNumber: 9, pullRequests: [] });
+    await settle();
+    expect(run.actions.filter((action) => action.type === 'prStatus/refreshCompleted')).toEqual([]);
     await stop(run.task);
   });
 
