@@ -4,7 +4,6 @@ import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { invoke } from '$lib/electron-bridge';
-import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
@@ -306,54 +305,23 @@ describe('mounted panel header actions menu', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('opens the neighboring panes from top-level stack actions with shortcut hints', async () => {
+  it('activates the chosen pane and dismisses the selector', async () => {
     const tabs = [tab('note'), tab('browser'), tab('terminal')];
     const onTabClick = vi.fn();
-    const middle = renderHeader('browser', {
+    const view = renderHeader('browser', {
       tabs,
       activeTabId: 'browser-tab',
       onTabClick,
     });
 
-    await fireEvent.click(middle.container.querySelector('[data-pane-stack-selector-trigger]')!);
-    const above = await screen.findByRole('menuitem', { name: 'Open panel above' });
-    const below = screen.getByRole('menuitem', { name: 'Open panel below' });
-    expect(above.textContent).toContain(formatShortcut(SHORTCUTS.PREVIOUS_PANE.key));
-    expect(below.textContent).toContain(formatShortcut(SHORTCUTS.NEXT_PANE.key));
-    expect(above.getAttribute('aria-disabled')).not.toBe('true');
-    expect(below.getAttribute('aria-disabled')).not.toBe('true');
-    expect(
-      above.compareDocumentPosition(screen.getByRole('menuitem', { name: 'note panel' })),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      screen.queryByText('Use Up or Down to move, Enter to select, and Escape to close.'),
-    ).toBeNull();
-    await fireEvent.click(above);
-    expect(onTabClick).toHaveBeenCalledWith('note-tab');
-    middle.unmount();
-
-    const top = renderHeader('note', { tabs, activeTabId: 'note-tab', onTabClick });
-    await fireEvent.click(top.container.querySelector('[data-pane-stack-selector-trigger]')!);
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Open panel above' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Open panel below' }));
-    expect(onTabClick).toHaveBeenLastCalledWith('browser-tab');
-    top.unmount();
-
-    const bottom = renderHeader('terminal', {
-      tabs,
-      activeTabId: 'terminal-tab',
-      onTabClick,
-    });
-    await fireEvent.click(bottom.container.querySelector('[data-pane-stack-selector-trigger]')!);
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Open panel below' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
+    const trigger = view.container.querySelector('[data-pane-stack-selector-trigger]')!;
+    for (const type of ['note', 'terminal', 'browser'] as const) {
+      await fireEvent.click(trigger);
+      await fireEvent.click(await screen.findByRole('menuitem', { name: `${type} panel` }));
+      expect(onTabClick).toHaveBeenLastCalledWith(`${type}-tab`);
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    }
   });
 
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {
@@ -560,18 +528,12 @@ describe('mounted panel header actions menu', () => {
 
   it('runs enabled actions once and closes only the active pane', async () => {
     const onZoomToggle = vi.fn();
-    const onSplitHorizontal = vi.fn();
-    const onMoveLeft = vi.fn();
-    const onMoveRight = vi.fn();
     const onMovePaneLeft = vi.fn();
     const onMovePaneRight = vi.fn();
     const onClosePanel = vi.fn();
     const onTabClose = vi.fn();
     const { container } = renderHeader('browser', {
       onZoomToggle,
-      onSplitHorizontal,
-      onMoveLeft,
-      onMoveRight,
       onMovePaneLeft,
       onMovePaneRight,
       onClosePanel,
@@ -583,20 +545,10 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(await screen.findByRole('menuitem', { name: /Zoom Panel/i }));
     expect(onZoomToggle).toHaveBeenCalledOnce();
 
-    await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab left' }));
-    expect(onMoveLeft).toHaveBeenCalledOnce();
-
-    await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab right' }));
-    expect(onMoveRight).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);
     const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move panel left' });
-    expect(movePaneLeft.textContent).toContain(
-      formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key),
-    );
     await fireEvent.click(movePaneLeft);
     expect(onMovePaneLeft).toHaveBeenCalledOnce();
 
@@ -604,16 +556,7 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move panel right' }));
     expect(onMovePaneRight).toHaveBeenCalledOnce();
 
-    await fireEvent.click(trigger);
-    const createColumn = await screen.findByRole('menuitem', { name: /Create column to right/i });
-    expect(createColumn.textContent).toContain(formatShortcut(SHORTCUTS.CREATE_COLUMN_RIGHT.key));
-    await fireEvent.click(createColumn);
-    expect(onSplitHorizontal).toHaveBeenCalledOnce();
-
-    await fireEvent.click(trigger);
-    expect(screen.queryByRole('menuitem', { name: /Split down/i })).toBeNull();
-    await fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onSplitHorizontal).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(onZoomToggle).toHaveBeenCalledOnce();
     await fireEvent.click(
       container.querySelector('[data-panel-tabless-header] [data-testid="panel-close-button"]')!,
@@ -623,7 +566,7 @@ describe('mounted panel header actions menu', () => {
     expect(onClosePanel).not.toHaveBeenCalled();
   });
 
-  it('shows disabled pane-move commands when no adjacent column exists', async () => {
+  it('disables pane movement when the layout provides no move callback', async () => {
     const { container } = renderHeader('note');
 
     await fireEvent.click(panelTrigger(container));

@@ -71,7 +71,10 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   await expect(trigger).toBeFocused();
 });
 
-test('column creation remains reachable and stops at the column limit', async ({ mount, page }) => {
+test('zoom dismisses the menu and the separate close control stays keyboard accessible', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(SimpleAgentPanelHeaderHost, {
     props: { fullActions: true, stackCount: 2, width: 280 },
     hooksConfig,
@@ -79,17 +82,11 @@ test('column creation remains reachable and stops at the column limit', async ({
   const trigger = component
     .locator('[data-panel-tabless-header]')
     .getByTestId('panel-actions-trigger');
-  for (let count = 2; count <= 4; count += 1) {
-    await trigger.click();
-    await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
-    await expect(component).toHaveAttribute('data-column-count', String(count));
-  }
-  await trigger.click();
-  await expect(page.getByRole('menuitem', { name: 'Add column', exact: true })).toHaveAttribute(
-    'aria-disabled',
-    'true',
-  );
-  await page.keyboard.press('Escape');
+  await trigger.press('Enter');
+  await page.getByRole('menuitem', { name: 'Zoom Panel', exact: false }).press('Enter');
+  await expect(component).toHaveAttribute('data-zoom-count', '1');
+  await expect(page.getByRole('menu')).toBeHidden();
+  await expect(trigger).toBeFocused();
   await component
     .locator('[data-panel-tabless-header]')
     .getByTestId('panel-close-button')

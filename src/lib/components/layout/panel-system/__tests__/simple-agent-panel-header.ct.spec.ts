@@ -89,38 +89,3 @@ for (const width of [190, 560]) {
     await testInfo.attach('header', { body: await header.screenshot(), contentType: 'image/png' });
   });
 }
-
-test('renames from the kebab menu with keyboard cancel and save', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const component = await mount(SimpleAgentPanelHeaderHost, {
-    props: { activeAgent: 'delegated', stackCount: 2, width: 240 },
-    hooksConfig,
-  });
-  const header = component.locator('[data-panel-tabless-header]');
-  const menuTrigger = header.getByTestId('panel-actions-trigger');
-  for (const save of [false, true]) {
-    await menuTrigger.press('Enter');
-    await page.getByRole('menuitem', { name: /Rename/i }).focus();
-    await page.keyboard.press('Enter');
-    const input = header.getByRole('textbox');
-    await expect(input).toBeFocused();
-    await input.fill('Renamed delegated agent');
-    await component.update({ props: { width: 190 } });
-    await expect(input).toBeFocused();
-    await input.press(save ? 'Enter' : 'Escape');
-    await expect(component).toHaveAttribute('data-rename-count', save ? '1' : '0');
-  }
-  await expect(component).toHaveAttribute(
-    'data-last-rename',
-    'delegated-tab:Renamed delegated agent',
-  );
-  await expect(header.getByTestId('pane-stack-selector-trigger')).toContainText(
-    'Renamed delegated agent',
-  );
-  await testInfo.attach('renamed-header', {
-    body: await header.screenshot(),
-    contentType: 'image/png',
-  });
-});

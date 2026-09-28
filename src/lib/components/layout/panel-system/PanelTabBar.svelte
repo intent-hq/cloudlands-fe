@@ -10,17 +10,10 @@
 
   import type { PanelTab } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
-  import DotsThreeVerticalIcon from 'phosphor-svelte/lib/DotsThreeVerticalIcon';
-  import CaretUpIcon from 'phosphor-svelte/lib/CaretUpIcon';
-  import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
-  import XIcon from 'phosphor-svelte/lib/XIcon';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faXmark,
     faFile,
-    faRobot,
-    faTerminal,
-    faGlobe,
-    faPlus,
     faCrosshairs,
     faCopy,
     faFolderOpen,
@@ -34,7 +27,6 @@
     faArrowDown,
     faCheck,
     faComment,
-    faPen,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { notify } from '$lib/components/patterns/notify';
@@ -54,12 +46,7 @@
   import { Button } from '$lib/components/ui/button';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import {
-    setPanelColumnCount,
-    toggleExpandPanel,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { isPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { toggleExpandPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     PANE_DRAG_MIME,
     clearDraggedPaneState,
@@ -71,14 +58,8 @@
   import { isSpecNote } from '$shared/constants/notes';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import {
-    filterPickableSpecialists,
-    selectSpecialists,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
   import BrowserFavicon from './BrowserFavicon.svelte';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsWorkspaceHostLocal,
     selectWorkspaceById,
@@ -96,7 +77,7 @@
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import type { PanelHeaderActions } from './panel-header-context.svelte';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
-  import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
+  import { getResourceIconKind } from '$lib/components/shared/resource-icon';
   import { getPanelExternalOpenTarget } from './panel-external-open-target';
 
   // Detect platform for file manager labels
@@ -118,15 +99,11 @@
   const createColumnRightShortcut$ = effectiveShortcutReadable('panel.create-column-right');
   const movePaneLeftShortcut$ = effectiveShortcutReadable('panel.move-pane-previous-column');
   const movePaneRightShortcut$ = effectiveShortcutReadable('panel.move-pane-next-column');
-  const previousPaneShortcut$ = effectiveShortcutReadable('panel.previous-pane');
-  const nextPaneShortcut$ = effectiveShortcutReadable('panel.next-pane');
   const copyBrowserUrlShortcutHint = $derived(formatShortcut($copyBrowserUrlShortcut$));
   const closePaneShortcutHint = $derived(formatShortcut($closePaneShortcut$));
   const createColumnRightShortcutHint = $derived(formatShortcut($createColumnRightShortcut$));
   const movePaneLeftShortcutHint = $derived(formatShortcut($movePaneLeftShortcut$));
   const movePaneRightShortcutHint = $derived(formatShortcut($movePaneRightShortcut$));
-  const previousPaneShortcutHint = $derived(formatShortcut($previousPaneShortcut$));
-  const nextPaneShortcutHint = $derived(formatShortcut($nextPaneShortcut$));
   const PANEL_HEADER_INTERACTIVE_SELECTOR =
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
 
@@ -184,16 +161,10 @@
     panelId,
     workspaceId,
     layoutId,
-    availableCanvasWidth,
     isFocused = false,
     isRightmostPanel: _isRightmostPanel = false,
     contentActions = null,
     showTabStrip = false,
-    onCreateAgent,
-    onCreateAgentWithSpecialist,
-    onCreateNote,
-    onCreateTerminal,
-    onOpenBrowser,
     onTabClick,
     onTabClose,
     onTabReorder,
@@ -201,8 +172,6 @@
     onPaneDragFinish,
     onMovePaneLeft,
     onMovePaneRight,
-    onMoveLeft,
-    onMoveRight,
     onCloseOtherTabs,
     onCloseTabsToRight,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -243,11 +212,8 @@
   // re-evaluates when the prop changes while the component stays mounted.
   // svelte-ignore state_referenced_locally
   const workspaceIdStore = writable(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const panelLayoutIdStore = writable(layoutId ?? workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
-    panelLayoutIdStore.set(layoutId ?? workspaceId);
   });
 
   // Reveal-in-file-manager runs against workspace file paths on this
@@ -260,26 +226,6 @@
   // state, specialist, and delegation info all derive from this store so the
   // UI updates when agents rename or their session metadata changes.
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
-  const panelColumnCount$ = selectPanelColumnCount(panelLayoutIdStore);
-
-  // Reactive store subscription for specialist names - ensures re-render when specialists change
-  const specialists$ = selectSpecialists();
-  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
-  const visibleSpecialists = $derived.by(() =>
-    filterPickableSpecialists($specialists$, $isGitHubAuth$),
-  );
-  $effect(() => {
-    void $specialists$;
-  });
-
-  // Check if any creation callbacks are available
-  const hasCreateActions = $derived(
-    !!onCreateAgent ||
-      !!onCreateAgentWithSpecialist ||
-      !!onCreateNote ||
-      !!onCreateTerminal ||
-      !!onOpenBrowser,
-  );
 
   /**
    * Get the display title for a tab, resolving note/agent titles from the store
@@ -384,20 +330,6 @@
       move: () => onMovePaneLeft?.(),
     },
   ]);
-  const previousPane = $derived(activePaneIndex > 0 ? tabs[activePaneIndex - 1] : undefined);
-  const nextPane = $derived(
-    activePaneIndex >= 0 && activePaneIndex < tabs.length - 1
-      ? tabs[activePaneIndex + 1]
-      : undefined,
-  );
-
-  function handleAddPanelColumn() {
-    const nextCount = $panelColumnCount$ + 1;
-    if (!isPanelColumnCount(nextCount)) return;
-    appStore.dispatch(
-      setPanelColumnCount(layoutId ?? workspaceId, nextCount, undefined, availableCanvasWidth),
-    );
-  }
 
   function activatePane(tabId: string) {
     handleTabClick(tabId);
@@ -1318,8 +1250,8 @@
     bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
-    contentClass="panel-header-menu panel-actions-menu-content"
-    subContentClass="panel-header-menu panel-header-submenu"
+    contentClass="panel-header-menu panel-actions-menu-content bg-background"
+    subContentClass="panel-header-menu panel-header-submenu bg-background"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
@@ -1337,7 +1269,7 @@
         class="panel-header-action-button"
         data-testid="panel-actions-trigger"
       >
-        <DotsThreeVerticalIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
+        <KebabIcon class="size-4!" />
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
@@ -1347,11 +1279,12 @@
         </Menu.Group>
         <Menu.Separator />
       {/if}
-      {#if contentActions?.primary || contentActions?.actions}
+      {#if contentActions?.primary || contentActions?.actions || contentActions?.destructive}
         <Menu.Group data-panel-actions-section="actions">
           <Menu.Label>{m.layout_panelTabBar_actionsSection_label()}</Menu.Label>
           {@render contentActions.primary?.()}
           {@render contentActions.actions?.()}
+          {@render contentActions.destructive?.()}
         </Menu.Group>
         <Menu.Separator />
       {/if}
@@ -1397,7 +1330,6 @@
             $isWorkspaceHostLocal$,
           )}
           <div data-panel-actions-section="open-in">
-            <Menu.Separator />
             {#if externalTarget.kind === 'browser'}
               <Menu.CommandItem
                 icon={faArrowUpRightFromSquare}
@@ -1420,6 +1352,7 @@
                   workspaceFolderPath={externalTarget.workspaceFolderPath ?? ''}
                   showDeleteOption={false}
                   showArchiveOption={false}
+                  showPathCopy={false}
                   showFileNameCopy={false}
                   layout="submenu"
                   iconWeight="regular"
@@ -1436,152 +1369,6 @@
             {/if}
           </div>
         {/if}
-      {/if}
-      {#if activeTab && isTabRenameable(activeTab) && onTabRename}
-        <Menu.CommandItem
-          icon={faPen}
-          label={m.ui_editableName_rename_tooltip()}
-          onclick={() => {
-            close();
-            if (activeTab) void startInlineRename(activeTab);
-          }}
-        />
-      {/if}
-      {@render contentActions?.additional?.()}
-      <Menu.Separator />
-      <Menu.Group data-panel-actions-section="tab">
-        <Menu.Label>{m.layout_panelTabBar_tabSection_label()}</Menu.Label>
-        <Menu.CommandItem
-          icon={faArrowLeft}
-          label={m.layout_panelTabBar_moveTabLeft_label()}
-          iconWeight="regular"
-          disabled={!onMoveLeft}
-          onclick={() => {
-            onMoveLeft?.();
-            close();
-          }}
-        />
-        <Menu.CommandItem
-          icon={faArrowRight}
-          label={m.layout_panelTabBar_moveTabRight_label()}
-          iconWeight="regular"
-          disabled={!onMoveRight}
-          onclick={() => {
-            onMoveRight?.();
-            close();
-          }}
-        />
-      </Menu.Group>
-
-      <Menu.Separator />
-
-      <Menu.Group data-panel-actions-section="layout">
-        <Menu.Label>{m.layout_panelTabBar_panelSection_label()}</Menu.Label>
-        <Menu.CommandItem
-          icon={faPlus}
-          label={m.workspace_sidebarHeader_panelColumns_add_ariaLabel()}
-          disabled={$panelColumnCount$ === 4}
-          onclick={() => {
-            handleAddPanelColumn();
-            close();
-          }}
-          data-add-panel-column
-        />
-        <Menu.CommandItem
-          icon={faTableColumns}
-          label={m.layout_panelTabBar_splitRight_label()}
-          iconWeight="regular"
-          shortcut={createColumnRightShortcutHint}
-          disabled={!onSplitHorizontal}
-          onclick={() => {
-            onSplitHorizontal?.();
-            close();
-          }}
-        />
-      </Menu.Group>
-
-      {#if hasCreateActions}
-        <Menu.Separator />
-        <Menu.Sub>
-          <Menu.SubTrigger icon={faPlus}
-            >{m.layout_panelTabBar_createNew_ariaLabel()}</Menu.SubTrigger
-          >
-          <Menu.SubContent>
-            {#if onCreateAgentWithSpecialist}
-              <Menu.CommandItem
-                icon={faRobot}
-                label={m.layout_panelTabBar_blankAgent_label()}
-                onclick={() => {
-                  onCreateAgentWithSpecialist?.(null);
-                  close();
-                }}
-              />
-              {#each visibleSpecialists as specialist (specialist.id)}
-                <Menu.CommandItem
-                  icon={faRobot}
-                  label={specialist.name}
-                  onclick={() => {
-                    onCreateAgentWithSpecialist?.(specialist.id);
-                    close();
-                  }}
-                />
-              {/each}
-              <Menu.CommandItem
-                icon={faPlus}
-                label={m.layout_panelTabBar_manageSpecialists_label()}
-                onclick={() => {
-                  void navigateToSettings({ tab: 'agents' });
-                  close();
-                }}
-              />
-            {:else if onCreateAgent}
-              <Menu.CommandItem
-                icon={faRobot}
-                label={m.menu_new_agent()}
-                onclick={() => {
-                  onCreateAgent?.();
-                  close();
-                }}
-              />
-            {/if}
-            {#if onCreateNote}
-              <Menu.CommandItem
-                icon={RESOURCE_ICON_BY_KIND.note}
-                label={m.menu_new_note()}
-                onclick={() => {
-                  onCreateNote?.();
-                  close();
-                }}
-              />
-            {/if}
-            {#if onCreateTerminal}
-              <Menu.CommandItem
-                icon={faTerminal}
-                label={m.menu_new_terminal()}
-                onclick={() => {
-                  onCreateTerminal?.();
-                  close();
-                }}
-              />
-            {/if}
-            {#if onOpenBrowser}
-              <Menu.CommandItem
-                icon={faGlobe}
-                label={m.menu_new_browser()}
-                onclick={() => {
-                  onOpenBrowser?.();
-                  close();
-                }}
-              />
-            {/if}
-          </Menu.SubContent>
-        </Menu.Sub>
-      {/if}
-      {#if contentActions?.destructive}
-        <Menu.Separator />
-        <Menu.Group data-panel-actions-section="destructive">
-          {@render contentActions.destructive()}
-        </Menu.Group>
       {/if}
     {/snippet}
   </DropdownMenu>
@@ -1613,7 +1400,13 @@
         data-testid="panel-close-button"
         data-pane-close={tab?.id}
       >
-        <XIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
+        <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
+          <path
+            d="M3.5 3.5 6.5 6.5C7.328 7.328 7.328 8.672 6.5 9.5L3.5 12.5M12.5 12.5 9.5 9.5C8.672 8.672 8.672 7.328 9.5 6.5L12.5 3.5"
+            stroke="currentColor"
+            stroke-width="1.33"
+          />
+        </svg>
       </Button>
     </Tooltip>
   {/if}
@@ -1671,7 +1464,7 @@
               variant="outline"
               size="lg"
               active={paneStackMenuOpen}
-              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-sidebar"
+              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-background"
               wrapContent={false}
               aria-label={selectorLabel}
               data-testid="pane-stack-selector-trigger"
@@ -1701,13 +1494,19 @@
                   {getTabTitle(activeTab)}
                 </span>
               {/if}
-              <span
-                class="flex shrink-0 flex-col items-center text-muted-foreground"
+              <svg
+                viewBox="0 0 8 14"
+                fill="none"
+                class="h-3.5! w-2! shrink-0 text-muted-foreground"
                 aria-hidden="true"
               >
-                <CaretUpIcon size={10} weight="regular" class="size-2.5!" />
-                <CaretDownIcon size={10} weight="regular" class="size-2.5!" />
-              </span>
+                <path
+                  d="M6.532 4 4.332 1.067C3.932.533 3.132.533 2.732 1.067L.532 4M.532 10 2.732 12.933C3.132 13.467 3.932 13.467 4.332 12.933L6.532 10"
+                  stroke="currentColor"
+                  stroke-width="1.33"
+                  stroke-linejoin="round"
+                />
+              </svg>
               {#if inactiveAttentionCount > 0 || (activeTab && attentionPaneIds.has(activeTab.id))}
                 <span
                   class="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary"
@@ -1722,7 +1521,7 @@
         align="start"
         side="bottom"
         collisionPadding={8}
-        class="panel-header-menu panel-selector-menu"
+        class="panel-header-menu panel-selector-menu bg-background"
         maxHeight="var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))"
         aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
         data-pane-stack-menu
@@ -1768,23 +1567,6 @@
             </Menu.Item>
           {/each}
         </div>
-        <Menu.Separator />
-        <Menu.CommandItem
-          icon={faArrowUp}
-          label={m.layout_panelTabBar_openPaneAbove_label()}
-          shortcut={previousPaneShortcutHint}
-          disabled={!previousPane}
-          onclick={() => previousPane && activatePane(previousPane.id)}
-          data-pane-stack-open-above
-        />
-        <Menu.CommandItem
-          icon={faArrowDown}
-          label={m.layout_panelTabBar_openPaneBelow_label()}
-          shortcut={nextPaneShortcutHint}
-          disabled={!nextPane}
-          onclick={() => nextPane && activatePane(nextPane.id)}
-          data-pane-stack-open-below
-        />
       </Menu.Content>
     </Menu.Root>
   </span>
@@ -1799,7 +1581,7 @@
   <div
     bind:this={tabBarRef}
     class={cn(
-      'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)] bg-sidebar',
+      'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)] bg-background',
       !showTabStrip && 'hidden',
     )}
     data-panel-tab-bar
@@ -1977,7 +1759,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
-        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-sidebar pr-2.5 active:cursor-grabbing',
+        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-background pr-2.5 active:cursor-grabbing',
         activeTab.type === 'agent' && 'panel-agent-header',
         isFocused && 'focused',
       )}
@@ -2020,7 +1802,7 @@
   {:else}
     <div
       class={cn(
-        'panel-header group/header relative flex items-center bg-sidebar pr-2.5',
+        'panel-header group/header relative flex items-center bg-background pr-2.5',
         isFocused && 'focused',
       )}
       style:height="var(--panel-header-height)"
@@ -2050,7 +1832,6 @@
 
 <style>
   :global(.panel-header-menu) {
-    background: hsl(var(--surface-3));
     border: 1px solid hsl(var(--border));
     border-radius: 9px;
     padding: 6px;
@@ -2192,28 +1973,35 @@
     position: relative;
     width: 120px;
     height: 120px;
-    margin: 6px auto 10px;
-    clip-path: polygon(
-      6px 0,
-      calc(100% - 6px) 0,
-      100% 6px,
-      100% calc(100% - 6px),
-      calc(100% - 6px) 100%,
-      6px 100%,
-      0 calc(100% - 6px),
-      0 6px
-    );
+    margin: 6px auto 12px;
   }
   :global(.panel-actions-menu-content .panel-move-direction) {
     position: absolute;
     inset: 0;
+    width: 120px;
+    height: 120px;
     min-height: 0;
     padding: 0;
     border-radius: 0;
     background: hsl(var(--selected));
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    clip-path: polygon(
+      15% 0,
+      85% 0,
+      88.333% 3.333%,
+      88.333% 10%,
+      53.333% 45%,
+      46.667% 45%,
+      11.667% 10%,
+      11.667% 3.333%
+    );
+  }
+  :global(.panel-move-direction > [data-slot='menu-item-leading']) {
+    display: none;
+  }
+  :global(.panel-move-direction > svg) {
+    position: absolute;
+    left: 52px;
+    top: 15px;
   }
   :global(.panel-actions-menu-content .panel-move-direction[data-disabled]) {
     opacity: 1;
@@ -2225,21 +2013,23 @@
   :global(.panel-actions-menu-content .panel-move-direction[data-highlighted]) {
     background: hsl(var(--accent));
   }
-  :global(.panel-move-up) {
-    clip-path: polygon(2px 0, calc(100% - 2px) 0, 54% 44%, 46% 44%);
-    padding-bottom: 80px !important;
-  }
   :global(.panel-move-right) {
-    clip-path: polygon(100% 2px, 100% calc(100% - 2px), 56% 54%, 56% 46%);
-    padding-left: 80px !important;
+    transform: rotate(90deg);
+  }
+  :global(.panel-move-right > svg) {
+    transform: rotate(-90deg);
   }
   :global(.panel-move-down) {
-    clip-path: polygon(2px 100%, 46% 56%, 54% 56%, calc(100% - 2px) 100%);
-    padding-top: 80px !important;
+    transform: rotate(180deg);
+  }
+  :global(.panel-move-down > svg) {
+    transform: rotate(-180deg);
   }
   :global(.panel-move-left) {
-    clip-path: polygon(0 2px, 44% 46%, 44% 54%, 0 calc(100% - 2px));
-    padding-right: 80px !important;
+    transform: rotate(270deg);
+  }
+  :global(.panel-move-left > svg) {
+    transform: rotate(-270deg);
   }
   @container (max-width: 420px) {
     .panel-header {

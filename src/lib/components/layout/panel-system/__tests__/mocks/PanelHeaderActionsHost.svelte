@@ -162,8 +162,8 @@
     }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}
-    onMoveLeft={() => (moveLeftCount += 1)}
-    onMoveRight={() => (moveRightCount += 1)}
+    onMovePaneLeft={() => (moveLeftCount += 1)}
+    onMovePaneRight={() => (moveRightCount += 1)}
     onTabClick={(tabId) => (activeTabId = tabId)}
     onTabClose={() => (closeCount += 1)}
     onClosePanel={() => (closeCount += 1)}
