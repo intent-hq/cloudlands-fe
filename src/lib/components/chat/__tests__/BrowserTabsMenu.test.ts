@@ -83,7 +83,7 @@ const liveClient = (clientId: string, hostname: string): LiveClient => ({
 /** This renderer is `cli-me`; `live` lists the connected clients. */
 function seedClients(live: LiveClient[]) {
   let state = browserClientsReducer(browserClientsInitialState, ownClientIdReceived('cli-me'));
-  state = browserClientsReducer(state, liveClientsReceived(live));
+  state = browserClientsReducer(state, liveClientsReceived(live, 'ws-1'));
   mockState.browserClients = state;
 }
 

@@ -48,6 +48,7 @@ type DaemonChannelMessage =
   { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
 
 interface SubscriptionLease {
+  workspaceId?: string;
   subscriptionId?: string;
   cancelled: boolean;
 }
@@ -79,6 +80,7 @@ async function subscribeLease(
   lease: SubscriptionLease,
   params: Record<string, unknown>,
 ): Promise<void> {
+  lease.workspaceId = typeof params.workspaceId === 'string' ? params.workspaceId : undefined;
   try {
     const result = await backendSubscribe<{ subscriptionId?: string }>(params);
     const subscriptionId = result?.subscriptionId;
@@ -87,7 +89,7 @@ async function subscribeLease(
       return;
     }
     if (lease.cancelled) {
-      await backendUnsubscribe(subscriptionId);
+      await backendUnsubscribe(subscriptionId, lease.workspaceId);
       return;
     }
     lease.subscriptionId = subscriptionId;
@@ -123,7 +125,7 @@ async function unsubscribeLease(lease: SubscriptionLease): Promise<void> {
   lease.subscriptionId = undefined;
   if (!subscriptionId) return;
   try {
-    await backendUnsubscribe(subscriptionId);
+    await backendUnsubscribe(subscriptionId, lease.workspaceId);
   } catch (error) {
     logger.warn('events.unsubscribe failed during saga cleanup', error);
   }

@@ -179,7 +179,7 @@ function resolveIdentity(state: SessionState): void {
 
 /** Drop the live lease (if any) without touching the roster. */
 function releaseLease(state: SessionState): void {
-  if (state.subscriptionId) unsubscribeNotePresence(state.subscriptionId);
+  if (state.subscriptionId) unsubscribeNotePresence(state.subscriptionId, state.workspaceId);
   state.subscriptionId = undefined;
   state.nextSeq = undefined;
   clearHeartbeat(state);
@@ -197,7 +197,7 @@ function register(state: SessionState): void {
   subscribeNotePresence(state.workspaceId, state.noteId)
     .then((id) => {
       if (generation !== state.generation || state.disposed) {
-        if (id) unsubscribeNotePresence(id);
+        if (id) unsubscribeNotePresence(id, state.workspaceId);
         return;
       }
       state.registering = false;

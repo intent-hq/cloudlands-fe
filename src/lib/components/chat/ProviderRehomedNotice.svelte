@@ -14,14 +14,19 @@
   import { formatProviderRehomedLabel, type ProviderRehomedNoticeInfo } from './rehome-notice';
 
   interface Props {
+    workspaceId?: string;
     notice: ProviderRehomedNoticeInfo;
     /** Fallback text (the daemon's message content) when the metadata fields are absent. */
     fallbackText?: string;
   }
 
-  let { notice, fallbackText = m.chat_providerRehomedNotice_fallback_label() }: Props = $props();
+  let {
+    notice,
+    workspaceId,
+    fallbackText = m.chat_providerRehomedNotice_fallback_label(),
+  }: Props = $props();
 
-  const label = $derived(formatProviderRehomedLabel(notice, fallbackText));
+  const label = $derived(formatProviderRehomedLabel(notice, fallbackText, workspaceId));
 </script>
 
 <div class="provider-rehomed-notice my-4 flex w-full min-w-0 items-center gap-3" role="status">

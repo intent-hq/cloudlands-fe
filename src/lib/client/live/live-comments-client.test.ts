@@ -674,7 +674,9 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     await flush();
 
     unsubscribe();
-    expect(requestsFor('comment.unsubscribe')).toEqual([{ subscriptionId: 'chan-1' }]);
+    expect(requestsFor('comment.unsubscribe')).toEqual([
+      { subscriptionId: 'chan-1', workspaceId: 'ws-A' },
+    ]);
   });
 
   it('sends comment.unsubscribe on dispose for the resolver-backed registration too', async () => {
@@ -684,7 +686,9 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     await flush();
 
     unsubscribe();
-    expect(requestsFor('comment.unsubscribe')).toEqual([{ subscriptionId: 'chan-1' }]);
+    expect(requestsFor('comment.unsubscribe')).toEqual([
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+    ]);
   });
 
   it('re-registers the channel with the same params after reconnect', async () => {

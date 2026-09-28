@@ -37,8 +37,11 @@ export async function backendSubscribe<T = { subscriptionId?: string }>(
 }
 
 /** Unsubscribe from daemon events (`events.unsubscribe`). Best-effort. */
-export async function backendUnsubscribe(subscriptionId: string): Promise<void> {
-  return resolveBackendTransport().unsubscribe(subscriptionId);
+export async function backendUnsubscribe(
+  subscriptionId: string,
+  workspaceId?: string,
+): Promise<void> {
+  return resolveBackendTransport().unsubscribe(subscriptionId, workspaceId);
 }
 
 /**

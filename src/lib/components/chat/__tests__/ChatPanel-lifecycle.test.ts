@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   transientUiReducer,
   initialState as initialTransientUi,
@@ -55,6 +55,7 @@ const mocks = vi.hoisted(() => {
   });
   const selector = <T>(value: T) => Object.assign(() => readable(value), { select: () => value });
   return {
+    specialistChange: null as null | ((id: string | null) => void),
     dispatch: vi.fn(),
     draftGet: vi.fn(),
     draftSet: vi.fn(),
@@ -372,6 +373,17 @@ vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
 vi.mock('$lib/utils/open-message', () => ({
   seekConversationToMessage: mocks.seekConversationToMessage,
 }));
+// Capture the callback wired by the mounted panel while retaining the real picker.
+vi.mock('../RegularAgentWelcome.svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../RegularAgentWelcome.svelte')>();
+  return {
+    ...actual,
+    default: (...args: Parameters<typeof actual.default>) => {
+      mocks.specialistChange = args[1].onSpecialistChange ?? null;
+      return actual.default(...args);
+    },
+  };
+});
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
@@ -421,12 +433,14 @@ import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
 } from '$features/agent/utils/chat-interest-leases';
+import type { StoreState } from '$store/renderer/types';
 import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
 import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
 import { store as appStore } from '$store/renderer/store';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
+  workspaceCatalogReceived,
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
@@ -647,8 +661,12 @@ async function settleSearchHighlight() {
   await vi.advanceTimersByTimeAsync(150);
   await tick();
   await tick();
-  while (frames.length > 0) flushFrame();
-  await Promise.resolve();
+  // Bounded row admission may await several frames; drain microtasks between
+  // them just as the browser does, without changing the one-highlight assertion.
+  for (let frame = 0; frame < 45; frame++) {
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 }
 
 beforeEach(() => {
@@ -733,6 +751,7 @@ beforeEach(() => {
   mocks.chatError.set(null);
   mocks.chatQuotaExceeded.set(null);
   mocks.storeState = {};
+  mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.transcriptHydration.set('settled');
@@ -1818,8 +1837,23 @@ describe('ChatPanel mounted lifecycle', () => {
     ) {
       mocks.storeState = {
         providerCatalog: providerCatalogReducer(
-          providerCatalogInitialState,
-          providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+          providerCatalogReducer(
+            providerCatalogInitialState,
+            providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+          ),
+          workspaceCatalogReceived(
+            'workspace-a',
+            {
+              catalog: MOCK_PROVIDER_CATALOG,
+              settings: [
+                { path: 'model.defaultProvider', value: defaultProviderId },
+                { path: 'providers.enabled', value: enabledProviders },
+              ] as never,
+              readiness: providerStatusMap,
+              specialists: [],
+            },
+            0,
+          ),
         ),
         model: { ...modelInitialState, defaultProviderId },
         providerSettings: { enabledProviders, nonDisableableProviderIds: [] },
@@ -1848,6 +1882,26 @@ describe('ChatPanel mounted lifecycle', () => {
           enabledProviders: { ...state.providerSettings.enabledProviders, [providerId]: enabled },
         },
       };
+      const catalogState = (mocks.storeState as StoreState).providerCatalog;
+      const snapshot = catalogState.byWorkspaceId!['workspace-a'];
+      (mocks.storeState as StoreState).providerCatalog = providerCatalogReducer(
+        catalogState,
+        workspaceCatalogReceived(
+          'workspace-a',
+          {
+            ...snapshot,
+            settings: snapshot.settings.map((setting) =>
+              setting.path === 'providers.enabled'
+                ? {
+                    ...setting,
+                    value: { ...(setting.value as Record<string, boolean>), [providerId]: enabled },
+                  }
+                : setting,
+            ),
+          },
+          catalogState.workspaceEpoch ?? 0,
+        ),
+      );
       (appStore as unknown as { emitState: () => void }).emitState();
       await tick();
       await tick();
@@ -3246,6 +3300,236 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(target.classList.contains('highlight-flash')).toBe(false);
   });
 
+  it('supersedes a pending same-agent deep link with the newer target', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      searchableAssistant('old-target', 'old needle'),
+      searchableAssistant('new-target', 'new needle'),
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const targets = ['old-target', 'new-target'].map((id) =>
+      transcript.querySelector<HTMLElement>(`[data-message-id="${id}"]`)!,
+    );
+    expect(targets.every(Boolean)).toBe(true);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'old-target',
+          query: 'old',
+          requestId: 'old-request',
+        },
+      }),
+    );
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: { agentId: 'agent-a', messageId: 'new-target', requestId: 'new-request' },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 45; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(targets[1].classList.contains('message-highlight-flash')).toBe(true);
+    expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
+  });
+
+  it('closing empty search leaves an unrelated return-to-bottom animation active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    mocks.animateScrollTo.mockClear();
+    view.component.scrollToBottom();
+    const [getContainer, , , onComplete] = mocks.animateScrollTo.mock.calls[0];
+    const container = getContainer();
+    expect(container).not.toBeNull();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    await fireEvent.keyDown(search, { key: 'Escape' });
+    await tick();
+    expect(getContainer()).toBe(container);
+    onComplete(container);
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(container);
+  });
+
+  it.each(['turn', 'query', 'close'] as const)(
+    'a completed search scroll yields to %s cancellation',
+    async (cancel) => {
+      installSearchHighlightSpy();
+      vi.stubGlobal('Highlight', class {});
+      const rangeSpy = vi.spyOn(document, 'createRange').mockImplementation(() =>
+        Object.assign(new Range(), {
+          getBoundingClientRect: () => new DOMRect(0, 100, 20, 20),
+        }),
+      );
+      onTestFinished(() => rangeSpy.mockRestore());
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+      render(ChatPanel, {
+        props: {
+          workspace: workspace('workspace-a'),
+          agentId: 'agent-a',
+          isActive: true,
+          isPanelFocused: true,
+        },
+      });
+      await tick();
+      const container = screen.getByTestId('chat-transcript-scroll-viewport');
+      const target = container.querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+      const body = document.createElement('p');
+      body.dataset.chatSearchBlockPath = 'b:0';
+      body.textContent = 'needle';
+      target.append(body);
+      target.dataset.turnNumber = '7';
+      mocks.animateScrollTo.mockClear();
+      const search = await openChatSearch();
+      await fireEvent.input(search, { target: { value: 'needle' } });
+      await settleSearchHighlight();
+      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
+      const [getContainer] = mocks.animateScrollTo.mock.calls[0];
+      expect(getContainer()).toBe(container);
+      if (cancel === 'turn')
+        window.dispatchEvent(
+          new CustomEvent('agent:scroll-to-turn', {
+            detail: { agentId: 'agent-a', turnNumber: 7 },
+          }),
+        );
+      else if (cancel === 'query') await fireEvent.input(search, { target: { value: 'changed' } });
+      else await fireEvent.keyDown(search, { key: 'Escape' });
+      expect(getContainer()).toBeNull();
+    },
+  );
+
+  it('search navigation cancels a pending return-to-bottom animation and completion', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    mocks.animateScrollTo.mockClear();
+    view.component.scrollToBottom();
+    const [getContainer, , , onComplete] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).not.toBeNull();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    expect(getContainer()).toBeNull();
+    onComplete(screen.getByTestId('chat-transcript-scroll-viewport'));
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+  });
+
+  it('explicit turn navigation cancels a pending search highlight', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+    target.dataset.turnNumber = '7';
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    for (let frame = 0; frame < 45; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(highlightPasses()).toBe(0);
+  });
+
+  it('does not revive a deep-link retry superseded by explicit turn navigation', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+    target.dataset.turnNumber = '7';
+    const detail = { agentId: 'agent-a', messageId: 'message-a', requestId: 'old-request' };
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+  });
+
+  it('deduplicates retry-ladder deep links before their first frame', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const add = vi.spyOn(target.classList, 'add');
+    for (let retry = 0; retry < 2; retry++)
+      window.dispatchEvent(
+        new CustomEvent('chat:open-message', {
+          detail: { agentId: 'agent-a', messageId: 'message-a', requestId: 'same-request' },
+        }),
+      );
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(add.mock.calls.filter(([name]) => name === 'message-highlight-flash')).toHaveLength(1);
+  });
+
   it('cancels active highlight timers and open-message frames on unmount', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
@@ -3569,7 +3853,11 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
     await tick();
 
-    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith('agent-a', 'proposal-message-far');
+    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith(
+      'agent-a',
+      'proposal-message-far',
+      'workspace-a',
+    );
     expect(view.container.querySelector('[data-message-id="proposal-message-far"]')).not.toBeNull();
   });
 
@@ -3737,7 +4025,7 @@ describe('ChatPanel mounted lifecycle', () => {
 
     view.component.refreshUserMessageIndex();
     await tick();
-    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a');
+    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a', undefined, 'workspace-a');
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ isLoadingUserMessageIndex: true }),
     );
@@ -4788,3 +5076,160 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
   });
 });
+
+describe.each(['workspace-a', 'workspace-b'])(
+  'ChatPanel specialist picker in %s',
+  (workspaceId) => {
+    it.each([
+      {
+        name: 'resolved-only model',
+        selection: 'shared',
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'explicit model before resolved preview',
+        selection: 'shared',
+        resolved: true,
+        explicit: true,
+        empty: false,
+      },
+      {
+        name: 'absent model retains session',
+        selection: 'shared',
+        resolved: false,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'empty model fields retain session',
+        selection: 'shared',
+        resolved: false,
+        explicit: false,
+        empty: true,
+      },
+      {
+        name: 'unknown specialist retains session',
+        selection: 'unknown',
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'blank selection retains session',
+        selection: null,
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+    ])('$name preserves local fields and persisted workspace', async (c) => {
+      const snapshots = Object.fromEntries(
+        ['workspace-a', 'workspace-b'].map((id) => [
+          id,
+          {
+            catalog: MOCK_PROVIDER_CATALOG,
+            settings: [],
+            readiness: {},
+            specialists: [
+              {
+                id: 'shared',
+                name: `Specialist ${id}`,
+                description: '',
+                source: 'user',
+                behaviorPrompt: `Prompt ${id}`,
+                codingAgent: 'codex',
+                resolvedProvider: 'codex',
+                ...(c.resolved ? { resolvedModel: `resolved-${id}` } : {}),
+                ...(c.explicit ? { model: `explicit-${id}` } : {}),
+                ...(c.empty ? { model: '', resolvedModel: '' } : {}),
+              },
+            ],
+          },
+        ]),
+      );
+      mocks.storeState = {
+        providerCatalog: { ...providerCatalogInitialState, byWorkspaceId: snapshots },
+        specialists: {
+          bundledSpecialists: [
+            {
+              id: 'shared',
+              name: 'Global specialist',
+              description: '',
+              defaultBehaviorPrompt: 'Global prompt',
+              defaultModel: 'global-model',
+              resolvedModel: 'global-resolved-model',
+            },
+          ],
+          userOverrides: {},
+        },
+      };
+      const metadata = {
+        unrelated: 'keep',
+        specialist: 'previous',
+        behaviorPrompt: 'Previous prompt',
+      };
+      mocks.agentSession.set({
+        id: 'agent-a',
+        workspaceId,
+        model: 'session-model',
+        codingAgent: 'codex',
+        metadata,
+        messages: [],
+        status: 'idle',
+        name: 'Agent',
+      });
+      mocks.draftGet.mockResolvedValue(null);
+      render(ChatPanel, { props: { workspace: workspace(workspaceId), agentId: 'agent-a' } });
+      await tick();
+      await tick();
+      expect(screen.getByTestId('specialist-picker-trigger')).toBeTruthy();
+      expect(mocks.specialistChange).toBeTypeOf('function');
+      mocks.dispatch.mockClear();
+      mocks.dispatch.mockResolvedValue(undefined);
+      mocks.specialistChange!(c.selection);
+      await tick();
+      const selected = c.selection === 'shared';
+      const model =
+        selected && c.explicit
+          ? `explicit-${workspaceId}`
+          : selected && c.resolved
+            ? `resolved-${workspaceId}`
+            : 'session-model';
+      const local = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'agentSessions/updateSession');
+      const save = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'workspaceAgents/saveAgentSessionRequested');
+      expect(local.payload).toEqual([
+        'agent-a',
+        {
+          model,
+          metadata: {
+            ...metadata,
+            specialist: c.selection ?? undefined,
+            behaviorPrompt: selected ? `Prompt ${workspaceId}` : '',
+            specialistName: selected ? `Specialist ${workspaceId}` : '',
+          },
+        },
+      ]);
+      expect(save.payload).toEqual([
+        workspaceId,
+        'agent-a',
+        true,
+        {
+          specialistUpdate:
+            c.selection === null
+              ? { specialist: null, systemPrompt: null }
+              : {
+                  specialist: c.selection,
+                  model,
+                  ...(selected ? { systemPrompt: `Prompt ${workspaceId}` } : {}),
+                },
+          specialistRollback: { metadata, model: 'session-model' },
+        },
+      ]);
+    });
+  },
+);

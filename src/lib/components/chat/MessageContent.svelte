@@ -1,4 +1,8 @@
 <script lang="ts">
+  import OperationalWindow from './OperationalWindow.svelte';
+  import { useOperationalPanel } from './operational-panel.svelte';
+  import { createWindowItemProjector, type WindowItem } from './operational-window-items';
+  import type { ReasoningHistoryItem } from './reasoning-heading';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
   import type { TextBlockMedia } from '$shared/types/content-block';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
@@ -62,13 +66,10 @@
     OPERATIONAL_GROUP_CHILD_ROW_CLASS,
   } from './operational-disclosure-row';
   import {
-    dedupeKeys,
-    getResponseGroupBlockKeys,
     getResponseGroupChildBoundary,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
-    shouldRenderResponseGroupInline,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import NavLink from './NavLink.svelte';
@@ -113,6 +114,15 @@
   const mediaAgent$ = $derived(selectAgentSession(agentId ?? ''));
   const allowFileMedia = $derived(
     !agentId || (!!$mediaAgent$ && !hasNodeOwnedAgentPath($mediaAgent$)),
+  );
+
+  const operationalPanel = useOperationalPanel();
+  const rendererId = $props.id();
+  const rowScope = $derived(messageId ?? rendererId);
+  const projectWindowItems = $derived(
+    operationalPanel.state(`projection:${rowScope}`, () => ({
+      project: createWindowItemProjector(),
+    })).project,
   );
 
   // Lazy full-block hydration (§5.5 slim projection →
@@ -349,37 +359,6 @@
     return ids;
   }
 
-  /**
-   * Generate a stable unique key for a render content block.
-   * Handles both regular ContentBlocks and ContentBlockGroups.
-   */
-  function getBlockKey(block: RenderContentBlock, index: number): string {
-    if (block.type === 'content_group') {
-      const group = block as ContentBlockGroup;
-      return `group-${index}-${group.sourceName ?? group.name}`;
-    }
-    const contentBlock = block as ContentBlock;
-    if (isNavLinkBlock(contentBlock)) return `nav-link-${index}-${contentBlock.target}`;
-    if (contentBlock.id) return contentBlock.id;
-    if (contentBlock.type === 'text') {
-      const text = contentBlock.text || '';
-      const hash = text
-        .slice(0, 50)
-        .split('')
-        .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-      return `text-${index}-${hash}`;
-    }
-    if (contentBlock.type === 'tool_result' && contentBlock.tool_use_id) {
-      return `result-${contentBlock.tool_use_id}`;
-    }
-    return `${contentBlock.type}-${index}`;
-  }
-
-  // Pre-compute block keys for stable iteration, ensuring uniqueness
-  const blockKeys = $derived(
-    dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))),
-  );
-
   function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
     if (block.type === 'content_group') return true;
     const contentBlock = block as ContentBlock;
@@ -407,6 +386,7 @@
     }
     return -1;
   });
+  const windowItems = $derived(projectWindowItems(groupedBlocks, rowScope, isVisibleGroupChild));
 </script>
 
 {#snippet renderParsedContentBlock(
@@ -533,6 +513,8 @@
   adjacentOperationalRow = false,
   reasoningHistory = false,
   searchPath: string | undefined = undefined,
+  rowKey: string = parsedKey,
+  historyItem: ReasoningHistoryItem | undefined = undefined,
 )}
   {@const proposal = getProposalFromBlock(block)}
   {#if proposal !== null}
@@ -617,6 +599,7 @@
     {@const resultContent = getToolResultPayload(toolResult)}
     <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <ToolCall
+        saved={operationalPanel.state(rowKey, () => ({}))}
         toolUse={toolBlock}
         {toolState}
         result={resultContent}
@@ -641,49 +624,60 @@
           <CodeBlock code={resultPresentation.payload} />
         {:else if Array.isArray(resultPresentation.payload)}
           <!-- Recursively render nested content blocks -->
-          {#each resultPresentation.payload as any[] as nestedBlock, nestedIndex (`nested-${blockIndex}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
-            {#if nestedBlock.type === 'text' && nestedBlock.text}
-              <div class="w-full">
-                <MarkdownViewer
+          <OperationalWindow
+            scope={`${rowScope}:result:${rowKey}`}
+            items={projectWindowItems(
+              resultPresentation.payload as ContentBlock[],
+              `${rowScope}:result:${rowKey}`,
+              () => true,
+            )}
+          >
+            {#snippet row(nestedItem)}
+              {@const nestedBlock = nestedItem.block as ContentBlock}
+              {#if nestedBlock.type === 'text' && nestedBlock.text}
+                <div class="w-full">
+                  <MarkdownViewer
+                    {allowFileMedia}
+                    canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+                    content={nestedBlock.text}
+                    {workspaceId}
+                    taskBlockRenderMode="content"
+                    chatImageThumbnails
+                    onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+                  />
+                </div>
+              {:else if nestedBlock.type === 'image' && nestedBlock.data && nestedBlock.mimeType}
+                <ChatImageBlock
+                  data={nestedBlock.data}
+                  mimeType={nestedBlock.mimeType}
+                  alt={m.chat_messageContent_toolResultImage_alt()}
+                />
+              {:else if nestedBlock.type === 'video' && nestedBlock.source}
+                <ChatVideoBlock
                   {allowFileMedia}
                   canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
-                  content={nestedBlock.text}
-                  {workspaceId}
-                  taskBlockRenderMode="content"
-                  chatImageThumbnails
-                  onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+                  source={nestedBlock.source}
+                  name={nestedBlock.fileName}
+                  poster={typeof nestedBlock.metadata?.poster === 'string'
+                    ? nestedBlock.metadata.poster
+                    : undefined}
                 />
-              </div>
-            {:else if nestedBlock.type === 'image' && nestedBlock.data && nestedBlock.mimeType}
-              <ChatImageBlock
-                data={nestedBlock.data}
-                mimeType={nestedBlock.mimeType}
-                alt={m.chat_messageContent_toolResultImage_alt()}
-              />
-            {:else if nestedBlock.type === 'video' && nestedBlock.source}
-              <ChatVideoBlock
-                {allowFileMedia}
-                canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
-                source={nestedBlock.source}
-                name={nestedBlock.fileName}
-                poster={typeof nestedBlock.metadata?.poster === 'string'
-                  ? nestedBlock.metadata.poster
-                  : undefined}
-              />
-            {:else if nestedBlock.type === 'tool_use'}
-              {@const nestedToolBlock = nestedBlock as ToolUseBlock}
-              {@const nestedToolResult = findToolResult(toolResultsMap, nestedToolBlock)}
-              {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
-              {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
-              <ToolCall
-                {agentId}
-                toolUse={nestedToolBlock}
-                toolState={nestedToolState}
-                result={nestedResultContent}
-                {workspaceId}
-              />
-            {/if}
-          {/each}
+              {:else if nestedBlock.type === 'tool_use'}
+                {@const nestedToolBlock = nestedBlock as ToolUseBlock}
+                {@const nestedToolResult = findToolResult(toolResultsMap, nestedToolBlock)}
+                {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
+                {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
+                <ToolCall
+                  {agentId}
+                  saved={operationalPanel.state(nestedItem.key, () => ({}))}
+                  toolUse={nestedToolBlock}
+                  toolState={nestedToolState}
+                  result={nestedResultContent}
+                  {workspaceId}
+                />
+              {/if}
+            {/snippet}
+          </OperationalWindow>
         {/if}
       </div>
     </div>
@@ -692,6 +686,7 @@
   {:else if block.type === 'thinking'}
     {#if reasoningHistory}
       <ReasoningHistoryBlock
+        item={historyItem}
         {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
@@ -700,6 +695,8 @@
       />
     {:else}
       <ThinkingBlock
+        {searchPath}
+        saved={operationalPanel.state(rowKey, () => ({}))}
         {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
@@ -717,6 +714,7 @@
   childBlock: ContentBlock,
   childIndex: number,
   nested: boolean = true,
+  item: WindowItem,
 )}
   {@const boundary = getResponseGroupChildBoundary(
     groupedBlocks,
@@ -733,14 +731,16 @@
   )}
   <div
     class={`${
-      reasoningSectionBoundary
-        ? NESTED_REASONING_SECTION_SEAM_CLASS
-        : getOperationalClusterSpacingClass(
-            boundary,
-            boundary.length - 1,
-            undefined,
-            group.isReasoningPhase,
-          )
+      item.fragment > 0
+        ? ''
+        : reasoningSectionBoundary
+          ? NESTED_REASONING_SECTION_SEAM_CLASS
+          : getOperationalClusterSpacingClass(
+              boundary,
+              boundary.length - 1,
+              undefined,
+              group.isReasoningPhase,
+            )
     } ${
       nested
         ? isOperationalClusterBlock(childBlock)
@@ -764,77 +764,94 @@
       `${groupIndex}-${childIndex}`,
       groupIndex,
       nested,
-      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
+      item.fragment > 0 ||
+        isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
       chatSearchBlockPath(groupIndex, childIndex),
+      item.key,
+      item.historyItem,
     )}
   </div>
 {/snippet}
 
-<div class="flex flex-col gap-0" style="contain: layout style paint;" data-operational-stack>
-  {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
-    {#if block.type === 'content_group'}
-      {@const group = block as ContentBlockGroup}
-      {@const childKeys = getResponseGroupBlockKeys(group.children)}
-      {#if shouldRenderResponseGroupInline(group)}
-        {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-          {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex, false)}
-          {/if}
-        {/each}
-      {:else}
-        <div
-          class={getOperationalClusterSpacingClass(
-            groupedBlocks,
-            blockIndex,
-            isVisibleTopLevelBlock,
-          )}
-          data-operational-cluster-row={block.type}
-          data-message-content-block={block.type}
-        >
-          <ResponseGroup
-            name={group.name}
-            isStreaming={group.isStreaming}
-            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
-            {isLastConversationMessage}
-            blocks={group.children.filter(isVisibleGroupChild)}
-            searchPath={chatSearchBlockPath(blockIndex)}
-            reasoningPhase={group.isReasoningPhase}
-            adjacentOperationalRow={isAdjacentOperationalClusterRow(
-              groupedBlocks,
-              blockIndex,
-              isVisibleTopLevelBlock,
-            )}
-          >
-            {#snippet children()}
-              {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-                {#if isVisibleGroupChild(childBlock)}
-                  {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
-                {/if}
-              {/each}
-            {/snippet}
-          </ResponseGroup>
-        </div>
-      {/if}
-    {:else if block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block)}
-      <div
-        class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
-        data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
-        data-message-content-block={block.type}
-        data-chat-search-block-path={block.type === 'text'
-          ? chatSearchBlockPath(blockIndex)
-          : undefined}
-      >
-        {@render renderContentBlock(
-          block as ContentBlock,
-          String(blockIndex),
+{#snippet renderWindowItem(item: WindowItem, admitted: boolean)}
+  {@const block = item.block}
+  {@const blockIndex = item.blockIndex}
+  {#if block.type === 'content_group'}
+    {@const group = block}
+    <div
+      class={getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
+      data-operational-cluster-row={block.type}
+      data-message-content-block={block.type}
+    >
+      <ResponseGroup
+        headerAdmitted={admitted}
+        headerHeight={operationalPanel.summaryHeight(item.key)}
+        saved={operationalPanel.state(item.key, () => ({}))}
+        name={group.name}
+        isStreaming={group.isStreaming}
+        isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+        {isLastConversationMessage}
+        blocks={group.children.filter(isVisibleGroupChild)}
+        searchPath={chatSearchBlockPath(blockIndex)}
+        reasoningPhase={group.isReasoningPhase}
+        adjacentOperationalRow={isAdjacentOperationalClusterRow(
+          groupedBlocks,
           blockIndex,
-          false,
-          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
-          false,
-          chatSearchBlockPath(blockIndex),
+          isVisibleTopLevelBlock,
         )}
-      </div>
-    {/if}
-  {/each}
+      >
+        {#snippet children()}
+          <OperationalWindow
+            scope={`${rowScope}:group:${item.key}`}
+            items={projectWindowItems(
+              group.children,
+              rowScope,
+              (block) => block.type === 'content_group' || isVisibleGroupChild(block),
+              group,
+              blockIndex,
+            )}
+            row={renderWindowItem}
+          />
+        {/snippet}
+      </ResponseGroup>
+    </div>
+  {:else if item.group && item.childIndex !== undefined}
+    {@render renderResponseGroupChild(
+      item.group,
+      blockIndex,
+      block as ContentBlock,
+      item.childIndex,
+      item.nested,
+      item,
+    )}
+  {:else}
+    <div
+      class={item.fragment > 0
+        ? ''
+        : getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
+      data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
+      data-message-content-block={block.type}
+      data-chat-search-block-path={block.type === 'text'
+        ? chatSearchBlockPath(blockIndex)
+        : undefined}
+    >
+      {@render renderContentBlock(
+        block as ContentBlock,
+        String(blockIndex),
+        blockIndex,
+        false,
+        item.fragment > 0 ||
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
+        false,
+        chatSearchBlockPath(blockIndex),
+        item.key,
+        item.historyItem,
+      )}
+    </div>
+  {/if}
+{/snippet}
+
+<div class="flex flex-col gap-0" style="contain: layout style paint;" data-operational-stack>
+  <OperationalWindow items={windowItems} scope={rowScope} row={renderWindowItem} />
 </div>

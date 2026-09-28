@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { screen, waitFor, within } from '@testing-library/svelte';
+import { render, fireEvent } from './operational-renderer-test';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';

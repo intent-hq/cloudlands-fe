@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   initialState,
+  removeServerFromState,
   mcpSettingsReducer,
   setAdvancedSaveStatus,
   setServerErrorMessage,
@@ -89,4 +90,25 @@ describe('mcpSettingsReducer', () => {
 
     expect(state.byWorkspaceId['ws-1'].disabledServers).toEqual({});
   });
+});
+
+it('removes only the selected same-name ID and its metadata', () => {
+  const siblings: McpServerConfig[] = [
+    { id: 'a', name: 'same', type: 'http' },
+    { id: 'b', name: 'same', type: 'http' },
+  ];
+  const state = mcpSettingsReducer(
+    {
+      ...initialState,
+      servers: siblings,
+      statusMap: { a: 'error', b: 'connected' },
+      disabledServers: { a: true, b: true },
+      errorMessages: { a: 'first', b: 'second' },
+    },
+    removeServerFromState('a'),
+  );
+  expect(state.servers).toEqual([siblings[1]]);
+  expect(state.statusMap).toEqual({ b: 'connected' });
+  expect(state.disabledServers).toEqual({ b: true });
+  expect(state.errorMessages).toEqual({ b: 'second' });
 });

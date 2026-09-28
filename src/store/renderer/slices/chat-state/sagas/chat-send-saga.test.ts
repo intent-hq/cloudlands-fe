@@ -398,7 +398,7 @@ describe('chatSendSaga', () => {
     await stop.promise;
 
     expect(order).toEqual(['send', 'stop']);
-    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.removeQueued).not.toHaveBeenCalled();
     await settle();
     expect(order).toEqual(['send', 'stop']);
@@ -410,7 +410,7 @@ describe('chatSendSaga', () => {
     gates[2].resolve();
     await retry.promise;
 
-    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-1');
+    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-1', WS);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -456,7 +456,7 @@ describe('chatSendSaga', () => {
 
     await expect(stop.promise).rejects.toThrow('stop failed');
     await vi.waitFor(() =>
-      expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-after-failure'),
+      expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-after-failure', WS),
     );
     run.task.cancel();
     await run.task.toPromise();
@@ -477,7 +477,7 @@ describe('chatSendSaga', () => {
     });
     expect(run.dispatch).toHaveBeenCalledWith(chatQueueProcessingReceived(AGENT, 'turn-1'));
     expect(mocks.send).not.toHaveBeenCalled();
-    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-2');
+    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-2', WS);
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === 'agentQueue/removeQueuedMessage'),
     ).toBe(true);
@@ -616,6 +616,7 @@ describe('chatSendSaga', () => {
     // Queued sends carry the converted reference blocks too — the retry
     // record matches the wire payload (no re-upload on retry).
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later', {
+      workspaceId: WS,
       imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -652,6 +653,7 @@ describe('chatSendSaga', () => {
     await settle();
 
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'Q: Auth method\nA: OAuth', {
+      workspaceId: WS,
       messageMetadata,
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -671,7 +673,7 @@ describe('chatSendSaga', () => {
       turnId: 'turn-superseded',
     };
     mocks.queue.mockImplementation(async () => {
-      noteAgentQueueEventSnapshotApplied(AGENT);
+      noteAgentQueueEventSnapshotApplied(AGENT, WS);
       return {
         success: true,
         turnId: 'turn-superseded',
@@ -697,7 +699,7 @@ describe('chatSendSaga', () => {
     // apply order cannot rank the superseding snapshot against the echo, so
     // the daemon's true queue is re-read instead of trusting either side
     // (monorepo#2486 review).
-    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT);
+    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT, WS);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -721,7 +723,7 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
     await settle();
 
-    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage]));
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage], WS));
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -764,7 +766,7 @@ describe('chatSendSaga', () => {
     );
     queueRun.channel.put(sendMessage(AGENT, { wsId: WS, text: '', fileBlocks }));
     await settle();
-    expect(mocks.queue).toHaveBeenCalledWith(AGENT, '', { fileBlocks });
+    expect(mocks.queue).toHaveBeenCalledWith(AGENT, '', { workspaceId: WS, fileBlocks });
     expect(mocks.send).not.toHaveBeenCalled();
     expect(queueRun.dispatch).toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(
@@ -815,11 +817,11 @@ describe('chatSendSaga', () => {
     const successfulStop = agentSessionStopChatRequested(AGENT);
     run.channel.put(successfulStop);
     await expect(successfulStop.promise).resolves.toBeUndefined();
-    expect(mocks.stop).toHaveBeenNthCalledWith(1, AGENT);
+    expect(mocks.stop).toHaveBeenNthCalledWith(1, AGENT, WS);
     const failedStop = agentSessionStopChatRequested(AGENT);
     run.channel.put(failedStop);
     await expect(failedStop.promise).rejects.toThrow('stop failed');
-    expect(mocks.stop).toHaveBeenNthCalledWith(2, AGENT);
+    expect(mocks.stop).toHaveBeenNthCalledWith(2, AGENT, WS);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -861,7 +863,7 @@ describe('chatSendSaga', () => {
     const modelRetrySettlement = concurrentModelRetry.promise.catch((error) => error);
 
     run.channel.put(activeStop);
-    await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(AGENT));
+    await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS));
     run.channel.put(concurrentRetry);
     await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
     run.channel.put(concurrentModelRetry);
@@ -947,7 +949,7 @@ describe('chatSendSaga', () => {
     run.channel.put(retry);
     await expect(retry.promise).resolves.toBeUndefined();
 
-    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.send).toHaveBeenCalledWith(
       AGENT,
       'stalled send',
@@ -1036,7 +1038,7 @@ describe('chatSendSaga', () => {
     run.channel.put(retry);
     await expect(retry.promise).resolves.toBeUndefined();
 
-    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.send).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
     run.task.cancel();
@@ -1084,7 +1086,7 @@ describe('chatSendSaga', () => {
       run.channel.put(retry);
       await expect(retry.promise).resolves.toBeUndefined();
 
-      expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER);
+      expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER, { workspaceId: WS });
       expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
       // The redrive MUST carry the newly picked model as an explicit
       // override on the wire: the plain last-message retry resolves the
@@ -1150,7 +1152,7 @@ describe('chatSendSaga', () => {
       expect(send1).toBeLessThan(switch2);
       expect(switch2).toBeLessThan(queue2);
       expect(mocks.queue).toHaveBeenCalledTimes(1);
-      expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'retry me');
+      expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'retry me', { workspaceId: WS });
       expect(mocks.toastError).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();

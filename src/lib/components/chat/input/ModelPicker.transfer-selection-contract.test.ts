@@ -66,6 +66,7 @@ import { notify } from '$lib/components/patterns/notify';
 import {
   initialState as catalogInitialState,
   providerCatalogLoaded,
+  workspaceCatalogReceived,
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import {
@@ -84,11 +85,29 @@ import ModelPicker from './ModelPicker.svelte';
 const { contract, artifact } = await loadTransferSelectionFixtures();
 console.info('Transfer-selection renderer input:', JSON.stringify(artifact.provenance));
 
-function makeState(codexEnabled: boolean) {
+function makeState(codexEnabled: boolean, workspaceId: string) {
   return {
     providerCatalog: providerCatalogReducer(
-      catalogInitialState,
-      providerCatalogLoaded(contract.providersCatalog),
+      providerCatalogReducer(catalogInitialState, providerCatalogLoaded(contract.providersCatalog)),
+      workspaceCatalogReceived(
+        workspaceId,
+        {
+          catalog: contract.providersCatalog,
+          settings: [
+            { path: 'model.defaultProvider', value: contract.destinationDefaults.provider },
+            { path: 'model.default', value: contract.destinationDefaults.model },
+            {
+              path: 'providers.enabled',
+              value: { ...contract.enabledProviders, codex: codexEnabled },
+            },
+          ] as never,
+          specialists: [],
+          readiness: Object.fromEntries(
+            contract.providersCatalog.providers.map(({ id }) => [id, { available: true }]),
+          ),
+        },
+        0,
+      ),
     ),
     providerSettings: { enabledProviders: { ...contract.enabledProviders, codex: codexEnabled } },
     model: {
@@ -132,7 +151,7 @@ beforeEach(() => {
   vi.mocked(backendRequest).mockImplementation(async (method, params) => {
     expect(method).toBe('models.list');
     const { providerId } = params as { providerId: string };
-    expect(params).toEqual({ providerId });
+    expect(params).toEqual({ providerId, workspaceId: context.session?.workspaceId });
     expect(contract.models).toHaveProperty(providerId);
     return { providerId, models: contract.models[providerId] };
   });
@@ -145,7 +164,7 @@ afterEach(() => {
 });
 
 async function mountSession(session: AgentSession, codexEnabled: boolean) {
-  context.state = makeState(codexEnabled);
+  context.state = makeState(codexEnabled, session.workspaceId);
   context.session = session;
   render(ModelPicker, {
     props: {
@@ -156,16 +175,21 @@ async function mountSession(session: AgentSession, codexEnabled: boolean) {
     },
   });
   await waitFor(() => {
-    expect(context.state.model.loadingState.auggie?.status).toBe('success');
-    expect(context.state.model.loadingState.codex?.status).toBe('success');
+    expect(context.state.providerModels.byWorkspaceId?.[session.workspaceId]?.auggie).toBeDefined();
+    expect(context.state.providerModels.byWorkspaceId?.[session.workspaceId]?.codex).toBeDefined();
   });
   await tick();
   // Model loading must preserve each daemon ID, with provenance in the
   // provider cache key. Prefixed values would exercise the legacy ID path.
   for (const { id: providerId } of contract.providersCatalog.providers) {
-    expect(backendRequest).toHaveBeenCalledWith('models.list', { providerId });
+    expect(backendRequest).toHaveBeenCalledWith('models.list', {
+      providerId,
+      workspaceId: session.workspaceId,
+    });
     expect(
-      context.state.providerModels.byProviderId[providerId]?.models.map(({ value }) => value),
+      context.state.providerModels.byWorkspaceId?.[session.workspaceId]?.[providerId]?.models.map(
+        ({ value }) => value,
+      ),
     ).toEqual(contract.models[providerId].map(({ id }) => id));
   }
   return screen.getByRole('button');

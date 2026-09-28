@@ -14,7 +14,9 @@ import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-cata
 
 export function setupGrokIPC() {
   // Get available models for grok — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(GROK_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
-    getProviderModelsEnvelope('grok', params, event),
+  ipcMain.handle(
+    GROK_CHANNELS.GET_MODELS,
+    async (event, params?: { forceRefresh?: boolean; workspaceId?: string }) =>
+      getProviderModelsEnvelope('grok', params, event),
   );
 }

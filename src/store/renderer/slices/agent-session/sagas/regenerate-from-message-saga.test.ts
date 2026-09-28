@@ -373,7 +373,7 @@ describe('regenerateFromMessageSaga', () => {
       channel.put(action);
       await settle();
 
-      expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, 'u9', 'blk-thumb');
+      expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, 'u9', 'blk-thumb', WS);
       expect(edits).toHaveLength(1);
       expect(edits[0].payload[4]).toEqual({
         imageBlocks: [{ type: 'image', data: FULL, mimeType: 'image/png' }],
@@ -398,7 +398,7 @@ describe('regenerateFromMessageSaga', () => {
       channel.put(action);
       await settle();
 
-      expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, 'u9', 'blk-omitted');
+      expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, 'u9', 'blk-omitted', WS);
       expect(edits[0].payload[4]).toEqual({
         imageBlocks: [{ type: 'image', data: FULL, mimeType: 'image/webp' }],
       });

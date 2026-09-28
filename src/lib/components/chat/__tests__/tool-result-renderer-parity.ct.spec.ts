@@ -121,7 +121,9 @@ test('renders object-envelope orphan text at payload-scoped search paths', async
     component.getByTestId('dedicated-agent-surface'),
   ]) {
     const disclosure = surface.getByTestId('response-group-disclosure');
-    if ((await disclosure.count()) > 0) await disclosure.click();
+    await expect(disclosure).toHaveCount(1);
+    if ((await disclosure.getAttribute('aria-expanded')) !== 'true') await disclosure.click();
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
     const payload = surface.locator('[data-chat-search-block-path="b:0:c:3"]');
     await expect(payload).toHaveText('grouped-object-orphan-marker');
     await expect(payload).not.toContainText('Tool Result');

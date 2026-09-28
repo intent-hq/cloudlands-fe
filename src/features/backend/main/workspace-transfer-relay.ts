@@ -145,9 +145,13 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
   let session: RelaySession | null = null;
 
   /** Best-effort source-side cleanup; never throws. */
-  async function abortExport(client: RelayRpcClient, exportId: string): Promise<void> {
+  async function abortExport(
+    client: RelayRpcClient,
+    exportId: string,
+    workspaceId: string,
+  ): Promise<void> {
     try {
-      await client.request('workspace.export.abort', { exportId });
+      await client.request('workspace.export.abort', { exportId, workspaceId });
     } catch (error) {
       deps.logger.warn('workspace.export.abort failed (best-effort)', { error: errText(error) });
     }
@@ -204,6 +208,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     workspaceId: string,
     isCancelled: () => boolean,
   ): Promise<TransferReadyData> {
+    const current = session;
+    let failed = false;
     const sub = await source.request<{ subscriptionId?: string }>('events.subscribe', {
       eventTypes: TRANSFER_EVENT_TYPES,
       workspaceId,
@@ -218,7 +224,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         listener = null;
       }
       if (subscriptionId) {
-        source.request('events.unsubscribe', { subscriptionId }).catch((error) => {
+        source.request('events.unsubscribe', { subscriptionId, workspaceId }).catch((error) => {
           deps.logger.warn('events.unsubscribe after transfer failed (best-effort)', {
             error: errText(error),
           });
@@ -237,8 +243,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         };
         // Let cancel() settle this wait immediately instead of leaving the
         // start() promise pending until the daemon's build task notices.
-        if (session) {
-          session.signalCancel = () => settle(() => reject(new Error('cancelled')));
+        if (current) {
+          current.signalCancel = () => settle(() => reject(new Error('cancelled')));
         }
         listener = (n) => {
           if (n.method !== 'events.event') return;
@@ -269,15 +275,15 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           settle(() => reject(new Error('cancelled')));
           return;
         }
-        if (session) session.sourceExportStarted = true;
+        if (current) current.sourceExportStarted = true;
         source
           .request<{ exportId: string }>('workspace.export.start', { workspaceId })
           .then((result) => {
             exportId = result.exportId;
-            if (session) session.exportId = result.exportId;
-            if (isCancelled()) {
+            if (current) current.exportId = result.exportId;
+            if (failed || isCancelled()) {
               // Cancelled while export.start was in flight: abort and bail.
-              void abortExport(source, result.exportId);
+              void abortExport(source, result.exportId, workspaceId);
               settle(() => reject(new Error('cancelled')));
             }
           })
@@ -286,8 +292,11 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           );
       });
       return ready;
+    } catch (error) {
+      failed = true;
+      throw error;
     } finally {
-      if (session) session.signalCancel = undefined;
+      if (current) current.signalCancel = undefined;
       cleanup();
     }
   }
@@ -306,7 +315,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       if (isCancelled()) throw new Error('cancelled');
       const chunk = await source.request<{ data: string }>(
         'workspace.export.read',
-        { exportId: ready.exportId, seq },
+        { exportId: ready.exportId, seq, workspaceId: ready.workspaceId },
         { timeoutMs: CHUNK_TIMEOUT_MS },
       );
       const decodedBytes = Buffer.from(chunk.data, 'base64').byteLength;
@@ -342,7 +351,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       if (isCancelled()) throw new Error('cancelled');
       const chunk = await source.request<{ data: string }>(
         'workspace.export.read',
-        { exportId: ready.exportId, seq },
+        { exportId: ready.exportId, seq, workspaceId: ready.workspaceId },
         { timeoutMs: CHUNK_TIMEOUT_MS },
       );
       const bytes = Buffer.from(chunk.data, 'base64');
@@ -370,6 +379,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     source: RelayRpcClient,
     ownerId: number,
   ): Promise<TransferStartResult> {
+    const workspaceId = params.workspaceId;
     if (session && !session.committed && !session.cancelled) {
       if (!deps.isOwnerGone(session.ownerId)) {
         return {
@@ -394,9 +404,9 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     // finalize or close, so no transfer:cancel ever arrived) would otherwise
     // be overwritten with its export staging leaked on the source.
     if (session?.committed && session.exportId) {
-      await abortExport(session.source, session.exportId);
+      await abortExport(session.source, session.exportId, session.workspaceId);
     }
-    const { workspaceId, destination } = params;
+    const { destination } = params;
     const current: RelaySession = {
       workspaceId,
       ownerId,
@@ -507,7 +517,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     } catch (error) {
       // Source cleanup only applies after export starts; preflight failures
       // leave the source untouched and its agents running.
-      if (current.exportId) await abortExport(source, current.exportId);
+      if (current.exportId) await abortExport(source, current.exportId, current.workspaceId);
       const message = current.cancelled ? 'cancelled' : errText(error);
       const cancelled = message === 'cancelled';
       if (!cancelled) {
@@ -574,6 +584,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     try {
       await source.request('workspace.export.finalize', {
         exportId: current.exportId,
+        workspaceId: current.workspaceId,
         archiveSource: params.archiveSource,
         ...(params.finalStatusMessage ? { finalStatusMessage: params.finalStatusMessage } : {}),
       });
@@ -600,7 +611,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       // deleted, workspace stays usable) without status message or archive.
       session = null;
       if (current.exportId) {
-        await abortExport(current.source, current.exportId);
+        await abortExport(current.source, current.exportId, current.workspaceId);
       }
       return { success: true };
     }
@@ -611,7 +622,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     // The in-flight start() loop observes the flag and aborts both sides; an
     // idle session (start already returned a failure) is cleaned here.
     if (current.exportId) {
-      await abortExport(current.source, current.exportId);
+      await abortExport(current.source, current.exportId, current.workspaceId);
     }
     return { success: true };
   }

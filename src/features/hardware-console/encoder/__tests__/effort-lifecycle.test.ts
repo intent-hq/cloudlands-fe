@@ -56,6 +56,14 @@ describe('conversation targeting', () => {
         { value: 'gpt-6-astra', label: 'GPT-6 Astra', effortLevels: levels },
       ]);
       state.model.providerModels.codex = 'gpt-6-astra';
+      for (const workspace of Object.values(state.providerCatalog.byWorkspaceId)) {
+        workspace.settings[1].value = { codex: 'gpt-6-astra' };
+      }
+      for (const workspace of Object.values(state.providerModels.byWorkspaceId)) {
+        workspace.codex.models = [
+          { value: 'gpt-6-astra', label: 'GPT-6 Astra', effortLevels: levels },
+        ];
+      }
       for (const id of ['agent-1', 'agent-2']) {
         mocks.dispatch(
           updateSession(id, {
