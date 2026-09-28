@@ -85,6 +85,9 @@ for (const theme of ['light', 'dark'] as const) {
         );
       }
 
+      await component
+        .locator('[data-message-id="assistant-production-search"]')
+        .evaluate((node) => node.scrollIntoView({ block: 'center' }));
       const productionRows = [
         'assistant-production-search',
         'assistant-production-reopen',

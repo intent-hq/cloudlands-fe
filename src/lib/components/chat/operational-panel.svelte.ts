@@ -361,6 +361,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       }
       return undefined;
     },
+    measuredHeight(key: string) {
+      return heights.get(key);
+    },
     summaryHeight(key: string) {
       return headers.get(key)?.height ?? 28;
     },

@@ -80,6 +80,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';
+  import { createToolEntranceReservations } from './operational-tool-entrance.svelte';
+  import { areAnimationsEnabled } from '$lib/utils/animations';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import flatstr from 'flatstr';
 
   import {
@@ -126,7 +129,7 @@
   const operationalPanel = useOperationalPanel();
   const rendererId = $props.id();
   const rowScope = $derived(messageId ?? rendererId);
-  const projectWindowItems = $derived(
+  const projectCanonicalItems = $derived(
     operationalPanel.state(`projection:${rowScope}`, () => ({
       project: createWindowItemProjector(),
     })).project,
@@ -625,18 +628,13 @@
     }
     return -1;
   }
-  function projectEnteringRows(...args: Parameters<ReturnType<typeof createWindowItemProjector>>) {
-    return projectWindowItems(...args).map((item) =>
-      isStreaming && item.block.type === 'tool_use' && !enteredToolKeys.has(item.block.id)
-        ? // New live rows enter from zero height. Reserving a full summary before
-          // admission would make the transcript shrink when the entrance starts.
-          // Keep a positive one-pixel estimate until measured growth takes over.
-          { ...item, estimatedHeight: 1 }
-        : item,
-    );
+  const reserveToolEntrance = createToolEntranceReservations(operationalPanel, enteredToolKeys);
+  function projectWindowItems(...args: Parameters<ReturnType<typeof createWindowItemProjector>>) {
+    const animate = isStreaming && areAnimationsEnabled() && !prefersReducedMotion();
+    return projectCanonicalItems(...args).map((item) => reserveToolEntrance(item, animate));
   }
   const windowItems = $derived(
-    projectEnteringRows(groupedBlocks, rowScope, (block, grouped) =>
+    projectWindowItems(groupedBlocks, rowScope, (block, grouped) =>
       grouped ? isVisibleGroupChild(block as ContentBlock) : isVisibleTopLevelBlock(block),
     ),
   );
@@ -879,7 +877,7 @@
         {:else if Array.isArray(resultPresentation.payload)}
           <OperationalWindow
             scope={`${rowScope}:result:${rowKey}`}
-            items={projectEnteringRows(
+            items={projectWindowItems(
               resultPresentation.payload as ContentBlock[],
               `${rowScope}:result:${rowKey}`,
               () => true,
@@ -1069,7 +1067,7 @@
         {#snippet children()}
           <OperationalWindow
             scope={`${rowScope}:group:${item.key}`}
-            items={projectEnteringRows(
+            items={projectWindowItems(
               group.children,
               rowScope,
               (block) => block.type === 'content_group' || isVisibleGroupChild(block),

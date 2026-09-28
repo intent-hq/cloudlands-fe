@@ -196,7 +196,9 @@ for (const theme of ['light', 'dark'] as const) {
                   childMargins: [rowStyle.marginTop, rowStyle.marginBottom],
                   wrapperMargins: [wrapperStyle.marginTop, wrapperStyle.marginBottom],
                   wrapperPaddingTop: wrapperStyle.paddingTop,
-                  parentRowGap: getComputedStyle(wrapper.parentElement!).rowGap,
+                  parentRowGap: getComputedStyle(
+                    wrapper.closest('[data-response-group-content], [data-operational-stack]')!,
+                  ).rowGap,
                 };
               }),
             );

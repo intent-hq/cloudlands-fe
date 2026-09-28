@@ -583,3 +583,77 @@ test('search restores its canonical disclosure after a group is prepended', asyn
   await input.press('Escape');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 });
+
+for (const motion of ['reduce', 'no-preference'] as const) {
+  for (const following of [true, false]) {
+    test(`batched ${following ? 'followed' : 'offscreen'} tools retain natural tail geometry through replay with ${motion} motion`, async ({
+      mount,
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: motion });
+      const initial = messages(80);
+      initial[1].isStreaming = true;
+      const host = await mount(ChatPanelOperationalGeometryHost, {
+        props: { liveMessages: initial, liveStreaming: true },
+      });
+      const viewport = host.getByTestId('chat-transcript-scroll-viewport');
+      await expect
+        .poll(() =>
+          viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+        )
+        .toBeLessThanOrEqual(2);
+      if (!following)
+        await viewport.evaluate((node) => {
+          node.dispatchEvent(new WheelEvent('wheel', { deltaY: -1000 }));
+          node.scrollTop = 0;
+          node.dispatchEvent(new Event('scroll'));
+        });
+      await page.evaluate(async () => {
+        for (let frame = 0; frame < 8; frame++) await new Promise(requestAnimationFrame);
+      });
+      const before = await viewport.evaluate((node) => node.scrollHeight);
+      const updated = structuredClone(initial);
+      updated[1].contentBlocks!.push(
+        ...Array.from({ length: 160 }, (_, index): ContentBlock => ({
+          type: 'tool_use',
+          id: `batch-${index}`,
+          name: 'view',
+          input: { path: `file-${index}.ts` },
+        })),
+      );
+      await host.update({ props: { liveMessages: updated, liveStreaming: true } });
+      await page.evaluate(async () => {
+        for (let frame = 0; frame < 8; frame++) await new Promise(requestAnimationFrame);
+      });
+      // Deferred tools must reserve their complete natural summaries, even
+      // before they have ever mounted or their tool-entry transition has run.
+      await expect
+        .poll(() => viewport.evaluate((node) => node.scrollHeight))
+        .toBeGreaterThanOrEqual(before + 160 * 28 - 2);
+      await expect
+        .poll(() =>
+          viewport.evaluate(
+            (node, follows) =>
+              follows ? node.scrollHeight - node.clientHeight - node.scrollTop : node.scrollTop,
+            following,
+          ),
+        )
+        .toBeLessThanOrEqual(2);
+      await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+        node.dispatchEvent(new Event('scroll'));
+      });
+      await expect(host.locator('[data-tool-use-id="batch-159"]')).toBeInViewport();
+      await host.update({ props: { liveMessages: [], liveStreaming: true } });
+      await host.update({ props: { liveMessages: updated, liveStreaming: true } });
+      await expect
+        .poll(() => viewport.evaluate((node) => node.scrollHeight))
+        .toBeGreaterThanOrEqual(before + 160 * 28 - 2);
+      await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+        node.dispatchEvent(new Event('scroll'));
+      });
+      await expect(host.locator('[data-tool-use-id="batch-159"]')).toBeInViewport();
+    });
+  }
+}

@@ -308,10 +308,11 @@ test('contains expanded long tool content, follows bottom, and preserves compose
   });
   const transcript = component.getByTestId('chat-transcript-inner');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
-  await component
-    .locator('[data-message-id="assistant-finished"]')
-    .getByTestId('response-group-disclosure')
-    .click();
+  await viewport.evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 })));
+  const finished = component.locator('[data-message-id="assistant-finished"]');
+  await finished.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+  await finished.getByTestId('response-group-disclosure').click();
+  await finished.evaluate((node) => node.scrollIntoView({ block: 'center' }));
   const longTool = component.locator('[data-tool-use-id="finished-long"]');
   await longTool
     .getByTestId('tool-call-disclosure')
