@@ -53,6 +53,19 @@ afterEach(() => {
 });
 
 describe('panel geometry lifetime', () => {
+  it('releases the focus pin when its row is destroyed without a blur event', () => {
+    panel.attach('message', node(2000), [entry], vi.fn());
+    frame();
+    const row = node();
+    row.tabIndex = 0;
+    const watch = panel.watch(row, entry.key);
+    row.focus();
+    expect(panel.policy.snapshot().pinnedKeys).toEqual([entry.key]);
+    watch.destroy();
+    row.remove();
+    expect(panel.policy.snapshot().pinnedKeys).toEqual([]);
+  });
+
   it('does not admit rows through a zero-width horizontal clipping ancestor', () => {
     const clip = node();
     clip.style.overflowX = 'hidden';
