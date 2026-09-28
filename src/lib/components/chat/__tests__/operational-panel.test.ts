@@ -559,6 +559,9 @@ describe('completed navigation geometry', () => {
     panel.watch(row, entry.key);
     const requested = panel.refreshGeometry();
     frame();
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    document.documentElement.scrollTop = 1;
+    frame();
     expect(panel.locate(entry.key)).toMatchObject({
       admitted: true,
       observation: { visible: false },
@@ -608,6 +611,8 @@ describe('completed navigation geometry', () => {
     const detach = panel.attach('old', old, [entry], vi.fn());
     panel.watch(row, entry.key);
     frame();
+    expect(panel.locate(entry.key)?.observation).toBeUndefined();
+    frame();
     expect(panel.locate(entry.key)?.observation?.visible).toBe(true);
     const replacement = node();
     panel.attach('new', replacement, [entry], vi.fn());
@@ -641,9 +646,35 @@ it('does not certify a row straddling a zero-height vertical clip', () => {
   panel.pin(entry.key, true);
   const requested = panel.refreshGeometry();
   frame();
+  expect(panel.locate(entry.key)?.observation).toBeUndefined();
+  frame();
   expect(panel.locate(entry.key)?.admitted).toBe(true);
   expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
   expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(requested);
+});
+
+it('does not certify pre-publication geometry when admission moves the target', () => {
+  const clip = node();
+  clip.style.overflowY = 'hidden';
+  vi.mocked(clip.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 300));
+  const root = node();
+  const row = node(100);
+  clip.append(root);
+  root.append(row);
+  panel.attach('message', root, [entry], (segments) => {
+    if (segments.some((segment) => segment.admitted)) {
+      vi.mocked(row.getBoundingClientRect).mockReturnValue(new DOMRect(0, 500, 600, 28));
+      // Model scroll activity accompanying the publication, not anchor repair.
+      document.documentElement.scrollTop = 1;
+    }
+  });
+  panel.watch(row, entry.key);
+  panel.pin(entry.key, true);
+  frame();
+  expect(panel.locate(entry.key)?.admitted).toBe(true);
+  expect(panel.locate(entry.key)?.observation).toBeUndefined();
+  frame();
+  expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
 });
 
 it('does not certify visibility through disjoint vertical clipping ancestors', () => {
@@ -663,6 +694,8 @@ it('does not certify visibility through disjoint vertical clipping ancestors', (
   panel.watch(row, entry.key);
   panel.pin(entry.key, true);
   frame();
+  expect(panel.locate(entry.key)?.observation).toBeUndefined();
+  frame();
   expect(panel.locate(entry.key)?.admitted).toBe(true);
   expect(panel.locate(entry.key)?.observation?.visible).toBe(false);
 });
@@ -681,6 +714,8 @@ it('refreshes navigation evidence after an anchor correction changes the read sc
   root.append(row);
   panel.attach('message', root, [entry], vi.fn());
   panel.watch(row, entry.key);
+  frame();
+  expect(panel.locate(entry.key)?.observation).toBeUndefined();
   frame();
   const previous = panel.locate(entry.key)!.observation!.revision;
   layoutTop = 200;

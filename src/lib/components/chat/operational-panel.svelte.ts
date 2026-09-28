@@ -64,6 +64,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   let disposed = false;
   let generation = 0;
   let readRevision = 0;
+  let projectionRevision = 0;
   let observations = new Map<string, NavigationObservation>();
   let cancelRead: (() => void) | undefined;
   let cancelWrite: (() => void) | undefined;
@@ -125,6 +126,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       })
     ) {
       root.segments = segments;
+      projectionRevision++;
+      observations.clear();
       root.notify(segments);
     }
   }
@@ -400,7 +403,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       // Publish navigation evidence only from a generation-accepted read.
       // Anchor corrections below move the scrollport after these rectangles
       // were read. Certify their new position in a subsequent batched read.
-      observations = corrections.size ? new Map() : nextObservations;
+      const beforePublish = projectionRevision;
       for (const measurement of measurements) heights.set(measurement.key, measurement.height);
       rebuild();
       policy.measure(measurements);
@@ -420,7 +423,12 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       // The document timeline is the browser's shared RAF timestamp. All
       // nested roots are admitted together, after the batched geometry reads.
       policy.advanceFrame(Number(document.timeline?.currentTime ?? performance.now()));
-      if (publish().pendingKeys.length || corrections.size) schedule();
+      const snapshot = publish();
+      // Admission and spacer changes can move an already-mounted target when
+      // Svelte renders this publication. Read again before certifying arrival.
+      const projectionChanged = projectionRevision !== beforePublish;
+      observations = corrections.size || projectionChanged ? new Map() : nextObservations;
+      if (snapshot.pendingKeys.length || corrections.size || projectionChanged) schedule();
     });
   }
   return {
