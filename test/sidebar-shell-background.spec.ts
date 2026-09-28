@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareSidebarShell } from './sidebar-shell-import';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -55,24 +56,7 @@ async function mountShell(
   page: Page,
   props: { theme: 'light' | 'dark'; width: number; zoom: number },
 ) {
-  await page.goto(`${baseUrl}src/app.html`);
-  await page.evaluate(() => {
-    Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-  });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await page.evaluate(async () => {
-        await import('/test/fixtures/SidebarShellBackgroundHost.svelte');
-      });
-      break;
-    } catch (error) {
-      if (attempt === 2) throw error;
-      await page.waitForLoadState('domcontentloaded');
-      await page.evaluate(() => {
-        Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-      });
-    }
-  }
+  await prepareSidebarShell(page, baseUrl);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; }' });
   return page.evaluate(async (options) => {
