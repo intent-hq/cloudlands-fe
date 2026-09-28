@@ -10,7 +10,7 @@
   import { logger } from '../../../shared/logger';
   import { onMount } from 'svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
-  import { serverToFormState } from './mcp/types';
+  import { getMcpServerKey, serverToFormState } from './mcp/types';
   import {
     mcpOptions,
     isServerInstalled,
@@ -107,8 +107,7 @@
   // (PROTOCOL §5.22 structured config — no raw settings-file IPC).
   function loadSettingsFile() {
     const servers = selectMcpServersWithStatus.select(appStore.state);
-    const mcpServers: Record<string, unknown> = {};
-    for (const server of servers) {
+    const configs = servers.map((server) => {
       const {
         name,
         status: _status,
@@ -118,8 +117,12 @@
         disabled,
         ...config
       } = server;
-      mcpServers[name] = disabled ? { ...config, disabled: true } : config;
-    }
+      return disabled ? { name, ...config, disabled: true } : { name, ...config };
+    });
+    const hasDuplicateNames = new Set(configs.map((server) => server.name)).size !== configs.length;
+    const mcpServers = hasDuplicateNames
+      ? configs
+      : Object.fromEntries(configs.map(({ name, ...config }) => [name, config]));
     userMcpSettingsContent = JSON.stringify({ mcpServers }, null, 2);
   }
 
@@ -141,12 +144,15 @@
     }
   }
 
-  function handleToggleServer(name: string) {
-    appStore.dispatch(toggleServer(name));
+  function handleToggleServer(key: string) {
+    appStore.dispatch(toggleServer(key));
   }
 
-  function handleRestartServer(name: string) {
-    appStore.dispatch(restartServer(name));
+  function handleRestartServer(key: string) {
+    const server = $servers$.find((server) => getMcpServerKey(server) === key);
+    if (!server) return;
+    const name = server.name;
+    appStore.dispatch(restartServer(key));
     notify.info(m.settings_mcpServers_restartingToast({ name }), {
       description: m.settings_mcpServers_restartingDescription(),
       duration: 3000,
@@ -167,19 +173,20 @@
 
   function handleUpdateServer(config: McpServerConfig) {
     if (!editingServer) return;
-    appStore.dispatch(updateServer(editingServer.name, config));
+    appStore.dispatch(updateServer(getMcpServerKey(editingServer), config));
     editingServer = null;
     loadSettingsFile();
   }
 
-  function handleDeleteServer(name: string) {
+  function handleDeleteServer(key: string) {
     // Get the server config before deleting (for undo)
     const currentServers = selectMcpServers.select(appStore.state);
-    const serverConfig = currentServers.find((s) => s.name === name);
+    const serverConfig = currentServers.find((s) => getMcpServerKey(s) === key);
     if (!serverConfig) return;
+    const name = serverConfig.name;
 
     // Delete immediately
-    appStore.dispatch(removeServer(name));
+    appStore.dispatch(removeServer(key));
     loadSettingsFile();
 
     // Show toast with undo action
@@ -201,8 +208,8 @@
     );
   }
 
-  function handleReauthenticate(name: string) {
-    appStore.dispatch(authenticateServer(name));
+  function handleReauthenticate(key: string) {
+    appStore.dispatch(authenticateServer(key));
   }
 
   // Easy MCP Install functions
@@ -210,13 +217,8 @@
     return isServerInstalled(option.label, $servers$);
   }
 
-  function getInstalledServerStatus(option: McpInstallOption): string | undefined {
-    const server = $servers$.find(
-      (s) =>
-        s.name.toLowerCase().replace(/\s+/g, '-') ===
-        option.label.toLowerCase().replace(/\s+/g, '-'),
-    );
-    return server?.status;
+  function getInstalledServer(option: McpInstallOption): McpServerWithStatus | undefined {
+    return $servers$.find((s) => normalizeServerName(s.name) === normalizeServerName(option.label));
   }
 
   function startInstall(option: McpInstallOption) {
@@ -596,7 +598,7 @@
           {:else}
             <ListView
               items={$servers$}
-              getKey={(server) => server.name}
+              getKey={getMcpServerKey}
               getText={(server) => server.name}
               ariaLabel={m.settings_mcpServers_sectionTitle()}
               class="mb-6"
@@ -626,8 +628,8 @@
                 {@const installed = isInstalled(option)}
                 {@const installing = installingServer === option.label}
                 {@const configuring = activeConfig?.label === option.label}
-                {@const needsAuth =
-                  installed && getInstalledServerStatus(option) === 'auth_required'}
+                {@const installedServer = getInstalledServer(option)}
+                {@const needsAuth = installedServer?.status === 'auth_required'}
 
                 <div class="relative">
                   {#if configuring}
@@ -710,7 +712,9 @@
                             variant="ghost"
                             type="button"
                             class="px-3 py-1 type-body font-medium rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
-                            onclick={() => handleReauthenticate(normalizeServerName(option.label))}
+                            onclick={() =>
+                              installedServer &&
+                              handleReauthenticate(getMcpServerKey(installedServer))}
                           >
                             {m.settings_mcp_authenticateButton()}
                           </Button>

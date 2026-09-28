@@ -1,3 +1,4 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { invoke } from '$lib/electron-bridge';
@@ -21,6 +22,7 @@ import {
 import {
   mapDaemonMcpState,
   normalizeMcpServersPayload,
+  validateMcpServerIdentities,
   toMcpErrorMessage,
 } from '../mcp-settings-normalization';
 import {
@@ -65,7 +67,7 @@ const logger = createLogger('McpSettingsSaga');
 export const ADVANCED_SAVED_RESET_MS = 2_000;
 // The existing full-list settings seam still carries credentials through the renderer transiently.
 // Main-process/keychain-owned MCP credential CRUD is tracked by monorepo#1181; never retain them here or in Redux.
-type CredentialInput = [config: McpServerConfig, previousName?: string];
+type CredentialInput = [config: McpServerConfig, previousKey?: string];
 
 function copyServerForState(source: McpServerConfig): McpServerConfig {
   const server: McpServerConfig = { name: source.name, type: source.type };
@@ -117,16 +119,16 @@ function persistedServers(
   current: McpServerConfig[],
   credentialInputs: CredentialInput[],
 ): McpServerConfig[] {
-  const currentByName = new Map(current.map((server) => [server.name, server]));
-  const inputByName = new Map(
-    credentialInputs.map(([config, previousName]) => [
-      config.name,
-      { config, previous: currentByName.get(previousName ?? config.name) },
+  const currentByKey = new Map(current.map((server) => [getMcpServerKey(server), server]));
+  const inputByKey = new Map(
+    credentialInputs.map(([config, previousKey]) => [
+      getMcpServerKey(config),
+      { config, previous: currentByKey.get(previousKey ?? getMcpServerKey(config)) },
     ]),
   );
   return servers.map((source) => {
-    const input = inputByName.get(source.name);
-    const currentServer = currentByName.get(source.name);
+    const input = inputByKey.get(getMcpServerKey(source));
+    const currentServer = currentByKey.get(getMcpServerKey(source));
     const credentialSource: McpServerConfig | undefined = input
       ? {
           name: source.name,
@@ -137,7 +139,7 @@ function persistedServers(
         }
       : currentServer;
     const server = copyServerForWire(source, credentialSource);
-    if (source.name in disabled) server.disabled = true;
+    if (getMcpServerKey(source) in disabled) server.disabled = true;
     else delete server.disabled;
     return server;
   });
@@ -163,7 +165,7 @@ function* persist(
       );
       return;
     }
-    yield* fork(refreshDaemonIdsAndStatuses);
+    yield* fork(refreshDaemonIdsAndStatuses, servers);
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())));
   }
@@ -174,8 +176,7 @@ function* persist(
  * reach Redux (`setMcpServers` returns only `{ success }`), then run the same
  * daemon-status overlay as the load path. Without this, neither the status
  * fetch nor live `mcp.servers:status-changed` events can correlate a runtime
- * status back to a just-saved server until the next `loadServers`. Ids merge
- * by name into the current optimistic list; credentials stay stripped.
+ * status back to a just-saved server until the next `loadServers`. Ids merge only into unchanged unsaved entries with an unambiguous name; credentials stay stripped.
  *
  * Call sites `fork` this helper rather than `call` it: the whole refresh is
  * fire-and-forget (redux-saga's attached-fork model would otherwise make the
@@ -184,25 +185,25 @@ function* persist(
  * body is fully wrapped in try/catch to keep an abort from surfacing as a
  * save error.
  */
-function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
+function* refreshDaemonIdsAndStatuses(saved: McpServerConfig[]): SagaGenerator<void> {
   try {
     const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
       appClient.settings,
       appClient.settings.getMcpServers,
     ]);
     const canonical = response.map(copyServerForState);
-    const idByName = new Map(
-      canonical.flatMap((server) => (server.id ? [[server.name, server.id] as const] : [])),
-    );
     const current: McpServerConfig[] = yield* selectMcpServers.effect();
     let changed = false;
     const merged = current.map((server) => {
-      const id = idByName.get(server.name);
-      if (id === undefined || server.id === id) return server;
+      // Only assign IDs to the exact unsaved entries that this save submitted.
+      // A later edit/remove/re-add must not inherit an older response's ID.
+      if (server.id !== undefined || !saved.includes(server)) return server;
+      const matches = canonical.filter((candidate) => candidate.name === server.name);
+      if (matches.length !== 1 || !matches[0].id) return server;
+      const id = matches[0].id;
+      if (current.some((candidate) => candidate.id === id)) return server;
       changed = true;
-      const copy = copyServerForState(server);
-      copy.id = id;
-      return copy;
+      return { ...server, id };
     });
     if (changed) yield* put(setServers(merged));
     yield* fork(fetchDaemonStatuses, canonical);
@@ -219,29 +220,30 @@ function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
  * a status without a recovery error clears any stale `errorMessages` entry. Because the
  * fan-out is forked, the list may change while it is in flight (e.g. a
  * remove-and-re-add of the same name assigns a new daemon id), so a status is
- * only applied when the current list still maps the queried id to that name.
+ * only applied when the current list still contains the queried ID.
  */
 function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
-  const nameById = new Map(
+  const keyById = new Map(
     servers.flatMap((server) =>
-      server.id && !server.disabled ? [[server.id, server.name] as const] : [],
+      server.id && !server.disabled ? [[server.id, getMcpServerKey(server)] as const] : [],
     ),
   );
-  if (nameById.size === 0) return;
+  if (keyById.size === 0) return;
   try {
     const statuses: Awaited<ReturnType<typeof appClient.settings.getMcpServerStatuses>> =
       yield* call(
         [appClient.settings, appClient.settings.getMcpServerStatuses],
-        [...nameById.keys()],
+        [...keyById.keys()],
       );
     const current: McpServerConfig[] = yield* selectMcpServers.effect();
-    const currentIdByName = new Map(current.map((server) => [server.name, server.id]));
+    const currentByKey = new Map(current.map((server) => [getMcpServerKey(server), server]));
+    const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
     const statusMap: Record<string, McpServerStatus> = {};
     for (const status of statuses) {
-      const name = nameById.get(status.serverId);
+      const name = keyById.get(status.serverId);
       const mapped = mapDaemonMcpState(status.state);
       if (!name || mapped === null) continue;
-      if (currentIdByName.get(name) !== status.serverId) continue;
+      if (currentByKey.get(name)?.id !== status.serverId || name in disabled) continue;
       statusMap[name] = mapped;
       if ((mapped === 'error' || mapped === 'auth_required') && status.lastError) {
         yield* put(setServerErrorMessage(name, status.lastError));
@@ -268,8 +270,8 @@ function* load(): SagaGenerator<void> {
     const disabled: Record<string, true> = {};
     const statuses: Record<string, McpServerStatus> = {};
     for (const server of servers) {
-      if (server.disabled) disabled[server.name] = true;
-      statuses[server.name] = statusFor(Boolean(server.disabled));
+      if (server.disabled) disabled[getMcpServerKey(server)] = true;
+      statuses[getMcpServerKey(server)] = statusFor(Boolean(server.disabled));
     }
     yield* put(setServers(servers));
     yield* put(clearAllErrorMessages());
@@ -291,16 +293,21 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
   yield* put(setError(null));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   try {
-    validateName(configInput.name, servers);
+    validateMcpServerIdentities([...servers, configInput]);
+    if (!configInput.id) validateName(configInput.name, servers);
+    else if (!configInput.name.trim()) throw new Error(m.mcp_management_serverNameRequired_error());
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_addServerFailed_error())));
     return;
   }
   const config = copyServerForState(configInput);
-  delete config.disabled;
   const next = [...servers.map(copyServerForState), config];
   yield* put(setServers(next));
-  yield* put(setServerStatus(config.name, statusFor(false)));
+  const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
+  if (config.disabled) {
+    yield* put(setDisabledServers({ ...disabled, [getMcpServerKey(config)]: true }));
+  }
+  yield* put(setServerStatus(getMcpServerKey(config), statusFor(Boolean(config.disabled))));
   const enabled: boolean = yield* selectMcpEnabled.effect();
   if (!enabled) yield* put(setEnabled(true));
   const credentialInputs: CredentialInput[] = [[configInput]];
@@ -309,8 +316,8 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
 
 function* remove(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-  if (!servers.some((server) => server.name === name)) return;
-  const next = servers.filter((server) => server.name !== name).map(copyServerForState);
+  if (!servers.some((server) => getMcpServerKey(server) === name)) return;
+  const next = servers.filter((server) => getMcpServerKey(server) !== name).map(copyServerForState);
   yield* put(removeServerFromState(name));
   yield* call(persist, next, []);
 }
@@ -318,27 +325,40 @@ function* remove(name: string): SagaGenerator<void> {
 function* update(name: string, configInput: McpServerConfig): SagaGenerator<void> {
   yield* put(setError(null));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-  const index = servers.findIndex((server) => server.name === name);
+  const index = servers.findIndex((server) => getMcpServerKey(server) === name);
   if (index === -1) return;
-  if (configInput.name !== name) {
+  const previous = servers[index];
+  if (configInput.name !== previous.name) {
     try {
       validateName(
         configInput.name,
-        servers.filter((server) => server.name !== name),
+        servers.filter((server) => getMcpServerKey(server) !== name),
       );
     } catch (error) {
       yield* put(setError(toMcpErrorMessage(error, m.mcp_management_updateServerFailed_error())));
       return;
     }
-    yield* put(removeServerFromState(name));
   }
-  const config = copyServerForState(configInput);
+  // Forms omit daemon IDs; an edit always retains the selected identity.
+  const input = { ...configInput, id: previous.id };
+  const config = copyServerForState(input);
+  const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
+  const wasDisabled = name in disabled;
+  const key = getMcpServerKey(config);
+  if (key !== name) yield* put(removeServerFromState(name));
+  if (wasDisabled) {
+    config.disabled = true;
+    const { [name]: _old, ...rest } = disabled;
+    yield* put(setDisabledServers({ ...rest, [key]: true }));
+  } else {
+    delete config.disabled;
+  }
   const next = servers.map((server, position) =>
     position === index ? config : copyServerForState(server),
   );
   yield* put(setServers(next));
-  yield* put(setServerStatus(config.name, statusFor(false)));
-  const credentialInputs: CredentialInput[] = [[configInput, name]];
+  yield* put(setServerStatus(key, statusFor(wasDisabled)));
+  const credentialInputs: CredentialInput[] = [[input, name]];
   yield* call(persist, next, credentialInputs);
 }
 
@@ -352,22 +372,29 @@ function* importJson(json: string): SagaGenerator<void> {
     return;
   }
   const existing: McpServerConfig[] = yield* selectMcpServers.effect();
-  const seen = new Set(existing.map((server) => server.name));
+  const seen = [...existing];
   const added = configs.filter((config) => {
-    const trimmed = config.name?.trim();
-    if (!trimmed || seen.has(config.name) || !MCP_SERVER_NAME_REGEX.test(trimmed)) return false;
-    if (trimmed.length > MCP_SERVER_NAME_MAX_LENGTH) return false;
-    if ((RESERVED_MCP_SERVER_NAMES as readonly string[]).includes(trimmed)) return false;
-    seen.add(config.name);
+    try {
+      validateMcpServerIdentities([...seen, config]);
+      if (!config.id) validateName(config.name, seen);
+      else if (!config.name.trim()) return false;
+    } catch {
+      return false;
+    }
+    seen.push(config);
     return true;
   });
   if (added.length > 0) {
     const stateAdded = added.map(copyServerForState);
     const next = [...existing.map(copyServerForState), ...stateAdded];
     yield* put(setServers(next));
+    const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
+    const nextDisabled = { ...disabled };
     for (const config of stateAdded) {
-      yield* put(setServerStatus(config.name, statusFor(false)));
+      if (config.disabled) nextDisabled[getMcpServerKey(config)] = true;
+      yield* put(setServerStatus(getMcpServerKey(config), statusFor(Boolean(config.disabled))));
     }
+    if (stateAdded.some((config) => config.disabled)) yield* put(setDisabledServers(nextDisabled));
     const enabled: boolean = yield* selectMcpEnabled.effect();
     if (!enabled) yield* put(setEnabled(true));
     yield* call(
@@ -380,17 +407,18 @@ function* importJson(json: string): SagaGenerator<void> {
 }
 
 function* toggle(name: string): SagaGenerator<void> {
-  yield* put(toggleServerDisabled(name));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
+  const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
+  if (!server) return;
+  yield* put(toggleServerDisabled(name));
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
-  const server = servers.find((candidate) => candidate.name === name);
-  if (server) yield* put(setServerStatus(name, statusFor(name in disabled)));
+  yield* put(setServerStatus(name, statusFor(name in disabled)));
   yield* call(persist, servers, []);
 }
 
 /**
  * Workspace-scoped toggle (PROTOCOL §5.22 per-workspace disable): resolve the
- * server name to its daemon id and call `mcp.servers.toggle` with a
+ * server key to its daemon id and call `mcp.servers.toggle` with a
  * `workspaceId` — the daemon sets/clears the per-workspace disabled marker
  * only, leaving the global config untouched. State is written only from the
  * daemon-confirmed result; a wire failure re-hydrates the scoped list so the
@@ -398,14 +426,14 @@ function* toggle(name: string): SagaGenerator<void> {
  */
 function* toggleForWorkspace(
   workspaceId: string,
-  serverName: string,
+  serverKey: string,
   enabled: boolean,
 ): SagaGenerator<void> {
   if (!workspaceId) return;
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-  const serverId = servers.find((server) => server.name === serverName)?.id;
+  const serverId = servers.find((server) => getMcpServerKey(server) === serverKey)?.id;
   if (!serverId) {
-    logger.warn('Cannot workspace-toggle an MCP server without a daemon id', { serverName });
+    logger.warn('Cannot workspace-toggle an MCP server without a daemon id', { serverKey });
     return;
   }
   const result: Awaited<ReturnType<typeof appClient.settings.toggleWorkspaceMcpServer>> =
@@ -420,11 +448,11 @@ function* toggleForWorkspace(
   // returns bare OK) is treated as unconfirmed rather than inferred from the
   // request, so state stays daemon-confirmed-only: re-hydrate instead.
   if (result.success && typeof result.workspaceDisabled === 'boolean') {
-    yield* put(setWorkspaceMcpServerDisabled(workspaceId, serverName, result.workspaceDisabled));
+    yield* put(setWorkspaceMcpServerDisabled(workspaceId, serverKey, result.workspaceDisabled));
     return;
   }
   if (!result.success) {
-    logger.warn('Workspace-scoped MCP toggle failed', { serverName, error: result.error });
+    logger.warn('Workspace-scoped MCP toggle failed', { serverKey, error: result.error });
   }
   yield* call(hydrateWorkspaceDisabled, workspaceId);
 }
@@ -440,14 +468,14 @@ function* toggleForWorkspace(
  */
 function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   if (!workspaceId) return;
-  const names: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerNames>> =
+  const keys: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerKeys>> =
     yield* call(
-      [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerNames],
+      [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerKeys],
       workspaceId,
     );
-  if (names === null) return;
+  if (keys === null) return;
   const disabled: Record<string, true> = {};
-  for (const name of names) disabled[name] = true;
+  for (const key of keys) disabled[key] = true;
   yield* put(setWorkspaceDisabledMcpServers(workspaceId, disabled));
 }
 
@@ -459,7 +487,7 @@ function* toggleFeature(): SagaGenerator<void> {
 
 function* restart(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-  const server = servers.find((candidate) => candidate.name === name);
+  const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
   if (!server) return;
   if (!server.id) {
     yield* put(setServerStatus(name, 'error'));
@@ -496,7 +524,7 @@ interface McpAuthenticateIpcResponse {
 
 function* authenticate(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-  const server = servers.find((candidate) => candidate.name === name);
+  const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
   if (!server) return;
   if (!server.id || !server.url || server.type === 'stdio') {
     yield* put(setServerStatus(name, 'auth_required'));
@@ -536,36 +564,34 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
     yield* put(setAdvancedSaveStatus('error', m.mcp_management_invalidJson_error()));
     return;
   }
-  const seen = new Set<string>();
-  for (const config of configs) {
-    try {
-      validateName(config.name, []);
-    } catch (error) {
-      yield* put(
-        setAdvancedSaveStatus(
-          'error',
-          toMcpErrorMessage(error, m.mcp_management_invalidServerConfig_error()),
-        ),
-      );
-      return;
-    }
-    if (seen.has(config.name)) {
-      yield* put(
-        setAdvancedSaveStatus(
-          'error',
-          m.mcp_management_duplicateServerName_error({ name: config.name }),
-        ),
-      );
-      return;
-    }
-    seen.add(config.name);
+  const existing: McpServerConfig[] = yield* selectMcpServers.effect();
+  try {
+    configs = configs.map((config) => {
+      const matches =
+        config.id !== undefined
+          ? existing.filter((server) => server.id === config.id)
+          : existing.filter((server) => server.name === config.name);
+      if (matches.length > 1) throw new Error(`Ambiguous MCP server name: ${config.name}`);
+      const previous = matches[0];
+      if (previous?.name !== config.name) validateName(config.name, []);
+      return previous?.id && !config.id ? { ...config, id: previous.id } : config;
+    });
+    validateMcpServerIdentities(configs);
+  } catch (error) {
+    yield* put(
+      setAdvancedSaveStatus(
+        'error',
+        toMcpErrorMessage(error, m.mcp_management_invalidServerConfig_error()),
+      ),
+    );
+    return;
   }
   const disabled: Record<string, true> = {};
   const statuses: Record<string, McpServerStatus> = {};
   const stateConfigs = configs.map(copyServerForState);
   for (const config of stateConfigs) {
-    if (config.disabled) disabled[config.name] = true;
-    statuses[config.name] = statusFor(Boolean(config.disabled));
+    if (config.disabled) disabled[getMcpServerKey(config)] = true;
+    statuses[getMcpServerKey(config)] = statusFor(Boolean(config.disabled));
   }
   yield* put(setServers(stateConfigs));
   yield* put(setDisabledServers(disabled));
@@ -592,7 +618,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
   }
   yield* put(setAdvancedSaveStatus('saved'));
   yield* fork(resetAdvancedStatus);
-  yield* fork(refreshDaemonIdsAndStatuses);
+  yield* fork(refreshDaemonIdsAndStatuses, stateConfigs);
 }
 
 function* resetAdvancedStatus(): SagaGenerator<void> {

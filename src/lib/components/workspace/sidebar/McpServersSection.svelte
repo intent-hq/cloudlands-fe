@@ -9,6 +9,7 @@
    */
   import { writable } from 'svelte/store';
   import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
+  import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 
   import {
     hydrateWorkspaceMcpDisabled,
@@ -18,7 +19,7 @@
   import {
     selectMcpServers,
     selectMcpErrorMessages,
-    selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
+    selectWorkspaceDisabledMcpServerKeysByWorkspaceId,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import { slide } from '$lib/motion';
   import Switch from '$lib/components/ui/switch/switch.svelte';
@@ -50,7 +51,7 @@
 
   // ✅ At component init — these use getContext() internally
   const servers$ = selectMcpServers();
-  const disabledServerNames$ = selectWorkspaceDisabledMcpServerNamesByWorkspaceId(workspaceIdStore);
+  const disabledServerKeys$ = selectWorkspaceDisabledMcpServerKeysByWorkspaceId(workspaceIdStore);
   const serverErrors$ = selectMcpErrorMessages();
 
   type McpServerRow = {
@@ -62,8 +63,8 @@
   const serverRows = $derived<McpServerRow[]>(
     $servers$.map((server) => ({
       server,
-      enabled: !$disabledServerNames$.includes(server.name),
-      error: $serverErrors$[server.name],
+      enabled: !$disabledServerKeys$.includes(getMcpServerKey(server)),
+      error: $serverErrors$[getMcpServerKey(server)],
     })),
   );
   const enabledServerCount = $derived(serverRows.filter((row) => row.enabled).length);
@@ -115,12 +116,12 @@
 
   // Get description for server type
 
-  function handleToggle(serverName: string, enabled: boolean) {
-    appStore.dispatch(toggleWorkspaceMcpServer(workspaceId, serverName, enabled));
+  function handleToggle(serverKey: string, enabled: boolean) {
+    appStore.dispatch(toggleWorkspaceMcpServer(workspaceId, serverKey, enabled));
   }
 
-  function handleFaviconError(serverName: string) {
-    faviconErrors = { ...faviconErrors, [serverName]: true };
+  function handleFaviconError(serverKey: string) {
+    faviconErrors = { ...faviconErrors, [serverKey]: true };
   }
 </script>
 
@@ -136,11 +137,12 @@
 
     {#if isExpanded}
       <div class="space-y-0.5 mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-        {#each serverRows as { server, enabled, error } (server.name)}
+        {#each serverRows as { server, enabled, error } (getMcpServerKey(server))}
+          {@const serverKey = getMcpServerKey(server)}
           {@const isEnabled = enabled}
           {@const serverError = error}
           {@const faviconUrl = getFaviconUrl(server)}
-          {@const showFallback = !faviconUrl || faviconErrors[server.name]}
+          {@const showFallback = !faviconUrl || faviconErrors[serverKey]}
           <div class="flex h-7 items-center gap-1.5 px-2 rounded-md transition-colors group">
             <!-- Server Icon - Favicon for HTTP/SSE, terminal icon for command -->
             <div
@@ -159,7 +161,7 @@
                   src={faviconUrl}
                   alt={m.workspace_mcpServers_serverIcon_alt({ name: server.name })}
                   class="size-3.5"
-                  onerror={() => handleFaviconError(server.name)}
+                  onerror={() => handleFaviconError(serverKey)}
                 />
               {/if}
             </div>
@@ -199,7 +201,7 @@
             <Switch
               size="sm"
               checked={isEnabled}
-              onCheckedChange={(checked) => handleToggle(server.name, checked)}
+              onCheckedChange={(checked) => handleToggle(serverKey, checked)}
               ariaLabel={`Toggle ${server.name} MCP server`}
             />
           </div>

@@ -376,7 +376,7 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     expect(await client.getMcpServers()).toEqual([]);
   });
 
-  it('getWorkspaceDisabledMcpServerNames reads the workspace-scoped mcp.servers.list (§5.22)', async () => {
+  it('getWorkspaceDisabledMcpServerKeys reads the workspace-scoped mcp.servers.list (§5.22)', async () => {
     // Workspace-scoped read: every entry adds `workspaceDisabled: boolean`.
     mockedRequest.mockResolvedValueOnce({
       servers: [
@@ -400,15 +400,15 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     });
     const client = new LiveSettingsClient();
 
-    const result = await client.getWorkspaceDisabledMcpServerNames('ws-1');
+    const result = await client.getWorkspaceDisabledMcpServerKeys('ws-1');
     expect(mockedRequest).toHaveBeenCalledWith('mcp.servers.list', { workspaceId: 'ws-1' });
-    expect(result).toEqual(['filesystem']);
+    expect(result).toEqual(['srv-fs']);
   });
 
-  it('getWorkspaceDisabledMcpServerNames folds a transport failure to null', async () => {
+  it('getWorkspaceDisabledMcpServerKeys folds a transport failure to null', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveSettingsClient();
-    expect(await client.getWorkspaceDisabledMcpServerNames('ws-1')).toBeNull();
+    expect(await client.getWorkspaceDisabledMcpServerKeys('ws-1')).toBeNull();
   });
 
   it('toggleWorkspaceMcpServer sends the workspace-scoped mcp.servers.toggle (§5.22)', async () => {
@@ -891,5 +891,53 @@ describe('LiveSettingsClient user-rule accessors (rules.* — PROTOCOL §5.21)',
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('rule content exceeds');
+  });
+});
+
+describe('MCP stable identity wire contracts', () => {
+  const wire = [
+    { id: 'srv-a', name: 'Desktop tools', transport: 'http', url: 'https://a.test', enabled: true },
+    { id: 'srv-b', name: 'Desktop tools', transport: 'http', url: 'https://b.test', enabled: true },
+  ];
+  it('deletes only the missing sibling and updates the selected ID', async () => {
+    mockedRequest.mockResolvedValueOnce({ servers: wire }).mockResolvedValue({ success: true });
+    const result = await new LiveSettingsClient().setMcpServers([
+      { id: 'srv-b', name: 'Renamed tools', type: 'http', url: 'https://edited.test' },
+    ]);
+    expect(result.success).toBe(true);
+    expect(mockedRequest.mock.calls).toEqual([
+      ['mcp.servers.list'],
+      ['mcp.servers.delete', { serverId: 'srv-a' }],
+      [
+        'mcp.servers.update',
+        {
+          serverId: 'srv-b',
+          config: {
+            id: 'srv-b',
+            name: 'Renamed tools',
+            transport: 'http',
+            url: 'https://edited.test',
+            enabled: true,
+          },
+        },
+      ],
+    ]);
+  });
+  it('rejects a name-only match against duplicate names before mutations', async () => {
+    mockedRequest.mockResolvedValueOnce({ servers: wire });
+    const result = await new LiveSettingsClient().setMcpServers([
+      { name: 'Desktop tools', type: 'http', url: 'https://a.test' },
+    ]);
+    expect(result.success).toBe(false);
+    expect(mockedRequest.mock.calls).toEqual([['mcp.servers.list']]);
+  });
+  it('rejects duplicate IDs before mutations', async () => {
+    mockedRequest.mockResolvedValueOnce({ servers: wire });
+    const result = await new LiveSettingsClient().setMcpServers([
+      { id: 'srv-a', name: 'first', type: 'http' },
+      { id: 'srv-a', name: 'second', type: 'http' },
+    ]);
+    expect(result.success).toBe(false);
+    expect(mockedRequest.mock.calls.every(([method]) => method === 'mcp.servers.list')).toBe(true);
   });
 });
