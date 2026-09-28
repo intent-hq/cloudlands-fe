@@ -37,7 +37,10 @@ import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-
 import { AgentStatus, type AgentSession, type QueuedMessage, type Workspace } from '$shared/types';
 import { ensureAgentSession } from './agent-read-service';
 import { sendMessage } from './agent-send';
-import { activateAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  activateAgentRequested,
+  restoreAgentSessionRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 let agentId = 'shared-agent';
 let sequence = 0;
@@ -162,9 +165,104 @@ describe.each(['agent.sendMessage', 'agent.queueMessage'] as const)(
         },
       );
 
-      it.each(['restore', 'activate'])(
-        'does not rebind B when pending %s for A finishes',
-        async (phase) => {
+      it('does not return a cached session from another workspace', async () => {
+        store.dispatch(bulkUpsertSessions([session('b')]));
+        const result = await store.dispatch(restoreAgentSessionRequested('a', agentId));
+        expect(result).toBeNull();
+        expect(store.state.agentSessions.byAgentId[agentId].workspaceId).toBe('b');
+        expect(request).not.toHaveBeenCalled();
+      });
+      it('returns a usable same-workspace cached session without a read', async () => {
+        store.dispatch(bulkUpsertSessions([session('a')]));
+        const result = await store.dispatch(restoreAgentSessionRequested('a', agentId));
+        expect(result).toMatchObject({ workspaceId: 'a', messages: [{ id: 'seed' }] });
+        expect(request).not.toHaveBeenCalled();
+      });
+      it('does not relabel a foreign metadata projection as the requested workspace', async () => {
+        request.mockResolvedValue({ agent: session('b') });
+        const result = await store.dispatch(restoreAgentSessionRequested('a', agentId));
+        expect(result).toBeNull();
+        expect(store.state.agentSessions.byAgentId[agentId]).toBeUndefined();
+      });
+      it('settles a current restore failure without losing its transcript', async () => {
+        store.dispatch(
+          bulkUpsertSessions([
+            { ...session('a'), status: AgentStatus.Pending, backendSessionId: null },
+          ]),
+        );
+        const before = store.state.agentSessions.byAgentId[agentId];
+        request.mockRejectedValue(new Error('current read failed'));
+        await expect(store.dispatch(restoreAgentSessionRequested('a', agentId))).rejects.toThrow(
+          'current read failed',
+        );
+        expect(store.state.agentSessions.byAgentId[agentId]).toEqual(before);
+      });
+      it.each(['empty', 'reject'] as const)(
+        'settles a late restore %s without returning A fallback over B',
+        async (outcome) => {
+          store.dispatch(
+            bulkUpsertSessions([
+              { ...session('a'), status: AgentStatus.Pending, backendSessionId: null },
+            ]),
+          );
+          let finish!: (value: unknown) => void;
+          let fail!: (error: Error) => void;
+          request.mockImplementation(async (name: string, params: { workspaceId?: string }) => {
+            if (name === 'agent.get' && params.workspaceId === 'a')
+              return new Promise((resolve, reject) => {
+                finish = resolve;
+                fail = reject;
+              });
+            if (name === 'agent.get') return { agent: session('b') };
+            return {};
+          });
+          const pending = store.dispatch(restoreAgentSessionRequested('a', agentId));
+          await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+          await ensureAgentSession(agentId, 'b');
+          const before = store.state.agentSessions.byAgentId[agentId];
+          if (outcome === 'empty') finish({ agent: null });
+          else fail(new Error('late A read failed'));
+          const result = await pending.catch(() => null);
+          expect(result).toBeNull();
+          expect(store.state.agentSessions.byAgentId[agentId]).toEqual(before);
+        },
+      );
+      it.each(['metadata', 'empty'] as const)(
+        'preserves current same-workspace messages on restore %s',
+        async (outcome) => {
+          store.dispatch(
+            bulkUpsertSessions([
+              { ...session('a'), status: AgentStatus.Pending, backendSessionId: null },
+            ]),
+          );
+          let finish!: (value: unknown) => void;
+          request.mockImplementation(
+            async () =>
+              new Promise((resolve) => {
+                finish = resolve;
+              }),
+          );
+          const pending = store.dispatch(restoreAgentSessionRequested('a', agentId));
+          await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+          const updated = session('a');
+          updated.messages[0].id = 'a-new-message';
+          store.dispatch(bulkUpsertSessions([updated]));
+          finish({ agent: outcome === 'metadata' ? { ...session('a'), messages: [] } : null });
+          const result = await pending;
+          expect(result?.messages.map((message) => message.id)).toEqual(['a-new-message']);
+          expect(
+            store.state.agentSessions.byAgentId[agentId].messages.map((message) => message.id),
+          ).toEqual(['a-new-message']);
+        },
+      );
+      it.each([
+        ['restore', false],
+        ['restore', true],
+        ['activate', false],
+        ['activate', true],
+      ] as const)(
+        'does not rebind B when pending %s for A finishes (reconnect=%s)',
+        async (phase, doReconnect) => {
           if (phase === 'activate')
             store.dispatch(
               bulkUpsertSessions([
@@ -186,10 +284,16 @@ describe.each(['agent.sendMessage', 'agent.queueMessage'] as const)(
               : start('a');
           await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
           await ensureAgentSession(agentId, 'b');
-          reconnect.forEach((cb) => cb());
-          finish({ agent: session('a') });
+          const b = session('b');
+          b.messages[0].id = 'b-private';
+          store.dispatch(bulkUpsertSessions([b]));
+          if (doReconnect) reconnect.forEach((cb) => cb());
+          finish({ agent: { ...session('a'), messages: [] } });
           await pending;
           expect(store.state.agentSessions.byAgentId[agentId].workspaceId).toBe('b');
+          expect(
+            store.state.agentSessions.byAgentId[agentId].messages.map((message) => message.id),
+          ).toEqual(['b-private']);
           expect(request.mock.calls.filter(([name]) => name === method)).toHaveLength(0);
         },
       );

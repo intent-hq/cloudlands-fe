@@ -205,18 +205,30 @@ function* restoreAgent(
   action: ReturnType<typeof restoreAgentSessionRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const existing = yield* selectAgentSession.effect(agentId);
+  // A cached row from another workspace is not this restoration's session.
+  // Do not claim its ownership or hand it back to the send/activation caller.
+  if (existing && existing.workspaceId !== wsId) {
+    yield* put(action.success(null));
+    return;
+  }
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   let settled = false;
   try {
-    const existing = yield* selectAgentSession.effect(agentId);
     if (hasUsableSession(existing)) {
       yield* put(action.success(existing));
     } else {
       const fetched = yield* call(readAgentSession, agentId, wsId);
-      if (!fetched) {
-        yield* put(action.success(existing ?? null));
+      const current = yield* selectAgentSession.effect(agentId);
+      // readAgentSession returns metadata; this consumer owns the state write.
+      // Recheck before both the persisted projection and fallback resolution.
+      if (!ownership.isCurrent(current?.workspaceId) || (fetched && fetched.workspaceId !== wsId)) {
+        yield* put(action.success(null));
+      } else if (!fetched) {
+        yield* put(action.success(current ?? null));
       } else {
         const session = {
-          ...preserveMessages(fetched, existing),
+          ...preserveMessages(fetched, current),
           workspaceId: wsId as AgentSession['workspaceId'],
         };
         yield* call(persistSession, session);
@@ -225,7 +237,11 @@ function* restoreAgent(
     }
     settled = true;
   } catch (error) {
-    yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    if (ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
+      yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    } else {
+      yield* put(action.success(null));
+    }
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
