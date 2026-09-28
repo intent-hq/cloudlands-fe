@@ -1138,6 +1138,10 @@ test('tab context menu stays actionable over the neighboring active tab', async 
   await expect(close).toBeVisible();
   // Wait for popup positioning and actionability without invoking the action.
   await close.click({ trial: true });
+  // A trial click moves the pointer. Clear its highlight before comparing paint:
+  // the hovered row and the active tab otherwise share the same background.
+  await page.mouse.move(850, 300);
+  await expect(close).not.toHaveAttribute('data-highlighted');
   const [closeBox, neighborBox] = await Promise.all([close.boundingBox(), neighbor.boundingBox()]);
   const left = Math.max(closeBox!.x, neighborBox!.x);
   const right = Math.min(closeBox!.x + closeBox!.width, neighborBox!.x + neighborBox!.width);

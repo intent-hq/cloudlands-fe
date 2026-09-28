@@ -22,7 +22,6 @@
       'zoom-110': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.1 } },
       'zoom-125': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.25 } },
       'middle-tab': { props: { activeWorkspaceId: ids[1] } },
-      'context-menu': { props: { activeWorkspaceId: ids[1], fullTitlebar: true } },
       'open-close': { props: { initialOpenWorkspaceIds: ids.slice(0, 2), interactive: true } },
       'sidebar-closed': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: false } },
       'sidebar-open': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: true } },
