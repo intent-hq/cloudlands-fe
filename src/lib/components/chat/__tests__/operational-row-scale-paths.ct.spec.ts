@@ -77,6 +77,12 @@ for (const rows of [100, 1000, 5000]) {
     const watched = host.getByTestId('scale-agent-subscriptions').getByTestId('agent-list-item');
     await expect(watched).toBeVisible();
     await expect(host.locator('[data-message-id="watched-assistant"]')).toHaveCount(0);
+    const navigationCheckpoints = Array.from({ length: 3 }, (_, cycle) =>
+      [Math.floor(rows * 0.8), Math.floor(rows / 2)].map((index) => ({
+        index,
+        label: `watched-cycle-${cycle}-${index}`,
+      })),
+    ).flat();
     const finish = await timeline(page);
     try {
       const samples = [await snapshot(page, 'before-watched-click')];
@@ -100,6 +106,22 @@ for (const rows of [100, 1000, 5000]) {
       await frames(page);
       samples.push(await snapshot(page, 'watched-search-disclosure'));
       expect(samples[2].mounted).toBeGreaterThan(1);
+      for (const { index, label } of navigationCheckpoints) {
+        await input.fill(`needle-watched-${index}.`);
+        await expect(
+          host.getByText(`Details needle-watched-${index}.`, { exact: true }),
+        ).toBeInViewport();
+        await frames(page);
+        samples.push(await snapshot(page, label));
+      }
+      // This optional collection is an observer-lifetime diagnostic, not a
+      // production timing sample. Weak probe references must not keep rows alive.
+      if (process.env.ROW_OBSERVER_GC === '1') {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send('HeapProfiler.collectGarbage');
+        await cdp.detach();
+        samples.push(await snapshot(page, 'watched-after-diagnostic-gc'));
+      }
       for (const sample of samples.slice(1)) {
         expect(sample.mounted).toBeGreaterThan(0);
         expect(sample.mounted - sample.visible).toBeLessThanOrEqual(26);
@@ -113,6 +135,7 @@ for (const rows of [100, 1000, 5000]) {
       await frames(page, 2);
       const destroyed = await snapshot(page, 'watched-destroyed');
       samples.push(destroyed);
+      expect(destroyed.unmatchedRegistrations).toBe(0);
       expect(destroyed.rowObserved).toBe(0);
       expect(destroyed.windowObserved).toBe(0);
       await info.attach('watched-opening-samples', {
@@ -124,6 +147,8 @@ for (const rows of [100, 1000, 5000]) {
         'before-watched-click',
         'watched-open',
         'watched-search-disclosure',
+        ...navigationCheckpoints.map(({ label }) => label),
+        ...(process.env.ROW_OBSERVER_GC === '1' ? ['watched-after-diagnostic-gc'] : []),
         'watched-destroyed',
       ]);
     }
@@ -226,6 +251,7 @@ test('two-message forced history remains anchored after 200-message prepend', as
       body: JSON.stringify(destroyed),
       contentType: 'application/json',
     });
+    expect(destroyed.unmatchedRegistrations).toBe(0);
     expect(destroyed.rowObserved).toBe(0);
     expect(destroyed.windowObserved).toBe(0);
   } finally {
