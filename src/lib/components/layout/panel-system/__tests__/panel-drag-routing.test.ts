@@ -796,7 +796,7 @@ describe('panel context menu routing', () => {
     expect(container.querySelector('[data-panel-pin]')).toBeNull();
   });
 
-  it('keeps kebab and Close visible while grouping other panel controls in the menu', async () => {
+  it('keeps kebab and Close visible and routes tab context commands', async () => {
     const onSplitHorizontal = vi.fn();
     const onZoomToggle = vi.fn();
     const { container } = renderTabBar({ onSplitHorizontal, onZoomToggle, onTabClose: vi.fn() });
@@ -807,9 +807,10 @@ describe('panel context menu routing', () => {
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
 
-    await fireEvent.click(
-      directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
-    );
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="one"]')!, {
+      clientX: 120,
+      clientY: 80,
+    });
 
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Zoom Panel' }));
     expect(onZoomToggle).toHaveBeenCalledOnce();
