@@ -37,7 +37,7 @@
   import ChatImageBlock from './ChatImageBlock.svelte';
 
   interface Props {
-    saved?: { expanded?: boolean };
+    saved?: { expanded?: boolean; showImageTechnicalDetails?: boolean };
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
@@ -207,7 +207,8 @@
 
   // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
   let expanded = $state(saved?.expanded ?? false);
-  let showImageTechnicalDetails = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let showImageTechnicalDetails = $state(saved?.showImageTechnicalDetails ?? false);
   const isExpandable = $derived(displayModel.hasDetails || Boolean(localImageSource));
   const hasTrailing = $derived(
     displayModel.status === 'success' ||
@@ -220,7 +221,10 @@
     if (!isExpandable) return;
     expanded = !expanded;
     if (saved) saved.expanded = expanded;
-    if (!expanded) showImageTechnicalDetails = false;
+    if (!expanded) {
+      showImageTechnicalDetails = false;
+      if (saved) saved.showImageTechnicalDetails = false;
+    }
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: truncatedBlockIds is empty).
     if (expanded) requestHydration();
@@ -364,7 +368,10 @@
         class="h-auto self-start p-0 type-caption text-muted-foreground"
         aria-expanded={showImageTechnicalDetails}
         aria-controls={`${detailsId}-technical`}
-        onclick={() => (showImageTechnicalDetails = !showImageTechnicalDetails)}
+        onclick={() => {
+          showImageTechnicalDetails = !showImageTechnicalDetails;
+          if (saved) saved.showImageTechnicalDetails = showImageTechnicalDetails;
+        }}
       >
         {m.chat_toolCall_technicalDetails_label()}
       </Button>
