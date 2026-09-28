@@ -257,7 +257,7 @@
             align="center"
             delayDuration={300}
             size="sm"
-            class="block h-(--control-height-large) w-full min-w-0 max-w-full"
+            class="block w-full min-w-0 max-w-full {embedded ? '' : 'h-(--control-height-large)'}"
             contentClass="max-w-[min(28rem,calc(100vw-var(--space-4)))] break-words text-left"
           >
             <Button
@@ -271,7 +271,9 @@
               class={cn(
                 menuItem(),
                 OPTION_LIST_ROW_CLASS,
-                'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
+                'max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
+                !embedded &&
+                  'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large)',
                 embedded
                   ? 'hover:bg-hover hover:text-foreground'
                   : 'hover:bg-accent/60 hover:text-accent-foreground',
@@ -290,6 +292,7 @@
               }}
               data-testid="chat-message-navigator-result"
               data-navigation-message-id={message.id}
+              data-panel-menu-row={embedded || undefined}
             >
               <span
                 class="block min-w-0 max-w-full flex-1 overflow-hidden whitespace-nowrap text-left text-ellipsis font-normal"

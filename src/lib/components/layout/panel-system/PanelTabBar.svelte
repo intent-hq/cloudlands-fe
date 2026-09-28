@@ -1831,6 +1831,9 @@
     padding: 4px;
     max-width: calc(100vw - 1rem);
     box-shadow: var(--surface-shadow-3);
+    font-size: 14px;
+    line-height: 1.2;
+    font-weight: 400;
   }
   :global(.panel-header-menu [data-proximity-highlight='selected']),
   :global(.panel-header-submenu [data-navigation-message-id][aria-selected='true']) {
@@ -1846,6 +1849,15 @@
   }
   :global(.panel-header-submenu) {
     min-width: min(224px, calc(100vw - 1rem));
+  }
+  :global(.panel-header-submenu :is([data-slot='input'], button[role='combobox'])) {
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+    height: 32px;
+    padding-left: 10px;
+    border-radius: 7px;
+    background: hsl(var(--background));
   }
 
   :global(.panel-actions-menu-content) {
@@ -1922,16 +1934,21 @@
     --agent-avatar-emphasized-art-size: 15px;
     --agent-avatar-emphasized-corner-radius: 5px;
   }
-  :global(.panel-header-menu:not(.panel-selector-menu) [data-menu-item]) {
+  :global(
+    .panel-header-menu:not(.panel-selector-menu) :is([data-menu-item], [data-panel-menu-row])
+  ) {
     min-height: 30px;
-    font-size: 14px;
-    line-height: 1.2;
-    font-weight: 400;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
     padding: 6px 10px;
     gap: 10px;
     border-radius: 7px;
   }
-  :global(.panel-header-menu [data-slot='menu-label']) {
+  :global(.panel-header-menu [data-panel-menu-row]) {
+    height: auto;
+  }
+  :global(.panel-header-menu :is([data-slot='menu-label'], [data-panel-menu-label])) {
     font-size: 13px;
     line-height: 1.3;
     font-weight: 400;

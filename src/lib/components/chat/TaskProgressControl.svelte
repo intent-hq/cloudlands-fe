@@ -396,7 +396,11 @@
 {/snippet}
 
 {#snippet taskList()}
-  <div class="shrink-0 px-2 py-1.5 text-muted-foreground" data-testid="task-progress-summary">
+  <div
+    class="shrink-0 px-2 py-1.5 text-muted-foreground"
+    data-testid="task-progress-summary"
+    data-panel-menu-label={embedded || undefined}
+  >
     {m.chat_taskProgress_summary_label({
       completed: formatInteger(completedTasks.length),
       total: formatInteger(tasks.length),
@@ -442,7 +446,11 @@
             {formatInteger(selectedFilter?.count ?? 0)}
           </span>
         </Select.Trigger>
-        <Select.Content portal wrapperId={statusMenuId}>
+        <Select.Content
+          portal
+          wrapperId={statusMenuId}
+          class={embedded ? 'panel-header-menu bg-background' : ''}
+        >
           {#each filterOptions as option (option.value)}
             <Select.Item value={option.value} label={option.label}>
               <span class="flex min-w-0 items-center gap-2">
@@ -472,6 +480,7 @@
           data-testid="task-progress-row"
           data-task-id={task.id}
           data-task-status={task.status}
+          data-panel-menu-row={embedded || undefined}
           aria-label={m.chat_taskProgress_task_ariaLabel({
             status: statusLabel(task.status),
             title: task.title,
