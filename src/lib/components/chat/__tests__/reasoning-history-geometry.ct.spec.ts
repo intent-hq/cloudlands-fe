@@ -296,6 +296,7 @@ for (const renderer of rendererIds) {
     await verify();
     await component.unmount();
     component = await mount(ReasoningHistoryGeometryHost, { props: completed });
+    await expect(component.getByTestId('response-group-disclosure')).toBeVisible();
     await verify();
   });
 
