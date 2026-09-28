@@ -233,11 +233,12 @@
     return selectIsProviderEnabled.select(appStore.state, providerId);
   }
 
-  function isFastModeEnabled(providerId: string): boolean {
-    // React to selector publications, but read the synchronous value during
-    // activation so two clicks within one render frame still alternate.
-    void $fastModeValues$;
-    return selectProviderFastModeValues.select(appStore.state)[providerId] ?? false;
+  function handleToggleFastMode(providerId: string, event: Event) {
+    // Keep Redux as the only checked state: local checkbox mutation can hide a
+    // fast rejection, and cached binding values can coalesce rapid activations.
+    event.preventDefault();
+    const enabled = selectProviderFastModeValues.select(appStore.state)[providerId] ?? false;
+    appStore.dispatch(setProviderFastMode(providerId, !enabled));
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
@@ -685,11 +686,8 @@
                         >
                           {#if $fastModeProviders$.includes(provider.id)}
                             <Menu.CheckboxItem
-                              bind:checked={
-                                () => isFastModeEnabled(provider.id),
-                                (enabled) =>
-                                  appStore.dispatch(setProviderFastMode(provider.id, enabled))
-                              }
+                              checked={$fastModeValues$[provider.id] ?? false}
+                              onSelect={(event) => handleToggleFastMode(provider.id, event)}
                               aria-describedby={`fast-mode-description-${provider.id}`}
                             >
                               {m.settings_providers_fastMode_label()}
