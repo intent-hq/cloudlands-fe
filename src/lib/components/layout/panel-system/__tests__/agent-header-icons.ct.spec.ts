@@ -50,9 +50,6 @@ for (const { width, theme } of [
     await expect(menu.getByRole('menuitem', { name: 'Zoom Panel' })).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(actions.getByTestId('panel-actions-trigger')).toBeFocused();
-    await actions.getByTestId('panel-actions-trigger').click();
-    await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
-    await expect(fixture).toHaveAttribute('data-column-count', '2');
     await actions.getByTestId('panel-close-button').focus();
     await page.keyboard.press('Space');
     await expect(fixture).toHaveAttribute('data-close-count', '1');
@@ -93,8 +90,6 @@ for (const { width, theme } of [
     for (const [name, action] of [
       ['Copy conversation', 'copy'],
       ['Zoom Panel', 'zoom'],
-      ['Move tab left', 'move-left'],
-      ['Create column to right', 'split'],
       ['Delete agent', 'delete'],
     ]) {
       await trigger.click();

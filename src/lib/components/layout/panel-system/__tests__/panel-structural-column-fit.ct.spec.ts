@@ -8,10 +8,9 @@ async function addColumn(component: Locator, count: number) {
   });
   await component
     .locator('[data-panel-tabless-header]')
-    .getByTestId('panel-actions-trigger')
-    .first()
-    .click();
-  await component.page().getByRole('menuitem', { name: 'Add column', exact: true }).click();
+    .last()
+    .click({ position: { x: 2, y: 2 } });
+  await component.page().keyboard.press('ControlOrMeta+Backslash');
   await expect(component.locator('[data-panel-id]')).toHaveCount(count);
 }
 
