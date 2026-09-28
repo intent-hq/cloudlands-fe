@@ -141,7 +141,10 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 import AgentTabType from '../AgentTabType.svelte';
 import MockTabTypeHeaderHarness from './mocks/MockTabTypeHeaderHarness.svelte';
-import { setAgentNotificationsMutedRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  retireAgentRequested,
+  setAgentNotificationsMutedRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 function seedSession(overrides: Record<string, unknown> = {}) {
   mockState.agents.set({
@@ -488,5 +491,49 @@ describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', (
 
     seedSession({ notificationsMuted: false });
     await waitFor(() => expect(screen.queryByTestId('agent-tab-muted-indicator')).toBeNull());
+  });
+});
+
+describe('AgentTabType retirement', () => {
+  beforeEach(() => {
+    mockState.dispatch.mockReset();
+    mockState.dispatch.mockImplementation((action) => {
+      if (action.type === retireAgentRequested.type) action.success(undefined);
+    });
+    mockState.hidesAgentLifecycleActions.set(false);
+    seedSession({ harnessFeatures: { peerAgents: false } });
+  });
+  afterEach(() => cleanup());
+
+  it('opens confirmation without a model turn and dispatches retirement only on confirmation', async () => {
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(await screen.findByText('Retire Agent'));
+    await screen.findByRole('dialog');
+    expect(mockState.dispatch).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockState.dispatch).toHaveBeenCalledTimes(1);
+    expect(mockState.dispatch.mock.calls[0][0]).toMatchObject({
+      type: retireAgentRequested.type,
+      payload: ['ws-1', 'agent-1'],
+    });
+  });
+
+  it('cancels without dispatching', async () => {
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(await screen.findByText('Retire Agent'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(mockState.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['retired', 'guest'])('withholds retirement for %s agents', async (state) => {
+    if (state === 'retired') seedSession({ retiredAt: '2026-09-28T08:00:00Z' });
+    else mockState.hidesAgentLifecycleActions.set(true);
+    renderTab();
+    await openPanelActionsMenu();
+    expect(screen.queryByText('Retire Agent')).toBeNull();
+    expect(mockState.dispatch).not.toHaveBeenCalled();
   });
 });

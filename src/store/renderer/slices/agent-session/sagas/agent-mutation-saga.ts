@@ -49,6 +49,7 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
+  retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   stopAgentSessionRequested,
@@ -162,6 +163,28 @@ function* softHide(wsId: string, agentId: string): SagaGenerator<void> {
 function* restoreHiddenSession(wsId: string, session: StoredAgentSession): SagaGenerator<void> {
   yield* put(restoreStoredSessions([session]));
   yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
+}
+
+function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
+  const [wsId, agentId] = action.payload;
+  let settled = false;
+  try {
+    if (yield* selectHidesAgentLifecycleActions.effect(wsId)) {
+      throw new Error(m.agent_mutation_retireForbidden_error());
+    }
+    const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
+    if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
+    yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(mutationError(error, m.agent_mutation_retireFailed_error())));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_retireFailed_error())));
+    }
+  }
 }
 
 /**
@@ -728,6 +751,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(restoreAgentSessionRequested, restoreAgent),
     takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
+    takeEvery(retireAgentRequested, retireAgent),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
     takeEvery(renameAgentSessionRequested, renameAgent),

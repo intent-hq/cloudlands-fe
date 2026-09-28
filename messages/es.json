@@ -6765,5 +6765,10 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Desactivar multijugador experimental",
   "lib_commandPalette_enableExperimentalGitlab_label": "Activar GitLab experimental",
   "lib_commandPalette_disableExperimentalGitlab_label": "Desactivar GitLab experimental",
-  "inviteNotice_modal_findGitlabCommand_label": "Buscar comando de GitLab"
+  "inviteNotice_modal_findGitlabCommand_label": "Buscar comando de GitLab",
+  "modals_retireAgent_title": "Retirar agente",
+  "modals_retireAgent_description": "¿Retirar a «{name}»? Se detendrá cualquier turno en curso y se cancelarán los hooks, monitores de PR y otras suscripciones de activación. La conversación se conserva y podrás restaurar al agente más adelante. Restaurarlo no reinicia los hooks ni los monitores cancelados.",
+  "modals_retireAgent_confirm_label": "Retirar agente",
+  "agent_mutation_retireFailed_error": "No se pudo retirar al agente",
+  "agent_mutation_retireForbidden_error": "No tienes permiso para retirar a este agente."
 }

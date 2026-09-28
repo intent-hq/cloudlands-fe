@@ -6765,5 +6765,10 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "実験的なマルチプレイヤーを無効にする",
   "lib_commandPalette_enableExperimentalGitlab_label": "試験的なGitLab機能を有効にする",
   "lib_commandPalette_disableExperimentalGitlab_label": "試験的なGitLab機能を無効にする",
-  "inviteNotice_modal_findGitlabCommand_label": "GitLab コマンドを検索"
+  "inviteNotice_modal_findGitlabCommand_label": "GitLab コマンドを検索",
+  "modals_retireAgent_title": "エージェントを引退",
+  "modals_retireAgent_description": "「{name}」を引退させますか？実行中のターンを停止し、フック、PR モニター、その他の起動サブスクリプションを解除します。会話は保持され、後でエージェントを復元できます。復元しても、解除したフックやモニターは再開されません。",
+  "modals_retireAgent_confirm_label": "エージェントを引退",
+  "agent_mutation_retireFailed_error": "エージェントを引退させられませんでした",
+  "agent_mutation_retireForbidden_error": "このエージェントを引退させる権限がありません。"
 }

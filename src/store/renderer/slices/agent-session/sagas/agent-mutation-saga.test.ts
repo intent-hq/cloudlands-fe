@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   dismissQuestions: vi.fn(),
   resolveProposal: vi.fn(),
   restore: vi.fn(),
+  retire: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
   dismiss: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('$lib/client', () => ({
       dismissQuestions: mocks.dismissQuestions,
       resolveProposal: mocks.resolveProposal,
       restore: mocks.restore,
+      retire: mocks.retire,
     },
   },
 }));
@@ -71,6 +73,7 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
+  retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   undoAgentDeletionRequested,
@@ -226,6 +229,39 @@ describe('agentMutationSaga', () => {
     expect(mocks.get).toHaveBeenCalledWith(A1);
     const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
     expect(upsert.payload[0][0]).toEqual(expect.objectContaining({ id: A1, messages }));
+    await stop(task);
+  });
+
+  it('retires only after daemon success and preserves the conversation', async () => {
+    const existing = session();
+    mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+    const { channel, dispatched, task } = start({ [A1]: existing });
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    const patch = dispatched.find((candidate) => candidate.type === updateSession.type);
+    expect(patch.payload).toEqual([A1, { retiredAt: '2026-09-28T08:00:00Z' }]);
+    expect(dispatched.some((candidate) => candidate.type === removeSession.type)).toBe(false);
+    await stop(task);
+  });
+
+  it('rejects a retirement failure without marking the session retired', async () => {
+    mocks.retire.mockResolvedValue({ success: false, error: 'A descendant is running' });
+    const { channel, dispatched, task } = start();
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow('A descendant is running');
+    expect(dispatched.some((candidate) => candidate.type === updateSession.type)).toBe(false);
+    await stop(task);
+  });
+
+  it('refuses retirement in a guest window without a wire request', async () => {
+    const { channel, task } = start(undefined, { guest: true });
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow();
+    expect(mocks.retire).not.toHaveBeenCalled();
     await stop(task);
   });
 

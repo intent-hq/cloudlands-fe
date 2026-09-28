@@ -590,6 +590,12 @@ export const restoreAgentSessionRequested = createAsyncAction<
   AgentSession | null
 >('workspaceAgents/restoreAgentSession', 'workspaceAgents/restoreAgentSessionRequested');
 
+/** Direct user lifecycle action; never sends a model message. */
+export const retireAgentRequested = createAsyncAction<[wsId: string, agentId: string], void>(
+  'workspaceAgents/retireAgent',
+  'workspaceAgents/retireAgentRequested',
+);
+
 /**
  * Un-retire a soft-retired agent via `agent.restore` (§5.5). Distinct from
  * `restoreAgentSessionRequested`, which re-materializes a hidden session from

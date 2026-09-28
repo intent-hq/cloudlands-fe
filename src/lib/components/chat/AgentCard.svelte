@@ -1,11 +1,5 @@
 <script lang="ts">
-  /**
-   * AgentCard Component
-   *
-   * A compact card that shows an agent's avatar, name, status, and message preview.
-   * Uses subscription for real-time updates and displays line changes stats.
-   * Reads Redux-owned streaming state for real-time response updates.
-   */
+  /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
@@ -24,6 +18,7 @@
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
     renameAgentSessionRequested,
+    retireAgentRequested,
     setAgentNotificationsMutedRequested,
     stopAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -50,6 +45,7 @@
   import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
+  import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 
@@ -60,6 +56,7 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faBoxArchive,
     faBell,
     faBellSlash,
     faCircleInfo,
@@ -179,12 +176,8 @@
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
-  // Restore a session the store has no row for (e.g. a card rendered before
-  // its workspace's `agent.list` hydration). A row already present — even a
-  // slim `agent.list` projection row (PROTOCOL §5.5) — must NOT trigger a
-  // per-card `agent.get` on mount: N mounted cards would fan out into N
-  // detail reads on every list hydration. Detail-only fields are pulled on
-  // demand from `handleContextMenu` instead.
+  // Load missing rows only; list projections must not trigger per-card detail
+  // fan-out. handleContextMenu loads detail-only fields on demand.
   $effect(() => {
     const wsId = workspace?.id;
     if (!wsId || readOnly) return;
@@ -205,6 +198,7 @@
 
   // Replace Agent modal (opened from the context menu when eligible).
   let replaceAgentModalOpen = $state(false);
+  let retireAgentModalOpen = $state(false);
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -430,10 +424,7 @@
       });
     }
 
-    // Add stop option if agent is running. Gate on the canonical runtime
-    // state, not the display state: user-attention states (question,
-    // needs-permission, …) outrank `running` in getAvatarState, but a live
-    // turn must stay stoppable regardless of what the avatar shows.
+    // Attention states can mask a running turn; use canonical runtime state.
     if (isTurnRunning) {
       items.push({ type: 'separator' });
       items.push({
@@ -446,9 +437,7 @@
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          // The stop trigger settles for real now (agent-mutation-service
-          // forwards agent.stop) — guard so a daemon-side failure cannot
-          // become an unhandled rejection that skips closing the menu.
+          // Close the menu even when the daemon refuses the stop.
           try {
             if (wsId) {
               await appStore.dispatch(stopAgentSessionRequested(wsId, agentId));
@@ -464,10 +453,7 @@
 
     items.push({ type: 'separator' });
 
-    // "Replace Agent" (peer-agent hand-off): hidden unless every
-    // session-derived eligibility gate passes (harnessFeatures.peerAgents
-    // snapshot true, top-level, non-background, not retired) — mirrors the
-    // AgentTabType panel menu.
+    // Match the panel menu's peer-agent hand-off eligibility.
     if (!readOnly && !isBackground && isReplaceAgentEligible($agent$)) {
       items.push({
         id: 'replace-agent',
@@ -487,6 +473,17 @@
     const hidesDelete =
       !!deleteWorkspaceId &&
       selectHidesAgentLifecycleActions.select(appStore.state, deleteWorkspaceId);
+    if (!readOnly && !hidesDelete && deleteWorkspaceId && $agent$ && !$agent$.retiredAt) {
+      items.push({
+        id: 'retire-agent',
+        label: m.modals_retireAgent_confirm_label(),
+        icon: faBoxArchive,
+        onClick: () => {
+          retireAgentModalOpen = true;
+          closeContextMenu();
+        },
+      });
+    }
     if (!hidesDelete) {
       items.push({
         id: 'delete',
@@ -1061,6 +1058,17 @@
     bind:open={harnessModalOpen}
     version={$agent$.harnessVersion}
     features={$agent$?.harnessFeatures ?? null}
+  />
+{/if}
+
+{#if retireAgentModalOpen}
+  <RetireAgentModal
+    bind:open={retireAgentModalOpen}
+    agentName={$agent$?.name || agentName || ''}
+    onRetire={() =>
+      appStore.dispatch(
+        retireAgentRequested(String($agent$?.workspaceId || workspace?.id), agentId),
+      )}
   />
 {/if}
 

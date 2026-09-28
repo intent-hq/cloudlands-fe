@@ -26,6 +26,7 @@ import type {
   AgentDeleteResult,
   AgentListOptions,
   AgentListResult,
+  AgentRetireResult,
   AgentsClient,
   FileBlock,
   ImageBlock,
@@ -783,6 +784,18 @@ export class LiveAgentsClient implements AgentsClient {
         agentId,
       });
       return { success: true, cancelled: result?.cancelled === true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async retire(agentId: string, workspaceId?: string): Promise<AgentRetireResult> {
+    const params: { agentId: string; workspaceId?: string } = { agentId };
+    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    try {
+      return await backendRequest<Extract<AgentRetireResult, { success: true }>>(
+        'agent.retire',
+        params,
+      );
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }

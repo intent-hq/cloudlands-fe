@@ -1608,6 +1608,36 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agents[1].parentAgentId).toBeUndefined();
   });
 
+  it.each([false, true])(
+    'retire forwards the direct contract (already retired: %s)',
+    async (alreadyRetired) => {
+      const response = {
+        success: true,
+        retiredAt: '2026-09-28T08:00:00Z',
+        ...(alreadyRetired ? { alreadyRetired: true } : {}),
+      };
+      backend.onRequest('agent.retire', () => response);
+      expect(await new LiveAgentsClient().retire('agent-1', 'ws-1')).toEqual(response);
+      expect(backend.requests).toEqual([
+        {
+          method: 'agent.retire',
+          params: { agentId: 'agent-1', workspaceId: 'ws-1' },
+        },
+      ]);
+    },
+  );
+
+  it('retire preserves errors and omits an absent workspace id without sending a message', async () => {
+    backend.onRequest('agent.retire', () => {
+      throw new BackendError(buildErrorPayload(-32003, 'Forbidden'));
+    });
+    expect(await new LiveAgentsClient().retire('agent-1')).toEqual({
+      success: false,
+      error: expect.stringContaining('Forbidden'),
+    });
+    expect(backend.requests).toEqual([{ method: 'agent.retire', params: { agentId: 'agent-1' } }]);
+  });
+
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
     backend.onRequest('agent.restore', () => ({ success: true }));
     const client = new LiveAgentsClient();

@@ -6765,5 +6765,10 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "禁用实验性多人协作",
   "lib_commandPalette_enableExperimentalGitlab_label": "启用实验性 GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "禁用实验性 GitLab",
-  "inviteNotice_modal_findGitlabCommand_label": "查找 GitLab 命令"
+  "inviteNotice_modal_findGitlabCommand_label": "查找 GitLab 命令",
+  "modals_retireAgent_title": "退役智能体",
+  "modals_retireAgent_description": "要将“{name}”退役吗？这会停止正在运行的轮次，并取消钩子、PR 监控及其他唤醒订阅。对话将被保留，你可以稍后恢复智能体。恢复不会重新启动已取消的钩子或监控。",
+  "modals_retireAgent_confirm_label": "退役智能体",
+  "agent_mutation_retireFailed_error": "无法退役智能体",
+  "agent_mutation_retireForbidden_error": "你没有权限退役此智能体。"
 }
