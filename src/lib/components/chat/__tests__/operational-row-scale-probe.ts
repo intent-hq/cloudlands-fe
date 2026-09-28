@@ -111,6 +111,16 @@ export async function snapshot(page: Page, label: string) {
       visible,
       observed: targets.length,
       detachedObserved: targets.filter((node) => !node.isConnected).length,
+      detachedTargets: targets
+        .filter((node) => !node.isConnected)
+        .map((node) => ({
+          tag: node.tagName,
+          attributes: Object.fromEntries(
+            [...node.attributes]
+              .filter((attribute) => attribute.name.startsWith('data-'))
+              .map((attribute) => [attribute.name, attribute.value]),
+          ),
+        })),
       rowObserved: targets.filter((node) => node.matches('[data-operational-window-key]')).length,
       windowObserved: targets.filter((node) => node.matches('[data-operational-window]')).length,
     };
@@ -126,15 +136,28 @@ export async function timeline(page: Page) {
   if (tracing) {
     cdp.on('Tracing.dataCollected', ({ value }) => trace.push(...value));
     await cdp.send('Tracing.start', {
-      categories:
-        '-*,devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.stack,blink.user_timing,v8.execute,disabled-by-default-v8.cpu_profiler',
-      options: 'sampling-frequency=1000',
+      // The synthetic renderer matrix supplies sampled CPU attribution. Keep
+      // full-panel traces lighter so source/search work cannot fill the buffer
+      // before the last checkpoint. Assert the trace endpoints below.
+      traceConfig: {
+        recordMode: 'recordAsMuchAsPossible',
+        traceBufferSizeInKb: 131072,
+        excludedCategories: ['*'],
+        includedCategories: [
+          'devtools.timeline',
+          'disabled-by-default-devtools.timeline',
+          'disabled-by-default-devtools.timeline.stack',
+          'blink.user_timing',
+        ],
+      },
       transferMode: 'ReportEvents',
     });
+    await page.evaluate(() => performance.mark('trace:path-start'));
   }
   return async (info: TestInfo) => {
     const after = await cdp.send('Performance.getMetrics');
     if (tracing) {
+      await page.evaluate(() => performance.mark('trace:path-end'));
       const complete = new Promise<void>((resolve) =>
         cdp.once('Tracing.tracingComplete', () => resolve()),
       );
@@ -144,6 +167,10 @@ export async function timeline(page: Page) {
         body: gzipSync(JSON.stringify({ traceEvents: trace })),
         contentType: 'application/gzip',
       });
+      const names = new Set(trace.map((event) => (event as { name: string }).name));
+      if (!names.has('trace:path-start') || !names.has('trace:path-end')) {
+        throw new Error('Incomplete path timeline; do not report its durations as full coverage');
+      }
     }
     await info.attach('path-performance-metrics', {
       body: JSON.stringify({ before, after }),

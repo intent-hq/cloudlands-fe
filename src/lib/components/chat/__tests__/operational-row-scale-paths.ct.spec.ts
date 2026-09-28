@@ -1,4 +1,4 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { expect, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 import { frames, instrument, snapshot, timeline } from './operational-row-scale-probe';
@@ -17,12 +17,21 @@ const transcript = (rows: number, prefix = 'scale'): AgentMessage[] => [
     id: `${prefix}-assistant`,
     role: 'assistant',
     timestamp: '2026-09-28T10:00:01Z',
-    contentBlocks: Array.from({ length: rows }, (_, i) => ({
-      type: 'tool_result' as const,
-      id: `${prefix}-row-${i}`,
-      tool_use_id: `${prefix}-orphan-${i}`,
-      output: `Details needle-${prefix}-${i}.`,
-    })),
+    // The named group is searchable; top-level thinking is intentionally not.
+    // Count its summary in the requested total, alongside its reasoning rows.
+    contentBlocks:
+      rows === 0
+        ? []
+        : [
+            { type: 'text', id: `${prefix}-open`, text: '<group:Prepping>Scale inspection.' },
+            ...Array.from({ length: rows - 1 }, (_, i): ContentBlock => ({
+              type: 'thinking',
+              id: `${prefix}-row-${i}`,
+              text: `Scale reasoning ${i}\n\nDetails needle-${prefix}-${i}.`,
+            })),
+            { type: 'text', id: `${prefix}-close`, text: '</group:Prepping>' },
+            { type: 'text', id: `${prefix}-end`, text: 'End of completed inspection.' },
+          ],
   },
 ];
 
@@ -36,6 +45,7 @@ test.afterEach(async ({ page }, info) => {
     body: JSON.stringify(probe),
     contentType: 'application/json',
   });
+  expect(Math.max(0, ...probe.frames.map((frame) => frame.mounted))).toBeGreaterThan(0);
   expect(Math.max(0, ...probe.frames.map((frame) => frame.mounts))).toBeLessThanOrEqual(4);
 });
 
@@ -54,9 +64,7 @@ for (const rows of [100, 1000, 5000]) {
         width: 600,
       },
     });
-    const watched = host
-      .getByTestId('scale-agent-subscriptions')
-      .getByTestId('agent-list-item');
+    const watched = host.getByTestId('scale-agent-subscriptions').getByTestId('agent-list-item');
     await expect(watched).toBeVisible();
     await expect(host.locator('[data-message-id="watched-assistant"]')).toHaveCount(0);
     const finish = await timeline(page);
@@ -81,8 +89,21 @@ for (const rows of [100, 1000, 5000]) {
       ).toBeVisible();
       await frames(page);
       samples.push(await snapshot(page, 'watched-search-disclosure'));
-      for (const sample of samples.slice(1))
+      for (const sample of samples.slice(1)) {
+        expect(sample.mounted).toBeGreaterThan(0);
         expect(sample.mounted - sample.visible).toBeLessThanOrEqual(26);
+      }
+      if (rows === 5000)
+        await info.attach('watched-agent-search', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
+      await host.unmount();
+      await frames(page, 2);
+      const destroyed = await snapshot(page, 'watched-destroyed');
+      samples.push(destroyed);
+      expect(destroyed.rowObserved).toBe(0);
+      expect(destroyed.windowObserved).toBe(0);
       await info.attach('watched-opening-samples', {
         body: JSON.stringify({ rows, samples }),
         contentType: 'application/json',
@@ -157,6 +178,7 @@ test('two-message forced history remains anchored after 200-message prepend', as
       contentType: 'application/json',
     });
     expect(anchors.every((offset) => offset !== null && Math.abs(offset) <= 2)).toBe(true);
+    expect(samples[1].mounted).toBeGreaterThan(0);
     expect(samples[1].mounted - samples[1].visible).toBeLessThanOrEqual(26);
     await viewport.click({ position: { x: 4, y: 4 } });
     await page.keyboard.press('ControlOrMeta+f');
@@ -165,6 +187,15 @@ test('two-message forced history remains anchored after 200-message prepend', as
       .getByRole('textbox')
       .fill('needle-older-0-25.');
     await expect(host.getByText('Details needle-older-0-25.', { exact: true })).toBeVisible();
+    await host.unmount();
+    await frames(page, 2);
+    const destroyed = await snapshot(page, 'history-destroyed');
+    await info.attach('history-destroyed-observations', {
+      body: JSON.stringify(destroyed),
+      contentType: 'application/json',
+    });
+    expect(destroyed.rowObserved).toBe(0);
+    expect(destroyed.windowObserved).toBe(0);
   } finally {
     await finish(info);
   }

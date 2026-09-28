@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import AgentSubscriptions from '../AgentSubscriptions.svelte';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT fixture exercises the real watched-agent navigation route.
   import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT fixture runs only the two navigation watchers it needs.
   import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
   import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
