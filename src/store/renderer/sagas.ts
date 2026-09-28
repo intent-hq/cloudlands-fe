@@ -40,6 +40,7 @@ import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-p
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
+import { pdfPreviewSaga } from './slices/pdf-preview/sagas/pdf-preview-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
@@ -163,6 +164,7 @@ export const sagas = [
   acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,
+  pdfPreviewSaga,
   filesWriteSaga,
   workspaceNotesSaga,
   noteReadTrackingSaga,
