@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "글꼴",
+  "chat_taskProgress_menu_label": "작업",
+  "chat_messageNavigator_menu_label": "프롬프트",
   "settings_devices_hostMachine_label": "호스트 컴퓨터(로컬)",
   "settings_wsApi_connectionDetails_label": "연결 세부 정보",
   "settings_wsApi_copyFingerprint_label": "TLS 지문 복사",
@@ -58,6 +61,9 @@
   "layout_panelTabBar_tabSection_label": "탭",
   "layout_panelTabBar_moveTabLeft_label": "탭을 왼쪽으로 이동",
   "layout_panelTabBar_moveTabRight_label": "탭을 오른쪽으로 이동",
+  "layout_panelTabBar_movePanel_label": "패널 이동",
+  "layout_panelTabBar_movePanelUp_label": "패널을 위로 이동",
+  "layout_panelTabBar_movePanelDown_label": "패널을 아래로 이동",
   "layout_panelTabBar_movePanelLeft_label": "패널을 왼쪽으로 이동",
   "layout_panelTabBar_movePanelRight_label": "패널을 오른쪽으로 이동",
   "ui_viewSettings_spellcheckPreview_description": "맞춤법 검사는 편집 가능한 노트 보기에서 사용할 수 있습니다.",

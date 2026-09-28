@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "Fuente",
+  "chat_taskProgress_menu_label": "Tareas",
+  "chat_messageNavigator_menu_label": "Instrucciones",
   "settings_devices_hostMachine_label": "Equipo anfitrión (local)",
   "settings_wsApi_connectionDetails_label": "Detalles de conexión",
   "settings_wsApi_copyFingerprint_label": "Copiar huella TLS",
@@ -58,6 +61,9 @@
   "layout_panelTabBar_tabSection_label": "Pestaña",
   "layout_panelTabBar_moveTabLeft_label": "Mover pestaña a la izquierda",
   "layout_panelTabBar_moveTabRight_label": "Mover pestaña a la derecha",
+  "layout_panelTabBar_movePanel_label": "Mover panel",
+  "layout_panelTabBar_movePanelUp_label": "Mover panel hacia arriba",
+  "layout_panelTabBar_movePanelDown_label": "Mover panel hacia abajo",
   "layout_panelTabBar_movePanelLeft_label": "Mover panel a la izquierda",
   "layout_panelTabBar_movePanelRight_label": "Mover panel a la derecha",
   "ui_viewSettings_spellcheckPreview_description": "La corrección ortográfica está disponible en una vista de nota editable.",

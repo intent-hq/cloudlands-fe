@@ -1,4 +1,7 @@
 {
+  "ui_viewSettings_font_label": "Police",
+  "chat_taskProgress_menu_label": "Tâches",
+  "chat_messageNavigator_menu_label": "Consignes",
   "settings_devices_hostMachine_label": "Machine hôte (locale)",
   "settings_wsApi_connectionDetails_label": "Détails de connexion",
   "settings_wsApi_copyFingerprint_label": "Copier l’empreinte TLS",
@@ -58,6 +61,9 @@
   "layout_panelTabBar_tabSection_label": "Onglet",
   "layout_panelTabBar_moveTabLeft_label": "Déplacer l’onglet vers la gauche",
   "layout_panelTabBar_moveTabRight_label": "Déplacer l’onglet vers la droite",
+  "layout_panelTabBar_movePanel_label": "Déplacer le panneau",
+  "layout_panelTabBar_movePanelUp_label": "Déplacer le panneau vers le haut",
+  "layout_panelTabBar_movePanelDown_label": "Déplacer le panneau vers le bas",
   "layout_panelTabBar_movePanelLeft_label": "Déplacer le panneau vers la gauche",
   "layout_panelTabBar_movePanelRight_label": "Déplacer le panneau vers la droite",
   "ui_viewSettings_spellcheckPreview_description": "La correction orthographique est disponible dans une vue de note modifiable.",

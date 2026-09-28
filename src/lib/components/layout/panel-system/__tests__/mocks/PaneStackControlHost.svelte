@@ -68,7 +68,8 @@
     };
   }
 
-  const tabs = $derived(paneTypes.slice(0, stackCount).map(createTab));
+  let reorderedTabs = $state<PanelTab[] | null>(null);
+  const tabs = $derived(reorderedTabs ?? paneTypes.slice(0, stackCount).map(createTab));
   // svelte-ignore state_referenced_locally - the prop seeds the test harness state
   let activeTabId = $state(initialActiveTabId);
   let lastClosedTabId = $state('');
@@ -101,6 +102,12 @@
     workspaceId="pane-stack-workspace"
     isRightmostPanel
     isFocused
+    onTabReorder={(from, to) => {
+      const next = [...tabs];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      reorderedTabs = next;
+    }}
     onTabClick={(tabId) => (activeTabId = tabId)}
     onTabClose={(tabId) => (lastClosedTabId = tabId)}
     onClosePanel={() => (closePanelCount += 1)}
