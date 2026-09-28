@@ -3,9 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import PanelVerticalMovementHarness from './mocks/PanelVerticalMovementHarness.svelte';
 
 function pane(component: Locator, title: string) {
-  return component.locator('[data-panel-id]').filter({
-    has: component.getByTestId('pane-stack-selector-trigger').filter({ hasText: title }),
-  });
+  return component.locator(`[data-panel-id]:has([data-tab-id="${title}"][aria-hidden="false"])`);
 }
 
 async function move(page: Page, panel: Locator, direction: string) {
@@ -61,8 +59,8 @@ for (const direction of ['up', 'down'] as const) {
     for (const bounds of Object.values(split)) {
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(original.y + original.height + 1);
     }
-    await expect(alpha.locator('[data-tab-id="alpha"]')).toBeVisible();
-    await expect(beta.locator('[data-tab-id="beta"]')).toBeVisible();
+    await expect(alpha.locator('[data-tab-id="alpha"][aria-hidden="false"]')).toBeVisible();
+    await expect(beta.locator('[data-tab-id="beta"][aria-hidden="false"]')).toBeVisible();
 
     await alpha.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger').click();
     const boundary = page.getByRole('menuitem', { name: `Move panel ${direction}`, exact: true });
@@ -153,10 +151,10 @@ for (const direction of ['up', 'down'] as const) {
     const original = await geometry(alpha);
     await move(page, alpha, direction);
     const beta = pane(component, 'beta');
-    await expect(beta.locator('[data-tab-id="beta"]')).toBeVisible();
+    await expect(beta.locator('[data-tab-id="beta"][aria-hidden="false"]')).toBeVisible();
     await alpha.locator('[data-panel-tabless-header]').getByTestId('panel-close-button').click();
     await expect(alpha).toHaveCount(0);
-    await expect(beta.locator('[data-tab-id="beta"]')).toBeVisible();
+    await expect(beta.locator('[data-tab-id="beta"][aria-hidden="false"]')).toBeVisible();
     await expect
       .poll(async () => Math.abs((await geometry(beta)).height - original.height))
       .toBeLessThan(1);

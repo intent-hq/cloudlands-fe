@@ -42,7 +42,12 @@
       JSON.stringify(selectPanelLayoutWorkspace.select(store.state, workspaceId)),
     );
     store.dispatch(clearPanelLayout(workspaceId));
-    store.dispatch(initializeLayout(workspaceId, saved));
+    store.dispatch(
+      initializeLayout(workspaceId, {
+        ...saved,
+        hiddenTabs: saved.hiddenTabs.ids.map((id: string) => saved.hiddenTabs.map[id]),
+      }),
+    );
     store.dispatch(setRestoreStatus(workspaceId, 'restored'));
     generation += 1;
   }
