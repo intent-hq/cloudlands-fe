@@ -173,8 +173,29 @@ test('real chat follows disclosure growth and resizing, but preserves user scrol
   });
   await expect.poll(distance).toBeGreaterThan(100);
   const before = await viewport.evaluate((n) => n.scrollTop);
+  const anchor = await viewport.evaluate((node) => {
+    const clip = node.getBoundingClientRect();
+    const row = [...node.querySelectorAll('[data-operational-disclosure-row]')].find((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.top >= clip.top && rect.bottom <= clip.bottom;
+    })!;
+    return {
+      key: row
+        .closest('[data-operational-window-key]')!
+        .getAttribute('data-operational-window-key')!,
+      top: row.getBoundingClientRect().top,
+    };
+  });
+  const anchorTop = () =>
+    viewport.evaluate((node, key) => {
+      const row = [...node.querySelectorAll('[data-operational-window-key]')].find(
+        (row) => row.getAttribute('data-operational-window-key') === key,
+      );
+      return row?.querySelector('[data-operational-disclosure-row]')?.getBoundingClientRect().top;
+    }, anchor.key);
   await host.update({ props: { liveMessages: messages(120), detachedStatus: true, width: 380 } });
   await expect.poll(() => viewport.evaluate((n) => n.scrollTop)).toBeCloseTo(before, 0);
+  await expect.poll(anchorTop).toBeCloseTo(anchor.top, 0);
   await expect.poll(distance).toBeGreaterThan(100);
 });
 
@@ -388,11 +409,17 @@ test('streaming growth and completion follow only while the user follows the tai
   await expect.poll(distance).toBeLessThanOrEqual(2);
   async function sampleFollowing(change: () => Promise<unknown>) {
     await viewport.evaluate((node) => {
-      const root = node as HTMLElement & { samples?: number[] };
+      const root = node as HTMLElement & { samples?: number[]; beforeResizeDelivery?: number[] };
       root.samples = [];
+      root.beforeResizeDelivery = [];
       const sample = () => {
-        root.samples!.push(root.scrollHeight - root.clientHeight - root.scrollTop);
-        if (root.samples!.length < 40) requestAnimationFrame(sample);
+        root.beforeResizeDelivery!.push(root.scrollHeight - root.clientHeight - root.scrollTop);
+        // SmartScroll corrects viewport resizes in ResizeObserver, after RAF
+        // callbacks but before paint. Read the completed frame in the next task.
+        setTimeout(() => {
+          root.samples!.push(root.scrollHeight - root.clientHeight - root.scrollTop);
+          if (root.samples!.length < 40) requestAnimationFrame(sample);
+        }, 0);
       };
       requestAnimationFrame(sample);
     });
@@ -407,6 +434,14 @@ test('streaming growth and completion follow only while the user follows the tai
     );
     await info.attach('follow-bottom-frames', {
       body: JSON.stringify(samples),
+      contentType: 'application/json',
+    });
+    await info.attach('before-resize-delivery', {
+      body: JSON.stringify(
+        await viewport.evaluate(
+          (n) => (n as HTMLElement & { beforeResizeDelivery: number[] }).beforeResizeDelivery,
+        ),
+      ),
       contentType: 'application/json',
     });
     expect(Math.max(...samples.map(Math.abs))).toBeLessThanOrEqual(2);
@@ -428,6 +463,26 @@ test('streaming growth and completion follow only while the user follows the tai
   });
   await expect.poll(distance).toBeGreaterThan(100);
   const before = await viewport.evaluate((n) => n.scrollTop);
+  const anchor = await viewport.evaluate((node) => {
+    const clip = node.getBoundingClientRect();
+    const row = [...node.querySelectorAll('[data-operational-disclosure-row]')].find((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.top >= clip.top && rect.bottom <= clip.bottom;
+    })!;
+    return {
+      key: row
+        .closest('[data-operational-window-key]')!
+        .getAttribute('data-operational-window-key')!,
+      top: row.getBoundingClientRect().top,
+    };
+  });
+  const anchorTop = () =>
+    viewport.evaluate((node, key) => {
+      const row = [...node.querySelectorAll('[data-operational-window-key]')].find(
+        (row) => row.getAttribute('data-operational-window-key') === key,
+      );
+      return row?.querySelector('[data-operational-disclosure-row]')?.getBoundingClientRect().top;
+    }, anchor.key);
   await host.update({
     props: { liveMessages: live(140), liveStreaming: true, height: 600, width: 380 },
   });
@@ -436,6 +491,12 @@ test('streaming growth and completion follow only while the user follows the tai
     props: { liveMessages: live(140, false), liveStreaming: false, height: 600, width: 380 },
   });
   await expect.poll(() => viewport.evaluate((n) => n.scrollTop)).toBeCloseTo(before, 0);
+  await expect.poll(anchorTop).toBeCloseTo(anchor.top, 0);
+  await host.update({
+    props: { liveMessages: live(140, false), liveStreaming: false, height: 540, width: 500 },
+  });
+  await expect.poll(anchorTop).toBeCloseTo(anchor.top, 0);
+  await expect.poll(distance).toBeGreaterThan(100);
 });
 
 test('search restores its canonical disclosure after a group is prepended', async ({

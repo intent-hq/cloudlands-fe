@@ -1370,7 +1370,13 @@
 
   // Resolve the current catalog path to the renderer's canonical identity before
   // scrolling. Admission still happens through the shared per-frame budget.
-  async function materializeSearchRow(messageId: string, path: string, current: () => boolean) {
+  async function materializeSearchRow(
+    messageId: string,
+    path: string,
+    current: () => boolean,
+    query?: string,
+    occurrence = 0,
+  ) {
     const lease = {};
     let pinned: string | undefined;
     try {
