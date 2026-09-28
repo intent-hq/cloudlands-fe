@@ -1,3 +1,4 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import {
   claimAgentReadOwnership,
   isAgentReadWorkspaceCurrent,
@@ -2753,7 +2754,7 @@ function handleWorkspaceMembershipRemoved(
  * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
  * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
  * agent-driven toggles) mirror the per-workspace state without a follow-up
- * `mcp.servers.list` read. The slice keys the map by server *name*, so the
+ * `mcp.servers.list` read. The slice keys the map by server identity, so the
  * daemon id resolves via the current server list; an unresolvable id is
  * dropped (the sidebar's mount hydrate converges the state later).
  */
@@ -2765,8 +2766,8 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
     return;
   }
   const name = selectWorkspaceMcpServerName.select(appStore.state, workspaceId, serverId);
-  if (!name) return;
-  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, name, workspaceDisabled));
+  if (name === undefined) return;
+  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, serverId, workspaceDisabled));
 }
 
 /**
@@ -3253,10 +3254,10 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
  * `"stopped" | "starting" | "running" | "error"` (PROTOCOL §5.22). No
  * `workspaceId` envelope: the MCP-servers surface is global, so this handler
  * runs before the workspace-id gate in `handleNotification`. Resolve the
- * daemon-assigned `serverId` back to a server `name` via the current
- * `mcpSettings.servers` list (`fromWireMcpConfig` carries `id` through), then
+ * daemon-assigned `serverId` via the current `mcpSettings.servers` list
+ * (`fromWireMcpConfig` carries `id` through), then
  * dispatch `setServerStatus` plus `setServerErrorMessage` /
- * `clearServerErrorMessage` keyed by name — the slice keys everything by name.
+ * `clearServerErrorMessage` keyed by server identity.
  * The daemon-state → badge mapping is the shared `mapDaemonMcpState` from
  * mcp-settings-normalization (also used by the load saga's status fetch).
  */
@@ -3386,7 +3387,7 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const mapped = mapDaemonMcpState(status.state);
   if (mapped === null) return;
 
-  // Resolve serverId → name via the local server list. When the FE has not
+  // Resolve serverId via the local server list. When the FE has not
   // yet loaded `mcp.servers.list` (e.g. the settings panel was never opened)
   // or when the daemon emits for an id the FE never mirrored, drop the
   // update — the next `refreshMcpServers` will pick up the current state.
@@ -3394,16 +3395,16 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const match = servers.find((s) => s.id === serverId);
   if (!match) return;
 
-  appStore.dispatch(setServerStatus(match.name, mapped));
+  appStore.dispatch(setServerStatus(getMcpServerKey(match), mapped));
   const lastError = status.lastError;
   if (
     (mapped === 'error' || mapped === 'auth_required') &&
     typeof lastError === 'string' &&
     lastError.length > 0
   ) {
-    appStore.dispatch(setServerErrorMessage(match.name, lastError));
+    appStore.dispatch(setServerErrorMessage(getMcpServerKey(match), lastError));
   } else {
-    appStore.dispatch(clearServerErrorMessage(match.name));
+    appStore.dispatch(clearServerErrorMessage(getMcpServerKey(match)));
   }
 }
 

@@ -5312,6 +5312,29 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     };
   }
 
+  it('keeps live same-name server events independent by ID', async () => {
+    appStore.dispatch(
+      setServers([
+        { id: 'srv-a', name: 'same', type: 'http' },
+        { id: 'srv-b', name: 'same', type: 'http' },
+      ]),
+    );
+    await primeBridge();
+    capturedHandlers[0]!(
+      mcpNotification({
+        serverId: 'srv-a',
+        status: { serverId: 'srv-a', state: 'error', lastError: 'first failed' },
+      }),
+    );
+    capturedHandlers[0]!(
+      mcpNotification({ serverId: 'srv-b', status: { serverId: 'srv-b', state: 'running' } }),
+    );
+    expect(appStore.state.mcpSettings.statusMap['srv-a']).toBe('error');
+    expect(appStore.state.mcpSettings.statusMap['srv-b']).toBe('connected');
+    expect(appStore.state.mcpSettings.errorMessages['srv-a']).toBe('first failed');
+    expect(appStore.state.mcpSettings.errorMessages['srv-b']).toBeUndefined();
+  });
+
   function readStatus(name: string): McpServerStatus | undefined {
     return appStore.state.mcpSettings.statusMap[name];
   }
@@ -5319,7 +5342,7 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
   it("running → sets statusMap[name] = 'connected' and clears any prior error", async () => {
     seedMcpServer('srv-fs', 'filesystem');
     // Prime a prior error to prove the handler clears it on recovery.
-    appStore.dispatch(setServerErrorMessage('filesystem', 'boot failed'));
+    appStore.dispatch(setServerErrorMessage('srv-fs', 'boot failed'));
 
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5331,8 +5354,8 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
       }),
     );
 
-    expect(readStatus('filesystem')).toBe('connected');
-    expect(appStore.state.mcpSettings.errorMessages.filesystem).toBeUndefined();
+    expect(readStatus('srv-fs')).toBe('connected');
+    expect(appStore.state.mcpSettings.errorMessages['srv-fs']).toBeUndefined();
   });
 
   it("error → sets 'error' status and surfaces lastError via setServerErrorMessage", async () => {
@@ -5347,8 +5370,8 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
       }),
     );
 
-    expect(readStatus('github')).toBe('error');
-    expect(appStore.state.mcpSettings.errorMessages.github).toBe('connect ECONNREFUSED');
+    expect(readStatus('srv-gh')).toBe('error');
+    expect(appStore.state.mcpSettings.errorMessages['srv-gh']).toBe('connect ECONNREFUSED');
   });
 
   it("auth_required → preserves the daemon's recovery message", async () => {
@@ -5367,8 +5390,8 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
       }),
     );
 
-    expect(readStatus('figma')).toBe('auth_required');
-    expect(appStore.state.mcpSettings.errorMessages.figma).toBe(
+    expect(readStatus('srv-figma')).toBe('auth_required');
+    expect(appStore.state.mcpSettings.errorMessages['srv-figma']).toBe(
       'authenticate or check configured credentials',
     );
   });
@@ -5381,12 +5404,12 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     handler(
       mcpNotification({ serverId: 'srv-a', status: { serverId: 'srv-a', state: 'starting' } }),
     );
-    expect(readStatus('alpha')).toBe('configured');
+    expect(readStatus('srv-a')).toBe('configured');
 
     handler(
       mcpNotification({ serverId: 'srv-a', status: { serverId: 'srv-a', state: 'stopped' } }),
     );
-    expect(readStatus('alpha')).toBe('stopped');
+    expect(readStatus('srv-a')).toBe('stopped');
   });
 
   it('drops events for an unknown serverId (no FE state mutation)', async () => {
@@ -5482,12 +5505,12 @@ describe('daemonEventsBridge (wire contract — mcpServerToggled on workspace:up
       toggledNotification({ mcpServerToggled: { serverId: 'srv-fs', workspaceDisabled: true } }),
     );
 
-    expect(readDisabled()).toEqual({ filesystem: true });
+    expect(readDisabled()).toEqual({ 'srv-fs': true });
   });
 
   it('re-enable delta → clears the name from byWorkspaceId', async () => {
     seedMcpServer('srv-fs', 'filesystem');
-    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { filesystem: true }));
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { 'srv-fs': true }));
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -13655,7 +13678,7 @@ it.each(['server-workspace', 'server-direct'])(
       },
     });
     expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual({
-      'workspace-server': true,
+      [serverId]: true,
     });
   },
 );
@@ -13698,10 +13721,7 @@ it.each([
       ),
     );
     appStore.dispatch(
-      setWorkspaceDisabledMcpServers(
-        workspaceId,
-        firstDisabled ? {} : { 'workspace-server': true },
-      ),
+      setWorkspaceDisabledMcpServers(workspaceId, firstDisabled ? {} : { [server.id]: true }),
     );
     appStore.dispatch(setServers([{ ...server, name: 'global-server' }]));
     appStore.dispatch(
@@ -13765,7 +13785,7 @@ it.each([
       emitToggle(firstDisabled);
       await flush();
       expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
-        firstDisabled ? { 'workspace-server': true } : {},
+        firstDisabled ? { [server.id]: true } : {},
       );
       expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]).toBeUndefined();
       emitToggle(!firstDisabled);
@@ -13776,7 +13796,7 @@ it.each([
         server,
       ]);
       expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
-        firstDisabled ? {} : { 'workspace-server': true },
+        firstDisabled ? {} : { [server.id]: true },
       );
       expect(appStore.state.mcpSettings.byWorkspaceId['mcp-burst-B']?.disabledServers).toEqual({});
     } finally {

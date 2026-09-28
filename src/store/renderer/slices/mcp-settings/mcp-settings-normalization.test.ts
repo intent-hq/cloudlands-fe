@@ -84,3 +84,11 @@ describe('mcp-settings normalization', () => {
     expect(normalizeMcpServerStatus({ status: 'error' })).toBeUndefined();
   });
 });
+
+it('preserves distinct IDs in same-name advanced JSON entries', () => {
+  const servers = [
+    { id: 'srv-a', name: 'Desktop tools', type: 'http', url: 'https://a.test' },
+    { id: 'srv-b', name: 'Desktop tools', type: 'http', url: 'https://b.test' },
+  ];
+  expect(normalizeMcpServersPayload({ mcpServers: servers })).toEqual(servers);
+});

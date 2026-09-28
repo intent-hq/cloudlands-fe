@@ -1,3 +1,4 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 /**
  * MCP Settings Selectors
  */
@@ -61,11 +62,13 @@ export const selectMcpErrorMessages = store.createSelector(
   (state, workspaceId?: string): Record<string, string> => {
     if (!workspaceId) return state.mcpSettings.errorMessages;
     const snapshot = state.providerCatalog?.byWorkspaceId?.[workspaceId];
-    const names = new Map(snapshot?.mcpServers?.map((server) => [server.id, server.name]) ?? []);
+    const keys = new Map(
+      snapshot?.mcpServers?.map((server) => [server.id, getMcpServerKey(server)]) ?? [],
+    );
     return Object.fromEntries(
       (snapshot?.mcpStatuses ?? []).flatMap((status) => {
-        const name = names.get(status.serverId);
-        return name && status.lastError ? [[name, status.lastError]] : [];
+        const key = keys.get(status.serverId);
+        return key && status.lastError ? [[key, status.lastError]] : [];
       }),
     );
   },
@@ -79,8 +82,8 @@ const selectWorkspaceMcpDisabledServersByWorkspaceId = store.createSelector(
   },
 );
 
-/** Select disabled server names for a workspace */
-export const selectWorkspaceDisabledMcpServerNamesByWorkspaceId = store.createSelector(
+/** Select disabled server keys for a workspace */
+export const selectWorkspaceDisabledMcpServerKeysByWorkspaceId = store.createSelector(
   (state, workspaceId: string | null | undefined): string[] => {
     return Object.keys(selectWorkspaceMcpDisabledServersByWorkspaceId.select(state, workspaceId));
   },
@@ -95,9 +98,9 @@ export const selectMcpServersWithStatus = store.createSelector((state): McpServe
   const errorMessages = selectMcpErrorMessages.select(state);
 
   return servers.map((server) => {
-    const disabled = server.name in disabledServers;
-    const tools = toolsMap[server.name] || [];
-    let status: McpServerStatus = statusMap[server.name] || 'disconnected';
+    const disabled = getMcpServerKey(server) in disabledServers;
+    const tools = toolsMap[getMcpServerKey(server)] || [];
+    let status: McpServerStatus = statusMap[getMcpServerKey(server)] || 'disconnected';
 
     if (disabled) {
       status = 'disabled';
@@ -109,7 +112,7 @@ export const selectMcpServersWithStatus = store.createSelector((state): McpServe
       status,
       tools,
       toolCount: tools.length,
-      errorMessage: errorMessages[server.name],
+      errorMessage: errorMessages[getMcpServerKey(server)],
     };
   });
 });

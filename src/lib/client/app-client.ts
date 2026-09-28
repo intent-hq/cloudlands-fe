@@ -1258,10 +1258,10 @@ export interface SettingsClient {
   restartMcpServer(serverId: string): Promise<McpServerRuntimeStatus>;
   /**
    * Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable). Returns
-   * the names of servers whose entry carries `workspaceDisabled: true`; `null`
+   * the identity keys (ID, or legacy name) of servers whose entry carries `workspaceDisabled: true`; `null`
    * when the read fails (callers keep their current state).
    */
-  getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null>;
+  getWorkspaceDisabledMcpServerKeys(workspaceId: string): Promise<string[] | null>;
   /**
    * Workspace-scoped `mcp.servers.toggle` (§5.22 per-workspace disable): sets
    * (`enabled: false`) or clears (`enabled: true`) the per-workspace disabled
