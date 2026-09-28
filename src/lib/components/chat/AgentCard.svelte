@@ -35,6 +35,8 @@
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentNodeStatusLabel } from './agent-node-status-label';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
@@ -410,7 +412,11 @@
       : workspace?.id
         ? String(workspace.id)
         : '';
-    if (sandboxPath && selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)) {
+    if (
+      sandboxPath &&
+      !hasNodeOwnedAgentPath($agent$) &&
+      selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)
+    ) {
       items.push({
         id: 'reveal-sandbox',
         label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
@@ -628,6 +634,8 @@
     if (!wsId) return;
     appStore.dispatch(sendMessage(agentId, { wsId, text, agentName: displayName }));
   }
+
+  const effectiveStatusLabel = $derived(getAgentNodeStatusLabel($agent$) ?? statusLabel);
 
   // Sandbox directory for sandboxed agents (daemon-provided metadata).
   const agentSandboxPath = $derived.by(() => {
@@ -879,12 +887,12 @@
                 <Fa icon={faBellSlash} class="h-3! w-3!" />
               </span>
             {/if}
-            {#if statusLabel}
+            {#if effectiveStatusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
                 data-testid="agent-card-status"
               >
-                {statusLabel}
+                {effectiveStatusLabel}
               </span>
             {/if}
             <!-- {#if specialist}
