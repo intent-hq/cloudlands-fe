@@ -204,6 +204,7 @@ for (const renderer of ['message', 'streaming'] as const) {
           isStreaming: false,
         },
       });
+      await expect(component.getByTestId('reasoning-disclosure').first()).toBeVisible();
       await verify('completed');
     });
   }

@@ -77,6 +77,9 @@
   let prevTerminal = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
+  // An outro can be reversed after the other branch replaces its row window.
+  // A fresh identity prevents Svelte from reviving a retired child attachment.
+  const childLifetime = $derived({ expanded: isExpanded });
   let triggerEl: HTMLButtonElement | null = $state(null);
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
@@ -283,7 +286,9 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render children()}
+      {#key childLifetime}
+        {@render children()}
+      {/key}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -296,7 +301,9 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      {@render children()}
+      {#key childLifetime}
+        {@render children()}
+      {/key}
     </div>
   </CylinderScroller>
 {/snippet}

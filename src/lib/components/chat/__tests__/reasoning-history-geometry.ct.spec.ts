@@ -349,6 +349,7 @@ for (const renderer of rendererIds) {
           phase: 'completed',
         },
       });
+      await expect(component.getByTestId('response-group-disclosure').first()).toBeVisible();
       await verify('completed');
     });
   }

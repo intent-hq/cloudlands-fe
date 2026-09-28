@@ -1,6 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import type { ContentBlock } from '$shared/types';
 import OperationalRowWindowHost from './OperationalRowWindowHost.svelte';
+import StreamingResponseGroupLifecycleHost from './StreamingResponseGroupLifecycleHost.svelte';
 
 test.setTimeout(120_000);
 
@@ -464,4 +465,26 @@ test('a prepended same-name group cannot take the active group disclosure', asyn
   await expect(groups).toHaveCount(2);
   await expect(groups.nth(0)).toHaveAttribute('aria-expanded', 'false');
   await expect(groups.nth(1)).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('reversing a live group outro reattaches rows within the shared frame allowance', async ({
+  mount,
+}) => {
+  const component = await mount(StreamingResponseGroupLifecycleHost);
+  const trigger = component.getByTestId('response-group-disclosure');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await component.update({ props: { phase: 'live', isStreaming: true } });
+  await expect(
+    component.locator('[data-operational-preview-content] [data-response-group-child]'),
+  ).toHaveCount(6);
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    component.locator('[data-operational-expanded-content] [data-response-group-child]'),
+  ).toHaveCount(6);
+  await expect(
+    component.getByText(
+      'I will set the workspace title. Then I will read the current spec and inspect the screenshot context.',
+    ),
+  ).toBeVisible();
 });
