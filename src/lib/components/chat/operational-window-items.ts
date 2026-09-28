@@ -15,7 +15,7 @@ import { operationalRowKey, type OperationalRowDescriptor } from './operational-
 
 export interface WindowItem {
   key: string;
-  navigation: { messageId: string; path: string };
+  navigation: { messageId: string; path: string; text?: string };
   kind: OperationalRowDescriptor['kind'];
   estimatedHeight: number;
   mountPath: string;
@@ -175,6 +175,10 @@ function projectWindowItems(
         extractReasoningHistory(content).forEach((historyItem, fragment) =>
           result.push({
             ...base,
+            navigation: {
+              ...base.navigation,
+              text: `${historyItem.title ?? ''}\n\n${historyItem.body}`,
+            },
             kind: historyItem.title ? 'reasoning' : 'content',
             historyItem,
             fragment,
@@ -189,6 +193,7 @@ function projectWindowItems(
         fragments.forEach((text, fragment) =>
           result.push({
             ...base,
+            navigation: { ...base.navigation, text },
             block: { ...block, text, content: undefined },
             fragment,
             key: operationalRowKey(

@@ -862,6 +862,19 @@ describe('ResponseGroup - collapse state model', () => {
       expect(header(second.container).getAttribute('aria-expanded')).toBe('false'),
     );
   });
+
+  it('restores search while its summary is evicted but its child window remains', async () => {
+    const view = render(ResponseGroup, {
+      props: { name: 'Searchable group', searchPath: 'b:0', children },
+    });
+    const group = view.container.querySelector('[data-chat-search-disclosure-id]')!;
+    group.dispatchEvent(new CustomEvent('chatsearchexpand'));
+    await waitFor(() => expect(group.getAttribute('data-chat-search-expanded')).toBe('true'));
+    await view.rerender({ headerAdmitted: false });
+    expect(view.container.querySelector('[data-chat-operational-row]')).toBeNull();
+    group.dispatchEvent(new CustomEvent('chatsearchrestore'));
+    await waitFor(() => expect(group.getAttribute('data-chat-search-expanded')).toBe('false'));
+  });
 });
 
 describe('ResponseGroup - block identity', () => {

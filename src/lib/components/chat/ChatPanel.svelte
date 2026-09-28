@@ -780,7 +780,6 @@
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
   const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
-  const activeAnimationFrames = new Set<number>();
 
   function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
     if (!isActive) return;
@@ -791,21 +790,10 @@
     highlightRemovalTimers.add(timer);
   }
 
-  function scheduleActiveAnimationFrame(callback: () => void) {
-    if (!isActive) return;
-    const frame = requestAnimationFrame(() => {
-      activeAnimationFrames.delete(frame);
-      if (isActive && !isComponentDestroyed) callback();
-    });
-    activeAnimationFrames.add(frame);
-  }
-
   $effect(() => {
     if (isActive) return;
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
-    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
-    activeAnimationFrames.clear();
   });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
@@ -1386,8 +1374,11 @@
     const lease = {};
     let pinned: string | undefined;
     try {
-      for (let attempt = 0; attempt < 40 && current(); attempt++) {
-        const key = operationalPanel.resolveTarget(messageId, path);
+      for (let attempt = 0; attempt < 40 && current() && !isComponentDestroyed; attempt++) {
+        const key =
+          query === undefined
+            ? operationalPanel.resolveTarget(messageId, path)
+            : operationalPanel.resolveMatch(messageId, path, query, occurrence)?.key;
         if (key) {
           if (pinned !== key) {
             if (pinned) operationalPanel.pin(pinned, false, lease);
@@ -1422,7 +1413,16 @@
     if (!current() || !container) return;
     const remaining: typeof searchOpenedDisclosures = [];
     for (const opened of [...searchOpenedDisclosures].reverse()) {
-      if (opened.messageId === keepMessageId && keep.has(opened.disclosureId)) {
+      if (
+        opened.messageId === keepMessageId &&
+        (opened.key
+          ? [...keep].some(
+              (id) =>
+                operationalPanel.resolveTarget(keepMessageId, id.replace(/^group:/, '')) ===
+                opened.key,
+            )
+          : keep.has(opened.disclosureId))
+      ) {
         remaining.unshift(opened);
         continue;
       }
@@ -1430,9 +1430,11 @@
       const message = container.querySelector(
         `[data-message-id="${CSS.escape(opened.messageId)}"]`,
       );
-      const disclosure = (node ?? message)?.querySelector(
-        `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
-      );
+      const disclosure = node
+        ? node.querySelector('[data-chat-search-disclosure-id]')
+        : message?.querySelector(
+            `[data-chat-search-disclosure-id="${CSS.escape(opened.disclosureId)}"]`,
+          );
       if (disclosure) requestSearchDisclosure(disclosure, false);
       else if (opened.key) {
         const saved = operationalPanel.state<{ expanded?: boolean; searchOwnsExpansion?: boolean }>(
@@ -1453,7 +1455,8 @@
   async function revealSearchMatch(
     match: ChatSearchMatch | undefined,
     container: HTMLDivElement | undefined,
-    current = () => isActive,
+    current = () => isActive && !isComponentDestroyed,
+    query?: string,
   ) {
     if (!current()) return;
     const required = new Set(match?.disclosurePath ?? []);
@@ -1483,7 +1486,14 @@
         if (!current()) return;
       }
     }
-    if (match.blockPath) await materializeSearchRow(match.messageId, match.blockPath, current);
+    if (match.blockPath)
+      await materializeSearchRow(
+        match.messageId,
+        match.blockPath,
+        current,
+        query,
+        match.occurrenceInBlock,
+      );
   }
 
   // Trigger highlighting after LazyTurn materialization and disclosure reveal.
@@ -1500,7 +1510,8 @@
     await revealSearchMatch(
       isShowing ? matches[index] : undefined,
       container,
-      () => isActive && request === searchHighlightRequest,
+      () => isActive && !isComponentDestroyed && request === searchHighlightRequest,
+      query,
     );
     if (!isActive || request !== searchHighlightRequest) return;
     await tick();
@@ -1548,12 +1559,22 @@
 
     const matchesByBlock = new Map<
       string,
-      Array<{ match: ChatSearchMatch; globalIndex: number }>
+      Array<{ match: ChatSearchMatch; globalIndex: number; rowKey?: string }>
     >();
     matches.forEach((match, globalIndex) => {
-      const key = `${match.messageId}\u0000${match.blockPath}`;
+      const target = operationalPanel.resolveMatch(
+        match.messageId,
+        match.blockPath,
+        query,
+        match.occurrenceInBlock,
+      );
+      const key = target?.key ?? `${match.messageId}\u0000${match.blockPath}`;
       const group = matchesByBlock.get(key) ?? [];
-      group.push({ match, globalIndex });
+      group.push({
+        match: target ? { ...match, occurrenceInBlock: target.occurrenceInRow } : match,
+        globalIndex,
+        rowKey: target?.key,
+      });
       matchesByBlock.set(key, group);
     });
 
@@ -1562,11 +1583,13 @@
       const messageEl = messageElById.get(first.messageId);
       if (!messageEl) continue;
       const selector = `[data-chat-search-block-path="${CSS.escape(first.blockPath)}"]`;
+      const rowKey = blockMatches[0].rowKey;
+      const owner = rowKey ? operationalPanel.locate(rowKey)?.node : messageEl;
       const blockEl = first.blockPath
-        ? messageEl.matches(selector)
-          ? messageEl
-          : messageEl.querySelector(selector)
-        : messageEl;
+        ? owner?.matches(selector)
+          ? owner
+          : owner?.querySelector(selector)
+        : owner;
       if (!blockEl) continue;
 
       const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, {
@@ -4473,15 +4496,15 @@
     // mounting); dedup so a successfully handled request runs exactly once.
     if (handledOpenMessageRequestIds.has(detail.requestId)) return;
 
+    const binding = searchBindingKey();
     // Force-render the target's turn through the LazyTurn virtualization and
     // drop follow so streaming growth doesn't yank the viewport back down.
     deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
     shouldFollowBottom = false;
     await tick();
     if (!isActive) return;
-    const binding = searchBindingKey();
     const targetElement = await forceRenderAndFindMessage(detail.messageId);
-    const current = () => isActive && binding === searchBindingKey();
+    const current = () => isActive && !isComponentDestroyed && binding === searchBindingKey();
     if (!current() || !targetElement) return;
     handledOpenMessageRequestIds.add(detail.requestId);
     const match = detail.query
@@ -4492,7 +4515,7 @@
           workspace?.ownerPrincipalId,
         )[0]
       : undefined;
-    if (match) await revealSearchMatch(match, scrollContainer, current);
+    if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
     if (!current()) return;
     if (!match) smoothScrollTo(targetElement, 'center');
     scheduleDeepOpenRelease();
@@ -4749,8 +4772,6 @@
     }
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
-    for (const frame of activeAnimationFrames) cancelAnimationFrame(frame);
-    activeAnimationFrames.clear();
 
     // Cache the transcript scroll state so a remount restores the user's
     // reading position instead of re-entering at the bottom. Guarded

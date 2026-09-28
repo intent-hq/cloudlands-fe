@@ -8,7 +8,7 @@ import {
 const CONTEXT = Symbol('operational-panel');
 type Entry = Omit<OperationalRowDescriptor, 'scopeId'> & {
   mountPath?: string;
-  navigation?: { messageId: string; path: string };
+  navigation?: { messageId: string; path: string; text?: string };
 };
 export type WindowSegment = {
   key: string;
@@ -43,6 +43,8 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   const headers = new Map<string, { height: number; offset: number }>();
   const elements = new Map<string, HTMLElement>();
   const owners = new Map<string, string>();
+  const navigationTargets = new Map<string, Entry[]>();
+  const targetId = (messageId: string, path: string) => JSON.stringify([messageId, path]);
   const anchors = new Map<HTMLElement, { key: string; top: number; scrollTop: number }>();
   const retained = new Map<string, object>();
   let disposed = false;
@@ -108,7 +110,20 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       }
     }
   }
+  function indexTargets() {
+    navigationTargets.clear();
+    for (const [scope, root] of roots) {
+      for (const entry of root.entries) {
+        if (!entry.navigation || owners.get(entry.key) !== scope) continue;
+        const id = targetId(entry.navigation.messageId, entry.navigation.path);
+        const entries = navigationTargets.get(id) ?? [];
+        entries.push(entry);
+        navigationTargets.set(id, entries);
+      }
+    }
+  }
   function rebuild() {
+    indexTargets();
     policy.setEntries(
       [...roots].flatMap(([scopeId, root]) =>
         root.entries
@@ -296,14 +311,25 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   return {
     policy,
     resolveTarget(messageId: string, path: string) {
-      for (const [scope, root] of roots) {
-        const entry = root.entries.find(
-          (entry) =>
-            owners.get(entry.key) === scope &&
-            entry.navigation?.messageId === messageId &&
-            entry.navigation.path === path,
-        );
-        if (entry) return entry.key;
+      return navigationTargets.get(targetId(messageId, path))?.[0]?.key;
+    },
+    resolveMatch(messageId: string, path: string, query: string, occurrence: number) {
+      const entries = navigationTargets.get(targetId(messageId, path)) ?? [];
+      const first = entries[0];
+      if (!first) return undefined;
+      if (entries.length === 1 || !query) return { key: first.key, occurrenceInRow: occurrence };
+      const needle = query.toLowerCase();
+      let remaining = occurrence;
+      for (const entry of entries) {
+        const text = entry.navigation?.text?.toLowerCase() ?? '';
+        let count = 0;
+        let offset = 0;
+        while ((offset = text.indexOf(needle, offset)) !== -1) {
+          count++;
+          offset += needle.length;
+        }
+        if (remaining < count) return { key: entry.key, occurrenceInRow: remaining };
+        remaining -= count;
       }
       return undefined;
     },
@@ -406,6 +432,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         )
       ) {
         root.entries = entries;
+        indexTargets();
         return;
       }
       generation++;
@@ -489,6 +516,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       headers.clear();
       elements.clear();
       owners.clear();
+      navigationTargets.clear();
       anchors.clear();
       retained.clear();
       pins.clear();

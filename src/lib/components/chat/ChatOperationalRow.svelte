@@ -109,13 +109,6 @@
     class: className = '',
   }: Props = $props();
 
-  function attachHeaderSearch(
-    node: HTMLElement,
-    handlers: Parameters<typeof searchDisclosureEvents>[1],
-  ) {
-    return searchDisclosureEvents(node.parentElement!, handlers);
-  }
-
   // Delegates to the consumer transition when provided; the zero-duration
   // fallback keeps removal synchronous for rows without preview motion.
   function previewContentTransition(
@@ -139,14 +132,10 @@
   data-conversation-layer={conversationLayer}
   data-chat-search-disclosure-id={searchDisclosureId}
   data-chat-search-expanded={searchDisclosureId ? expanded : undefined}
+  use:searchDisclosureEvents={{ onExpand: onSearchExpand, onRestore: onSearchRestore }}
 >
   {#if headerAdmitted}
-    <div
-      class={CHAT_OPERATIONAL_ROW_CLASS}
-      data-operational-disclosure-row
-      data-compact-tool-row
-      use:attachHeaderSearch={{ onExpand: onSearchExpand, onRestore: onSearchRestore }}
-    >
+    <div class={CHAT_OPERATIONAL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
       {#if interactive}
         <Button
           variant="plain"

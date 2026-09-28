@@ -53,6 +53,28 @@ afterEach(() => {
 });
 
 describe('panel geometry lifetime', () => {
+  it('maps repeated block matches to the correct emitted fragment and local occurrence', () => {
+    const entries = ['needle', 'other', 'needle needle'].map((text, index) => ({
+      ...entry,
+      key: `fragment-${index}`,
+      navigation: { messageId: 'message', path: 'b:0:c:1', text },
+    }));
+    panel.attach('message', node(), entries, vi.fn());
+    expect(panel.resolveMatch('message', 'b:0:c:1', 'needle', 0)).toEqual({
+      key: 'fragment-0',
+      occurrenceInRow: 0,
+    });
+    expect(panel.resolveMatch('message', 'b:0:c:1', 'NEEDLE', 1)).toEqual({
+      key: 'fragment-2',
+      occurrenceInRow: 0,
+    });
+    expect(panel.resolveMatch('message', 'b:0:c:1', 'needle', 2)).toEqual({
+      key: 'fragment-2',
+      occurrenceInRow: 1,
+    });
+    expect(panel.resolveMatch('message', 'b:0:c:1', 'absent', 0)).toBeUndefined();
+  });
+
   it('resolves current source paths to canonical rows without synchronous geometry reads', () => {
     const root = node();
     const original = { ...entry, navigation: { messageId: 'message', path: 'b:2' } };

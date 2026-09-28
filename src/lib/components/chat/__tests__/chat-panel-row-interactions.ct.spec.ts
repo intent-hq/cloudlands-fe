@@ -189,7 +189,7 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
             {
               type: 'thinking',
               id: `reason-${i}`,
-              text: `Evidence ${i}\n\nReasoning target-${i}-end.`,
+              text: `Evidence ${i}\n\nReasoning target-${i}-end`,
             },
             { type: 'text', id: `reason-close-${i}`, text: '</group:Prepping>' },
           ]).flat()
@@ -198,7 +198,7 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
             {
               type: 'thinking',
               id: 'history',
-              text: Array.from({ length: 100 }, (_, i) => `**Reasoning target-${i}-end.**`).join(
+              text: Array.from({ length: 100 }, (_, i) => `**Reasoning target-${i}-end**`).join(
                 '\n\n',
               ),
             },
@@ -212,8 +212,8 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
     await viewport.click({ position: { x: 4, y: 4 } });
     await page.keyboard.press('ControlOrMeta+f');
     const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
-    await input.fill('Reasoning target-10-end.');
-    await expect(host.getByText('Reasoning target-10-end.', { exact: true })).toBeInViewport();
+    await input.fill('Reasoning target-10-end');
+    await expect(host.getByText('Reasoning target-10-end', { exact: true })).toBeInViewport();
     await expect
       .poll(() =>
         page.evaluate(() => {
@@ -222,9 +222,9 @@ for (const shape of ['many-groups', 'one-history-block'] as const) {
           return ranges ? Array.from(ranges)[0]?.toString() : undefined;
         }),
       )
-      .toBe('Reasoning target-10-end.');
-    await input.fill('Reasoning target-90-end.');
-    await expect(host.getByText('Reasoning target-90-end.', { exact: true })).toBeInViewport();
+      .toBe('Reasoning target-10-end');
+    await input.fill('Reasoning target-90-end');
+    await expect(host.getByText('Reasoning target-90-end', { exact: true })).toBeInViewport();
     await input.press('Escape');
   });
 }
@@ -455,6 +455,7 @@ test('search restores its canonical disclosure after a group is prepended', asyn
     .getByTestId('response-group-disclosure')
     .filter({ hasText: 'Inspect 10' });
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await input.press('Enter');
   const prepended = structuredClone(source);
   prepended[1].contentBlocks!.unshift({
     type: 'text',
