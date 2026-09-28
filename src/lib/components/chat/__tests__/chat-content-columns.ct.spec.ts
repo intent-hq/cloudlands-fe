@@ -302,6 +302,7 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
 
 test('contains expanded long tool content, follows bottom, and preserves composer focus', async ({
   mount,
+  page,
 }) => {
   const component = await mount(ChatPanelOperationalGeometryHost, {
     props: { theme: 'dark', zoom: 2, width: 360 },
@@ -317,7 +318,9 @@ test('contains expanded long tool content, follows bottom, and preserves compose
   await longTool
     .getByTestId('tool-call-disclosure')
     .evaluate((element) => (element as HTMLElement).click());
-  await viewport.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+  // Wheel-up above paused following; resume through downward user input.
+  await viewport.hover({ position: { x: 2, y: 100 } });
+  await page.mouse.wheel(0, 100_000);
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))
     .toBeLessThanOrEqual(1);
