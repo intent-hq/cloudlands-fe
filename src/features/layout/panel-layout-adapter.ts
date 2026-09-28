@@ -10,6 +10,8 @@
 
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import type { PanelCycleDirection } from './panel-cycle-navigation';
+import { resolvePaneColumnMove } from './panel-pane-column-move';
 import {
   openTab,
   openTabInAdjacentOrSplit as openTabInAdjacentOrSplitAction,
@@ -196,6 +198,16 @@ export class PanelLayoutAdapter {
   }
   moveTabToPanel(tabId: string, fromPanelId: string, toPanelId: string, insertIndex?: number) {
     this.dispatch(moveTabToPanel(this.workspaceId, tabId, fromPanelId, toPanelId, insertIndex));
+  }
+  moveActivePaneToColumn(panelId: string, direction: PanelCycleDirection): boolean {
+    const move = resolvePaneColumnMove(this.getPanelIds(), this.getPanel(panelId), direction);
+    if (!move) return false;
+    if (move.kind === 'neighbor') {
+      this.moveTabToPanel(move.tabId, panelId, move.targetPanelId);
+    } else {
+      this.moveTabToSplitLevel(move.tabId, panelId, [], move.position, 'horizontal');
+    }
+    return true;
   }
   moveTabToSplit(
     tabId: string,

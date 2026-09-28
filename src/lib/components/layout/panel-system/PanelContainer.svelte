@@ -12,6 +12,7 @@
     PanelState,
     PanelTab,
   } from '$features/layout/panel-layout-adapter';
+  import { resolvePaneColumnMove } from '$features/layout/panel-pane-column-move';
   import { cn } from '$lib/utils';
   import Panel from './Panel.svelte';
   import PanelSplitHandle from './PanelSplitHandle.svelte';
@@ -670,10 +671,10 @@
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
         {onPaneDropPreview}
         {onPaneDragFinish}
-        onMovePaneLeft={onMoveActivePane && panelIndex > 0
+        onMovePaneLeft={onMoveActivePane && resolvePaneColumnMove(panelOrder, panel, 'prev')
           ? () => onMoveActivePane(node.panelId, 'prev')
           : undefined}
-        onMovePaneRight={onMoveActivePane && panelIndex >= 0 && panelIndex < panelOrder.length - 1
+        onMovePaneRight={onMoveActivePane && resolvePaneColumnMove(panelOrder, panel, 'next')
           ? () => onMoveActivePane(node.panelId, 'next')
           : undefined}
         onMoveLeft={panelIndex > 0

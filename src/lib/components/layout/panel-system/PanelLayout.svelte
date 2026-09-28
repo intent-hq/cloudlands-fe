@@ -1076,14 +1076,7 @@
   }
 
   function handleMoveActivePane(panelId: string, direction: PanelCycleDirection) {
-    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
-    const panelIndex = panelIds.indexOf(panelId);
-    const targetIndex = panelIndex + (direction === 'next' ? 1 : -1);
-    const targetPanelId = panelIds[targetIndex];
-    const activeTabId = layoutManager.getPanel(panelId)?.activeTabId;
-    if (targetPanelId && activeTabId) {
-      layoutManager.moveTabToPanel(activeTabId, panelId, targetPanelId);
-    }
+    layoutManager.moveActivePaneToColumn(panelId, direction);
   }
 
   function handleTabDropToSplitHandle(
