@@ -15,7 +15,7 @@ export interface OperationalRowViewport {
   bottom: number;
 }
 
-export type OperationalRowSegment = {
+type OperationalRowSegment = {
   type: 'row' | 'content' | 'spacer';
   scopeId: string;
   key: string;
