@@ -193,6 +193,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       // its first admitted row renders. Its positive flow height is still visible.
       let hidden = box.height <= 0;
       let scroll: HTMLElement | undefined;
+      let scrollCandidate: HTMLElement | undefined;
       for (let parent = root.node.parentElement; parent; parent = parent.parentElement) {
         const style = getComputedStyle(parent);
         if (
@@ -201,7 +202,12 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           parent.matches('[data-operational-expanded-content][aria-hidden="true"]')
         )
           hidden = true;
-        if (!scroll && /(auto|scroll)/.test(style.overflowY)) scroll = parent;
+        if (/(auto|scroll)/.test(style.overflowY)) {
+          scrollCandidate ??= parent;
+          // Unconstrained disclosure bodies advertise auto overflow but cannot
+          // move vertically. Keep walking to the actual transcript scrollport.
+          if (!scroll && parent.scrollHeight > parent.clientHeight) scroll = parent;
+        }
         const clipsX = /(auto|scroll|hidden|clip)/.test(style.overflowX);
         const clipsY = /(auto|scroll|hidden|clip)/.test(style.overflowY);
         if (clipsX || clipsY) {
@@ -223,7 +229,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         box.left >= clipRight ||
         (box.width > 0 ? box.right <= clipLeft : box.left < clipLeft);
       const documentScroll = (document.scrollingElement ?? document.documentElement) as HTMLElement;
-      scroll ??= documentScroll;
+      scroll ??= scrollCandidate ?? documentScroll;
       const scrollBox = scroll.getBoundingClientRect();
       root.geometry = {
         top: box.top,

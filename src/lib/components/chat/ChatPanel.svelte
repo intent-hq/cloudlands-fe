@@ -780,6 +780,26 @@
   let showLockConfirmation = $state(false);
   let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
   const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
+  const activeAnimationFrames = new Map<number, (active: boolean) => void>();
+
+  function waitForActiveFrame(): Promise<boolean> {
+    if (!isActive || isComponentDestroyed) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const frame = requestAnimationFrame(() => {
+        activeAnimationFrames.delete(frame);
+        resolve(isActive && !isComponentDestroyed);
+      });
+      activeAnimationFrames.set(frame, resolve);
+    });
+  }
+
+  function cancelActiveFrames() {
+    for (const [frame, resolve] of activeAnimationFrames) {
+      cancelAnimationFrame(frame);
+      resolve(false);
+    }
+    activeAnimationFrames.clear();
+  }
 
   function scheduleHighlightRemoval(element: HTMLElement, className: string, delayMs: number) {
     if (!isActive) return;
@@ -794,6 +814,7 @@
     if (isActive) return;
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
+    cancelActiveFrames();
   });
   const LOCK_CONFIRMATION_DURATION_MS = 1500;
 
@@ -1401,7 +1422,7 @@
             if (node?.isConnected && location.admitted) return node;
           }
         }
-        await new Promise(requestAnimationFrame);
+        if (!(await waitForActiveFrame())) return undefined;
         await tick();
       }
     } finally {
@@ -1522,8 +1543,7 @@
     if (!isActive || request !== searchHighlightRequest) return;
     await tick();
     if (!isActive) return;
-    await new Promise(requestAnimationFrame);
-    if (!isActive || request !== searchHighlightRequest) return;
+    if (!(await waitForActiveFrame()) || request !== searchHighlightRequest) return;
     doHighlightSearchMatches(query, index, matches, isShowing, container);
   }
 
@@ -4508,8 +4528,10 @@
     deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
     shouldFollowBottom = false;
     await tick();
-    if (!isActive) return;
-    const targetElement = await forceRenderAndFindMessage(detail.messageId);
+    if (!(await waitForActiveFrame())) return;
+    const targetElement = scrollContainer?.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(detail.messageId)}"]`,
+    );
     const current = () => isActive && !isComponentDestroyed && binding === searchBindingKey();
     if (!current() || !targetElement) return;
     handledOpenMessageRequestIds.add(detail.requestId);
@@ -4778,6 +4800,7 @@
     }
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
+    cancelActiveFrames();
 
     // Cache the transcript scroll state so a remount restores the user's
     // reading position instead of re-entering at the bottom. Guarded

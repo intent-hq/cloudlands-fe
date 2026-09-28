@@ -199,6 +199,23 @@ describe('panel geometry lifetime', () => {
     expect(panel.policy.snapshot().mountedKeys).toEqual([entry.key]);
   });
 
+  it('locates rows through a non-scrolling auto-overflow wrapper', () => {
+    const scroll = node();
+    scroll.style.overflowY = 'auto';
+    vi.spyOn(scroll, 'clientHeight', 'get').mockReturnValue(300);
+    vi.spyOn(scroll, 'scrollHeight', 'get').mockReturnValue(3000);
+    const wrapper = node();
+    wrapper.style.overflowY = 'auto';
+    vi.spyOn(wrapper, 'clientHeight', 'get').mockReturnValue(2800);
+    vi.spyOn(wrapper, 'scrollHeight', 'get').mockReturnValue(2800);
+    scroll.append(wrapper);
+    const root = node();
+    wrapper.append(root);
+    panel.attach('message', root, [entry], vi.fn());
+    frame();
+    expect(panel.locate(entry.key)?.scrollRoot).toBe(scroll);
+  });
+
   it('returns scroll coordinates in the scrollport units under CSS zoom', () => {
     const scroll = node();
     scroll.style.overflowY = 'auto';

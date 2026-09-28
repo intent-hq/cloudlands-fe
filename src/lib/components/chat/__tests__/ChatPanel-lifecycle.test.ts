@@ -647,8 +647,12 @@ async function settleSearchHighlight() {
   await vi.advanceTimersByTimeAsync(150);
   await tick();
   await tick();
-  while (frames.length > 0) flushFrame();
-  await Promise.resolve();
+  // Bounded row admission may await several frames; drain microtasks between
+  // them just as the browser does, without changing the one-highlight assertion.
+  for (let frame = 0; frame < 45; frame++) {
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 }
 
 beforeEach(() => {
