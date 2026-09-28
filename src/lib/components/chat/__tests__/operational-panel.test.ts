@@ -57,6 +57,150 @@ afterEach(() => {
   document.documentElement.scrollTop = 0;
 });
 
+describe('panel scope work', () => {
+  function addScopes(count: number) {
+    return Array.from({ length: count }, (_, index) =>
+      panel.attach(
+        `message${index}`,
+        node(),
+        Array.from({ length: 4 }, (_, row) => ({
+          key: `message${index}:row${row}`,
+          kind: 'tool' as const,
+          estimatedHeight: 28,
+          navigation: { messageId: `message${index}`, path: `b:${row}` },
+        })),
+        vi.fn(),
+      ),
+    );
+  }
+
+  it('bounds full-panel descriptor work across a batch of new message scopes', () => {
+    const rebuild = vi.spyOn(panel.policy, 'setEntries');
+    const snapshots = vi.spyOn(panel.policy, 'snapshot');
+    const scopeCount = 80;
+    addScopes(scopeCount);
+    // Initial spacers and navigation are available synchronously, but the
+    // descriptor collection must not be copied once for every new message.
+    expect(panel.resolveTarget('message79', 'b:3')).toBe('message79:row3');
+    expect(rebuild.mock.calls.reduce((work, [rows]) => work + rows.length, 0)).toBeLessThanOrEqual(
+      scopeCount * 4 * 2,
+    );
+    expect(snapshots.mock.calls.length).toBeLessThanOrEqual(2);
+    frame();
+    expect(rebuild.mock.calls.reduce((work, [rows]) => work + rows.length, 0)).toBeLessThanOrEqual(
+      scopeCount * 4 * 2,
+    );
+    expect(panel.policy.snapshot().mountedKeys.length).toBeLessThanOrEqual(4);
+  });
+
+  it('bounds descriptor work when all message scopes are removed together', () => {
+    const remove = addScopes(80);
+    frame();
+    const rebuild = vi.spyOn(panel.policy, 'setEntries');
+    const snapshots = vi.spyOn(panel.policy, 'snapshot');
+    for (const detach of remove) detach();
+    expect(panel.resolveTarget('message79', 'b:3')).toBeUndefined();
+    expect(rebuild.mock.calls.reduce((work, [rows]) => work + rows.length, 0)).toBeLessThanOrEqual(
+      320,
+    );
+    expect(snapshots.mock.calls.length).toBeLessThanOrEqual(2);
+    frame();
+    expect(panel.policy.snapshot().mountedKeys).toEqual([]);
+  });
+
+  it('updates navigation metadata without visiting unchanged message descriptors', () => {
+    const unrelatedNavigation = vi.fn(() => ({ messageId: 'other', path: 'b:0' }));
+    const other = {
+      ...entry,
+      key: 'other',
+      get navigation() {
+        return unrelatedNavigation();
+      },
+    };
+    panel.attach('other', node(), [other], vi.fn());
+    panel.attach(
+      'changed',
+      node(),
+      [{ ...entry, navigation: { messageId: 'changed', path: 'b:0' } }],
+      vi.fn(),
+    );
+    unrelatedNavigation.mockClear();
+    panel.update('changed', [{ ...entry, navigation: { messageId: 'changed', path: 'b:1' } }]);
+    expect(panel.resolveTarget('changed', 'b:0')).toBeUndefined();
+    expect(panel.resolveTarget('changed', 'b:1')).toBe(entry.key);
+    expect(panel.resolveTarget('other', 'b:0')).toBe('other');
+    expect(unrelatedNavigation).not.toHaveBeenCalled();
+  });
+
+  it('keeps source fragment order when another scope metadata changes', () => {
+    const first = {
+      ...entry,
+      key: 'first',
+      navigation: { messageId: 'same', path: 'b:0', text: 'Needle' },
+    };
+    const second = {
+      ...entry,
+      key: 'second',
+      navigation: { messageId: 'same', path: 'b:0', text: 'Needle Needle' },
+    };
+    panel.attach('first', node(), [first], vi.fn());
+    panel.attach('second', node(), [second], vi.fn());
+    panel.update('first', [
+      { ...first, navigation: { ...first.navigation, text: 'Updated Needle' } },
+    ]);
+    expect(panel.resolveTarget('same', 'b:0')).toBe('first');
+    expect(panel.resolveMatch('same', 'b:0', ' needle ', 2)).toEqual({
+      key: 'second',
+      occurrenceInRow: 1,
+    });
+  });
+
+  it('moves target ownership without exposing the old scope element or deleting the replacement', () => {
+    const first = node();
+    const removeFirst = panel.attach(
+      'first',
+      first,
+      [{ ...entry, navigation: { messageId: 'm', path: 'b:0' } }],
+      vi.fn(),
+    );
+    const oldRow = node();
+    first.append(oldRow);
+    panel.watch(oldRow, entry.key);
+    panel.attach('second', node(), [{ ...entry, key: 'other' }], vi.fn());
+    frame();
+    panel.update('second', [{ ...entry, navigation: { messageId: 'm', path: 'b:1' } }]);
+    expect(panel.resolveTarget('m', 'b:0')).toBeUndefined();
+    expect(panel.resolveTarget('m', 'b:1')).toBe(entry.key);
+    expect(panel.locate(entry.key)?.node).toBeUndefined();
+    expect(panel.locate(entry.key)?.admitted).toBe(false);
+    removeFirst();
+    expect(panel.resolveTarget('m', 'b:1')).toBe(entry.key);
+  });
+
+  it('invalidates a replacement immediately and ignores old cleanup before the batched rebuild', () => {
+    const old = node();
+    const removeOld = panel.attach('same', old, [entry], vi.fn());
+    frame();
+    expect(panel.policy.snapshot().mountedKeys).toContain(entry.key);
+    const replacement = node();
+    const notify = vi.fn();
+    panel.attach(
+      'same',
+      replacement,
+      [{ ...entry, navigation: { messageId: 'same', path: 'b:1' } }],
+      notify,
+    );
+    removeOld();
+    expect(panel.policy.snapshot().mountedKeys).not.toContain(entry.key);
+    expect(panel.resolveTarget('same', 'b:1')).toBe(entry.key);
+    expect(notify.mock.lastCall?.[0]).toEqual([
+      expect.objectContaining({ type: 'spacer', admitted: false }),
+    ]);
+    frame();
+    expect(panel.resolveTarget('same', 'b:1')).toBe(entry.key);
+  });
+});
+
 describe('panel geometry lifetime', () => {
   it('maps a trimmed catalog query to the real emitted reasoning fragment', () => {
     const message: AgentMessage = {

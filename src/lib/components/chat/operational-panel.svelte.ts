@@ -23,6 +23,8 @@ type Root = {
   entries: Entry[];
   notify: (segments: WindowSegment[]) => void;
   shells: Set<string>;
+  order: number;
+  targets: Map<string, Entry[]>;
   segments?: WindowSegment[];
   geometry?: {
     top: number;
@@ -43,7 +45,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   const headers = new Map<string, { height: number; offset: number }>();
   const elements = new Map<string, HTMLElement>();
   const owners = new Map<string, string>();
-  const navigationTargets = new Map<string, Entry[]>();
+  const navigationTargets = new Map<string, Map<Root, Entry[]>>();
+  let nextRootOrder = 0;
+  let entriesChanged = false;
   const targetId = (messageId: string, path: string) => JSON.stringify([messageId, path]);
   const anchors = new Map<HTMLElement, { key: string; top: number; scrollTop: number }>();
   const retained = new Map<string, object>();
@@ -66,69 +70,120 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
   function height(entry: Entry) {
     return heights.get(entry.key) ?? entry.estimatedHeight;
   }
-  function publish() {
-    mounted = new Set(policy.snapshot().mountedKeys);
-    for (const [scope, root] of roots) {
-      const segments: WindowSegment[] = [];
-      root.entries.forEach((entry, index) => {
-        const admitted = owners.get(entry.key) === scope && mounted.has(entry.key);
-        const type =
-          admitted || entry.kind === 'content' || root.shells.has(entry.key) ? 'row' : 'spacer';
-        const previous = segments.at(-1);
-        if (type === 'spacer' && previous?.type === 'spacer') {
-          previous.end = index + 1;
-          previous.height += height(entry);
-          previous.key = `gap:${root.entries[previous.start].key}:${entry.key}`;
-        } else
-          segments.push({
-            key: type === 'spacer' ? `gap:${entry.key}:${entry.key}` : entry.key,
-            start: index,
-            end: index + 1,
-            height: height(entry),
-            type,
-            admitted,
-          });
-      });
-      if (
-        !root.segments ||
-        segments.length !== root.segments.length ||
-        segments.some((segment, index) => {
-          const old = root.segments?.[index];
-          return (
-            !old ||
-            segment.key !== old.key ||
-            segment.height !== old.height ||
-            segment.admitted !== old.admitted ||
-            segment.start !== old.start ||
-            segment.end !== old.end ||
-            segment.type !== old.type
-          );
-        })
-      ) {
-        root.segments = segments;
-        root.notify(segments);
-      }
+  function publishRoot(scope: string, root: Root) {
+    const segments: WindowSegment[] = [];
+    root.entries.forEach((entry, index) => {
+      const admitted = owners.get(entry.key) === scope && mounted.has(entry.key);
+      const type =
+        admitted || entry.kind === 'content' || root.shells.has(entry.key) ? 'row' : 'spacer';
+      const previous = segments.at(-1);
+      if (type === 'spacer' && previous?.type === 'spacer') {
+        previous.end = index + 1;
+        previous.height += height(entry);
+        previous.key = `gap:${root.entries[previous.start].key}:${entry.key}`;
+      } else
+        segments.push({
+          key: type === 'spacer' ? `gap:${entry.key}:${entry.key}` : entry.key,
+          start: index,
+          end: index + 1,
+          height: height(entry),
+          type,
+          admitted,
+        });
+    });
+    if (
+      !root.segments ||
+      segments.length !== root.segments.length ||
+      segments.some((segment, index) => {
+        const old = root.segments?.[index];
+        return (
+          !old ||
+          segment.key !== old.key ||
+          segment.height !== old.height ||
+          segment.admitted !== old.admitted ||
+          segment.start !== old.start ||
+          segment.end !== old.end ||
+          segment.type !== old.type
+        );
+      })
+    ) {
+      root.segments = segments;
+      root.notify(segments);
     }
   }
-  function indexTargets() {
-    navigationTargets.clear();
-    for (const [scope, root] of roots) {
-      for (const entry of root.entries) {
-        if (!entry.navigation || owners.get(entry.key) !== scope) continue;
-        const id = targetId(entry.navigation.messageId, entry.navigation.path);
-        const entries = navigationTargets.get(id) ?? [];
-        entries.push(entry);
-        navigationTargets.set(id, entries);
+  function publish() {
+    const snapshot = policy.snapshot();
+    mounted = new Set(snapshot.mountedKeys);
+    for (const [scope, root] of roots) publishRoot(scope, root);
+    return snapshot;
+  }
+  function removeTargets(root: Root) {
+    for (const id of root.targets.keys()) {
+      const scopes = navigationTargets.get(id);
+      scopes?.delete(root);
+      if (!scopes?.size) navigationTargets.delete(id);
+    }
+    root.targets.clear();
+  }
+  function indexTargets(scope: string, root: Root) {
+    removeTargets(root);
+    for (const entry of root.entries) {
+      if (owners.get(entry.key) !== scope) continue;
+      const navigation = entry.navigation;
+      if (!navigation) continue;
+      const id = targetId(navigation.messageId, navigation.path);
+      let entries = root.targets.get(id);
+      if (!entries) {
+        entries = [];
+        root.targets.set(id, entries);
+        let scopes = navigationTargets.get(id);
+        if (!scopes) navigationTargets.set(id, (scopes = new Map()));
+        scopes.set(root, entries);
       }
+      entries.push(entry);
+    }
+  }
+  function targetsFor(messageId: string, path: string) {
+    return [...(navigationTargets.get(targetId(messageId, path)) ?? [])]
+      .sort(([a], [b]) => a.order - b.order)
+      .flatMap(([, entries]) => entries);
+  }
+  function invalidate(keys: string[]) {
+    policy.invalidateMounts(keys);
+    // Only the frame snapshot grants permission. Scope mutations may revoke it
+    // immediately, without scanning every panel descriptor for a new snapshot.
+    for (const key of keys) mounted.delete(key);
+  }
+  function claim(scope: string, entries: Entry[]) {
+    const displaced = new Set<string>();
+    for (const entry of entries) {
+      const old = owners.get(entry.key);
+      if (old && old !== scope) displaced.add(old);
+      owners.set(entry.key, scope);
+    }
+    return displaced;
+  }
+  function refreshScopes(scopes: Iterable<string>) {
+    for (const scope of scopes) {
+      const root = roots.get(scope);
+      if (!root) continue;
+      indexTargets(scope, root);
+      publishRoot(scope, root);
     }
   }
   function rebuild() {
-    indexTargets();
+    if (!entriesChanged) return;
+    entriesChanged = false;
     policy.setEntries(
       [...roots].flatMap(([scopeId, root]) =>
         root.entries
           .filter((entry) => owners.get(entry.key) === scopeId)
-          .map((entry) => ({ ...entry, scopeId, estimatedHeight: height(entry) })),
+          .map((entry) => ({
+            key: entry.key,
+            kind: entry.kind,
+            scopeId,
+            estimatedHeight: height(entry),
+          })),
       ),
     );
     syncPins();
@@ -310,17 +365,16 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       // The document timeline is the browser's shared RAF timestamp. All
       // nested roots are admitted together, after the batched geometry reads.
       policy.advanceFrame(Number(document.timeline?.currentTime ?? performance.now()));
-      publish();
-      if (policy.snapshot().pendingKeys.length) schedule();
+      if (publish().pendingKeys.length) schedule();
     });
   }
   return {
     policy,
     resolveTarget(messageId: string, path: string) {
-      return navigationTargets.get(targetId(messageId, path))?.[0]?.key;
+      return targetsFor(messageId, path)[0]?.key;
     },
     resolveMatch(messageId: string, path: string, query: string, occurrence: number) {
-      const entries = navigationTargets.get(targetId(messageId, path)) ?? [];
+      const entries = targetsFor(messageId, path);
       const first = entries[0];
       if (!first) return undefined;
       const needle = query.trim().toLowerCase();
@@ -345,9 +399,10 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       if (!root?.geometry) return undefined;
       let offset = 0;
       for (const entry of root.entries) {
-        if (entry.key === key)
+        if (entry.key === key) {
+          const node = elements.get(key);
           return {
-            node: elements.get(key),
+            node: node?.isConnected && root.node.contains(node) ? node : undefined,
             admitted: entry.kind === 'content' || mounted.has(key),
             kind: entry.kind,
             scrollRoot: root.geometry.scroll,
@@ -357,6 +412,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
                 root.geometry.scrollScale,
             height: (height(entry) * root.geometry.scale) / root.geometry.scrollScale,
           };
+        }
         offset += height(entry);
       }
       return undefined;
@@ -394,36 +450,49 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       const previous = roots.get(scope);
       if (previous) {
         previous.notify([]);
+        removeTargets(previous);
         resize?.unobserve(previous.node);
         previous.node.removeEventListener('scroll', schedule, true);
-        policy.invalidateMounts(previous.entries.map((entry) => entry.key));
+        invalidate(
+          previous.entries
+            .filter((entry) => owners.get(entry.key) === scope)
+            .map((entry) => entry.key),
+        );
         for (const entry of previous.entries)
           if (owners.get(entry.key) === scope) owners.delete(entry.key);
       }
-      // Attachment, not just teardown, revokes every retained DOM permission.
-      policy.invalidateMounts(entries.map((entry) => entry.key));
-      for (const entry of entries) owners.set(entry.key, scope);
-      roots.set(scope, { node, entries, notify, shells: new Set() });
+      // Revoke before publishing the attachment, including keys inherited from
+      // another scope. New rows wait for the shared frame's admission allowance.
+      invalidate(entries.map((entry) => entry.key));
+      const displaced = claim(scope, entries);
+      roots.set(scope, {
+        node,
+        entries,
+        notify,
+        shells: new Set(),
+        targets: new Map(),
+        order: previous?.order ?? nextRootOrder++,
+      });
       ensureObserver();
       resize?.observe(node);
       node.addEventListener('scroll', schedule, { capture: true, passive: true });
-      rebuild();
-      publish();
+      entriesChanged = true;
+      refreshScopes([...displaced, scope]);
       schedule();
       return () => {
         const root = roots.get(scope);
         if (root?.node !== node) return;
         generation++;
-        policy.invalidateMounts(
+        invalidate(
           root.entries.filter((entry) => owners.get(entry.key) === scope).map((entry) => entry.key),
         );
+        removeTargets(root);
         for (const entry of root.entries)
           if (owners.get(entry.key) === scope) owners.delete(entry.key);
         roots.delete(scope);
         resize?.unobserve(node);
         node.removeEventListener('scroll', schedule, true);
-        rebuild();
-        publish();
+        entriesChanged = true;
         schedule();
       };
     },
@@ -441,32 +510,31 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
         )
       ) {
         root.entries = entries;
-        indexTargets();
+        indexTargets(scope, root);
         return;
       }
       generation++;
       const nextKeys = new Set(entries.map((entry) => entry.key));
+      const revoked: string[] = [];
       for (const entry of root.entries)
-        if (!nextKeys.has(entry.key) && owners.get(entry.key) === scope) owners.delete(entry.key);
+        if (!nextKeys.has(entry.key) && owners.get(entry.key) === scope) {
+          revoked.push(entry.key);
+          owners.delete(entry.key);
+        }
       const previous = new Map(root.entries.map((entry) => [entry.key, entry]));
       for (const entry of entries) {
-        if (owners.has(entry.key) && owners.get(entry.key) !== scope)
-          policy.invalidateMounts([entry.key]);
-        owners.set(entry.key, scope);
+        const old = previous.get(entry.key);
+        if (
+          (owners.has(entry.key) && owners.get(entry.key) !== scope) ||
+          (old && (old.kind !== entry.kind || old.mountPath !== entry.mountPath))
+        )
+          revoked.push(entry.key);
       }
-      policy.invalidateMounts(
-        entries
-          .filter(
-            (entry) =>
-              previous.has(entry.key) &&
-              (previous.get(entry.key)?.kind !== entry.kind ||
-                previous.get(entry.key)?.mountPath !== entry.mountPath),
-          )
-          .map((entry) => entry.key),
-      );
+      invalidate(revoked);
+      const displaced = claim(scope, entries);
       root.entries = entries;
-      rebuild();
-      publish();
+      entriesChanged = true;
+      refreshScopes([...displaced, scope]);
       schedule();
     },
     watch(node: HTMLElement, key: string) {
