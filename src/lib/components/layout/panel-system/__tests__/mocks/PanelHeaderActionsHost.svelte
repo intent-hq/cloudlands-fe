@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import type {
@@ -92,6 +93,12 @@
   let moveLeftCount = $state(0);
   let moveRightCount = $state(0);
   let closeCount = $state(0);
+  let openedExternalUrl = $state('');
+  const restoreExternalOpen = overrideMockIpcHandler('shell:openExternal', (payload) => {
+    openedExternalUrl = (payload as { url: string }).url;
+    return { success: true };
+  });
+  onDestroy(restoreExternalOpen);
 
   const tabs = $derived<PanelTab[]>(
     Array.from({ length: stackCount }, (_, index) => ({
@@ -99,6 +106,7 @@
       type: panelType,
       title: `${panelType} panel ${index + 1}`,
       closable: true,
+      browserUrl: panelType === 'browser' ? 'https://example.com/panel-preview' : undefined,
       agentId: panelType === 'agent' ? `panel-menu-agent-${index + 1}` : undefined,
     })),
   );
@@ -149,6 +157,7 @@
   data-move-left-count={moveLeftCount}
   data-move-right-count={moveRightCount}
   data-close-count={closeCount}
+  data-opened-external-url={openedExternalUrl}
   data-current-count={$count$}
   data-active-tab={activeTabId}
 >

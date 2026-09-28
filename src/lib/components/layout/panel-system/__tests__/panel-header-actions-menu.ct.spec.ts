@@ -222,6 +222,25 @@ test.describe('Panel file commands in the web renderer', () => {
     await expect(menu).toBeHidden();
   });
 
+  test('opens a browser panel externally without native editor capability', async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'browser', width: 560, zoom: 1 },
+    });
+    const { menu, trigger } = await openAgentPanelMenu(component, page);
+    const open = menu.getByRole('menuitem', { name: 'Open in Browser', exact: true });
+    await expect(open).toBeEnabled();
+    await open.press('Enter');
+    await expect(component).toHaveAttribute(
+      'data-opened-external-url',
+      'https://example.com/panel-preview',
+    );
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
   test('supports keyboard navigation to the last available command', async ({ mount, page }) => {
     const component = await mount(PanelHeaderActionsHost, {
       props: { panelType: 'agent', width: 560, zoom: 1 },
@@ -369,7 +388,6 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(menu).toBeVisible();
     await expect(menu.locator('[data-panel-actions-section="display"]')).toHaveCount(1);
     await expect(menu.locator('[data-panel-actions-section="actions"]')).toHaveCount(1);
-    await expect(menu.locator('[data-panel-actions-section="open-in"]')).toHaveCount(1);
     if (panelType !== 'browser') {
       await expect(menu.getByRole('menuitem', { name: 'Open in...' })).toHaveCount(0);
     }
