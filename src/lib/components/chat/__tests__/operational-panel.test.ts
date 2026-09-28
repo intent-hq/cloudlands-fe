@@ -51,6 +51,15 @@ afterEach(() => {
 });
 
 describe('panel geometry lifetime', () => {
+  it('admits spacer-only rows in a zero-width shrink-to-fit container', () => {
+    const root = node();
+    vi.mocked(root.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 0, 28));
+    panel.attach('message', root, [entry], vi.fn());
+    frame();
+    expect(panel.policy.snapshot().visibleKeys).toEqual([entry.key]);
+    expect(panel.policy.snapshot().mountedKeys).toEqual([entry.key]);
+  });
+
   it('returns scroll coordinates in the scrollport units under CSS zoom', () => {
     const scroll = node();
     scroll.style.overflowY = 'auto';

@@ -163,7 +163,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       }
       let clipTop = 0;
       let clipBottom = window.innerHeight;
-      let hidden = box.width <= 0;
+      // A spacer-only shrink-to-fit parent can have zero intrinsic width until
+      // its first admitted row renders. Its positive flow height is still visible.
+      let hidden = box.height <= 0;
       let scroll: HTMLElement | undefined;
       for (let parent = root.node.parentElement; parent; parent = parent.parentElement) {
         const style = getComputedStyle(parent);
