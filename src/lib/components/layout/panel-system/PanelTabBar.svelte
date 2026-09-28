@@ -1895,7 +1895,7 @@
     gap: 8px;
     padding: 6px;
     border-radius: 5px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 400;
   }
   :global(.panel-selector-menu [data-slot='menu-command-item'] span.truncate) {
