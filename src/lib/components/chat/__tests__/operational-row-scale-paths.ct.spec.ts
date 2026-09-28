@@ -109,7 +109,12 @@ for (const rows of [100, 1000, 5000]) {
         contentType: 'application/json',
       });
     } finally {
-      await finish(info);
+      await finish(info, [
+        'before-watched-click',
+        'watched-open',
+        'watched-search-disclosure',
+        'watched-destroyed',
+      ]);
     }
   });
 }
@@ -187,6 +192,10 @@ test('two-message forced history remains anchored after 200-message prepend', as
       .getByRole('textbox')
       .fill('needle-older-0-25.');
     await expect(host.getByText('Details needle-older-0-25.', { exact: true })).toBeVisible();
+    await info.attach('history-search-observations', {
+      body: JSON.stringify(await snapshot(page, 'history-search')),
+      contentType: 'application/json',
+    });
     await host.unmount();
     await frames(page, 2);
     const destroyed = await snapshot(page, 'history-destroyed');
@@ -197,6 +206,6 @@ test('two-message forced history remains anchored after 200-message prepend', as
     expect(destroyed.rowObserved).toBe(0);
     expect(destroyed.windowObserved).toBe(0);
   } finally {
-    await finish(info);
+    await finish(info, ['before-prepend', 'after-prepend', 'history-search', 'history-destroyed']);
   }
 });

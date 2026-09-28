@@ -5,6 +5,7 @@ type Probe = {
   frames: Frame[];
   longtasks: { start: number; duration: number }[];
   observations: Map<ResizeObserver, Set<Element>>;
+  observerBaseline?: number;
 };
 declare global {
   interface Window {
@@ -104,12 +105,15 @@ export async function snapshot(page: Page, label: string) {
       return box.bottom > top && box.top < bottom;
     }).length;
     const targets = [...window.rowScaleProbe.observations.values()].flatMap((set) => [...set]);
+    window.rowScaleProbe.observerBaseline ??= targets.length;
     return {
       label: name,
       time: performance.now(),
       mounted: rows.length,
       visible,
       observed: targets.length,
+      observerBaseline: window.rowScaleProbe.observerBaseline,
+      observerDelta: targets.length - window.rowScaleProbe.observerBaseline,
       detachedObserved: targets.filter((node) => !node.isConnected).length,
       detachedTargets: targets
         .filter((node) => !node.isConnected)
@@ -154,7 +158,7 @@ export async function timeline(page: Page) {
     });
     await page.evaluate(() => performance.mark('trace:path-start'));
   }
-  return async (info: TestInfo) => {
+  return async (info: TestInfo, checkpoints: string[]) => {
     const after = await cdp.send('Performance.getMetrics');
     if (tracing) {
       await page.evaluate(() => performance.mark('trace:path-end'));
@@ -168,7 +172,13 @@ export async function timeline(page: Page) {
         contentType: 'application/gzip',
       });
       const names = new Set(trace.map((event) => (event as { name: string }).name));
-      if (!names.has('trace:path-start') || !names.has('trace:path-end')) {
+      if (
+        [
+          'trace:path-start',
+          'trace:path-end',
+          ...checkpoints.map((name) => `checkpoint:${name}`),
+        ].some((name) => !names.has(name))
+      ) {
         throw new Error('Incomplete path timeline; do not report its durations as full coverage');
       }
     }
