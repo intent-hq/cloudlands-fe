@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "buildReady": false,
+  "buildAuthorized": false,
+  "startAuthorized": false,
+  "launchReady": false,
+  "purpose": "New disposable-host verification; no recovered 6df or old runtime approval",
+  "image": "mcr.microsoft.com/playwright@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac",
+  "platform": "linux/amd64",
+  "playwright": "1.62.1",
+  "pnpm": "10.30.3",
+  "candidate": {
+    "repo": "intent-hq/intentd",
+    "version": "0.9.113",
+    "commit": "f0fcfce7b9d97cec6a561533b65ba9571e9d4db7",
+    "releaseId": 397705604,
+    "assetId": 593211424,
+    "name": "intentd-x86_64-unknown-linux-musl.tar.xz",
+    "bytes": 27088520,
+    "sha256": "40174e11f1a85ddb6c4f41d5395c0b74a513636472c8c5f7b64d637624457430"
+  },
+  "budgets": {
+    "jobMinutes": 90,
+    "uiSeconds": 1800,
+    "cleanupSeconds": 600,
+    "actionMs": 15000,
+    "statusMs": 30000,
+    "retries": 0,
+    "artifactBytes": 268435456
+  },
+  "network": {
+    "setup": "exact package/image/dependency acquisition only",
+    "workload": "none; private loopback only",
+    "publishedPorts": [],
+    "hostSockets": [],
+    "devices": []
+  },
+  "unresolved": [
+    "Exact source review and distinct hosted execution grant",
+    "Runner/image availability, Chromium nonprivileged sandbox and candidate static ABI have not been executed",
+    "Real host/guest invite provisioning may refuse tunnel-down without a rendezvous address; no address or principal is fabricated",
+    "Three credential/attribution source differences require actual private TLS compatibility evidence",
+    "No ordinary pending nonempty GitLab pin is assumed reachable on an account-free cold host",
+    "Original-socket discard is transport isolation, not delivery to a stale saga",
+    "New collector/cleanup and role bootstrap need exact source review; historical MCP predicate and PTY proof do not transfer",
+    "Cold UI canonical consumption, hidden pin and open-modal preference oracles remain explicitly limited",
+    "Current local dependency copy lacks pdfjs-dist 6.3.289; canonical verify:changed dependency preflight is not green"
+  ]
+}
