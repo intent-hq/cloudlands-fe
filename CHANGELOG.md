@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.190.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.2...v2.190.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* add floating animated chat scroll button ([#3004](https://github.com/intent-hq/cloudlands-fe/issues/3004)) ([eaa5948](https://github.com/intent-hq/cloudlands-fe/commit/eaa5948022de10f237702a9c96ca7cdd722cdff0))
+
 ## [2.189.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.1...v2.189.2) (2026-09-29)
 
 
