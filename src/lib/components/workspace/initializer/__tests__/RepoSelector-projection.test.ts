@@ -331,7 +331,7 @@ describe('RepoSelector partial source settlement through the real store and clie
       const removed = failed === 'registry' ? 'workspace-repo' : 'registry-repo';
       expect(paths()).toEqual(expect.arrayContaining(['/saved-repo', `/${retained}`]));
       expect(paths()).not.toContain(`/${removed}`);
-      expect(screen.getByText(retained)).toBeTruthy();
+      await waitFor(() => expect(screen.getByText(retained)).toBeTruthy());
       expect(screen.queryByText(removed)).toBeNull();
       expect(screen.getByText('saved-repo')).toBeTruthy();
       if (failed === 'workspace')
