@@ -34,6 +34,10 @@ export const selectWorkspaceInitializerRecentRepos = store.createSelector((state
   getItems(state.workspaceInitializer.recentRepos),
 );
 
+export const selectWorkspaceInitializerDismissedRecentRepoKeys = store.createSelector(
+  (state) => state.workspaceInitializer.dismissedRecentRepoKeys,
+);
+
 export const selectWorkspaceInitializerRemoteSetups = store.createSelector((state) =>
   getItems(state.workspaceInitializer.remoteSetups),
 );
