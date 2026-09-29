@@ -921,9 +921,13 @@ ${source}`;
       const inner = b.getBBox();
       return inner.width * inner.height - outer.width * outer.height;
     });
-    // Native rect blocks are already ordered by Mermaid (outer before inner).
-    // Keep them below the constructs without changing their relative paint order.
-    const backgrounds = [...svg.querySelectorAll<SVGRectElement>(':scope > rect.rect')];
+    // Preserve Mermaid's native background order, including participant boxes.
+    // Move each box group intact so its heading stays with its background rect.
+    const backgrounds = [...svg.children].filter(
+      (child) =>
+        child.matches('rect.rect') ||
+        (child.matches('g') && child.querySelector(':scope > rect.rect')),
+    );
     svg.prepend(...backgrounds, ...constructs);
 
     const normalizeNoteText = (text: string) =>

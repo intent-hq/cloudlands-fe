@@ -501,20 +501,22 @@ async function notePaint(page: Page) {
       images.push((await page.screenshot({ clip })).toString('base64'));
     return images;
   };
-  const constructLabels = await page.locator('.sequence-construct text').evaluateAll((labels) =>
-    labels.map((label) => {
-      const box = label.getBoundingClientRect();
-      return {
-        name: `construct: ${label.textContent}`,
-        clip: {
-          x: Math.ceil(box.x),
-          y: Math.ceil(box.y),
-          width: Math.floor(box.width - 1),
-          height: Math.floor(box.height - 1),
-        },
-      };
-    }),
-  );
+  const constructLabels = await page
+    .locator('.sequence-construct text, .mermaid-svg > svg > g:has(> rect.rect) > text')
+    .evaluateAll((labels) =>
+      labels.map((label) => {
+        const box = label.getBoundingClientRect();
+        return {
+          name: `${label.closest('.sequence-construct') ? 'construct' : 'background'}: ${label.textContent}`,
+          clip: {
+            x: Math.ceil(box.x),
+            y: Math.ceil(box.y),
+            width: Math.floor(box.width - 1),
+            height: Math.floor(box.height - 1),
+          },
+        };
+      }),
+    );
   regions.push(...constructLabels);
   const painted = await capture();
   const surfaceStyle = await page.addStyleTag({
@@ -523,7 +525,8 @@ async function notePaint(page: Page) {
   const uncovered = await capture();
   await surfaceStyle.evaluate((style) => style.remove());
   const textStyle = await page.addStyleTag({
-    content: '.sequence-note text, .sequence-construct text { visibility: hidden !important; }',
+    content:
+      '.sequence-note text, .sequence-construct text, .mermaid-svg > svg > g:has(> rect.rect) > text { visibility: hidden !important; }',
   });
   const withoutText = await capture();
   await textStyle.evaluate((style) => style.remove());
@@ -700,8 +703,52 @@ Note over B: Second note
 end
 end`,
   },
+  {
+    name: 'participant box background',
+    fills: ['rgb(230, 240, 255)'],
+    headings: ['Group'],
+    frames: 1,
+    source: `sequenceDiagram
+box rgb(230, 240, 255) Group
+participant A
+participant B
+end
+alt Ready
+A->>B: Begin
+Note over A: Visible note
+else Retry
+B-->>A: Pending
+end`,
+  },
+  {
+    name: 'participant boxes with nested authored backgrounds',
+    // Mermaid lowers participant boxes after rect blocks, in reverse declaration
+    // order. Keep each heading with its box, above the corresponding rectangle.
+    fills: ['rgb(230, 255, 230)', 'rgb(230, 240, 255)', 'rgb(255, 240, 230)', 'rgb(245, 235, 255)'],
+    headings: ['Services', 'Workers'],
+    frames: 2,
+    source: `sequenceDiagram
+box rgb(230, 240, 255) Workers
+participant A
+end
+box rgb(230, 255, 230) Services
+participant B
+end
+rect rgb(255, 240, 230)
+alt Ready
+rect rgb(245, 235, 255)
+loop Until ready
+A->>B: Begin
+Note over A: Visible note
+end
+end
+else Retry
+B-->>A: Pending
+end
+end`,
+  },
 ];
-for (const { name, source, fills, frames } of backgroundCases) {
+for (const { name, source, fills, frames, headings = [] } of backgroundCases) {
   test(`native backgrounds preserve construct paint: ${name}`, async ({ page }, info) => {
     test.setTimeout(120_000);
     await mountNote(page, source, 1000, info);
@@ -718,10 +765,22 @@ for (const { name, source, fills, frames } of backgroundCases) {
     const layers = await page.locator('.mermaid-svg > svg').evaluate((svg) => {
       const children = [...svg.children];
       return {
-        backgrounds: [...svg.querySelectorAll(':scope > rect.rect')].map((e) => ({
-          fill: e.getAttribute('fill'),
-          index: children.indexOf(e),
-        })),
+        backgrounds: [...svg.querySelectorAll(':scope > rect.rect, :scope > g > rect.rect')].map(
+          (e) => {
+            const layer = e.parentElement === svg ? e : e.parentElement!;
+            return {
+              fill: e.getAttribute('fill'),
+              index: children.indexOf(layer),
+              heading: layer === e ? null : layer.querySelector('text')?.textContent,
+              headingAfterRect:
+                layer === e ||
+                !!(
+                  e.compareDocumentPosition(layer.querySelector('text')!) &
+                  Node.DOCUMENT_POSITION_FOLLOWING
+                ),
+            };
+          },
+        ),
         constructs: [
           ...svg.querySelectorAll<SVGGraphicsElement>(':scope > .sequence-construct'),
         ].map((e) => {
@@ -739,7 +798,9 @@ for (const { name, source, fills, frames } of backgroundCases) {
       info.outputPath('background-paint.json'),
       JSON.stringify({ paint, framePixels, layers }, null, 2),
     );
-    expect(layers.backgrounds.map((b) => b.fill)).toEqual(fills);
+    expect.soft(layers.backgrounds.map((b) => b.fill)).toEqual(fills);
+    expect(layers.backgrounds.flatMap((b) => (b.heading ? [b.heading] : []))).toEqual(headings);
+    expect(layers.backgrounds.every((b) => b.headingAfterRect)).toBe(true);
     expect(layers.constructs).toHaveLength(frames);
     for (const region of paint) {
       expect.soft(region.occludedPixels, `${region.name} stays above surfaces`).toBe(0);
