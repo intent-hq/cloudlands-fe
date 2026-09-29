@@ -33,6 +33,12 @@
     title: 'Repository details',
     defaultState: 'self-managed',
     states: {
+      'selection-edit': { props: { scene: 'selection-edit', initiallyOpen: true } },
+      'selection-history': { props: { scene: 'selection-history', initiallyOpen: true } },
+      'selection-reset': { props: { scene: 'selection-reset', initiallyOpen: true } },
+      'selection-uncertain': { props: { scene: 'selection-uncertain', initiallyOpen: true } },
+      'selection-committed': { props: { scene: 'selection-committed', initiallyOpen: true } },
+      'selection-conflict': { props: { scene: 'selection-conflict', initiallyOpen: true } },
       closed: { props: { scene: 'self-managed', initiallyOpen: false } },
       'self-managed': { props: { scene: 'self-managed', initiallyOpen: true } },
       github: { props: { scene: 'github', initiallyOpen: true } },
@@ -52,6 +58,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
   import { Button } from '$lib/components/ui/button';
   import RepositoryContextSummary from './RepositoryContextSummary.svelte';
   import type { RepositoryRootIdentity } from '$shared/types/repository-context';
@@ -92,6 +99,15 @@
     <Button variant="ghost" size="compact" onclick={() => fixture.admit('local-B')}
       >Replace host</Button
     >
+    {#if scene.startsWith('selection-')}
+      <Button variant="ghost" size="compact" onclick={() => fixture.retireSelection()}
+        >Retire edit</Button
+      >
+      <Button variant="ghost" size="compact" onclick={() => fixture.retireSelection('closed')}
+        >Close session</Button
+      >
+    {/if}
   </div>
   <RepositoryContextSummary {root} />
+  <ConfirmHost />
 </div>

@@ -43,6 +43,7 @@
   import { toStore } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { DataList } from '$lib/components/patterns/collection';
+  import RepositorySelectionEditor from './RepositorySelectionEditor.svelte';
   import Fa from 'svelte-fa';
   import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -230,6 +231,10 @@
       >
         {m.repository_details_readAgain_label()}
       </Button>
+      <RepositorySelectionEditor
+        {root}
+        label={target?.projectPath ?? entry?.branch ?? m.repository_selection_root_label()}
+      />
     </div>
   {/if}
 </section>

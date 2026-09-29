@@ -235,4 +235,28 @@ describe('Repository details with the real root Store/saga/live client and contr
     await ready();
     expect(fixture.reads[1].params).toEqual({ workspaceId: 'another-workspace' });
   });
+  it('selection is explicit and independent of the one read demand across root switches and collapse', async () => {
+    fixture = installSummaryFixture('selection-edit');
+    const Component = (await import('../components/RepositoryContextSummary.svelte')).default;
+    const { rerender } = render(Component, { root: primary });
+    await open();
+    await ready();
+    expect(fixture.selectionCaptures).toHaveLength(0);
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit review repository' }));
+    await screen.findByRole('combobox', { name: 'Review choice' });
+    await rerender({ root: { ...primary, kind: 'registered', gitRootId: 'tools' } });
+    await waitFor(() => expect(fixture.selectionReleases).toEqual(['preview-selection-1']));
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(fixture.captures).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit review repository' }));
+    await screen.findByRole('combobox', { name: 'Review choice' });
+    expect(fixture.selectionCaptures[1].root).toEqual({
+      ...primary,
+      kind: 'registered',
+      gitRootId: 'tools',
+    });
+    await open();
+    await waitFor(() => expect(fixture.selectionReleases).toHaveLength(2));
+    expect(fixture.selectionRequests).toHaveLength(0);
+  });
 });
