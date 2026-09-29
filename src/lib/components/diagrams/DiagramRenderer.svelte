@@ -340,15 +340,149 @@
   }
 
   // Isolated diagnostic only: selected element identity is supplied by the test.
+  // Diagnostic-only state; no rune subscriptions or replacement scroll behavior.
+  let scrollObservationSequence6036 = 0;
+  let scrollElementSequence6036 = 0;
+  const scrollElementIds6036 = new WeakMap<Element, number>();
+  let activeScrollObservation6036:
+    | { id: number; revision: number; caller: 'settlement' | 'changeState'; write: number }
+    | undefined;
+
+  function observeStepViewport6036(
+    phase: 'settlement-before' | 'step-before' | 'call-after' | 'write-before' | 'write-after',
+    revision?: number,
+    writer?: { ancestor: HTMLElement; delta: number; top: number; bottom: number; target: DOMRect },
+  ): number | null {
+    // Only new observation reads are untracked; original calls retain their dependencies.
+    return untrack(() => {
+      const capture = (
+        globalThis as typeof globalThis & {
+          __walkthroughSettlement6036?: {
+            target: Element | null;
+            count: number;
+            serializedUnits: number;
+            overflow: boolean;
+            incomplete: boolean;
+          };
+        }
+      ).__walkthroughSettlement6036;
+      if (!rendererEl || !capture || capture.target !== rendererEl) return null;
+      if (capture.overflow || capture.count >= 4096 || capture.serializedUnits >= 2 * 1024 * 1024) {
+        capture.overflow = capture.incomplete = true;
+        return null;
+      }
+      try {
+        if (phase === 'settlement-before' || phase === 'step-before') {
+          if (activeScrollObservation6036) capture.incomplete = true;
+          if (scrollObservationSequence6036 >= 4096) {
+            capture.overflow = true;
+            throw new Error('scroll callback capacity');
+          }
+          activeScrollObservation6036 = {
+            id: ++scrollObservationSequence6036,
+            revision: revision ?? settlementRevision,
+            caller: phase === 'settlement-before' ? 'settlement' : 'changeState',
+            write: 0,
+          };
+        }
+        const observation = activeScrollObservation6036;
+        if (!observation) {
+          capture.incomplete = true;
+          return null;
+        }
+        if (phase === 'write-before') observation.write += 1;
+        const id = (element: Element) => {
+          let value = scrollElementIds6036.get(element);
+          if (value === undefined) {
+            if (scrollElementSequence6036 >= 64) {
+              capture.overflow = true;
+              throw new Error('scroll identity capacity');
+            }
+            value = ++scrollElementSequence6036;
+            scrollElementIds6036.set(element, value);
+          }
+          return value;
+        };
+        const rect = (bounds: DOMRect) => [bounds.x, bounds.y, bounds.width, bounds.height];
+        const measure = (element: Element) => ({
+          id: id(element),
+          rect: rect(element.getBoundingClientRect()),
+          scroll: [element.scrollLeft, element.scrollTop],
+          client: [element.clientTop, element.clientHeight],
+        });
+        const readStartedAt = performance.now();
+        const ancestors = [];
+        for (let element = rendererEl.parentElement; element; element = element.parentElement) {
+          if (ancestors.length >= 16) {
+            capture.overflow = true;
+            throw new Error('scroll ancestor capacity');
+          }
+          ancestors.push(measure(element));
+        }
+        const target = measure(rendererEl);
+        const page = rendererEl.ownerDocument.scrollingElement;
+        const documentScroll = page ? measure(page) : null;
+        const payload = {
+          phase,
+          caller: observation.caller,
+          readStartedAt,
+          readEndedAt: performance.now(),
+          target,
+          ancestors,
+          documentScroll,
+          writer: writer
+            ? {
+                site: 'keepStepInView:ancestor.scrollBy',
+                index: observation.write,
+                ancestorId: id(writer.ancestor),
+                requestedTop: writer.delta,
+                behavior: 'instant',
+                top: writer.top,
+                bottom: writer.bottom,
+                targetRect: rect(writer.target),
+              }
+            : null,
+        };
+        recordSettlementDecision(
+          observation.revision,
+          'viewport',
+          null,
+          null,
+          null,
+          undefined,
+          undefined,
+          null,
+          observation.id,
+          payload,
+        );
+        if (phase === 'call-after') activeScrollObservation6036 = undefined;
+        return observation.id;
+      } catch {
+        capture.incomplete = true;
+        return null;
+      }
+    });
+  }
+
   function recordSettlementDecision(
     revision: number,
-    decision: 'stale' | 'continue' | 'tick' | 'settled' | 'tick-resume' | 'tick-stale' | 'begin',
+    decision:
+      | 'stale'
+      | 'continue'
+      | 'tick'
+      | 'settled'
+      | 'tick-resume'
+      | 'tick-stale'
+      | 'begin'
+      | 'viewport',
     active: boolean | null,
     previousSnapshotPresent: boolean | null,
     snapshotEqual: boolean | null,
     snapshot?: string,
     previousSnapshot?: string,
     finiteAnimationCount: number | null = null,
+    scrollObservationId: number | null = null,
+    scrollObservation: Record<string, unknown> | null = null,
   ) {
     const capture = (
       globalThis as typeof globalThis & {
@@ -397,6 +531,8 @@
       if (movingEdgeIds.size > 64) capture.overflow = capture.incomplete = true;
       const record = {
         sampledAt: performance.now(),
+        scrollObservationId,
+        scrollObservation,
         segment: capture.segment,
         snapshotIndex,
         previousSnapshotIndex,
@@ -431,7 +567,9 @@
         recordSettlementDecision(revision, 'stale', null, null, null);
         return;
       }
+      const scrollObservationId6036 = observeStepViewport6036('settlement-before', revision);
       keepStepInView?.();
+      observeStepViewport6036('call-after');
       const snapshot = motionSnapshot();
       let finiteAnimationCount: number | null = null;
       const active =
@@ -450,6 +588,7 @@
             snapshot,
             previousSnapshot,
             finiteAnimationCount,
+            scrollObservationId6036,
           );
           stateJustChanged = false;
           settlementFrame = undefined;
@@ -474,6 +613,7 @@
           snapshot,
           previousSnapshot,
           finiteAnimationCount,
+          scrollObservationId6036,
         );
         diagramSettled = true;
         motionPhase = 'settled';
@@ -490,6 +630,7 @@
         snapshot,
         previousSnapshot,
         finiteAnimationCount,
+        scrollObservationId6036,
       );
       monitorDiagramSettlement(revision, active ? undefined : snapshot);
     });
@@ -1346,7 +1487,23 @@
             : footer.querySelector('.state-navigation')!.getBoundingClientRect();
         const delta =
           target.bottom > bottom ? target.bottom - bottom : target.top < top ? target.top - top : 0;
-        if (Math.abs(delta) > 0.5) ancestor.scrollBy({ top: delta, behavior: 'instant' });
+        if (Math.abs(delta) > 0.5) {
+          observeStepViewport6036('write-before', undefined, {
+            ancestor,
+            delta,
+            top,
+            bottom,
+            target,
+          });
+          ancestor.scrollBy({ top: delta, behavior: 'instant' });
+          observeStepViewport6036('write-after', undefined, {
+            ancestor,
+            delta,
+            top,
+            bottom,
+            target,
+          });
+        }
       }
     };
   }
@@ -1534,7 +1691,9 @@
 
     // Notify parent so consumers (e.g. TipTap DiagramBlock) can persist the selected step
     onUpdate?.({ currentStateId: stateId });
+    observeStepViewport6036('step-before');
     keepStepInView?.();
+    observeStepViewport6036('call-after');
   }
 
   function handleEdgeMotion(edgeId: string, moving: boolean) {
