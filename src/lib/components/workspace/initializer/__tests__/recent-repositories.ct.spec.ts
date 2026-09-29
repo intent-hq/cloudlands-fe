@@ -1,6 +1,36 @@
 import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../recent-repositories.preview.svelte';
 
+test('late settings hydration preserves undismissed source rows in the open picker', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview, { props: { persist: true, delayHydration: true } });
+  const trigger = component.getByRole('button', { name: 'Choose fixture repository' });
+  const open = async () => {
+    await trigger.click();
+    await page.getByRole('tab', { name: 'Copy local repo', exact: true }).click();
+  };
+  await open();
+  const rows = page.locator('[data-recent-repo-row]');
+  await expect(rows).toHaveCount(3);
+  await expect(component.getByTestId('hydration-state')).toHaveText('false');
+  await rows.first().hover();
+  await page
+    .getByRole('button', { name: 'Remove /fixture/app from recent repositories', exact: true })
+    .click();
+  await expect(rows).toHaveCount(2);
+  // Complete the delayed settings read while the picker remains open.
+  await component
+    .getByRole('button', { name: 'Complete fixture hydration' })
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await expect(component.getByTestId('hydration-state')).toHaveText('true');
+  await expect(rows).toHaveCount(2);
+  await expect(component.getByTestId('repo-selection')).toHaveText('null');
+  await rows.first().locator('[data-slot=menu-action-row]').click();
+  await expect(component.getByTestId('repo-selection')).toContainText('/fixture/tools');
+});
+
 for (const tab of ['Pick a repo', 'Copy local repo']) {
   test(`Recent ${tab} rows share left icon and text columns and remain selectable`, async ({
     mount,

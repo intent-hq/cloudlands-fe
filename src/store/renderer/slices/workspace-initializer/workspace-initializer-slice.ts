@@ -31,6 +31,7 @@ export const initialState: WorkspaceInitializerState = {
   branchByRepo: {},
   defaultParentPath: DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
   recentRepos: createCollection<WorkspaceInitializerRecentRepo, 'path'>('path'),
+  pendingRecentRepos: null,
   dismissedRecentRepoKeys: {},
   remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id'),
   lastSubmittedAgent: null,
@@ -130,9 +131,12 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
     defaultParentPath: hydration.defaultParentPath || state.defaultParentPath,
     dismissedRecentRepoKeys,
     recentRepos: recentReposCollection(
-      hydration.recentRepos ?? getItems(state.recentRepos),
+      state.pendingRecentRepos
+        ? getItems(state.pendingRecentRepos)
+        : (hydration.recentRepos ?? getItems(state.recentRepos)),
       dismissedRecentRepoKeys,
     ),
+    pendingRecentRepos: null,
     remoteSetups: hydration.remoteSetups
       ? createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id', hydration.remoteSetups)
       : state.remoteSetups,
@@ -185,6 +189,14 @@ workspaceInitializerReducer.with(
   (state, { payload: [recentRepos] }) => ({
     ...state,
     recentRepos: recentReposCollection(recentRepos, state.dismissedRecentRepoKeys),
+    // Keep every source candidate until persisted dismissals are known. Retaining
+    // only the visible nine would prevent refilling rows excluded by late settings.
+    pendingRecentRepos: state.hydrated
+      ? null
+      : createCollection<WorkspaceInitializerRecentRepo, 'path'>(
+          'path',
+          recentRepos.filter((repo) => repo.path),
+        ),
   }),
 );
 workspaceInitializerReducer.with(

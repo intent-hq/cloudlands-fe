@@ -8,6 +8,7 @@ import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace
 import {
   selectWorkspaceInitializerRecentRepos,
   selectWorkspaceInitializerDismissedRecentRepoKeys,
+  selectWorkspaceInitializerHydrated,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import {
   setWorkspaceInitializerRecentRepos,
@@ -17,7 +18,7 @@ import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initi
 import { invalidateCowIsolationSetting } from './cow-isolation-setting';
 
 /** Isolated sources; optional real initializer saga backed by a fixture-only settings adapter. */
-export function setupRecentRepositoriesPreview(persist = false) {
+export function setupRecentRepositoriesPreview(persist = false, hydrationReady?: Promise<void>) {
   const names = [
     'app',
     'tools',
@@ -62,20 +63,24 @@ export function setupRecentRepositoriesPreview(persist = false) {
   let stopPersistence: (() => void) | undefined;
   if (persist) {
     const key = 'recent-repositories-preview-settings';
-    appClient.settings.get = async (path) =>
-      path === 'workspaceInitializer.state'
-        ? {
-            path,
-            label: 'Fixture initializer',
-            description: '',
-            category: 'workspaceInitializer',
-            type: 'object',
-            defaultValue: {},
-            value: JSON.parse(sessionStorage.getItem(key) ?? '{"recentRepos":[]}'),
-            origin: 'default',
-            revision: 0,
-          }
-        : null;
+    appClient.settings.get = async (path) => {
+      if (path !== 'workspaceInitializer.state') return null;
+      const value = hydrationReady
+        ? { recentRepos: [{ path: '/fixture/app', type: 'local', name: 'app' }] }
+        : JSON.parse(sessionStorage.getItem(key) ?? '{"recentRepos":[]}');
+      await hydrationReady;
+      return {
+        path,
+        label: 'Fixture initializer',
+        description: '',
+        category: 'workspaceInitializer',
+        type: 'object',
+        defaultValue: {},
+        value,
+        origin: 'default',
+        revision: 0,
+      };
+    };
     appClient.settings.update = async (updates) => {
       const update = updates.find((item) => item.path === 'workspaceInitializer.state');
       if (update) sessionStorage.setItem(key, JSON.stringify(update.value));
@@ -91,6 +96,11 @@ export function setupRecentRepositoriesPreview(persist = false) {
     appClient.settings.update = previousUpdateSetting;
     invalidateCowIsolationSetting();
     appStore.dispatch(replaceWorkspaceList(previousWorkspaces));
+    // A preview without the persistence saga may still have pending sources.
+    // Settle that first so restoring the prior fixture is an ordinary hydration.
+    if (!selectWorkspaceInitializerHydrated.select(appStore.state)) {
+      appStore.dispatch(hydrateWorkspaceInitializer({}));
+    }
     appStore.dispatch(
       hydrateWorkspaceInitializer({
         recentRepos: previousRecent,

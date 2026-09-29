@@ -116,6 +116,8 @@ export interface WorkspaceInitializerState {
   branchByRepo: Record<string, string>;
   defaultParentPath: string;
   recentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'>;
+  /** Uncapped source results awaiting initial settings hydration; never persisted. */
+  pendingRecentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'> | null;
   dismissedRecentRepoKeys: Record<string, true>;
   remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;

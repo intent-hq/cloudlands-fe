@@ -263,6 +263,47 @@ describe('workspaceInitializerReducer', () => {
     ).toBe(state);
   });
 
+  it('keeps newer source refresh rows when older settings hydrate after a dismissal', () => {
+    const app = { path: '/app', type: 'local' as const, name: 'app' };
+    const newlyFound = { path: '/newly-found', type: 'local' as const, name: 'newly-found' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerRecentRepos([app, newlyFound]),
+    );
+    state = workspaceInitializerReducer(state, dismissWorkspaceInitializerRecentRepo(app));
+    state = workspaceInitializerReducer(state, hydrateWorkspaceInitializer({ recentRepos: [app] }));
+    expect(state.recentRepos.ids).toEqual(['/newly-found']);
+  });
+
+  it('filters the full source refresh before limiting rows when dismissal settings arrive late', () => {
+    const repos = Array.from({ length: 12 }, (_, i) => ({
+      path: `/repo-${i}`,
+      type: 'local' as const,
+      name: `repo-${i}`,
+    }));
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerRecentRepos(repos),
+    );
+    state = workspaceInitializerReducer(state, dismissWorkspaceInitializerRecentRepo(repos[1]));
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({
+        recentRepos: [repos[0]],
+        dismissedRecentRepoKeys: { 'local:/repo-0': true },
+      }),
+    );
+    expect(state.recentRepos.ids).toEqual(repos.slice(2, 11).map((repo) => repo.path));
+  });
+
+  it('keeps an empty source refresh authoritative over older persisted suggestions', () => {
+    const state = workspaceInitializerReducer(
+      workspaceInitializerReducer(initialState, setWorkspaceInitializerRecentRepos([])),
+      hydrateWorkspaceInitializer({ recentRepos: [{ path: '/old', type: 'local', name: 'old' }] }),
+    );
+    expect(state.recentRepos.ids).toEqual([]);
+  });
+
   it('falls back to the default parent for blank values and ignores empty branch repo keys', () => {
     let state = workspaceInitializerReducer(
       initialState,

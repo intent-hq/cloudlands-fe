@@ -398,7 +398,7 @@ describe('workspaceInitializerSaga', () => {
               lastSelectedRepo: { path: '/daemon', type: 'local' },
               branchByRepo: {},
               defaultParentPath: '~/Developer',
-              recentRepos: [{ path: '/daemon', type: 'local', name: 'daemon' }],
+              recentRepos: [],
               dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
@@ -483,6 +483,43 @@ describe('workspaceInitializerSaga', () => {
       }
     },
   );
+
+  it('persists undismissed source results when older settings arrive after source loading', async () => {
+    const app = { path: '/app', type: 'local' as const, name: 'app' };
+    const newlyFound = { path: '/newly-found', type: 'local' as const, name: 'newly-found' };
+    let resolve!: (value: unknown) => void;
+    mocks.get.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const channel = stdChannel();
+    let slice = initialState;
+    const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      workspaceInitializerSaga,
+    );
+    try {
+      dispatch(setWorkspaceInitializerRecentRepos([app, newlyFound]));
+      dispatch(dismissWorkspaceInitializerRecentRepo(app));
+      resolve({ value: { recentRepos: [app] } });
+      await settle();
+      expect(slice.recentRepos.ids).toEqual(['/newly-found']);
+      expect(slice.pendingRecentRepos).toBeNull();
+      const saved = mocks.update.mock.calls.at(-1)![0][0].value;
+      expect(saved.recentRepos).toEqual([newlyFound]);
+      expect(saved).not.toHaveProperty('pendingRecentRepos');
+      expect(saved.dismissedRecentRepoKeys).toEqual({ 'local:/app': true });
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
 
   it('ignores malformed dismissal settings', async () => {
     mocks.get.mockResolvedValue({
