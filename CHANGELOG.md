@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.188.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.187.0...v2.188.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* download workspace files from viewer and browser menus ([#2988](https://github.com/intent-hq/cloudlands-fe/issues/2988)) ([c9621bf](https://github.com/intent-hq/cloudlands-fe/commit/c9621bfa6a4100f214c1ff522fcf43d2e0131177))
+* navigate to previous user message from assistant actions ([#2987](https://github.com/intent-hq/cloudlands-fe/issues/2987)) ([94e3da0](https://github.com/intent-hq/cloudlands-fe/commit/94e3da0c5db62103218426e3dc646e44465e04d9))
+
+
+### 🐛 Bug Fixes
+
+* bound chat history action control construction ([#2990](https://github.com/intent-hq/cloudlands-fe/issues/2990)) ([2b71fdc](https://github.com/intent-hq/cloudlands-fe/commit/2b71fdc4ed73f1caedc68f7f84c363408d6deca3))
+* bump intentd sidecar to v0.9.116 ([#2993](https://github.com/intent-hq/cloudlands-fe/issues/2993)) ([1572b2d](https://github.com/intent-hq/cloudlands-fe/commit/1572b2d49e613ba9809fb3b1ea79a88cd9270b9d))
+* preserve quick-action model ownership and sandbox themes ([#2986](https://github.com/intent-hq/cloudlands-fe/issues/2986)) ([48ab294](https://github.com/intent-hq/cloudlands-fe/commit/48ab2941598e13fbb2412ae7e220e67355f393f7))
+
 ## [2.187.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.186.0...v2.187.0) (2026-09-29)
 
 
