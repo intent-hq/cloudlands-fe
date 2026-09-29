@@ -214,26 +214,34 @@
     <Menu.SubTrigger icon={faWindowMaximize} data-testid="browser-tabs-trigger"
       >{triggerLabel}</Menu.SubTrigger
     >
-    <Menu.SubContent class="w-64" onCloseAutoFocus={handleCloseAutoFocus}>
+    <Menu.SubContent class="w-64" alignIconColumn={false} onCloseAutoFocus={handleCloseAutoFocus}>
       {#each entries as entry (entry.tab.id)}
-        <Menu.Sub>
-          <Menu.SubTrigger data-browser-tab-id={entry.tab.id}>{tabLabel(entry)}</Menu.SubTrigger>
-          <Menu.SubContent>
-            <Menu.CommandItem
-              icon={faWindowMaximize}
-              label={tabLabel(entry)}
-              onclick={() => handleTabClick(entry)}
-              data-testid="browser-tabs-menu-item"
-            />
-            <Menu.CommandItem
-              icon={faXmark}
-              label={m.chat_browserTabs_closeTab_ariaLabel({ title: tabLabel(entry) })}
-              onSelect={(event) => event.preventDefault()}
-              onclick={() => requestClose({ kind: 'tab', entry })}
-              data-testid="browser-tab-close"
-            />
-          </Menu.SubContent>
-        </Menu.Sub>
+        {@const label = tabLabel(entry)}
+        <div class="flex min-w-0 items-center gap-1">
+          <Menu.Item
+            class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}"
+            textValue={label}
+            onclick={() => handleTabClick(entry)}
+            data-testid="browser-tabs-menu-item"
+            data-browser-tab-id={entry.tab.id}
+            data-hidden={entry.hidden || undefined}
+          >
+            {#snippet leading()}{@render favicon(entry)}{/snippet}
+            <span class="min-w-0 flex-1 truncate">{label}</span>
+          </Menu.Item>
+          <Menu.Item
+            class="size-7 shrink-0 items-center justify-center p-0"
+            textValue={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            aria-label={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            title={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            onSelect={(event) => event.preventDefault()}
+            onclick={() => requestClose({ kind: 'tab', entry })}
+            data-testid="browser-tab-close"
+            data-browser-tab-id={entry.tab.id}
+          >
+            <Fa icon={faXmark} size={16} class="size-4! shrink-0" />
+          </Menu.Item>
+        </div>
       {/each}
       {#if hiddenCount > 0}
         <Menu.Separator />
