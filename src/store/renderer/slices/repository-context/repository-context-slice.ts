@@ -11,12 +11,14 @@ import {
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
+  RepositoryContextDemandOwnership,
   RepositoryContextState,
   RepositoryContextWorkspaceState,
 } from './repository-context-types';
 
 const emptyWorkspaceState: RepositoryContextWorkspaceState = {
   binding: null,
+  ownership: null,
   status: 'inactive',
   scope: null,
   revision: null,
@@ -28,19 +30,21 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 export { getWorkspaceState as getRepositoryContextWorkspaceState };
 
-/** Explicit inventory demand; ending an older demand cannot cancel its replacement. */
-export const repositoryContextDemanded = createAction<[workspaceId: string, demandId: string]>(
-  'repositoryContext/demanded',
-);
-export const repositoryContextDemandEnded = createAction<[workspaceId: string, demandId: string]>(
-  'repositoryContext/demandEnded',
-);
+/** Pass the original captured admission for typed UI demands; omitted keeps legacy callers. */
+export const repositoryContextDemanded = createAction<
+  [workspaceId: string, demandId: string, admission?: string | null]
+>('repositoryContext/demanded');
+export const repositoryContextDemandEnded = createAction<
+  [workspaceId: string, demandId: string, admission?: string | null]
+>('repositoryContext/demandEnded');
 
 export const repositoryContextBound =
-  createAction<[workspaceId: string, binding: string]>('repositoryContext/bound');
-export const repositoryContextRetired = createAction<[workspaceId: string, binding: string]>(
-  'repositoryContext/retired',
-);
+  createAction<
+    [workspaceId: string, binding: string, ownership?: RepositoryContextDemandOwnership]
+  >('repositoryContext/bound');
+export const repositoryContextRetired = createAction<
+  [workspaceId: string, binding: string, ownedRequestId?: string]
+>('repositoryContext/retired');
 export const repositoryContextStarted = createAction<[request: RepositoryContextRequest]>(
   'repositoryContext/started',
 );
@@ -56,17 +60,29 @@ export const repositoryContextReducer = createReducer<RepositoryContextState>(in
 
 repositoryContextReducer.with(
   repositoryContextBound,
-  (state, { payload: [workspaceId, binding] }) => {
+  (state, { payload: [workspaceId, binding, ownership] }) => {
     const current = getWorkspaceState(state, workspaceId);
     if (current.binding === binding) return state;
-    return setWorkspaceState(state, workspaceId, { ...emptyWorkspaceState, binding });
+    if (
+      ownership &&
+      (ownership.request.workspaceId !== workspaceId || ownership.request.binding !== binding)
+    )
+      return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...emptyWorkspaceState,
+      binding,
+      ownership: ownership ? { ...ownership, request: { ...ownership.request } } : null,
+    });
   },
 );
 
 repositoryContextReducer.with(
   repositoryContextRetired,
-  (state, { payload: [workspaceId, binding] }) => {
-    if (getWorkspaceState(state, workspaceId).binding !== binding) return state;
+  (state, { payload: [workspaceId, binding, ownedRequestId] }) => {
+    const current = getWorkspaceState(state, workspaceId);
+    if (ownedRequestId !== undefined && current.ownership?.request.requestId !== ownedRequestId)
+      return state;
+    if (current.binding !== binding && current.ownership?.request.binding !== binding) return state;
     return clearWorkspaceState(state, workspaceId);
   },
 );
@@ -81,10 +97,23 @@ repositoryContextReducer.with(repositoryContextStarted, (state, { payload: [requ
   return setWorkspaceState(state, request.workspaceId, {
     ...current,
     status: 'loading',
+    ownership:
+      current.ownership && matchesRequest(current.ownership.request, request)
+        ? current.ownership
+        : null,
     pending: { ...request },
     unavailableReason: null,
   });
 });
+
+function matchesRequest(left: RepositoryContextRequest, right: RepositoryContextRequest): boolean {
+  return (
+    left.binding === right.binding &&
+    left.requestId === right.requestId &&
+    left.workspaceId === right.workspaceId &&
+    left.gitRootId === right.gitRootId
+  );
+}
 
 function matchesPending(
   current: RepositoryContextWorkspaceState,
@@ -115,6 +144,7 @@ repositoryContextReducer.with(
     if (order === null || !valid) {
       return setWorkspaceState(state, request.workspaceId, {
         ...emptyWorkspaceState,
+        ownership: current.ownership,
         status: 'unavailable',
         unavailableReason: valid ? 'context-changed' : 'invalid-response',
       });

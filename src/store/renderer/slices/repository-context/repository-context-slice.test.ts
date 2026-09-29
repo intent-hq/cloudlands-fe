@@ -4,6 +4,8 @@ import {
   RepositoryContextSchema,
   type RepositoryContextRequest,
 } from '$shared/types/repository-context';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalAdmissionContext } from '../principal/principal-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { StoreState } from '../../types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -17,10 +19,15 @@ import {
   repositoryContextStarted,
 } from './repository-context-slice';
 import {
+  selectRepositoryContextForDemand,
   selectRepositoryContextRoot,
   selectRepositoryContextState,
 } from './repository-context-selectors';
-import type { RepositoryContextState } from './repository-context-types';
+import type {
+  RepositoryContextDemand,
+  RepositoryContextDemandOwnership,
+  RepositoryContextState,
+} from './repository-context-types';
 
 const context = RepositoryContextSchema.parse(fixture);
 const root = context.roots[0].root;
@@ -230,5 +237,204 @@ describe('scoped repository context state', () => {
       unavailableReason: 'invalid-response',
     });
     expect(state.byWorkspaceId['workspace-other']).toBeUndefined();
+  });
+});
+
+function ownedContext() {
+  const state = {
+    ...withLegacyPrincipal(
+      {
+        repositoryContext: initial(),
+        connections: { windowBackendId: 'host-A' },
+      },
+      'guest',
+    ),
+  };
+  const admission = selectPrincipalAdmissionContext.select(state);
+  if (admission === null) throw new Error('fixture guest must have a read admission');
+  const demand: RepositoryContextDemand = {
+    workspaceId: request.workspaceId,
+    demandId: 'view-1',
+    admission,
+  };
+  const ownership: RepositoryContextDemandOwnership = {
+    demandId: demand.demandId,
+    admission,
+    request,
+  };
+  state.repositoryContext = repositoryContextReducer(
+    repositoryContextReducer(
+      initial(),
+      repositoryContextBound(request.workspaceId, request.binding, ownership),
+    ),
+    repositoryContextStarted(request),
+  );
+  const dispatch = (action: Parameters<typeof repositoryContextReducer>[1]) => {
+    state.repositoryContext = repositoryContextReducer(state.repositoryContext, action);
+  };
+  return {
+    state,
+    demand,
+    ownership,
+    dispatch,
+    view: () => selectRepositoryContextForDemand.select(state, demand),
+  };
+}
+
+describe('typed original repository demand selection', () => {
+  it('presents an explicitly owned guest read without revealing its private request or binding', () => {
+    const h = ownedContext();
+    expect(h.view()).toMatchObject({ status: 'loading', roots: [] });
+    h.dispatch(repositoryContextReceived({ request, context }));
+    expect(h.view()).toMatchObject({
+      status: 'ready',
+      roots: context.roots,
+      scope: context.scope,
+      revision: context.revision,
+    });
+    expect(h.view()).not.toHaveProperty('binding');
+    expect(h.view()).not.toHaveProperty('pending');
+    expect(h.view()).not.toHaveProperty('ownership');
+  });
+
+  it('does not adopt an unowned row, even when a caller knows its binding and attaches an owner later', () => {
+    const h = ownedContext();
+    h.state.repositoryContext = ready();
+    expect(h.view()).toBeNull();
+    h.dispatch(repositoryContextBound(request.workspaceId, request.binding, h.ownership));
+    expect(h.view()).toBeNull();
+    expect(displayedRoot(h.state.repositoryContext)).toEqual(context.roots[0]);
+  });
+
+  it.each(['workspace', 'binding'] as const)(
+    'rejects mismatched ownership %s before installing it',
+    (field) => {
+      const h = ownedContext();
+      const bad = {
+        ...h.ownership,
+        request: { ...request, [field === 'workspace' ? 'workspaceId' : 'binding']: 'other' },
+      };
+      expect(
+        repositoryContextReducer(
+          initial(),
+          repositoryContextBound(request.workspaceId, request.binding, bad),
+        ),
+      ).toEqual(initial());
+    },
+  );
+
+  it.each(['host', 'connection', 'subscription', 'principal', 'admission', 'revoked'] as const)(
+    'withholds an old ready view immediately after actual %s changes',
+    (change) => {
+      const h = ownedContext();
+      h.dispatch(repositoryContextReceived({ request, context }));
+      if (change === 'host')
+        h.state.connections = { ...h.state.connections, windowBackendId: 'local-B' };
+      if (change === 'connection')
+        h.state.daemonHealth = {
+          ...h.state.daemonHealth,
+          connectionGeneration: h.state.daemonHealth.connectionGeneration + 1,
+        };
+      if (change === 'subscription')
+        h.state.workspaceEvents = {
+          ...h.state.workspaceEvents,
+          subscriptionGeneration: h.state.workspaceEvents.subscriptionGeneration + 1,
+        };
+      if (change === 'principal') {
+        const snapshot = h.state.principal.snapshot;
+        if (!snapshot) throw new Error('fixture principal missing');
+        h.state.principal = {
+          ...h.state.principal,
+          snapshot: { ...snapshot, principal: { ...snapshot.principal, id: 'another-person' } },
+        };
+      }
+      if (change === 'admission')
+        h.state.principal = {
+          ...h.state.principal,
+          invalidation: h.state.principal.invalidation + 1,
+        };
+      if (change === 'revoked') h.state.principal = { ...h.state.principal, status: 'revoked' };
+      expect(h.view()).toBeNull();
+      expect(
+        selectRepositoryContextForDemand.select(h.state, {
+          ...h.demand,
+          admission: selectPrincipalAdmissionContext.select(h.state),
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it('requires the original workspace, demand and non-null admission rather than the current row', () => {
+    const h = ownedContext();
+    h.dispatch(repositoryContextReceived({ request, context }));
+    for (const demand of [
+      { ...h.demand, workspaceId: 'another-workspace' },
+      { ...h.demand, demandId: 'another-view' },
+      { ...h.demand, admission: null },
+      { ...h.demand, admission: 'local-B' },
+    ])
+      expect(selectRepositoryContextForDemand.select(h.state, demand)).toBeNull();
+  });
+
+  it('keeps an original failure eligible only until its own binding is retired', () => {
+    const h = ownedContext();
+    h.dispatch(repositoryContextFailed(request));
+    expect(h.view()).toMatchObject({
+      status: 'unavailable',
+      unavailableReason: 'read-failed',
+      roots: [],
+    });
+    h.dispatch(repositoryContextReceived({ request, context }));
+    expect(h.view()?.status).toBe('unavailable');
+    h.dispatch(repositoryContextRetired(request.workspaceId, request.binding));
+    expect(h.view()).toBeNull();
+  });
+
+  it('retains unavailable ownership after rejecting invalid facts and clears it on the original retirement', () => {
+    const h = ownedContext();
+    const wrong = structuredClone(context);
+    wrong.roots[0].root.workspaceId = 'wrong-workspace';
+    h.dispatch(repositoryContextReceived({ request, context: wrong }));
+    expect(h.view()).toMatchObject({
+      status: 'unavailable',
+      unavailableReason: 'invalid-response',
+      roots: [],
+    });
+    expect(
+      selectRepositoryContextState.select(h.state, request.workspaceId, request.binding),
+    ).toBeNull();
+    h.dispatch(repositoryContextRetired(request.workspaceId, request.binding));
+    expect(h.view()).toBeNull();
+  });
+
+  it('does not attach a lower-level replacement request to the UI demand that owned its predecessor', () => {
+    const h = ownedContext();
+    const replacement = { ...request, requestId: 'another-read' };
+    h.dispatch(repositoryContextStarted(replacement));
+    expect(h.view()).toBeNull();
+    h.dispatch(repositoryContextReceived({ request: replacement, context }));
+    expect(h.view()).toBeNull();
+    expect(displayedRoot(h.state.repositoryContext)).toEqual(context.roots[0]);
+    h.dispatch(repositoryContextRetired(request.workspaceId, request.binding, request.requestId));
+    expect(displayedRoot(h.state.repositoryContext)).toEqual(context.roots[0]);
+    h.dispatch(repositoryContextRetired(request.workspaceId, request.binding));
+    expect(displayedRoot(h.state.repositoryContext)).toBeUndefined();
+  });
+
+  it('preserves unknown availability, omitted account data, unresolved provenance and decimal revision', () => {
+    const h = ownedContext();
+    const unknown = structuredClone(context);
+    unknown.roots[0].targets[0].availability = 'unknown';
+    delete unknown.roots[0].targets[0].connection;
+    unknown.roots[0].reviewSelection = {
+      saved: { mode: 'unresolved-historical', recordId: '' },
+      noRemotes: false,
+      outcome: { state: 'selection-required', reason: 'unresolved-historical-choice' },
+    };
+    h.dispatch(repositoryContextReceived({ request, context: unknown }));
+    expect(h.view()?.roots).toEqual(unknown.roots);
+    expect(h.view()?.roots[0].targets[0]).not.toHaveProperty('connection');
+    expect(h.view()?.roots[0].reviewSelection.saved).not.toHaveProperty('source');
+    expect(h.view()?.revision?.sequence).toBe('9007199254740993');
   });
 });

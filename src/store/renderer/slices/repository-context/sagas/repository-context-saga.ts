@@ -1,5 +1,5 @@
 import { buffers, eventChannel } from 'redux-saga';
-import { actionChannel, call, put, race, take, takeEvery } from 'typed-redux-saga';
+import { actionChannel, call, flush, put, race, take, takeEvery } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { appClient } from '$lib/client';
 import type { RepositoryContextUpdate } from '$lib/client/app-client';
@@ -40,17 +40,8 @@ function updatesFor(request: RepositoryContextRequest) {
   }, buffers.sliding(1));
 }
 
-function* observe(admission: string, workspaceId: string, demandId: string) {
-  const requestId = crypto.randomUUID();
-  const request: RepositoryContextRequest = {
-    workspaceId,
-    requestId,
-    binding: JSON.stringify([admission, demandId, requestId]),
-  };
-  yield* put(repositoryContextBound(workspaceId, request.binding));
-  yield* put(repositoryContextStarted(request));
+function* observe(admission: string, request: RepositoryContextRequest) {
   const updates = updatesFor(request);
-  let keepFailure = false;
   try {
     while (true) {
       const update = yield* take(updates);
@@ -58,14 +49,12 @@ function* observe(admission: string, workspaceId: string, demandId: string) {
       if (update.type === 'received') {
         yield* put(repositoryContextReceived(update.response));
       } else if (update.type === 'unavailable') {
-        keepFailure = true;
         yield* put(repositoryContextFailed(request));
-        return;
+        return 'unavailable' as const;
       } else return;
     }
   } finally {
     updates.close();
-    if (!keepFailure) yield* put(repositoryContextRetired(workspaceId, request.binding));
   }
 }
 
@@ -75,26 +64,61 @@ export function* repositoryContextSaga() {
     selectPrincipalAdmissionContext,
     function* ({ payload: admission }: SelectorChannelPayload<string | null>) {
       if (!admission) return;
-      yield* takeEvery(repositoryContextDemanded, function* ({ payload: [workspaceId, demandId] }) {
-        // Register cancellation before the first read or state dispatch. Redux-saga
-        // owns task lifetime; a later demand for this workspace supersedes this one.
-        const ended = yield* actionChannel((action: { type: string; payload?: unknown }) => {
-          if (!Array.isArray(action.payload) || action.payload[0] !== workspaceId) return false;
-          return (
-            action.type === workspaceUnmounted.type ||
-            action.type === repositoryContextDemanded.type ||
-            (action.type === repositoryContextDemandEnded.type && action.payload[1] === demandId)
-          );
-        }, buffers.sliding(1));
-        try {
-          yield* race({
-            read: call(observe, admission, workspaceId, demandId),
-            ended: take(ended),
-          });
-        } finally {
-          ended.close();
-        }
-      });
+      yield* takeEvery(
+        repositoryContextDemanded,
+        function* ({ payload: [workspaceId, demandId, capturedAdmission] }) {
+          if (capturedAdmission !== undefined && capturedAdmission !== admission) return;
+          if ((yield* selectPrincipalAdmissionContext.effect()) !== admission) return;
+          // Register cancellation before the first read or state dispatch. The explicit
+          // admission prevents an old component from ending a replacement host's demand.
+          const ended = yield* actionChannel((action: { type: string; payload?: unknown }) => {
+            if (!Array.isArray(action.payload) || action.payload[0] !== workspaceId) return false;
+            if (action.type === workspaceUnmounted.type) return true;
+            if (action.type === repositoryContextDemanded.type) {
+              return action.payload[2] === undefined || action.payload[2] === admission;
+            }
+            return (
+              action.type === repositoryContextDemandEnded.type &&
+              action.payload[1] === demandId &&
+              (capturedAdmission === undefined
+                ? action.payload[2] === undefined
+                : action.payload[2] === admission)
+            );
+          }, buffers.sliding(1));
+          const requestId = crypto.randomUUID();
+          const request: RepositoryContextRequest = {
+            workspaceId,
+            requestId,
+            binding: JSON.stringify([admission, demandId, requestId]),
+          };
+          try {
+            yield* put(
+              repositoryContextBound(workspaceId, request.binding, {
+                admission,
+                demandId,
+                request,
+              }),
+            );
+            yield* put(repositoryContextStarted(request));
+            // A state subscriber may synchronously close or replace this demand.
+            if (
+              (yield* flush(ended)).length > 0 ||
+              (yield* selectPrincipalAdmissionContext.effect()) !== admission
+            )
+              return;
+            const result = yield* race({
+              read: call(observe, admission, request),
+              ended: take(ended),
+            });
+            // Dispose the failed observation, but retain its cancellation owner while
+            // unavailable is displayed. Only a fresh explicit demand may start a read.
+            if (result.read === 'unavailable') yield* take(ended);
+          } finally {
+            ended.close();
+            yield* put(repositoryContextRetired(workspaceId, request.binding, request.requestId));
+          }
+        },
+      );
     },
   );
 }

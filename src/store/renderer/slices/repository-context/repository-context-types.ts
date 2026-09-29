@@ -11,9 +11,34 @@ interface RepositoryContextRootEntry {
   context: RepositoryRootContext;
 }
 
+/** Capture once for a fresh explicit demand; admission is renderer correlation, not authority. */
+export interface RepositoryContextDemand {
+  readonly workspaceId: string;
+  /** Unique to this demand lifetime, including a new explicit read after retirement. */
+  readonly demandId: string;
+  readonly admission: string | null;
+}
+
+/** Only the root observation owner associates a demand with its original private request. */
+export interface RepositoryContextDemandOwnership {
+  demandId: string;
+  admission: string;
+  request: RepositoryContextRequest;
+}
+
+/** Binding-free presentation for the original demand owner. Null selection means inactive. */
+export interface RepositoryContextDemandView {
+  status: RepositoryContextWorkspaceState['status'];
+  scope: ExecutionScope | null;
+  revision: RepositoryContextRevision | null;
+  roots: readonly RepositoryRootContext[];
+  unavailableReason: RepositoryContextWorkspaceState['unavailableReason'];
+}
+
 export interface RepositoryContextWorkspaceState {
   /** Existing connection/admission context, supplied by its owner at integration. */
   binding: string | null;
+  ownership: RepositoryContextDemandOwnership | null;
   status: 'inactive' | 'loading' | 'ready' | 'unavailable';
   scope: ExecutionScope | null;
   revision: RepositoryContextRevision | null;
