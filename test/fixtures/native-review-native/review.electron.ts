@@ -1727,7 +1727,7 @@ async function uiPrepare(page: Page, title: string) {
 }
 async function uiConfirmation(page: Page, prepared: NativeReviewPreparedView, title: string) {
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  const dialog = page.getByRole('alertdialog', { name: 'Create this merge request?' });
+  const dialog = page.getByRole('dialog', { name: 'Create this merge request?' });
   await expect(dialog).toBeVisible();
   for (const value of [
     title,
