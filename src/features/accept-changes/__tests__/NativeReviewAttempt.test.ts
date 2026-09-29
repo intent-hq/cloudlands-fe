@@ -11,6 +11,7 @@ import {
 import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
+import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
@@ -389,9 +390,7 @@ describe('native review through rendered Store, root saga, Live client and contr
     expect(fixture.captures[0].input.action).toBe('create-pr');
     expect(fixture.captures[0].input.options).toBeUndefined();
     expect(fixture.legacyRequests).toHaveLength(0);
-    expect(dispatch.mock.calls.some(([a]) => a.type === 'workspace/updateWorkspaceEntity')).toBe(
-      false,
-    );
+    expect(dispatch.mock.calls.some(([a]) => a.type === updateWorkspaceEntity.type)).toBe(false);
   });
   it('preserves the Labs-off legacy form without acquiring repository/native state', async () => {
     await mount({}, nativeRoot, true);

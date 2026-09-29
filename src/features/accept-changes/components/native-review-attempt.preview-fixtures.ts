@@ -44,10 +44,7 @@ const repository = {
   projectPath: 'engineering/tools/editor',
 };
 
-function nativePreview(
-  root = nativeRoot,
-  id = 'native-preview-1',
-): NativeReviewPreparedView {
+function nativePreview(root = nativeRoot, id = 'native-preview-1'): NativeReviewPreparedView {
   return {
     root,
     valid: true,
