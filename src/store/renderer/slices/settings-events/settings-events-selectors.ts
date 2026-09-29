@@ -1,4 +1,4 @@
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '$store/renderer/store';
 import type { SettingsFormIdentity, SettingsFormRequest } from './settings-events-types';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';

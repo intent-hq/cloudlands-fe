@@ -7,9 +7,9 @@
  * the `presence:report` sends; see `sagas/presence-saga.ts`.
  */
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { PresenceRoster } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import type { LiveTypingEntry, PresenceState } from './presence-types';

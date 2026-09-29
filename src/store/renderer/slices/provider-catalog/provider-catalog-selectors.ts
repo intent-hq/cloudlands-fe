@@ -11,7 +11,7 @@
  * provider is derived from user settings via
  * `selectEffectiveDefaultProviderId`.
  */
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';

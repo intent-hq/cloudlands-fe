@@ -9,7 +9,7 @@ import type { AppSelector } from '../../types';
 import { defaultGitOperationFlags, getGitWorkspaceState } from './git-slice';
 import type { GitOperationFlags, PostMergeState } from './git-types';
 import type { GitStatus } from '$shared/types';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { CommitFile } from '$features/file-tracking/types';
 import type { CommitInfo } from '$shared/types';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';

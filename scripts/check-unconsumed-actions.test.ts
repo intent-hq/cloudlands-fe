@@ -4,7 +4,7 @@ import { inspectUnconsumedActions } from './check-unconsumed-actions.mjs';
 const SLICE = 'src/store/renderer/slices/demo/demo-slice.ts';
 const SAGA = 'src/store/renderer/slices/demo/sagas/demo-saga.ts';
 const SLICE_IMPORT =
-  "import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';";
+  "import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';";
 const SAGA_IMPORT =
   "import { put, take, takeEvery, takeLatest, throttle } from 'typed-redux-saga';";
 const ACTIONS_IMPORT = "import { a, b, req } from '../demo-slice';";
@@ -13,7 +13,7 @@ const slice = (handlers: string[] = [], creators: string[] = []) => ({
   path: SLICE,
   content: [
     SLICE_IMPORT,
-    "import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';",
+    "import { createReducer } from '@themislib/themis/utils/store/create-reducer';",
     "export const a = createAction<{ id: string }>('demo/a');",
     "export const b = createAction('demo/b');",
     ...creators,

@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import type { AgentMessage } from '$shared/types';
 import { expect, test } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
@@ -6,37 +6,22 @@ import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrati
 // Chromium hides native scrollbars in headless mode unless this default is removed.
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
 
-function bottomMenu(component: Locator, page: Page) {
-  const trigger = component
-    .locator('[data-panel-content-header]')
-    .getByTestId('panel-actions-trigger');
-  const command = page.getByTestId('chat-scroll-to-bottom-button');
-
-  async function open() {
-    // Keyboard activation avoids actionability animation frames while the race
-    // test's clock is paused. These remain trusted browser input events.
-    await trigger.press('Enter');
-    await expect(command).toBeVisible();
-  }
+function bottomArrow(component: Locator) {
+  const command = component.getByTestId('chat-floating-scroll-to-bottom-button');
 
   return {
     async expectAtBottom(atBottom: boolean) {
-      await open();
       if (atBottom) {
-        await expect(command).toHaveAttribute('aria-disabled', 'true');
+        await expect(command).toBeHidden();
       } else {
-        await expect(command).not.toHaveAttribute('aria-disabled', 'true');
+        await expect(command).toBeVisible();
       }
-      await command.press('Escape');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      await expect(trigger).toBeFocused();
     },
     async returnToBottom() {
-      await open();
-      await expect(command).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(command).toBeVisible();
+      // Trusted keyboard activation avoids actionability animation frames while
+      // the race test's clock is paused, preserving the pending navigation.
       await command.press('Enter');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      await expect(trigger).toBeFocused();
     },
   };
 }
@@ -48,7 +33,7 @@ test('newer previous-message navigation wins over a pending return to bottom', a
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatMessageNavigatorIntegrationHost);
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
-  const down = bottomMenu(component, page);
+  const down = bottomArrow(component);
   await down.expectAtBottom(true);
   for (const current of [24, 23, 22]) {
     const source = component.locator(`[data-message-id="user-${current}"]`);
@@ -117,7 +102,7 @@ test('newer previous-message navigation wins over a pending return to bottom', a
     .evaluate((node: HTMLButtonElement) => node.focus({ preventScroll: true }));
   await page.keyboard.press('Enter');
   await down.returnToBottom();
-  // Opening and selecting the lazy menu must not advance the pending lookup's frame.
+  // Activating the floating arrow must not advance the pending lookup's frame.
   const reverseSelectedAt = await page.evaluate(() => Date.now());
   expect(reverseSelectedAt).toBe(reverseStartedAt);
   await page.clock.runFor(800);
@@ -142,7 +127,7 @@ test('previous-message action leaves bottom and stays at successive user message
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatMessageNavigatorIntegrationHost);
   const scroll = component.locator('.conversation-column').locator('..');
-  const down = bottomMenu(component, page);
+  const down = bottomArrow(component);
   await down.expectAtBottom(true);
 
   for (const current of [24, 23, 22]) {
@@ -222,7 +207,7 @@ for (const sourceRole of ['user', 'assistant'] as const) {
       ];
       const component = await mount(ChatMessageNavigatorIntegrationHost, { props: { messages } });
       const scroll = component.getByTestId('chat-transcript-scroll-viewport');
-      const down = bottomMenu(component, page);
+      const down = bottomArrow(component);
       await down.expectAtBottom(true);
       const first = component.locator('[data-message-id="first"]');
       await expect(first.locator('[data-lazy-visible]')).toHaveAttribute(
@@ -290,7 +275,7 @@ test('assistant navigation falls back to the top without an earlier human messag
   ];
   const component = await mount(ChatMessageNavigatorIntegrationHost, { props: { messages } });
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
-  await bottomMenu(component, page).expectAtBottom(true);
+  await bottomArrow(component).expectAtBottom(true);
   expect(await scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   const action = component
     .locator('[data-message-id="reply"]')
@@ -307,7 +292,7 @@ test('keyboard message navigation releases follow and can return to bottom', asy
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatMessageNavigatorIntegrationHost);
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
-  const down = bottomMenu(component, page);
+  const down = bottomArrow(component);
   await down.expectAtBottom(true);
   const bottom = await scroll.evaluate((node) => node.scrollTop);
   for (let step = 0; step < 3; step++) {
@@ -774,6 +759,9 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
       props: {
         messages: automatedTail,
         historyStartLoaded: false,
+        // One unloaded page keeps real scrolling without invoking the ordinal
+        // seek saga, which this focused navigation host does not start.
+        totalMessages: 200,
         deferPages: true,
         conversationPages: [
           conversationPage([

@@ -7,15 +7,15 @@
  * settings changes without polling. Form state is transient: closing a form
  * removes its snapshot and makes late acknowledgements inert.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 import type { AppliedSettingChange } from '$lib/client/app-client';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   getItem,
   upsertItem,
   removeItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   SettingsEventsState,
   SettingsForm,

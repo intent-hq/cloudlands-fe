@@ -28,9 +28,9 @@ Pass `logReduxActions: true` in the **third Store constructor argument**. Pass
 `undefined` as the middleware argument when no middleware is configured.
 
 ```ts
-import { Store } from '@augmentcode/themis/svelte-store';
-import { ReactStore } from '@augmentcode/themis/react-store';
-import { StreamingStore } from '@augmentcode/themis/streaming-store';
+import { Store } from '@themislib/themis/svelte-store';
+import { ReactStore } from '@themislib/themis/react-store';
+import { StreamingStore } from '@themislib/themis/streaming-store';
 
 const svelteStore = new Store(reducers, undefined, { logReduxActions: true });
 const reactStore = new ReactStore(reducers, undefined, { logReduxActions: true });
@@ -47,7 +47,7 @@ The Store exposes a frozen `traceStreams` collection of six read-only Kefir stre
 `selectorDetail`, `selectorSummary`, `selectorCadence`, `sagaMonitor`,
 `runtimeError`, and `reduxAction`. The collection exposes no emitters and does not
 permit consumers to publish events. Public `StoreTraceStreams` and
-`StoreLoggerFactory` types are available from `@augmentcode/themis/types` and
+`StoreLoggerFactory` types are available from `@themislib/themis/types` and
 re-exported by each Store-family entrypoint.
 
 When `logReduxActions: true`, `reduxAction` is produced by pure middleware:
@@ -134,7 +134,7 @@ non-empty period aggregate directly, independently of the custom logger. See
 [Aggregate summaries](../selector-tracing/SKILL.md#aggregate-summaries).
 
 ```ts
-import type { StoreLoggerFactory, StoreOptions } from '@augmentcode/themis/types';
+import type { StoreLoggerFactory, StoreOptions } from '@themislib/themis/types';
 
 const loggerFactory: StoreLoggerFactory = (streams) => {
   const subscription = streams.runtimeError.observe(reportRuntimeError);

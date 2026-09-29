@@ -1,4 +1,4 @@
-import { Store } from '@augmentcode/themis/svelte-store';
+import { Store } from '@themislib/themis/svelte-store';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ForgeConnectResult } from '$features/forge-auth/types';

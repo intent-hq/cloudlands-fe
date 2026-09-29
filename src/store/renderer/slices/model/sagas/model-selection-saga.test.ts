@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { all, call } from 'typed-redux-saga';
 import { providerSettingsSaga } from '../../provider-settings/sagas/provider-settings-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ update: vi.fn(), updateSnapshot: undefined as any }));
 vi.mock('$lib/client', () => ({

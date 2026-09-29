@@ -39,6 +39,7 @@
     historyMessages = [],
     historyGap = false,
     historyStartLoaded = true,
+    totalMessages = 1000,
     conversationPages = [],
     deferPages = false,
     retired = false,
@@ -48,6 +49,7 @@
     historyMessages?: AgentMessage[];
     historyGap?: boolean;
     historyStartLoaded?: boolean;
+    totalMessages?: number;
     conversationPages?: (
       Awaited<ReturnType<typeof appClient.agents.getConversation>> | { error: string }
     )[];
@@ -171,9 +173,7 @@
     if (historyGap) store.dispatch(scrollbackFetchStarted(agentId, 'gap'));
   }
   if (!historyStartLoaded) {
-    store.dispatch(
-      chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages: 1000 }),
-    );
+    store.dispatch(chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages }));
   }
   store.dispatch(setAgents(workspaceId, [session]));
   store.dispatch(

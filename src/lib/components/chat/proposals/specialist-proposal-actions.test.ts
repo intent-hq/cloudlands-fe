@@ -4,7 +4,7 @@ import SpecialistChangeCard from './SpecialistChangeCard.svelte';
 import { WORKSPACE_ROUTE_CONTEXT } from '$lib/utils/workspace-route-context';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
   deleteFileSpecialist,
   initialState as specialistsInitialState,

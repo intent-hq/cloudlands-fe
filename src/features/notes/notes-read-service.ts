@@ -12,7 +12,7 @@
  * the configured store, slice actions, and the logger. State reads use the raw
  * `appStore.state.workspaceNotes` shape.
  */
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import type { Note } from '$shared/types';
 import { NoteId } from '$shared/types/branded-ids';

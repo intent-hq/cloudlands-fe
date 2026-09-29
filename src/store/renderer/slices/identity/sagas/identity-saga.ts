@@ -18,7 +18,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, select, takeLatest, type SagaGenerator } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import { selectDaemonSupportsIdentitySeam } from '../../daemon-health/daemon-health-selectors';
 import { selectIdentityLoadStatus } from '../identity-selectors';

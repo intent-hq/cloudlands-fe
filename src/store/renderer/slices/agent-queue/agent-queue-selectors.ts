@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import type { QueuedMessage } from '$shared/types';
 import type { StoreState } from '../../types';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentQueueEntryState } from './agent-queue-types';
 
 const emptyAgentQueueEntry: AgentQueueEntryState = {

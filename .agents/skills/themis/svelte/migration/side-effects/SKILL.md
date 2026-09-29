@@ -40,7 +40,7 @@ saga cancels on unmount and starts again on remount.
 ```typescript
 // src/lib/store/slices/users/sagas/users-saga.ts
 import { call, put, takeLatest } from "typed-redux-saga";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAction } from "@themislib/themis/utils/store/create-action";
 import { setUsername } from "../users-slice";
 
 export const loadUser = createAction<[userId: string]>("users/loadUser");
@@ -79,7 +79,7 @@ export function* searchSaga() {
 ```typescript
 // src/lib/store/slices/session/sagas/session-saga.ts
 import { call } from "typed-redux-saga";
-import { takeLatestFromSelector } from "@augmentcode/themis/saga";
+import { takeLatestFromSelector } from "@themislib/themis/saga";
 import { selectSessionToken } from "../session-selectors";
 
 declare function reconnectWithToken(token: string): Promise<void>;
@@ -115,7 +115,7 @@ export function* settingsSaga() {
 ```typescript
 // src/lib/store/slices/profile/sagas/profile-saga.ts
 import { call, put, takeEvery } from "typed-redux-saga";
-import { createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAsyncAction } from "@themislib/themis/utils/store/create-action";
 
 type Profile = { id: string; name: string };
 declare const api: { saveProfile(profile: Profile): Promise<Profile> };

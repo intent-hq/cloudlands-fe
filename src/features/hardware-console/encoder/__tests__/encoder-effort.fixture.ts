@@ -3,7 +3,7 @@ import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import type { HardwareDeviceModel } from '../../input/types';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';

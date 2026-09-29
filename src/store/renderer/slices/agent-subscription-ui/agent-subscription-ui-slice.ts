@@ -5,8 +5,8 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import type {
   AgentSubscriptionUIState,

@@ -28,7 +28,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   onBackendNotification: () => () => {},
 }));
 
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { clearInviteLinks, readInviteLink } from '$features/workspace-sharing/invite-link-vault';
 import type {
   HostPrincipal,

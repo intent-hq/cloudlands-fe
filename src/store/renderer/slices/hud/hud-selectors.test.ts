@@ -30,7 +30,7 @@ import {
 } from './hud-selectors';
 import type { DaemonHealthState } from '../daemon-health/daemon-health-types';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
   agentSessionReducer,

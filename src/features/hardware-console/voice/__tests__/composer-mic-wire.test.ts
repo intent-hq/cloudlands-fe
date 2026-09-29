@@ -8,7 +8,7 @@
  * is the backend bridge, so the stub sits on its `invoke` boundary.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 

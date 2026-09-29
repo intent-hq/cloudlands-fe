@@ -1,13 +1,13 @@
 import type { QueuedMessage } from '$shared/types';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
   getItem,
   getItems,
   replaceItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentQueueEntryState, AgentQueueState } from './agent-queue-types';
 
 const RECENTLY_REMOVED_MESSAGE_ID_LIMIT = 100;

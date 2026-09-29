@@ -1,10 +1,11 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
+  getItems,
   removeItem,
   upsertItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
@@ -17,6 +18,8 @@ import type {
   WorkspaceInitializerOnboardingFormState,
 } from './workspace-initializer-types';
 
+import { recentRepoKey } from './utils/recent-repo-key';
+
 export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = '~/Developer';
 const MAX_RECENT_REPOS = 9;
 
@@ -28,6 +31,8 @@ export const initialState: WorkspaceInitializerState = {
   branchByRepo: {},
   defaultParentPath: DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
   recentRepos: createCollection<WorkspaceInitializerRecentRepo, 'path'>('path'),
+  pendingRecentRepos: null,
+  dismissedRecentRepoKeys: {},
   remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id'),
   lastSubmittedAgent: null,
   pendingGitHubPrefill: null,
@@ -69,6 +74,10 @@ export const setWorkspaceInitializerRecentRepos = createAction<
   [repos: WorkspaceInitializerRecentRepo[]]
 >('workspaceInitializer/setRecentRepos');
 
+export const dismissWorkspaceInitializerRecentRepo = createAction<
+  [repo: Pick<WorkspaceInitializerRecentRepo, 'path' | 'type'>]
+>('workspaceInitializer/dismissRecentRepo');
+
 export const setWorkspaceInitializerRemoteSetups = createAction<
   [setups: WorkspaceInitializerRemoteSetup[]]
 >('workspaceInitializer/setRemoteSetups');
@@ -93,17 +102,24 @@ export const clearWorkspaceInitializerPendingGitHubPrefill = createAction(
   'workspaceInitializer/clearPendingGitHubPrefill',
 );
 
-function recentReposCollection(repos: WorkspaceInitializerRecentRepo[]) {
+function recentReposCollection(
+  repos: WorkspaceInitializerRecentRepo[],
+  dismissed: Record<string, true>,
+) {
   return createCollection<WorkspaceInitializerRecentRepo, 'path'>(
     'path',
-    repos.filter((repo) => repo.path).slice(0, MAX_RECENT_REPOS),
+    repos.filter((repo) => repo.path && !dismissed[recentRepoKey(repo)]).slice(0, MAX_RECENT_REPOS),
   );
 }
 
 export const workspaceInitializerReducer = createReducer<WorkspaceInitializerState>(initialState);
-workspaceInitializerReducer.with(
-  hydrateWorkspaceInitializer,
-  (state, { payload: [hydration] }) => ({
+workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload: [hydration] }) => {
+  const dismissedRecentRepoKeys = {
+    ...(hydration.dismissedRecentRepoKeys ?? state.dismissedRecentRepoKeys),
+    // A removal made while the initial settings read was pending wins over it.
+    ...(!state.hydrated ? state.dismissedRecentRepoKeys : {}),
+  };
+  return {
     ...state,
     hydrated: true,
     // A form edit made during the read belongs to this session, even if it
@@ -113,15 +129,20 @@ workspaceInitializerReducer.with(
     lastSelectedRepo: hydration.lastSelectedRepo ?? state.lastSelectedRepo,
     branchByRepo: hydration.branchByRepo ?? state.branchByRepo,
     defaultParentPath: hydration.defaultParentPath || state.defaultParentPath,
-    recentRepos: hydration.recentRepos
-      ? recentReposCollection(hydration.recentRepos)
-      : state.recentRepos,
+    dismissedRecentRepoKeys,
+    recentRepos: recentReposCollection(
+      state.pendingRecentRepos
+        ? getItems(state.pendingRecentRepos)
+        : (hydration.recentRepos ?? getItems(state.recentRepos)),
+      dismissedRecentRepoKeys,
+    ),
+    pendingRecentRepos: null,
     remoteSetups: hydration.remoteSetups
       ? createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id', hydration.remoteSetups)
       : state.remoteSetups,
     lastSubmittedAgent: hydration.lastSubmittedAgent ?? state.lastSubmittedAgent,
-  }),
-);
+  };
+});
 workspaceInitializerReducer.with(
   setCompactWorkspaceInitializerFormState,
   (state, { payload: [compactFormState] }) => ({
@@ -167,8 +188,31 @@ workspaceInitializerReducer.with(
   setWorkspaceInitializerRecentRepos,
   (state, { payload: [recentRepos] }) => ({
     ...state,
-    recentRepos: recentReposCollection(recentRepos),
+    recentRepos: recentReposCollection(recentRepos, state.dismissedRecentRepoKeys),
+    // Keep every source candidate until persisted dismissals are known. Retaining
+    // only the visible nine would prevent refilling rows excluded by late settings.
+    pendingRecentRepos: state.hydrated
+      ? null
+      : createCollection<WorkspaceInitializerRecentRepo, 'path'>(
+          'path',
+          recentRepos.filter((repo) => repo.path),
+        ),
   }),
+);
+workspaceInitializerReducer.with(
+  dismissWorkspaceInitializerRecentRepo,
+  (state, { payload: [repo] }) => {
+    if (!repo.path) return state;
+    const dismissedRecentRepoKeys = {
+      ...state.dismissedRecentRepoKeys,
+      [recentRepoKey(repo)]: true as const,
+    };
+    return {
+      ...state,
+      dismissedRecentRepoKeys,
+      recentRepos: recentReposCollection(getItems(state.recentRepos), dismissedRecentRepoKeys),
+    };
+  },
 );
 workspaceInitializerReducer.with(
   setWorkspaceInitializerRemoteSetups,

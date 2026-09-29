@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import type { StoreAction } from '@augmentcode/themis/types';
+import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../types';
 
 const mocks = vi.hoisted(() => ({

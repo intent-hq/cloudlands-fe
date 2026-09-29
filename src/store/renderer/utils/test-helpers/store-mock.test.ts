@@ -1,4 +1,4 @@
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppStoreMock } from './store-mock';
 

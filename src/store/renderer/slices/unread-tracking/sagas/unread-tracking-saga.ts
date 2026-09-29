@@ -1,4 +1,4 @@
-import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
