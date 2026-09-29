@@ -12,7 +12,7 @@ import type { Workspace } from '$shared/types';
 let sequence = 0;
 const issued = new WeakSet<object>();
 export type WorkspaceDeletion = {
-  readonly workspaceId: string;
+  readonly workspaceId: Workspace['id'];
   begin(hide?: boolean): boolean;
   current(): boolean;
   restore(): void;

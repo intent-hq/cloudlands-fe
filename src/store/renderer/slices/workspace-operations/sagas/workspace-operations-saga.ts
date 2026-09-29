@@ -44,7 +44,6 @@ import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-
 import { selectSpecialists } from '../../specialists/specialists-selectors';
 import {
   bulkUpdateWorkspaceEntities,
-  clearWorkspacePendingDeletion,
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   setWorkspaceEntity,
