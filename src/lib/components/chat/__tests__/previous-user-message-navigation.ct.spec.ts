@@ -574,6 +574,90 @@ for (const retired of [false, true]) {
   });
 }
 
+for (const motion of ['reduce', 'no-preference'] as const) {
+  test(`reading inside a tall paged reply survives quiet spacer resizing (${motion})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: motion });
+    const component = await mount(ChatMessageNavigatorIntegrationHost, {
+      props: {
+        messages: automatedTail,
+        historyStartLoaded: false,
+        conversationPages: [
+          conversationPage(automatedTail, 'older-1'),
+          conversationPage(
+            [
+              {
+                ...historyMessage('older-wake', 'user', 'Automated only', 800),
+                metadata: { type: 'pr_monitor_wake' },
+              },
+            ],
+            'older-2',
+          ),
+          conversationPage(
+            [
+              historyMessage('far-human', 'user', 'Earlier human', 700),
+              historyMessage('paged-human', 'user', 'Nearest unloaded human', 701),
+              historyMessage(
+                'paged-reply',
+                'assistant',
+                'Long answer for reading stability. '.repeat(900),
+                702,
+              ),
+            ],
+            'older-3',
+          ),
+        ],
+      },
+    });
+    const source = component.locator('[data-message-id="reply-tail"]');
+    await source.hover();
+    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    await expectAtMessage(component, 'paged-human');
+    const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+    await viewport.hover();
+    await page.mouse.wheel(0, 350);
+    // Enter the middle of a reply before the 400ms quiet spacer reconcile.
+    await page.waitForTimeout(100);
+    const measure = () =>
+      viewport.evaluate((node) => {
+        const reply = node.querySelector('[data-message-id="paged-reply"]');
+        const rect = node.getBoundingClientRect();
+        const replyRect = reply?.getBoundingClientRect();
+        return {
+          offset: replyRect ? replyRect.top - rect.top : null,
+          bottom: replyRect ? replyRect.bottom - rect.top : null,
+          viewport: node.clientHeight,
+          rowStartsInside: [
+            ...node.querySelectorAll('[data-message-id], [data-lazy-turn-key]'),
+          ].some((row) => {
+            const top = row.getBoundingClientRect().top;
+            return top >= rect.top && top < rect.bottom;
+          }),
+        };
+      });
+    const before = await measure();
+    expect(before.offset).not.toBeNull();
+    expect(before.offset!).toBeLessThan(-200);
+    expect(before.bottom!).toBeGreaterThan(before.viewport);
+    expect(before.rowStartsInside).toBe(false);
+    await component.screenshot({ path: testInfo.outputPath('tall-reply-before-resize.png') });
+    await page.waitForTimeout(850);
+    const after = await measure();
+    await testInfo.attach('tall-reply-reading-offsets', {
+      body: JSON.stringify({ before, after }),
+      contentType: 'application/json',
+    });
+    await component.screenshot({ path: testInfo.outputPath('tall-reply-after-resize.png') });
+    expect(after.offset).not.toBeNull();
+    expect(Math.abs(after.offset! - before.offset!)).toBeLessThanOrEqual(5);
+    await expect(component.getByTestId('page-requests')).toHaveText(
+      '["reply-tail","older-1","older-2"]',
+    );
+  });
+}
+
 test('unloaded gap resolves the nearer human instead of crossing to the loaded older prompt', async ({
   mount,
   page,

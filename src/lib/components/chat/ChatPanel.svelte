@@ -6496,9 +6496,13 @@
                    rows above the resident window, so the scrollbar represents
                    the full conversation (see estimateVirtualSpacerHeight).
                    Shrinks as real rows land; absent when everything is
-                   resident or totalMessages is unknown. -->
+                   resident or totalMessages is unknown. These geometry-only
+                   spacers must not transition: the global reduced-motion
+                   duration otherwise animates their default transition-property
+                   of all, briefly exposing an old extent to scroll compensation. -->
               {#if virtualSpacerHeight > 0}
                 <div
+                  class="transition-none"
                   style="height: {virtualSpacerHeight}px;"
                   data-testid="chat-virtual-scrollback-spacer"
                   aria-hidden="true"
@@ -6606,6 +6610,7 @@
                   {#if virtualSpacerBelowHeight > 0}
                     <div
                       bind:this={belowSpacerEl}
+                      class="transition-none"
                       style="height: {virtualSpacerBelowHeight}px;"
                       data-testid="chat-virtual-scrollback-spacer-below"
                       aria-hidden="true"
