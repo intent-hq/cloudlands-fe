@@ -5,6 +5,7 @@ import {
   hydrateWorkspaceInitializer,
   initialState,
   removeWorkspaceInitializerRemoteSetup,
+  dismissWorkspaceInitializerRecentRepo,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerPendingGitHubPrefill,
   setWorkspaceInitializerBranchForRepo,
@@ -181,6 +182,85 @@ describe('workspaceInitializerReducer', () => {
 
     state = workspaceInitializerReducer(state, removeWorkspaceInitializerRemoteSetup('one'));
     expect(state.remoteSetups.ids).toEqual(['two']);
+  });
+
+  it('dismisses only the matching recent entry and ignores stale source refreshes', () => {
+    const repos = [
+      { path: '/app', type: 'local' as const, name: 'app' },
+      { path: '/other/app', type: 'local' as const, name: 'app' },
+      { path: 'Owner/App', type: 'github' as const, name: 'App' },
+    ];
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerRecentRepos(repos),
+    );
+    state = workspaceInitializerReducer(state, dismissWorkspaceInitializerRecentRepo(repos[0]));
+    state = workspaceInitializerReducer(state, dismissWorkspaceInitializerRecentRepo(repos[2]));
+    expect(state.recentRepos.ids).toEqual(['/other/app']);
+    expect(state.lastSelectedRepo).toBeNull();
+    expect(state.dismissedRecentRepoKeys).toEqual({ 'local:/app': true, 'github:owner/app': true });
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerRecentRepos([
+        ...repos,
+        { path: 'owner/app', type: 'github', name: 'app' },
+      ]),
+    );
+    expect(state.recentRepos.ids).toEqual(['/other/app']);
+  });
+
+  it('filters hydrated recents and keeps dismissals made while hydration was pending', () => {
+    const repo = { path: '/app', type: 'local' as const, name: 'app' };
+    const pending = workspaceInitializerReducer(
+      initialState,
+      dismissWorkspaceInitializerRecentRepo(repo),
+    );
+    const state = workspaceInitializerReducer(
+      pending,
+      hydrateWorkspaceInitializer({
+        recentRepos: [repo, { path: 'Owner/App', type: 'github', name: 'App' }],
+        dismissedRecentRepoKeys: { 'github:owner/app': true },
+      }),
+    );
+    expect(state.recentRepos.ids).toEqual([]);
+    expect(state.dismissedRecentRepoKeys).toEqual({ 'local:/app': true, 'github:owner/app': true });
+    expect(
+      workspaceInitializerReducer(
+        initialState,
+        hydrateWorkspaceInitializer({ recentRepos: [repo] }),
+      ).recentRepos.ids,
+    ).toEqual(['/app']);
+  });
+
+  it('applies dismissals before the recent repository limit', () => {
+    const repos = Array.from({ length: 12 }, (_, i) => ({
+      path: `/repo-${i}`,
+      type: 'local' as const,
+      name: `repo-${i}`,
+    }));
+    const state = workspaceInitializerReducer(
+      workspaceInitializerReducer(initialState, dismissWorkspaceInitializerRecentRepo(repos[0])),
+      setWorkspaceInitializerRecentRepos(repos),
+    );
+    expect(state.recentRepos.ids).toHaveLength(9);
+    expect(state.recentRepos.ids).toContain('/repo-9');
+    expect(state.recentRepos.ids).not.toContain('/repo-0');
+  });
+
+  it('keeps dismissals during partial hydration and ignores an empty dismissal', () => {
+    let state = workspaceInitializerReducer(initialState, hydrateWorkspaceInitializer({}));
+    state = workspaceInitializerReducer(
+      state,
+      dismissWorkspaceInitializerRecentRepo({ path: '/app', type: 'local' }),
+    );
+    state = workspaceInitializerReducer(state, hydrateWorkspaceInitializer({ branchByRepo: {} }));
+    expect(state.dismissedRecentRepoKeys).toEqual({ 'local:/app': true });
+    expect(
+      workspaceInitializerReducer(
+        state,
+        dismissWorkspaceInitializerRecentRepo({ path: '', type: 'local' }),
+      ),
+    ).toBe(state);
   });
 
   it('falls back to the default parent for blank values and ignores empty branch repo keys', () => {

@@ -5,12 +5,19 @@ import { store as appStore } from '$store/renderer/store';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
-import { selectWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
-import { setWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import {
+  selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerDismissedRecentRepoKeys,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+import {
+  setWorkspaceInitializerRecentRepos,
+  hydrateWorkspaceInitializer,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import { invalidateCowIsolationSetting } from './cow-isolation-setting';
 
-/** Preview-only adapters: no daemon calls, persistence, or application sagas. */
-export function setupRecentRepositoriesPreview() {
+/** Isolated sources; optional real initializer saga backed by a fixture-only settings adapter. */
+export function setupRecentRepositoriesPreview(persist = false) {
   const names = [
     'app',
     'tools',
@@ -35,6 +42,10 @@ export function setupRecentRepositoriesPreview() {
   ]);
   const previousWorkspaces = selectWorkspaceItems.select(appStore.state);
   const previousRecent = selectWorkspaceInitializerRecentRepos.select(appStore.state);
+  const previousDismissals = selectWorkspaceInitializerDismissedRecentRepoKeys.select(
+    appStore.state,
+  );
+  const previousUpdateSetting = appClient.settings.update;
   const previousList = workspaceClient.list;
   const previousGetSetting = appClient.settings.get;
   workspaceClient.list = async () => ({ ok: true, data: [] });
@@ -48,12 +59,43 @@ export function setupRecentRepositoriesPreview() {
       data: repos,
     }),
   );
+  let stopPersistence: (() => void) | undefined;
+  if (persist) {
+    const key = 'recent-repositories-preview-settings';
+    appClient.settings.get = async (path) =>
+      path === 'workspaceInitializer.state'
+        ? {
+            path,
+            label: 'Fixture initializer',
+            description: '',
+            category: 'workspaceInitializer',
+            type: 'object',
+            defaultValue: {},
+            value: JSON.parse(sessionStorage.getItem(key) ?? '{"recentRepos":[]}'),
+            origin: 'default',
+            revision: 0,
+          }
+        : null;
+    appClient.settings.update = async (updates) => {
+      const update = updates.find((item) => item.path === 'workspaceInitializer.state');
+      if (update) sessionStorage.setItem(key, JSON.stringify(update.value));
+      return [];
+    };
+    stopPersistence = appStore.runSaga(workspaceInitializerSaga);
+  }
   return () => {
+    stopPersistence?.();
     restoreRegistry();
     workspaceClient.list = previousList;
     appClient.settings.get = previousGetSetting;
+    appClient.settings.update = previousUpdateSetting;
     invalidateCowIsolationSetting();
     appStore.dispatch(replaceWorkspaceList(previousWorkspaces));
-    appStore.dispatch(setWorkspaceInitializerRecentRepos(previousRecent));
+    appStore.dispatch(
+      hydrateWorkspaceInitializer({
+        recentRepos: previousRecent,
+        dismissedRecentRepoKeys: previousDismissals,
+      }),
+    );
   };
 }

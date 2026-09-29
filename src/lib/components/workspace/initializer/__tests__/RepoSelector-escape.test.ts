@@ -27,14 +27,22 @@ const mockRepos = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {} });
+  const module = createAppStoreMockModule({
+    state: {},
+    dispatch: (action) => {
+      if (action.type === 'workspaceInitializer/setRecentRepos') {
+        mockRepos.recentRepos = action.payload;
+        module.store.emitState();
+      }
+    },
+  });
+  return module;
 });
 
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
   async () => {
-    const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-    const store = createAppStoreMock({ state: {} });
+    const { store } = await import('$store/renderer/store');
     return {
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),

@@ -33,6 +33,7 @@ import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
+  dismissWorkspaceInitializerRecentRepo,
   initialState,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerLastSelectedRepo,
@@ -228,6 +229,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: { '/repo': 'main' },
               defaultParentPath: '/parent',
               recentRepos: [{ path: '/repo', type: 'local', name: 'repo' }],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [
                 {
                   id: 'remote-1',
@@ -281,6 +283,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: { '/repo': 'main' },
               defaultParentPath: '/parent',
               recentRepos: [{ path: '/repo', type: 'local', name: 'repo' }],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [
                 {
                   id: 'remote-1',
@@ -396,6 +399,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: {},
               defaultParentPath: '~/Developer',
               recentRepos: [{ path: '/daemon', type: 'local', name: 'daemon' }],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
             },
@@ -405,6 +409,90 @@ describe('workspaceInitializerSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  it.each([false, true])(
+    'persists dismissal across reload and source refresh (pending hydration: %s)',
+    async (pending) => {
+      const repos = [
+        { path: '/app', type: 'local' as const, name: 'app' },
+        { path: 'Owner/App', type: 'github' as const, name: 'App' },
+      ];
+      let resolve!: (value: unknown) => void;
+      mocks.get.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const channel = stdChannel();
+      let slice = workspaceInitializerReducer(
+        initialState,
+        setWorkspaceInitializerRecentRepos(repos),
+      );
+      const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+        slice = workspaceInitializerReducer(slice, action);
+        channel.put(action);
+        return action;
+      };
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+        workspaceInitializerSaga,
+      );
+      try {
+        if (!pending) {
+          resolve({ value: { recentRepos: repos } });
+          await settle();
+        }
+        dispatch(dismissWorkspaceInitializerRecentRepo(repos[0]));
+        dispatch(dismissWorkspaceInitializerRecentRepo(repos[1]));
+        if (pending) {
+          expect(mocks.update).not.toHaveBeenCalled();
+          resolve({ value: { recentRepos: repos } });
+        }
+        await settle();
+        const saved = mocks.update.mock.calls.at(-1)![0][0].value;
+        expect(saved.recentRepos).toEqual([]);
+        expect(saved.dismissedRecentRepoKeys).toEqual({
+          'local:/app': true,
+          'github:owner/app': true,
+        });
+        expect(saved.lastSelectedRepo).toBeNull();
+
+        // A new renderer hydrates the daemon setting, then receives the same source records.
+        mocks.get.mockResolvedValue({ value: JSON.parse(JSON.stringify(saved)) });
+        let reloaded = initialState;
+        await runSaga(
+          {
+            dispatch: (action) => {
+              reloaded = workspaceInitializerReducer(reloaded, action);
+            },
+          },
+          hydrateWorkspaceInitializerWorker,
+        ).toPromise();
+        reloaded = workspaceInitializerReducer(
+          reloaded,
+          setWorkspaceInitializerRecentRepos([
+            ...repos,
+            { path: 'owner/app', type: 'github', name: 'app' },
+          ]),
+        );
+        expect(reloaded.recentRepos.ids).toEqual([]);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
+
+  it('ignores malformed dismissal settings', async () => {
+    mocks.get.mockResolvedValue({
+      value: { dismissedRecentRepoKeys: { 'local:/app': true, 'local:/other': false, bad: 'yes' } },
+    });
+    const dispatch = vi.fn();
+    await runSaga({ dispatch }, hydrateWorkspaceInitializerWorker).toPromise();
+    expect(dispatch.mock.calls[0][0].payload[0].dismissedRecentRepoKeys).toEqual({
+      'local:/app': true,
+    });
   });
 
   it('drops queued writes after a failed hydration', async () => {
@@ -469,6 +557,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: {},
               defaultParentPath: '~/Developer',
               recentRepos: [],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
             },
@@ -533,6 +622,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: {},
               defaultParentPath: '~/Developer',
               recentRepos: [],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
             },
