@@ -151,7 +151,7 @@ describe('sidebar launcher hover previews', () => {
     expect(sidebar).toContain('label: m.workspace_fileChanges_agent_label(),');
     expect(sidebar).toContain('rows={[{ text: getNoteLauncherPreview(note) }]}');
     expect(sidebar).toContain('if (open && agent.messages.length === 0)');
-    expect(sidebar).toContain('void loadChatTranscript(agent.id)');
+    expect(sidebar).toContain('void loadChatTranscript(agent.id, agent.workspaceId)');
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('let openLauncherHoverKey = $state<string | null>(null)');
     expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');

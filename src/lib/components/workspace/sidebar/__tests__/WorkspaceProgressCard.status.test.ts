@@ -962,7 +962,14 @@ describe('WorkspaceProgressCard driving browser client', () => {
       ownClientId: OWN,
       liveClients: createLiveClientCollection(clients),
       liveClientsLoaded: true,
-      byWorkspaceId: { 'ws-1': { ...emptyWorkspaceBrowserClientsState, browserClient } },
+      byWorkspaceId: {
+        'ws-1': {
+          ...emptyWorkspaceBrowserClientsState,
+          browserClient,
+          liveClients: createLiveClientCollection(clients),
+          liveClientsLoaded: true,
+        },
+      },
     } satisfies BrowserClientsState;
   }
 

@@ -66,8 +66,10 @@ for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
   registerMockIpcHandler(channel, async (data?: unknown): Promise<GetModelsEnvelope> => {
     try {
       const forceRefresh = (data as { forceRefresh?: boolean } | undefined)?.forceRefresh === true;
+      const workspaceId = (data as { workspaceId?: string } | undefined)?.workspaceId;
       const result = await backendRequest<WireModelsListResult>('models.list', {
         providerId,
+        ...(workspaceId ? { workspaceId } : {}),
         ...(forceRefresh ? { forceRefresh: true } : {}),
       });
       const envelope: GetModelsEnvelope = {

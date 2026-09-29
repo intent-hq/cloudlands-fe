@@ -1,3 +1,4 @@
+import { getFixedColumnPanelIds } from './panel-layout-tabless';
 import { migratePanelCanvasWidth } from './panel-layout-width-provenance';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
 import {
@@ -49,7 +50,10 @@ function hasValidGeometry(node: unknown): boolean {
 function hasUsableGeometry(node: PanelLayoutNode, availableWidth: number | null): boolean {
   if (!hasValidGeometry(node)) return false;
   if (node.type === 'panel') return true;
-  if (availableWidth === null || node.direction === 'vertical') {
+  if (node.direction === 'vertical') {
+    return node.children.every((child) => hasUsableGeometry(child, availableWidth));
+  }
+  if (availableWidth === null) {
     return (
       node.sizes.every((size) => size >= MIN_PANEL_SIZE_PERCENT) &&
       node.children.every((child) => hasUsableGeometry(child, availableWidth))
@@ -147,17 +151,15 @@ function isCurrentFixedLayout(
 ): layout is WorkspacePanelLayout & { columnCount: PanelColumnCount } {
   if (
     layout.version !== PANEL_LAYOUT_PERSISTENCE_VERSION ||
-    !isPanelColumnCount(layout.columnCount) ||
-    orderedIds.length !== layout.columnCount ||
-    !hasUsableGeometry(layout.root, explicitCanvasWidth(layout))
-  ) {
+    !isPanelColumnCount(layout.columnCount)
+  )
     return false;
-  }
-  if (orderedIds.length === 1) return layout.root.type === 'panel';
+  const panelIds = getFixedColumnPanelIds({ ...layout, columnCount: layout.columnCount });
   return (
-    layout.root.type === 'split' &&
-    layout.root.direction === 'horizontal' &&
-    layout.root.children.every((child) => child.type === 'panel')
+    !!panelIds &&
+    panelIds.length === orderedIds.length &&
+    panelIds.every((id) => orderedIds.includes(id)) &&
+    hasUsableGeometry(layout.root, explicitCanvasWidth(layout))
   );
 }
 

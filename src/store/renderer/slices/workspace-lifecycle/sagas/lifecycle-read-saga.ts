@@ -1,3 +1,5 @@
+import { refreshIntegrationAuthAfterReconnect } from '../../workspace-share/sagas/workspace-share-saga';
+import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 
@@ -348,6 +350,7 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
     const metrics: Awaited<ReturnType<typeof getAgentLineStats>> = yield* call(
       getAgentLineStats,
       agentId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
     if (metrics) {
       yield* put(
@@ -1131,6 +1134,7 @@ function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
   while (true) {
     yield* take(backendReconnected);
     yield* put(loadWorkspacesRequested());
+    yield* call(refreshIntegrationAuthAfterReconnect);
   }
 }
 
@@ -1326,6 +1330,7 @@ function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
   try {
     yield* race({
       read: call(refreshPrStatus, workspaceId, force),
+      reconnected: take(backendReconnected),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
   } catch (error) {

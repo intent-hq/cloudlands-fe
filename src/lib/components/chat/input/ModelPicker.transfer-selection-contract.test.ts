@@ -3,29 +3,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AgentSession } from '$shared/types/agent-session';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { loadTransferSelectionFixtures } from '../../../../../scripts/transfer-selection-fixtures.mjs';
 
 const context = vi.hoisted(() => ({
-  state: {} as ReturnType<typeof makeState>,
   session: undefined as AgentSession | undefined,
   dispatch: vi.fn(),
 }));
 
-// Only state/transport boundaries are isolated. Identity, provider catalog,
-// provider settings and model selectors, catalog adapters, reducers, and the
-// picker remain real.
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
-    state: () => context.state,
-    dispatch: context.dispatch,
-    dedupeEmits: true,
-  });
-});
+// Only session/transport boundaries are isolated. The configured Store,
+// catalog owner, identity, catalog/settings/model selectors, adapters,
+// reducers, and picker remain real.
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
   const { readable } = await import('svelte/store');
   return {
@@ -64,18 +53,24 @@ import {
 } from '$features/agent/reasoning-effort';
 import { notify } from '$lib/components/patterns/notify';
 import {
-  initialState as catalogInitialState,
   providerCatalogLoaded,
-  providerCatalogReducer,
+  workspaceCatalogReceived,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import {
-  initialState as modelInitialState,
-  modelReducer,
+  hydrateDefaultProvider,
+  loadDefaultReasoningEffortFromStorage,
+  loadProviderModelsFromStorage,
 } from '$store/renderer/slices/model/model-slice';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import {
-  initialState as providerModelsInitialState,
-  providerModelsReducer,
-} from '$store/renderer/slices/provider-models/provider-models-slice';
+  checkAllProvidersComplete,
+  checkSingleProviderSuccess,
+} from '$store/renderer/slices/agent-availability/agent-availability-slice';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { setWorkspaceHasLoaded } from '$store/renderer/slices/workspace/workspace-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import '$store/renderer/seeders/model-catalog-bridge-seeder';
 import ModelPicker from './ModelPicker.svelte';
@@ -84,55 +79,73 @@ import ModelPicker from './ModelPicker.svelte';
 const { contract, artifact } = await loadTransferSelectionFixtures();
 console.info('Transfer-selection renderer input:', JSON.stringify(artifact.provenance));
 
-function makeState(codexEnabled: boolean) {
-  return {
-    providerCatalog: providerCatalogReducer(
-      catalogInitialState,
-      providerCatalogLoaded(contract.providersCatalog),
-    ),
-    providerSettings: { enabledProviders: { ...contract.enabledProviders, codex: codexEnabled } },
-    model: {
-      ...structuredClone(modelInitialState),
-      defaultProviderId: contract.destinationDefaults.provider,
-      defaultReasoningEffort: contract.destinationDefaults.reasoningEffort,
-      providerModels: {
-        [contract.destinationDefaults.provider]: contract.destinationDefaults.model,
+function hydrateFixtureState(codexEnabled: boolean, workspaceId: string) {
+  store.dispatch(providerCatalogLoaded(contract.providersCatalog));
+  store.dispatch(
+    workspaceCatalogReceived(
+      workspaceId,
+      {
+        catalog: contract.providersCatalog,
+        settings: [
+          { path: 'model.defaultProvider', value: contract.destinationDefaults.provider },
+          { path: 'model.default', value: contract.destinationDefaults.model },
+          {
+            path: 'providers.enabled',
+            value: { ...contract.enabledProviders, codex: codexEnabled },
+          },
+        ] as never,
+        specialists: [],
+        readiness: Object.fromEntries(
+          contract.providersCatalog.providers.map(({ id }: { id: string }) => [
+            id,
+            { available: true },
+          ]),
+        ),
       },
-    },
-    providerModels: structuredClone(providerModelsInitialState),
-    agentAvailability: {
-      hasCheckedOnce: true,
-      providerStatusMap: Object.fromEntries(
-        contract.providersCatalog.providers.map(({ id }) => [id, { available: true }]),
-      ),
-    },
-    daemonHealth: { health: 'healthy' },
-    workspace: { hasLoaded: true, workspaces: createCollection('id') },
-    connections: { windowBackendId: 'local', hasReceivedList: true },
-    guestSessions: {
-      sessions: createCollection('id'),
-      hasReceivedList: true,
-      listUnavailable: false,
-    },
-  };
+      store.state.providerCatalog.workspaceEpoch ?? 0,
+    ),
+  );
+  store.dispatch(
+    loadEnabledProvidersFromStorage({ ...contract.enabledProviders, codex: codexEnabled }),
+  );
+  store.dispatch(hydrateDefaultProvider(contract.destinationDefaults.provider));
+  store.dispatch(
+    loadDefaultReasoningEffortFromStorage(contract.destinationDefaults.reasoningEffort),
+  );
+  store.dispatch(
+    loadProviderModelsFromStorage({
+      [contract.destinationDefaults.provider]: contract.destinationDefaults.model,
+    }),
+  );
+  for (const { id } of contract.providersCatalog.providers) {
+    store.dispatch(checkSingleProviderSuccess(id, { available: true }));
+  }
+  store.dispatch(checkAllProvidersComplete());
+  store.dispatch(connectionStatusChanged('connected'));
+  store.dispatch(setWorkspaceHasLoaded(true));
+  store.dispatch(
+    connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+  );
+  store.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
 }
+
+let disposeStore: () => void;
+let cancelCatalog: () => void;
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('electronAPI', undefined);
-  context.dispatch.mockImplementation((action) => {
-    context.state = {
-      ...context.state,
-      model: modelReducer(context.state.model, action),
-      providerModels: providerModelsReducer(context.state.providerModels, action),
-    };
-    (store as unknown as { emitState(): void }).emitState();
-    return action;
+  disposeStore = store.init();
+  const dispatch = store.dispatch.bind(store);
+  vi.spyOn(store, 'dispatch').mockImplementation((action) => {
+    context.dispatch(action);
+    return dispatch(action);
   });
+  cancelCatalog = store.runSaga(modelReloadSaga);
   vi.mocked(backendRequest).mockImplementation(async (method, params) => {
     expect(method).toBe('models.list');
     const { providerId } = params as { providerId: string };
-    expect(params).toEqual({ providerId });
+    expect(params).toEqual({ providerId, workspaceId: context.session?.workspaceId });
     expect(contract.models).toHaveProperty(providerId);
     return { providerId, models: contract.models[providerId] };
   });
@@ -140,12 +153,15 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  cancelCatalog();
+  vi.restoreAllMocks();
+  disposeStore();
   context.session = undefined;
   vi.unstubAllGlobals();
 });
 
 async function mountSession(session: AgentSession, codexEnabled: boolean) {
-  context.state = makeState(codexEnabled);
+  hydrateFixtureState(codexEnabled, session.workspaceId);
   context.session = session;
   render(ModelPicker, {
     props: {
@@ -156,17 +172,22 @@ async function mountSession(session: AgentSession, codexEnabled: boolean) {
     },
   });
   await waitFor(() => {
-    expect(context.state.model.loadingState.auggie?.status).toBe('success');
-    expect(context.state.model.loadingState.codex?.status).toBe('success');
+    expect(store.state.providerModels.byWorkspaceId?.[session.workspaceId]?.auggie).toBeDefined();
+    expect(store.state.providerModels.byWorkspaceId?.[session.workspaceId]?.codex).toBeDefined();
   });
   await tick();
   // Model loading must preserve each daemon ID, with provenance in the
   // provider cache key. Prefixed values would exercise the legacy ID path.
   for (const { id: providerId } of contract.providersCatalog.providers) {
-    expect(backendRequest).toHaveBeenCalledWith('models.list', { providerId });
+    expect(backendRequest).toHaveBeenCalledWith('models.list', {
+      providerId,
+      workspaceId: session.workspaceId,
+    });
     expect(
-      context.state.providerModels.byProviderId[providerId]?.models.map(({ value }) => value),
-    ).toEqual(contract.models[providerId].map(({ id }) => id));
+      store.state.providerModels.byWorkspaceId?.[session.workspaceId]?.[providerId]?.models.map(
+        ({ value }) => value,
+      ),
+    ).toEqual(contract.models[providerId].map(({ id }: { id: string }) => id));
   }
   return screen.getByRole('button');
 }
@@ -203,22 +224,26 @@ describe('imported public sessions preserve the ModelPicker selection', () => {
         expected.selection.provider,
       );
       const trigger = await mountSession(row.session, input.codexEnabled);
-      assertSelection(trigger, expected.renderer.label);
+      await waitFor(() => assertSelection(trigger, expected.renderer.label));
       assertNoChanges();
       expect(row.session).toEqual(original);
     });
   }
 
   it('preserves an unresolved historical alias from an older catalog without guessing the default', async () => {
-    const row = artifact.cases.find(({ id }) => id === 'acp:direct:codex=false');
+    const row = artifact.cases.find(({ id }: { id: string }) => id === 'acp:direct:codex=false');
     // This older catalog carries no alias metadata. Bypass fixture validation
     // only to exercise the historical identity, which must remain unresolved.
     const session = { ...row.session, provider: 'acp' };
     const trigger = await mountSession(session, false);
     expect(getAgentProvider(session, contract.destinationDefaults.provider)).toBe('acp');
-    expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(/no longer available/);
-    expect(trigger.querySelector('[title]')?.getAttribute('title')).not.toMatch(/Codex|disabled/);
-    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    await waitFor(() => {
+      expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(
+        /no longer available/,
+      );
+      expect(trigger.querySelector('[title]')?.getAttribute('title')).not.toMatch(/Codex|disabled/);
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
     expect(() => assertSelection(trigger, contract.expectations.explicit.renderer.label)).toThrow();
     assertNoChanges();
   });

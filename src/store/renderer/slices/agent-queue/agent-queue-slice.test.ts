@@ -306,3 +306,19 @@ describe('agent queue selectors', () => {
     ]);
   });
 });
+
+it('drops the prior workspace queue and tombstones on rebind', () => {
+  let state = agentQueueReducer(
+    initialState,
+    replaceAgentQueue(AGENT_ID, [message('shared-row', 0)], 'workspace-a'),
+  );
+  state = agentQueueReducer(state, removeQueuedMessageFromAgentQueue(AGENT_ID, 'shared-row'));
+  state = agentQueueReducer(state, hydrateAgentQueueRequested(AGENT_ID, 'workspace-b'));
+  expect(state.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([]);
+  state = agentQueueReducer(
+    state,
+    replaceAgentQueue(AGENT_ID, [message('shared-row', 0)], 'workspace-b'),
+  );
+  expect(getItems(state.byAgentId[AGENT_ID].messages).map((m) => m.id)).toEqual(['shared-row']);
+  expect(state.byAgentId[AGENT_ID].workspaceId).toBe('workspace-b');
+});

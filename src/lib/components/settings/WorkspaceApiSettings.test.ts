@@ -4,6 +4,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import WorkspaceApiSettings from './WorkspaceApiSettings.svelte';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
+
+async function renderReady() {
+  render(WorkspaceApiSettings);
+  await waitFor(() =>
+    expect((screen.getByRole('switch') as HTMLButtonElement).disabled).toBe(false),
+  );
+}
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
@@ -52,7 +72,7 @@ describe('WorkspaceApiSettings', () => {
       { path: 'workspaceApi.toonOutput', value: false },
     ]);
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const toggle = await waitFor(() => screen.getByRole('switch'));
     await fireEvent.click(toggle);
@@ -72,7 +92,7 @@ describe('WorkspaceApiSettings', () => {
       { path: 'workspaceApi.toonOutput', value: true },
     ]);
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const toggle = await waitFor(() => screen.getByRole('switch'));
     await fireEvent.click(toggle);
@@ -89,15 +109,15 @@ describe('WorkspaceApiSettings', () => {
   it('shows toast.error and reverts toggle when settings.update omits the toggled path', async () => {
     mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const toggle = await waitFor(() => screen.getByRole('switch'));
     await fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
+      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     });
-    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
   });
 
   it('shows Save when max output chars differs, and clicking Save sends the exact request', async () => {
@@ -105,7 +125,7 @@ describe('WorkspaceApiSettings', () => {
       { path: 'workspaceApi.maxOutputChars', value: 250000 },
     ]);
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
@@ -125,7 +145,7 @@ describe('WorkspaceApiSettings', () => {
   });
 
   it('shows validation error and disables Save for a non-zero value below 1000', async () => {
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
@@ -139,7 +159,7 @@ describe('WorkspaceApiSettings', () => {
   });
 
   it('treats a blank max output chars input as invalid instead of 0 (unlimited)', async () => {
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
@@ -156,7 +176,7 @@ describe('WorkspaceApiSettings', () => {
   it('shows toast.error and reverts input when settings.update omits the max output chars path', async () => {
     mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
@@ -173,7 +193,7 @@ describe('WorkspaceApiSettings', () => {
       { path: 'workspaceApi.maxOutputChars', value: 0 },
     ]);
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
@@ -194,7 +214,7 @@ describe('WorkspaceApiSettings', () => {
       new Error('workspaceApi.maxOutputChars must be 0 or between 1000 and 10000000'),
     );
 
-    render(WorkspaceApiSettings);
+    await renderReady();
 
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
@@ -223,7 +243,7 @@ describe('WorkspaceApiSettings', () => {
         { path: 'agents.historyReplayToolContentChars', value: 8000 },
       ]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
@@ -245,7 +265,7 @@ describe('WorkspaceApiSettings', () => {
     });
 
     it('disables Save for values outside 500..100000', async () => {
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
@@ -272,7 +292,7 @@ describe('WorkspaceApiSettings', () => {
         { path: 'agents.historyReplayToolContentChars', value: 4000 },
       ]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
@@ -290,7 +310,7 @@ describe('WorkspaceApiSettings', () => {
     it('shows toast.error and reverts input when settings.update omits the path (older daemon)', async () => {
       mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
@@ -306,7 +326,7 @@ describe('WorkspaceApiSettings', () => {
     });
 
     it('treats a blank input as invalid and disables Save', async () => {
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
@@ -328,7 +348,7 @@ describe('WorkspaceApiSettings', () => {
         new Error('agents.historyReplayToolContentChars must be between 500 and 100000'),
       );
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
@@ -355,7 +375,7 @@ describe('WorkspaceApiSettings', () => {
         { path: 'agents.toolPayloadRetentionDays', value: 30 },
       ]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
@@ -387,7 +407,7 @@ describe('WorkspaceApiSettings', () => {
         { path: 'agents.toolPayloadRetentionDays', value: 0 },
       ]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
@@ -405,7 +425,7 @@ describe('WorkspaceApiSettings', () => {
     });
 
     it('disables Save for negative or above-3650 values', async () => {
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
@@ -432,7 +452,7 @@ describe('WorkspaceApiSettings', () => {
         { path: 'agents.toolPayloadRetentionDays', value: 0 },
       ]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
@@ -450,7 +470,7 @@ describe('WorkspaceApiSettings', () => {
     it('shows toast.error and reverts input when settings.update omits the path (older daemon)', async () => {
       mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
@@ -473,7 +493,7 @@ describe('WorkspaceApiSettings', () => {
         { path: 'agents.toolPayloadRetentionDays', value: 30 },
       ]);
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
@@ -495,7 +515,7 @@ describe('WorkspaceApiSettings', () => {
         new Error('agents.toolPayloadRetentionDays must be between 0 and 3650'),
       );
 
-      render(WorkspaceApiSettings);
+      await renderReady();
 
       const input = await waitFor(
         () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,

@@ -2,7 +2,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -797,7 +796,7 @@ describe('panel context menu routing', () => {
     expect(container.querySelector('[data-panel-pin]')).toBeNull();
   });
 
-  it('keeps kebab and Close visible while grouping other panel controls in the menu', async () => {
+  it('keeps kebab and Close visible and routes tab context commands', async () => {
     const onSplitHorizontal = vi.fn();
     const onZoomToggle = vi.fn();
     const { container } = renderTabBar({ onSplitHorizontal, onZoomToggle, onTabClose: vi.fn() });
@@ -808,14 +807,17 @@ describe('panel context menu routing', () => {
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
 
-    await fireEvent.click(
-      directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
-    );
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="one"]')!, {
+      clientX: 120,
+      clientY: 80,
+    });
 
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Zoom Panel' }));
     expect(onZoomToggle).toHaveBeenCalledOnce();
-    await fireEvent.click(directActions.querySelector('[data-testid="panel-actions-trigger"]')!);
-    expect(screen.queryByRole('menuitem', { name: 'Close panel' })).toBeNull();
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="one"]')!, {
+      clientX: 120,
+      clientY: 80,
+    });
     expect(
       screen
         .getByRole('menuitem', { name: /Create column to right/i })
@@ -826,7 +828,7 @@ describe('panel context menu routing', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('disables column creation in the mounted menu at four columns', async () => {
+  it('disables column creation in the tab context menu at four columns', async () => {
     const panelIds = ['panel-1', 'panel-2', 'panel-3', 'panel-4'];
     const panels = Object.fromEntries(panelIds.map((id) => [id, panel(id, [tab(`${id}-tab`)])]));
     const { container } = render(PanelContainer, {
@@ -846,8 +848,9 @@ describe('panel context menu routing', () => {
       },
     });
 
-    await fireEvent.click(
-      container.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
+    await fireEvent.contextMenu(
+      container.querySelector<HTMLElement>('[data-tab-id="panel-1-tab"]')!,
+      { clientX: 120, clientY: 80 },
     );
 
     expect(
@@ -887,7 +890,6 @@ describe('panel context menu routing', () => {
     ).toBe('true');
     const moveRight = screen.getByRole('menuitem', { name: 'Move panel right' });
     expect(moveRight.getAttribute('aria-disabled')).toBe('false');
-    expect(moveRight.textContent).toContain(formatShortcut(SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key));
     await fireEvent.click(moveRight);
     expect(onMoveActivePane).toHaveBeenCalledWith('panel-1', 'next');
   });
@@ -895,34 +897,34 @@ describe('panel context menu routing', () => {
   // Kebab ink, target geometry, focus, and action coverage live in agent-header-icons.ct.spec.ts.
 
   it('opens the shared panel actions menu from the tabless header without tab actions', async () => {
-    const onMoveRight = vi.fn();
-    const { container } = renderTabBar({ showTabStrip: false, onMoveRight });
+    const onMovePaneRight = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMovePaneRight });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
 
-    const moveLeft = screen.getByRole('menuitem', { name: 'Move tab left' });
-    const moveRight = screen.getByRole('menuitem', { name: 'Move tab right' });
+    const moveLeft = screen.getByRole('menuitem', { name: 'Move panel left' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move panel right' });
     expect(moveLeft.getAttribute('aria-disabled')).toBe('true');
     expect(moveRight.getAttribute('aria-disabled')).toBe('false');
     expect(screen.queryByRole('menuitem', { name: /Close tabs to the right/ })).toBeNull();
     await fireEvent.click(moveRight);
-    expect(onMoveRight).toHaveBeenCalledOnce();
+    expect(onMovePaneRight).toHaveBeenCalledOnce();
   });
 
   it('disables Move right at the right boundary and keeps Move left enabled', async () => {
-    const onMoveLeft = vi.fn();
-    const { container } = renderTabBar({ showTabStrip: false, onMoveLeft });
+    const onMovePaneLeft = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMovePaneLeft });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
 
-    const moveLeft = screen.getByRole('menuitem', { name: 'Move tab left' });
-    const moveRight = screen.getByRole('menuitem', { name: 'Move tab right' });
+    const moveLeft = screen.getByRole('menuitem', { name: 'Move panel left' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move panel right' });
     expect(moveLeft.getAttribute('aria-disabled')).toBe('false');
     expect(moveRight.getAttribute('aria-disabled')).toBe('true');
     await fireEvent.click(moveLeft);
-    expect(onMoveLeft).toHaveBeenCalledOnce();
+    expect(onMovePaneLeft).toHaveBeenCalledOnce();
   });
 
   it.each([

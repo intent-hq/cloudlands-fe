@@ -13,7 +13,10 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify } from '$lib/components/patterns/notify';
   import { parseAgentTypeId } from '$shared/types/agent.types';
-  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import {
+    selectContextSelectedModel,
+    selectContextDefaultProvider,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
 
@@ -96,7 +99,8 @@
         // self-renameable.
         nameExplicitlySet: false,
         workspaceId: WorkspaceId(workspaceId),
-        model: selectSelectedModel.select(state),
+        model: selectContextSelectedModel.select(state, workspaceId),
+        provider: selectContextDefaultProvider.select(state, workspaceId),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,

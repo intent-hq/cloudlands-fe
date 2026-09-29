@@ -1,7 +1,7 @@
 <script lang="ts">
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { faFont, faSliders } from '@fortawesome/free-solid-svg-icons';
+  import { faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
@@ -68,11 +68,11 @@
 
 {#snippet settingsItems()}
   <Menu.Sub>
-    <Menu.SubTrigger icon={faFont}>
-      <span class="min-w-0 flex-1">{m.settings_section_fontStyle()}</span>
+    <Menu.SubTrigger>
+      <span class="min-w-0 flex-1">{m.ui_viewSettings_font_label()}</span>
       <span class="type-caption text-muted-foreground">{fontLabel}</span>
     </Menu.SubTrigger>
-    <Menu.SubContent aria-label={m.settings_section_fontStyle()}>
+    <Menu.SubContent aria-label={m.ui_viewSettings_font_label()}>
       <Menu.RadioGroup value={$noteFontStyle} onValueChange={setFontStyle}>
         <Menu.RadioItem value="sans" closeOnSelect={false}>
           {m.settings_fontStyle_sans()}

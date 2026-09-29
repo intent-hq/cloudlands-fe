@@ -48,14 +48,19 @@ export function getModelChangeNotice(
   };
 }
 
-function describeSide(providerId: string | undefined, model: string | null): string {
+function describeSide(
+  providerId: string | undefined,
+  model: string | null,
+  workspaceId?: string,
+): string {
   const providerName = providerId
     ? selectProviderDisplayName.select(appStore.state, providerId)
     : undefined;
   if (providerId && providerName && model) {
     // Pretty name from the model catalog by (provider, model id); a lookup
     // miss (catalog not loaded / unknown model) falls back to the raw id.
-    const prettyName = selectModelDisplayName.select(appStore.state, providerId, model) ?? model;
+    const prettyName =
+      selectModelDisplayName.select(appStore.state, providerId, model, workspaceId) ?? model;
     return m.chat_modelChangeNotice_model_label({
       name: prettyName,
       providerId,
@@ -77,9 +82,10 @@ function describeSide(providerId: string | undefined, model: string | null): str
 export function formatModelChangeLabel(
   notice: ModelChangeNoticeInfo,
   fallbackText: string,
+  workspaceId?: string,
 ): string {
-  const fromLabel = describeSide(notice.fromProvider, notice.from);
-  const toLabel = describeSide(notice.toProvider, notice.to);
+  const fromLabel = describeSide(notice.fromProvider, notice.from, workspaceId);
+  const toLabel = describeSide(notice.toProvider, notice.to, workspaceId);
   return fromLabel && toLabel
     ? m.chat_modelChangeNotice_switched_label({ from: fromLabel, to: toLabel })
     : fallbackText;

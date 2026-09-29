@@ -271,3 +271,53 @@ describe('authoritative provider alias identity', () => {
     },
   );
 });
+
+it('retains only scoped MCP identity during refresh and clears it across connection and workspace lifetimes', async () => {
+  const { workspaceCatalogReceived, workspaceCatalogInvalidated } =
+    await import('./provider-catalog-slice');
+  const { selectWorkspaceMcpServerName } = await import('../mcp-settings/mcp-settings-selectors');
+  const { workspaceUnmounted, workspaceDeleted } =
+    await import('../workspace-lifecycle/workspace-lifecycle-slice');
+  const { removeWorkspaceEntity } = await import('../workspace/workspace-slice');
+  const snapshot = (name: string) => ({
+    catalog: CATALOG,
+    settings: [],
+    specialists: [],
+    readiness: {},
+    mcpServers: [{ id: 'shared-id', name, type: 'stdio' as const, command: 'node' }],
+  });
+  let current = providerCatalogReducer(
+    initialState,
+    workspaceCatalogReceived('A', snapshot('A-server'), 0),
+  );
+  current = providerCatalogReducer(current, workspaceCatalogReceived('B', snapshot('B-server'), 0));
+  const refreshing = providerCatalogReducer(current, workspaceCatalogInvalidated());
+  expect(refreshing.byWorkspaceId).toEqual({});
+  expect(selectWorkspaceMcpServerName.select(storeWith(refreshing), 'A', 'shared-id')).toBe(
+    'A-server',
+  );
+  expect(selectWorkspaceMcpServerName.select(storeWith(refreshing), 'B', 'shared-id')).toBe(
+    'B-server',
+  );
+  expect(
+    selectWorkspaceMcpServerName.select(storeWith(refreshing), 'missing', 'shared-id'),
+  ).toBeUndefined();
+  const reconnected = providerCatalogReducer(refreshing, workspaceCatalogInvalidated(true));
+  expect(
+    selectWorkspaceMcpServerName.select(storeWith(reconnected), 'A', 'shared-id'),
+  ).toBeUndefined();
+  for (const cleanup of [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity]) {
+    const cleared = providerCatalogReducer(refreshing, cleanup('A'));
+    expect(
+      selectWorkspaceMcpServerName.select(storeWith(cleared), 'A', 'shared-id'),
+    ).toBeUndefined();
+    expect(selectWorkspaceMcpServerName.select(storeWith(cleared), 'B', 'shared-id')).toBe(
+      'B-server',
+    );
+  }
+  const removed = providerCatalogReducer(
+    refreshing,
+    workspaceCatalogReceived('A', { ...snapshot('A-server'), mcpServers: [] }, 1),
+  );
+  expect(selectWorkspaceMcpServerName.select(storeWith(removed), 'A', 'shared-id')).toBeUndefined();
+});

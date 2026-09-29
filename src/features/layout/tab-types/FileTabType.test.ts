@@ -3,6 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { m } from '$shared/paraglide/messages.js';
 import { appClient } from '$lib/client';
+import { invoke } from '$lib/electron-bridge';
+import { notify } from '$lib/components/patterns/notify';
+
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { FileNode } from '$shared/types';
 
@@ -333,6 +337,111 @@ describe('FileTabType Redux integration', () => {
         return [];
       });
   }
+
+  async function downloadFromMenu() {
+    if (!screen.queryByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() })) {
+      await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() }),
+    );
+  }
+
+  it.each([
+    ['docs/Quarterly report #1.PDF', 'docs/Quarterly report #1.PDF', 'Quarterly report #1.PDF'],
+    ['/repo/images/café.png', 'images/café.png', 'café.png'],
+    ['src/main.ts', 'src/main.ts', 'main.ts'],
+    ['archive.zip', 'archive.zip', 'archive.zip'],
+  ])('downloads persisted %s through the workspace route', async (filePath, path, fileName) => {
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      data: { filePath: '/Downloads/' + fileName },
+    });
+    renderFileTab({ ...fileTab, filePath });
+    if (filePath.endsWith('.png')) await screen.findByTestId('file-viewer');
+    await downloadFromMenu();
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: 'ws-1',
+      path,
+      fileName,
+    });
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '../secret.txt',
+    '/repo-other/file.txt',
+    '/repo/../secret.txt',
+    '~/secret.txt',
+    'dir//file.txt',
+    'C:secret.txt',
+    'bad\0.txt',
+    '/repo',
+  ])('rejects invalid download target %s', async (filePath) => {
+    renderFileTab({ ...fileTab, filePath });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(
+      screen.queryByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() }),
+    ).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps cancellation quiet and allows another download', async () => {
+    vi.mocked(invoke).mockResolvedValue({ success: false, canceled: true });
+    renderFileTab();
+    await downloadFromMenu();
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    await downloadFromMenu();
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('disables repeat requests while the native download is pending', async () => {
+    let finish!: (result: unknown) => void;
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderFileTab();
+    await downloadFromMenu();
+    await downloadFromMenu();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish({ success: false, canceled: true });
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() })
+          .getAttribute('aria-disabled'),
+      ).not.toBe('true'),
+    );
+  });
+
+  it('waits for a shortened media path to resolve before downloading', async () => {
+    vi.mocked(backendRequest).mockImplementation(() => new Promise(() => {}));
+    renderFileTab({ ...fileTab, filePath: 'preview.png' });
+    await downloadFromMenu();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(['response', 'rejection'])('shows a download error after an IPC %s', async (kind) => {
+    if (kind === 'response')
+      vi.mocked(invoke).mockResolvedValue({
+        success: false,
+        error: { code: 'DOWNLOAD_FAILED', message: 'Transfer failed for main.ts' },
+      });
+    else vi.mocked(invoke).mockRejectedValue(new Error('bridge unavailable'));
+    renderFileTab();
+    await downloadFromMenu();
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        kind === 'response'
+          ? 'Transfer failed for main.ts'
+          : m.layout_fileTab_downloadFailed_error(),
+      ),
+    );
+  });
 
   it('groups editor presentation toggles into one view settings menu', async () => {
     renderFileTab();
@@ -703,6 +812,13 @@ describe('FileTabType Redux integration', () => {
       const viewer = await screen.findByTestId('file-viewer');
       expect(viewer.getAttribute('data-file-path')).toBe(resolvedPath);
       expect(viewer.getAttribute('data-source-url')).toBe(`workspace-file://ws-1/${resolvedPath}`);
+      vi.mocked(invoke).mockResolvedValue({ success: true });
+      await downloadFromMenu();
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+        workspaceId: 'ws-1',
+        path: resolvedPath,
+        fileName: resolvedPath.split('/').pop(),
+      });
       expect(actionMocks.updateFileTabPath).toHaveBeenCalledTimes(1);
       expect(list.mock.calls.every(([workspaceId]) => workspaceId === 'ws-1')).toBe(true);
       expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();

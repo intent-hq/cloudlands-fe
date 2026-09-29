@@ -87,6 +87,28 @@ describe('loadGitHubLinkPreview', () => {
     expect(client.githubIssue).not.toHaveBeenCalled();
   });
 
+  it('does not share identical PRs across workspaces or injected connections', async () => {
+    const client = makeClient();
+    let resolve!: (value: GitHubPullRequestDetails) => void;
+    client.githubPullRequest.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const a = loadGitHubLinkPreview(PR_URL, { client, workspaceId: 'a' });
+    const b = loadGitHubLinkPreview(PR_URL, { client, workspaceId: 'b' });
+    await b;
+    expect(client.githubPullRequest).toHaveBeenCalledTimes(2);
+    expect(client.githubPullRequest).toHaveBeenNthCalledWith(1, 'octo', 'intent', 42, 'a');
+    expect(client.githubPullRequest).toHaveBeenNthCalledWith(2, 'octo', 'intent', 42, 'b');
+    const otherConnection = makeClient();
+    await loadGitHubLinkPreview(PR_URL, { client: otherConnection, workspaceId: 'a' });
+    expect(otherConnection.githubPullRequest).toHaveBeenCalledTimes(1);
+    resolve(PR);
+    await a;
+  });
+
   it('routes a PR URL to githubPullRequest and tags the result kind: pr', async () => {
     const client = makeClient();
     const preview = await loadGitHubLinkPreview(PR_URL, { client });

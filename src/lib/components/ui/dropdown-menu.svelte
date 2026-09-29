@@ -21,6 +21,7 @@
     trigger,
     content,
     contentClass = '',
+    subContentClass,
     contentMaxHeight,
     class: className = '',
   }: {
@@ -33,6 +34,7 @@
     trigger?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
+    subContentClass?: string;
     contentMaxHeight?: string;
     class?: string;
   } = $props();
@@ -104,6 +106,7 @@
       {portal}
       {collisionPadding}
       {alignIconColumn}
+      {subContentClass}
       preventScroll={false}
       class={contentClass}
       maxHeight={contentMaxHeight}

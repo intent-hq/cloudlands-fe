@@ -927,7 +927,8 @@
       open={openLauncherHoverKey === `agent:${agent.id}`}
       onOpenChange={(open) => {
         handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
-        if (open && agent.messages.length === 0) void loadChatTranscript(agent.id);
+        if (open && agent.messages.length === 0)
+          void loadChatTranscript(agent.id, agent.workspaceId);
       }}
     >
       <Button

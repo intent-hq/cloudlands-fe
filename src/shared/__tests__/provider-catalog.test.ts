@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ProviderCatalogResponseSchema } from '../provider-catalog';
+import { ProviderCatalogResponseSchema, ProviderCatalogRequestSchema } from '../provider-catalog';
 
 const row = {
   id: 'provider',
@@ -47,5 +47,19 @@ describe('providers.catalog Fast mode capability', () => {
       ProviderCatalogResponseSchema.safeParse({ providers: [{ ...row, supportsFastMode }] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('providers.catalog routing request', () => {
+  it('accepts direct and workspace calls while retaining strict validation', () => {
+    expect(ProviderCatalogRequestSchema.parse({})).toEqual({});
+    expect(ProviderCatalogRequestSchema.parse({ workspaceId: 'A' })).toEqual({ workspaceId: 'A' });
+    for (const params of [
+      { workspaceId: '' },
+      { workspaceId: null },
+      { workspaceId: 'A', providerId: 'extra' },
+    ]) {
+      expect(ProviderCatalogRequestSchema.safeParse(params).success).toBe(false);
+    }
   });
 });

@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable intent/no-component-async-data-fetch */
   /**
    * Agent Features Settings Component
    *
@@ -30,8 +29,19 @@
     type SettingEntry,
   } from '$lib/components/patterns/settings';
   import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
-  import { notify } from '$lib/components/patterns/notify';
-  import { appClient } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+    settingsFormLoadRequested,
+    settingsFormSaveRequested,
+    settingsFormDraftChanged,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsForm,
+    selectSettingsFormEntries,
+    selectSettingsFormOperation,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { m } from '$shared/paraglide/messages.js';
 
   import {
@@ -58,92 +68,66 @@
     return typeof value === 'boolean' ? value : FEATURE_DEFAULTS[path];
   }
 
-  let loading = $state(true);
-  // Seed from per-feature daemon defaults (PROTOCOL §5.12)
-  let values = $state<Record<FeaturePath, boolean>>({ ...FEATURE_DEFAULTS });
+  const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const form$ = selectSettingsForm(identity);
+  const entries$ = selectSettingsFormEntries(identity);
+  const debounceOperation$ = selectSettingsFormOperation(identity, DEBOUNCE_PATH);
+  const maxAgentsOperation$ = selectSettingsFormOperation(identity, MAX_AGENTS_PATH);
+  const loading = $derived(!$form$?.loaded);
+  const values = $derived(
+    Object.fromEntries(
+      FEATURE_PATHS.map((path) => [
+        path,
+        coerceValue(path, $form$?.drafts[path] ?? $entries$[path]?.value),
+      ]),
+    ) as Record<FeaturePath, boolean>,
+  );
   // settings.list includes registered defaults even without a stored preference.
-  let peerAgentsSupported = $state(false);
+  const peerAgentsSupported = $derived($entries$['agentFeatures.peerAgents'] !== undefined);
   let peerAgentsEnabled = $derived(peerAgentsSupported && values['agentFeatures.peerAgents']);
   // Daemon-provided approximate token cost per toggle (§5.12 `tokenImpact`);
   // absent on older daemons or unannotated entries → no line rendered.
-  let tokenImpacts = $state<Partial<Record<FeaturePath, string>>>({});
+  const tokenImpacts = $derived(
+    Object.fromEntries(FEATURE_PATHS.map((path) => [path, $entries$[path]?.tokenImpact])),
+  );
 
   // Debounce window (§6.9): persisted seconds + input mirror, min 10.
-  let persistedDebounce = $state<number>(60);
-  let editedDebounce = $state<string>('60');
-  let debounceSaving = $state(false);
+  const persistedDebounce = $derived(Number($entries$[DEBOUNCE_PATH]?.value ?? 60));
+  const editedDebounce = $derived(String($form$?.drafts[DEBOUNCE_PATH] ?? persistedDebounce));
+  const debounceSaving = $derived($debounceOperation$?.status === 'pending');
 
   // Top-level agent cap: persisted count + input mirror, min 1.
-  let persistedMaxAgents = $state<number>(DEFAULT_MAX_TOP_LEVEL_AGENTS);
-  let editedMaxAgents = $state<string>(String(DEFAULT_MAX_TOP_LEVEL_AGENTS));
-  let maxAgentsSaving = $state(false);
+  const persistedMaxAgents = $derived(
+    Number($entries$[MAX_AGENTS_PATH]?.value ?? DEFAULT_MAX_TOP_LEVEL_AGENTS),
+  );
+  const editedMaxAgents = $derived(String($form$?.drafts[MAX_AGENTS_PATH] ?? persistedMaxAgents));
+  const maxAgentsSaving = $derived($maxAgentsOperation$?.status === 'pending');
 
-  onMount(async () => {
-    await loadSettings();
+  onMount(() => {
+    appStore.dispatch(settingsFormOpened(identity, 'agent-features'));
+    appStore.dispatch(
+      settingsFormLoadRequested({ ...identity, requestId: crypto.randomUUID(), resource: 'load' }),
+    );
+    return () => appStore.dispatch(settingsFormClosed(identity));
   });
 
-  async function loadSettings() {
-    try {
-      loading = true;
-      const settings = await appClient.settings.list();
-      for (const path of FEATURE_PATHS) {
-        const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
-        if (path === 'agentFeatures.peerAgents') peerAgentsSupported = entry !== undefined;
-        values[path] = coerceValue(path, entry?.value);
-        tokenImpacts[path] = typeof entry?.tokenImpact === 'string' ? entry.tokenImpact : undefined;
-      }
-      const debounce = settings.find(
-        (s: { path: string; value: unknown }) => s.path === DEBOUNCE_PATH,
-      );
-      if (typeof debounce?.value === 'number') {
-        persistedDebounce = debounce.value;
-        editedDebounce = String(debounce.value);
-      }
-      const maxAgents = settings.find(
-        (s: { path: string; value: unknown }) => s.path === MAX_AGENTS_PATH,
-      );
-      if (typeof maxAgents?.value === 'number') {
-        persistedMaxAgents = maxAgents.value;
-        editedMaxAgents = String(maxAgents.value);
-      }
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_loadError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      loading = false;
-    }
+  function handleToggle(path: FeaturePath, checked: boolean) {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    if (!form?.loaded || (path === 'agentFeatures.peerAgents' && !entries[path])) return;
+    appStore.dispatch(settingsFormDraftChanged(identity, path, checked));
+    appStore.dispatch(
+      settingsFormSaveRequested({ ...identity, resource: path, requestId: crypto.randomUUID() }, [
+        { path, value: checked },
+      ]),
+    );
   }
 
-  async function handleToggle(path: FeaturePath, checked: boolean) {
-    if (path === 'agentFeatures.peerAgents' && !peerAgentsSupported) return;
-    values[path] = checked;
-    try {
-      const result = await appClient.settings.update([{ path, value: checked }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find((r: { path: string; value: unknown }) => r.path === path);
-      if (applied && applied.value !== checked) {
-        notify.error(m.settings_agentFeatures_rollbackError());
-        values[path] = coerceValue(path, applied.value);
-        return;
-      }
-
-      values[path] = checked;
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      values[path] = !checked;
-    }
-  }
-
-  async function handleDebounceSave() {
-    const newValue = Number(editedDebounce);
+  function handleDebounceSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const newValue = Number(form.drafts[DEBOUNCE_PATH] ?? entries[DEBOUNCE_PATH]?.value);
     if (
       !Number.isInteger(newValue) ||
       newValue < MIN_DEBOUNCE_SECONDS ||
@@ -152,34 +136,12 @@
       return; // invalid input, do nothing
     }
 
-    try {
-      debounceSaving = true;
-      const result = await appClient.settings.update([{ path: DEBOUNCE_PATH, value: newValue }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === DEBOUNCE_PATH,
-      );
-      if (applied && applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedDebounce;
-        notify.error(m.settings_agentFeatures_rollbackError());
-        persistedDebounce = rolledBackValue;
-        editedDebounce = String(rolledBackValue);
-        return;
-      }
-
-      persistedDebounce = newValue;
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedDebounce = String(persistedDebounce);
-    } finally {
-      debounceSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: DEBOUNCE_PATH, requestId: crypto.randomUUID() },
+        [{ path: DEBOUNCE_PATH, value: newValue }],
+      ),
+    );
   }
 
   function isValidDebounce(value: string): boolean {
@@ -191,41 +153,29 @@
     );
   }
 
-  async function handleMaxAgentsSave() {
-    if (!peerAgentsEnabled) return;
-    const newValue = Number(editedMaxAgents);
+  function handleMaxAgentsSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    if (
+      !form?.loaded ||
+      !entries['agentFeatures.peerAgents'] ||
+      !coerceValue(
+        'agentFeatures.peerAgents',
+        form.drafts['agentFeatures.peerAgents'] ?? entries['agentFeatures.peerAgents'].value,
+      )
+    )
+      return;
+    const newValue = Number(form.drafts[MAX_AGENTS_PATH] ?? entries[MAX_AGENTS_PATH]?.value);
     if (!Number.isInteger(newValue) || newValue < MIN_MAX_TOP_LEVEL_AGENTS) {
       return; // invalid input, do nothing
     }
 
-    try {
-      maxAgentsSaving = true;
-      const result = await appClient.settings.update([{ path: MAX_AGENTS_PATH, value: newValue }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === MAX_AGENTS_PATH,
-      );
-      if (applied && applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedMaxAgents;
-        notify.error(m.settings_agentFeatures_rollbackError());
-        persistedMaxAgents = rolledBackValue;
-        editedMaxAgents = String(rolledBackValue);
-        return;
-      }
-
-      persistedMaxAgents = newValue;
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedMaxAgents = String(persistedMaxAgents);
-    } finally {
-      maxAgentsSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: MAX_AGENTS_PATH, requestId: crypto.randomUUID() },
+        [{ path: MAX_AGENTS_PATH, value: newValue }],
+      ),
+    );
   }
 
   const schema = $derived.by(() => {
@@ -286,7 +236,11 @@
         type="number"
         min={MIN_DEBOUNCE_SECONDS}
         max={MAX_DEBOUNCE_SECONDS}
-        bind:value={editedDebounce}
+        value={editedDebounce}
+        oninput={(event) =>
+          appStore.dispatch(
+            settingsFormDraftChanged(identity, DEBOUNCE_PATH, event.currentTarget.value),
+          )}
         disabled={loading || debounceSaving || !values['agentFeatures.prMonitor']}
         aria-label={m.settings_agentFeatures_prMonitorDebounce_ariaLabel()}
         class="w-24"
@@ -320,7 +274,11 @@
       <Input
         type="number"
         min={MIN_MAX_TOP_LEVEL_AGENTS}
-        bind:value={editedMaxAgents}
+        value={editedMaxAgents}
+        oninput={(event) =>
+          appStore.dispatch(
+            settingsFormDraftChanged(identity, MAX_AGENTS_PATH, event.currentTarget.value),
+          )}
         disabled={loading || maxAgentsSaving || !peerAgentsEnabled}
         aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
         class="w-24"
