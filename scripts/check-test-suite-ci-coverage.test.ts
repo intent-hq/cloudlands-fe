@@ -81,6 +81,8 @@ interface Word {
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
+  'test/fixtures/native-review-native/playwright.config.ts':
+    '2026-09-29: manual Electron native-client proof requiring explicit evidence, digest-pinned 5bed0a98 composed driver and private lifetime pipe/display/profiles/two hosts; provider API is loopback HTTP and Git is verified HTTPS; normal provider TLS and hosted CI remain unproven',
   'test/fixtures/repository-route/playwright.config.ts':
     '2026-09-29: opt-in disposable Electron/generated-preload harness with fixture authority, not the accepted daemon; requires a private display and profiles, with hosted CI provisioning and execution pending',
   'test/fixtures/repository-context-native/playwright.config.ts':
