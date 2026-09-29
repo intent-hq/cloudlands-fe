@@ -24,6 +24,7 @@ import time
 import zipfile
 
 PRODUCT = "13a6cbe92681f7e3f6858ad7d5ce414375935b2c"
+PREVIOUS = "efd7e727e1d919dfb18ae086bc5f566a02cae41e"
 REPO = "intent-hq/cloudlands-fe"
 BRANCH = "diagnostic/b76t-packaged-readiness"
 WORKFLOW = ".github/workflows/packaged-macos-inspection.yml"
@@ -128,8 +129,8 @@ def route(event, env, merge, parents, tree, controller_tree, workflow_equal, sou
     require(event["repository"]["full_name"] == REPO
             and pr["head"]["repo"]["full_name"] == REPO
             and pr["base"]["repo"]["full_name"] == REPO, "repository")
-    require(pr["head"]["ref"] == BRANCH and event["before"] == PRODUCT
-            and event["after"] == head and head != PRODUCT, "one-use head transition")
+    require(pr["head"]["ref"] == BRANCH and event["before"] == PREVIOUS
+            and event["after"] == head and head not in (PRODUCT, PREVIOUS), "one-use head transition")
     require(re.fullmatch("[0-9a-f]{40}", head) and env["GITHUB_RUN_ATTEMPT"] == "1", "head/attempt")
     require(env["GITHUB_REF"] == "refs/pull/2977/merge"
             and env["GITHUB_SHA"] == merge and env["WORKFLOW_SHA"] == merge, "workflow/event/checkout")
@@ -144,21 +145,94 @@ def route(event, env, merge, parents, tree, controller_tree, workflow_equal, sou
                 workflowRef=env["WORKFLOW_REF"], previous=event["before"])
 
 
-def mount_record(info, mount, dmg, entities):
-    """Use native image identity. Never derive a disk number from a mount name."""
-    matches = [i for i in info.get("images", []) if i.get("image-path") == str(dmg)]
+def attachment_entities(rows, mount):
+    """Strict identity for the two-device HFS shape observed in retained V75.
+
+    Only order and explicitly observed optional presentation fields normalize.
+    Unknown keys/shapes fail closed; this is not a general macOS schema parser.
+    """
+    require(isinstance(rows, list) and len(rows) == 2, "attachment entity count")
+    allowed = {"dev-entry", "mount-point", "content-hint", "unmapped-content-hint",
+               "potentially-mountable", "volume-kind"}
+    devices = {}
+    hfs = "48465300-0000-11AA-AA11-00306543ECAC"
+    for row in rows:
+        require(isinstance(row, dict) and set(row) <= allowed, "unknown attachment entity fields")
+        device = row.get("dev-entry")
+        require(isinstance(device, str) and re.fullmatch(r"/dev/disk[0-9]+(?:s[0-9]+)?", device)
+                and device not in devices, "duplicate/invalid attachment device")
+        devices[device] = row
+    roots = [d for d in devices if re.fullmatch(r"/dev/disk[0-9]+", d)]
+    require(len(roots) == 1, "attachment root device")
+    root = roots[0]
+    slices = [d for d in devices if d != root]
+    require(len(slices) == 1 and re.fullmatch(re.escape(root) + r"s[0-9]+", slices[0]), "attachment slice family")
+    stable = []
+    for device in sorted(devices):
+        row = devices[device]
+        is_slice = device != root
+        hint = hfs if is_slice else "GUID_partition_scheme"
+        require(row.get("content-hint") in ({hfs, "Apple_HFS"} if is_slice else {hint}), "attachment filesystem hint")
+        if "unmapped-content-hint" in row:
+            require(row["unmapped-content-hint"] == hint, "conflicting unmapped hint")
+        if "potentially-mountable" in row:
+            require(row["potentially-mountable"] is is_slice, "conflicting mountability")
+        if "volume-kind" in row:
+            require(is_slice and row["volume-kind"] == "hfs", "conflicting volume kind")
+        if is_slice:
+            require(row.get("mount-point") == str(mount), "private mount identity")
+        else:
+            require("mount-point" not in row, "root device unexpectedly mounted")
+        stable.append(dict(device=device, mount=str(mount) if is_slice else None, filesystem=hint))
+    return dict(device=root, entities=stable)
+
+
+def attach_record(attach, mount, dmg, verified_dmg, evidence_root):
+    """Capture attributable attach identity before any follow-up comparison.
+
+    Cleanup still requires fresh info proving this exact backing/device/mount,
+    runtime owner and read-only state; a successful command alone is not enough.
+    """
+    require(isinstance(attach, dict) and set(attach) == {"system-entities"}, "attach response shape")
+    require(dmg == evidence_root / DMG_NAME and not dmg.is_symlink()
+            and dmg.is_file() and identity(dmg) == verified_dmg, "verified backing identity drift")
+    require(verified_dmg["uid"] == os.getuid() and verified_dmg["mode"] == 0o600
+            and verified_dmg["size"] == DMG_BYTES, "private backing owner/mode/size")
+    require(mount == evidence_root / "mount" and not mount.is_symlink() and mount.is_dir(), "private mount path/type")
+    stable = attachment_entities(attach["system-entities"], mount)
+    return dict(backing=str(dmg), backingIdentity=verified_dmg,
+                backingBytes=DMG_BYTES, backingSha256=DMG_SHA,
+                entities=attach["system-entities"], stableEntities=stable["entities"], device=stable["device"],
+                mount=str(mount), mountIdentity=identity(mount), runtimeOwner=os.getuid(),
+                readonlyRequested=True, infoValidated=False)
+
+
+def mount_record(info, mount, dmg, entities, owner=None):
+    """Match an exact stable device set, never a guessed disk or PID."""
+    owner = os.getuid() if owner is None else owner
+    require(type(owner) is int and isinstance(info, dict) and isinstance(info.get("images"), list), "image inventory/owner")
+    images = info["images"]
+    require(all(isinstance(i, dict) for i in images), "image inventory shape")
+    matches = [i for i in images if i.get("image-path") == str(dmg)]
     require(len(matches) == 1, "backing image ambiguity")
     image = matches[0]
     require(image.get("writeable") is False, "image not read-only")
-    live = image.get("system-entities", [])
-    require(live == entities, "attach/info entities differ")
-    mounted = [e for e in live if e.get("mount-point")]
-    require(len(mounted) == 1 and mounted[0]["mount-point"] == str(mount), "mount ownership")
-    devices = [e.get("dev-entry", "") for e in live]
-    require(devices and all(re.fullmatch(r"/dev/disk[0-9]+(?:s[0-9]+)*", d) for d in devices), "device identity")
-    roots = [d for d in devices if re.fullmatch(r"/dev/disk[0-9]+", d)]
-    require(len(roots) == 1 and all(d == roots[0] or d.startswith(roots[0] + "s") for d in devices), "device family")
-    return dict(backing=str(dmg), entities=live, device=roots[0], readonly=True)
+    require(type(image.get("owner-uid")) is int and image["owner-uid"] == owner, "image runtime owner")
+    expected = attachment_entities(entities, mount)
+    actual = attachment_entities(image.get("system-entities"), mount)
+    require(expected == actual, "attach/info stable identity differs")
+    devices = {e["device"] for e in expected["entities"]}
+    for other in images:
+        if other is image:
+            continue
+        require(isinstance(other.get("system-entities", []), list), "foreign image inventory shape")
+        for entity in other.get("system-entities", []):
+            require(isinstance(entity, dict) and entity.get("dev-entry") not in devices
+                    and entity.get("mount-point") != str(mount), "ambiguous image device/mount")
+    pid = image.get("hdid-pid")
+    require(type(pid) is int and pid > 0, "image provider PID absent")
+    return dict(backing=str(dmg), entities=actual["entities"], device=actual["device"],
+                readonly=True, runtimeOwner=owner, hdidPid=pid)
 
 
 def settle(primary, cleanup):
@@ -393,8 +467,10 @@ def check_route(ops, evidence, env, event):
     head = event["pull_request"]["head"]["sha"]
     require(re.fullmatch("[0-9a-f]{40}", head), "invalid head")
     controller_parents = git("show", "-s", "--format=%P", head).split()
-    require(controller_parents == [PRODUCT], "controller must be one child of the product source")
-    changed = git("diff", "--name-only", PRODUCT, head).splitlines()
+    require(controller_parents == [PREVIOUS], "controller must be one child of the consumed predecessor")
+    # Immutable PREVIOUS already differs from PRODUCT only at these controls;
+    # sole-parent ancestry plus this exact delta preserves every other path.
+    changed = git("diff", "--name-only", PREVIOUS, head).splitlines()
     require(set(changed) == {WORKFLOW, CONTROLLER} and len(changed) == 2, "controller publication scope")
     controller_tree = git("rev-parse", head + "^{tree}")
     require(git("status", "--porcelain", "--untracked-files=no") == "", "dirty source")
@@ -512,6 +588,7 @@ def inspect(ops, evidence, dmg):
     mount.mkdir(mode=0o700)
     original_dmg = identity(dmg)
     owned = None
+    detached_observed = False
     attach_attempted = False
     primary = 0
     primary_error = None
@@ -520,17 +597,26 @@ def inspect(ops, evidence, dmg):
     cleanup_error = None
     cleanup_outcome = None
     try:
+        ownership_slot = evidence.reserve(RESULT_SLOT, "cleanup")
         with ops.phase("dmgVerify"):
+            require(dmg == evidence.root / DMG_NAME and dmg.is_file() and not dmg.is_symlink(), "fixed private payload path")
+            require(original_dmg["uid"] == os.getuid() and original_dmg["mode"] == 0o600
+                    and original_dmg["size"] == DMG_BYTES, "private backing owner/mode/size")
+            verify_bytes(*digest_file(dmg, DMG_BYTES, ops.tick), DMG_BYTES, DMG_SHA)
+            require(identity(dmg) == original_dmg, "backing changed while rehashing")
             ops.run([TOOLS["hdiutil"], "verify", str(dmg)])
         with ops.phase("attach"):
             require(shutil.disk_usage(evidence.root).free >= 4294967296, "free disk prerequisite")
             attach_attempted = True
             attach = plistlib.loads(ops.run([TOOLS["hdiutil"], "attach", "-readonly", "-nobrowse",
                        "-noautoopen", "-mountpoint", str(mount), "-plist", str(dmg)]).read_bytes())
+            owned = attach_record(attach, mount, dmg, original_dmg, evidence.root)
+            evidence.write("attach-ownership.json", owned, ticket=ownership_slot)
             info = plistlib.loads(ops.run([TOOLS["hdiutil"], "info", "-plist"]).read_bytes())
-            owned = mount_record(info, mount, dmg, attach["system-entities"])
-            owned["mountIdentity"] = identity(mount)
-            evidence.write("owned-mount.json", owned)
+            validation = mount_record(info, mount, dmg, owned["entities"], owned["runtimeOwner"])
+            owned["infoValidated"] = True
+            owned["hdidPid"] = validation["hdidPid"]
+            evidence.write("owned-mount.json", dict(ownership=owned, validation=validation))
         with ops.phase("bundleInventory"):
             apps = list(mount.glob("*.app"))
             require(len(apps) == 1 and apps[0].name == "Intent.app" and not apps[0].is_symlink(), "unique app")
@@ -584,13 +670,17 @@ def inspect(ops, evidence, dmg):
                 with ops.phase("detach"):
                     require(identity(dmg) == original_dmg and identity(mount) == owned["mountIdentity"], "owned identity drift")
                     info = plistlib.loads(ops.run([TOOLS["hdiutil"], "info", "-plist"]).read_bytes())
-                    current = mount_record(info, mount, dmg, owned["entities"])
-                    require(current["device"] == owned["device"], "device drift")
+                    current = mount_record(info, mount, dmg, owned["entities"], owned["runtimeOwner"])
+                    require(current["device"] == owned["device"] and current["entities"] == owned["stableEntities"], "device drift")
+                    require(not owned["infoValidated"] or current["hdidPid"] == owned["hdidPid"], "image provider PID drift")
                     ops.run([TOOLS["hdiutil"], "detach", owned["device"]])
                     after = plistlib.loads(ops.run([TOOLS["hdiutil"], "info", "-plist"]).read_bytes())
+                    require(isinstance(after, dict) and isinstance(after.get("images"), list), "detach inventory absent")
+                    device_set = {e["device"] for e in owned["stableEntities"]}
                     require(not any(i.get("image-path") == str(dmg) or any(
-                        e.get("dev-entry") == owned["device"] or e.get("mount-point") == str(mount)
-                        for e in i.get("system-entities", [])) for i in after.get("images", [])), "owned detach absence")
+                        e.get("dev-entry") in device_set or e.get("mount-point") == str(mount)
+                        for e in i.get("system-entities", [])) for i in after["images"]), "owned detach absence")
+                    detached_observed = True
             except BaseException as exc:
                 cleanup = getattr(exc, "code", 1)
                 cleanup_error = type(exc).__name__ + ": " + str(exc)
@@ -598,6 +688,9 @@ def inspect(ops, evidence, dmg):
     return dict(primary=primary, primaryError=primary_error, cleanup=cleanup, cleanupError=cleanup_error,
                 primaryNativeOutcome=primary_outcome, cleanupNativeOutcome=cleanup_outcome,
                 result=settle(primary, cleanup), attachAttempted=attach_attempted,
+                attachmentOwnership=owned, detachedObserved=detached_observed,
+                attachmentUnresolved=attach_attempted and not detached_observed,
+                nativeWaitUnresolved=ops.unsettled,
                 noAppOrDaemonExecution=True, settlementScope="recorded image and direct native children only")
 
 
