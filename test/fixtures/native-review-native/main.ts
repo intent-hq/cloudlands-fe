@@ -199,6 +199,7 @@ async function run() {
   const uiMode = process.env.NATIVE_REVIEW_UI === '1';
   const completions = completionLedger();
   const identities = new WeakMap<object, string>();
+  const connectionSockets = new WeakMap<object, string>();
   const objectId = (object: object | null) => {
     if (!object) return null;
     if (!identities.has(object)) identities.set(object, randomUUID());
@@ -211,12 +212,24 @@ async function run() {
       const original = JsonRpcClient.prototype[name];
       const observed = function (this: JsonRpcClient, ...args: any[]) {
         const captured = name === 'requestOnCapturedConnection';
-        const connection = captured ? args[0] : this.getRepositoryConnection();
+        const currentConnection = this.getRepositoryConnection();
+        const connection = captured ? args[0] : currentConnection;
         const method = args[captured ? 1 : 0];
         const params = args[captured ? 2 : 1];
         const allocation = [...allocations].findLast(
           ([, value]) => value.config === this.getConfig() && !value.socket.destroyed,
         );
+        if (connection && connection === currentConnection && allocation) {
+          const known = connectionSockets.get(connection);
+          if (known && known !== allocation[0])
+            completions.faults.push('Original acknowledged connection changed physical socket');
+          else connectionSockets.set(connection, allocation[0]);
+        }
+        const originalSocket = connection
+          ? (connectionSockets.get(connection) ?? null)
+          : (allocation?.[0] ?? null);
+        if (captured && !originalSocket)
+          completions.faults.push('Captured request has no observed original socket');
         const callId = randomUUID();
         const prior = activeCall;
         activeCall = callId;
@@ -233,7 +246,7 @@ async function run() {
               clientId: objectId(this),
               connectionId: objectId(connection),
               incarnationId: objectId(connection?.incarnation ?? null),
-              socketId: allocation?.[0] ?? null,
+              socketId: originalSocket,
               params: observationValue(method, params),
             },
             (value) => observationValue(method, value),
