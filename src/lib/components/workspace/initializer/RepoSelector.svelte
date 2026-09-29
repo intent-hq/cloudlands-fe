@@ -42,10 +42,12 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerDismissedRecentRepoKeys,
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerRemoteSetups,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
   import type {
     WorkspaceInitializerRecentRepo,
     WorkspaceInitializerRemoteSetup,
@@ -110,6 +112,7 @@
   const isolationLabel = $derived(isolationNoun(isolationMode));
   const mountedDispatch = appStore.dispatch;
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const dismissedRecentRepoKeys$ = selectWorkspaceInitializerDismissedRecentRepoKeys();
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
@@ -233,7 +236,26 @@
     relativePathFromGitRoot?: string;
     isSubdirectoryOfGitRepo?: boolean;
   } | null>(null);
-  const recentRepos = $derived($workspaceInitializerRecentRepos$);
+  // Source suggestions can render before saved settings settle, but must not
+  // become a whole-history write that overwrites that still-pending read.
+  let pendingSourceView = $state<{
+    admission: string;
+    repos: WorkspaceInitializerRecentRepo[];
+  } | null>(null);
+  const recentRepos = $derived.by(() => {
+    const saved = $workspaceInitializerRecentRepos$;
+    if (
+      !pendingSourceView ||
+      pendingSourceView.admission !== $admission$ ||
+      appStore.dispatch !== mountedDispatch
+    )
+      return saved;
+    const merged = new Map(saved.map((repo) => [recentRepoKey(repo), repo]));
+    for (const repo of pendingSourceView.repos) merged.set(recentRepoKey(repo), repo);
+    return [...merged.values()]
+      .filter((repo) => !$dismissedRecentRepoKeys$[recentRepoKey(repo)])
+      .slice(0, 9);
+  });
 
   async function handleDismissRecentRepo(event: MouseEvent, repo: WorkspaceInitializerRecentRepo) {
     event.preventDefault();
@@ -686,7 +708,7 @@
   // That logic lives in the parent flow to avoid side effects when this component
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
-  async function loadRecentRepos(isCurrent: () => boolean) {
+  async function loadRecentRepos(isCurrent: () => boolean, admission: string, publish: boolean) {
     performanceMonitor.start('loadRecentRepos');
 
     // Refresh the GitHub auth snapshot so the "Pick a repo" tab knows whether
@@ -713,7 +735,7 @@
       if (!workspaceListResult.ok && !registryResult?.success) return;
 
       const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
-      if (workspaceListResult.ok) {
+      if (workspaceListResult.ok && publish) {
         mountedDispatch(
           replaceWorkspaceList(workspaces, {
             complete: workspaceListResult.complete === true,
@@ -842,7 +864,13 @@
 
       // Redux applies persisted dismissals to the latest source results, including
       // removals made while this request was in flight, before enforcing the limit.
-      if (isCurrent()) mountedDispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
+      if (!isCurrent()) return;
+      if (publish) {
+        mountedDispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
+        pendingSourceView = null;
+      } else {
+        pendingSourceView = { admission, repos: refreshedRepos };
+      }
     } catch (err) {
       if (!isCurrent()) return;
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
@@ -860,15 +888,15 @@
     const admission = $admission$;
     const awaitingHydration = $canAdministerHost$ && !$initializerHydrated$;
     isLoading = true;
-    // Reading history must not clear it, nor race the owner's saved settings.
-    // Members use local preferences and do not wait for owner-only hydration.
-    if (!admission || awaitingHydration || appStore.dispatch !== mountedDispatch) return;
+    // Settings readiness gates publication, not reading current source suggestions.
+    // Members still use local preferences without owner-only hydration.
+    if (!admission || appStore.dispatch !== mountedDispatch) return;
     let active = true;
     const isCurrent = () =>
       active &&
       appStore.dispatch === mountedDispatch &&
       admission === selectPrincipalActionContext.select(appStore.state);
-    void untrack(() => loadRecentRepos(isCurrent));
+    void untrack(() => loadRecentRepos(isCurrent, admission, !awaitingHydration));
     return () => {
       active = false;
     };

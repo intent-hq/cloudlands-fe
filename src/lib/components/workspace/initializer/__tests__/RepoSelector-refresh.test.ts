@@ -354,4 +354,95 @@ describe('RepoSelector recent hydration and refresh ownership', () => {
     expect(recents()).toEqual([saved, fresh]);
     expect(writes()).toHaveLength(0);
   });
+  it('renders current sources without publishing over pending saved settings', async () => {
+    setState(admit({ workspaceInitializer: initialState }));
+    vi.mocked(invoke).mockResolvedValue({ success: true, data: [fresh] });
+    await openDropdown();
+    await waitFor(() => expect(screen.getByText('fresh')).toBeTruthy());
+    expect(recents()).toEqual([]);
+    expect(writes()).toHaveLength(0);
+    // A failed later refresh cannot erase either the newly hydrated saved row
+    // or the already observed current source suggestion.
+    vi.mocked(invoke).mockRejectedValue(new Error('registry offline'));
+    vi.mocked(workspaceClient.list).mockResolvedValue({
+      ok: false,
+      error: { message: 'offline' },
+    } as never);
+    store.dispatch(hydrateWorkspaceInitializer({ recentRepos: [saved] }));
+    await waitFor(() => expect(performanceMonitor.end).toHaveBeenCalledTimes(2));
+    expect(recents()).toEqual([saved]);
+    expect(screen.getByText('fresh')).toBeTruthy();
+    expect(screen.getByText('saved')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('applies late saved dismissals and preserves unrelated saved history', async () => {
+    setState(admit({ workspaceInitializer: initialState }));
+    vi.mocked(invoke).mockResolvedValue({ success: true, data: [fresh] });
+    await openDropdown();
+    await waitFor(() => expect(screen.getByText('fresh')).toBeTruthy());
+    store.dispatch(
+      hydrateWorkspaceInitializer({
+        recentRepos: [saved],
+        dismissedRecentRepoKeys: { 'github:octo/fresh': true },
+      }),
+    );
+    await waitFor(() => expect(performanceMonitor.end).toHaveBeenCalledTimes(2));
+    expect(recents()).toEqual([saved]);
+    expect(screen.queryByText('fresh')).toBeNull();
+    expect(screen.getByText('saved')).toBeTruthy();
+  });
+
+  it.each(['readmission', 'connection', 'host', 'revocation', 'store'] as const)(
+    'rejects a held pre-hydration source response after %s replacement',
+    async (change) => {
+      setState(admit({ workspaceInitializer: initialState }));
+      const held = holdRegistry();
+      const rendered = await openDropdown();
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(invoke)
+            .mock.calls.some(([c]) => c === WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES),
+        ).toBe(true),
+      );
+      const before = mocks.appState as unknown as StoreState;
+      const next = admit({ workspaceInitializer: initialState });
+      if (change === 'readmission')
+        next.principal = { ...next.principal, invalidation: next.principal.invalidation + 1 };
+      if (change === 'connection')
+        next.daemonHealth = {
+          ...next.daemonHealth,
+          connectionGeneration: before.daemonHealth.connectionGeneration + 1,
+        };
+      if (change === 'host')
+        next.connections = { ...next.connections, windowBackendId: 'replacement-host' };
+      if (change === 'revocation') next.principal = { ...next.principal, status: 'revoked' };
+      if (change === 'store') store.dispatch = vi.fn();
+      vi.mocked(invoke).mockImplementation(async () => new Promise(() => {}));
+      setState(next);
+      await tick();
+      mocks.dispatch.mockClear();
+      held.resolve({ success: true, data: [fresh] });
+      await waitFor(() => expect(performanceMonitor.end).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText('fresh')).toBeNull();
+      expect(recents()).toEqual([]);
+      expect(writes()).toHaveLength(0);
+      if (change === 'store') expect(store.dispatch).not.toHaveBeenCalled();
+      rendered.unmount();
+    },
+  );
+
+  it('removes the provisional view on revoked admission without persisting it', async () => {
+    setState(admit({ workspaceInitializer: initialState }));
+    vi.mocked(invoke).mockResolvedValue({ success: true, data: [fresh] });
+    await openDropdown();
+    await waitFor(() => expect(screen.getByText('fresh')).toBeTruthy());
+    const next = admit({ workspaceInitializer: initialState });
+    next.principal = { ...next.principal, status: 'revoked' };
+    setState(next);
+    await waitFor(() => expect(screen.queryByText('fresh')).toBeNull());
+    expect(recents()).toEqual([]);
+    expect(writes()).toHaveLength(0);
+  });
 });
