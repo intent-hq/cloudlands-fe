@@ -922,4 +922,52 @@ describe('native review original renderer bridge', () => {
     });
     expect(await run).toMatchObject({ current: false, uncertain: true });
   });
+  it('prepares one child through the original bridge and never exposes daemon correlations', async () => {
+    const api = installFakeApi();
+    api.invoke
+      .mockResolvedValueOnce({ ok: true, result: { id: 'parent', preview } } as never)
+      .mockResolvedValueOnce({ ok: true, result: { id: 'child', preview } } as never)
+      .mockResolvedValue({ ok: true, result: { released: true } } as never);
+    const marked = {
+      ...input,
+      action: 'commit' as const,
+      review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' as const } },
+    };
+    const parent = await createElectronIpcBackendTransport().prepareNativeReview!(marked);
+    api.emit(channels.RETIRED, { id: 'parent', kind: 'admission' });
+    const first = parent.prepareCompanion!();
+    expect(parent.prepareCompanion!()).toBe(first);
+    const child = await first;
+    expect(child.prepareCompanion).toBeUndefined();
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toEqual([
+      [channels.PREPARE, { input: marked }],
+      [channels.PREPARE, { companionOf: 'parent', root }],
+    ]);
+    installFakeApi();
+    await parent.release();
+    await vi.waitFor(() =>
+      expect(api.invoke).toHaveBeenCalledWith(channels.RELEASE, { id: 'child', root }),
+    );
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('retains a child capture refusal instead of recapturing through a changed bridge', async () => {
+    const api = installFakeApi();
+    api.invoke
+      .mockResolvedValueOnce({ ok: true, result: { id: 'parent', preview } } as never)
+      .mockRejectedValueOnce(new Error('original refused'));
+    const parent = await createElectronIpcBackendTransport().prepareNativeReview!({
+      ...input,
+      action: 'commit',
+      review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' } },
+    });
+    const failed = parent.prepareCompanion!();
+    await expect(failed).rejects.toThrow();
+    const replacement = installFakeApi();
+    expect(parent.prepareCompanion!()).toBe(failed);
+    await expect(parent.prepareCompanion!()).rejects.toThrow();
+    expect(replacement.invoke).not.toHaveBeenCalled();
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toHaveLength(2);
+    api.invoke.mockResolvedValue({ ok: true, result: { released: true } } as never);
+    await parent.release();
+  });
 });

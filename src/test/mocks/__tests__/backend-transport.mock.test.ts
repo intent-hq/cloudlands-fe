@@ -1,3 +1,8 @@
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
+import {
+  NativeReviewPreparedViewSchema,
+  type NativeReviewSession,
+} from '$shared/types/native-review-operation';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Point the real backend-transport module at the fixture. The `vi.mock`
@@ -392,5 +397,39 @@ it('supports the real facade native seam independently of generic requests and r
   await expect(prepareBackendNativeReview(input)).rejects.toThrow('native refused');
   expect(handler).toHaveBeenCalledWith(input);
   resetMockBackend();
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
+});
+
+it('keeps a captured mock companion independent of resetting the transport lookup', async () => {
+  const backend = installMockBackend(),
+    root = { workspaceId: 'ws', kind: 'primary' as const };
+  const child: NativeReviewSession = {
+    preview: NativeReviewPreparedViewSchema.parse({
+      ...nativeFixture.prepare,
+      root,
+      expiresAfterMs: 300000,
+    }),
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  const parent: NativeReviewSession = { ...child, prepareCompanion: vi.fn(async () => child) };
+  const prepare = vi.fn(async () => parent);
+  backend.onNativeReviewPrepare(prepare);
+  const input = {
+    workspaceId: 'ws',
+    action: 'commit' as const,
+    review: {
+      root,
+      choice: { kind: 'saved' as const },
+      targetBranch: 'trunk',
+      companion: { kind: 'create-pr' as const },
+    },
+  };
+  const captured = await prepareBackendNativeReview(input);
+  resetMockBackend();
+  expect(await captured.prepareCompanion!()).toBe(child);
+  expect(prepare).toHaveBeenCalledExactlyOnceWith(input);
   await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
 });

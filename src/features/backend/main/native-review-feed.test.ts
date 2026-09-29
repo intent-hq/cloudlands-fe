@@ -89,7 +89,7 @@ afterEach(() => {
   cleanup.splice(0).forEach((close) => close());
   vi.useRealTimers();
 });
-async function harness(capability: unknown = 1) {
+async function harness(capability: unknown = 1, companionCapability: unknown = null) {
   const sockets: Socket[] = [];
   const client = new JsonRpcClient({
     socketFactory: () => {
@@ -110,7 +110,9 @@ async function harness(capability: unknown = 1) {
   await vi.waitFor(() => expect(sockets[0].frames).toHaveLength(1));
   sockets[0].result(1, {
     clientId: 'original',
-    server: { capabilities: { nativeReview: capability } },
+    server: {
+      capabilities: { nativeReview: capability, nativeReviewCompanion: companionCapability },
+    },
   });
   await vi.waitFor(() => expect(client.getRepositoryConnection()).not.toBeNull());
   const connection = client.getRepositoryConnection()!;
@@ -360,5 +362,292 @@ describe('original socket native review ownership', () => {
         reviewExecution: { outcome, gitReceipts: [{ stage: 'commit', commitHash: 'actual-B' }] },
       },
     });
+  });
+});
+
+const parentId = 'aaaaaaaa-0000-4000-8000-000000000001';
+const childId = 'aaaaaaaa-0000-4000-8000-000000000002';
+const markedInput = {
+  ...input,
+  action: 'commit' as const,
+  review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' as const } },
+};
+const committed = () => ({
+  ...state(),
+  steps: [],
+  result: { commitHash: 'actual-B' },
+  operationId: parentId,
+  success: true,
+  reviewExecution: {
+    ...state().reviewExecution!,
+    requestId: parentId,
+    preparation: captureReply(parentId).reviewPreparation,
+    outcome: { status: 'not-attempted' as const },
+  },
+});
+async function prepareParent(h: Awaited<ReturnType<typeof harness>>) {
+  const work = h.feed.prepare(h.connection, markedInput);
+  h.socket.result(h.socket.frames.at(-1)!.id, captureReply(parentId));
+  return await work;
+}
+async function completeParent(
+  h: Awaited<ReturnType<typeof harness>>,
+  op: Awaited<ReturnType<typeof prepareParent>>,
+) {
+  const work = op.confirm({ commitMessage: 'Original staged change' });
+  h.socket.result(h.socket.frames.at(-1)!.id, committed());
+  return await work;
+}
+async function childRequest(
+  h: Awaited<ReturnType<typeof harness>>,
+  op: Awaited<ReturnType<typeof prepareParent>>,
+) {
+  const work = op.prepareCompanion!();
+  await Promise.resolve();
+  expect(h.socket.frames.at(-1)?.params).toMatchObject({
+    review: { choice: { kind: 'afterCommit' } },
+  });
+  return { work, frame: h.socket.frames.at(-1)! };
+}
+describe('original commit companion ownership against the actual JsonRpc client', () => {
+  it.each([null, 0, '1', true])(
+    'refuses absent or invalid companion capability %j before a commit preparation',
+    async (capability) => {
+      const h = await harness(1, capability);
+      await expect(h.feed.prepare(h.connection, markedInput)).rejects.toThrow();
+      expect(h.socket.frames).toHaveLength(1);
+      expect((await h.acquire()).prepareCompanion).toBeUndefined();
+    },
+  );
+  it('coalesces one private capture after normal retirement and preserves separate child receipts', async () => {
+    const h = await harness(1, 1),
+      parent = await prepareParent(h);
+    const before = await completeParent(h, parent);
+    expect(before.current).toBe(false);
+    const { work, frame } = await childRequest(h, parent);
+    expect(parent.prepareCompanion!()).toBe(work);
+    expect(frame.params).toEqual({
+      workspaceId: root.workspaceId,
+      action: 'create-pr',
+      review: {
+        root,
+        choice: {
+          kind: 'afterCommit',
+          operationId: parentId,
+          captureId: expect.stringMatching(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/),
+        },
+      },
+    });
+    h.socket.result(frame.id, captureReply(childId));
+    const child = await work;
+    expect(child.prepareCompanion).toBeUndefined();
+    expect(child.preview.reviewPreparation.operationId).toBe(childId);
+    expect(child.preview.reviewPreparation.source).not.toHaveProperty('connection');
+    const confirm = child.confirm(command);
+    expect(h.socket.frames.at(-1)?.params).toEqual({
+      workspaceId: root.workspaceId,
+      action: 'create-pr',
+      review: { operationId: childId, root },
+      ...command,
+    });
+    const childReply = {
+      ...executeReply(),
+      operationId: childId,
+      success: true,
+      reviewExecution: {
+        ...fixture.execute.reviewExecution,
+        requestId: childId,
+        preparation: captureReply(childId).reviewPreparation,
+        gitReceipts: [],
+      },
+    };
+    h.socket.result(h.socket.frames.at(-1)!.id, childReply);
+    expect((await confirm).execute?.reviewExecution?.gitReceipts).toEqual([]);
+    expect(before.execute?.reviewExecution?.gitReceipts).toEqual([
+      { stage: 'commit', commitHash: 'actual-B' },
+    ]);
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.prepare')).toHaveLength(2);
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(2);
+  });
+  it('tombstones an original refused capture even if later history is known', async () => {
+    const h = await harness(1, 1),
+      parent = await prepareParent(h);
+    await completeParent(h, parent);
+    const { work, frame } = await childRequest(h, parent);
+    h.socket.emit(
+      'data',
+      Buffer.from(
+        JSON.stringify({
+          id: frame.id,
+          error: { code: -32003, message: 'Repository review unavailable' },
+        }) + '\n',
+      ),
+    );
+    await expect(work).rejects.toThrow();
+    const count = h.socket.frames.length;
+    expect(parent.prepareCompanion!()).toBe(work);
+    await expect(parent.prepareCompanion!()).rejects.toThrow();
+    expect(h.socket.frames).toHaveLength(count);
+  });
+  it.each(['prepared', 'pending', 'reconciled', 'failed', 'uncertain'] as const)(
+    'does not promote %s into original-delivery eligibility',
+    async (kind) => {
+      const h = await harness(1, 1),
+        parent = await prepareParent(h);
+      if (kind === 'reconciled') {
+        const work = parent.reconcile();
+        const { success: _success, steps: _steps, result: _result, ...known } = committed();
+        h.socket.result(h.socket.frames.at(-1)!.id, known);
+        await work;
+      } else if (kind !== 'prepared') {
+        const work = parent.confirm({ commitMessage: 'one' });
+        const reply =
+          kind === 'pending'
+            ? { operationId: parentId, root, state: 'pending', success: false, steps: [] }
+            : {
+                ...committed(),
+                success: false,
+                reviewExecution: {
+                  ...committed().reviewExecution,
+                  outcome:
+                    kind === 'uncertain'
+                      ? { status: 'uncertain', stage: 'commit', message: 'unknown' }
+                      : {
+                          status: 'failed',
+                          stage: 'commit',
+                          code: null,
+                          message: 'classification failed',
+                        },
+                },
+              };
+        h.socket.result(h.socket.frames.at(-1)!.id, reply);
+        await work;
+      }
+      const count = h.socket.frames.length;
+      await expect(parent.prepareCompanion!()).rejects.toThrow();
+      expect(h.socket.frames).toHaveLength(count);
+    },
+  );
+  it('gives a published child its own lease while parent intent expires without renewal', async () => {
+    const h = await harness(1, 1);
+    vi.useFakeTimers();
+    const parent = await prepareParent(h);
+    await completeParent(h, parent);
+    await vi.advanceTimersByTimeAsync(299000);
+    const { work, frame } = await childRequest(h, parent);
+    h.socket.result(frame.id, captureReply(childId));
+    const child = await work;
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(child.isAdmitted()).toBe(true);
+    expect(parent.isAdmitted()).toBe(false);
+    await vi.advanceTimersByTimeAsync(298999);
+    expect(child.isAdmitted()).toBe(false);
+  });
+  it.each(['publication deadline', 'raw response deadline', 'publication close'] as const)(
+    'releases the original child and keeps the refusal after %s',
+    async (schedule) => {
+      const h = await harness(1, 1);
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      const write = h.socket.write.bind(h.socket);
+      vi.spyOn(h.socket, 'write').mockImplementation((line) => {
+        const result = write(line);
+        const frame = h.socket.frames.at(-1)!;
+        if (frame.method === 'accept-changes.release') {
+          queueMicrotask(() => h.socket.result(frame.id, { released: true }));
+        }
+        return result;
+      });
+      const parent = await prepareParent(h);
+      await completeParent(h, parent);
+      vi.setSystemTime(1_299_999);
+      const { work, frame } = await childRequest(h, parent);
+      expect(parent.prepareCompanion!()).toBe(work);
+      const outcome = work.then(
+        () => 'published',
+        () => 'refused',
+      );
+      if (schedule === 'raw response deadline') vi.setSystemTime(1_300_001);
+      h.socket.result(frame.id, captureReply(childId));
+      // The raw-response reaction runs before this microtask; publication runs after it.
+      queueMicrotask(() => {
+        if (schedule === 'publication close') void parent.release();
+        else vi.setSystemTime(1_300_001);
+      });
+      expect(await outcome).toBe('refused');
+      expect(
+        h.socket.frames.filter(
+          (f) => f.method === 'accept-changes.release' && f.params.operationId === childId,
+        ),
+      ).toMatchObject([
+        {
+          method: 'accept-changes.release',
+          params: { workspaceId: root.workspaceId, operationId: childId, root },
+        },
+      ]);
+      const count = h.socket.frames.length;
+      expect(parent.prepareCompanion!()).toBe(work);
+      await expect(parent.prepareCompanion!()).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
+      expect(h.socket.frames).toHaveLength(count);
+      expect(h.socket.frames.filter((f) => f.method === 'accept-changes.prepare')).toHaveLength(2);
+      if (schedule !== 'publication close') {
+        expect(parent.isAdmitted()).toBe(false);
+        expect(parent.isLive()).toBe(true);
+      }
+      expect(h.sockets).toHaveLength(1);
+    },
+  );
+  it('refuses first child acquisition after parent intent expiry despite retained original history', async () => {
+    const h = await harness(1, 1);
+    vi.useFakeTimers();
+    const parent = await prepareParent(h);
+    await completeParent(h, parent);
+    await vi.advanceTimersByTimeAsync(300001);
+    expect(parent.isLive()).toBe(true);
+    const count = h.socket.frames.length;
+    await expect(parent.prepareCompanion!()).rejects.toThrow();
+    expect(h.socket.frames).toHaveLength(count);
+  });
+  it('releases a late child on the original socket after explicit parent closure', async () => {
+    const h = await harness(1, 1),
+      parent = await prepareParent(h);
+    await completeParent(h, parent);
+    const { work, frame } = await childRequest(h, parent);
+    const release = parent.release();
+    h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+    await release;
+    h.socket.result(frame.id, captureReply(childId));
+    await expect(work).rejects.toThrow();
+    expect(h.socket.frames.at(-1)).toMatchObject({
+      method: 'accept-changes.release',
+      params: { operationId: childId, root },
+    });
+  });
+  it('rejects capture publication after the parent deadline and never repairs it after re-hello', async () => {
+    const h = await harness(1, 1);
+    vi.useFakeTimers();
+    const parent = await prepareParent(h);
+    await completeParent(h, parent);
+    await vi.advanceTimersByTimeAsync(299999);
+    const { work, frame } = await childRequest(h, parent),
+      rejected = expect(work).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(2);
+    await rejected;
+    h.socket.result(frame.id, captureReply(childId));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.socket.frames.at(-1)).toMatchObject({
+      method: 'accept-changes.release',
+      params: { operationId: childId },
+    });
+    const hello = h.client.request('client.hello', { clientId: 'changed' });
+    await vi.advanceTimersByTimeAsync(0);
+    h.socket.result(h.socket.frames.at(-1)!.id, {
+      clientId: 'changed',
+      server: { capabilities: { nativeReview: 1, nativeReviewCompanion: 1 } },
+    });
+    await hello;
+    const count = h.socket.frames.length;
+    await expect(parent.prepareCompanion!()).rejects.toThrow();
+    expect(h.socket.frames).toHaveLength(count);
   });
 });

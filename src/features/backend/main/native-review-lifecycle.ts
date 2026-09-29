@@ -14,7 +14,10 @@ import { createRepositoryRequestRoutes } from './repository-request-route';
 import type { JsonRpcClient } from './json-rpc-client';
 import type { NativeReviewLifetime } from './native-review-feed';
 
-const captureSchema = z.object({ input: NativeReviewInputSchema }).strict();
+const captureSchema = z.union([
+  z.object({ input: NativeReviewInputSchema }).strict(),
+  z.object({ companionOf: z.string().min(1).max(4096), root: NativeReviewRootSchema }).strict(),
+]);
 const ownedSchema = z
   .object({ root: NativeReviewRootSchema, id: z.string().min(1).max(4096) })
   .strict();
@@ -35,10 +38,18 @@ interface Dependencies {
 /** The local ID only looks up an original sender-owned operation; it is not authority. */
 export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps: Dependencies) {
   type Routes = ReturnType<typeof createRepositoryRequestRoutes<WebContents, JsonRpcClient>>;
+  type CaptureResult =
+    | ReturnType<typeof failure>
+    | {
+        ok: true;
+        result: { id: string; preview: NativeReviewLifetime['preview'] };
+      };
   type Entry = {
     sender: WebContents;
     senderBinding: NonNullable<ReturnType<typeof getStrictBackendBindingForWebContents>>;
     client: JsonRpcClient;
+    connection: object;
+    companion?: Promise<CaptureResult>;
     root: z.infer<typeof NativeReviewRootSchema>;
     lifetime: NativeReviewLifetime;
     routes: Routes;
@@ -92,13 +103,16 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
       if (!sameOwner(entry) || !entry.lifetime.isLive()) drop(id, entry);
   }, 5_000);
   timer.unref();
-  ipc.handle(channel.PREPARE, async (event, payload: unknown) => {
-    const parsed = captureSchema.safeParse(payload);
-    if (!parsed.success) return failure('INVALID_PARAMS');
+  async function capture(
+    event: IpcMainInvokeEvent,
+    requestedRoot: z.infer<typeof NativeReviewRootSchema>,
+    prepare: (client: JsonRpcClient, connection: object) => Promise<NativeReviewLifetime>,
+    parent?: { id: string; entry: Entry },
+  ): Promise<CaptureResult> {
     const sender = event.sender,
-      binding = getStrictBackendBindingForWebContents(sender);
-    const client = binding && deps.readBackend(binding.backendId),
-      connection = client?.getRepositoryConnection();
+      binding = parent?.entry.senderBinding ?? getStrictBackendBindingForWebContents(sender);
+    const client = parent?.entry.client ?? (binding && deps.readBackend(binding.backendId)),
+      connection = parent?.entry.connection ?? client?.getRepositoryConnection();
     if (disposed || !binding || binding.frame !== event.senderFrame || !client || !connection)
       return failure();
     const pending = [...acquiring.values()].reduce((count, set) => count + set.size, 0);
@@ -121,10 +135,16 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
       getStrictBackendBindingForWebContents(sender) === binding &&
       event.senderFrame === binding.frame &&
       deps.readBackend(binding.backendId) === client &&
-      client.getRepositoryConnection() === connection;
+      client.getRepositoryConnection() === connection &&
+      (!parent || (entries.get(parent.id) === parent.entry && parent.entry.lifetime.isLive()));
+    if (!current()) {
+      own.delete(cancel);
+      if (!own.size) acquiring.delete(sender);
+      return failure();
+    }
     let lifetime: NativeReviewLifetime | undefined;
     try {
-      lifetime = await deps.prepare(client, connection, parsed.data.input);
+      lifetime = await prepare(client, connection);
       if (!current() || !lifetime.isAdmitted()) return failure();
       const original = lifetime;
       const routes = createRepositoryRequestRoutes<WebContents, JsonRpcClient>({
@@ -138,18 +158,19 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
         },
         readRepositoryLifetime: (owner, root) =>
           owner === sender &&
-          repositoryRootKey(root) === repositoryRootKey(parsed.data.input.review.root) &&
+          repositoryRootKey(root) === repositoryRootKey(requestedRoot) &&
           original.isLive()
             ? original.stamp
             : null,
       });
-      const root = Object.freeze(parsed.data.input.review.root),
+      const root = Object.freeze({ ...requestedRoot }),
         route = routes.captureRepositoryRequestBinding(sender, root),
         id = randomUUID();
       const entry: Entry = {
         sender,
         senderBinding: binding,
         client,
+        connection,
         root,
         lifetime,
         routes,
@@ -184,7 +205,40 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
         void lifetime?.release();
       }
     }
+  }
+  ipc.handle(channel.PREPARE, (event, payload: unknown) => {
+    const parsed = captureSchema.safeParse(payload);
+    if (!parsed.success) return failure('INVALID_PARAMS');
+    const value = parsed.data;
+    if ('input' in value)
+      return capture(event, value.input.review.root, (client, connection) =>
+        deps.prepare(client, connection, value.input),
+      );
+    const parent = find(event, { id: value.companionOf, root: value.root });
+    if (!parent) return failure();
+    if (parent.companion) return retainedCompanion(event, parent);
+    const prepare = parent.lifetime.prepareCompanion;
+    if (parent.inFlight || !prepare || !parent.lifetime.isLive()) {
+      parent.companion = Promise.resolve(failure());
+      return parent.companion;
+    }
+    parent.inFlight = true;
+    parent.companion = Promise.resolve()
+      .then(() =>
+        capture(event, parent.root, () => prepare(), { id: value.companionOf, entry: parent }),
+      )
+      .finally(() => {
+        parent.inFlight = false;
+      });
+    return retainedCompanion(event, parent);
   });
+  function retainedCompanion(event: IpcMainInvokeEvent, parent: Entry): Promise<CaptureResult> {
+    return parent.companion!.then((result) => {
+      if (!result.ok) return result;
+      const child = find(event, { id: result.result.id, root: parent.root });
+      return child?.lifetime.isAdmitted() && parent.lifetime.isLive() ? result : failure();
+    });
+  }
   function find(event: IpcMainInvokeEvent, value: z.infer<typeof ownedSchema>) {
     const entry = entries.get(value.id);
     return entry &&

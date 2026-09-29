@@ -1,4 +1,5 @@
 /** Native review admission and receipt observation have different lifetimes. */
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { repositoryRootKey } from '$shared/types/repository-context';
 import {
@@ -20,10 +21,19 @@ import type { JsonRpcClient, RepositoryConnection } from './json-rpc-client';
 
 const PREFIX = 'accept-changes.';
 const unavailable = () => new Error('NATIVE_REVIEW_UNAVAILABLE');
+type CompanionInput = {
+  workspaceId: string;
+  action: 'create-pr';
+  review: {
+    root: NativeReviewInput['review']['root'];
+    choice: { kind: 'afterCommit'; operationId: string; captureId: string };
+  };
+};
 export interface NativeReviewLifetime extends NativeReviewSession {
   readonly stamp: object;
   isLive(): boolean;
   isAdmitted(): boolean;
+  prepareCompanion?(): Promise<NativeReviewLifetime>;
 }
 
 export function createNativeReviewFeed(client: JsonRpcClient) {
@@ -136,23 +146,33 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
     connection: object,
     input: NativeReviewInput,
   ): Promise<NativeReviewLifetime> {
+    return acquire(connection, NativeReviewInputSchema.parse(input));
+  }
+  async function acquire(
+    connection: object,
+    query: NativeReviewInput | CompanionInput,
+    parentDeadline?: number,
+  ): Promise<NativeReviewLifetime> {
     const original = client.getRepositoryConnection(),
       f = feed;
+    const marked = 'companion' in query.review && query.review.companion !== undefined;
     if (
       disposed ||
       !original ||
       connection !== original ||
       !original.nativeReview ||
+      ((marked || parentDeadline !== undefined) && !original.nativeReviewCompanion) ||
       !f ||
       f.dead ||
       f.incarnation !== original.incarnation ||
       f.pending.size + f.owned.size >= 32
     )
       throw unavailable();
-    const query = NativeReviewInputSchema.parse(input),
-      root = query.review.root;
+    const root = query.review.root;
     if (Buffer.byteLength(JSON.stringify(query)) > 65_536) throw unavailable();
     const started = Date.now();
+    const acquireDeadline = Math.min(started + 5_000, parentDeadline ?? Infinity);
+    if (started >= acquireDeadline) throw unavailable();
     const p: Pending = { connection: original, abandoned: false, ids: new Set() };
     f.pending.add(p);
     let knownId: string | undefined,
@@ -190,7 +210,8 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
         if (
           !originalNow() ||
           p.ids.has(operationId) ||
-          Date.now() >= started + reviewOperation.expiresAfterMs
+          Date.now() >=
+            Math.min(started + reviewOperation.expiresAfterMs, parentDeadline ?? Infinity)
         )
           throw unavailable();
         const bound = { workspaceId: root.workspaceId, operationId, root };
@@ -209,14 +230,21 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
         let retentionTimer: ReturnType<typeof setTimeout> | undefined;
         let releaseTask: Promise<void> | undefined;
         let settledAt: number | undefined;
+        let companionTask: Promise<NativeReviewLifetime> | undefined;
         const cleanup = () => {
           if (releaseTask) return releaseTask;
           // Release immediately to stop future stages. The outstanding original completion
           // remains privately owned; a release reply does not assert that it stopped.
           releaseTask = releaseWire(original, bound);
-          void Promise.allSettled([releaseTask, ...(pending ? [pending] : [])]).then(() =>
-            f.owned.delete(op),
+          const childCleanup = companionTask?.then(
+            (captured) => captured.release(),
+            () => {},
           );
+          void Promise.allSettled([
+            releaseTask,
+            ...(pending ? [pending] : []),
+            ...(childCleanup ? [childCleanup] : []),
+          ]).then(() => f.owned.delete(op));
           return releaseTask;
         };
         const op: Owned = {
@@ -342,6 +370,48 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
         actionTimer.unref();
         adopted = true;
         return {
+          ...(marked
+            ? {
+                prepareCompanion() {
+                  if (companionTask) return companionTask;
+                  // Reserve even a refusal before an await; no second wire capture can repair it.
+                  companionTask = Promise.resolve().then(async () => {
+                    const executed = retained.execute;
+                    if (
+                      !isLive() ||
+                      pending ||
+                      Date.now() >= started + reviewOperation.expiresAfterMs ||
+                      !executed?.success ||
+                      executed.state !== 'settled' ||
+                      retained.uncertain ||
+                      executed.reviewExecution?.outcome.status !== 'not-attempted' ||
+                      executed.reviewExecution.gitReceipts.length !== 1 ||
+                      executed.reviewExecution.gitReceipts[0].stage !== 'commit' ||
+                      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(operationId)
+                    )
+                      throw unavailable();
+                    const captured = await acquire(
+                      original,
+                      {
+                        workspaceId: root.workspaceId,
+                        action: 'create-pr',
+                        review: {
+                          root,
+                          choice: { kind: 'afterCommit', operationId, captureId: randomUUID() },
+                        },
+                      },
+                      started + reviewOperation.expiresAfterMs,
+                    );
+                    if (!isLive() || Date.now() >= started + reviewOperation.expiresAfterMs) {
+                      await captured.release();
+                      throw unavailable();
+                    }
+                    return captured;
+                  });
+                  return companionTask;
+                },
+              }
+            : {}),
           stamp: Object.freeze({}),
           preview: { ...display, root, expiresAfterMs: reviewOperation.expiresAfterMs },
           isLive,
@@ -411,11 +481,14 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
       const op = await Promise.race([
         work,
         new Promise<never>((_resolve, reject) => {
-          deadline = setTimeout(() => {
-            p.abandoned = true;
-            p.wake?.();
-            reject(unavailable());
-          }, 5_000);
+          deadline = setTimeout(
+            () => {
+              p.abandoned = true;
+              p.wake?.();
+              reject(unavailable());
+            },
+            Math.max(0, acquireDeadline - Date.now()),
+          );
           deadline.unref();
         }),
       ]);

@@ -112,3 +112,70 @@ describe('compiled native operation boundary', () => {
     },
   );
 });
+
+// Manually authored from d317's strict presence-discriminated Core parser.
+describe('marked staged commit companion input', () => {
+  const marked = {
+    ...input,
+    action: 'commit',
+    review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' } },
+  };
+  it('preserves the complete preconfirmation intent without adding options or facts', () => {
+    expect(NativeReviewInputSchema.parse(marked)).toEqual(marked);
+    const explicit = {
+      ...marked,
+      review: {
+        ...marked.review,
+        choice: {
+          kind: 'explicitTarget',
+          target: fixture.prepare.reviewPreparation.target.repository,
+        },
+      },
+    };
+    expect(NativeReviewInputSchema.parse(explicit)).toEqual(explicit);
+  });
+  it.each([
+    { files: null },
+    { files: [] },
+    { options: null },
+    { options: {} },
+    { options: { stageUnstaged: false } },
+    { action: 'push' },
+    { action: 'create-pr' },
+  ])('rejects a present stage override %j before dispatch', (extra) => {
+    expect(NativeReviewInputSchema.safeParse({ ...marked, ...extra }).success).toBe(false);
+  });
+  it.each([
+    { pushRemote: null },
+    { pushRemote: 'origin' },
+    { targetBranch: null },
+    { targetBranch: '' },
+    { companion: null },
+    { companion: {} },
+    { companion: { kind: 'create-pr', target: 'changed' } },
+    {
+      choice: {
+        kind: 'afterCommit',
+        operationId: 'aaaaaaaa-0000-4000-8000-000000000001',
+        captureId: 'aaaaaaaa-0000-4000-8000-000000000002',
+      },
+    },
+  ])('rejects widened or absent intended review metadata %j', (extra) => {
+    expect(
+      NativeReviewInputSchema.safeParse({ ...marked, review: { ...marked.review, ...extra } })
+        .success,
+    ).toBe(false);
+  });
+  it('keeps an ordinary unmarked commit and old custom session independent of companions', () => {
+    const ordinary = {
+      ...input,
+      action: 'commit',
+      files: null,
+      options: { createPRAfterPush: true },
+      review: { ...input.review, targetBranch: null, pushRemote: null },
+    };
+    expect(NativeReviewInputSchema.parse(ordinary)).toEqual(ordinary);
+    const { targetBranch: _target, ...review } = marked.review;
+    expect(NativeReviewInputSchema.safeParse({ ...marked, review }).success).toBe(false);
+  });
+});

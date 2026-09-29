@@ -1414,4 +1414,43 @@ describe('private repository connection evidence', () => {
       client.requestOnCapturedConnection(confirmed, 'accept-changes.prepare', {}),
     ).rejects.toThrow();
   });
+  it('binds companion capability to the original successful hello and retires it on replacement', async () => {
+    const { client, sockets } = await start();
+    const original = client.getRepositoryConnection()!;
+    expect(original.nativeReviewCompanion).toBe(false);
+    const hello = client.request('client.hello');
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
+    sockets[0].receive(
+      JSON.stringify({
+        id: 2,
+        result: {
+          clientId: 'companion',
+          server: { capabilities: { nativeReview: 1, nativeReviewCompanion: 1 } },
+        },
+      }) + '\n',
+    );
+    await hello;
+    const confirmed = client.getRepositoryConnection()!;
+    expect(confirmed.nativeReviewCompanion).toBe(true);
+    expect(confirmed.incarnation).toBe(original.incarnation);
+    const replacement = client.request('client.hello');
+    expect(client.getRepositoryConnection()).toBeNull();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(3));
+    sockets[0].receive(
+      JSON.stringify({
+        id: 3,
+        result: {
+          clientId: 'older',
+          server: { capabilities: { nativeReview: 1, nativeReviewCompanion: '1' } },
+        },
+      }) + '\n',
+    );
+    await replacement;
+    expect(client.getRepositoryConnection()?.nativeReviewCompanion).toBe(false);
+    const count = sockets[0].writes.length;
+    await expect(
+      client.requestOnCapturedConnection(confirmed, 'accept-changes.prepare', {}),
+    ).rejects.toThrow();
+    expect(sockets[0].writes).toHaveLength(count);
+  });
 });

@@ -347,6 +347,9 @@ export const nativeReviewEditRequested = createAction<
 export const nativeReviewConfirmRequested = createAction<
   [owner: NativeReviewOwner, command: NativeReviewTextCommand]
 >('repositoryContext/nativeReviewConfirmRequested');
+export const nativeReviewCompanionRequested = createAction<
+  [original: NativeReviewOwner, companion: NativeReviewOwner]
+>('repositoryContext/nativeReviewCompanionRequested');
 export const nativeReviewReconcileRequested = createAction<[owner: NativeReviewOwner]>(
   'repositoryContext/nativeReviewReconcileRequested',
 );

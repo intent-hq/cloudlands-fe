@@ -531,18 +531,39 @@ async function captureRepositorySelection(
 /** Original native preparation and its one immutable text claim. */
 async function prepareNativeReview(input: NativeReviewInput): Promise<NativeReviewSession> {
   const api = electronAPI(),
-    capturedInput = NativeReviewInputSchema.parse(input),
-    capturedRoot = capturedInput.review.root;
+    capturedInput = NativeReviewInputSchema.parse(input);
+  if (!api)
+    throw new BackendError({
+      code: 'NATIVE_REVIEW_UNAVAILABLE',
+      message: 'NATIVE_REVIEW_UNAVAILABLE',
+    });
+  return captureNativeReview(
+    api,
+    capturedInput.review.root,
+    { input: capturedInput },
+    !!capturedInput.review.companion,
+  );
+}
+async function captureNativeReview(
+  api: NonNullable<ReturnType<typeof electronAPI>>,
+  capturedRoot: NativeReviewInput['review']['root'],
+  payload:
+    | { input: NativeReviewInput }
+    | { companionOf: string; root: NativeReviewInput['review']['root'] },
+  marked = false,
+): Promise<NativeReviewSession> {
   const unavailable = () =>
     new BackendError({
       code: 'NATIVE_REVIEW_UNAVAILABLE',
       message: 'NATIVE_REVIEW_UNAVAILABLE',
     });
-  if (!api) throw unavailable();
+  if (electronAPI() !== api) throw unavailable();
   const channels = BACKEND.NATIVE_REVIEW;
   let id: string | undefined,
     ended = false,
     retirement: NativeReviewRetirement | undefined;
+  let companionTask: Promise<NativeReviewSession> | undefined;
+  const isClosed = () => retirement === 'closed';
   let overflow = false;
   const early = new Map<string, NativeReviewRetirement>(),
     handlers = new Set<(kind: NativeReviewRetirement) => void>();
@@ -578,6 +599,10 @@ async function prepareNativeReview(input: NativeReviewInput): Promise<NativeRevi
     ended = true;
     retire('closed');
     api.offById(channels.RETIRED, listener);
+    void companionTask?.then(
+      (child) => child.release(),
+      () => {},
+    );
     if (id) {
       try {
         await api.invoke(channels.RELEASE, { id, root: capturedRoot });
@@ -588,7 +613,7 @@ async function prepareNativeReview(input: NativeReviewInput): Promise<NativeRevi
   };
   let preview;
   try {
-    const raw = unwrap<unknown>(await api.invoke(channels.PREPARE, { input: capturedInput }));
+    const raw = unwrap<unknown>(await api.invoke(channels.PREPARE, payload));
     const known = z.object({ id: z.string().min(1).max(4096) }).safeParse(raw);
     if (known.success) id = known.data.id;
     const captured = z
@@ -654,6 +679,27 @@ async function prepareNativeReview(input: NativeReviewInput): Promise<NativeRevi
     return task;
   };
   return {
+    ...(marked
+      ? {
+          prepareCompanion() {
+            if (companionTask) return companionTask;
+            companionTask = Promise.resolve().then(async () => {
+              if (!id || ended || retirement === 'closed' || pending || electronAPI() !== api)
+                throw unavailable();
+              const child = await captureNativeReview(api, capturedRoot, {
+                companionOf: id,
+                root: capturedRoot,
+              });
+              if (ended || isClosed() || electronAPI() !== api) {
+                await child.release();
+                throw unavailable();
+              }
+              return child;
+            });
+            return companionTask;
+          },
+        }
+      : {}),
     preview,
     onRetired(handler) {
       if (ended || electronAPI() !== api) retire('closed');

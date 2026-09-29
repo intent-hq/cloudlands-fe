@@ -68,3 +68,59 @@ describe('selection facade original session', () => {
     expect(capture).toHaveBeenCalledOnce();
   });
 });
+
+it('keeps the optional companion on the same facade session and coalesces without fresh prepare', async () => {
+  const parent = session(),
+    child = session(),
+    capture = vi.fn(async () => parent);
+  parent.prepareCompanion = vi.fn(async () => child);
+  const opened = await createNativeReviewTransport(capture).begin(
+    { root, attemptId: 'parent', admission: 'A', hostContext: 'A' },
+    {
+      ...input,
+      action: 'commit',
+      review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' } },
+    },
+    vi.fn(),
+  );
+  const first = opened.prepareCompanion!();
+  expect(opened.prepareCompanion!()).toBe(first);
+  expect(await first).toBe(child);
+  expect(parent.prepareCompanion).toHaveBeenCalledOnce();
+  expect(capture).toHaveBeenCalledOnce();
+  await opened.release();
+  await vi.waitFor(() => expect(child.release).toHaveBeenCalledOnce());
+});
+it('disposes a late companion after the owner releases and preserves old sessions without the method', async () => {
+  const parent = session(),
+    child = session();
+  let finish!: (value: NativeReviewSession) => void;
+  parent.prepareCompanion = vi.fn(
+    () =>
+      new Promise<NativeReviewSession>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const opened = await createNativeReviewTransport(async () => parent).begin(
+    { root, attemptId: 'parent', admission: 'A', hostContext: 'A' },
+    {
+      ...input,
+      action: 'commit',
+      review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' } },
+    },
+    vi.fn(),
+  );
+  const pending = opened.prepareCompanion!();
+  await Promise.resolve();
+  await opened.release();
+  finish(child);
+  await expect(pending).rejects.toThrow();
+  expect(child.release).toHaveBeenCalledOnce();
+  const old = await createNativeReviewTransport(async () => session()).begin(
+    { root, attemptId: 'old', admission: 'A', hostContext: 'A' },
+    input,
+    vi.fn(),
+  );
+  expect(old.prepareCompanion).toBeUndefined();
+  await old.release();
+});

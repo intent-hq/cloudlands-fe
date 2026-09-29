@@ -66,7 +66,10 @@ vi.mock('../backend-connection', async (original) => {
           const operationId =
             request.params?.review?.operationId ??
             request.params?.operationId ??
-            `${name}-${++this.next}`;
+            (request.params?.review?.companion ||
+            request.params?.review?.choice?.kind === 'afterCommit'
+              ? `aaaaaaaa-0000-4000-8000-${String(++this.next).padStart(12, '0')}`
+              : `${name}-${++this.next}`);
           const preparation = {
             ...fixture.prepare.reviewPreparation,
             operationId,
@@ -84,6 +87,12 @@ vi.mock('../backend-connection', async (original) => {
               ...fixture.execute.reviewExecution,
               requestId: operationId,
               preparation,
+              ...(request.params?.action === 'commit'
+                ? {
+                    gitReceipts: [{ stage: 'commit', commitHash: 'actual-parent' }],
+                    outcome: { status: 'not-attempted' },
+                  }
+                : {}),
             },
           };
           const result =
@@ -91,7 +100,12 @@ vi.mock('../backend-connection', async (original) => {
               ? {
                   clientId: 'confirmed',
                   server: {
-                    capabilities: { repositoryContext: 1, repositorySelection: 1, nativeReview: 1 },
+                    capabilities: {
+                      repositoryContext: 1,
+                      repositorySelection: 1,
+                      nativeReview: 1,
+                      nativeReviewCompanion: 1,
+                    },
                   },
                 }
               : request.method === 'accept-changes.prepare' && request.params?.review
@@ -294,4 +308,61 @@ describe('production native handler and captured socket', () => {
     stampWindowWithBackend(a.window as unknown as Window, 'host-A');
     expect(await call(channels.RECONCILE, a.event, { id, root })).toMatchObject({ ok: false });
   });
+});
+
+it('keeps a marked companion on its original production pooled host and separates both request histories', async () => {
+  const { a, b } = await setup();
+  const marked = {
+    ...input,
+    action: 'commit',
+    review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' } },
+  };
+  const parent = await call(channels.PREPARE, a.event, { input: marked });
+  expect(parent.ok).toBe(true);
+  const original = await call(channels.EXECUTE, a.event, {
+    id: parent.result.id,
+    root,
+    command: { commitMessage: 'Original' },
+  });
+  expect(original.result.execute.reviewExecution.gitReceipts).toEqual([
+    { stage: 'commit', commitHash: 'actual-parent' },
+  ]);
+  expect(
+    await call(channels.PREPARE, b.event, { companionOf: parent.result.id, root }),
+  ).toMatchObject({ ok: false });
+  const child = await call(channels.PREPARE, a.event, { companionOf: parent.result.id, root });
+  expect(child.ok).toBe(true);
+  expect(child.result.preview.reviewPreparation.scope.daemonId).toBe('host-A');
+  expect(child.result.preview.reviewPreparation.source).not.toHaveProperty('connection');
+  expect(child.result.id).not.toBe(parent.result.id);
+  const response = await call(channels.EXECUTE, a.event, {
+    id: child.result.id,
+    root,
+    command: { prTitle: 'Separate create' },
+  });
+  expect(response.result.execute.operationId).not.toBe(original.result.execute.operationId);
+  expect(response.result.execute.reviewExecution.gitReceipts).toEqual([]);
+  const remote = data.sockets.find((s) => s.name === 'host-A'),
+    local = data.sockets.find((s) => s.name === 'local-B');
+  expect(remote.writes.filter((f: any) => f.method === 'accept-changes.prepare')).toHaveLength(2);
+  expect(
+    remote.writes.find((f: any) => f.params?.review?.choice?.kind === 'afterCommit').params,
+  ).toEqual({
+    workspaceId: root.workspaceId,
+    action: 'create-pr',
+    review: {
+      root,
+      choice: {
+        kind: 'afterCommit',
+        operationId: original.result.execute.operationId,
+        captureId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      },
+    },
+  });
+  expect(local.writes.filter((f: any) => f.method.startsWith('accept-changes.'))).toHaveLength(0);
+  await call(channels.RELEASE, a.event, { id: child.result.id, root });
+  expect(
+    await call(channels.PREPARE, a.event, { companionOf: parent.result.id, root }),
+  ).toMatchObject({ ok: false });
+  await call(channels.RELEASE, a.event, { id: parent.result.id, root });
 });

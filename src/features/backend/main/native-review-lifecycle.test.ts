@@ -66,7 +66,7 @@ afterEach(() => {
   cleanup.splice(0).forEach((f) => f());
   windows.clear();
 });
-async function harness() {
+async function harness(companionCapability: unknown = null) {
   const socket = new Socket(),
     client = new JsonRpcClient({
       socketFactory: () => socket as unknown as Duplex,
@@ -80,7 +80,10 @@ async function harness() {
   client.start();
   socket.emit('connect');
   await vi.waitFor(() => expect(socket.frames).toHaveLength(1));
-  socket.reply({ clientId: 'original', server: { capabilities: { nativeReview: 1 } } });
+  socket.reply({
+    clientId: 'original',
+    server: { capabilities: { nativeReview: 1, nativeReviewCompanion: companionCapability } },
+  });
   await vi.waitFor(() => expect(client.getRepositoryConnection()).not.toBeNull());
   const sender = Object.assign(new EventEmitter(), {
     mainFrame: { send: vi.fn() },
@@ -204,5 +207,126 @@ describe('native review original window and private operation', () => {
       ok: true,
       result: { current: false, reconciliation: reconcile },
     });
+  });
+});
+
+const parentId = 'aaaaaaaa-0000-4000-8000-000000000001',
+  childId = 'aaaaaaaa-0000-4000-8000-000000000002';
+const marked = {
+  ...input,
+  action: 'commit' as const,
+  review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' as const } },
+};
+function companionCapture(id: string) {
+  return {
+    ...capture,
+    reviewOperation: { ...capture.reviewOperation, operationId: id },
+    reviewPreparation: {
+      ...capture.reviewPreparation,
+      operationId: id,
+      scope: { ...capture.reviewPreparation.scope, authorityScopeId: id },
+      contextRevision: { epoch: id, sequence: '1' },
+    },
+  };
+}
+async function committedParent(h: Awaited<ReturnType<typeof harness>>) {
+  const opened = h.call(channels.PREPARE, { input: marked });
+  h.socket.reply(companionCapture(parentId));
+  const id = (await opened).result.id as string;
+  const committed = h.call(channels.EXECUTE, {
+    id,
+    root,
+    command: { commitMessage: 'Staged only' },
+  });
+  h.socket.reply({
+    ...outcome,
+    operationId: parentId,
+    reviewExecution: {
+      ...outcome.reviewExecution,
+      requestId: parentId,
+      preparation: companionCapture(parentId).reviewPreparation,
+      gitReceipts: [{ stage: 'commit', commitHash: 'actual-parent' }],
+      outcome: { status: 'not-attempted' },
+    },
+  });
+  expect(await committed).toMatchObject({
+    ok: true,
+    result: { current: false, execute: { success: true } },
+  });
+  return id;
+}
+describe('same document companion capture through actual main routes', () => {
+  it('issues one capture for duplicate callers and gives the child its own local identity', async () => {
+    const h = await harness(1),
+      id = await committedParent(h);
+    const before = h.socket.frames.length;
+    const first = h.call(channels.PREPARE, { companionOf: id, root });
+    const second = h.call(channels.PREPARE, { companionOf: id, root });
+    await vi.waitFor(() => expect(h.socket.frames).toHaveLength(before + 1));
+    const wire = h.socket.frames.at(-1)!;
+    expect(wire.params).toMatchObject({
+      action: 'create-pr',
+      review: { choice: { kind: 'afterCommit', operationId: parentId } },
+    });
+    h.socket.reply(companionCapture(childId));
+    const a = await first,
+      b = await second;
+    expect(a).toEqual(b);
+    expect(a.ok).toBe(true);
+    expect(a.result.id).not.toBe(id);
+    expect(a.result.id).not.toBe(childId);
+    expect(h.socket.frames).toHaveLength(before + 1);
+    expect(
+      await h.call(channels.PREPARE, { companionOf: id, root, captureId: childId }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_PARAMS' } });
+    expect(
+      await h.call(channels.PREPARE, { companionOf: id, root: { ...root, workspaceId: 'other' } }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await h.call(channels.PREPARE, { companionOf: id, root }, {
+        ...h.event,
+        senderFrame: {},
+      } as IpcMainInvokeEvent),
+    ).toMatchObject({ ok: false });
+  });
+  it('retains a failed claim without another socket request', async () => {
+    const h = await harness(1),
+      id = await committedParent(h);
+    const first = h.call(channels.PREPARE, { companionOf: id, root });
+    await vi.waitFor(() =>
+      expect((h.socket.frames.at(-1)?.params as any)?.review?.choice?.kind).toBe('afterCommit'),
+    );
+    const frame = h.socket.frames.at(-1)!;
+    h.socket.emit(
+      'data',
+      Buffer.from(
+        JSON.stringify({ id: frame.id, error: { code: -32003, message: 'refused' } }) + '\n',
+      ),
+    );
+    expect(await first).toMatchObject({ ok: false });
+    const count = h.socket.frames.length;
+    expect(await h.call(channels.PREPARE, { companionOf: id, root })).toMatchObject({ ok: false });
+    expect(h.socket.frames).toHaveLength(count);
+  });
+  it('cleans an awaited child after original document retirement and refuses cached disclosure', async () => {
+    const h = await harness(1),
+      id = await committedParent(h);
+    const work = h.call(channels.PREPARE, { companionOf: id, root });
+    await vi.waitFor(() =>
+      expect((h.socket.frames.at(-1)?.params as any)?.review?.choice?.kind).toBe('afterCommit'),
+    );
+    const frame = h.socket.frames.at(-1)!;
+    h.sender.emit('did-start-navigation', {}, 'replacement', false, true);
+    h.socket.reply({ released: true });
+    h.socket.reply(companionCapture(childId), frame.id);
+    await vi.waitFor(() =>
+      expect(h.socket.frames.at(-1)).toMatchObject({
+        method: 'accept-changes.release',
+        params: { operationId: childId },
+      }),
+    );
+    h.socket.reply({ released: true });
+    expect(await work).toMatchObject({ ok: false });
+    expect(await h.call(channels.PREPARE, { companionOf: id, root })).toMatchObject({ ok: false });
   });
 });

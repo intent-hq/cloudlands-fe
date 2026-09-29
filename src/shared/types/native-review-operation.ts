@@ -42,6 +42,10 @@ export const NativeReviewInputSchema = z
         ]),
         targetBranch: z.string().nullish(),
         pushRemote: z.string().nullish(),
+        companion: z
+          .object({ kind: z.literal('create-pr') })
+          .strict()
+          .optional(),
       })
       .strict(),
   })
@@ -49,6 +53,14 @@ export const NativeReviewInputSchema = z
   .refine(
     (value) =>
       value.workspaceId === value.review.root.workspaceId &&
+      (!Object.hasOwn(value.review, 'companion') ||
+        (value.review.companion !== undefined &&
+          value.action === 'commit' &&
+          !Object.hasOwn(value, 'files') &&
+          !Object.hasOwn(value, 'options') &&
+          !Object.hasOwn(value.review, 'pushRemote') &&
+          typeof value.review.targetBranch === 'string' &&
+          value.review.targetBranch.length > 0)) &&
       (value.action === 'commit' ||
         (value.files == null &&
           !value.options?.stageUnstaged &&
@@ -183,4 +195,6 @@ export interface NativeReviewSession {
   confirm(command: NativeReviewTextCommand): Promise<NativeReviewObservation>;
   reconcile(): Promise<NativeReviewObservation>;
   release(): Promise<void>;
+  /** One separately confirmed create, acquired through this marked original commit only. */
+  prepareCompanion?(): Promise<NativeReviewSession>;
 }

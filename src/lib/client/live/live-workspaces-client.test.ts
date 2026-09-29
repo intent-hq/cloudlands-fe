@@ -1,3 +1,7 @@
+import {
+  NativeReviewPreparedViewSchema,
+  type NativeReviewSession,
+} from '$shared/types/native-review-operation';
 import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/types';
@@ -1267,4 +1271,45 @@ it('uses the native preparation facade without any generic mutation or selection
   expect(mockedRequest).not.toHaveBeenCalled();
   await opened.release();
   expect(session.release).toHaveBeenCalledOnce();
+});
+
+it('forwards a companion only through its original Live session without a second backend preparation', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const child: NativeReviewSession = {
+    preview: NativeReviewPreparedViewSchema.parse({
+      ...nativeFixture.prepare,
+      root,
+      expiresAfterMs: 300000,
+    }),
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  const parent: NativeReviewSession = {
+    ...child,
+    prepareCompanion: vi.fn(async () => child),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(prepareBackendNativeReview).mockClear().mockResolvedValueOnce(parent);
+  mockedRequest.mockClear();
+  const opened = await new LiveWorkspacesClient().beginNativeReview(
+    { root, attemptId: 'marked', admission: 'member', hostContext: 'host-A' },
+    {
+      workspaceId: 'ws',
+      action: 'commit',
+      review: {
+        root,
+        choice: { kind: 'saved' },
+        targetBranch: 'trunk',
+        companion: { kind: 'create-pr' },
+      },
+    },
+    vi.fn(),
+  );
+  expect(await opened.prepareCompanion!()).toBe(child);
+  expect(prepareBackendNativeReview).toHaveBeenCalledOnce();
+  expect(parent.prepareCompanion).toHaveBeenCalledOnce();
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await opened.release();
 });
