@@ -67,4 +67,14 @@ export interface FileExplorerWorkspaceState {
 
 export interface FileExplorerState {
   byWorkspaceId: Record<string, FileExplorerWorkspaceState>;
+  searches: Collection<FileExplorerSearch, 'consumerId'>;
+}
+
+export interface FileExplorerSearch {
+  consumerId: string;
+  workspaceId: string;
+  requestId: string;
+  paths: string[];
+  loading: boolean;
+  error: string | null;
 }

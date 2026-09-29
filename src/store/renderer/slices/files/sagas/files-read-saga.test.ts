@@ -78,6 +78,27 @@ function startStatefulSaga() {
 }
 
 describe('filesReadSaga', () => {
+  it('does not resurrect a deleted entry from a late read or cancel an independent reader', async () => {
+    const deleted = deferred<FileReadResult>();
+    const other = deferred<FileReadResult>();
+    vi.spyOn(appClient.files, 'read')
+      .mockReturnValueOnce(deleted.promise)
+      .mockReturnValueOnce(other.promise);
+    const h = startStatefulSaga();
+    try {
+      h.send(loadFileContentRequested('ws-1', 'a.ts', '/repo/a.ts'));
+      h.send(loadFileContentRequested('ws-1', 'b.ts', '/repo/b.ts'));
+      h.send(removeFileContentEntry('ws-1', 'a.ts'));
+      deleted.resolve(fileResult('deleted'));
+      other.resolve(fileResult('retained'));
+      await settle();
+      expect(h.entry('ws-1', 'a.ts')).toBeUndefined();
+      expect(h.entry('ws-1', 'b.ts')?.originalContent).toBe('retained');
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
   afterEach(() => {
     vi.mocked(backendRequest).mockReset();
     vi.restoreAllMocks();

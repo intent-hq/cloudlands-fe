@@ -1,10 +1,15 @@
 import type { FileGitStatus, FileNode } from '$shared/types';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   addExpandedPath,
   emptyFileExplorerWorkspaceState,
   fileExplorerReducer,
+  fileSearchRequested,
+  fileSearchLoading,
+  fileSearchSettled,
+  fileSearchReleased,
   initialState,
   refreshDirectoryRequested,
   removeAgentFileEditsEntries,
@@ -22,6 +27,41 @@ const WS_PATH = '/a/repo';
 
 const MODIFIED: FileGitStatus = { status: ' M', additions: 2, deletions: 1 };
 const ADDED: FileGitStatus = { status: 'A ', additions: 5, deletions: 0 };
+
+describe('fileExplorerReducer — search request identity', () => {
+  it('accepts only the current request and releases only the captured consumer/workspace', () => {
+    let state = fileExplorerReducer(undefined, fileSearchRequested('ws-1', 'tree', 'old', 'a'));
+    state = fileExplorerReducer(state, fileSearchRequested('ws-2', 'tree', 'new', 'b'));
+    expect(fileExplorerReducer(state, fileSearchLoading('ws-1', 'tree', 'old'))).toBe(state);
+    expect(
+      fileExplorerReducer(state, fileSearchSettled('ws-1', 'tree', 'old', ['stale'], null)),
+    ).toBe(state);
+    expect(fileExplorerReducer(state, fileSearchReleased('ws-1', 'tree'))).toBe(state);
+    state = fileExplorerReducer(state, fileSearchLoading('ws-2', 'tree', 'new'));
+    expect(getItem(state.searches, 'tree')?.loading).toBe(true);
+    state = fileExplorerReducer(state, fileSearchSettled('ws-2', 'tree', 'new', ['b.ts'], null));
+    expect(getItem(state.searches, 'tree')).toMatchObject({
+      paths: ['b.ts'],
+      loading: false,
+      error: null,
+    });
+    state = fileExplorerReducer(
+      state,
+      fileSearchRequested('ws-2', 'other-tree', 'independent', 'c'),
+    );
+    state = fileExplorerReducer(state, fileSearchReleased('ws-2', 'tree'));
+    expect(getItem(state.searches, 'tree')).toBeUndefined();
+    expect(getItem(state.searches, 'other-tree')).toBeDefined();
+    state = fileExplorerReducer(state, workspaceUnmounted('ws-2'));
+    expect(state.searches.ids).toEqual([]);
+    expect(
+      fileExplorerReducer(
+        state,
+        fileSearchSettled('ws-2', 'other-tree', 'independent', ['late'], null),
+      ),
+    ).toBe(state);
+  });
+});
 
 describe('fileExplorerReducer — initialization error', () => {
   it('stores a serializable error and clears it when retry loading starts', () => {

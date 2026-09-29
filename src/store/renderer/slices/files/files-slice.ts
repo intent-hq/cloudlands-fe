@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -12,6 +12,8 @@ import type {
   FileContentEntry,
   FileContentReadOptions,
   FileContentSaveOptions,
+  FileContentUpdateOptions,
+  FileDeleteOptions,
   FilesState,
   FilesWorkspaceState,
 } from './files-types';
@@ -102,7 +104,23 @@ export const loadFileContentFailed = createAction<
 >('files/loadFileContentFailed');
 
 export const updateFileContent =
-  createAction<[wsId: string, path: string, content: string]>('files/updateFileContent');
+  createAction<[wsId: string, path: string, content: string, options?: FileContentUpdateOptions]>(
+    'files/updateFileContent',
+  );
+
+export const deleteFileWithUndoRequested = createAction<
+  [wsId: string, path: string, options: FileDeleteOptions]
+>('files/deleteFileWithUndoRequested');
+
+export const deleteFileRequested = createAsyncAction<
+  [wsId: string, path: string, options: FileDeleteOptions],
+  string
+>('files/deleteFileRequested', 'files/deleteFile');
+
+export const restoreFileContentRequested = createAsyncAction<
+  [wsId: string, path: string, absolutePath: string, content: string],
+  void
+>('files/restoreFileContentRequested', 'files/restoreFileContent');
 
 export const saveFileContentRequested = createAction<
   [
