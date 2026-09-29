@@ -1,3 +1,11 @@
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  repositorySelectionEditStarted,
+  repositorySelectionPreviewReceived,
+  repositorySelectionObserved,
+  repositorySelectionRetired,
+  repositorySelectionEditCleared,
+} from './repository-context-slice';
 import { describe, expect, it } from 'vitest';
 import fixture from '$shared/types/__fixtures__/repository-context.json';
 import {
@@ -436,5 +444,67 @@ describe('typed original repository demand selection', () => {
     expect(h.view()?.roots[0].targets[0]).not.toHaveProperty('connection');
     expect(h.view()?.roots[0].reviewSelection.saved).not.toHaveProperty('source');
     expect(h.view()?.revision?.sequence).toBe('9007199254740993');
+  });
+});
+
+describe('selection operation collection independent of context rows', () => {
+  const owner = {
+    root: { workspaceId: 'workspace-1', kind: 'primary' as const },
+    editId: 'edit',
+    admission: 'host-A',
+  };
+  it('preserves actual receipts through read retirement and refuses another owner', () => {
+    let state = repositoryContextReducer(initial(), repositorySelectionEditStarted(owner));
+    const observation = {
+      current: false,
+      uncertain: false,
+      attempt: {
+        status: 'settled' as const,
+        receipt: {
+          result: { kind: 'failed' as const, code: 'storage-failed' as const },
+          persistence: { kind: 'committed' as const, selectionRevision: '2' },
+        },
+      },
+    };
+    state = repositoryContextReducer(state, repositorySelectionObserved(owner, observation));
+    const before = state.selectionEdits;
+    state = repositoryContextReducer(state, repositoryContextRetired('workspace-1', 'unused'));
+    expect(state.selectionEdits).toEqual(before);
+    expect(
+      repositoryContextReducer(
+        state,
+        repositorySelectionEditCleared({ ...owner, admission: 'host-B' }),
+      ),
+    ).toBe(state);
+    state = repositoryContextReducer(state, repositorySelectionRetired(owner, 'admission'));
+    expect(JSON.stringify(state)).toContain('committed');
+    state = repositoryContextReducer(
+      state,
+      repositorySelectionObserved(owner, { current: false, attempt: null, uncertain: true }),
+    );
+    expect(JSON.stringify(state)).toContain('committed');
+  });
+  it('does not restore a retired preview and clears only its original owner', () => {
+    let state = repositoryContextReducer(initial(), repositorySelectionEditStarted(owner));
+    state = repositoryContextReducer(state, repositorySelectionRetired(owner, 'closed'));
+    const preview = {
+      root: owner.root,
+      scope: { daemonId: 'A', authorityScopeId: 'op', authorityGeneration: '1' },
+      snapshot: {
+        root: owner.root,
+        rootIncarnation: '1',
+        selectionRevision: '0',
+        selection: { kind: 'neverSaved' as const },
+      },
+      expiresAfterMs: 300000 as const,
+    };
+    expect(
+      repositoryContextReducer(state, repositorySelectionPreviewReceived(owner, preview)),
+    ).toBe(state);
+    expect(
+      getItems(
+        repositoryContextReducer(state, repositorySelectionEditCleared(owner)).selectionEdits!,
+      ),
+    ).toEqual([]);
   });
 });

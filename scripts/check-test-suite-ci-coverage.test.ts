@@ -85,6 +85,8 @@ const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
     '2026-09-29: opt-in disposable Electron/generated-preload harness with fixture authority, not the accepted daemon; requires a private display and profiles, with hosted CI provisioning and execution pending',
   'test/fixtures/repository-context-native/playwright.config.ts':
     '2026-09-29: opt-in Electron integration requiring an explicit evidence path, the digest-pinned 82ca038d normal daemon and private disposable two-daemon/display/profiles; hosted CI provisioning and execution pending',
+  'test/fixtures/repository-selection-native/playwright.config.ts':
+    '2026-09-29: opt-in Electron selection integration requiring an explicit evidence path, the digest-pinned 410a7447 normal daemon and private disposable two-host/display/profiles; hosted CI provisioning and execution pending',
   'playwright-ct-lifetime.config.ts':
     '2026-09-25: opt-in browser lifetime comparison for intent-hq/intent#5481; deliberately timed-out tests verify cancellation and late responses with explicitly identified diagnostic browsers',
   'playwright-ct-evidence.config.ts':

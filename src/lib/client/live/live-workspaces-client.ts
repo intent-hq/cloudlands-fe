@@ -1,3 +1,8 @@
+import type {
+  RepositorySelectionEdit,
+  SelectionRetirement,
+} from '$shared/types/repository-selection';
+import { createRepositorySelectionTransport } from './repository-selection-transport';
 import type { RepositoryContextRequest } from '$shared/types/repository-context';
 import type { RepositoryContextUpdate } from '../app-client';
 import { createRepositoryContextTransport } from './repository-context-transport';
@@ -143,6 +148,12 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
+  beginRepositorySelectionEdit(
+    request: RepositorySelectionEdit,
+    handler: (kind: SelectionRetirement) => void,
+  ) {
+    return createRepositorySelectionTransport().begin(request, handler);
+  }
   observeRepositoryContext(
     request: RepositoryContextRequest,
     handler: (update: RepositoryContextUpdate) => void,

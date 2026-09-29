@@ -1,3 +1,5 @@
+import type { RepositorySelectionEdit } from '$shared/types/repository-selection';
+import type { RepositorySelectionEditState } from './repository-context-types';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   repositoryRootKey,
@@ -59,4 +61,21 @@ export const selectRepositoryContextForDemand: AppSelector<
     roots: current.status === 'ready' ? getItems(current.roots).map((entry) => entry.context) : [],
     unavailableReason: current.unavailableReason,
   };
+});
+
+/** Presentation of only the original edit owner; no private route or server reference. */
+export const selectRepositorySelectionForEdit: AppSelector<
+  RepositorySelectionEditState | null,
+  [owner: RepositorySelectionEdit]
+> = store.createSelector((state, owner) => {
+  if (owner.admission === null || selectPrincipalAdmissionContext.select(state) !== owner.admission)
+    return null;
+  const edits = state.repositoryContext.selectionEdits;
+  const edit = edits ? getItem(edits, owner.editId) : undefined;
+  return edit &&
+    edit.status !== 'closed' &&
+    edit.owner.admission === owner.admission &&
+    repositoryRootKey(edit.owner.root) === repositoryRootKey(owner.root)
+    ? edit
+    : null;
 });

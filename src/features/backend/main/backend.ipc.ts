@@ -48,6 +48,8 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
+import { createRepositorySelectionFeed } from './repository-selection-feed';
+import { registerRepositorySelectionHandlers } from './repository-selection-lifecycle';
 import {
   buildMainClientHelloParams,
   getOrCreateClientId,
@@ -378,6 +380,11 @@ const repositoryFeeds = new WeakMap<
   JsonRpcClient,
   ReturnType<typeof createRepositoryAuthorityFeed>
 >();
+const selectionFeeds = new WeakMap<
+  JsonRpcClient,
+  ReturnType<typeof createRepositorySelectionFeed>
+>();
+let selectionRoutes: ReturnType<typeof registerRepositorySelectionHandlers> | undefined;
 let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
@@ -934,6 +941,7 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
+  selectionRoutes?.retireBackend(id);
   backendClients.delete(id);
   invitedConnectionGuards.delete(id);
   if (id === LOCAL_CONNECTION_ID) {
@@ -950,6 +958,7 @@ export function disconnectBackendClient(id: string): void {
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   repositoryFeeds.get(instance)?.dispose();
+  selectionFeeds.get(instance)?.dispose();
   instance.dispose();
   // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
   // already-disconnected client emits no status change, so the forwarder
@@ -1274,10 +1283,16 @@ function createAdditionalBackendClient(
     },
   });
   // Subscribe before start/hello. Older test doubles have no private source feed.
-  if (typeof instance.onRepositoryConnectionEvent === 'function')
+  if (typeof instance.onRepositoryConnectionEvent === 'function') {
     repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
+    selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
+  }
   instance.on('notification', (notification: JsonRpcNotification) => {
-    if (notification.method === 'workspace.repositoryContext.retired') return;
+    if (
+      notification.method === 'workspace.repositoryContext.retired' ||
+      notification.method === 'workspace.repositorySelection.retired'
+    )
+      return;
     if (backendClients.get(id) !== instance) return;
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
@@ -3220,6 +3235,14 @@ export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
+  selectionRoutes = registerRepositorySelectionHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    capture: (client, connection, root) => {
+      const feed = selectionFeeds.get(client);
+      if (!feed) return Promise.reject(new Error('REPOSITORY_SELECTION_UNAVAILABLE'));
+      return feed.capture(connection, root);
+    },
+  });
   repositoryRoutes = registerRepositoryRouteHandlers(ipcMain, {
     // Explicit pool lookup only: do not instantiate local or follow focus.
     readBackend: (id) => backendClients.get(id),
@@ -3241,7 +3264,12 @@ export function registerBackendHandlers(): void {
       if (
         method === 'workspace.repositoryContext' ||
         method === 'workspace.repositoryContext.capture' ||
-        method === 'workspace.repositoryContext.release'
+        method === 'workspace.repositoryContext.release' ||
+        method === 'workspace.repositorySelection.capture' ||
+        method === 'workspace.repositorySelection.save' ||
+        method === 'workspace.repositorySelection.reset' ||
+        method === 'workspace.repositorySelection.reconcile' ||
+        method === 'workspace.repositorySelection.release'
       ) {
         return {
           ok: false,
@@ -4189,6 +4217,7 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 /** Dispose every pooled backend client (app shutdown). */
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
+  selectionRoutes?.dispose();
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
     if (id === LOCAL_CONNECTION_ID) {
@@ -4199,6 +4228,7 @@ export function disposeAllBackendClients(): void {
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);
     repositoryFeeds.get(instance)?.dispose();
+    selectionFeeds.get(instance)?.dispose();
     instance.dispose();
   }
 }

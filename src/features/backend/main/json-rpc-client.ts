@@ -37,6 +37,7 @@ export interface RepositoryConnection {
   readonly incarnation: object;
   readonly identity: object;
   readonly repositoryContext: boolean;
+  readonly repositorySelection: boolean;
 }
 
 /** Main-private physical evidence, never sent to the renderer. */
@@ -275,6 +276,9 @@ export class JsonRpcClient extends EventEmitter {
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
       identity: Object.freeze({}),
+      repositorySelection:
+        (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
+          ?.capabilities?.repositorySelection === 1,
       repositoryContext:
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,

@@ -7,6 +7,7 @@ import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/typ
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
   captureBackendRepositoryRoute: vi.fn(),
+  captureBackendRepositorySelection: vi.fn(),
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
@@ -20,7 +21,11 @@ vi.mock('$lib/client', async () => {
   return { appClient: { workspaces: new LiveWorkspacesClient() } };
 });
 
-import { backendRequest, captureBackendRepositoryRoute } from './backend-transport';
+import {
+  backendRequest,
+  captureBackendRepositoryRoute,
+  captureBackendRepositorySelection,
+} from './backend-transport';
 import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
 import { LiveWorkspacesClient } from './live-workspaces-client';
@@ -1196,4 +1201,35 @@ describe('LiveWorkspacesClient bound inventory', () => {
     close();
     expect(release).toHaveBeenCalledOnce();
   });
+});
+
+it('opens selection editing through its explicit facade without a generic mutation', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const session = {
+    preview: {
+      root,
+      scope: { daemonId: 'A', authorityScopeId: 's', authorityGeneration: '1' },
+      snapshot: {
+        root,
+        rootIncarnation: '1',
+        selectionRevision: '0',
+        selection: { kind: 'neverSaved' as const },
+      },
+      expiresAfterMs: 300000 as const,
+    },
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(captureBackendRepositorySelection).mockResolvedValueOnce(session);
+  mockedRequest.mockClear();
+  const result = await new LiveWorkspacesClient().beginRepositorySelectionEdit(
+    { root, editId: 'edit', admission: 'guest' },
+    vi.fn(),
+  );
+  expect(captureBackendRepositorySelection).toHaveBeenCalledWith(root);
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await result.release();
+  expect(session.release).toHaveBeenCalledOnce();
 });

@@ -1,3 +1,4 @@
+import type { RepositorySelectionSession } from '$shared/types/repository-selection';
 /**
  * Transport-agnostic contract for the renderer's live backend seam.
  *
@@ -121,6 +122,7 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  captureRepositorySelection?(root: RepositoryRootIdentity): Promise<RepositorySelectionSession>;
   /** Absent on older or non-Electron transports; never fall back to ordinary request. */
   captureRepositoryRoute?(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute>;
   /** Whether the live backend bridge is reachable in this environment. */

@@ -1,4 +1,9 @@
 import type {
+  RepositorySelectionEdit,
+  RepositorySelectionSession,
+  SelectionRetirement,
+} from '$shared/types/repository-selection';
+import type {
   RepositoryContextRequest,
   RepositoryContextResponse,
 } from '$shared/types/repository-context';
@@ -390,6 +395,10 @@ export type RepositoryContextUpdate =
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
 export interface WorkspacesClient {
+  beginRepositorySelectionEdit(
+    request: RepositorySelectionEdit,
+    handler: (kind: SelectionRetirement) => void,
+  ): Promise<RepositorySelectionSession>;
   /** One inventory read, retaining its resource until retirement or unsubscribe. */
   observeRepositoryContext(
     request: RepositoryContextRequest,

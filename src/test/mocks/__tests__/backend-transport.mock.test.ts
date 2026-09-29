@@ -11,6 +11,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 import {
   backendRequest,
   captureBackendRepositoryRoute,
+  captureBackendRepositorySelection,
   backendSubscribe,
   backendUnsubscribe,
   detectLiveStateCapability,
@@ -351,5 +352,23 @@ describe('scripted repository routes use the actual transport mock', () => {
     await expect(captureBackendRepositoryRoute(query)).rejects.toMatchObject({
       code: 'REPOSITORY_ROUTE_UNAVAILABLE',
     });
+  });
+});
+
+it('selection fixture is explicit, isolated and reset without ordinary request fallback', async () => {
+  const backend = installMockBackend(),
+    root = { workspaceId: 'same', kind: 'primary' as const };
+  await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({
+    code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+  });
+  const handler = vi.fn(async () => {
+    throw new BackendError({ code: 'forbidden', message: 'denied', rpcCode: -32003 });
+  });
+  backend.onSelectionCapture(handler);
+  await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({ rpcCode: -32003 });
+  expect(handler).toHaveBeenCalledWith(root);
+  resetMockBackend();
+  await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({
+    code: 'REPOSITORY_SELECTION_UNAVAILABLE',
   });
 });

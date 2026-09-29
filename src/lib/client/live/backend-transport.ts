@@ -27,6 +27,19 @@ export function captureBackendRepositoryRoute(root: RepositoryRootIdentity) {
   return transport.captureRepositoryRoute(root);
 }
 
+/** A new explicit edit captures this transport once, before confirmation. */
+export function captureBackendRepositorySelection(root: RepositoryRootIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositorySelection)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+        message: 'REPOSITORY_SELECTION_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositorySelection(root);
+}
+
 export type { BackendNotification } from './backend-transport-types';
 export { electronAPI } from './electron-ipc-transport';
 

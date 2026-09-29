@@ -1,4 +1,19 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type {
+  RepositorySelectionEdit,
+  SelectionCommand,
+  SelectionPreview,
+  SelectionObservation,
+  SelectionRetirement,
+} from '$shared/types/repository-selection';
+import type { RepositorySelectionEditState } from './repository-context-types';
+import {
+  createCollection,
+  addItem,
+  getItem,
+  getItems,
+  removeItem,
+  updateItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
@@ -87,9 +102,14 @@ repositoryContextReducer.with(
   },
 );
 
-repositoryContextReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) =>
-  clearWorkspaceState(state, workspaceId),
-);
+repositoryContextReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+  const cleared = clearWorkspaceState(state, workspaceId);
+  let edits = state.selectionEdits;
+  if (!edits) return cleared;
+  for (const edit of getItems(edits))
+    if (edit.owner.root.workspaceId === workspaceId) edits = removeItem(edits, edit.editId);
+  return { ...cleared, selectionEdits: edits };
+});
 
 repositoryContextReducer.with(repositoryContextStarted, (state, { payload: [request] }) => {
   const current = getWorkspaceState(state, request.workspaceId);
@@ -185,3 +205,124 @@ repositoryContextReducer.with(repositoryContextFailed, (state, { payload: [reque
     unavailableReason: 'read-failed',
   });
 });
+
+// Editing operations are separate from read rows: a read retirement is not a write outcome.
+export const repositorySelectionEditRequested = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionEditRequested',
+);
+export const repositorySelectionConfirmRequested = createAction<
+  [owner: RepositorySelectionEdit, command: SelectionCommand]
+>('repositoryContext/selectionConfirmRequested');
+export const repositorySelectionReconcileRequested = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionReconcileRequested',
+);
+export const repositorySelectionEditEnded = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionEditEnded',
+);
+export const repositorySelectionEditStarted = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionEditStarted',
+);
+export const repositorySelectionPreviewReceived = createAction<
+  [owner: RepositorySelectionEdit, preview: SelectionPreview]
+>('repositoryContext/selectionPreviewReceived');
+export const repositorySelectionCommandStarted = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionCommandStarted',
+);
+export const repositorySelectionObserved = createAction<
+  [owner: RepositorySelectionEdit, observation: SelectionObservation]
+>('repositoryContext/selectionObserved');
+export const repositorySelectionRetired = createAction<
+  [owner: RepositorySelectionEdit, kind: SelectionRetirement]
+>('repositoryContext/selectionRetired');
+export const repositorySelectionUnavailable = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionUnavailable',
+);
+export const repositorySelectionEditCleared = createAction<[owner: RepositorySelectionEdit]>(
+  'repositoryContext/selectionEditCleared',
+);
+const emptyEdits = createCollection<RepositorySelectionEditState, 'editId'>('editId');
+function ownedEdit(state: RepositoryContextState, owner: RepositorySelectionEdit) {
+  const entry = getItem(state.selectionEdits ?? emptyEdits, owner.editId);
+  return entry &&
+    entry.owner.admission === owner.admission &&
+    repositoryRootKey(entry.owner.root) === repositoryRootKey(owner.root)
+    ? entry
+    : undefined;
+}
+function updateEdit(
+  state: RepositoryContextState,
+  owner: RepositorySelectionEdit,
+  update: Partial<RepositorySelectionEditState>,
+) {
+  return ownedEdit(state, owner)
+    ? {
+        ...state,
+        selectionEdits: updateItem(state.selectionEdits ?? emptyEdits, {
+          ...update,
+          editId: owner.editId,
+        }),
+      }
+    : state;
+}
+repositoryContextReducer.with(repositorySelectionEditStarted, (state, { payload: [owner] }) => {
+  const edits = state.selectionEdits ?? emptyEdits;
+  if (owner.admission === null || getItem(edits, owner.editId) || getItems(edits).length >= 32)
+    return state;
+  return {
+    ...state,
+    selectionEdits: addItem(edits, {
+      editId: owner.editId,
+      owner: { ...owner, root: { ...owner.root } },
+      status: 'capturing',
+      preview: null,
+      observation: null,
+    }),
+  };
+});
+repositoryContextReducer.with(
+  repositorySelectionPreviewReceived,
+  (state, { payload: [owner, preview] }) => {
+    if (
+      ownedEdit(state, owner)?.status !== 'capturing' ||
+      repositoryRootKey(preview.root) !== repositoryRootKey(owner.root)
+    )
+      return state;
+    return updateEdit(state, owner, { status: 'ready', preview });
+  },
+);
+repositoryContextReducer.with(repositorySelectionCommandStarted, (state, { payload: [owner] }) =>
+  ownedEdit(state, owner)?.status === 'ready'
+    ? updateEdit(state, owner, { status: 'pending' })
+    : state,
+);
+repositoryContextReducer.with(
+  repositorySelectionObserved,
+  (state, { payload: [owner, observation] }) => {
+    const old = ownedEdit(state, owner);
+    if (!old) return state;
+    const retained = old.observation?.attempt?.status === 'settled' ? old.observation : observation;
+    return updateEdit(state, owner, {
+      observation: {
+        ...retained,
+        current: observation.current && old.status !== 'retired' && old.status !== 'closed',
+      },
+    });
+  },
+);
+repositoryContextReducer.with(repositorySelectionRetired, (state, { payload: [owner, kind] }) => {
+  const old = ownedEdit(state, owner);
+  if (!old || old.status === 'closed') return state;
+  return updateEdit(state, owner, {
+    status: kind === 'closed' ? 'closed' : 'retired',
+    preview: null,
+    observation: old.observation ? { ...old.observation, current: false } : null,
+  });
+});
+repositoryContextReducer.with(repositorySelectionUnavailable, (state, { payload: [owner] }) =>
+  updateEdit(state, owner, { status: 'unavailable', preview: null }),
+);
+repositoryContextReducer.with(repositorySelectionEditCleared, (state, { payload: [owner] }) =>
+  ownedEdit(state, owner)
+    ? { ...state, selectionEdits: removeItem(state.selectionEdits ?? emptyEdits, owner.editId) }
+    : state,
+);

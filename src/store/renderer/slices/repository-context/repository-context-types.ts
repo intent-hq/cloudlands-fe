@@ -1,3 +1,8 @@
+import type {
+  RepositorySelectionEdit,
+  SelectionPreview,
+  SelectionObservation,
+} from '$shared/types/repository-selection';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type {
   ExecutionScope,
@@ -47,6 +52,15 @@ export interface RepositoryContextWorkspaceState {
   unavailableReason: 'read-failed' | 'context-changed' | 'invalid-response' | null;
 }
 
+export interface RepositorySelectionEditState {
+  editId: string;
+  owner: RepositorySelectionEdit;
+  status: 'capturing' | 'ready' | 'pending' | 'retired' | 'closed' | 'unavailable';
+  preview: SelectionPreview | null;
+  observation: SelectionObservation | null;
+}
+
 export interface RepositoryContextState {
+  selectionEdits?: Collection<RepositorySelectionEditState, 'editId'>;
   byWorkspaceId: Record<string, RepositoryContextWorkspaceState>;
 }

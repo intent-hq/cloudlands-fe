@@ -1,5 +1,6 @@
+import { repositorySelectionSaga } from './repository-selection-saga';
 import { buffers, eventChannel } from 'redux-saga';
-import { actionChannel, call, flush, put, race, take, takeEvery } from 'typed-redux-saga';
+import { actionChannel, call, fork, flush, put, race, take, takeEvery } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { appClient } from '$lib/client';
 import type { RepositoryContextUpdate } from '$lib/client/app-client';
@@ -60,6 +61,7 @@ function* observe(admission: string, request: RepositoryContextRequest) {
 
 /** One root owner, cancelled by original actor/admission changes without replay. */
 export function* repositoryContextSaga() {
+  yield* fork(repositorySelectionSaga);
   yield* takeLatestFromSelector(
     selectPrincipalAdmissionContext,
     function* ({ payload: admission }: SelectorChannelPayload<string | null>) {

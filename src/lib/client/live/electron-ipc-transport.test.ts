@@ -657,3 +657,129 @@ describe('owner-frame repository retirement events', () => {
     await route.release();
   });
 });
+
+describe('selection session over the actual renderer IPC transport', () => {
+  const channels = IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION;
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const preview = {
+    root,
+    scope: { daemonId: 'A', authorityScopeId: 'server', authorityGeneration: '1' },
+    snapshot: {
+      root,
+      rootIncarnation: '1',
+      selectionRevision: '0',
+      selection: { kind: 'neverSaved' },
+    },
+    expiresAfterMs: 300000,
+  };
+  const observation = {
+    current: false,
+    uncertain: false,
+    attempt: {
+      status: 'settled',
+      receipt: {
+        result: { kind: 'failed', code: 'admission-retired' },
+        persistence: { kind: 'committed', selectionRevision: '1' },
+      },
+    },
+  };
+  it('retains failed plus committed through normal retirement and reconciles only its original handle', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result: channel === channels.CAPTURE ? { id: 'local-route', preview } : observation,
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().captureRepositorySelection!(root);
+    const retired = vi.fn();
+    session.onRetired(retired);
+    api.emit(channels.RETIRED, { id: 'local-route', kind: 'admission' });
+    expect(retired).toHaveBeenCalledWith('admission');
+    const result = await session.reconcile();
+    expect(result).toEqual(observation);
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RECONCILE, { id: 'local-route', root });
+    await session.release();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('owns the original bridge, rejects changed claim, and does not repeat a confirmation', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result: channel === channels.CAPTURE ? { id: 'route', preview } : observation,
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().captureRepositorySelection!(root);
+    await session.confirm({ kind: 'reset' });
+    await session.confirm({ kind: 'reset' });
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.CONFIRM)).toHaveLength(1);
+    await expect(
+      session.confirm({ kind: 'save', choice: { mode: 'automatic' } }),
+    ).rejects.toThrow();
+    installFakeApi();
+    await expect(session.reconcile()).rejects.toThrow();
+    await session.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'route', root });
+  });
+  it('never marks a cached original attempt current after retirement or bridge replacement', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result:
+            channel === channels.CAPTURE
+              ? { id: 'route', preview }
+              : {
+                  current: true,
+                  attempt: { status: 'pending' },
+                  uncertain: false,
+                },
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().captureRepositorySelection!(root);
+    expect((await session.confirm({ kind: 'reset' })).current).toBe(true);
+    api.emit(channels.RETIRED, { id: 'route', kind: 'admission' });
+    expect(await session.confirm({ kind: 'reset' })).toEqual({
+      current: false,
+      attempt: { status: 'pending' },
+      uncertain: false,
+    });
+    installFakeApi();
+    expect((await session.confirm({ kind: 'reset' })).current).toBe(false);
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.CONFIRM)).toHaveLength(1);
+    await session.release();
+  });
+  it('disposes a known original local reference when capture metadata is malformed', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result: channel === channels.CAPTURE ? { id: 'route', preview: {} } : { released: true },
+        }) as never,
+    );
+    await expect(
+      createElectronIpcBackendTransport().captureRepositorySelection!(root),
+    ).rejects.toThrow();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'route', root });
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('reconciles a retirement during capture before publishing an editing session', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(async (channel) => {
+      if (channel === channels.CAPTURE) {
+        api.emit(channels.RETIRED, { id: 'route', kind: 'admission' });
+        return { ok: true, result: { id: 'route', preview } } as never;
+      }
+      return { ok: true, result: { released: true } } as never;
+    });
+    await expect(
+      createElectronIpcBackendTransport().captureRepositorySelection!(root),
+    ).rejects.toThrow();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+});

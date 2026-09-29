@@ -918,6 +918,13 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    REPOSITORY_SELECTION: {
+      CAPTURE: 'backend:repository-selection:capture',
+      CONFIRM: 'backend:repository-selection:confirm',
+      RECONCILE: 'backend:repository-selection:reconcile',
+      RELEASE: 'backend:repository-selection:release',
+      RETIRED: 'backend:repository-selection:retired',
+    },
     REPOSITORY: {
       CAPTURE: 'backend:repository:capture',
       RETIRED: 'backend:repository:retired',
@@ -1053,6 +1060,7 @@ export const IPC_CHANNELS = {
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
+  IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',
