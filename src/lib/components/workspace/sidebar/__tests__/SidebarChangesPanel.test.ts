@@ -289,6 +289,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceManagementContext: createMockFtSelector(() => null),
   selectWorkspaceHostOperationContext: Object.assign(
     (workspaceId: string) =>
       createSelectorReadable(workspaceId, (id) =>
