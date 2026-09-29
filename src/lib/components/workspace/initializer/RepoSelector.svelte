@@ -31,6 +31,7 @@
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
+  import type { Workspace } from '$shared/types';
 
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -241,6 +242,8 @@
   let pendingSourceView = $state<{
     admission: string;
     repos: WorkspaceInitializerRecentRepo[];
+    workspaces: Workspace[];
+    registryRepos: KnownRepo[];
   } | null>(null);
   const recentRepos = $derived.by(() => {
     const saved = $workspaceInitializerRecentRepos$;
@@ -734,7 +737,17 @@
       if (!isCurrent()) return;
       if (!workspaceListResult.ok && !registryResult?.success) return;
 
-      const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
+      // A successful source replaces only its own provisional observations. A
+      // failure is not evidence that the other source's suggestions disappeared.
+      const previousSources = pendingSourceView?.admission === admission ? pendingSourceView : null;
+      const workspaces = workspaceListResult.ok
+        ? workspaceListResult.data
+        : (previousSources?.workspaces ?? []);
+      const registryRepos = registryResult?.success
+        ? (registryResult.data ?? [])
+        : (previousSources?.registryRepos ?? []);
+      // Retained workspace data contributes suggestions/exclusions only; never
+      // publish a failed list as a current workspace/capability projection.
       if (workspaceListResult.ok && publish) {
         mountedDispatch(
           replaceWorkspaceList(workspaces, {
@@ -781,8 +794,8 @@
 
       // Add persistent registry repos. Path-less GitHub picks carry a
       // githubUrl and use the owner/repo shorthand as their key.
-      if (registryResult?.success && Array.isArray(registryResult.data)) {
-        for (const repo of registryResult.data) {
+      if (Array.isArray(registryRepos)) {
+        for (const repo of registryRepos) {
           if (repo.githubUrl) {
             const entry: RecentEntry = {
               path: repo.path,
@@ -869,7 +882,7 @@
         mountedDispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
         pendingSourceView = null;
       } else {
-        pendingSourceView = { admission, repos: refreshedRepos };
+        pendingSourceView = { admission, repos: refreshedRepos, workspaces, registryRepos };
       }
     } catch (err) {
       if (!isCurrent()) return;

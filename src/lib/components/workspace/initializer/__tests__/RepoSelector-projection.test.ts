@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 const mocks = vi.hoisted(() => ({
@@ -65,6 +65,7 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 import RepoSelector from '../RepoSelector.svelte';
+import { performanceMonitor } from '$lib/utils/performance';
 import { store } from '$store/renderer/store';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import {
@@ -82,7 +83,10 @@ import {
   selectCanManageWorkspace,
   selectWorkspaceById,
 } from '$store/renderer/slices/workspace/workspace-selectors';
-import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import {
+  dismissWorkspaceInitializerRecentRepo,
+  hydrateWorkspaceInitializer,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { selectWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
@@ -276,4 +280,195 @@ describe('RepoSelector actual store/client projection ownership', () => {
       expect(recents()).toContainEqual(saved);
     },
   );
+});
+
+describe('RepoSelector partial source settlement through the real store and client', () => {
+  const registryRepo = { path: '/registry-repo', name: 'registry-repo' };
+  const workspace = {
+    ...row,
+    repositoryPath: '/workspace-repo',
+    repositoryName: 'workspace-repo',
+    worktreePath: '/worktrees/ws-1',
+    updatedAt: '2026-09-29T00:00:00Z',
+  };
+  const localSaved = { path: '/saved-repo', type: 'local' as const, name: 'saved-repo' };
+  const paths = () => recents().map((repo) => repo.path);
+  async function pendingSources() {
+    dispose();
+    dispose = store.init();
+    admitLegacyPrincipal();
+    admit('owner');
+    workspaceClient.clearCache();
+    list.mockResolvedValue({ success: true, data: [workspace] });
+    mocks.registry.mockResolvedValue({ success: true, data: [registryRepo] });
+    const view = render(RepoSelector);
+    await fireEvent.click(view.container.querySelector('button')!);
+    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo' }));
+    await waitFor(() => expect(screen.getByText('registry-repo')).toBeTruthy());
+    expect(screen.getByText('workspace-repo')).toBeTruthy();
+    expect(store.state.workspaceInitializer.hydrated).toBe(false);
+    expect(paths()).toEqual([]);
+    return view;
+  }
+  async function settle() {
+    store.dispatch(hydrateWorkspaceInitializer({ recentRepos: [localSaved] }));
+    await waitFor(() => expect(performanceMonitor.end).toHaveBeenCalledTimes(2));
+    await tick();
+  }
+  it.each(['registry', 'workspace'] as const)(
+    'retains only the failed %s source with hydrated saved history',
+    async (failed) => {
+      await pendingSources();
+      list.mockResolvedValue(
+        failed === 'workspace'
+          ? { success: false, error: 'workspace offline' }
+          : { success: true, data: [] },
+      );
+      if (failed === 'registry') mocks.registry.mockRejectedValue(new Error('registry offline'));
+      else mocks.registry.mockResolvedValue({ success: true, data: [] });
+      await settle();
+      const retained = failed === 'registry' ? 'registry-repo' : 'workspace-repo';
+      const removed = failed === 'registry' ? 'workspace-repo' : 'registry-repo';
+      expect(paths()).toEqual(expect.arrayContaining(['/saved-repo', `/${retained}`]));
+      expect(paths()).not.toContain(`/${removed}`);
+      expect(screen.getByText(retained)).toBeTruthy();
+      expect(screen.queryByText(removed)).toBeNull();
+      expect(screen.getByText('saved-repo')).toBeTruthy();
+      if (failed === 'workspace')
+        expect(selectWorkspaceById.select(store.state, workspace.id)).toBeUndefined();
+    },
+  );
+  it('keeps both failed source views without publishing over saved history', async () => {
+    await pendingSources();
+    list.mockResolvedValue({ success: false, error: 'workspace offline' });
+    mocks.registry.mockRejectedValue(new Error('registry offline'));
+    await settle();
+    expect(paths()).toEqual(['/saved-repo']);
+    expect(screen.getByText('registry-repo')).toBeTruthy();
+    expect(screen.getByText('workspace-repo')).toBeTruthy();
+    expect(screen.getByText('saved-repo')).toBeTruthy();
+  });
+  it('retires missing suggestions only when their own source succeeds', async () => {
+    await pendingSources();
+    list.mockResolvedValue({ success: true, data: [] });
+    mocks.registry.mockResolvedValue({ success: true, data: [] });
+    await settle();
+    expect(paths()).toEqual(['/saved-repo']);
+    expect(screen.queryByText('registry-repo')).toBeNull();
+    expect(screen.queryByText('workspace-repo')).toBeNull();
+  });
+  it.each(['before', 'during', 'after'] as const)(
+    'honors dismissal %s hydration when the registry fails',
+    async (when) => {
+      await pendingSources();
+      const dismiss = () =>
+        store.dispatch(
+          dismissWorkspaceInitializerRecentRepo({ path: registryRepo.path, type: 'local' }),
+        );
+      if (when === 'before') dismiss();
+      const resolve = hold();
+      mocks.registry.mockRejectedValue(new Error('registry offline'));
+      store.dispatch(hydrateWorkspaceInitializer({ recentRepos: [localSaved] }));
+      await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+      if (when === 'during') dismiss();
+      resolve({ success: true, data: [] });
+      await waitFor(() => expect(performanceMonitor.end).toHaveBeenCalledTimes(2));
+      if (when === 'after') dismiss();
+      await waitFor(() => expect(screen.queryByText('registry-repo')).toBeNull());
+      expect(paths()).toEqual(['/saved-repo']);
+    },
+  );
+  it('applies current workspace-owned exclusions to failed registry suggestions', async () => {
+    await pendingSources();
+    list.mockResolvedValue({
+      success: true,
+      data: [{ ...workspace, repositoryPath: registryRepo.path, worktreePath: registryRepo.path }],
+    });
+    mocks.registry.mockRejectedValue(new Error('registry offline'));
+    await settle();
+    expect(paths()).not.toContain(registryRepo.path);
+    expect(paths()).toContain('/saved-repo');
+    expect(paths()).toContain('octo/workspace-repo');
+  });
+  it.each(['readmission', 'revocation', 'store'] as const)(
+    'cannot publish fallback suggestions after held %s replacement',
+    async (change) => {
+      await pendingSources();
+      const resolve = hold();
+      mocks.registry.mockRejectedValue(new Error('registry offline'));
+      store.dispatch(hydrateWorkspaceInitializer({ recentRepos: [localSaved] }));
+      await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+      if (change === 'store') {
+        dispose();
+        init();
+      } else {
+        store.dispatch(
+          hostMembershipChanged({
+            principalId: 'principal',
+            action: change === 'revocation' ? 'removed' : 'updated',
+            revision: 2,
+          }),
+        );
+        if (change === 'readmission') {
+          list.mockResolvedValue({ success: true, data: [] });
+          mocks.registry.mockResolvedValue({ success: true, data: [] });
+          admit('guest', 2);
+        }
+      }
+      await tick();
+      const previous = recents();
+      resolve({ success: true, data: [] });
+      await waitFor(() =>
+        expect(vi.mocked(performanceMonitor.end).mock.calls.length).toBeGreaterThanOrEqual(2),
+      );
+      await tick();
+      expect(recents()).toEqual(previous);
+      expect(paths()).not.toContain(registryRepo.path);
+      if (change !== 'store')
+        await waitFor(() => expect(screen.queryByText('registry-repo')).toBeNull());
+      // A disposed store does not notify its old mounted subscribers. The live
+      // replacement must remain untouched; this is not an old-DOM teardown oracle.
+    },
+  );
+  it('retains known workspace-owned exclusions when only the workspace read fails', async () => {
+    dispose();
+    dispose = store.init();
+    admitLegacyPrincipal();
+    admit('owner');
+    list.mockResolvedValue({
+      success: true,
+      data: [{ ...workspace, worktreePath: workspace.repositoryPath }],
+    });
+    mocks.registry.mockResolvedValue({
+      success: true,
+      data: [
+        { path: workspace.repositoryPath, name: 'must-not-copy' },
+        { path: '/workspaces/.repo-cache/octo/managed', name: 'daemon-managed' },
+      ],
+    });
+    render(RepoSelector);
+    await waitFor(() => expect(performanceMonitor.end).toHaveBeenCalledTimes(1));
+    list.mockResolvedValue({ success: false, error: 'workspace offline' });
+    await settle();
+    expect(paths()).toContain('octo/workspace-repo');
+    expect(paths()).toContain('/saved-repo');
+    expect(paths()).not.toContain(workspace.repositoryPath);
+    expect(paths()).not.toContain('/workspaces/.repo-cache/octo/managed');
+  });
+  it('uses current successful source metadata with deterministic deduplication', async () => {
+    await pendingSources();
+    list.mockResolvedValue({ success: true, data: [{ ...workspace, repositoryName: 'renamed' }] });
+    mocks.registry.mockResolvedValue({
+      success: true,
+      data: [
+        { ...registryRepo, name: 'new-registry-name' },
+        { path: workspace.repositoryPath, name: 'registry-duplicate' },
+      ],
+    });
+    await settle();
+    expect(paths()).toHaveLength(3);
+    expect(recents().find((r) => r.path === registryRepo.path)?.name).toBe('new-registry-name');
+    expect(recents().find((r) => r.path === workspace.repositoryPath)?.name).toBe('renamed');
+    expect(paths()).toContain('/saved-repo');
+  });
 });
