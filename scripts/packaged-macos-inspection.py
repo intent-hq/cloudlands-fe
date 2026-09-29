@@ -24,7 +24,7 @@ import time
 import zipfile
 
 PRODUCT = "13a6cbe92681f7e3f6858ad7d5ce414375935b2c"
-PREVIOUS = "aab326e5ebce48849da628721e8f4b6b530f10c6"
+PREVIOUS = "ea28a8e733c9b5699923b6e74b0142950af38d5b"
 REPO = "intent-hq/cloudlands-fe"
 BRANCH = "diagnostic/b76t-packaged-readiness"
 WORKFLOW = ".github/workflows/packaged-macos-inspection.yml"
@@ -583,6 +583,129 @@ def inventory(ops, evidence, app):
     return mach, bundles
 
 
+CANVAS_PATH = "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"
+CANVAS_BYTES = 27971424
+CANVAS_SHA = "7a7f2285fd6a5a8a89f3d1c6011537a727f4b9109bf637e30a62f052d53ae6f3"
+DYLIB_LOADS = {"LC_LOAD_DYLIB", "LC_LOAD_WEAK_DYLIB", "LC_REEXPORT_DYLIB",
+               "LC_LAZY_LOAD_DYLIB", "LC_LOAD_UPWARD_DYLIB"}
+# These commands are retained as opaque diagnostic blocks, not runtime proof.
+# Other path-bearing/obsolete/unknown commands fail closed in this narrow parser.
+OPAQUE_COMMANDS = {"LC_SEGMENT_64", "LC_SYMTAB", "LC_DYSYMTAB", "LC_UUID",
+                   "LC_CODE_SIGNATURE", "LC_SEGMENT_SPLIT_INFO", "LC_DYLD_INFO",
+                   "LC_DYLD_INFO_ONLY", "LC_VERSION_MIN_MACOSX", "LC_FUNCTION_STARTS",
+                   "LC_MAIN", "LC_DATA_IN_CODE", "LC_SOURCE_VERSION", "LC_DYLIB_CODE_SIGN_DRS",
+                   "LC_ENCRYPTION_INFO_64", "LC_LINKER_OPTIMIZATION_HINT", "LC_NOTE",
+                   "LC_BUILD_VERSION", "LC_DYLD_EXPORTS_TRIE", "LC_DYLD_CHAINED_FIXUPS"}
+
+
+def typed_canvas_commands(text, full_path, legacy):
+    """Conservative text-envelope classification; never waives the existing -L guard.
+
+    Header counts and cmdsize sums reject incomplete command envelopes. Opaque
+    bodies are not independently decoded Mach-O structures. Actual native output
+    formatting remains to be demonstrated; unsupported forms stop, not normalize.
+    """
+    require(len(text.encode("utf-8")) <= 1048576 and text.endswith("\n")
+            and all(ord(x) >= 32 or x in "\t\n" for x in text), "typed text bound/encoding")
+    lines = text.splitlines()
+    require(len(lines) >= 7 and lines[0] == full_path + ":"
+            and lines[1] == "Mach header", "typed exact path/header")
+    columns = lines[2].split()
+    expected = ["magic", "cputype", "cpusubtype", "caps", "filetype", "ncmds", "sizeofcmds", "flags"]
+    require(columns in (expected, expected + ["reserved"]), "typed header columns")
+    values = lines[3].split()
+    require(len(values) == len(columns)
+            and all(re.fullmatch(r"(?:0x[0-9a-fA-F]+|[0-9]+)", v) for v in values), "typed numeric header")
+    header = {k: int(v, 16 if v.startswith("0x") else 10) for k, v in zip(columns, values)}
+    require(header["magic"] == 0xfeedfacf and header["cputype"] == 0x100000c
+            and header["filetype"] in (6, 8), "typed arm64 dylib/bundle header")
+    require(0 < header["ncmds"] <= 4096 and 0 < header["sizeofcmds"] <= CANVAS_BYTES,
+            "typed command bounds")
+    starts = [i for i in range(4, len(lines)) if re.fullmatch(r"Load command [0-9]+", lines[i])]
+    require(len(starts) == header["ncmds"] and starts[0] == 4, "typed missing/extra commands")
+    records = []
+    size_sum = 0
+    for number, start in enumerate(starts):
+        end = starts[number + 1] if number + 1 < len(starts) else len(lines)
+        body = [v.strip() for v in lines[start + 1:end]]
+        require(lines[start] == f"Load command {number}" and len(body) >= 3,
+                "typed command order/truncation")
+        cmd = re.fullmatch(r"cmd (LC_[A-Z0-9_]+)", body[0])
+        size = re.fullmatch(r"cmdsize ([0-9]+)", body[1])
+        require(cmd is not None and size is not None
+                and not any(re.match(r"(?:cmd|cmdsize)\b", v) for v in body[2:]), "typed command fields")
+        kind = cmd.group(1)
+        size = int(size.group(1))
+        require(size >= 8 and size % 8 == 0, "typed command size")
+        size_sum += size
+        row = dict(index=number, command=kind, cmdsize=size, classification="opaque diagnostic only")
+        if kind in DYLIB_LOADS | {"LC_ID_DYLIB", "LC_LOAD_DYLINKER", "LC_ID_DYLINKER", "LC_RPATH"}:
+            dylib = kind in DYLIB_LOADS | {"LC_ID_DYLIB"}
+            field = "path" if kind == "LC_RPATH" else "name"
+            match = re.fullmatch(field + r" (.+) \(offset ([0-9]+)\)", body[2])
+            require(match is not None, "typed path field")
+            name, offset = match.group(1), int(match.group(2))
+            require(offset == (24 if dylib else 12) and offset + len(name.encode()) + 1 <= size,
+                    "typed string offset/size")
+            require(len(body) == (6 if dylib else 3), "typed extra/missing path fields")
+            if dylib:
+                require(re.fullmatch(r"time stamp [0-9]+(?: .*)?", body[3])
+                        and re.fullmatch(r"current version [0-9]+\.[0-9]+\.[0-9]+", body[4])
+                        and re.fullmatch(r"compatibility version [0-9]+\.[0-9]+\.[0-9]+", body[5]),
+                        "typed dylib fields")
+            row.update(path=name, classification=("install ID" if kind in {"LC_ID_DYLIB", "LC_ID_DYLINKER"}
+                       else "runpath" if kind == "LC_RPATH" else "dependency"))
+        else:
+            require(kind in OPAQUE_COMMANDS, "typed unknown/unsupported load command")
+        records.append(row)
+    require(size_sum == header["sizeofcmds"], "typed total command size")
+    ids = [r for r in records if r["command"] == "LC_ID_DYLIB"]
+    require(len(ids) <= 1 and (not ids or header["filetype"] == 6), "typed duplicate/inconsistent install ID")
+    linkers = [r for r in records if r["command"] in {"LC_ID_DYLINKER", "LC_LOAD_DYLINKER"}]
+    require(len(linkers) <= 1 and not any(r["command"] == "LC_ID_DYLINKER" for r in linkers),
+            "typed duplicate/inconsistent dylinker")
+    old_lines = legacy.splitlines()
+    require(old_lines and old_lines[0] == full_path + ":" and legacy.endswith("\n"), "legacy exact path/header")
+    names = []
+    for line in old_lines[1:]:
+        match = re.fullmatch(r"\s+(.+) \(compatibility version [0-9]+\.[0-9]+\.[0-9]+, current version [0-9]+\.[0-9]+\.[0-9]+\)", line)
+        require(match is not None, "legacy malformed row")
+        names.append(match.group(1))
+    require(names == [r["path"] for r in records if r["command"] in DYLIB_LOADS | {"LC_ID_DYLIB"}],
+            "typed/legacy names differ")
+    return dict(header=header, commands=records, interpretation="diagnostic only; existing unsafe-load rejection remains",
+                limitations="opaque command bodies not decoded; no dyld resolution, ABI or runtime compatibility proof")
+
+
+def observe_canvas(ops, evidence, p, app, legacy):
+    require(str(p.relative_to(app)) == CANVAS_PATH and p.is_file() and not p.is_symlink(), "typed exact canvas path")
+    before = identity(p)
+    verify_bytes(*digest_file(p, CANVAS_BYTES, ops.tick), CANVAS_BYTES, CANVAS_SHA)
+    require(identity(p) == before, "typed canvas changed before command")
+    argv = [TOOLS["otool"], "-m", "-h", "-l", str(p)]
+    tool = identity(TOOLS["otool"])
+    evidence.write("canvas-typed-intent.json", dict(argv=argv, toolIdentity=tool, fileIdentity=before,
+                   product=PRODUCT, artifact=ARTIFACT, path=CANVAS_PATH, sha256=CANVAS_SHA))
+    capture = ops.run(argv)
+    require(identity(p) == before and identity(TOOLS["otool"]) == tool, "typed file/tool identity drift")
+    verify_bytes(*digest_file(p, CANVAS_BYTES, ops.tick), CANVAS_BYTES, CANVAS_SHA)
+    require(identity(p) == before, "typed canvas changed after command")
+    require(capture.with_suffix(".stderr").stat().st_size == 0, "typed native diagnostic on stderr")
+    require(capture.stat().st_size <= 1048576, "typed capture parse cap")
+    parsed = typed_canvas_commands(capture.read_text(encoding="utf-8", errors="strict"), str(p), legacy)
+    evidence.write("canvas-typed-commands.json", dict(parsed, capture=capture.name,
+                   rawSha256=sha(capture.read_bytes()), argv=argv, toolIdentity=tool,
+                   fileIdentity=before, fileSha256=CANVAS_SHA))
+    # Diagnose every supported path-bearing load command, including those -L
+    # omits. An ID is recorded separately, never used to bypass the old guard.
+    for row in parsed["commands"]:
+        if row["classification"] in ("dependency", "runpath"):
+            dep = row["path"]
+            require(not dep.startswith("/") or dep.startswith(("/usr/lib/", "/System/Library/", str(app) + "/")),
+                    "typed non-system external absolute load path")
+
+
+
 def inspect(ops, evidence, dmg):
     mount = evidence.root / "mount"
     mount.mkdir(mode=0o700)
@@ -635,10 +758,13 @@ def inspect(ops, evidence, dmg):
                         "Contents/Resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper"]
             require(all(app / p in mach for p in required), "required native payload absent")
         with ops.phase("nativeSignatureAndArchitecture"):
+            require(sum(p == app / CANVAS_PATH for p in mach) == 1, "unique typed canvas target")
             loads = []
             for p in mach:
                 require("arm64" in ops.text([TOOLS["lipo"], "-archs", str(p)]).split(), "arm64 absent")
                 output = ops.text([TOOLS["otool"], "-m", "-L", str(p)])
+                if str(p.relative_to(app)) == CANVAS_PATH:
+                    observe_canvas(ops, evidence, p, app, output)
                 dependencies = []
                 for line in output.splitlines()[1:]:
                     dep = line.strip().split(" (compatibility version", 1)[0]

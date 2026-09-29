@@ -20,7 +20,7 @@ jobs:
       github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'diagnostic/b76t-packaged-readiness' &&
-      github.event.before == 'aab326e5ebce48849da628721e8f4b6b530f10c6' &&
+      github.event.before == 'ea28a8e733c9b5699923b6e74b0142950af38d5b' &&
       github.run_attempt == 1
     runs-on: macos-15-xlarge
     timeout-minutes: 25
