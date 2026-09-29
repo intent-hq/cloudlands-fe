@@ -6,6 +6,7 @@
  */
 import type { AgentMessage } from '$shared/types';
 import { groupMessagesByDate, type MessageGroup } from '$lib/utils/timeFormatting';
+import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
 
 interface ComposedTranscriptGroup extends MessageGroup<AgentMessage> {
   /**
@@ -27,6 +28,28 @@ export interface ComposedTranscript {
    * is no gap (no history, or history is contiguous with the tail).
    */
   gapBeforeGroupIndex: number | null;
+}
+
+/**
+ * Index nearest human prompts in the exact deduplicated render order. A null
+ * target means the true conversation start is loaded and top fallback is safe.
+ * Missing entries have an unknown predecessor: older rows are unloaded, or
+ * the walk hit the history-to-tail gap before finding a human prompt.
+ */
+export function indexPreviousUserMessages(
+  transcript: ComposedTranscript,
+  conversationStartLoaded: boolean,
+): Map<string, AgentMessage | null> {
+  const targets = new Map<string, AgentMessage | null>();
+  let previous: AgentMessage | null | undefined = conversationStartLoaded ? null : undefined;
+  for (const [groupIndex, group] of transcript.groups.entries()) {
+    if (groupIndex === transcript.gapBeforeGroupIndex) previous = undefined;
+    for (const message of group.messages) {
+      if (previous !== undefined) targets.set(message.id, previous);
+      if (message.role === 'user' && !isAutomatedChatMessage(message)) previous = message;
+    }
+  }
+  return targets;
 }
 
 function dayKey(date: Date): string {

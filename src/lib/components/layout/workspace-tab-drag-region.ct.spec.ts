@@ -93,12 +93,11 @@ test('overflowing tabs leave the empty left titlebar gap draggable after scrolli
   await expectClippedRegions();
   const gapBeforeSidebarResize = (await dragRegionGeometry(titlebar)).gap;
   await component.update({ props: { sidebarWidth: 340 } });
-  await component.locator('[data-titlebar-workspace-controls]').evaluate(async (element) => {
-    await Promise.all(element.getAnimations().map((animation) => animation.finished));
-  });
-  expect((await dragRegionGeometry(titlebar)).gap.right).toBeGreaterThan(
-    gapBeforeSidebarResize.right,
-  );
+  // Store selectors publish on a frame cadence even with reduced motion.
+  // Wait for the rendered resize before checking the resized drag regions.
+  await expect
+    .poll(async () => (await dragRegionGeometry(titlebar)).gap.right)
+    .toBeGreaterThan(gapBeforeSidebarResize.right);
   await expectClippedRegions();
   await expect(component.locator('[data-titlebar-settings]')).toHaveCSS(
     '-webkit-app-region',

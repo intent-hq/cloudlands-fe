@@ -222,6 +222,7 @@
     classifyScrollbackGesture,
     classifyScrollBurst,
     composeTranscript,
+    indexPreviousUserMessages,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
     OLDER_HISTORY_INDICATOR_QUIET_MS,
@@ -406,10 +407,7 @@
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
   import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
-  import {
-    findPreviousUserMessage,
-    isAutomatedChatMessage,
-  } from '$lib/utils/previous-user-message';
+  import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
@@ -2456,7 +2454,7 @@
   // Grouped messages for display: scrollback history segment + live tail.
   // With no history hydrated this is exactly the old tail-only grouping.
   // NOTE: transcript search, sticky headers, pinned prompts, message
-  // navigation, and the unread divider intentionally keep operating on the
+  // navigator, and the unread divider intentionally keep operating on the
   // tail ($agentMessages$) only for this iteration — history rows render but
   // are not indexed by those features.
   const composedTranscript = $derived(
@@ -2478,6 +2476,9 @@
       tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
     }),
+  );
+  const previousUserMessageTargets = $derived(
+    indexPreviousUserMessages(composedTranscript, conversationStartLoaded),
   );
 
   // ── Infinite scrollback triggers + no-jump prepend anchoring ──────────
@@ -4761,15 +4762,14 @@
     };
   });
 
-  // Scroll to previous user-authored message from the current sticky one.
-  // Automated rows (wakes, system, agent-origin) are skipped; when the
-  // current message is itself automated, the walk starts from its position
-  // in the full message order. No preceding user message → scroll to top.
+  // Scroll to the previous user-authored message from the clicked transcript row.
+  // Use the composed render order, skipping automated rows without crossing
+  // unloaded history. A known empty predecessor retains the top fallback.
   async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!isActive || !scrollContainer) return;
+    const previousMessage = previousUserMessageTargets.get(currentMessageId);
+    if (previousMessage === undefined) return;
     const getContainer = beginScrollNavigation();
-
-    const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
 
     if (!previousMessage) {
       // No preceding user-authored message - scroll to top
@@ -6659,7 +6659,9 @@
                                   handleTurnEditStateChange(turnKey, isEditing)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
-                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                onScrollToPrevious={previousUserMessageTargets.has(message.id)
+                                  ? () => scrollToPreviousUserMessage(message.id)
+                                  : undefined}
                                 backendSessionId={auggieSessionId}
                                 suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
                                   cardSpacingOwnedBefore}
@@ -6788,6 +6790,9 @@
                                 ? undefined
                                 : (newText, model, blocks) =>
                                     handleEditMessage(message.id, newText, model, blocks)}
+                              onScrollToPrevious={previousUserMessageTargets.has(message.id)
+                                ? () => scrollToPreviousUserMessage(message.id)
+                                : undefined}
                               onRegenerate={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}

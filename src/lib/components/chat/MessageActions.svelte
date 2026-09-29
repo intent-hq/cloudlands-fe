@@ -152,6 +152,12 @@
         when: role === 'assistant' && Boolean(onRegenerate),
       },
       {
+        id: 'scroll-previous',
+        label: m.chat_messageActions_previousUserMessage_label(),
+        icon: faArrowUp,
+        when: role === 'assistant' && Boolean(onScrollToPrevious),
+      },
+      {
         id: 'fork',
         label: m.chat_messageActions_fork_ariaLabel(),
         icon: faCodeBranch,

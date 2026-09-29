@@ -1911,6 +1911,7 @@
           <MessageActions
             role="assistant"
             {onRegenerate}
+            {onScrollToPrevious}
             {onFork}
             {onVote}
             onCopy={handleCopy}

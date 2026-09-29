@@ -84,9 +84,26 @@
     appStore.dispatch(setTypeReasoningEffortOverride({ type, effort: effort ?? '' }));
   }
 
-  // ModelPicker reports "use default" as '' — stored verbatim as a cleared override.
-  function handleOverrideChange(type: BackgroundAgentType, model: string) {
-    appStore.dispatch(setTypeOverride({ type, model }));
+  // These settings belong to the active provider's snapshot. Never reinterpret
+  // a foreign pick under that provider or persist a legacy compound row value.
+  // ModelPicker reports "use default" as '' without a structured pick.
+  function changeModel(
+    model: string,
+    pick?: { providerId: string; modelId: string },
+    type?: BackgroundAgentType,
+  ) {
+    if (
+      model !== '' &&
+      (!pick ||
+        pick.providerId !== $effectiveProviderId$ ||
+        !pick.modelId ||
+        pick.modelId.includes(':'))
+    )
+      return;
+    const bareModel = model === '' ? '' : pick!.modelId;
+    appStore.dispatch(
+      type ? setTypeOverride({ type, model: bareModel }) : setDefaultModel(bareModel),
+    );
   }
 
   const defaultSchema = $derived.by(() =>
@@ -167,12 +184,13 @@
     <!-- Empty defaultModel means "provider default": the daemon/CLI default is
          used because background requests omit `model` on the wire. -->
     <ModelPicker
+      allowProviderSwitch={false}
       showReasoning={effortAvailable($defaultModel)}
       fallbackToCatalogDefault
       reasoningEffort={effortAvailable($defaultModel) ? $defaultEffort$ || null : null}
       onReasoningChange={changeDefaultEffort}
       selectedModel={$defaultModel || undefined}
-      onModelChange={(model) => appStore.dispatch(setDefaultModel(model))}
+      onModelChange={(model, pick) => changeModel(model, pick)}
       showManageLink={false}
       showDefaultOption={true}
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
@@ -189,6 +207,7 @@
 {#snippet commitControl()}
   <div class="flex w-full min-w-0 flex-col items-end">
     <ModelPicker
+      allowProviderSwitch={false}
       showReasoning={effortAvailable($typeOverrides$.commit || $defaultModel)}
       fallbackToCatalogDefault
       defaultModelId={$defaultModel || undefined}
@@ -200,7 +219,7 @@
         : null}
       onReasoningChange={(effort) => changeActionEffort('commit', effort)}
       selectedModel={$typeOverrides$.commit || undefined}
-      onModelChange={(model) => handleOverrideChange('commit', model)}
+      onModelChange={(model, pick) => changeModel(model, pick, 'commit')}
       showManageLink={false}
       showDefaultOption={true}
       defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
@@ -217,6 +236,7 @@
 {#snippet prControl()}
   <div class="flex w-full min-w-0 flex-col items-end">
     <ModelPicker
+      allowProviderSwitch={false}
       showReasoning={effortAvailable($typeOverrides$.pr || $defaultModel)}
       fallbackToCatalogDefault
       defaultModelId={$defaultModel || undefined}
@@ -228,7 +248,7 @@
         : null}
       onReasoningChange={(effort) => changeActionEffort('pr', effort)}
       selectedModel={$typeOverrides$.pr || undefined}
-      onModelChange={(model) => handleOverrideChange('pr', model)}
+      onModelChange={(model, pick) => changeModel(model, pick, 'pr')}
       showManageLink={false}
       showDefaultOption={true}
       defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
@@ -245,6 +265,7 @@
 {#snippet fastControl()}
   <div class="flex w-full min-w-0 flex-col items-end">
     <ModelPicker
+      allowProviderSwitch={false}
       showReasoning={effortAvailable($typeOverrides$.fast || $defaultModel)}
       fallbackToCatalogDefault
       defaultModelId={$defaultModel || undefined}
@@ -256,7 +277,7 @@
         : null}
       onReasoningChange={(effort) => changeActionEffort('fast', effort)}
       selectedModel={$typeOverrides$.fast || undefined}
-      onModelChange={(model) => handleOverrideChange('fast', model)}
+      onModelChange={(model, pick) => changeModel(model, pick, 'fast')}
       showManageLink={false}
       showDefaultOption={true}
       defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}

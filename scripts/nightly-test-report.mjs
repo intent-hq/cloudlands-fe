@@ -194,7 +194,7 @@ function jobName(entry) {
   if (entry.suite === 'ct' || entry.suite === 'quarantine')
     return `test-ct / Component Tests (shard ${entry.suite === 'quarantine' ? 1 : entry.shard}/4)`;
   return entry.suite === 'root'
-    ? `test-playwright / Playwright (root ${entry.shard}/2)`
+    ? `test-playwright / Playwright (root ${entry.shard}/${entry.shardCount})`
     : 'test-electron / Electron Browser Lifetime';
 }
 function latestJob(jobs, entry, run) {
