@@ -24,7 +24,7 @@ import time
 import zipfile
 
 PRODUCT = "13a6cbe92681f7e3f6858ad7d5ce414375935b2c"
-PREVIOUS = "efd7e727e1d919dfb18ae086bc5f566a02cae41e"
+PREVIOUS = "aab326e5ebce48849da628721e8f4b6b530f10c6"
 REPO = "intent-hq/cloudlands-fe"
 BRANCH = "diagnostic/b76t-packaged-readiness"
 WORKFLOW = ".github/workflows/packaged-macos-inspection.yml"
@@ -638,7 +638,7 @@ def inspect(ops, evidence, dmg):
             loads = []
             for p in mach:
                 require("arm64" in ops.text([TOOLS["lipo"], "-archs", str(p)]).split(), "arm64 absent")
-                output = ops.text([TOOLS["otool"], "-L", str(p)])
+                output = ops.text([TOOLS["otool"], "-m", "-L", str(p)])
                 dependencies = []
                 for line in output.splitlines()[1:]:
                     dep = line.strip().split(" (compatibility version", 1)[0]
