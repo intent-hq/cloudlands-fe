@@ -1356,11 +1356,13 @@
                   {m.workspace_commitDrawer_commit_label()}
                 </Button>
               {:else}
-                {#if $nativeParentView?.preview}
+                {#if $nativeParentView?.preview && !nativeParentClaimed}
                   <p>
-                    {m.workspace_commitDrawer_stagedWillCommit_many({
-                      count: formatInteger($nativeParentView.preview.filesCount),
-                    })}
+                    {$nativeParentView.preview.filesCount === 1
+                      ? m.workspace_commitDrawer_stagedWillCommit_one()
+                      : m.workspace_commitDrawer_stagedWillCommit_many({
+                          count: formatInteger($nativeParentView.preview.filesCount),
+                        })}
                   </p>
                 {/if}
                 {#if !nativeParentClaimed && !$nativeParentView?.observation}
