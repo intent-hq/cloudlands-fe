@@ -139,7 +139,7 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     const menu = page.locator(`[id="${menuId}"]`);
     await expect(menu).toBeVisible();
     for (const testId of ['chat-message-navigator-trigger', 'chat-scroll-to-bottom-button']) {
-      const icon = menu.getByTestId(testId).locator('[data-slot="menu-item-leading"] svg');
+      const icon = menu.getByTestId(testId).locator('svg');
       await expect(icon, result.scenario).toHaveCount(1);
       await expect(icon, result.scenario).toHaveCSS('width', '16px');
       await expect(icon, result.scenario).toHaveCSS('height', '16px');
