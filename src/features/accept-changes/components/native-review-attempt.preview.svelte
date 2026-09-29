@@ -4,6 +4,7 @@
   interface Props {
     scene?: NativeScene;
     member?: boolean;
+    baseRef?: string;
   }
   export const preview = definePreview<Props>({
     id: 'native-review-attempt',
@@ -15,6 +16,8 @@
       uncertain: { props: { scene: 'uncertain' } },
       failed: { props: { scene: 'failed' } },
       member: { props: { scene: 'reused', member: true } },
+      absentBranch: { props: { scene: 'reused' } },
+      suppliedBranch: { props: { scene: 'reused', baseRef: 'release/example' } },
     },
   });
 </script>
@@ -25,10 +28,10 @@
   import { Button } from '$lib/components/ui/button';
   import NativeReviewAttempt from './NativeReviewAttempt.svelte';
   import { installNativeFixture, nativeRoot } from './native-review-attempt.preview-fixtures';
-  let { scene = 'reused', member = false }: Props = $props();
+  let { scene = 'reused', member = false, baseRef }: Props = $props();
   let fixture: ReturnType<typeof installNativeFixture>;
   onMount(() => {
-    fixture = installNativeFixture({ scene, role: member ? 'member' : 'owner' });
+    fixture = installNativeFixture({ scene, role: member ? 'member' : 'owner', baseRef });
     return () => fixture.dispose();
   });
 </script>
@@ -42,6 +45,6 @@
       >Close original session</Button
     >
   </div>
-  <NativeReviewAttempt root={nativeRoot} />
+  <NativeReviewAttempt root={nativeRoot} targetBranch={baseRef} />
   <ConfirmHost />
 </div>

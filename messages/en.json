@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "Observed local commit",
   "native_review_remoteSha_label": "Observed remote commit",
   "native_review_commitReceipt_description": "Completed commit: {sha}",
-  "native_review_pushReceipt_description": "Completed push: {sha}"
+  "native_review_pushReceipt_description": "Completed push: {sha}",
+  "native_review_targetChoice_description": "Choose the target branch for this review. Preparation checks the branch; your workspace settings stay the same.",
+  "native_review_targetRequired_error": "Enter a target branch.",
+  "native_review_changeTarget_label": "Change target branch",
+  "native_review_targetContextChanged_description": "Repository details changed. Start a review again to check your target branch."
 }

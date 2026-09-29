@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "Commit local observado",
   "native_review_remoteSha_label": "Commit remoto observado",
   "native_review_commitReceipt_description": "Commit completado: {sha}",
-  "native_review_pushReceipt_description": "Envío completado: {sha}"
+  "native_review_pushReceipt_description": "Envío completado: {sha}",
+  "native_review_targetChoice_description": "Elige la rama de destino para esta revisión. La preparación comprueba la rama; la configuración del espacio de trabajo no cambia.",
+  "native_review_targetRequired_error": "Introduce una rama de destino.",
+  "native_review_changeTarget_label": "Cambiar rama de destino",
+  "native_review_targetContextChanged_description": "Los detalles del repositorio han cambiado. Inicia de nuevo la revisión para comprobar la rama de destino."
 }

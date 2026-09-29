@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "Commit local observé",
   "native_review_remoteSha_label": "Commit distant observé",
   "native_review_commitReceipt_description": "Commit terminé : {sha}",
-  "native_review_pushReceipt_description": "Push terminé : {sha}"
+  "native_review_pushReceipt_description": "Push terminé : {sha}",
+  "native_review_targetChoice_description": "Choisissez la branche cible de cette revue. La préparation vérifie la branche ; les paramètres de votre espace de travail restent inchangés.",
+  "native_review_targetRequired_error": "Saisissez une branche cible.",
+  "native_review_changeTarget_label": "Changer la branche cible",
+  "native_review_targetContextChanged_description": "Les détails du dépôt ont changé. Relancez la revue pour vérifier votre branche cible."
 }

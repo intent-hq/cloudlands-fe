@@ -4,7 +4,12 @@
     selectRepositoryContextForDemand,
     selectNativeReviewForOwner,
   } from '$store/renderer/slices/repository-context/repository-context-selectors';
-  import { repositoryRootKey, type RepositoryRootIdentity } from '$shared/types/repository-context';
+  import {
+    executionScopeKey,
+    repositoryTargetKey,
+    repositoryRootKey,
+    type RepositoryRootIdentity,
+  } from '$shared/types/repository-context';
   import type { RepositoryContextDemand } from '$store/renderer/slices/repository-context/repository-context-types';
   import type { NativeReviewOwner } from '$shared/types/native-review-operation';
 
@@ -17,6 +22,8 @@
           : undefined;
       return {
         view,
+        rootKey: repositoryRootKey(root),
+        branch: entry?.branch ?? null,
         target:
           entry?.reviewSelection.outcome.state === 'resolved'
             ? entry.reviewSelection.outcome.target
@@ -24,6 +31,18 @@
       };
     },
   );
+  // Presentation identity only; the original native owner still controls admission.
+  function readIdentity(read: ReturnType<typeof selectRead.select>) {
+    if (!read.target || !read.view?.scope || !read.view.revision) return null;
+    return JSON.stringify([
+      read.rootKey,
+      repositoryTargetKey(read.target),
+      executionScopeKey(read.view.scope),
+      read.view.revision.epoch,
+      read.view.revision.sequence,
+      read.branch,
+    ]);
+  }
   const selectAttempt = store.createSelector((state, owner: NativeReviewOwner | null) =>
     owner ? selectNativeReviewForOwner.select(state, owner) : null,
   );
@@ -68,6 +87,10 @@
   } = $props();
   let demand = $state.raw<RepositoryContextDemand | null>(null);
   let owner = $state.raw<NativeReviewOwner | null>(null);
+  let branchDraft = $state('');
+  let branchEdited = $state(false);
+  let readIdentityAtStart = $state<string | null>(null);
+  let readChanged = $state(false);
   let title = $state('');
   let body = $state('');
   let titleEdited = $state(false);
@@ -113,6 +136,8 @@
   function start() {
     endAttempt();
     endRead();
+    readIdentityAtStart = null;
+    readChanged = false;
     const original = Object.freeze({
       workspaceId: root.workspaceId,
       demandId: crypto.randomUUID(),
@@ -132,7 +157,17 @@
     );
   }
   function prepare() {
-    if (owner || selectRead.select(store.state, demand, root).target?.provider !== 'gitlab') return;
+    const currentRead = selectRead.select(store.state, demand, root);
+    if (
+      owner ||
+      !branchDraft.trim() ||
+      readChanged ||
+      !readIdentityAtStart ||
+      readIdentity(currentRead) !== readIdentityAtStart ||
+      currentRead.target?.provider !== 'gitlab'
+    )
+      return;
+    const requestedBranch = branchDraft;
     const capturedAdmission = selectPrincipalAdmissionContext.select(store.state);
     const hostContext = selectWorkspaceHostOperationContext.select(store.state, root.workspaceId);
     if (!capturedAdmission || !hostContext) return;
@@ -143,6 +178,7 @@
       hostContext,
     });
     owner = original;
+    branchEdited = true;
     store.dispatch(
       nativeReviewEditRequested(original, {
         workspaceId: original.root.workspaceId,
@@ -150,7 +186,7 @@
         review: {
           root: original.root,
           choice: { kind: 'saved' },
-          ...(targetBranch ? { targetBranch } : {}),
+          targetBranch: requestedBranch,
         },
       }),
     );
@@ -158,6 +194,8 @@
   function eligible(original: NativeReviewOwner) {
     return (
       owner === original &&
+      !readChanged &&
+      readIdentity(selectRead.select(store.state, demand, root)) === readIdentityAtStart &&
       // eslint-disable-next-line intent/no-component-async-data-fetch -- Pure shared root keys, following the existing selection editor; no client or IO.
       repositoryRootKey(root) === repositoryRootKey(original.root) &&
       selectNativeReviewForOwner.select(store.state, original)?.status === 'ready' &&
@@ -194,6 +232,10 @@
       if (confirming === original.attemptId) confirming = null;
     }
   }
+  function changeTargetBranch() {
+    if (!owner || confirming || submitted || view?.observation) return;
+    endAttempt();
+  }
   function reconcile() {
     const original = owner;
     if (!original || checking || !selectNativeReviewForOwner.select(store.state, original)) return;
@@ -211,6 +253,17 @@
     await tick();
     startButton?.focus();
   }
+  $effect(() => {
+    if (!branchEdited && !owner) branchDraft = targetBranch ?? '';
+  });
+  $effect(() => {
+    const identity = readIdentity($read);
+    if (!demand) return;
+    if (!readIdentityAtStart && identity) readIdentityAtStart = identity;
+    else if (readIdentityAtStart && identity !== readIdentityAtStart) readChanged = true;
+    // A changed read cannot adopt an unused preparation. Claimed receipts stay with their owner.
+    if (readChanged && owner && !submitted) endAttempt();
+  });
   $effect(() => {
     onLegacyEligibility?.(legacyEligible);
     return () => onLegacyEligibility?.(() => false);
@@ -391,6 +444,30 @@
     <Button bind:ref={startButton} variant="secondary" onclick={start}
       >{m.native_review_start_label()}</Button
     >
+    {#if demand && (owner || $read.target?.provider === 'gitlab')}
+      <FormField
+        label={m.native_review_target_label()}
+        description={m.native_review_targetChoice_description()}
+        error={branchEdited && !branchDraft.trim()
+          ? m.native_review_targetRequired_error()
+          : undefined}
+        disabled={!!owner || readChanged || !$hostAdmission}
+      >
+        {#snippet control(props)}<Input
+            {...props}
+            bind:value={branchDraft}
+            oninput={() => (branchEdited = true)}
+          />{/snippet}
+      </FormField>
+      {#if owner && !submitted && !observation}
+        <Button variant="secondary" onclick={changeTargetBranch} disabled={!!confirming}>
+          {m.native_review_changeTarget_label()}
+        </Button>
+      {/if}
+    {/if}
+    {#if demand && readChanged}<p role="status">
+        {m.native_review_targetContextChanged_description()}
+      </p>{/if}
     {#if demand && !owner}
       {#if $read.view?.status === 'loading'}
         <p role="status">{m.repository_details_loading_description()}</p>
@@ -409,7 +486,10 @@
             },
           ]}
         />
-        <Button variant="primary" onclick={prepare} disabled={!$hostAdmission}
+        <Button
+          variant="primary"
+          onclick={prepare}
+          disabled={!$hostAdmission || !branchDraft.trim() || readChanged || !readIdentityAtStart}
           >{m.native_review_prepare_label()}</Button
         >
         {#if !$hostAdmission}<p role="status">{m.native_review_unavailable_description()}</p>{/if}

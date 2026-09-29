@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "Beobachteter lokaler Commit",
   "native_review_remoteSha_label": "Beobachteter Remote-Commit",
   "native_review_commitReceipt_description": "Abgeschlossener Commit: {sha}",
-  "native_review_pushReceipt_description": "Abgeschlossener Push: {sha}"
+  "native_review_pushReceipt_description": "Abgeschlossener Push: {sha}",
+  "native_review_targetChoice_description": "Wähle den Zielbranch für diese Überprüfung. Bei der Vorbereitung wird der Branch geprüft; deine Arbeitsbereichseinstellungen bleiben unverändert.",
+  "native_review_targetRequired_error": "Gib einen Zielbranch ein.",
+  "native_review_changeTarget_label": "Zielbranch ändern",
+  "native_review_targetContextChanged_description": "Die Repository-Details haben sich geändert. Starte die Überprüfung erneut, um deinen Zielbranch zu prüfen."
 }

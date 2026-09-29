@@ -21,10 +21,15 @@ import type {
   NativeReviewOutcome,
 } from '$shared/types/native-review';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
+import { store } from '$store/renderer/store';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
 export type NativeScene =
   'created' | 'reused' | 'uncertain' | 'failed' | 'pending' | 'not-attempted';
 export interface NativeFixtureOptions {
+  baseRef?: string;
+  preparedTargetBranch?: string;
   scene?: NativeScene;
   context?: SummaryScene;
   role?: SelectionFixtureOptions['role'];
@@ -149,6 +154,11 @@ export function installNativeFixture(options: NativeFixtureOptions = {}) {
   const base = installSummaryFixture(options.context ?? 'self-managed', options.delayRead, {
     role: options.role ?? 'owner',
   });
+  if (options.baseRef !== undefined) {
+    const workspace = selectWorkspaceById.select(store.state, nativeRoot.workspaceId);
+    if (!workspace) throw new Error('Expected admitted fixture workspace');
+    store.dispatch(setWorkspaceEntity({ ...workspace, baseRef: options.baseRef }));
+  }
   const previousBridge = window.electronAPI;
   const listeners = new Map<string, (payload: unknown) => void>();
   const channels = IPC_CHANNELS.BACKEND.NATIVE_REVIEW;
@@ -229,6 +239,8 @@ export function installNativeFixture(options: NativeFixtureOptions = {}) {
       const { input } = raw as { input: NativeReviewInput };
       const id = 'native-preview-' + (captures.length + 1);
       const preview = nativePreview(input.review.root, id);
+      if (options.preparedTargetBranch !== undefined)
+        preview.reviewPreparation.target.branch = options.preparedTargetBranch;
       if (options.invalidPrepare) {
         preview.valid = false;
         preview.errors = ['Preparation refused'];

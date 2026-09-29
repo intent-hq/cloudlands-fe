@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "確認したローカルコミット",
   "native_review_remoteSha_label": "確認したリモートコミット",
   "native_review_commitReceipt_description": "完了したコミット：{sha}",
-  "native_review_pushReceipt_description": "完了したプッシュ：{sha}"
+  "native_review_pushReceipt_description": "完了したプッシュ：{sha}",
+  "native_review_targetChoice_description": "このレビューの対象ブランチを選択してください。準備時にブランチを確認します。ワークスペースの設定は変更されません。",
+  "native_review_targetRequired_error": "対象ブランチを入力してください。",
+  "native_review_changeTarget_label": "対象ブランチを変更",
+  "native_review_targetContextChanged_description": "リポジトリの情報が変更されました。レビューを開始し直して、対象ブランチを確認してください。"
 }

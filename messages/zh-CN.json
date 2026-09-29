@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "观察到的本地提交",
   "native_review_remoteSha_label": "观察到的远程提交",
   "native_review_commitReceipt_description": "已完成提交：{sha}",
-  "native_review_pushReceipt_description": "已完成推送：{sha}"
+  "native_review_pushReceipt_description": "已完成推送：{sha}",
+  "native_review_targetChoice_description": "选择此次评审的目标分支。准备时会检查该分支，工作区设置保持不变。",
+  "native_review_targetRequired_error": "请输入目标分支。",
+  "native_review_changeTarget_label": "更改目标分支",
+  "native_review_targetContextChanged_description": "仓库信息已更改。请重新开始评审以检查目标分支。"
 }

@@ -14,6 +14,7 @@ import { principalContextChanged } from '$store/renderer/slices/principal/princi
 import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { summaryContext } from '../components/repository-context-summary.preview-fixtures';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 import {
   installNativeFixture,
@@ -52,11 +53,18 @@ async function mount(
       workspaceId: WorkspaceId(root.workspaceId),
       onClose,
     });
-  return render((await import('../components/NativeReviewAttempt.svelte')).default, { root });
+  return render((await import('../components/NativeReviewAttempt.svelte')).default, {
+    root,
+    targetBranch: options.baseRef,
+  });
 }
-async function start() {
+async function start(branch: string | null = 'trunk') {
   await fireEvent.click(screen.getByRole('button', { name: 'Start a review' }));
   await screen.findByRole('button', { name: 'Prepare merge request' });
+  if (branch !== null)
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Target branch' }), {
+      target: { value: branch },
+    });
 }
 async function prepare() {
   await start();
@@ -75,6 +83,291 @@ async function submit(agree = true) {
 const executed = () => fixture.requests.filter((r) => r.kind === 'execute');
 
 describe('native review through rendered Store, root saga, Live client and controlled IPC', () => {
+  it.each([false, true])(
+    'keeps a supplied branch and permits a literal per-review override (override %s)',
+    async (override) => {
+      await mount({ baseRef: 'release/saved' }, nativeRoot, true);
+      const dispatch = vi.spyOn(store, 'dispatch');
+      await start(null);
+      const input = screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement;
+      expect(input.value).toBe('release/saved');
+      if (override) await fireEvent.input(input, { target: { value: 'origin/release/other ' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+      await waitFor(() => expect(fixture.captures).toHaveLength(1));
+      expect(fixture.captures[0].input.review.targetBranch).toBe(
+        override ? 'origin/release/other ' : 'release/saved',
+      );
+      expect(input.disabled).toBe(true);
+      expect(dispatch.mock.calls.some(([a]) => a.type === updateWorkspaceEntity.type)).toBe(false);
+      expect(fixture.base.selectionRequests).toHaveLength(0);
+      expect(fixture.legacyRequests).toHaveLength(0);
+    },
+  );
+
+  it.each(['bad..ref', 'missing/remote-branch', 'feature/details'])(
+    'retains drafts when original preparation rejects %s',
+    async (branch) => {
+      await mount({ refusePrepare: true });
+      await start(branch);
+      await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+      const title = await screen.findByRole('textbox', { name: 'Title' });
+      await fireEvent.input(title, { target: { value: 'Keep my title' } });
+      await fireEvent.input(screen.getByRole('textbox', { name: 'Description' }), {
+        target: { value: 'Keep my body' },
+      });
+      await screen.findByText(
+        'This review cannot be prepared with the current repository and access.',
+      );
+      expect(fixture.captures[0].input.review.targetBranch).toBe(branch);
+      expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      await fireEvent.click(screen.getByRole('button', { name: 'Change target branch' }));
+      expect(
+        (screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).value,
+      ).toBe(branch);
+      await fireEvent.input(screen.getByRole('textbox', { name: 'Target branch' }), {
+        target: { value: 'release/corrected' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+      await waitFor(() => expect(fixture.captures).toHaveLength(2));
+      expect(
+        ((await screen.findByRole('textbox', { name: 'Title' })) as HTMLInputElement).value,
+      ).toBe('Keep my title');
+      expect(
+        (screen.getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement).value,
+      ).toBe('Keep my body');
+      expect(executed()).toHaveLength(0);
+    },
+  );
+
+  it('changes an unused prepared branch with a distinct original owner and fresh confirmation', async () => {
+    await mount({ preparedTargetBranch: 'confirmed/target' });
+    const dispatch = vi.spyOn(store, 'dispatch');
+    await prepare();
+    const title = screen.getByRole('textbox', { name: 'Title' });
+    await fireEvent.input(title, { target: { value: 'Unchanged draft' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    let dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('confirmed/target');
+    expect(
+      (screen.getByRole('button', { name: 'Change target branch' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(fixture.captures).toHaveLength(1);
+    expect(fixture.releases).toHaveLength(0);
+    await fireEvent.click(screen.getByRole('button', { name: 'Change target branch' }));
+    await waitFor(() => expect(fixture.releases).toHaveLength(1));
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Target branch' }), {
+      target: { value: 'next/target' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+    await waitFor(() => expect(fixture.captures).toHaveLength(2));
+    const owners = dispatch.mock.calls
+      .map(([a]) => a)
+      .filter((a) => a.type === nativeReviewEditRequested.type) as ReturnType<
+      typeof nativeReviewEditRequested
+    >[];
+    expect(owners[0].payload[0]).not.toBe(owners[1].payload[0]);
+    expect(owners[0].payload[0].attemptId).not.toBe(owners[1].payload[0].attemptId);
+    expect(
+      dispatch.mock.calls.some(
+        ([a]) =>
+          a.type === nativeReviewEditEnded.type &&
+          (a as ReturnType<typeof nativeReviewEditEnded>).payload[0] === owners[0].payload[0],
+      ),
+    ).toBe(true);
+    expect(fixture.captures.map((c) => c.input.review.targetBranch)).toEqual([
+      'trunk',
+      'next/target',
+    ]);
+    expect(executed()).toHaveLength(0);
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('Unchanged draft');
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(executed()).toHaveLength(1));
+    expect(executed()[0].id).toBe(fixture.captures[1].id);
+    expect(executed()[0].command).toEqual({
+      prTitle: 'Unchanged draft',
+      prBody: 'Suggested details',
+    });
+  });
+
+  it('releases a late unused capture without adopting it into the changed branch', async () => {
+    await mount({ delayPrepare: true });
+    await start('old/target');
+    await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+    await waitFor(() => expect(fixture.captures).toHaveLength(1));
+    await fireEvent.click(screen.getByRole('button', { name: 'Change target branch' }));
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Target branch' }), {
+      target: { value: 'new/target' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+    await waitFor(() => expect(fixture.captures).toHaveLength(2));
+    fixture.captures[0].finish();
+    await waitFor(() =>
+      expect(fixture.releases).toContainEqual({ id: fixture.captures[0].id, root: nativeRoot }),
+    );
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fixture.captures[1].finish();
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    await submit();
+    expect(executed()[0].id).toBe(fixture.captures[1].id);
+  });
+
+  it('does not mutate the captured branch when the supplied base changes', async () => {
+    const component = await mount({ baseRef: 'saved/original' });
+    await start(null);
+    await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+    await waitFor(() => expect(fixture.captures).toHaveLength(1));
+    await component.rerender({ root: nativeRoot, targetBranch: 'saved/replaced' });
+    expect((screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).value).toBe(
+      'saved/original',
+    );
+    expect(fixture.captures[0].input.review.targetBranch).toBe('saved/original');
+  });
+
+  it('does not carry an unprepared branch choice to a different browsed root', async () => {
+    const component = await mount();
+    await start('release/original');
+    const nextRoot = { ...nativeRoot, kind: 'registered' as const, gitRootId: 'tools' };
+    await component.rerender({ root: nextRoot });
+    await screen.findByText(
+      'Repository details changed. Start a review again to check your target branch.',
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Prepare merge request' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(fixture.captures).toHaveLength(0);
+    await start(null);
+    expect((screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).value).toBe(
+      'release/original',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+    await waitFor(() => expect(fixture.captures).toHaveLength(1));
+    expect(fixture.captures[0].input.review.root).toEqual(nextRoot);
+    expect(fixture.base.captures).toHaveLength(2);
+  });
+
+  it.each(['pending', 'failed', 'uncertain'] as const)(
+    'keeps the original branch and receipts after a %s claim and result check',
+    async (scene) => {
+      const component = await mount({ scene });
+      await prepare();
+      await submit();
+      await screen.findByRole('region', { name: 'Original execution' });
+      expect(screen.queryByRole('button', { name: 'Change target branch' })).toBeNull();
+      await component.rerender({ root: nativeRoot, targetBranch: 'different/prop' });
+      expect(
+        (screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).value,
+      ).toBe('trunk');
+      expect(
+        (screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).disabled,
+      ).toBe(true);
+      await fireEvent.click(screen.getByRole('button', { name: 'Check result' }));
+      await screen.findByRole('region', { name: 'Original result check' });
+      expect(screen.getByRole('region', { name: 'Original execution' })).toBeTruthy();
+      expect(fixture.captures).toHaveLength(1);
+      expect(executed()).toHaveLength(1);
+      expect(fixture.requests.map((r) => r.id)).toEqual([
+        fixture.captures[0].id,
+        fixture.captures[0].id,
+      ]);
+      if (scene === 'failed') expect(screen.getAllByText(/completed-B/).length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(['before-prepare', 'capture', 'confirmation'] as const)(
+    'requires a new explicit read after project context retires %s',
+    async (phase) => {
+      await mount({ context: 'loading', delayPrepare: phase === 'capture' });
+      await fireEvent.click(screen.getByRole('button', { name: 'Start a review' }));
+      await waitFor(() => expect(fixture.base.reads).toHaveLength(1));
+      fixture.base.reads[0].finish(summaryContext('self-managed'));
+      await screen.findByRole('button', { name: 'Prepare merge request' });
+      await fireEvent.input(screen.getByRole('textbox', { name: 'Target branch' }), {
+        target: { value: 'release/original' },
+      });
+      if (phase !== 'before-prepare') {
+        await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+        await waitFor(() => expect(fixture.captures).toHaveLength(1));
+        if (phase === 'confirmation') {
+          await waitFor(() =>
+            expect(
+              (screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled,
+            ).toBe(false),
+          );
+          await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+          await screen.findByRole('dialog');
+        }
+      }
+      fixture.base.retire();
+      await screen.findByText(
+        'Repository details changed. Start a review again to check your target branch.',
+      );
+      if (phase === 'confirmation')
+        await fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: 'Create' }),
+        );
+      if (phase === 'capture') fixture.captures[0].finish();
+      expect(executed()).toHaveLength(0);
+      expect(fixture.base.reads).toHaveLength(1);
+      await fireEvent.click(screen.getByRole('button', { name: 'Start a review' }));
+      await waitFor(() => expect(fixture.base.reads).toHaveLength(2));
+      const next = summaryContext('self-managed');
+      const outcome = next.roots[0].reviewSelection.outcome;
+      if (outcome.state !== 'resolved') throw new Error('Expected qualified fixture target');
+      outcome.target.projectPath = 'new/project';
+      fixture.base.reads[1].finish(next);
+      await screen.findByText('new/project');
+      expect(
+        (screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).value,
+      ).toBe('release/original');
+      expect(fixture.captures).toHaveLength(phase === 'before-prepare' ? 0 : 1);
+      await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+      await waitFor(() =>
+        expect(fixture.captures).toHaveLength(phase === 'before-prepare' ? 1 : 2),
+      );
+      expect(executed()).toHaveLength(0);
+    },
+  );
+  it('requires an explicit target branch instead of preparing an omitted or blank branch', async () => {
+    await mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'Start a review' }));
+    const prepareButton = await screen.findByRole('button', { name: 'Prepare merge request' });
+    const branch = screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement;
+    expect(branch.value).toBe('');
+    expect((prepareButton as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(branch, { target: { value: '   ' } });
+    await fireEvent.click(prepareButton);
+    expect(fixture.captures).toHaveLength(0);
+    expect(executed()).toHaveLength(0);
+    await fireEvent.input(branch, { target: { value: 'release/example' } });
+    await fireEvent.click(prepareButton);
+    await waitFor(() => expect(fixture.captures).toHaveLength(1));
+    expect(fixture.captures[0].input).toEqual({
+      workspaceId: nativeRoot.workspaceId,
+      action: 'create-pr',
+      review: { root: nativeRoot, choice: { kind: 'saved' }, targetBranch: 'release/example' },
+    });
+    expect(fixture.legacyRequests).toHaveLength(0);
+    expect(fixture.base.selectionCaptures).toHaveLength(0);
+    expect(fixture.base.selectionRequests).toHaveLength(0);
+    expect(fixture.base.reads.map(({ method }) => method)).toEqual(['workspace.repositoryContext']);
+  });
+
   it('names the captured preparation destination before confirming, without rereading or changing the command', async () => {
     await mount({ delayPrepare: true });
     await start();
@@ -188,7 +481,7 @@ describe('native review through rendered Store, root saga, Live client and contr
     expect(fixture.captures[0].input).toEqual({
       workspaceId: root.workspaceId,
       action: 'create-pr',
-      review: { root, choice: { kind: 'saved' } },
+      review: { root, choice: { kind: 'saved' }, targetBranch: 'trunk' },
     });
     const action = dispatch.mock.calls
       .map(([a]) => a)
@@ -251,6 +544,7 @@ describe('native review through rendered Store, root saga, Live client and contr
       expect(result.textContent).toContain('Local commits are ahead');
       expect(result.textContent).toContain('Unknown');
       expect(fixture.captures[0].preview.reviewPreparation.source.connection).toBeUndefined();
+      expect(fixture.captures[0].input.review.targetBranch).toBe('trunk');
     },
   );
   it.each(['guest-owner', 'collaborator', 'stale-guest'] as const)(

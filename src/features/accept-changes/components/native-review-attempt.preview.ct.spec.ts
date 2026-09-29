@@ -1,6 +1,8 @@
 import { test, expect } from '../../../test/ct-test';
 import Preview from './native-review-attempt.preview.svelte';
 
+test.describe.configure({ retries: 0 });
+
 test('create confirmation preserves edits on cancel and separates actual reused review from publication', async ({
   mount,
   page,
@@ -9,7 +11,13 @@ test('create confirmation preserves edits on cancel and separates actual reused 
   const start = scene.getByRole('button', { name: 'Start a review' });
   await start.focus();
   await start.press('Enter');
+  const branch = scene.getByRole('textbox', { name: 'Target branch' });
+  await expect(branch).toHaveValue('');
+  await expect(scene.getByRole('button', { name: 'Prepare merge request' })).toBeDisabled();
+  await branch.focus();
+  await branch.pressSequentially('release/example');
   await scene.getByRole('button', { name: 'Prepare merge request' }).click();
+  await expect(branch).toBeDisabled();
   const title = scene.getByRole('textbox', { name: 'Title' });
   await expect(title).toHaveValue('Suggested request');
   await title.fill('My request');
@@ -24,6 +32,11 @@ test('create confirmation preserves edits on cancel and separates actual reused 
   });
   await scene.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(title).toHaveValue('My request');
+  await scene.getByRole('button', { name: 'Change target branch' }).click();
+  await expect(branch).toHaveValue('release/example');
+  await branch.fill('release/revised');
+  await scene.getByRole('button', { name: 'Prepare merge request' }).click();
   await expect(title).toHaveValue('My request');
   await scene.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click();
@@ -56,11 +69,15 @@ test('uncertain result is checked explicitly and terminal closure hides retained
 }) => {
   const scene = await mount(Preview, { props: { scene: 'uncertain' } });
   await scene.getByRole('button', { name: 'Start a review' }).click();
+  await scene.getByRole('textbox', { name: 'Target branch' }).fill('release/check');
   await scene.getByRole('button', { name: 'Prepare merge request' }).click();
   await expect(scene.getByRole('textbox', { name: 'Title' })).toHaveValue('Suggested request');
   await scene.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click();
   await expect(scene.getByText(/The result is uncertain/).first()).toBeVisible();
+  await expect(scene.getByRole('button', { name: 'Change target branch' })).toHaveCount(0);
+  await expect(scene.getByRole('textbox', { name: 'Target branch' })).toHaveValue('release/check');
+  await expect(scene.getByRole('textbox', { name: 'Target branch' })).toBeDisabled();
   await test.info().attach('native-review-uncertain.png', {
     body: await scene.screenshot(),
     contentType: 'image/png',
@@ -80,8 +97,11 @@ test('Member metadata omissions stay unknown and the form fits a narrow view', a
   page,
 }) => {
   await page.setViewportSize({ width: 300, height: 1100 });
-  const scene = await mount(Preview, { props: { member: true, scene: 'created' } });
+  const scene = await mount(Preview, {
+    props: { member: true, scene: 'created', baseRef: 'release/saved' },
+  });
   await scene.getByRole('button', { name: 'Start a review' }).click();
+  await expect(scene.getByRole('textbox', { name: 'Target branch' })).toHaveValue('release/saved');
   await scene.getByRole('button', { name: 'Prepare merge request' }).click();
   await expect(scene.getByRole('textbox', { name: 'Title' })).toHaveValue('Suggested request');
   await scene.getByRole('button', { name: 'Create', exact: true }).click();

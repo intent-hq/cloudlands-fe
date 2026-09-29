@@ -6909,5 +6909,9 @@
   "native_review_localSha_label": "觀察到的本機提交",
   "native_review_remoteSha_label": "觀察到的遠端提交",
   "native_review_commitReceipt_description": "已完成提交：{sha}",
-  "native_review_pushReceipt_description": "已完成推送：{sha}"
+  "native_review_pushReceipt_description": "已完成推送：{sha}",
+  "native_review_targetChoice_description": "選擇此次審查的目標分支。準備時會檢查該分支，工作區設定保持不變。",
+  "native_review_targetRequired_error": "請輸入目標分支。",
+  "native_review_changeTarget_label": "變更目標分支",
+  "native_review_targetContextChanged_description": "儲存庫資訊已變更。請重新開始審查以檢查目標分支。"
 }
