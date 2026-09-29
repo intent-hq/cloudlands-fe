@@ -16,12 +16,21 @@ import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
 import '../../app.css';
 
-// Pin only this suite's absolute timestamps, independent of host TZ and formatter caches (#5200).
+// Pin this suite's timestamp timezone and relative-time reference, keeping real timers.
 vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
   const actual = await importOriginal();
   const { getActiveLocale } = await import('$lib/i18n/locale');
   return {
     ...actual,
+    formatRelativeTime(
+      input: Parameters<typeof actual.formatRelativeTime>[0],
+      options?: Parameters<typeof actual.formatRelativeTime>[1],
+    ) {
+      return actual.formatRelativeTime(input, {
+        ...options,
+        now: options?.now ?? new Date('2026-09-01T12:00:00.000Z'),
+      });
+    },
     formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
       const date = input instanceof Date ? input : new Date(input);
       if (Number.isNaN(date.getTime())) return '';
