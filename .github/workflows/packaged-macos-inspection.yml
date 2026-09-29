@@ -1,0 +1,50 @@
+name: Packaged macOS inspection
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: packaged-inspection-${{ github.event.pull_request.number }}-11049821412
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: >-
+      github.repository == 'intent-hq/cloudlands-fe' &&
+      github.event.pull_request.number == 2977 &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'diagnostic/b76t-packaged-readiness' &&
+      github.event.before == '13a6cbe92681f7e3f6858ad7d5ce414375935b2c' &&
+      github.run_attempt == 1
+    runs-on: macos-15-xlarge
+    timeout-minutes: 25
+    steps:
+      - name: Checkout the event merge and controller ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+          persist-credentials: false
+      - name: Bind route and inspect without launching bundled code
+        id: inspect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: python3 -I -S -B scripts/packaged-macos-inspection.py
+      - name: Retain bounded receipts independently of inspection result
+        if: always() && steps.inspect.outputs.upload_ready == 'true'
+        timeout-minutes: 3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: packaged-inspection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.inspect.outputs.receipt_path }}
+          if-no-files-found: error
+          retention-days: 7
