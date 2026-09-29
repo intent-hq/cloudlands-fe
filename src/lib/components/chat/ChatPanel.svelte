@@ -64,6 +64,8 @@
     agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
+    seedHistoryAround,
+    setHistoryOldestReached,
     updateSession as updateAgentSessionFields,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -125,6 +127,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    scrollbackFetchStarted,
+    scrollbackSeekSettled,
     pendingProposalRecoveryPruned,
     pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
@@ -133,6 +137,7 @@
   import {
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
+    selectChatAgentState,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
@@ -254,6 +259,7 @@
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { loadPreviousUserMessage } from '$lib/utils/previous-user-message-page';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
@@ -2811,6 +2817,7 @@
       const isNewDiscard = meta?.resumed === false;
       discardBaselineMeta = meta;
       if (!isNewDiscard) return;
+      cancelPreviousMessageLoad?.();
       cancelSeekDebounce();
       seekLandingPending = false;
       pendingSeekTargetOrdinal = null;
@@ -2952,12 +2959,27 @@
         container.scrollTop;
       if (previousScrollTop > spacerTopDoc) compensation += belowResult.scrollTopDelta;
     }
+    const anchor = captureScrollAnchor(container);
+    const navigationId = scrollNavigationId;
     if (result.applied) virtualSpacerHeight = result.spacerHeight;
     if (belowResult.applied) virtualSpacerBelowHeight = belowResult.spacerHeight;
     if (compensation === 0) return;
     tick().then(() => {
-      if (!isActive || isComponentDestroyed || !scrollContainer) return;
-      scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
+      requestAnimationFrame(() => {
+        if (
+          !isActive ||
+          isComponentDestroyed ||
+          scrollContainer !== container ||
+          navigationId !== scrollNavigationId
+        )
+          return;
+        // Wait for the resized spacer to reach layout before compensating.
+        // A tick-only write can clamp against the old extent, land in the
+        // tail, and discard the very history page navigation just opened.
+        // Restore the visible row so native anchoring isn't counted twice.
+        if (anchor.element?.isConnected) restoreScrollAnchor(container, anchor);
+        else container.scrollTop = Math.max(0, previousScrollTop + compensation);
+      });
     });
   }
 
@@ -4099,7 +4121,10 @@
   // A single owner spans lazy rendering and animation. Returning null cancels
   // animateScrollTo before either its next write or its completion callback.
   let scrollNavigationId = 0;
+  let previousMessageLoadingId = $state<string | null>(null);
+  let cancelPreviousMessageLoad: (() => void) | null = null;
   function beginScrollNavigation(): () => HTMLElement | null {
+    cancelPreviousMessageLoad?.();
     searchHighlightRequest++;
     const navigationId = ++scrollNavigationId;
     const container = scrollContainer ?? null;
@@ -4450,6 +4475,7 @@
   $effect(() => {
     if (isActive) return;
     scrollNavigationId++;
+    cancelPreviousMessageLoad?.();
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
     deepOpenReleaseTimer = null;
     deepOpenTurnKey = null;
@@ -4762,27 +4788,153 @@
     };
   });
 
-  // Scroll to the previous user-authored message from the clicked transcript row.
-  // Use the composed render order, skipping automated rows without crossing
-  // unloaded history. A known empty predecessor retains the top fallback.
+  // Resident predecessors use the canonical gap-aware index. Unknown ones
+  // require an anchored backward walk; a loaded prompt across a hole is unsafe.
   async function scrollToPreviousUserMessage(currentMessageId: string) {
-    if (!isActive || !scrollContainer) return;
-    const previousMessage = previousUserMessageTargets.get(currentMessageId);
-    if (previousMessage === undefined) return;
+    if (!isActive || !scrollContainer || previousMessageLoadingId === currentMessageId) return;
+    let previousMessage = previousUserMessageTargets.get(currentMessageId);
     const getContainer = beginScrollNavigation();
-
-    if (!previousMessage) {
-      // No preceding user-authored message - scroll to top
-      smoothScrollToPosition(0, undefined, getContainer);
-      return;
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace.id;
+    const epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+    let cancelled = false;
+    let ownsSeek = false;
+    let tokens = { nextToken: null as string | null, prevToken: null as string | null };
+    const current = () =>
+      !cancelled &&
+      !!getContainer() &&
+      agentId === originAgentId &&
+      workspace.id === originWorkspaceId &&
+      !!selectAgentSession.select(appStore.state, originAgentId) &&
+      selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch;
+    const finish = () => {
+      cancelled = true;
+      if (cancelPreviousMessageLoad !== finish) return;
+      cancelPreviousMessageLoad = null;
+      previousMessageLoadingId = null;
+      if (
+        ownsSeek &&
+        !!selectAgentSession.select(appStore.state, originAgentId) &&
+        selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch
+      ) {
+        // This seek lands on a message, not an estimated ordinal. Its caller
+        // owns positioning; don't run the far-flick seek's settle positioning.
+        wasFetchingHistorySeek = false;
+        seekLandingPending = false;
+        appStore.dispatch(scrollbackSeekSettled(originAgentId, tokens));
+      }
+    };
+    cancelPreviousMessageLoad = finish;
+    try {
+      if (previousMessage === undefined) {
+        previousMessageLoadingId = currentMessageId;
+        // Let any already-running page settle before reserving the shared
+        // seek slot, which excludes serial/gap/ordinal paging in every panel.
+        while (current()) {
+          const chat = selectChatAgentState.select(appStore.state, originAgentId);
+          if (
+            !chat.fetchingOlderHistory &&
+            !chat.fetchingGapFill &&
+            !chat.fetchingHistorySeek &&
+            !seekLandingPending
+          )
+            break;
+          if (!(await waitForActiveFrame())) return;
+        }
+        if (!current()) return;
+        cancelSeekDebounce();
+        ownsSeek = true;
+        seekLandingPending = true;
+        appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
+        const historyIndex = $agentHistoryMessages$.findIndex(
+          (message) => message.id === currentMessageId,
+        );
+        const sourceOrdinal =
+          historyIndex >= 0
+            ? ($historySegmentMeta$.startOrdinalEstimate ?? 0) + historyIndex
+            : Math.max(
+                0,
+                ($transcriptSnapshotMeta$?.totalMessages ?? $agentMessages$.length) -
+                  $agentMessages$.length,
+              ) +
+              Math.max(
+                0,
+                $agentMessages$.findIndex((message) => message.id === currentMessageId),
+              );
+        const result = await loadPreviousUserMessage(
+          currentMessageId,
+          (token, anchor) =>
+            appClient.agents.getConversation(
+              originAgentId,
+              200,
+              token,
+              anchor,
+              undefined,
+              originWorkspaceId,
+            ),
+          current,
+        );
+        if (!result || !current()) return;
+        previousMessage = result.target;
+        appStore.dispatch(
+          seedHistoryAround(
+            originAgentId,
+            result.page.messages,
+            result.page.nextToken === null
+              ? 0
+              : Math.max(0, sourceOrdinal - result.rowsBeforeAnchor),
+          ),
+        );
+        appStore.dispatch(setHistoryOldestReached(originAgentId, result.page.nextToken === null));
+        tokens = { nextToken: result.page.nextToken, prevToken: result.page.prevToken };
+        await tick();
+        if (!current()) return;
+        const split = currentUnloadedSplit();
+        const rowHeight = spacerRowHeightEma ?? VIRTUAL_ROW_HEIGHT_MIN_PX;
+        virtualSpacerHeight = Math.round(split.above * rowHeight);
+        virtualSpacerBelowHeight = Math.round(split.below * rowHeight);
+        await tick();
+      }
+      if (!current()) return;
+      if (!previousMessage) {
+        smoothScrollToPosition(0, undefined, getContainer);
+        return;
+      }
+      const targetElement = await forceRenderAndFindMessage(previousMessage.id, getContainer);
+      if (!current()) return;
+      if (!targetElement) throw new Error('Previous user message could not be rendered');
+      smoothScrollTo(targetElement, 'start', undefined, getContainer);
+      scheduleDeepOpenRelease();
+    } catch (error) {
+      if (current()) {
+        logger.warn('Previous user message navigation failed', { error, currentMessageId });
+        notify.error(m.chat_chatPanel_previousMessageLoad_error());
+      }
+    } finally {
+      finish();
     }
-    // Measure the rendered row, not its lazy placeholder, just as the header
-    // navigator does. Reuse the same follow release and force-visible lifetime.
-    const targetElement = await forceRenderAndFindMessage(previousMessage.id, getContainer);
-    if (!getContainer() || !targetElement) return;
-    smoothScrollTo(targetElement, 'start', undefined, getContainer);
-    scheduleDeepOpenRelease();
   }
+
+  $effect(() => {
+    const container = scrollContainer;
+    if (!isActive || !container) return;
+    const cancel = () => {
+      if (!cancelPreviousMessageLoad) return;
+      scrollNavigationId++;
+      cancelPreviousMessageLoad();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cancel();
+    };
+    container.addEventListener('wheel', cancel, { passive: true });
+    container.addEventListener('touchstart', cancel, { passive: true });
+    container.addEventListener('keydown', onKeyDown);
+    return () => {
+      container.removeEventListener('wheel', cancel);
+      container.removeEventListener('touchstart', cancel);
+      container.removeEventListener('keydown', onKeyDown);
+    };
+  });
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
   let draftPromptApplied = $state(false);
@@ -4915,6 +5067,7 @@
       appStore.dispatch(clearCurrentlyViewedAgent(agentId));
     }
 
+    cancelPreviousMessageLoad?.();
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
     searchHighlightRequest += 1;
@@ -6659,9 +6812,8 @@
                                   handleTurnEditStateChange(turnKey, isEditing)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
-                                onScrollToPrevious={previousUserMessageTargets.has(message.id)
-                                  ? () => scrollToPreviousUserMessage(message.id)
-                                  : undefined}
+                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                previousMessageLoading={previousMessageLoadingId === message.id}
                                 backendSessionId={auggieSessionId}
                                 suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
                                   cardSpacingOwnedBefore}
@@ -6790,9 +6942,8 @@
                                 ? undefined
                                 : (newText, model, blocks) =>
                                     handleEditMessage(message.id, newText, model, blocks)}
-                              onScrollToPrevious={previousUserMessageTargets.has(message.id)
-                                ? () => scrollToPreviousUserMessage(message.id)
-                                : undefined}
+                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              previousMessageLoading={previousMessageLoadingId === message.id}
                               onRegenerate={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}

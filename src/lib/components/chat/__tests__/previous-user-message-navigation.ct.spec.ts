@@ -393,7 +393,10 @@ test('history-only assistant navigates to its loaded human prompt', async ({ mou
   expect(await scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
 });
 
-test('previous-message actions stop at unloaded history boundaries', async ({ mount, page }) => {
+test('previous-message actions remain available at unloaded history boundaries', async ({
+  mount,
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ChatMessageNavigatorIntegrationHost, {
     props: {
@@ -415,12 +418,12 @@ test('previous-message actions stop at unloaded history boundaries', async ({ mo
   for (const id of ['history-orphan', 'live-orphan']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
-    await expect(row.getByRole('button', { name: 'Previous user message' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Previous user message' })).toBeVisible();
   }
   for (const id of ['history-human', 'live-human']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
-    await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toBeVisible();
   }
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   for (const segment of ['history', 'live']) {
@@ -441,4 +444,301 @@ test('previous-message actions stop at unloaded history boundaries', async ({ mo
       )
       .toBeLessThanOrEqual(3);
   }
+});
+
+test('unloaded human prompt keeps the assistant arrow discoverable', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      historyStartLoaded: false,
+      messages: [
+        {
+          ...historyMessage(
+            'wake-tail',
+            'user',
+            '[WORKSPACE EVENTS] Background work finished',
+            900,
+          ),
+          metadata: { type: 'hook_wake' },
+        },
+        historyMessage('reply-tail', 'assistant', 'Background update. '.repeat(80), 901),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await expect(source.getByRole('button', { name: 'Regenerate response' })).toBeVisible();
+  await component.screenshot({ path: testInfo.outputPath('unloaded-human-arrow.png') });
+  await expect(source.getByRole('button', { name: 'Previous user message' })).toBeVisible();
+});
+
+const automatedTail = [
+  {
+    ...historyMessage('wake-tail', 'user', '[WORKSPACE EVENTS] Background work finished', 900),
+    metadata: { type: 'hook_wake' },
+  },
+  historyMessage('reply-tail', 'assistant', 'Background update. '.repeat(80), 901),
+];
+function conversationPage(messages: AgentMessage[], nextToken: string | null = null) {
+  return { messages, nextToken, prevToken: 'forward', totalMessages: 1000, truncated: true };
+}
+async function releasePage(component: Locator) {
+  await component.getByTestId('release-page').evaluate((node: HTMLButtonElement) => node.click());
+}
+async function expectAtMessage(component: Locator, id: string) {
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  const target = component.locator(`[data-message-id="${id}"]`);
+  await expect(target).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.abs(
+        await target.evaluate(
+          (node, container) =>
+            node.getBoundingClientRect().top -
+            (container as HTMLElement).getBoundingClientRect().top,
+          await scroll.elementHandle(),
+        ),
+      ),
+    )
+    .toBeLessThanOrEqual(3);
+}
+
+for (const retired of [false, true]) {
+  test(`unloaded predecessor walks automated pages and lands on the nearest human (retired=${retired})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatMessageNavigatorIntegrationHost, {
+      props: {
+        messages: automatedTail,
+        historyStartLoaded: false,
+        retired,
+        deferPages: true,
+        conversationPages: [
+          conversationPage(automatedTail, 'older-1'),
+          conversationPage(
+            [
+              {
+                ...historyMessage('older-wake', 'user', 'Monitor wake', 800),
+                metadata: { type: 'pr_monitor_wake' },
+              },
+            ],
+            'older-2',
+          ),
+          conversationPage(
+            [
+              historyMessage('far-human', 'user', 'Earlier human prompt', 700),
+              historyMessage(
+                'paged-human',
+                'user',
+                'Nearest human prompt from unloaded history',
+                701,
+              ),
+              historyMessage('paged-reply', 'assistant', 'Earlier answer. '.repeat(120), 702),
+            ],
+            'older-3',
+          ),
+        ],
+      },
+    });
+    const source = component.locator('[data-message-id="reply-tail"]');
+    await source.hover();
+    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    const busy = source.getByRole('button', { name: 'Finding previous user message…' });
+    await expect(busy).toBeDisabled();
+    await busy.evaluate((node: HTMLButtonElement) => node.click());
+    await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+    await component.screenshot({ path: testInfo.outputPath('loading-previous-human.png') });
+    await releasePage(component);
+    await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail","older-1"]');
+    await releasePage(component);
+    await expect(component.getByTestId('page-requests')).toHaveText(
+      '["reply-tail","older-1","older-2"]',
+    );
+    await releasePage(component);
+    await expectAtMessage(component, 'paged-human');
+    await expect(component.locator('[data-message-id="paged-human"]')).toHaveCount(1);
+    await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+    await page.waitForTimeout(700);
+    await expectAtMessage(component, 'paged-human');
+    await component
+      .getByTestId('append-streaming-message')
+      .evaluate((node: HTMLButtonElement) => node.click());
+    await page.waitForTimeout(700);
+    await expectAtMessage(component, 'paged-human');
+    await component.screenshot({ path: testInfo.outputPath('paged-human-settled.png') });
+  });
+}
+
+test('unloaded gap resolves the nearer human instead of crossing to the loaded older prompt', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      historyGap: true,
+      historyMessages: [historyMessage('wrong-human', 'user', 'Too far back across a gap', 1)],
+      conversationPages: [
+        conversationPage(
+          [
+            historyMessage('gap-human', 'user', 'Correct human inside the unloaded gap', 899),
+            ...automatedTail,
+          ],
+          'older',
+        ),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await component.getByTestId('settle-gap').evaluate((node: HTMLButtonElement) => node.click());
+  await expectAtMessage(component, 'gap-human');
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+});
+
+test('loading failure leaves transcript intact and the arrow retries', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      conversationPages: [
+        { error: 'Offline' },
+        conversationPage([
+          historyMessage('retry-human', 'user', 'Prompt loaded after retry', 899),
+          ...automatedTail,
+        ]),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expect(
+    page.getByText('Could not load the previous user message. Please try again.', { exact: true }),
+  ).toBeVisible();
+  await expect(component.locator('[data-message-id="reply-tail"]')).toHaveCount(1);
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expectAtMessage(component, 'retry-human');
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail","reply-tail"]');
+});
+
+for (const cancel of ['wheel', 'discard', 'newer-navigation'] as const) {
+  test(`pending unloaded navigation is cancelled by ${cancel}`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatMessageNavigatorIntegrationHost, {
+      props: {
+        messages: [
+          ...automatedTail,
+          historyMessage('new-human', 'user', 'A newer human prompt', 902),
+          historyMessage('new-reply', 'assistant', 'Latest answer. '.repeat(100), 903),
+        ],
+        historyStartLoaded: false,
+        deferPages: true,
+        conversationPages: [
+          conversationPage([
+            historyMessage('stale-human', 'user', 'Do not install this cancelled page', 899),
+            ...automatedTail,
+          ]),
+        ],
+      },
+    });
+    const source = component.locator('[data-message-id="reply-tail"]');
+    await source.hover();
+    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+    if (cancel === 'wheel')
+      await component.getByTestId('chat-transcript-scroll-viewport').dispatchEvent('wheel');
+    else if (cancel === 'discard')
+      await component
+        .getByTestId('discard-transcript')
+        .evaluate((node: HTMLButtonElement) => node.click());
+    else {
+      await component
+        .locator('[data-message-id="new-reply"]')
+        .getByRole('button', { name: 'Previous user message' })
+        .press('Enter');
+      await expectAtMessage(component, 'new-human');
+    }
+    await releasePage(component);
+    await expect(source.getByRole('button', { name: 'Previous user message' })).toBeEnabled();
+    await page.waitForTimeout(350);
+    await expect(component.locator('[data-message-id="stale-human"]')).toHaveCount(0);
+    if (cancel === 'newer-navigation') await expectAtMessage(component, 'new-human');
+    await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+  });
+}
+
+test('unloaded walk reaches confirmed conversation start without a human', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      conversationPages: [
+        conversationPage(automatedTail, 'older'),
+        conversationPage([
+          historyMessage(
+            'first-automated',
+            'assistant',
+            'First autonomous message. '.repeat(100),
+            1,
+          ),
+        ]),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expect(component.locator('[data-message-id="first-automated"]')).toBeVisible();
+  await expect
+    .poll(() =>
+      component.getByTestId('chat-transcript-scroll-viewport').evaluate((node) => node.scrollTop),
+    )
+    .toBe(0);
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail","older"]');
+});
+
+test('closing the panel cancels a pending page before remounting the conversation', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      deferPages: true,
+      conversationPages: [
+        conversationPage([
+          historyMessage('stale-human', 'user', 'Do not install after unmount', 899),
+          ...automatedTail,
+        ]),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+  await component.getByTestId('toggle-panel').evaluate((node: HTMLButtonElement) => node.click());
+  await expect(component.getByTestId('chat-transcript-scroll-viewport')).toHaveCount(0);
+  await releasePage(component);
+  await component.getByTestId('toggle-panel').evaluate((node: HTMLButtonElement) => node.click());
+  await expect(source).toBeVisible();
+  await source.hover();
+  await expect(source.getByRole('button', { name: 'Previous user message' })).toBeEnabled();
+  await expect(component.locator('[data-message-id="stale-human"]')).toHaveCount(0);
 });

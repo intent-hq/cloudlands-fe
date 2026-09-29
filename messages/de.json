@@ -2375,6 +2375,8 @@
   "chat_messageActions_copyMessage_label": "Nachricht kopieren",
   "chat_messageActions_copySessionIdHint_label": "Umschalt gedrückt halten, um die Sitzungs-ID zu kopieren",
   "chat_messageActions_scrollToPrevious_label": "Zur vorherigen Nachricht scrollen",
+  "chat_messageActions_previousMessageLoading_label": "Vorherige Benutzernachricht wird gesucht…",
+  "chat_chatPanel_previousMessageLoad_error": "Die vorherige Benutzernachricht konnte nicht geladen werden. Bitte versuche es erneut.",
   "chat_messageActions_previousUserMessage_label": "Vorherige Benutzernachricht",
   "chat_messageEditor_cancel_label": "Abbrechen",
   "chat_messageEditor_send_label": "Senden",

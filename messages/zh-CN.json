@@ -2375,6 +2375,8 @@
   "chat_messageActions_copyMessage_label": "复制消息",
   "chat_messageActions_copySessionIdHint_label": "按住 Shift 复制会话 ID",
   "chat_messageActions_scrollToPrevious_label": "滚动到上一条消息",
+  "chat_messageActions_previousMessageLoading_label": "正在查找上一条用户消息…",
+  "chat_chatPanel_previousMessageLoad_error": "无法加载上一条用户消息。请重试。",
   "chat_messageActions_previousUserMessage_label": "上一条用户消息",
   "chat_messageEditor_cancel_label": "取消",
   "chat_messageEditor_send_label": "发送",

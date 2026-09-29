@@ -47,6 +47,7 @@
     requestId?: string;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Canonical message time. */
     timestamp?: DateInput | null;
     /** Legacy fallback when the canonical timestamp is absent or invalid. */
@@ -67,6 +68,7 @@
     class: className = '',
     requestId,
     onScrollToPrevious,
+    previousMessageLoading = false,
     timestamp,
     createdAt,
     queueInfo,
@@ -153,7 +155,10 @@
       },
       {
         id: 'scroll-previous',
-        label: m.chat_messageActions_previousUserMessage_label(),
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_previousUserMessage_label(),
+        disabled: previousMessageLoading,
         icon: faArrowUp,
         when: role === 'assistant' && Boolean(onScrollToPrevious),
       },
@@ -187,7 +192,10 @@
       },
       {
         id: 'scroll-previous',
-        label: m.chat_messageActions_scrollToPrevious_label(),
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_scrollToPrevious_label(),
+        disabled: previousMessageLoading,
         icon: faArrowUp,
         when: role === 'user' && Boolean(onScrollToPrevious),
       },

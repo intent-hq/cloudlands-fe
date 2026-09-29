@@ -2375,6 +2375,8 @@
   "chat_messageActions_copyMessage_label": "Copiar mensaje",
   "chat_messageActions_copySessionIdHint_label": "Mantenga Mayús para copiar el ID de sesión",
   "chat_messageActions_scrollToPrevious_label": "Desplazarse al mensaje anterior",
+  "chat_messageActions_previousMessageLoading_label": "Buscando el mensaje anterior del usuario…",
+  "chat_chatPanel_previousMessageLoad_error": "No se pudo cargar el mensaje anterior del usuario. Inténtalo de nuevo.",
   "chat_messageActions_previousUserMessage_label": "Mensaje anterior del usuario",
   "chat_messageEditor_cancel_label": "Cancelar",
   "chat_messageEditor_send_label": "Enviar",
