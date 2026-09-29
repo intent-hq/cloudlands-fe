@@ -1873,6 +1873,7 @@ test(uiGroups[1][0], async () =>
     await uiReady(a, 'guest');
     const beforeGuest = await packet('ui-guest-before-action', await uiSnapshot(a));
     const start = a.getByRole('button', { name: 'Start a review', exact: true });
+    await expect(start).toBeVisible();
     if (await start.count()) {
       await start.click();
     }
