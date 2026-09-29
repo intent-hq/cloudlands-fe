@@ -11,10 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (v: T) => void) {
       run(getter());
-      return () => {};
+      const notify = () => run(getter());
+      listeners.add(notify);
+      return () => {
+        listeners.delete(notify);
+      };
     },
   });
   const selector = <T>(getter: () => T) => {
@@ -23,6 +28,7 @@ const mocks = vi.hoisted(() => {
   };
   return {
     selector,
+    listeners,
     dispatch: vi.fn(),
     isAuthenticated: true,
     reposLoaded: true,
@@ -43,7 +49,16 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: (action) => {
+      mocks.dispatch(action);
+      if (action.type === 'wi/recent') {
+        mocks.recentRepos = action.payload;
+        for (const notify of mocks.listeners) notify();
+      }
+    },
+  });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({

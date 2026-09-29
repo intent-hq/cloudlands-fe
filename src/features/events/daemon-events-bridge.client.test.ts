@@ -99,6 +99,7 @@ const { notifyInterruptedAgentUpdatedSpy } = vi.hoisted(() => ({
 }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
   notifyInterruptedAgentUpdated: notifyInterruptedAgentUpdatedSpy,
+  notifyInterruptedAgentsSubscriptionReady: vi.fn(),
 }));
 
 // Fake the navigate-away helper so the bridge's `workspace:deleted` navigation
@@ -5835,8 +5836,22 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT);
+    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT, false);
   });
+
+  it.each([true, false, 'true', undefined])(
+    'only forwards a boolean startup failure hint (%s)',
+    async (startupRecoveryFailed) => {
+      capturedHandlers[0]!(
+        notification('agent:updated', { agentId: AGENT, startupRecoveryFailed }),
+      );
+      await flush();
+      expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(
+        AGENT,
+        startupRecoveryFailed === true,
+      );
+    },
+  );
 
   it('ignores agent:created/renamed/updated payloads missing agentId (schema guard)', async () => {
     const handler = capturedHandlers[0]!;

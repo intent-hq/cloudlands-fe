@@ -103,6 +103,7 @@ export interface WorkspaceInitializerHydrationState {
   branchByRepo?: Record<string, string>;
   defaultParentPath?: string;
   recentRepos?: WorkspaceInitializerRecentRepo[];
+  dismissedRecentRepoKeys?: Record<string, true>;
   remoteSetups?: WorkspaceInitializerRemoteSetup[];
   lastSubmittedAgent?: WorkspaceInitializerAgentSettings | null;
 }
@@ -115,6 +116,9 @@ export interface WorkspaceInitializerState {
   branchByRepo: Record<string, string>;
   defaultParentPath: string;
   recentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'>;
+  /** Uncapped source results awaiting initial settings hydration; never persisted. */
+  pendingRecentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'> | null;
+  dismissedRecentRepoKeys: Record<string, true>;
   remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
   /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
