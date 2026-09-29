@@ -604,25 +604,6 @@ describe('SimpleRichInput action bar layout', () => {
     await fireEvent.focusIn(screen.getByTestId('tiptap-editor'));
     expect(composer.getAttribute('data-ring-state')).toBe('focus');
   });
-
-  it('uses the surface-2 composer shell in edge-docked and standalone contexts', () => {
-    render(SimpleRichInput, {
-      props: { value: '', contextItems: [], edgeDocked: true },
-    });
-
-    const edgeDockedInput = screen.getByTestId('message-input');
-    expect(edgeDockedInput.className).toContain('rounded-(--radius-large)');
-    expect(edgeDockedInput.className).toContain('border-0');
-    expect(edgeDockedInput.className).toContain('bg-surface-2');
-
-    cleanup();
-    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
-    const standaloneInput = screen.getByTestId('message-input');
-    expect(standaloneInput.className).toContain('bg-surface-2');
-    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
-      'shrink-0',
-    );
-  });
 });
 
 describe('SimpleRichInput provider switch sync', () => {

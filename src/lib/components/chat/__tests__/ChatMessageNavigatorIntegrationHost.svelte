@@ -10,6 +10,9 @@
   import {
     addMessage,
     bulkUpsertSessions,
+    prependHistoryMessages,
+    seedHistoryAround,
+    setHistoryOldestReached,
     setAgentStreaming,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -18,6 +21,7 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { scrollbackFetchStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
 
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
@@ -26,7 +30,16 @@
   let {
     theme = 'light',
     messages: fixtureMessages,
-  }: { theme?: 'light' | 'dark'; messages?: AgentMessage[] } = $props();
+    historyMessages = [],
+    historyGap = false,
+    historyStartLoaded = true,
+  }: {
+    theme?: 'light' | 'dark';
+    messages?: AgentMessage[];
+    historyMessages?: AgentMessage[];
+    historyGap?: boolean;
+    historyStartLoaded?: boolean;
+  } = $props();
 
   $effect(() => {
     const root = document.documentElement;
@@ -131,6 +144,17 @@
     } as never),
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+  if (historyMessages.length > 0) {
+    store.dispatch(
+      historyGap
+        ? seedHistoryAround(agentId, historyMessages, 0)
+        : prependHistoryMessages(agentId, historyMessages),
+    );
+    store.dispatch(setHistoryOldestReached(agentId, historyStartLoaded));
+    // Keep the missing page in flight while testing both loaded sides. The
+    // real panel otherwise drops a detached segment on return to the live tail.
+    if (historyGap) store.dispatch(scrollbackFetchStarted(agentId, 'gap'));
+  }
   store.dispatch(setAgents(workspaceId, [session]));
   store.dispatch(
     initializeLayout(workspaceId, {

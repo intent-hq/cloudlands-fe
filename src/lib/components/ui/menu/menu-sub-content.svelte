@@ -9,7 +9,7 @@
   import { useStaticOverlay } from '../static-overlay-context.svelte';
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
-  import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
+  import { SUBMENU_CONTEXT, SUBMENU_CONTENT_CLASS, type SubmenuContext } from './submenu-context';
   import { resolveSubmenuSide } from './submenu-placement';
   import { createMenuLayout } from './menu-layout-context.svelte';
 
@@ -49,6 +49,7 @@
   createMenuLayout(() => alignIconColumn);
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
   const submenu = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
+  const inheritedClass = getContext<(() => string | undefined) | undefined>(SUBMENU_CONTENT_CLASS);
   let verticalFallback = $state(false);
   let leadingInset = $state(0);
   const resolvedSide = $derived(verticalFallback ? 'bottom' : side);
@@ -110,6 +111,7 @@
       menuOverlay(),
       OPTION_LIST_CONTAINER_CLASS,
       'min-w-40 overflow-y-auto overscroll-contain',
+      inheritedClass?.(),
       className,
     ),
   );

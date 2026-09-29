@@ -208,6 +208,13 @@ async function validateLocalPath(
           }
 
           // Directory exists but is not a git repo and not inside a parent repo
+          if (!allowNewRepo) {
+            return {
+              valid: false,
+              error: m.workspace_repoSelector_notGitRepository_label(),
+              directoryStatus: status,
+            };
+          }
           if (status.isEmpty) {
             // Empty directory - will create new repo
             return {
@@ -253,6 +260,15 @@ async function validateLocalPath(
 
       // Check if it's a git repository
       const gitCheck = await invoke<any>('git:isRepository', { path });
+      if (!allowNewRepo && gitCheck?.isRepository !== true) {
+        return {
+          valid: false,
+          error:
+            gitCheck?.isRepository === false
+              ? m.workspace_repoSelector_notGitRepository_label()
+              : m.workspace_compactInitializer_gitCheckUnknown_label(),
+        };
+      }
       if (!gitCheck.isRepository) {
         return {
           valid: true,
@@ -262,7 +278,12 @@ async function validateLocalPath(
       }
     } catch (err) {
       logger.warn('Could not validate path existence', err);
-      // Don't fail validation if we can't check
+      if (!allowNewRepo) {
+        return {
+          valid: false,
+          error: m.workspace_compactInitializer_gitCheckUnknown_label(),
+        };
+      }
     }
   }
 
