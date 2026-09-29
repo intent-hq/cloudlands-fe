@@ -155,12 +155,6 @@
     selectedRepository?.label ??
       (tab === 'workspaces' ? m.home_filter_all() : m.home_all_repositories()),
   );
-  const activeCount = $derived(
-    scopedWorkspaces.filter((workspace) => matchesHomeFilter(workspace, 'all')).length,
-  );
-  const attentionCount = $derived(
-    scopedWorkspaces.filter((workspace) => matchesHomeFilter(workspace, 'attention')).length,
-  );
   const integrationWorkspaceId = $derived($collaborator$ ? scopedWorkspaces[0]?.id : undefined);
 
   let homeElement = $state<HTMLDivElement | null>(null);
@@ -230,7 +224,6 @@
     class="home-sidebar min-h-0 overflow-y-auto px-3 py-4"
     aria-label={m.home_navigation_label()}
   >
-    <div class="mb-5 px-2 text-sm font-medium">{m.home_navigation_label()}</div>
     {#if !$collaborator$}
       <Button
         variant="ghost"
@@ -297,34 +290,26 @@
       </p>{/if}
   </nav>
   <Screen
-    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-sm"
+    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background"
   >
     {#if destination === 'assistant' && !$collaborator$}
       <header class="border-b border-border px-6 py-5">
         <h1 class="text-xl font-medium tracking-tight">{m.home_assistant()}</h1>
-        <p class="mt-1 text-sm text-muted-foreground">{m.home_assistant_description()}</p>
       </header>
       <div class="min-h-0 flex-1 overflow-hidden"><ChiefCard expanded embedded isActive /></div>
     {:else}
       <header class="flex flex-wrap items-start justify-between gap-3 px-6 pb-4 pt-5">
         <div class="min-w-0">
-          <h1 class="break-words text-xl font-medium tracking-tight">{heading}</h1>
-          {#if tab === 'workspaces'}<p class="mt-1 type-caption text-muted-foreground">
-              {m.home_scope_summary({
-                active: formatInteger(activeCount),
-                attention: formatInteger(attentionCount),
-              })}
-            </p>{/if}
+          <h1
+            class="break-words text-lg font-medium tracking-tight"
+            title={selectedRepository?.repoPath}
+          >
+            {heading}
+          </h1>
           {#if selectedRepository}<HomeRepositoryMetadata
               workspaces={scopedWorkspaces}
               repository={selectedRepository}
             />{/if}
-          {#if selectedRepository?.repoPath}<p
-              class="mt-1 truncate type-caption text-muted-foreground"
-              title={selectedRepository.repoPath}
-            >
-              {selectedRepository.repoPath}
-            </p>{/if}
         </div>
         {#if !$collaborator$}<Button variant="primary" size="sm" onclick={createWorkspace}
             >{#snippet leadingIcon()}<Fa icon={faPlus} />{/snippet}{m.home_new_workspace()}</Button
@@ -357,9 +342,13 @@
                   type="search"
                   placeholder={m.home_search_workspaces()}
                   aria-label={m.home_search_workspaces()}
-                  class="min-w-0 flex-1"
+                  class="min-w-0 flex-1 max-w-sm"
                 />
-                <div class="flex shrink-0 gap-1" role="group" aria-label={m.home_workspace_view()}>
+                <div
+                  class="ml-auto flex shrink-0 gap-1"
+                  role="group"
+                  aria-label={m.home_workspace_view()}
+                >
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -380,13 +369,6 @@
                     ><Fa icon={faTableColumns} /></Button
                   >
                 </div>
-              </div>
-              <div
-                class="flex items-center justify-between px-5 py-2 type-caption text-muted-foreground"
-              >
-                <span>{filters.find((item) => item.id === filter)?.label}</span><span
-                  >{formatInteger(filteredWorkspaces.length)}</span
-                >
               </div>
               {#if $workspaceError$}<ErrorState
                   retryLabel={m.home_retry()}
@@ -430,7 +412,7 @@
               {:else}
                 <ListView
                   items={filteredWorkspaces}
-                  rowHeight={80}
+                  rowHeight={64}
                   getKey={(workspace) => workspace.id}
                   getText={(workspace) => workspace.title}
                   selectable="single"
@@ -442,36 +424,45 @@
                     updateView({ selectedId: workspace.id });
                   }}
                   ariaLabel={m.home_tab_workspaces()}
-                  class="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+                  class="min-h-0 flex-1 overflow-y-auto px-2 py-2"
                 >
                   {#snippet row({ item })}
-                    <ListRow class="h-20 py-3" data-home-workspace={item.id}>
+                    <ListRow class="h-16 py-3" data-home-workspace={item.id}>
                       {#snippet leading()}<WorkspaceStatusIcon
                           status={resolveWorkspaceStatusState(item)}
                         />{/snippet}
-                      {#snippet title()}<span
-                          class:font-semibold={needsAttention(item)}
-                          class="font-medium">{item.title}</span
+                      {#snippet title()}<span title={item.title} class="font-medium"
+                          >{item.title}</span
                         ><span class="ml-2 type-caption font-normal text-muted-foreground"
                           >{needsAttention(item)
                             ? m.home_filter_attention()
                             : getWorkspaceStatusPresentation(resolveWorkspaceStatusState(item))
                                 .label}</span
                         >{/snippet}
-                      {#snippet description()}<p class="truncate">
+                      {#snippet description()}<p
+                          class="truncate"
+                          title={item.statusMessage || item.branch}
+                        >
                           {item.statusMessage || item.branch || item.repositoryName}
                         </p>
-                        <p class="mt-1 truncate text-muted-foreground">
-                          {[item.repositoryOwner, item.repositoryName].filter(Boolean).join('/')}
-                          {#if item.branch}
-                            · {item.branch}{/if}
-                          {#if item.pullRequests?.length}
-                            · {item.pullRequests.map((pr) => `#${pr.number}`).join(', ')}{/if}
-                        </p>{/snippet}
-                      {#snippet trailing()}<RelativeTime
-                          date={getWorkspaceActivityDisplayTime(item)}
-                          compact
-                        />{/snippet}
+                      {/snippet}
+                      {#snippet trailing()}<span
+                          class="workspace-row-meta flex items-center gap-4 text-muted-foreground"
+                        >
+                          {#if !selectedRepository}<span
+                              class="workspace-row-repo max-w-32 truncate"
+                              title={[item.repositoryOwner, item.repositoryName, item.branch]
+                                .filter(Boolean)
+                                .join(' / ')}>{item.repositoryName}</span
+                            >{/if}
+                          {#if item.pullRequests?.length}<span class="workspace-row-repo"
+                              >#{item.pullRequests[0].number}</span
+                            >{/if}
+                          <RelativeTime
+                            date={getWorkspaceActivityDisplayTime(item)}
+                            compact
+                          /></span
+                        >{/snippet}
                     </ListRow>
                   {/snippet}
                 </ListView>
@@ -523,6 +514,9 @@
     grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 1fr);
   }
   @container (max-width: 1000px) {
+    .workspace-row-repo {
+      display: none;
+    }
     .workspace-content.has-selection {
       grid-template-columns: minmax(0, 1fr);
     }

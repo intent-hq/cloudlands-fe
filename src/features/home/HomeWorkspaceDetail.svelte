@@ -4,6 +4,8 @@
   import { selectWorkspaceDetailHydrated } from '$store/renderer/slices/workspace/workspace-selectors';
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
+  import Fa from 'svelte-fa';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { ListRow } from '$lib/components/patterns/collection';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
@@ -58,7 +60,13 @@
 >
   <header class="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
     <span class="type-caption text-muted-foreground">{m.home_workspace_details()}</span>
-    <Button variant="ghost" size="sm" onclick={onclose}>{m.home_close_preview()}</Button>
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={m.home_close_preview()}
+      tooltip={m.home_close_preview()}
+      onclick={onclose}><Fa icon={faXmark} /></Button
+    >
   </header>
   <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-5">
     <div class="space-y-3">

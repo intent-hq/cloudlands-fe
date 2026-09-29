@@ -58,13 +58,13 @@
 >
   {#each columns as group (group.id)}
     {@const items = workspaces.filter((workspace) => column(workspace) === group.id)}
-    <section class="flex w-64 shrink-0 flex-col rounded-lg bg-muted/40" aria-label={group.label}>
-      <h3 class="flex items-center justify-between gap-2 px-3 py-3 text-sm font-medium">
+    <section class="flex w-64 shrink-0 flex-col" aria-label={group.label}>
+      <h3 class="flex items-center gap-2 px-2 pb-3 pt-1 type-caption font-medium">
         <span>{group.label}</span><span class="type-caption text-muted-foreground"
           >{formatInteger(items.length)}</span
         >
       </h3>
-      <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-2">
         {#each items as workspace (workspace.id)}
           <Button
             data-home-workspace={workspace.id}
@@ -72,17 +72,18 @@
             active={selectedId === workspace.id}
             aria-pressed={selectedId === workspace.id}
             wrapContent={false}
-            class="h-auto w-full flex-col items-stretch whitespace-normal bg-background p-3 text-left"
+            class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal bg-background p-3 text-left"
             onclick={() => onselect(workspace.id)}
             aria-label={workspace.title}
           >
             <span class="flex items-start gap-2"
               ><WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace)} /><span
-                class="min-w-0 break-words font-medium">{workspace.title}</span
+                class="min-w-0 line-clamp-2 break-words font-medium"
+                title={workspace.title}>{workspace.title}</span
               ></span
             >
             {#if workspace.statusMessage}<span
-                class="mt-2 line-clamp-3 break-words type-caption text-muted-foreground"
+                class="mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
                 >{workspace.statusMessage}</span
               >{/if}
             <span
@@ -93,7 +94,7 @@
             >
           </Button>
         {:else}
-          <p class="px-2 py-6 text-center type-caption text-muted-foreground">
+          <p class="sr-only">
             {m.home_board_empty_column()}
           </p>
         {/each}

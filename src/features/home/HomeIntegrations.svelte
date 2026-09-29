@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import Fa from 'svelte-fa';
+  import { faArrowRotateRight, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { ListView, ListRow } from '$lib/components/patterns/collection';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
@@ -149,7 +151,7 @@
   data-home-integrations={kind}
 >
   <div class="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
-    <div class="min-w-40 flex-1">
+    <div class="min-w-40 max-w-sm flex-1">
       <Input
         type="search"
         value={query}
@@ -158,13 +160,18 @@
         oninput={(event) => search(event.currentTarget.value)}
       />
     </div>
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={!!preview || view.status === 'loading' || view.loadingMore}
-      onclick={() => appStore.dispatch(refreshHomeIntegrations())}
-      >{m.home_integrations_refresh()}</Button
-    >
+    <div class="ml-auto shrink-0">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={m.home_integrations_refresh()}
+        tooltip={m.home_integrations_refresh()}
+        loading={view.status === 'loading'}
+        disabled={!!preview || view.status === 'loading' || view.loadingMore}
+        onclick={() => appStore.dispatch(refreshHomeIntegrations())}
+        ><Fa icon={faArrowRotateRight} /></Button
+      >
+    </div>
   </div>
   <div class="flex flex-wrap items-center gap-1 border-b border-border px-5 py-2">
     {#each filters as filter (filter.value)}
@@ -245,7 +252,7 @@
           >
         </div>
       {:else}
-        <div class="px-5 py-3 type-caption text-muted-foreground" aria-live="polite">
+        <div class="sr-only" aria-live="polite">
           {m.home_integrations_loaded({ count: formatInteger(items.length) })}
         </div>
         <ListView
@@ -266,18 +273,19 @@
             </p>{/snippet}
           {#snippet row({ item })}
             <ListRow class="px-5 py-3">
-              {#snippet title()}<span class="font-medium">{item.title}</span>{/snippet}
+              {#snippet title()}<span class="font-medium" title={item.title}>{item.title}</span
+                >{/snippet}
               {#snippet description()}<span
                   >{item.identifier} · {isPr ? `${item.owner}/${item.repo}` : item.team}{item.author
                     ? ` · ${item.author}`
                     : ''}</span
                 >{/snippet}
-              {#snippet meta()}<span
-                  class="rounded-md bg-muted px-2 py-0.5 type-caption capitalize text-muted-foreground"
+              {#snippet meta()}<span class="type-caption capitalize text-muted-foreground"
                   >{item.state}</span
                 >{/snippet}
               {#snippet trailing()}{#if item.updatedAt}<RelativeTime
                     date={item.updatedAt}
+                    compact
                   />{/if}{/snippet}
             </ListRow>
           {/snippet}
@@ -287,6 +295,8 @@
           </p>{/if}
         {#if view.cursors.some(Boolean)}<div class="p-4 text-center">
             <Button
+              variant="ghost"
+              size="sm"
               disabled={!!preview || view.loadingMore}
               loading={view.loadingMore}
               onclick={() => appStore.dispatch(loadMoreHomeIntegrations())}
@@ -301,9 +311,15 @@
         aria-label={m.home_integrations_detail()}
       >
         <header class="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
-          <span class="type-caption text-muted-foreground">{m.home_integrations_detail()}</span
-          ><Button data-integration-close variant="ghost" size="sm" onclick={() => selectItem(null)}
-            >{m.home_integrations_close()}</Button
+          <span class="type-caption text-muted-foreground"
+            >{detail?.identifier ?? m.home_integrations_detail()}</span
+          ><Button
+            data-integration-close
+            variant="ghost"
+            size="icon-sm"
+            aria-label={m.home_integrations_close()}
+            tooltip={m.home_integrations_close()}
+            onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
           >
         </header>
         <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
@@ -318,7 +334,7 @@
             </div>
           {:else if detail}
             <div class="space-y-3">
-              <p class="type-caption text-muted-foreground">{detail.identifier} · {detail.state}</p>
+              <p class="type-caption capitalize text-muted-foreground">{detail.state}</p>
               <h2 class="break-words text-xl font-medium tracking-tight">{detail.title}</h2>
               <div class="flex flex-wrap gap-2">
                 {#if detail.url}<Button
