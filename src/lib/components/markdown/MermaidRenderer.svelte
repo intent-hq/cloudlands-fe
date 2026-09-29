@@ -552,6 +552,9 @@ ${source}`;
       const label = actor.querySelector<SVGTextElement>(':scope > text.actor-man');
       if (!head || !label) continue;
       const centerX = Number(head.getAttribute('cx'));
+      // Mermaid draws the head ten local units below each actor row. Keep
+      // that row origin: bottom actors use absolute coordinates in this group.
+      const rowY = Number(head.getAttribute('cy')) - 10;
       const labelHeight = label.getBBox().height;
       actor
         .querySelectorAll(':scope > line, :scope > circle')
@@ -559,13 +562,13 @@ ${source}`;
       const icon = template.cloneNode(true) as SVGSVGElement;
       icon.classList.add('mermaid-actor-user-icon');
       icon.setAttribute('x', String(centerX - 15));
-      icon.setAttribute('y', '1');
+      icon.setAttribute('y', String(rowY + 1));
       icon.setAttribute('width', '30');
       icon.setAttribute('height', '30');
       icon.setAttribute('aria-hidden', 'true');
       icon.setAttribute('focusable', 'false');
       icon.removeAttribute('role');
-      label.setAttribute('y', String(37 + labelHeight / 2));
+      label.setAttribute('y', String(rowY + 37 + labelHeight / 2));
       actor.insertBefore(icon, label);
     }
   }
@@ -622,6 +625,7 @@ ${source}`;
       }
     }
     for (const text of svg.querySelectorAll<SVGTextElement>('text')) {
+      if (text.closest('g.actor-man')) continue;
       const y = Number(text.getAttribute('y'));
       if (Number.isFinite(y) && y >= threshold) text.setAttribute('y', String(y + amount));
     }
@@ -631,6 +635,23 @@ ${source}`;
       if (![y, height].every(Number.isFinite)) continue;
       if (y >= threshold) rect.setAttribute('y', String(y + amount));
       else if (y + height >= threshold) rect.setAttribute('height', String(height + amount));
+    }
+    // Move actor labels and nested icon viewports together in the root SVG's
+    // coordinates, including actors whose row is carried by a group transform.
+    const rootMatrix = svg.getScreenCTM();
+    for (const actor of svg.querySelectorAll<SVGGElement>('g.actor-man')) {
+      const actorMatrix = actor.getScreenCTM();
+      const parentMatrix = (actor.parentElement as SVGGraphicsElement | null)?.getScreenCTM();
+      if (!rootMatrix || !actorMatrix || !parentMatrix) continue;
+      const bounds = actor.getBBox();
+      const top = new DOMPoint(bounds.x, bounds.y)
+        .matrixTransform(actorMatrix)
+        .matrixTransform(rootMatrix.inverse()).y;
+      if (top < threshold) continue;
+      const rootToParent = parentMatrix.inverse().multiply(rootMatrix);
+      const translate = svg.createSVGTransform();
+      translate.setTranslate(rootToParent.c * amount, rootToParent.d * amount);
+      actor.transform.baseVal.insertItemBefore(translate, 0);
     }
     // Self-message curves and construct tabs are not line/rect geometry. Move
     // their existing paint too, but never touch marker definitions or actor icons.

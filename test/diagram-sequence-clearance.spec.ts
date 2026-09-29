@@ -47,6 +47,7 @@ async function mountNote(
   width: number,
   info: TestInfo,
   theme = 'light',
+  localActors = false,
 ) {
   await page.setViewportSize({ width: 1280, height: 1200 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -55,11 +56,39 @@ async function mountNote(
   const path = 'src/lib/components/markdown/MermaidRenderer.svelte';
   const response = page.waitForResponse((r) => new URL(r.url()).pathname === `/${path}`);
   await page.evaluate(
-    async ({ source, width }) => {
+    async ({ source, width, localActors }) => {
       const [{ mount }, { default: NoteWithComments }] = await Promise.all([
         import('/@id/svelte'),
         import('/src/lib/components/workspace/NoteWithComments.svelte'),
       ]);
+      if (localActors) {
+        // Keep Mermaid's real output, but express actor rows as group translations
+        // instead of absolute child coordinates before the renderer fits it.
+        const module = await (
+          await fetch('/src/lib/components/markdown/MermaidRenderer.svelte')
+        ).text();
+        const url = module.match(/import mermaid from "([^"]+)"/)![1];
+        const { default: mermaid } = await import(url);
+        const render = mermaid.render.bind(mermaid);
+        mermaid.render = async (...args: Parameters<typeof render>) => {
+          const result = await render(...args);
+          const document = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
+          for (const actor of document.querySelectorAll('g.actor-man')) {
+            const y = Number(actor.querySelector('circle')!.getAttribute('cy')) - 10;
+            actor.setAttribute('transform', `translate(0, ${y})`);
+            for (const child of actor.querySelectorAll('*')) {
+              for (const attribute of ['y', 'cy', 'y1', 'y2']) {
+                if (child.hasAttribute(attribute))
+                  child.setAttribute(attribute, String(Number(child.getAttribute(attribute)) - y));
+              }
+            }
+          }
+          return {
+            ...result,
+            svg: new XMLSerializer().serializeToString(document.documentElement),
+          };
+        };
+      }
       const host = document.createElement('div');
       host.id = 'sequence-clearance-host';
       host.style.cssText = `width:${width}px;min-height:1000px;margin:0 auto`;
@@ -85,7 +114,7 @@ async function mountNote(
         },
       });
     },
-    { source, width },
+    { source, width, localActors },
   );
   const served = await (await response).text();
   const map = served.match(/sourceMappingURL=data:application\/json[^,]*;base64,([^\s]+)/);
@@ -597,4 +626,105 @@ test('note paint oracle detects a surface moved over authored content', async ({
   expect(notes).toHaveLength(5);
   expect(notes.every((region) => region.occludedPixels > 20 && region.textPixels === 0)).toBe(true);
   await writeFile(info.outputPath('paint-control.json'), JSON.stringify(paint, null, 2));
+});
+
+async function actorGeometry(page: Page) {
+  await settled(page);
+  return page.locator('.mermaid-svg > svg').evaluate((svg: SVGSVGElement) => {
+    const rect = (element: Element) => element.getBoundingClientRect().toJSON();
+    const actors = [...svg.querySelectorAll('g.actor-man')].map((actor) => ({
+      bottom: actor.classList.contains('actor-bottom'),
+      icon: rect(actor.querySelector('.mermaid-actor-user-icon')!),
+      label: rect(actor.querySelector('text')!),
+      localIcon: actor.querySelector('.mermaid-actor-user-icon')!.getAttribute('y'),
+      localLabel: actor.querySelector('text')!.getAttribute('y'),
+    }));
+    return {
+      actors,
+      worker: [...svg.querySelectorAll('rect.actor')].map(rect),
+      lifeline: rect(svg.querySelector('.actor-line[name="Visitor"]')!),
+    };
+  });
+}
+
+function expectActorsAligned(result: Awaited<ReturnType<typeof actorGeometry>>, mirrored: boolean) {
+  expect(result.actors).toHaveLength(mirrored ? 2 : 1);
+  const top = result.actors.find((actor) => !actor.bottom)!;
+  const topWorker = result.worker.reduce((a, b) => (a.top < b.top ? a : b));
+  for (const actor of result.actors) {
+    expect(actor.icon.x + actor.icon.width / 2).toBeCloseTo(result.lifeline.x, 2);
+    expect(actor.label.x + actor.label.width / 2).toBeCloseTo(result.lifeline.x, 2);
+    expect(actor.icon.bottom).toBeLessThanOrEqual(actor.label.top);
+  }
+  if (!mirrored) return;
+  const bottom = result.actors.find((actor) => actor.bottom)!;
+  const bottomWorker = result.worker.reduce((a, b) => (a.top > b.top ? a : b));
+  expect(bottom.icon.top).toBeGreaterThanOrEqual(bottomWorker.top);
+  expect(bottom.label.bottom).toBeLessThanOrEqual(bottomWorker.bottom);
+  expect(bottom.icon.top - bottomWorker.top).toBeCloseTo(top.icon.top - topWorker.top, 2);
+  expect(bottom.label.top - bottomWorker.top).toBeCloseTo(top.label.top - topWorker.top, 2);
+  expect(bottomWorker.top).toBeCloseTo(result.lifeline.bottom, 2);
+}
+
+for (const mirrored of [true, false]) {
+  test(`mirrored actor row and repeat renders: mirrorActors=${mirrored}`, async ({
+    page,
+  }, info) => {
+    test.setTimeout(120_000);
+    const source = constructSource.replace('mirrorActors: true', `mirrorActors: ${mirrored}`);
+    await mountNote(page, source, 1000, info);
+    const before = await actorGeometry(page);
+    await writeFile(info.outputPath('actor-before.json'), JSON.stringify(before, null, 2));
+    await writeFile(
+      info.outputPath('rendered.svg'),
+      await page.locator('.mermaid-svg > svg').evaluate((e) => e.outerHTML),
+    );
+    await page
+      .locator('#sequence-clearance-host')
+      .screenshot({ path: info.outputPath('note.png') });
+    expectActorsAligned(before, mirrored);
+    // A scaled/translated ancestor must not mix screen and SVG-local coordinates.
+    await page.locator('#sequence-clearance-host').evaluate((host) => {
+      host.style.transformOrigin = 'top left';
+      host.style.transform = 'translate(17px, 23px) scale(0.8)';
+    });
+    expectActorsAligned(await actorGeometry(page), mirrored);
+    await page.locator('#sequence-clearance-host').evaluate((host) => {
+      host.style.transform = '';
+    });
+    for (const theme of ['dark', 'light', 'dark', 'light']) {
+      const generation = await page
+        .locator('.mermaid-renderer')
+        .getAttribute('data-render-generation');
+      await page.evaluate((theme) => {
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+      }, theme);
+      await expect(page.locator('.mermaid-renderer')).not.toHaveAttribute(
+        'data-render-generation',
+        generation!,
+      );
+      expectActorsAligned(await actorGeometry(page), mirrored);
+    }
+    const after = await actorGeometry(page);
+    expectActorsAligned(after, mirrored);
+    expect(after).toEqual(before);
+    await writeFile(info.outputPath('actor-after.json'), JSON.stringify(after, null, 2));
+    const sourceButton = page.getByRole('button', { name: /source/i }).first();
+    await sourceButton.focus();
+    await sourceButton.press('Enter');
+    expect(await page.locator('.mermaid-source pre').textContent()).toBe(source);
+  });
+}
+
+test('mirrored actor row with translated SVG groups', async ({ page }, info) => {
+  await mountNote(page, constructSource, 1000, info, 'light', true);
+  const result = await actorGeometry(page);
+  await writeFile(info.outputPath('actor-geometry.json'), JSON.stringify(result, null, 2));
+  await writeFile(
+    info.outputPath('rendered.svg'),
+    await page.locator('.mermaid-svg > svg').evaluate((e) => e.outerHTML),
+  );
+  await page.locator('#sequence-clearance-host').screenshot({ path: info.outputPath('note.png') });
+  expectActorsAligned(result, true);
 });
