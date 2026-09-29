@@ -4740,7 +4740,7 @@
   "stats_passportCard_sessions_label": "Sessions",
   "stats_passportCard_topModel_label": "Top model",
   "stats_passportCard_longestRun_label": "Longest run",
-  "stats_card_builtWith_label": "Built with Intent",
+  "stats_card_builtWith_label": "Build with Intent",
   "stats_card_legendInput_label": "input",
   "stats_card_legendOutput_label": "output",
   "stats_card_legendThoughts_label": "thoughts",
