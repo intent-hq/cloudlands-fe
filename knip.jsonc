@@ -47,6 +47,7 @@
     "test/fixtures/browser-lifetime/Harness.svelte",
     // Bundled by Vite's computed SSR entry in repository-route/routing.electron.ts.
     "test/fixtures/repository-route/main.ts",
+    "test/fixtures/repository-context-native/main.ts",
     // Substituted for production components through Vite alias/resolveId plugins inside
     // the specs' createServer() config (electron-browser-lifetime.spec.ts,
     // sidebar-shell-background.spec.ts); alias resolution is not followed by knip
@@ -167,6 +168,7 @@
       "playwright-ct.config.ts",
       "e2e/build-smoke.config.ts",
       "test/fixtures/repository-route/playwright.config.ts",
+      "test/fixtures/repository-context-native/playwright.config.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
       "test/**/*.spec.ts",
@@ -178,6 +180,7 @@
       "e2e/**/*.e2e.ts",
       // repository-route/playwright.config.ts: testDir ., testMatch routing.electron.ts
       "test/fixtures/repository-route/routing.electron.ts",
+      "test/fixtures/repository-context-native/context.electron.ts",
     ],
   },
   "playwright-ct": {

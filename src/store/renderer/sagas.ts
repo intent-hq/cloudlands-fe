@@ -1,3 +1,4 @@
+import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
@@ -126,6 +127,7 @@ export const sagas = [
   presenceSaga,
   principalSaga,
   hostExecutionSaga,
+  repositoryContextSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,

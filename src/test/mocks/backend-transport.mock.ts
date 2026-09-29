@@ -1,3 +1,5 @@
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
+import type { BoundRepositoryRoute } from '$lib/client/live/backend-transport-types';
 /**
  * MockBackendTransport — scripted-daemon fixture for the renderer WSS seam.
  *
@@ -66,6 +68,7 @@ interface RecordedRequest {
 }
 
 interface MockState {
+  repositoryCapture: ((root: RepositoryRootIdentity) => Promise<BoundRepositoryRoute>) | null;
   requestHandlers: Map<string, RequestHandler>;
   subscribeHandler: SubscribeHandler | null;
   notificationHandlers: Set<(n: BackendNotification) => void>;
@@ -78,6 +81,7 @@ interface MockState {
 }
 
 const state: MockState = {
+  repositoryCapture: null,
   requestHandlers: new Map(),
   subscribeHandler: null,
   notificationHandlers: new Set(),
@@ -91,6 +95,7 @@ const state: MockState = {
 
 /** Reset all handlers, recorded calls, and cached capability. Call per test. */
 export function resetMockBackend(): void {
+  state.repositoryCapture = null;
   state.requestHandlers.clear();
   state.subscribeHandler = null;
   state.notificationHandlers.clear();
@@ -172,6 +177,14 @@ function mockIsBackendAvailable(): boolean {
  * write the module-level `state` so `installMockBackend()` can drive them.
  */
 export const mockBackendTransportModule = {
+  async captureBackendRepositoryRoute(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute> {
+    if (!state.repositoryCapture)
+      throw new BackendError({
+        code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+        message: 'Repository route unavailable',
+      });
+    return state.repositoryCapture(structuredClone(root));
+  },
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,
@@ -274,6 +287,9 @@ export function buildErrorPayload(
 
 /** Scripting handle returned by `installMockBackend()`. */
 export interface MockBackendHandle {
+  onRepositoryCapture(
+    handler: (root: RepositoryRootIdentity) => Promise<BoundRepositoryRoute>,
+  ): void;
   onRequest(method: string, handler: RequestHandler): void;
   onSubscribe(handler: SubscribeHandler): void;
   pushEvent(
@@ -332,6 +348,9 @@ function isNotificationEnvelope(value: unknown): value is BackendNotification {
 export function installMockBackend(): MockBackendHandle {
   resetMockBackend();
   return {
+    onRepositoryCapture(handler) {
+      state.repositoryCapture = handler;
+    },
     onRequest(method, handler) {
       state.requestHandlers.set(method, handler);
     },

@@ -10,6 +10,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 
 import {
   backendRequest,
+  captureBackendRepositoryRoute,
   backendSubscribe,
   backendUnsubscribe,
   detectLiveStateCapability,
@@ -323,3 +324,32 @@ describe('MockBackendTransport fixture', () => {
 });
 
 type BackendNotificationSpy = { method: string; params?: unknown };
+
+describe('scripted repository routes use the actual transport mock', () => {
+  afterEach(() => resetMockBackend());
+  it('stays unavailable unless the test explicitly provides a captured route', async () => {
+    installMockBackend();
+    await expect(
+      captureBackendRepositoryRoute({ workspaceId: 'ws', kind: 'primary' }),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+  });
+  it('captures immutable query input independently of ordinary daemon scripting', async () => {
+    const backend = installMockBackend();
+    let root: unknown;
+    const release = vi.fn(async () => {});
+    const route = { release, onRetired: vi.fn(() => () => {}), request: vi.fn() };
+    backend.onRepositoryCapture(async (captured) => {
+      root = captured;
+      return route;
+    });
+    const query = { workspaceId: 'original', kind: 'primary' as const };
+    expect(await captureBackendRepositoryRoute(query)).toBe(route);
+    query.workspaceId = 'replacement';
+    expect(root).toEqual({ workspaceId: 'original', kind: 'primary' });
+    expect(backend.requests).toEqual([]);
+    resetMockBackend();
+    await expect(captureBackendRepositoryRoute(query)).rejects.toMatchObject({
+      code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+    });
+  });
+});

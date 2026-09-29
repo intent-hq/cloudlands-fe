@@ -33,6 +33,19 @@ export interface JsonRpcNotification {
   params?: unknown;
 }
 
+export interface RepositoryConnection {
+  readonly incarnation: object;
+  readonly identity: object;
+  readonly repositoryContext: boolean;
+}
+
+/** Main-private physical evidence, never sent to the renderer. */
+export type RepositoryConnectionEvent =
+  | { type: 'opened'; incarnation: object }
+  | { type: 'closed'; incarnation: object }
+  | { type: 'identity-retired'; connection: RepositoryConnection }
+  | { type: 'notification'; incarnation: object; notification: JsonRpcNotification };
+
 /**
  * Handler for a daemon-initiated (reverse) JSON-RPC request. Returns the
  * `result` payload directly; throw a {@link ReverseRpcHandlerError} to control
@@ -134,7 +147,8 @@ export class JsonRpcClient extends EventEmitter {
 
   private socket: Duplex | null = null;
   private socketIncarnation: object | null = null;
-  private repositoryConnection: Readonly<{ incarnation: object; identity: object }> | null = null;
+  private repositoryConnection: RepositoryConnection | null = null;
+  private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
@@ -194,10 +208,34 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   /** Main-private current socket AND positively acknowledged hello lifetime. */
-  getRepositoryConnection(): Readonly<{ incarnation: object; identity: object }> | null {
+  getRepositoryConnection(): RepositoryConnection | null {
     return !this.disposed && this.status === 'connected' && this.socket && !this.socket.destroyed
       ? this.repositoryConnection
       : null;
+  }
+
+  /** Subscribe before start: no replay can establish a missed physical feed. */
+  onRepositoryConnectionEvent(listener: (event: RepositoryConnectionEvent) => void): () => void {
+    this.repositoryObservers.add(listener);
+    return () => this.repositoryObservers.delete(listener);
+  }
+
+  private emitRepositoryEvent(event: RepositoryConnectionEvent): void {
+    for (const listener of this.repositoryObservers) listener(event);
+  }
+
+  private retireRepositoryIdentity(): void {
+    const connection = this.repositoryConnection;
+    this.repositoryConnection = null;
+    if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
+  }
+
+  private retireRepositorySocket(): void {
+    const incarnation = this.socketIncarnation;
+    this.socketIncarnation = null;
+    this.retireRepositoryIdentity();
+    this.helloAttempt = null;
+    if (incarnation) this.emitRepositoryEvent({ type: 'closed', incarnation });
   }
 
   /** Send now on exactly the captured connection; never reconnect, queue or rebind. */
@@ -219,7 +257,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private beginHello(): object {
-    this.repositoryConnection = null;
+    this.retireRepositoryIdentity();
     this.helloAttempt = Object.freeze({});
     return this.helloAttempt;
   }
@@ -237,6 +275,9 @@ export class JsonRpcClient extends EventEmitter {
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
       identity: Object.freeze({}),
+      repositoryContext:
+        (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
+          ?.capabilities?.repositoryContext === 1,
     });
   }
 
@@ -312,6 +353,7 @@ export class JsonRpcClient extends EventEmitter {
     this.failPending(new Error('JSON-RPC client disposed'));
     this.failWaiters(new Error('JSON-RPC client disposed'));
     this.teardownSocket();
+    this.repositoryObservers.clear();
     this.setStatus('disconnected');
     this.removeAllListeners();
   }
@@ -416,7 +458,8 @@ export class JsonRpcClient extends EventEmitter {
     const attempt = this.beginHello();
     const incarnation = this.socketIncarnation;
     const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
-    if (this.socketIncarnation !== incarnation || this.disposed) return result;
+    if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+      return result;
     this.onHelloResult?.(result);
     this.confirmHello(attempt, result);
     return result;
@@ -458,18 +501,29 @@ export class JsonRpcClient extends EventEmitter {
       return;
     }
     this.socket = socket;
-    this.socketIncarnation = Object.freeze({});
+    const incarnation = Object.freeze({});
+    this.socketIncarnation = incarnation;
     this.repositoryConnection = null;
-    const onConnect = (info?: RaceConnectInfo) => this.onConnected(info);
+    this.emitRepositoryEvent({ type: 'opened', incarnation });
+    const current = () => this.socket === socket && this.socketIncarnation === incarnation;
+    const onConnect = (info?: RaceConnectInfo) => {
+      if (current()) this.onConnected(info);
+    };
     socket.once('connect', onConnect);
     socket.once('secureConnect', onConnect);
-    socket.on('data', (chunk: Buffer | string) => this.onData(chunk));
+    socket.on('data', (chunk: Buffer | string) => this.onData(chunk, incarnation));
     // Non-fatal per-host pin mismatches from the multi-host connection race
     // (#1746): re-emit for observers (backend.ipc's renderer warnings) without
     // touching the connection lifecycle — the race itself decides fatality.
-    socket.on('pin-mismatch', (info: HostCertMismatch) => this.emit('cert-warning', info));
-    socket.once('error', (error: Error) => this.onConnectionFailure(error));
-    socket.once('close', () => this.onConnectionFailure(new Error('Connection closed')));
+    socket.on('pin-mismatch', (info: HostCertMismatch) => {
+      if (current()) this.emit('cert-warning', info);
+    });
+    socket.once('error', (error: Error) => {
+      if (current()) this.onConnectionFailure(error);
+    });
+    socket.once('close', () => {
+      if (current()) this.onConnectionFailure(new Error('Connection closed'));
+    });
     logger.info('Connecting to backend', { target: describeBackendConfig(this.config) });
   }
 
@@ -499,7 +553,7 @@ export class JsonRpcClient extends EventEmitter {
         params,
         Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS),
       );
-      if (this.disposed || this.socket !== socket) return;
+      if (this.disposed || this.socket !== socket || this.helloAttempt !== attempt) return;
       this.onHelloResult?.(result);
       this.confirmHello(attempt, result);
     } catch (error) {
@@ -538,9 +592,7 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
-    this.repositoryConnection = null;
-    this.socketIncarnation = null;
-    this.helloAttempt = null;
+    this.retireRepositorySocket();
     this.hasConnectionFailed = true;
     this.emitError(error);
     this.stopHeartbeat();
@@ -580,30 +632,35 @@ export class JsonRpcClient extends EventEmitter {
     this.scheduleReconnect();
   }
 
-  private onData(chunk: Buffer | string): void {
+  private onData(chunk: Buffer | string, incarnation: object): void {
+    if (this.socketIncarnation !== incarnation || this.disposed) return;
     // Decode bytes through the StringDecoder so a multi-byte UTF-8 character
     // straddling two chunks is held back until its bytes are complete.
     this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() ?? '';
     for (const line of lines) {
+      if (this.socketIncarnation !== incarnation || this.disposed) return;
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        this.handleMessage(JSON.parse(trimmed));
+        this.handleMessage(JSON.parse(trimmed), incarnation);
       } catch (error) {
         this.emitError(error instanceof Error ? error : new Error(String(error)));
       }
     }
   }
 
-  private handleMessage(message: {
-    id?: number | string | null;
-    method?: string;
-    result?: unknown;
-    error?: JsonRpcErrorShape;
-    params?: unknown;
-  }): void {
+  private handleMessage(
+    message: {
+      id?: number | string | null;
+      method?: string;
+      result?: unknown;
+      error?: JsonRpcErrorShape;
+      params?: unknown;
+    },
+    incarnation: object,
+  ): void {
     const hasMethod = typeof message.method === 'string';
     const hasId = message.id != null;
     // Inbound request: has BOTH `method` and `id` (daemon → client reverse RPC,
@@ -636,7 +693,10 @@ export class JsonRpcClient extends EventEmitter {
     }
     // Notification: has a method and no id.
     if (hasMethod && !hasId) {
-      this.emit('notification', { method: message.method as string, params: message.params });
+      const notification = { method: message.method as string, params: message.params };
+      this.emitRepositoryEvent({ type: 'notification', incarnation, notification });
+      if (this.socketIncarnation === incarnation && !this.disposed)
+        this.emit('notification', notification);
     }
   }
 
@@ -754,9 +814,7 @@ export class JsonRpcClient extends EventEmitter {
 
   private teardownSocket(): void {
     // Retire BEFORE any teardown callback can attempt another dispatch.
-    this.socketIncarnation = null;
-    this.repositoryConnection = null;
-    this.helloAttempt = null;
+    this.retireRepositorySocket();
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

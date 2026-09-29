@@ -1,3 +1,7 @@
+import type {
+  RepositoryContextRequest,
+  RepositoryContextResponse,
+} from '$shared/types/repository-context';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -381,7 +385,16 @@ export interface WorkspaceCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
+export type RepositoryContextUpdate =
+  | { type: 'received'; response: RepositoryContextResponse }
+  | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
+
 export interface WorkspacesClient {
+  /** One inventory read, retaining its resource until retirement or unsubscribe. */
+  observeRepositoryContext(
+    request: RepositoryContextRequest,
+    handler: (update: RepositoryContextUpdate) => void,
+  ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**

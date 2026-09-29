@@ -920,6 +920,7 @@ export const IPC_CHANNELS = {
     REQUEST: 'backend:request',
     REPOSITORY: {
       CAPTURE: 'backend:repository:capture',
+      RETIRED: 'backend:repository:retired',
       REQUEST: 'backend:repository:request',
       RELEASE: 'backend:repository:release',
     },
@@ -1051,6 +1052,7 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',

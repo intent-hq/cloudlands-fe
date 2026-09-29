@@ -1255,3 +1255,135 @@ describe('queued hello repository eligibility', () => {
     }
   });
 });
+
+describe('private repository connection evidence', () => {
+  const clients: JsonRpcClient[] = [];
+  afterEach(() => clients.splice(0).forEach((client) => client.dispose()));
+
+  async function start(capability: unknown = 1) {
+    const sockets: FakeSocket[] = [];
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      helloParams: () => ({ clientId: 'desktop' }),
+      onHelloResult,
+      reconnectDelayMs: 1,
+    });
+    clients.push(client);
+    const events: unknown[] = [];
+    client.onRepositoryConnectionEvent((event) => events.push(event));
+    client.start();
+    sockets[0].open();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(1));
+    sockets[0].receive(
+      JSON.stringify({
+        id: 1,
+        result: {
+          clientId: 'desktop',
+          server: { capabilities: { repositoryContext: capability } },
+        },
+      }) + '\n',
+    );
+    await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
+    return { client, sockets, events, onHelloResult };
+  }
+
+  it.each([undefined, false, '1', 2])(
+    'does not borrow unsupported capability %j',
+    async (value) => {
+      const { client } = await start(value === undefined ? null : value);
+      expect(client.getRepositoryConnection()?.repositoryContext).toBe(false);
+    },
+  );
+
+  it('stamps notifications with the physical source and retires identity before re-hello', async () => {
+    const { client, sockets, events } = await start();
+    const original = client.getRepositoryConnection()!;
+    expect(original.repositoryContext).toBe(true);
+    const notification = {
+      method: 'workspace.repositoryContext.retired',
+      params: {
+        lifetimeIds: ['old'],
+        sequence: '1',
+        allRetired: false,
+        terminal: false,
+      },
+    };
+    sockets[0].receive(JSON.stringify(notification) + '\n');
+    expect(events).toContainEqual({
+      type: 'notification',
+      incarnation: original.incarnation,
+      notification,
+    });
+    const hello = client.request('client.hello');
+    expect(events).toContainEqual({ type: 'identity-retired', connection: original });
+    expect(client.getRepositoryConnection()).toBeNull();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
+    sockets[0].receive(
+      '{"id":2,"result":{"clientId":"desktop","server":{"capabilities":{"repositoryContext":1}}}}\n',
+    );
+    await hello;
+    expect(client.getRepositoryConnection()?.incarnation).toBe(original.incarnation);
+    expect(client.getRepositoryConnection()).not.toBe(original);
+    expect(events.filter((event) => (event as { type: string }).type === 'opened')).toHaveLength(1);
+  });
+
+  it('drops a retained old data callback after reconnect instead of retagging it', async () => {
+    const { client, sockets, events } = await start();
+    const original = client.getRepositoryConnection()!;
+    const oldData = sockets[0].listeners('data')[0];
+    const ordinary = vi.fn();
+    client.on('notification', ordinary);
+    sockets[0].emit('close');
+    expect(events).toContainEqual({ type: 'closed', incarnation: original.incarnation });
+    await vi.waitFor(() => expect(sockets).toHaveLength(2));
+    sockets[1].open();
+    await vi.waitFor(() => expect(sockets[1].writes).toHaveLength(1));
+    const hello = JSON.parse(sockets[1].writes[0]);
+    sockets[1].receive(JSON.stringify({ id: hello.id, result: { clientId: 'desktop' } }) + '\n');
+    await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
+    oldData(
+      Buffer.from('{"method":"workspace.repositoryContext.retired","params":{"sequence":"999"}}\n'),
+    );
+    expect(ordinary).not.toHaveBeenCalled();
+    expect(events.filter((event) => (event as { type: string }).type === 'notification')).toEqual(
+      [],
+    );
+  });
+
+  it('stops parsing the old buffered batch after a notification retires the socket', async () => {
+    const { client, sockets } = await start();
+    const ordinary = vi.fn(() => client.dispose());
+    client.on('notification', ordinary);
+    sockets[0].receive('{"method":"first"}\n{"method":"second"}\n');
+    expect(ordinary).toHaveBeenCalledOnce();
+  });
+  it('does not confirm or publish an older hello that completes after a newer attempt', async () => {
+    const { client, sockets, onHelloResult } = await start();
+    const first = client.request('client.hello');
+    const second = client.request('client.hello');
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(3));
+    sockets[0].receive(
+      JSON.stringify({
+        id: 3,
+        result: { clientId: 'current', server: { capabilities: { repositoryContext: 1 } } },
+      }) + '\n',
+    );
+    await second;
+    const current = client.getRepositoryConnection();
+    sockets[0].receive(
+      JSON.stringify({ id: 2, result: { clientId: 'old', server: { capabilities: {} } } }) + '\n',
+    );
+    await first;
+    expect(client.getRepositoryConnection()).toBe(current);
+    expect(onHelloResult).toHaveBeenCalledTimes(2);
+    expect(onHelloResult).toHaveBeenLastCalledWith({
+      clientId: 'current',
+      server: { capabilities: { repositoryContext: 1 } },
+    });
+  });
+});

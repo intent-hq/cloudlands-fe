@@ -178,32 +178,89 @@ export function createElectronIpcBackendTransport(): BackendTransport {
         });
       if (!api) throw unavailable();
       const capturedRoot = Object.freeze(RepositoryRootIdentitySchema.parse(root));
-      const { id } = unwrap<{ id: string }>(
-        await api.invoke(BACKEND.REPOSITORY.CAPTURE, { root: capturedRoot }),
-      );
-      if (typeof id !== 'string' || !id) throw unavailable();
+      let id: string | undefined;
       let released = false;
+      let retired = false;
+      let overflow = false;
+      const early = new Set<string>();
+      const handlers = new Set<() => void>();
+      const retire = () => {
+        if (retired) return;
+        retired = true;
+        for (const handler of [...handlers]) {
+          try {
+            handler();
+          } catch {
+            /* Other owners still need retirement. */
+          }
+        }
+        handlers.clear();
+      };
+      const listener = api.on(BACKEND.REPOSITORY.RETIRED, (payload: unknown) => {
+        if (
+          !payload ||
+          typeof payload !== 'object' ||
+          !('id' in payload) ||
+          typeof payload.id !== 'string'
+        )
+          return;
+        if (id === undefined && !overflow) {
+          early.add(payload.id);
+          if (early.size > 32) {
+            overflow = true;
+            early.clear();
+            retire();
+          }
+        } else if (payload.id === id) retire();
+      });
       const release = async () => {
         if (released) return;
         released = true;
+        retire();
+        api.offById(BACKEND.REPOSITORY.RETIRED, listener);
+        if (!id) return;
         // Always address the original bridge, including cleanup after replacement.
         try {
           await api.invoke(BACKEND.REPOSITORY.RELEASE, { id, root: capturedRoot });
         } catch {
-          // Main also retires on document teardown and bounds every handle's lifetime.
+          /* Main also retires on document teardown and expiry. */
         }
       };
-      if (electronAPI() !== api) {
+      try {
+        const result = unwrap<{ id: string }>(
+          await api.invoke(BACKEND.REPOSITORY.CAPTURE, { root: capturedRoot }),
+        );
+        if (typeof result.id !== 'string' || !result.id) throw unavailable();
+        id = result.id;
+        if (early.has(id)) retire();
+        early.clear();
+        if (electronAPI() !== api || overflow || retired) throw unavailable();
+      } catch (error) {
         await release();
-        throw unavailable();
+        throw error;
       }
       return {
+        onRetired(handler) {
+          if (released || retired || electronAPI() !== api) {
+            handler();
+            return () => {};
+          }
+          handlers.add(handler);
+          return () => {
+            handlers.delete(handler);
+          };
+        },
         async request<T>(
           method: string,
           params: Record<string, unknown>,
           options?: { timeoutMs?: number },
         ) {
-          if (released || electronAPI() !== api || (options && 'localMachine' in options))
+          if (
+            released ||
+            retired ||
+            electronAPI() !== api ||
+            (options && 'localMachine' in options)
+          )
             throw unavailable();
           const result = unwrap<BoundRepositoryResult<T>>(
             await api.invoke(BACKEND.REPOSITORY.REQUEST, {
@@ -214,7 +271,10 @@ export function createElectronIpcBackendTransport(): BackendTransport {
               ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
             }),
           );
-          return { ...result, current: result.current && !released && electronAPI() === api };
+          return {
+            ...result,
+            current: result.current && !released && !retired && electronAPI() === api,
+          };
         },
         release,
       };

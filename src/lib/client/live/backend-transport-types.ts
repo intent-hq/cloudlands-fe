@@ -103,6 +103,8 @@ export interface BoundRepositoryResult<T> {
  * interstage calls keep the original route, never a newly captured one.
  */
 export interface BoundRepositoryRoute {
+  /** Subscribe immediately; an already retired route calls back synchronously. */
+  onRetired(listener: () => void): () => void;
   request<T = unknown>(
     method: string,
     params: Record<string, unknown>,

@@ -299,7 +299,9 @@ describe('bound repository IPC with real window, socket and route sources', () =
     const invoke = vi.fn((channel: string, payload: unknown) =>
       h.call(channel, payload, h.a.event),
     );
-    vi.stubGlobal('window', { electronAPI: { invoke } });
+    vi.stubGlobal('window', {
+      electronAPI: { invoke, on: vi.fn(() => 'subscription'), offById: vi.fn() },
+    });
     const transport = createElectronIpcBackendTransport();
     const route = await transport.captureRepositoryRoute!(root);
     const pending = route.request('git.status', { workspaceId: root.workspaceId });

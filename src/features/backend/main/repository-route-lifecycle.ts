@@ -13,15 +13,19 @@ import type { JsonRpcClient } from './json-rpc-client';
 import { createRepositoryRequestRoutes } from './repository-request-route';
 
 /**
- * Future R/P adapter: main-owned non-reused lifetime, covering the original
+ * Main-owned non-reused lifetime from the original daemon session, covering the
  * admitted root, context revision, account/connection and authority generations.
  * allowsRequest validates the captured target/method, not daemon permission.
- * No adapter currently exists: production passes null and capture is unavailable.
+ * Production inventory uses the daemon lease adapter; no write grant follows.
  */
 interface RepositoryLifetime {
   stamp: object;
   isCurrent(): boolean;
   allowsRequest(method: string, params: Readonly<Record<string, unknown>>): boolean;
+  request?(method: string, params: Readonly<Record<string, unknown>>): Promise<unknown>;
+  dispose?(): void;
+  onRetired?(listener: () => void): () => void;
+  expiresAt?: number;
 }
 interface Dependencies {
   readBackend(backendId: string): JsonRpcClient | undefined;
@@ -81,6 +85,8 @@ export function registerRepositoryRouteHandlers(ipc: Pick<IpcMain, 'handle'>, de
     root: Readonly<RepositoryRootIdentity>;
     connection: object;
     lifetime: RepositoryLifetime;
+    senderBinding: NonNullable<ReturnType<typeof getStrictBackendBindingForWebContents>>;
+    stopRetirement?: () => void;
     routes: Routes;
     binding: ReturnType<Routes['captureRepositoryRequestBinding']>;
     completions: Array<Awaited<ReturnType<Routes['backendRequestForCapturedBinding']>>>;
@@ -91,14 +97,30 @@ export function registerRepositoryRouteHandlers(ipc: Pick<IpcMain, 'handle'>, de
   const entries = new Map<string, Entry>();
   const pending = new Map<WebContents, number>();
   const observed = new Map<WebContents, () => void>();
+  const acquisitions = new Map<WebContents, Set<() => void>>();
   let disposed = false;
   const channels = IPC_CHANNELS.BACKEND.REPOSITORY;
 
   function drop(id: string, entry: Entry) {
+    if (entries.get(id) !== entry) return;
     entry.routes.retireRepositoryRequestBinding(entry.sender, entry.binding);
     entries.delete(id);
+    entry.stopRetirement?.();
+    entry.lifetime.dispose?.();
+    if (
+      getStrictBackendBindingForWebContents(entry.sender) === entry.senderBinding &&
+      entry.sender.mainFrame === entry.frame &&
+      typeof entry.sender.mainFrame.send === 'function'
+    ) {
+      try {
+        entry.sender.mainFrame.send(channels.RETIRED, { id });
+      } catch {
+        /* Document gone. */
+      }
+    }
   }
   function retireSender(sender: WebContents) {
+    for (const cancel of acquisitions.get(sender) ?? []) cancel();
     for (const [id, entry] of entries) if (entry.sender === sender) drop(id, entry);
   }
   function observe(sender: WebContents) {
@@ -145,26 +167,56 @@ export function registerRepositoryRouteHandlers(ipc: Pick<IpcMain, 'handle'>, de
     pending.set(sender, (pending.get(sender) ?? 0) + 1);
     const root = Object.freeze(parsed.data.root);
     let deadline: ReturnType<typeof setTimeout> | undefined;
+    let abandoned = false;
+    let published = false;
+    const cancel = () => {
+      abandoned = true;
+    };
+    const ownerAcquisitions = acquisitions.get(sender) ?? new Set<() => void>();
+    acquisitions.set(sender, ownerAcquisitions);
+    ownerAcquisitions.add(cancel);
+    observe(sender);
+    const stillOriginal = () =>
+      !abandoned &&
+      !disposed &&
+      getStrictBackendBindingForWebContents(sender) === binding &&
+      event.senderFrame === binding.frame &&
+      deps.readBackend(binding.backendId) === client &&
+      client.getRepositoryConnection() === connection;
     try {
-      const lifetime = await Promise.race([
+      const acquisition = Promise.resolve(
         deps.resolveLifetime(
           Object.freeze({ sender, backendId: binding.backendId, client, connection, root }),
         ),
+      );
+      void acquisition.then(
+        (lifetime) => {
+          if (!stillOriginal()) lifetime?.dispose?.();
+        },
+        () => {},
+      );
+      const lifetime = await Promise.race([
+        acquisition,
         new Promise<null>((resolve) => {
-          deadline = setTimeout(() => resolve(null), CAPTURE_TIMEOUT_MS);
+          deadline = setTimeout(() => {
+            abandoned = true;
+            resolve(null);
+          }, CAPTURE_TIMEOUT_MS);
           deadline.unref();
         }),
       ]);
       if (
-        disposed ||
+        !stillOriginal() ||
         !lifetime ||
         !lifetime.isCurrent() ||
         getStrictBackendBindingForWebContents(sender) !== binding ||
         event.senderFrame !== binding.frame ||
         deps.readBackend(binding.backendId) !== client ||
         client.getRepositoryConnection() !== connection
-      )
+      ) {
+        lifetime?.dispose?.();
         return unavailable();
+      }
       const routes = createRepositoryRequestRoutes<WebContents, JsonRpcClient>({
         readSenderBinding: getStrictBackendBindingForWebContents,
         readBackend: (id) => {
@@ -183,25 +235,36 @@ export function registerRepositoryRouteHandlers(ipc: Pick<IpcMain, 'handle'>, de
       });
       const capture = routes.captureRepositoryRequestBinding(sender, root);
       const id = randomUUID();
-      entries.set(id, {
+      const entry: Entry = {
         sender,
         frame: binding.frame,
         backendId: binding.backendId,
         root,
         connection,
         lifetime,
+        senderBinding: binding,
         routes,
         binding: capture,
         completions: [],
         requests: 0,
         inFlight: false,
-        expires: Date.now() + TTL_MS,
-      });
-      observe(sender);
+        expires: Math.min(lifetime.expiresAt ?? Infinity, Date.now() + TTL_MS),
+      };
+      entries.set(id, entry);
+      entry.stopRetirement = lifetime.onRetired?.(() => drop(id, entry));
+      if (!stillOriginal() || entries.get(id) !== entry || !lifetime.isCurrent()) {
+        drop(id, entry);
+        return unavailable();
+      }
+      published = true;
       return { ok: true as const, result: { id } };
-    } catch {
-      return unavailable();
+    } catch (error) {
+      const payload = deps.errorPayload(error);
+      return payload.rpcCode === -32003 ? { ok: false as const, error: payload } : unavailable();
     } finally {
+      if (!published) abandoned = true;
+      ownerAcquisitions.delete(cancel);
+      if (!ownerAcquisitions.size) acquisitions.delete(sender);
       clearTimeout(deadline);
       const count = (pending.get(sender) ?? 1) - 1;
       if (count) pending.set(sender, count);
@@ -247,9 +310,11 @@ export function registerRepositoryRouteHandlers(ipc: Pick<IpcMain, 'handle'>, de
         event.sender,
         entry.binding,
         (client) =>
-          client.requestOnCapturedConnection(entry.connection, method, capturedParams, {
-            timeoutMs,
-          }),
+          entry.lifetime.request
+            ? entry.lifetime.request(method, capturedParams)
+            : client.requestOnCapturedConnection(entry.connection, method, capturedParams, {
+                timeoutMs,
+              }),
       );
       // Retain the original settlement before checking UI eligibility. Rejections
       // may have effects; do not replace a native failed/uncertain result with success.
@@ -297,6 +362,8 @@ export function registerRepositoryRouteHandlers(ipc: Pick<IpcMain, 'handle'>, de
     },
     dispose() {
       disposed = true;
+      for (const pendingAcquisitions of acquisitions.values())
+        for (const cancel of pendingAcquisitions) cancel();
       clearInterval(timer);
       for (const [id, entry] of entries) drop(id, entry);
       for (const cleanup of observed.values()) cleanup();

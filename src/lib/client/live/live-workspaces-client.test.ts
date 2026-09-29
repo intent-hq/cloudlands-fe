@@ -6,6 +6,7 @@ import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/typ
 // client emits and how it folds success / error into a MutationResult.
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
+  captureBackendRepositoryRoute: vi.fn(),
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
@@ -19,7 +20,8 @@ vi.mock('$lib/client', async () => {
   return { appClient: { workspaces: new LiveWorkspacesClient() } };
 });
 
-import { backendRequest } from './backend-transport';
+import { backendRequest, captureBackendRepositoryRoute } from './backend-transport';
+import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
 import { LiveWorkspacesClient } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
@@ -1156,4 +1158,42 @@ describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake t
       );
     },
   );
+});
+
+describe('LiveWorkspacesClient bound inventory', () => {
+  it('uses the captured inventory route and retires the delivered view without legacy reads', async () => {
+    let retire = () => {};
+    const release = vi.fn(async () => {});
+    const read = vi.fn(async () => ({
+      operationId: 'own',
+      current: true,
+      settlement: { status: 'fulfilled' as const, value: repositoryFixture },
+    }));
+    vi.mocked(captureBackendRepositoryRoute).mockResolvedValue({
+      request: read as never,
+      release,
+      onRetired(handler) {
+        retire = handler;
+        return () => {};
+      },
+    });
+    mockedRequest.mockClear();
+    const handler = vi.fn();
+    const request = { workspaceId: 'workspace-1', binding: 'guest-original', requestId: 'read-1' };
+    const close = await new LiveWorkspacesClient().observeRepositoryContext(request, handler);
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenCalledWith({
+        type: 'received',
+        response: { request, context: repositoryFixture },
+      }),
+    );
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledWith('workspace.repositoryContext', {
+      workspaceId: 'workspace-1',
+    });
+    retire();
+    expect(handler).toHaveBeenLastCalledWith({ type: 'retired', request });
+    close();
+    expect(release).toHaveBeenCalledOnce();
+  });
 });

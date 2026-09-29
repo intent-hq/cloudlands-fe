@@ -47,6 +47,7 @@ import {
 } from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
+import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import {
   buildMainClientHelloParams,
   getOrCreateClientId,
@@ -373,6 +374,10 @@ const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
  */
 const backendCredentialGenerations = new Map<string, number>();
 let handlersRegistered = false;
+const repositoryFeeds = new WeakMap<
+  JsonRpcClient,
+  ReturnType<typeof createRepositoryAuthorityFeed>
+>();
 let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
@@ -944,6 +949,7 @@ export function disconnectBackendClient(id: string): void {
   disposeTransferConnectionsForBackend(id);
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
+  repositoryFeeds.get(instance)?.dispose();
   instance.dispose();
   // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
   // already-disconnected client emits no status change, so the forwarder
@@ -1267,7 +1273,11 @@ function createAdditionalBackendClient(
       }
     },
   });
+  // Subscribe before start/hello. Older test doubles have no private source feed.
+  if (typeof instance.onRepositoryConnectionEvent === 'function')
+    repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
   instance.on('notification', (notification: JsonRpcNotification) => {
+    if (notification.method === 'workspace.repositoryContext.retired') return;
     if (backendClients.get(id) !== instance) return;
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
@@ -3213,9 +3223,8 @@ export function registerBackendHandlers(): void {
   repositoryRoutes = registerRepositoryRouteHandlers(ipcMain, {
     // Explicit pool lookup only: do not instantiate local or follow focus.
     readBackend: (id) => backendClients.get(id),
-    // The R/P repository/account/authority lifetime producer is not registered
-    // yet. A successful hello or configured host row cannot substitute for it.
-    resolveLifetime: () => null,
+    resolveLifetime: ({ client, connection, root }) =>
+      repositoryFeeds.get(client)?.capture(connection, root) ?? null,
     errorPayload: toErrorPayload,
   });
 
@@ -3228,6 +3237,17 @@ export function registerBackendHandlers(): void {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
+      }
+      if (
+        method === 'workspace.repositoryContext' ||
+        method === 'workspace.repositoryContext.capture' ||
+        method === 'workspace.repositoryContext.release'
+      ) {
+        return {
+          ok: false,
+          // i18n-ignore (internal route diagnostic; facade emits a typed unavailable state)
+          error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Repository route required' },
+        };
       }
       // `timeoutMs` is an optional per-call override forwarded verbatim to the
       // JSON-RPC client. Long daemon operations (e.g. `git.pull`, whose own
@@ -4178,6 +4198,7 @@ export function disposeAllBackendClients(): void {
     connectedProtocolVersions.delete(id);
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);
+    repositoryFeeds.get(instance)?.dispose();
     instance.dispose();
   }
 }

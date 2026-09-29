@@ -1,3 +1,6 @@
+import type { RepositoryContextRequest } from '$shared/types/repository-context';
+import type { RepositoryContextUpdate } from '../app-client';
+import { createRepositoryContextTransport } from './repository-context-transport';
 /**
  * Live workspaces domain backed by the intentd daemon.
  *
@@ -140,6 +143,13 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
+  observeRepositoryContext(
+    request: RepositoryContextRequest,
+    handler: (update: RepositoryContextUpdate) => void,
+  ) {
+    return createRepositoryContextTransport().observe(request, handler);
+  }
+
   private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
   private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 

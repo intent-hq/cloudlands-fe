@@ -28,6 +28,14 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
 export { getWorkspaceState as getRepositoryContextWorkspaceState };
 
+/** Explicit inventory demand; ending an older demand cannot cancel its replacement. */
+export const repositoryContextDemanded = createAction<[workspaceId: string, demandId: string]>(
+  'repositoryContext/demanded',
+);
+export const repositoryContextDemandEnded = createAction<[workspaceId: string, demandId: string]>(
+  'repositoryContext/demandEnded',
+);
+
 export const repositoryContextBound =
   createAction<[workspaceId: string, binding: string]>('repositoryContext/bound');
 export const repositoryContextRetired = createAction<[workspaceId: string, binding: string]>(

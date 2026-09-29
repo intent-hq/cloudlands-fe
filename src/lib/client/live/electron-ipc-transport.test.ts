@@ -597,3 +597,63 @@ describe('captured repository transport', () => {
     });
   });
 });
+
+describe('owner-frame repository retirement events', () => {
+  const channels = IPC_CHANNELS.BACKEND.REPOSITORY;
+  const root = { workspaceId: 'same', kind: 'primary' as const };
+  it('subscribes before acquisition and disposes a response retired during the await', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementationOnce(async () => {
+      expect(api.listenerCount(channels.RETIRED)).toBe(1);
+      api.emit(channels.RETIRED, { id: 'retired-before-reply' });
+      return { ok: true, result: { id: 'retired-before-reply' } } as never;
+    });
+    await expect(
+      createElectronIpcBackendTransport().captureRepositoryRoute!(root),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, {
+      id: 'retired-before-reply',
+      root,
+    });
+  });
+  it('retirement is correlated to one route and cleans its subscription on release', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'one' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    const retired = vi.fn();
+    route.onRetired(retired);
+    api.emit(channels.RETIRED, { id: 'another' });
+    expect(retired).not.toHaveBeenCalled();
+    api.emit(channels.RETIRED, { id: 'one' });
+    api.emit(channels.RETIRED, { id: 'one' });
+    expect(retired).toHaveBeenCalledOnce();
+    await expect(
+      route.request('workspace.repositoryContext', { workspaceId: 'same' }),
+    ).rejects.toThrow();
+    await route.release();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('retains the original settlement but marks it ineligible after an in-flight retirement', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'one' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    api.invoke.mockImplementationOnce(async () => {
+      api.emit(channels.RETIRED, { id: 'one' });
+      return {
+        ok: true,
+        result: {
+          operationId: 'original',
+          current: true,
+          settlement: { status: 'fulfilled', value: { ownReceipt: true } },
+        },
+      } as never;
+    });
+    expect(await route.request('workspace.repositoryContext', { workspaceId: 'same' })).toEqual({
+      operationId: 'original',
+      current: false,
+      settlement: { status: 'fulfilled', value: { ownReceipt: true } },
+    });
+    await route.release();
+  });
+});
