@@ -4,6 +4,15 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { stripObservation } from './strip-observation.mjs';
+
+const observation = stripObservation();
+let detachObservation = () => {};
+test.beforeEach(({ page }, info) => { detachObservation = observation.page(page, baseUrl, info); });
+test.afterEach(({}, info) => {
+  for (const error of info.errors) observation.event('test-error', { error: String(error.message).slice(0, 512) });
+  detachObservation();
+});
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -187,6 +196,7 @@ function geometryStubs(): Plugin {
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
+  observation.create();
   server = await createServer({
     configFile: false,
     root: process.cwd(),
@@ -205,9 +215,15 @@ test.beforeAll(async () => {
   });
   await server.listen();
   baseUrl = server.resolvedUrls?.local[0] ?? '';
+  observation.listen(server);
 });
 
-test.afterAll(async () => server?.close());
+test.afterAll(async () => {
+  observation.event('server-close-start');
+  try { await server?.close(); observation.close(); }
+  catch (error) { observation.event('server-close-error', { error: String(error).slice(0, 512) }); throw error; }
+  finally { observation.finish(); }
+});
 
 async function mountStrip(
   page: Page,
@@ -222,9 +238,12 @@ async function mountStrip(
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
+  observation.event('explicit-goto', { path: '/src/app.html' });
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
+  observation.event('mount-evaluate-start');
+  try {
   await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -351,6 +370,11 @@ async function mountStrip(
     await tick();
     await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
   }, options);
+  observation.event('mount-evaluate-success');
+  } catch (error) {
+    observation.event('mount-evaluate-error', { error: String(error).slice(0, 512) });
+    throw error;
+  }
 }
 
 async function box(locator: Locator) {

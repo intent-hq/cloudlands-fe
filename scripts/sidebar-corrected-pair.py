@@ -12,15 +12,14 @@ import subprocess
 import sys
 import time
 
-REF = '2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f'
-TREE = 'f6c0192ff5125a4b8550886946b0fc105b80725b'
-SPECS = ['test/workspace-tab-strip-status-geometry.spec.ts',
-         'test/sidebar-shell-background.spec.ts']
-CACHES = ['node_modules/.vite-harness/workspace-tab-strip-status-geometry',
-          'node_modules/.vite-harness/sidebar-shell-background']
+REF = 'd7bdc3034e43b7db7e167ae4d46cd163f843dd59'
+TREE = '6d790487dd4832c337183eddfaaae246dc054617'
+SPECS = ['test/workspace-tab-strip-status-geometry.spec.ts']
+TITLES = ['keeps the normal first-tab curve, both flares, and 24px panel gutter across the geometry matrix',
+          'preserves the collapsed-sidebar first-tab clearance across zoom']
+CACHES = ['node_modules/.vite-harness/workspace-tab-strip-status-geometry']
 SOURCE_BLOBS = {
     SPECS[0]: '2977be06d6a05ad03049e185c184228ace7cfba1',
-    SPECS[1]: '1eafdd4de3e8859c5cf33af7ddd34304567e19e7',
     'test/sidebar-shell-import.ts': 'd83ad3a85afd181576a2ded03d92680a44ac20e0',
     'test/vite-harness-cache.mjs': '8e3fe1680a2efdab8df46ff5e1cb5ca56cbc70dc',
     'playwright.config.ts': '2d3277409456705bd53bd19388d292b76c340329',
@@ -29,7 +28,7 @@ SOURCE_BLOBS = {
 subject = Path(sys.argv[1]).resolve()
 workers = int(sys.argv[2])
 root = Path(sys.argv[3]).resolve()
-assert workers in (1, 2) and not root.exists()
+assert workers == 2 and not root.exists()
 root.mkdir(mode=0o700)
 receipts = root / 'receipts'
 payload = root / 'payload'
@@ -89,22 +88,25 @@ def run(cell):
     out.mkdir(mode=0o700)
     args = ['pnpm', 'run', 'test:playwright', *SPECS, '--project=chromium',
             '--workers=' + str(workers), '--retries=0', '--repeat-each=1',
-            '--trace=on', '--reporter=list,json', '--output=' + str(out / 'test-results')]
+            '--trace=on', '--reporter=list,json', '--output=' + str(out / 'test-results'),
+            '--grep=' + '|'.join(TITLES)]
     env = dict(os.environ)
     for forbidden in ('WORKSPACE_TAB_STRIP_REF', 'NODE_V8_COVERAGE'):
         assert not env.get(forbidden), forbidden
+    env['STRIP_OBSERVATION_ROOT'] = str(payload / 'events')
     env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / 'results.json')
     record(cell + '-start', {'argv': args, 'cwd': str(subject), 'time': now(),
-                           'workers': workers, 'primarySeconds': 1200,
-                           'killAfterSeconds': 10, 'outerStepMinutes': 44,
+                           'workers': workers, 'primarySeconds': 300,
+                           'killAfterSeconds': 10, 'outerStepMinutes': 10,
                            'traceQualification': 'Always tracing adds observation overhead.'})
-    global ownership_settled
+    global ownership_settled, observed_test_exit
     native = None
     sel = selectors.DefaultSelector()
     streams = {}
     counts = {'stdout': 0, 'stderr': 0}
     eof = {'stdout': False, 'stderr': False}
     failures = []
+    stream_chunks = []
     signals = []
     code = None
     absent = None
@@ -129,14 +131,19 @@ def run(cell):
                     eof[key] = True
                     sel.unregister(item.fileobj)
                     continue
-                if counts[key] + len(data) > 32 * 1024 * 1024:
+                if counts[key] + len(data) > 8 * 1024 * 1024:
                     stop = stop or key + '-limit'
                     # Continue bounded draining during cleanup; never call discarded bytes complete.
                     continue
                 if key not in streams:
                     stop = stop or key + '-retention-unavailable'
                     continue
+                if len(stream_chunks) >= 4096:
+                    stop = stop or 'stream-index-limit'
+                    continue
                 streams[key].write(data)
+                stream_chunks.append({'stream': key, 'offset': counts[key], 'bytes': len(data),
+                                      'monotonic': time.monotonic(), 'time': now()})
                 counts[key] += len(data)
             except BaseException as error:
                 fail('stream-' + key, error)
@@ -174,7 +181,7 @@ def run(cell):
 
     # One anchor before launch, never reset by EOF, parent exit, I/O failure or cleanup.
     start = time.monotonic()
-    primary_deadline = start + 1200
+    primary_deadline = start + 300
     ownership_settled = False
     try:
         native = subprocess.Popen(args, cwd=subject, env=env, stdout=subprocess.PIPE,
@@ -278,6 +285,7 @@ def run(cell):
                     'cleanupStart': cleanup_start, 'termDeadline': term_deadline,
                     'finalDeadline': final_deadline, 'completedWithinDeadline': time.monotonic() <= final_deadline,
                     'signals': signals,
+                    'streamChunks': stream_chunks,
                     'bothEOF': eof, 'bytes': counts, 'waitReaped': reaped,
                     'capturedGroupAbsent': absent, 'ownershipSettled': ownership_settled,
                     'limits': 'Sampled group only; cancellation/uninterruptible I/O may prevent receipts; no detached/whole-runner assurance.'}
@@ -288,8 +296,10 @@ def run(cell):
         record(cell + '-cache-at-terminal', inventory([subject / p for p in CACHES],
                                                     256 * 1024 * 1024, 8192))
     assert stop is None and original_error is None and not failures
-    assert code == 0 and all(eof.values()) and ownership_settled
+    assert code in (0, 1) and all(eof.values()) and ownership_settled
+    observed_test_exit = code
     assert terminal['completedWithinDeadline'] and receipt_within_deadline, 'late cleanup or terminal receipt'
+    assert (out / 'results.json').stat().st_size <= 8 * 1024 * 1024
     report = json.loads((out / 'results.json').read_text())
     cases = []
     def visit(suites):
@@ -299,25 +309,102 @@ def run(cell):
                     cases.append((spec, test))
             visit(suite.get('suites', []))
     visit(report['suites'])
-    assert len(cases) == 11 and not report.get('errors')
-    assert report['config']['workers'] == workers
-    actual_workers = set()
-    files = []
+    assert len(cases) == 2 and not report.get('errors')
+    assert report['config']['workers'] == 2
+    assert sorted(spec['title'] for spec, test in cases) == sorted(TITLES)
+    rows = []
     for spec, test in cases:
+        assert Path(spec['file']).name == Path(SPECS[0]).name
         assert test['projectName'] == 'chromium' and test['expectedStatus'] == 'passed'
         assert len(test['results']) == 1
         result = test['results'][0]
-        assert result['status'] == 'passed' and result['retry'] == 0 and not result.get('errors')
-        assert test['status'] == 'expected'
-        actual_workers.add(result['workerIndex'])
-        files.append(spec['file'])
-    assert len(actual_workers) == workers
-    assert sum(Path(x).name == Path(SPECS[0]).name for x in files) == 8
-    assert sum(Path(x).name == Path(SPECS[1]).name for x in files) == 3
-    record(cell + '-result-acceptance', {'pass': True, 'cases': 11,
-                                       'workerIndices': sorted(actual_workers)})
+        assert result['retry'] == 0 and result['status'] in ('passed', 'failed', 'timedOut')
+        rows.append({'title': spec['title'], 'worker': result['workerIndex'],
+                     'status': result['status'], 'retry': result['retry'], 'parallel': result.get('parallelIndex')})
+    record(cell + '-result-observation', {'nativeExit': code, 'cases': rows,
+        'actualWorkers': sorted({row['worker'] for row in rows}),
+        'limits': 'A pass is one exposure; failure is evidence, not acceptance. Overlap requires lifecycle records.'})
+    return rows
+
+def reconcile_observers(cases, files, raw_stdout):
+    """Pure data validation, not a causal verdict or a filesystem/process operation."""
+    assert len(cases) == 2 and sorted(row['title'] for row in cases) == sorted(TITLES)
+    expected = {}
+    for row in cases:
+        assert type(row['worker']) is int and row['worker'] in (0, 1)
+        assert type(row['parallel']) is int and row['parallel'] in (0, 1)
+        assert row['retry'] == 0
+        expected.setdefault(row['worker'], []).append((row['title'], row['parallel'], row['retry']))
+    assert len(files) == len(expected), 'missing/extra worker file'
+    # Count every candidate, including malformed/truncated messages; never regex-filter bad ones away.
+    prefix = b'STRIP_OBSERVER_FINAL '
+    segments = raw_stdout.split(prefix)
+    acknowledgements = []
+    for segment in segments[1:]:
+        assert b'\n' in segment, 'truncated finalization acknowledgement'
+        line = segment.split(b'\n', 1)[0]
+        assert len(line) <= 8192
+        ack = json.loads(line)
+        assert ack['kind'] == 'observer-finalization'
+        assert ack['footerWritten'] is True and ack['captureComplete'] is True
+        assert type(ack['syncExit']) is int and ack['syncExit'] == 0
+        assert type(ack['closeExit']) is int and ack['closeExit'] == 0
+        assert not ack['errors'] and not ack['captureErrors']
+        acknowledgements.append(ack)
+    assert len(acknowledgements) == len(expected), 'missing/duplicate acknowledgement'
+    seen_workers = set()
+    seen_pids = set()
+    bound = []
+    for file in files:
+        raw, metadata = file['raw'], file['metadata']
+        assert len(raw) <= 4 * 1024 * 1024 and raw.endswith(b'\n')
+        rows = [json.loads(line) for line in raw.splitlines()]
+        assert 2 <= len(rows) <= 12001
+        initial, terminal = rows[0], rows[-1]
+        worker = initial['worker']
+        assert type(worker) is int and worker in expected and worker not in seen_workers
+        seen_workers.add(worker)
+        assert initial['kind'] == 'worker-start'
+        assert type(initial['pid']) is int and initial['pid'] > 0
+        assert isinstance(initial['startTicks'], str) and initial['startTicks'].isdigit()
+        process_id = (initial['pid'], initial['startTicks'])
+        assert process_id not in seen_pids
+        seen_pids.add(process_id)
+        identity_fields = ('worker', 'parallel', 'pid', 'startTicks', 'processTimeOrigin', 'server')
+        identity = {key: initial[key] for key in identity_fields}
+        assert initial['server'] == str(initial['pid']) + ':' + initial['startTicks'] + ':1'
+        assert all({key: row[key] for key in identity_fields} == identity for row in rows)
+        assert terminal['kind'] == 'observer-terminal' and terminal['captureComplete'] is True
+        assert not terminal['errors'] and not any(row['kind'] == 'observer-error' for row in rows)
+        assert all(row['kind'] != 'observer-terminal' for row in rows[:-1])
+        assert terminal['count'] == len(rows) - 1
+        assert terminal['bytes'] == sum(len(line) + 1 for line in raw.splitlines()[:-1])
+        assert [row['seq'] for row in rows[:-1]] == list(range(len(rows) - 1))
+        actual = []
+        for row in rows:
+            if 'workerIndex' in row:
+                assert row['workerIndex'] == worker and row['parallelIndex'] == initial['parallel']
+            if row['kind'] == 'page-attached-before-navigation':
+                actual.append((row['title'], row['parallelIndex'], row['retry']))
+        assert sorted(actual) == sorted(expected[worker]), 'missing/duplicate/mismatched case coverage'
+        matches = [ack for ack in acknowledgements if ack['worker'] == worker]
+        assert len(matches) == 1
+        ack = matches[0]
+        assert {key: ack[key] for key in identity_fields} == identity
+        binding = ack['file']
+        assert binding['name'] == file['name'] == 'worker-' + str(worker) + '-' + str(initial['pid']) + '.jsonl'
+        assert binding['bytes'] == len(raw) and binding['sha256'] == hashlib.sha256(raw).hexdigest()
+        assert binding['mode'] == 0o600 and binding['nlink'] == 1
+        assert all(binding[key] == metadata[key] for key in ('dev', 'ino', 'uid', 'gid', 'mode', 'nlink'))
+        bound.append({'identity': identity, 'cases': actual, 'file': binding,
+                      'syncExit': ack['syncExit'], 'closeExit': ack['closeExit']})
+    assert seen_workers == set(expected)
+    return {'workers': bound, 'coverageComplete': True,
+            'overlap': 'UNPROVED; requires reviewed actual server/cache intervals, even with two workers',
+            'durability': 'Acknowledged event-file fsync and close only; stdout acknowledgement persistence depends on captured native stream'}
 
 ownership_settled = True
+observed_test_exit = None
 accepted = False
 try:
     assert os.environ.get('GITHUB_RUN_ATTEMPT') == '1'
@@ -330,7 +417,7 @@ try:
     assert route_binding['merge'] == os.environ['GITHUB_SHA']
     assert route_binding['workflowSha'] == os.environ['GITHUB_WORKFLOW_SHA']
     assert route_binding['runId'] == os.environ['GITHUB_RUN_ID']
-    assert route_binding['runNumber'] == os.environ['GITHUB_RUN_NUMBER'] == '2'
+    assert route_binding['runNumber'] == os.environ['GITHUB_RUN_NUMBER'] == '3'
     assert route_binding['attempt'] == os.environ['GITHUB_RUN_ATTEMPT'] == '1'
     record('route-binding', {'sha256': hashlib.sha256(route_raw).hexdigest(), 'receipt': route_binding})
     assert git('rev-parse', 'HEAD') == REF and git('rev-parse', 'HEAD^{tree}') == TREE
@@ -374,33 +461,62 @@ try:
     cold = inventory(cache_paths, 256 * 1024 * 1024, 8192)
     record('cold-before', cold)
     assert all(x.get('absent') for x in cold)
-    run('cold')
-    warm = inventory(cache_paths, 256 * 1024 * 1024, 8192)
-    record('cold-after', warm)
-    for path in cache_paths:
-        assert path.is_dir() and (path / 'deps' / '_metadata.json').is_file()
-    again = inventory(cache_paths, 256 * 1024 * 1024, 8192)
-    record('warm-before', again)
-    assert again == warm
-    assert inventory(generated_paths, 64 * 1024 * 1024, 12000) == generated
-    run('warm')
-    record('warm-after', inventory(cache_paths, 256 * 1024 * 1024, 8192))
+    # Only exact reviewed observation overlay; subject commit remains fixed and recorded.
+    control = Path(__file__).resolve().parent.parent
+    overlay = ['test/workspace-tab-strip-status-geometry.spec.ts', 'test/strip-observation.mjs']
+    rows = {x['path']: x for x in route_binding['controllerAndExecutedRouteFiles']}
+    for name in overlay:
+        src, dst = control / name, subject / name
+        data = src.read_bytes()
+        assert hashlib.sha256(data).hexdigest() == rows[name]['sha256']
+        if name == SPECS[0]:
+            st = dst.lstat()
+            assert stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and st.st_nlink == 1
+            assert git('hash-object', str(dst)) == SOURCE_BLOBS[name]
+            fd = os.open(dst, os.O_WRONLY | os.O_NOFOLLOW)
+            assert os.fstat(fd).st_ino == st.st_ino and os.fstat(fd).st_dev == st.st_dev
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(data); stream.truncate()
+        else:
+            fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'wb') as stream: stream.write(data)
+    record('observed-source-overlay', [rows[name] for name in overlay])
+    (payload / 'events').mkdir(mode=0o700)
+    actual_cases = run('cold')
+    record('cold-after', inventory(cache_paths, 256 * 1024 * 1024, 8192))
     generated_after = inventory(generated_paths, 64 * 1024 * 1024, 12000)
     record('generated-after', generated_after)
     assert generated_after == generated
-    assert git('status', '--porcelain', '--untracked-files=no') == ''
+    assert git('diff', '--name-only').splitlines() == [SPECS[0]]
+    for name in overlay:
+        assert hashlib.sha256((subject / name).read_bytes()).hexdigest() == rows[name]['sha256']
+    event_manifest = inventory([payload / 'events'], 8 * 1024 * 1024, 4)
+    record('observer-manifest', event_manifest)
+    event_files = sorted((payload / 'events').glob('*.jsonl'))
+    event_data = []
+    for path in event_files:
+        st = path.lstat()
+        assert stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and st.st_nlink == 1
+        assert st.st_size <= 4 * 1024 * 1024 and stat.S_IMODE(st.st_mode) == 0o600
+        event_data.append({'name': path.name, 'raw': path.read_bytes(), 'metadata':
+            {'dev': st.st_dev, 'ino': st.st_ino, 'uid': st.st_uid, 'gid': st.st_gid,
+             'mode': stat.S_IMODE(st.st_mode), 'nlink': st.st_nlink}})
+    stdout_path = payload / 'cold/stdout.raw'
+    assert stdout_path.stat().st_size <= 8 * 1024 * 1024
+    coverage = reconcile_observers(actual_cases, event_data, stdout_path.read_bytes())
+    record('observer-coverage-and-finalization', coverage)
     accepted = True
 except Exception as error:
     record('stop', {'type': type(error).__name__, 'message': str(error), 'time': now()})
 finally:
     try:
         assert ownership_settled, 'Payload/cache ownership incomplete; no live-mutating inventory or upload credit'
-        record('payload-manifest', inventory([payload], 512 * 1024 * 1024, 8192))
+        record('payload-manifest', inventory([payload], 64 * 1024 * 1024, 128))
         if os.environ.get('GITHUB_OUTPUT'):
             with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
                 output.write('upload_payload=true\n')
     except Exception as error:
         record('payload-stop', {'type': type(error).__name__, 'message': str(error)})
         accepted = False
-    record('pair-result', {'accepted': accepted, 'time': now(), 'noRetry': True})
-sys.exit(0 if accepted else 1)
+    record('pair-result', {'observationComplete': accepted, 'testPassOrCauseAccepted': False, 'time': now(), 'noRetry': True})
+sys.exit(observed_test_exit if accepted and observed_test_exit in (0, 1) else 1)

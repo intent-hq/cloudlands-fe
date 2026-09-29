@@ -8,12 +8,13 @@ import subprocess
 import sys
 import time
 
-SUBJECT = '2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f'
-PREDECESSOR = '092b348c9a9a5805a6dbe7e32a3f8541ac9e4d03'
-TREE = 'f6c0192ff5125a4b8550886946b0fc105b80725b'
+SUBJECT = 'd7bdc3034e43b7db7e167ae4d46cd163f843dd59'
+PREDECESSOR = SUBJECT
+TREE = '6d790487dd4832c337183eddfaaae246dc054617'
 FILES = ['.github/workflows/sidebar-corrected-matrix.yml',
          '.github/workflows/sidebar-corrected-pair.yml',
-         'scripts/sidebar-corrected-pair.py', 'scripts/sidebar-matrix-route.py']
+         'scripts/sidebar-corrected-pair.py', 'scripts/sidebar-matrix-route.py',
+         'test/workspace-tab-strip-status-geometry.spec.ts', 'test/strip-observation.mjs']
 control, route, subject = [Path(x).resolve() for x in sys.argv[1:4]]
 receipt = Path(sys.argv[4])
 end = time.monotonic() + 45
@@ -87,7 +88,7 @@ try:
     assert os.environ['MATRIX_CONTROLLER_SHA'] == head
     result['stage'] = 'run-generation'
     result.pop('operation', None)
-    assert os.environ['GITHUB_RUN_ATTEMPT'] == '1' and os.environ['GITHUB_RUN_NUMBER'] == '2'
+    assert os.environ['GITHUB_RUN_ATTEMPT'] == '1' and os.environ['GITHUB_RUN_NUMBER'] == '3'
     result['stage'] = 'pull-request-ref'
     result.pop('operation', None)
     assert os.environ['GITHUB_REF'] == 'refs/pull/2976/merge'
@@ -124,7 +125,7 @@ try:
     assert sorted(git(control, 'diff', '--name-only', '--no-renames', PREDECESSOR, head).splitlines()) == sorted(FILES)
     result['stage'] = 'modified-paths'
     result.pop('operation', None)
-    assert all(row.startswith('M\t') for row in git(control, 'diff', '--name-status', '--no-renames', PREDECESSOR, head).splitlines())
+    assert sorted(git(control, 'diff', '--name-status', '--no-renames', PREDECESSOR, head).splitlines()) == sorted(('A\t' if name == 'test/strip-observation.mjs' else 'M\t') + name for name in FILES)
     for checkout in (control, route, subject):
         result['checkout'] = 'control' if checkout == control else ('route' if checkout == route else 'subject')
         result['stage'] = 'checkout-clean'
