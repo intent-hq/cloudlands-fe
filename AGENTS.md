@@ -644,7 +644,7 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
   PRs that touch CT-contract paths, specs or geometry goldens also require it
   (classified by `scripts/ct-contract-paths.mjs`, shared with `verify:changed`).
-  Root Playwright test/config/fixture changes require its two shards on the PR;
+  Root Playwright test/config/fixture changes require its four shards on the PR;
   Electron lifetime test/harness/config changes require its Electron suite.
   Both also run nightly/manual. Browser suites never run in the merge queue;
   ordinary application changes can therefore reveal browser regressions after merge.
