@@ -94,6 +94,51 @@ describe('MessageActions callbacks', () => {
   });
 });
 
+describe('MessageActions transcript construction', () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(['pointerEnter', 'focusIn'] as const)(
+    'keeps timestamps immediate while controls are queued, and responds to %s',
+    async (event) => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let sequence = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(++sequence, callback);
+        return sequence;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+      const viewport = document.createElement('div');
+      viewport.dataset.messageControlsRoot = '';
+      const surface = document.createElement('div');
+      viewport.append(surface);
+      document.body.append(viewport);
+      const onCopy = vi.fn();
+      const view = render(MessageActions, {
+        target: surface,
+        props: {
+          role: 'user',
+          timestamp: '2026-09-28T10:00:00Z',
+          onCopy,
+        },
+      });
+      expect(view.container.querySelector('time')).not.toBeNull();
+      expect(view.queryAllByRole('button')).toHaveLength(0);
+      await fireEvent[event](surface);
+      const copy = view.getByRole('button', {
+        name: m.chat_messageActions_copyMessage_ariaLabel(),
+      });
+      await fireEvent.click(copy);
+      expect(onCopy).toHaveBeenCalledTimes(1);
+      expect(frames.size).toBe(0);
+      view.unmount();
+      viewport.remove();
+    },
+  );
+});
+
 describe('MessageActions timestamp', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
@@ -183,6 +228,31 @@ describe('MessageActions timestamp', () => {
       expect(time.getAttribute('datetime')).toBe(timestamp.toISOString());
       expect(time.getAttribute('aria-label')).toBe(formatFullDateTime(timestamp));
     });
+  });
+
+  it('shares one midnight timer and wake listener pair across 200 messages', async () => {
+    const timers = vi.getTimerCount();
+    const focus = vi.spyOn(window, 'addEventListener');
+    const visibility = vi.spyOn(document, 'addEventListener');
+    const views = Array.from({ length: 200 }, () =>
+      render(MessageActions, {
+        props: { role: 'user', timestamp: new Date() },
+      }),
+    );
+    expect(vi.getTimerCount() - timers).toBe(1);
+    expect(focus.mock.calls.filter(([name]) => name === 'focus')).toHaveLength(1);
+    expect(visibility.mock.calls.filter(([name]) => name === 'visibilitychange')).toHaveLength(1);
+    views[0].unmount();
+    vi.setSystemTime(new Date(2026, 5, 4, 8));
+    window.dispatchEvent(new Event('focus'));
+    await tick();
+    expect(views[1].container.querySelector('time')?.textContent).toBe(
+      formatDateTime(new Date(2026, 5, 3, 0, 5)),
+    );
+    for (const view of views.slice(1)) view.unmount();
+    expect(vi.getTimerCount()).toBe(timers);
+    focus.mockRestore();
+    visibility.mockRestore();
   });
 
   it('cleans up its midnight timer and wake listeners on unmount', async () => {
