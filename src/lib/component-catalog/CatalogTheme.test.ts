@@ -56,6 +56,36 @@ describe('sandbox renderer theme ownership', () => {
     expect(store.state.theme.preference).toBe('light');
   });
 
+  it('preserves a newer external theme name when leaving the preview', async () => {
+    window.history.replaceState(null, '', '/sandbox?theme=dark');
+    const layout = render(SandboxLayout);
+    await waitFor(() => expect(document.documentElement.style.colorScheme).toBe('dark'));
+    store.dispatch(setThemeName('light'));
+    layout.unmount();
+    expect(store.state.theme.name).toBe('light');
+  });
+
+  it('does not reclaim ownership when external changes return to the preview value', async () => {
+    const layout = render(SandboxLayout);
+    await waitFor(() => expect(store.state.theme.name).toBe('light'));
+    store.dispatch(setThemeName('dark'));
+    store.dispatch(setThemeName('light'));
+    layout.unmount();
+    expect(store.state.theme.name).toBe('light');
+  });
+
+  it('restores the newer external value after the user takes preview ownership again', async () => {
+    window.history.replaceState(null, '', '/sandbox?theme=dark');
+    const layout = render(SandboxLayout);
+    await waitFor(() => expect(document.documentElement.style.colorScheme).toBe('dark'));
+    store.dispatch(setThemeName('light'));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    await waitFor(() => expect(store.state.theme.name).toBe('dark'));
+    layout.unmount();
+    expect(store.state.theme.name).toBe('light');
+  });
+
   it('follows system appearance changes while the system option is selected', async () => {
     const media = new EventTarget();
     let dark = false;

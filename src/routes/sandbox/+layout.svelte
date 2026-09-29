@@ -20,12 +20,25 @@
   // Preview the resolved appearance for Redux consumers without requesting a saved
   // application preference change. Capture only the field this route owns.
   let priorThemeName: ThemeName | undefined;
+  let previewThemeName: ThemeName | undefined;
+  let ownsThemeName = false;
+  let stopThemeWatch: (() => void) | undefined;
   function syncPreviewTheme(name: ThemeName) {
-    priorThemeName ??= store.state.theme.name;
+    // Observe transitions synchronously: a newer owner may change away and back
+    // before unmount, so comparing only the final value would reclaim its state.
+    stopThemeWatch ??= store.getReadableState().subscribe((state) => {
+      if (state.theme.name !== previewThemeName) ownsThemeName = false;
+    });
+    if (!ownsThemeName) priorThemeName = store.state.theme.name;
+    previewThemeName = name;
+    ownsThemeName = true;
     store.dispatch(setThemeName(name));
   }
   onDestroy(() => {
-    if (priorThemeName !== undefined) store.dispatch(setThemeName(priorThemeName));
+    stopThemeWatch?.();
+    if (ownsThemeName && priorThemeName !== undefined) {
+      store.dispatch(setThemeName(priorThemeName));
+    }
   });
 
   // The stylesheet rule below shares specificity with the token defaults, so which one wins
