@@ -341,3 +341,104 @@ test('keyboard message navigation releases follow and can return to bottom', asy
   });
   await component.screenshot({ path: testInfo.outputPath('keyboard-return-to-bottom.png') });
 });
+
+function historyMessage(
+  id: string,
+  role: AgentMessage['role'],
+  text: string,
+  seq: number,
+): AgentMessage {
+  return {
+    id,
+    role,
+    seq,
+    timestamp: '2026-09-29T06:00:00Z',
+    contentBlocks: [{ type: 'text', text }],
+  };
+}
+
+test('history-only assistant navigates to its loaded human prompt', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      historyMessages: [
+        historyMessage('older-human', 'user', 'Earlier prompt', 1),
+        historyMessage('older-reply', 'assistant', 'Earlier answer. '.repeat(80), 2),
+        historyMessage('history-human', 'user', 'The loaded history prompt', 3),
+        historyMessage('history-reply', 'assistant', 'The loaded history response. '.repeat(30), 4),
+      ],
+      messages: [
+        historyMessage('live-human', 'user', 'Latest prompt', 5),
+        historyMessage('live-reply', 'assistant', 'Latest response. '.repeat(80), 6),
+      ],
+    },
+  });
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  const source = component.locator('[data-message-id="history-reply"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  const target = component.locator('[data-message-id="history-human"]');
+  await expect
+    .poll(async () =>
+      Math.abs(
+        await target.evaluate(
+          (node, container) =>
+            node.getBoundingClientRect().top -
+            (container as HTMLElement).getBoundingClientRect().top,
+          await scroll.elementHandle(),
+        ),
+      ),
+    )
+    .toBeLessThanOrEqual(3);
+  expect(await scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
+});
+
+test('previous-message actions stop at unloaded history boundaries', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      historyGap: true,
+      historyStartLoaded: false,
+      historyMessages: [
+        historyMessage('history-orphan', 'assistant', 'Earlier prompt is not loaded', 2),
+        historyMessage('history-human', 'user', 'Loaded older prompt', 3),
+        historyMessage('history-reply', 'assistant', 'Loaded older answer', 4),
+      ],
+      messages: [
+        historyMessage('live-orphan', 'assistant', 'Prompt is inside the unloaded gap', 10),
+        historyMessage('live-human', 'user', 'Loaded latest prompt', 11),
+        historyMessage('live-reply', 'assistant', 'Loaded latest answer. '.repeat(80), 12),
+      ],
+    },
+  });
+  await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+  for (const id of ['history-orphan', 'live-orphan']) {
+    const row = component.locator(`[data-message-id="${id}"]`);
+    await row.hover();
+    await expect(row.getByRole('button', { name: 'Previous user message' })).toHaveCount(0);
+  }
+  for (const id of ['history-human', 'live-human']) {
+    const row = component.locator(`[data-message-id="${id}"]`);
+    await row.hover();
+    await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toHaveCount(0);
+  }
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  for (const segment of ['history', 'live']) {
+    const row = component.locator(`[data-message-id="${segment}-reply"]`);
+    await row.hover();
+    await row.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    const target = component.locator(`[data-message-id="${segment}-human"]`);
+    await expect
+      .poll(async () =>
+        Math.abs(
+          await target.evaluate(
+            (node, container) =>
+              node.getBoundingClientRect().top -
+              (container as HTMLElement).getBoundingClientRect().top,
+            await scroll.elementHandle(),
+          ),
+        ),
+      )
+      .toBeLessThanOrEqual(3);
+  }
+});
