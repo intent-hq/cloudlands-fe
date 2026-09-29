@@ -921,7 +921,10 @@ ${source}`;
       const inner = b.getBBox();
       return inner.width * inner.height - outer.width * outer.height;
     });
-    svg.prepend(...constructs);
+    // Native rect blocks are already ordered by Mermaid (outer before inner).
+    // Keep them below the constructs without changing their relative paint order.
+    const backgrounds = [...svg.querySelectorAll<SVGRectElement>(':scope > rect.rect')];
+    svg.prepend(...backgrounds, ...constructs);
 
     const normalizeNoteText = (text: string) =>
       text

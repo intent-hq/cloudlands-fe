@@ -614,6 +614,167 @@ for (const { name, source, theme, frames } of paintCases) {
   });
 }
 
+// Hide only the frame strokes so other painted content cannot satisfy this oracle.
+async function framePaint(page: Page) {
+  const svg = page.locator('.mermaid-svg > svg');
+  const painted = (await svg.screenshot()).toString('base64');
+  const results = [];
+  for (const frame of await page.locator('.sequence-construct').all()) {
+    await frame.locator('.sequence-frame-line').evaluateAll((lines) => {
+      for (const line of lines) (line as SVGElement).style.visibility = 'hidden';
+    });
+    const hidden = (await svg.screenshot()).toString('base64');
+    await frame.locator('.sequence-frame-line').evaluateAll((lines) => {
+      for (const line of lines) (line as SVGElement).style.removeProperty('visibility');
+    });
+    results.push(
+      await page.evaluate(
+        async ({ painted, hidden }) => {
+          const pixels = async (png: string) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${png}`;
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const context = canvas.getContext('2d')!;
+            context.drawImage(image, 0, 0);
+            return context.getImageData(0, 0, canvas.width, canvas.height).data;
+          };
+          const a = await pixels(painted),
+            b = await pixels(hidden);
+          let count = 0;
+          for (let i = 0; i < a.length; i += 4)
+            if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) count++;
+          return count;
+        },
+        { painted, hidden },
+      ),
+    );
+  }
+  return results;
+}
+
+const backgroundCases = [
+  {
+    name: 'authored background enclosing alt',
+    fills: ['rgb(230, 240, 255)'],
+    frames: 1,
+    source: `sequenceDiagram
+participant A
+participant B
+rect rgb(230, 240, 255)
+alt Ready
+A->>B: Begin
+Note over A: Visible note
+else Retry
+B-->>A: Pending
+end
+end`,
+  },
+  {
+    name: 'nested and separate authored backgrounds',
+    // Mermaid lowers each completed background: the later sibling precedes the
+    // outer background, which precedes its inner background. Keep that order.
+    fills: ['rgb(230, 255, 230)', 'rgb(230, 240, 255)', 'rgb(255, 240, 230)'],
+    frames: 3,
+    source: `sequenceDiagram
+participant A
+participant B
+rect rgb(230, 240, 255)
+alt Ready
+rect rgb(255, 240, 230)
+loop Until ready
+A->>B: Begin
+Note over A: Visible note
+end
+end
+else Retry
+B-->>A: Pending
+end
+end
+rect rgb(230, 255, 230)
+opt Later
+A->>B: Finish
+Note over B: Second note
+end
+end`,
+  },
+];
+for (const { name, source, fills, frames } of backgroundCases) {
+  test(`native backgrounds preserve construct paint: ${name}`, async ({ page }, info) => {
+    test.setTimeout(120_000);
+    await mountNote(page, source, 1000, info);
+    await settled(page);
+    await page
+      .locator('#sequence-clearance-host')
+      .screenshot({ path: info.outputPath('note.png') });
+    await writeFile(
+      info.outputPath('rendered.svg'),
+      await page.locator('.mermaid-svg > svg').evaluate((e) => e.outerHTML),
+    );
+    const paint = await notePaint(page);
+    const framePixels = await framePaint(page);
+    const layers = await page.locator('.mermaid-svg > svg').evaluate((svg) => {
+      const children = [...svg.children];
+      return {
+        backgrounds: [...svg.querySelectorAll(':scope > rect.rect')].map((e) => ({
+          fill: e.getAttribute('fill'),
+          index: children.indexOf(e),
+        })),
+        constructs: [
+          ...svg.querySelectorAll<SVGGraphicsElement>(':scope > .sequence-construct'),
+        ].map((e) => {
+          const { x, y, width, height } = e.getBBox();
+          return { index: children.indexOf(e), box: { x, y, width, height } };
+        }),
+        foreground: [
+          ...svg.querySelectorAll(
+            ':scope > .sequence-note, :scope > .messageText, :scope > .messageLine0, :scope > .messageLine1',
+          ),
+        ].map((e) => children.indexOf(e)),
+      };
+    });
+    await writeFile(
+      info.outputPath('background-paint.json'),
+      JSON.stringify({ paint, framePixels, layers }, null, 2),
+    );
+    expect(layers.backgrounds.map((b) => b.fill)).toEqual(fills);
+    expect(layers.constructs).toHaveLength(frames);
+    for (const region of paint) {
+      expect.soft(region.occludedPixels, `${region.name} stays above surfaces`).toBe(0);
+      expect.soft(region.textPixels, `${region.name} paints visible glyphs`).toBeGreaterThan(20);
+    }
+    for (const pixels of framePixels)
+      expect.soft(pixels, 'frame strokes paint').toBeGreaterThan(20);
+    expect
+      .soft(Math.max(...layers.backgrounds.map((b) => b.index)))
+      .toBeLessThan(Math.min(...layers.constructs.map((c) => c.index)));
+    expect
+      .soft(Math.max(...layers.constructs.map((c) => c.index)))
+      .toBeLessThan(Math.min(...layers.foreground));
+    for (const outer of layers.constructs)
+      for (const inner of layers.constructs) {
+        if (outer === inner) continue;
+        const a = outer.box,
+          b = inner.box;
+        if (
+          a.x <= b.x &&
+          a.y <= b.y &&
+          a.x + a.width >= b.x + b.width &&
+          a.y + a.height >= b.y + b.height
+        )
+          expect(outer.index, 'outer construct paints before enclosed construct').toBeLessThan(
+            inner.index,
+          );
+      }
+    const sourceButton = page.getByRole('button', { name: /source/i }).first();
+    await sourceButton.focus();
+    await sourceButton.press('Enter');
+    expect(await page.locator('.mermaid-source pre').textContent()).toBe(source);
+  });
+}
+
 test('note paint oracle detects a surface moved over authored content', async ({ page }, info) => {
   test.setTimeout(120_000);
   await mountNote(page, constructSource, 1000, info);
