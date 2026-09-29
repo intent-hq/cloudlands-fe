@@ -83,7 +83,11 @@
       return;
     }
     let stopObserving = () => {};
+    let released = false;
     const release = () => {
+      // Both queued mounting and teardown release this registration.
+      if (released) return;
+      released = true;
       stopObserving();
       parent.removeEventListener('pointerenter', queued.mountNow);
       parent.removeEventListener('focusin', queued.mountNow);

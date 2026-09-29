@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatDateTime, formatFullDateTime, formatTime } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import MessageActions from '../MessageActions.svelte';
+import { inspectLazyTurnObserverOwnership } from '../lazy-turn-observer';
 
 describe('MessageActions callbacks', () => {
   it('keeps role-specific action order and invokes each callback exactly once', async () => {
@@ -98,6 +99,53 @@ describe('MessageActions transcript construction', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps one visibility observer after queued mount, teardown and same-root reacquisition', async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let sequence = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++sequence, callback);
+      return sequence;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const viewport = document.createElement('div');
+    viewport.dataset.messageControlsRoot = '';
+    document.body.append(viewport);
+    const mountMessage = () => {
+      const surface = document.createElement('div');
+      viewport.append(surface);
+      return render(MessageActions, { target: surface, props: { role: 'user', onCopy: vi.fn() } });
+    };
+    try {
+      const first = mountMessage();
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 1, targetCount: 1 });
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(0);
+      await tick();
+      expect(first.getAllByRole('button')).toHaveLength(1);
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
+      const second = mountMessage();
+      first.unmount();
+      const third = mountMessage();
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 1, targetCount: 2 });
+      second.unmount();
+      third.unmount();
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
+      expect(frames.size).toBe(0);
+    } finally {
+      cleanup();
+      viewport.remove();
+    }
   });
 
   it.each(['pointerEnter', 'focusIn'] as const)(
