@@ -1,8 +1,9 @@
 /** Disposable Electron shell. All authority and native dispatch use production handlers. */
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
+import { dirname, resolve, sep } from 'node:path';
 import { PassThrough, type Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { stampWindowWithBackend } from '../../../src/main/window-backend';
@@ -163,6 +164,62 @@ export function disposalComplete(rows: Array<Record<string, any>>): boolean {
 }
 
 type Envelope = Record<string, any>;
+/** Only canonical root-relative generated paths can address the bounded asset manifest. */
+export function uiAssetPath(raw: string): string | null {
+  const path = raw.split('?')[0];
+  try {
+    if (
+      !path.startsWith('/') ||
+      path.includes('\\') ||
+      path.includes('\0') ||
+      decodeURIComponent(path) !== path ||
+      path.includes('//') ||
+      path.split('/').some((part) => part === '.' || part === '..')
+    )
+      return null;
+    return path;
+  } catch {
+    return null;
+  }
+}
+async function loadUiAssets(manifestPath: string) {
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  const base = await realpath(dirname(manifestPath));
+  if (manifest.version !== 1 || manifest.entry !== '/index.html' || !manifest.assets)
+    throw new Error('Generated Kit asset manifest required');
+  const assets = new Map<string, { bytes: Buffer; type: string }>();
+  let total = 0;
+  for (const [key, raw] of Object.entries(manifest.assets)) {
+    const entry = raw as { file: string; sha256: string; bytes: number; type: string };
+    if (
+      uiAssetPath(key) !== key ||
+      typeof entry.file !== 'string' ||
+      uiAssetPath('/' + entry.file) !== key
+    )
+      throw new Error('Non-canonical generated asset');
+    const path = resolve(base, entry.file);
+    if (
+      !path.startsWith(base + sep) ||
+      (await realpath(path)) !== path ||
+      !(await lstat(path)).isFile()
+    )
+      throw new Error('Generated asset escaped its original root');
+    const bytes = await readFile(path);
+    total += bytes.length;
+    if (
+      bytes.length !== entry.bytes ||
+      createHash('sha256').update(bytes).digest('hex') !== entry.sha256 ||
+      typeof entry.type !== 'string' ||
+      !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(entry.type)
+    )
+      throw new Error('Generated asset does not match its pinned manifest');
+    if (assets.size >= 4096 || total > 268435456) throw new Error('Generated asset bound');
+    assets.set(key, { bytes, type: entry.type });
+  }
+  if (!assets.has('/index.html') || total !== manifest.total)
+    throw new Error('Generated entry inventory incomplete');
+  return assets;
+}
 export interface WireRecord {
   socketId: string;
   host: number;
@@ -495,8 +552,25 @@ async function run() {
       },
     ]);
   };
+  const uiAssets = uiMode ? await loadUiAssets(rendererPath) : null;
   const http = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
+    if (uiAssets) {
+      const path = uiAssetPath(request.url ?? '');
+      const entry =
+        path && ['/host-A', '/local-B', '/host-A-next', '/local-B-next', '/other-A'].includes(path)
+          ? '/index.html'
+          : path;
+      const asset = entry ? uiAssets.get(entry) : undefined;
+      if (request.method !== 'GET' || !asset) {
+        response.statusCode = 404;
+        response.end();
+        return;
+      }
+      response.setHeader('Content-Type', asset.type);
+      response.end(asset.bytes);
+      return;
+    }
     if (request.url === '/renderer.js' || request.url === '/style.css') {
       response.setHeader(
         'Content-Type',
@@ -629,8 +703,10 @@ async function run() {
       const producers = [];
       for (const [key, window] of windows) {
         if (window.isDestroyed()) throw new Error('Unobserved renderer disposal');
-        const receipt = await window.webContents.executeJavaScript('window.nativeUi.close()');
+        const receipt = await window.webContents.executeJavaScript('window.nativeUiRoute.close()');
         if (
+          !receipt.route?.startupSettled ||
+          !receipt.route?.closed ||
           !receipt.producersClosed ||
           receipt.tasks.length !== 5 ||
           receipt.tasks.some((task: any) => !task.iteratorDone || !task.joined) ||

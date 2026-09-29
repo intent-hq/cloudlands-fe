@@ -26,8 +26,7 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { build, loadConfigFromFile, transformWithEsbuild, type Plugin } from 'vite';
-import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { build, loadConfigFromFile, type Plugin, type UserConfig } from 'vite';
 import type { Fixture, Ready, WireRecord } from './main';
 import type {
   NativeReviewInput,
@@ -119,6 +118,7 @@ const uiRenderer = `
 
 import App from '${join(root, 'test/fixtures/native-review-native/ui-renderer.svelte')}';
 import '${join(root, 'src/app.css')}';
+export function start() {
 const target = document.getElementById('ui');
 if (!target) throw new Error('Original UI mount target missing');
 const component = mount(App, {target});
@@ -257,7 +257,10 @@ let closing: Promise<unknown> | null = null;
     return closing;
   }
 
-Object.assign(window,{native:{ui:true},nativeUi:{snapshot,close,async dismiss(){await component.dismiss();return snapshot();}}});
+const lifetime = {snapshot,close,async dismiss(){await component.dismiss();return snapshot();}};
+Object.assign(window,{native:{ui:true},nativeUi:lifetime});
+return lifetime;
+}
 `;
 const activeRenderer = uiMode ? uiRenderer : renderer;
 // Node/libuv stdio "pipe" is a socketpair. This controller owns a genuine
@@ -499,6 +502,226 @@ const modules = (label: string): Plugin => ({
   },
 });
 
+/** Source literals for a real, isolated Kit route; no application routes or mock $app modules. */
+async function buildKitFixture(application: UserConfig) {
+  const scaffold = join(bundle, 'kit-fixture');
+  const output = join(bundle, 'ui-assets');
+  const routes = join(scaffold, 'src/routes');
+  await mkdir(join(routes, '[...fixture]'), { recursive: true });
+  await mkdir(join(scaffold, 'static'), { recursive: true });
+  const page = `<script lang="ts">
+import {onMount} from 'svelte';
+onMount(() => {
+  let retired = false;
+  let startupSettled = false;
+  let child: Awaited<ReturnType<typeof import('../../bootstrap').start>> | undefined;
+  let closing: Promise<unknown> | undefined;
+  const startup = import('../../bootstrap').then(module => {
+    if (!retired) child = module.start();
+    startupSettled = true;
+  });
+  const close = () => closing ??= (async () => {
+    retired = true;
+    await startup;
+    if (!child) throw new Error('Original UI bootstrap did not complete');
+    const receipt = await child.close();
+    return {...receipt, route: {startupSettled, closed: true}};
+  })();
+  Object.assign(window, {nativeUiRoute: {close}});
+  return () => { void close(); };
+});
+</script>
+<div id="ui"></div>
+`;
+  const aliases = application.resolve!.alias;
+  if (!Array.isArray(aliases)) throw new Error('Original application alias list required');
+  const aliasSource =
+    '[' +
+    aliases
+      .map(
+        (value) =>
+          '{find:' +
+          (value.find instanceof RegExp ? value.find.toString() : JSON.stringify(value.find)) +
+          ',replacement:' +
+          JSON.stringify(value.replacement) +
+          '}',
+      )
+      .join(',') +
+    ']';
+  const config = `import {sveltekit} from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import {vitePreprocess} from '@sveltejs/vite-plugin-svelte';
+import fs from 'node:fs';import path from 'node:path';import {createHash} from 'node:crypto';
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const provenance = {name:'actual-kit-fixture-inputs',generateBundle(options,output){
+  const side = options.dir.endsWith('/client') ? 'client' : 'server';
+  const entries = Object.values(output).filter(item=>item.type==='chunk').flatMap(chunk=>Object.entries(chunk.modules).map(([id,value])=>{
+    let sourceSha256=null;try{sourceSha256=hash(fs.readFileSync(id));}catch{}
+    const info=this.getModuleInfo(id);return {id,sourceSha256,importedIds:info.importedIds,importers:info.importers,renderedExports:value.renderedExports,renderedLength:value.renderedLength,renderedSha256:value.code ? hash(value.code) : null,chunk:chunk.fileName,chunkSha256:hash(chunk.code)};
+  }));
+  fs.writeFileSync(path.join(${JSON.stringify(evidence)},'kit-'+side+'-inputs.json'),JSON.stringify(entries,null,2)+'\\n');
+}};
+export default {
+  root:${JSON.stringify(scaffold)},
+  resolve:{alias:${aliasSource},conditions:['browser','svelte']},
+  define:${JSON.stringify(application.define)},
+  plugins:[...await sveltekit({
+    preprocess:vitePreprocess(),compilerOptions:{compatibility:{componentApi:4}},
+    adapter:adapter({pages:${JSON.stringify(output)},assets:${JSON.stringify(output)},fallback:'index.html',precompress:false}),
+    outDir:${JSON.stringify(join(scaffold, '.kit'))},
+    files:{src:${JSON.stringify(join(scaffold, 'src'))},routes:${JSON.stringify(routes)},assets:${JSON.stringify(join(scaffold, 'static'))},lib:${JSON.stringify(join(root, 'src/lib'))},appTemplate:${JSON.stringify(join(scaffold, 'src/app.html'))},hooks:{client:${JSON.stringify(join(scaffold, 'src/hooks.client'))},server:${JSON.stringify(join(scaffold, 'src/hooks.server'))},universal:${JSON.stringify(join(scaffold, 'src/hooks'))}}},
+    env:{dir:${JSON.stringify(scaffold)}},prerender:{entries:[]},paths:{relative:false},version:{name:'native-ui-fixture'},serviceWorker:{register:false}
+  }),provenance],
+  build:{target:'es2022',minify:false,sourcemap:false},
+};
+`;
+  const buildCode =
+    "const {build}=await import('vite');await build({configFile:'vite.config.mjs',logLevel:'error'});";
+  const generated: Record<string, string> = {
+    'build.mjs': buildCode,
+    'package.json': JSON.stringify({ private: true, type: 'module' }),
+    'tsconfig.json': JSON.stringify({ extends: './.kit/tsconfig.json' }),
+    'src/app.html':
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">%sveltekit.head%</head><body><div style="display: contents">%sveltekit.body%</div></body></html>',
+    'src/routes/+layout.ts': 'export const ssr = false;\nexport const prerender = false;\n',
+    'src/routes/[...fixture]/+page.svelte': page,
+    'src/bootstrap.ts': uiRenderer,
+    'vite.config.mjs': config,
+  };
+  const inputs = [];
+  for (const [name, value] of Object.entries(generated)) {
+    await writeFile(join(scaffold, name), value);
+    const artifact = join(evidence!, 'kit-generated', name);
+    await mkdir(dirname(artifact), { recursive: true });
+    await writeFile(artifact, value);
+    inputs.push({ name, sha256: hash(value), bytes: Buffer.byteLength(value) });
+  }
+  record(evidence!, 'kit-generated-inputs', inputs);
+  // Kit's post-build workers rediscover Vite config from cwd. The original child
+  // owns that cwd for every phase, without changing this worker or the application.
+  const builder = spawn(process.execPath, [join(scaffold, 'build.mjs')], {
+    cwd: scaffold,
+    stdio: 'inherit',
+  });
+  const terminal = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    (resolve, reject) => {
+      builder.once('error', reject);
+      builder.once('close', (code, signal) => resolve({ code, signal }));
+    },
+  );
+  record(evidence!, 'kit-build-process', {
+    pid: builder.pid,
+    cwd: scaffold,
+    executable: process.execPath,
+    argv: [join(scaffold, 'build.mjs')],
+    ...terminal,
+    waitedOriginalChild: true,
+  });
+  if (terminal.code !== 0 || terminal.signal) throw new Error('Original Kit build child failed');
+  const compiled: Array<{
+    id: string;
+    renderedLength: number;
+    importedIds: string[];
+    importers: string[];
+    renderedExports: string[];
+    sourceSha256: string | null;
+    chunk: string;
+  }> = JSON.parse(await readFile(join(evidence!, 'kit-client-inputs.json'), 'utf8'));
+  const required = [
+    join(root, 'test/fixtures/native-review-native/ui-renderer.svelte'),
+    ...[
+      'lib/components/workspace/PullRequestCreator.svelte',
+      'features/accept-changes/components/NativeReviewAttempt.svelte',
+      'lib/components/patterns/confirm/ConfirmHost.svelte',
+      'store/renderer/configured-store.ts',
+      'store/renderer/slices/connections/sagas/connections-saga.ts',
+      'store/renderer/slices/workspace-events/sagas/daemon-events-saga.ts',
+      'store/renderer/slices/principal/sagas/principal-saga.ts',
+      'store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts',
+      'store/renderer/slices/repository-context/sagas/repository-context-saga.ts',
+      'store/renderer/slices/repository-context/sagas/native-review-saga.ts',
+      'lib/client/live/live-workspaces-client.ts',
+      'lib/client/live/electron-ipc-transport.ts',
+    ].map((p) => join(root, 'src', p)),
+    join(scaffold, 'src/bootstrap.ts'),
+    join(routes, '[...fixture]/+page.svelte'),
+  ];
+  const proof = required.map((id) => {
+    const item = compiled.find((item) => item.id === id && item.renderedLength > 0);
+    if (!item) throw new Error('Missing actual Kit UI module: ' + id);
+    return item;
+  });
+  const kitClient = compiled.find(
+    (item) =>
+      item.id.includes('/@sveltejs/kit/') &&
+      item.id.endsWith('/src/runtime/client/client.js') &&
+      item.renderedLength > 0,
+  );
+  if (!kitClient || !['goto', 'start'].every((name) => kitClient.renderedExports.includes(name)))
+    throw new Error('Genuine Kit navigation and startup implementation missing');
+  proof.push(kitClient);
+  for (const suffix of [
+    '/src/runtime/app/stores.js',
+    '/src/runtime/app/navigation.js',
+    '/src/runtime/client/entry.js',
+  ]) {
+    const item = compiled.find(
+      (item) => item.id.includes('/@sveltejs/kit/') && item.id.endsWith(suffix),
+    );
+    if (
+      !item ||
+      item.sourceSha256 !== hash(await readFile(item.id)) ||
+      !item.importedIds.includes(kitClient.id)
+    )
+      throw new Error('Missing original Kit runtime import relation: ' + suffix);
+    if (suffix.endsWith('/stores.js') && item.renderedLength <= 0)
+      throw new Error('Genuine Kit stores not emitted');
+    proof.push(item);
+  }
+  record(evidence!, 'ui-build-preflight', proof);
+  const assets: Record<string, { file: string; sha256: string; bytes: number; type: string }> = {};
+  let total = 0;
+  async function inventory(folder: string) {
+    for (const name of await readdir(folder)) {
+      const path = join(folder, name),
+        stat = await lstat(path);
+      if (stat.isDirectory()) {
+        await inventory(path);
+        continue;
+      }
+      if (!stat.isFile()) throw new Error('Non-regular generated Kit asset');
+      const relative = path.slice(output.length + 1),
+        bytes = await readFile(path);
+      total += bytes.length;
+      if (Object.keys(assets).length >= 4096 || total > 268435456)
+        throw new Error('Kit asset bound');
+      const extension = relative.split('.').at(-1)!;
+      const type =
+        (
+          {
+            html: 'text/html',
+            js: 'text/javascript',
+            css: 'text/css',
+            json: 'application/json',
+            woff2: 'font/woff2',
+            woff: 'font/woff',
+            svg: 'image/svg+xml',
+            png: 'image/png',
+          } as Record<string, string>
+        )[extension] ?? 'application/octet-stream';
+      assets['/' + relative] = { file: relative, sha256: hash(bytes), bytes: bytes.length, type };
+      const copy = join(evidence!, 'kit-assets', relative);
+      await mkdir(dirname(copy), { recursive: true });
+      await copyFile(path, copy);
+    }
+  }
+  await inventory(output);
+  if (!assets['/index.html']) throw new Error('Generated Kit fallback entry missing');
+  const manifest = { version: 1, entry: '/index.html', assets, total };
+  record(output, 'asset-manifest', manifest);
+  record(evidence!, 'asset-manifest', manifest);
+}
+
 test.beforeAll(async () => {
   await mkdir(evidence!, { recursive: true, mode: 0o700 });
   const artifact = await lstat(executable!);
@@ -588,61 +811,55 @@ test.beforeAll(async () => {
       qualification:
         'Unchanged application resolution and defines only; fixture owns its build plugins and entry',
     });
-  await build({
-    configFile: false,
-    logLevel: 'error',
-    resolve: {
-      alias: appConfig?.config.resolve?.alias ?? alias,
-      conditions: ['browser', 'svelte'],
-    },
-    define: appConfig?.config.define,
-    plugins: [
-      ...(uiMode ? [svelte({ configFile: false, preprocess: vitePreprocess() })] : []),
-      modules('renderer'),
-      {
-        name: 'inline-native-facade',
-        resolveId(id) {
-          if (id === 'native-renderer') return '\0native-renderer';
+  if (uiMode) {
+    await buildKitFixture(appConfig!.config);
+  } else {
+    await build({
+      configFile: false,
+      logLevel: 'error',
+      resolve: { alias, conditions: ['browser', 'svelte'] },
+      plugins: [
+        modules('renderer'),
+        {
+          name: 'inline-native-facade',
+          resolveId(id) {
+            if (id === 'native-renderer') return '\0native-renderer';
+          },
+          load(id) {
+            if (id === '\0native-renderer') return renderer;
+          },
         },
-        async load(id) {
-          if (id === '\0native-renderer')
-            return uiMode
-              ? (
-                  await transformWithEsbuild(activeRenderer, 'native-ui-entry.ts', {
-                    loader: 'ts',
-                    target: 'es2022',
-                  })
-                ).code
-              : activeRenderer;
-        },
-      },
-    ],
-    build: {
-      target: 'es2022',
-      outDir: bundle,
-      emptyOutDir: false,
-      minify: false,
-      rollupOptions: {
-        input: 'native-renderer',
-        output: {
-          format: 'es',
-          entryFileNames: 'renderer.js',
-          inlineDynamicImports: true,
-          assetFileNames: (asset) =>
-            asset.names.some((name) => name.endsWith('.css'))
-              ? 'renderer.js.css'
-              : 'assets/[name]-[hash][extname]',
+      ],
+      build: {
+        target: 'es2022',
+        outDir: bundle,
+        emptyOutDir: false,
+        minify: false,
+        rollupOptions: {
+          input: 'native-renderer',
+          output: {
+            format: 'es',
+            entryFileNames: 'renderer.js',
+            inlineDynamicImports: true,
+            assetFileNames: (asset) =>
+              asset.names.some((name) => name.endsWith('.css'))
+                ? 'renderer.js.css'
+                : 'assets/[name]-[hash][extname]',
+          },
         },
       },
-    },
-  });
-  await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
-  if (uiMode) await copyFile(join(bundle, 'renderer.js.css'), join(evidence!, 'renderer.js.css'));
+    });
+    await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
+  }
   record(
     evidence!,
     'compiled',
     await Promise.all(
-      ['main.mjs', 'preload.cjs', 'renderer.js'].map(async (name) => ({
+      [
+        'main.mjs',
+        'preload.cjs',
+        ...(uiMode ? ['ui-assets/asset-manifest.json'] : ['renderer.js']),
+      ].map(async (name) => ({
         name,
         sha256: hash(await readFile(join(bundle, name))),
       })),
@@ -1032,7 +1249,7 @@ async function withDriver(
         join(dir, 'profile'),
         join(bundle, 'preload.cjs'),
         join(dir, 'ready.json'),
-        join(bundle, 'renderer.js'),
+        join(bundle, uiMode ? 'ui-assets/asset-manifest.json' : 'renderer.js'),
       ],
       env: {
         ...environment(home),
