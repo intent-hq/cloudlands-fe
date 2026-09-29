@@ -22,6 +22,7 @@ import {
   refreshDaemonEventsAfterReconnect,
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
+import { notifyInterruptedAgentsSubscriptionReady } from '$features/agent/interrupted-agents-service';
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -108,7 +109,10 @@ function subscribeFirehose(lease: SubscriptionLease): Promise<void> {
  * every later change is guaranteed to arrive as an event.
  */
 function* announceFirehoseSubscribed(lease: SubscriptionLease) {
-  if (lease.subscriptionId) yield* put(daemonEventsSubscribed());
+  if (lease.subscriptionId) {
+    yield* put(daemonEventsSubscribed());
+    yield* call(notifyInterruptedAgentsSubscriptionReady);
+  }
 }
 
 function subscribeScopedFileEvents(lease: SubscriptionLease, workspaceId: string): Promise<void> {
