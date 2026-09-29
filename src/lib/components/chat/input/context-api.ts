@@ -239,10 +239,11 @@ export async function sendAttachmentUploadChunk(
   uploadId: string,
   seq: number,
   data: string,
+  workspaceId?: string,
 ): Promise<{ uploadId: string; seq: number; receivedBytes: number }> {
   return await backendRequest(
     'file.attachmentUpload.chunk',
-    { uploadId, seq, data },
+    { uploadId, seq, data, ...(workspaceId !== undefined ? { workspaceId } : {}) },
     { timeoutMs: UPLOAD_TRANSFER_TIMEOUT_MS },
   );
 }
@@ -252,10 +253,13 @@ export async function sendAttachmentUploadChunk(
  * (`file.attachmentUpload.commit`, PROTOCOL §5.9). The result is
  * byte-shape-identical to a successful `file.placeAttachment`.
  */
-export async function commitAttachmentUpload(uploadId: string): Promise<PlaceAttachmentResult> {
+export async function commitAttachmentUpload(
+  uploadId: string,
+  workspaceId?: string,
+): Promise<PlaceAttachmentResult> {
   return await backendRequest<PlaceAttachmentResult>(
     'file.attachmentUpload.commit',
-    { uploadId },
+    { uploadId, ...(workspaceId !== undefined ? { workspaceId } : {}) },
     { timeoutMs: UPLOAD_TRANSFER_TIMEOUT_MS },
   );
 }
@@ -266,8 +270,12 @@ export async function commitAttachmentUpload(uploadId: string): Promise<PlaceAtt
  */
 export async function abortAttachmentUpload(
   uploadId: string,
+  workspaceId?: string,
 ): Promise<{ uploadId: string; aborted: boolean }> {
-  return await backendRequest('file.attachmentUpload.abort', { uploadId });
+  return await backendRequest('file.attachmentUpload.abort', {
+    uploadId,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
+  });
 }
 
 /** Result of `file.getAttachmentInfo` (PROTOCOL §5.9). */
@@ -287,7 +295,10 @@ export interface AttachmentInfo {
  * `file.getAttachmentInfo` selector: the registry UUID, or (keyed placement) the
  * `{ workspaceId, idempotencyKey }` pair of a keyed placement.
  */
-export type AttachmentInfoSelector = string | { workspaceId: string; idempotencyKey: string };
+export type AttachmentInfoSelector =
+  | string
+  | { workspaceId: string; idempotencyKey: string; attachmentId?: never }
+  | { workspaceId: string; attachmentId: string; idempotencyKey?: never };
 
 /**
  * Look up an attachment-registry row via the daemon
@@ -300,7 +311,9 @@ export async function getAttachmentInfo(selector: AttachmentInfoSelector): Promi
   const params =
     typeof selector === 'string'
       ? { attachmentId: selector }
-      : { workspaceId: selector.workspaceId, idempotencyKey: selector.idempotencyKey };
+      : selector.attachmentId !== undefined
+        ? { workspaceId: selector.workspaceId, attachmentId: selector.attachmentId }
+        : { workspaceId: selector.workspaceId, idempotencyKey: selector.idempotencyKey };
   return await backendRequest<AttachmentInfo>('file.getAttachmentInfo', params);
 }
 

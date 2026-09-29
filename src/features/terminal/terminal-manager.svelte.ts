@@ -217,7 +217,7 @@ class RendererTerminalManager {
   /**
    * Dispose a terminal completely
    */
-  disposeTerminal(terminalId: string): void {
+  disposeTerminal(terminalId: string, workspaceId?: string): void {
     const managed = this.terminals.get(terminalId);
     if (managed) {
       logger.info(`[RendererTerminalManager] Disposing terminal: ${terminalId}`);
@@ -227,7 +227,7 @@ class RendererTerminalManager {
       this.removeTerminalMetadata(terminalId, managed.workspaceId);
     } else {
       // Restored tabs can be closed before their renderer adapter is created.
-      void appClient.terminals.kill(terminalId).then(
+      void appClient.terminals.kill(terminalId, workspaceId).then(
         (result) => {
           if (!result.success) logger.error('Error killing terminal:', result.error);
         },

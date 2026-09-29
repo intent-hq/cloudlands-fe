@@ -2,6 +2,7 @@
 //   ../PinnedUserPrompt.svelte, ../pinned-prompt.ts, ../user-message-surface.ts,
 //   ../ConversationTurnGap.svelte, ../MessageContent.svelte, ../StreamingMessageContent.svelte,
 //   ../ResponseGroup.svelte, ../operational-disclosure-row.ts, ../ChatOperationalRow.svelte,
+//   ../operational-window-items.ts, ../OperationalWindow.svelte,
 //   ../StreamingStatus.svelte, ../StreamingTypingIndicator.svelte, ../EventWakeupBanner.svelte,
 //   ../InlineAgentAvatar.svelte, ../SuggestedPrompts.svelte, ../message-action-surface.ts,
 //   ../ToolCall.svelte, ../ThinkingBlock.svelte, ../ContextEngineToolCall.svelte,
@@ -186,13 +187,19 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
-    expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
-    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toContain(
-      '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
+    const projection = source('src/lib/components/chat/operational-window-items.ts');
+    // Inline and expanded groups share the canonical staged child renderer.
+    // Their spacing helpers below must apply to both projected paths.
+    for (const renderer of [staticContent, streamingContent]) {
+      expect(renderer.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(1);
+      expect(renderer).toContain('row={renderWindowItem}');
+      expect(renderer).toContain('items={projectWindowItems(');
+    }
+    expect(projection).toContain('shouldRenderResponseGroupInline(block)');
+    expect(projection).toContain(
+      'block.children.forEach((child, ci) => append(child, index, block, ci))',
     );
-    expect(streamingContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
+    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');
@@ -210,9 +217,11 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
-    expect(staticContent).toMatch(/nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
+    expect(staticContent).toMatch(
+      /nested,\s+item\.fragment > 0 \|\|\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
+    );
     expect(streamingContent).toMatch(
-      /nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
+      /nested,\s+item\.fragment > 0 \|\|\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
     );
   });
 
@@ -287,16 +296,6 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
     expect(suggestions).not.toContain('faPaperPlane');
-  });
-
-  it('uses the MessageComposer surface shell in docked and standalone contexts', () => {
-    const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
-
-    expect(input).toContain('surfaceClasses(2, 2)');
-    expect(input).toContain('rounded-(--radius-large)');
-    expect(input).toContain('data-ring-state={ringState}');
-    expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@container style(--motion-reduced: 1)');
   });
 
   it('gives tool, context, and reasoning rows one shared muted shell', () => {

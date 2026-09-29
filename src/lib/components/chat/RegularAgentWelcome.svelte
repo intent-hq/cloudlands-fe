@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { writable } from 'svelte/store';
+  import { selectContextSpecialists } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import Fa from 'svelte-fa';
   import { faGear, faChevronDown, faPlus } from '@fortawesome/free-solid-svg-icons';
   import SpecialistOptions from './SpecialistOptions.svelte';
@@ -6,7 +8,6 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
   import {
-    selectSpecialists,
     selectUserOverrides,
     filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -23,12 +24,15 @@
   interface Props {
     onSpecialistChange?: (specialistId: string | null) => void;
     session?: AgentSession | null;
+    workspaceId?: string;
   }
 
-  let { onSpecialistChange, session }: Props = $props();
+  let { onSpecialistChange, session, workspaceId }: Props = $props();
 
   // Reactive store subscriptions for Svelte reactivity
-  const specialists$ = selectSpecialists();
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => workspaceIdStore.set(workspaceId ?? ''));
+  const specialists$ = selectContextSpecialists(workspaceIdStore);
   const userOverrides$ = selectUserOverrides();
   $effect(() => {
     void $userOverrides$;

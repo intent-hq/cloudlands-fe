@@ -330,3 +330,34 @@ describe('ThinkingBlock — tool-call presentation', () => {
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false');
   });
 });
+
+describe('ThinkingBlock search ownership', () => {
+  it('restores search-owned expansion after eviction without changing manual state', async () => {
+    const ThinkingBlock = (await import('../ThinkingBlock.svelte')).default;
+    const { requestSearchDisclosure } = await import('../chat-search-disclosure');
+    const saved = {};
+    const props = { content: 'Searchable completed reasoning body.', saved, searchPath: 'b:1:c:0' };
+    let view = render(ThinkingBlock, { props });
+    const disclosure = () => view.container.querySelector('[data-chat-search-disclosure-id]')!;
+    expect(disclosure()).not.toBeNull();
+    requestSearchDisclosure(disclosure(), true);
+    await waitFor(() =>
+      expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true'),
+    );
+    view.unmount();
+    view = render(ThinkingBlock, { props });
+    await waitFor(() =>
+      expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true'),
+    );
+    requestSearchDisclosure(disclosure(), false);
+    await waitFor(() =>
+      expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false'),
+    );
+    await fireEvent.click(screen.getByRole('button'));
+    requestSearchDisclosure(disclosure(), true);
+    requestSearchDisclosure(disclosure(), false);
+    await waitFor(() =>
+      expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true'),
+    );
+  });
+});

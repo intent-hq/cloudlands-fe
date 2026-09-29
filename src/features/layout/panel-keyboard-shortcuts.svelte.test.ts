@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PanelLayoutManager } from './panel-layout-adapter';
+import { PanelLayoutAdapter, type PanelLayoutManager } from './panel-layout-adapter';
+import type { PanelLayoutNode } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 const mocks = vi.hoisted(() => ({
   focusedPanelId: 'p1' as string | null,
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     activeTabId: 'pane-1',
     tabs: [{ id: 'pane-1' }, { id: 'pane-2' }],
   } as { id: string; activeTabId: string | null; tabs: Array<{ id: string }> } | null,
+  root: undefined as PanelLayoutNode | undefined,
   shortcutOverrides: {} as Record<string, string>,
 }));
 
@@ -21,6 +23,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectFocusedPanel: { select: () => mocks.focusedPanel },
   selectPanelLayoutWorkspace: { select: () => null },
   selectPanelIds: { select: () => mocks.panelIds },
+  selectPanelLayoutRoot: { select: () => mocks.root },
 }));
 
 import { createPanelKeyboardShortcuts } from './panel-keyboard-shortcuts.svelte';
@@ -51,12 +54,17 @@ describe('fixed-column panel keyboard shortcuts', () => {
   const selectPreviousTab = vi.fn();
   const moveTabToPanel = vi.fn();
   const focusPanel = vi.fn();
+  const moveTabToSplitLevel = vi.fn();
   const manager = {
     workspaceId: 'ws',
     splitPanel,
     selectNextTab,
     selectPreviousTab,
     moveTabToPanel,
+    moveTabToSplitLevel,
+    moveActivePaneToColumn: PanelLayoutAdapter.prototype.moveActivePaneToColumn,
+    getPanelIds: () => mocks.panelIds,
+    getPanel: () => mocks.focusedPanel,
     focusPanel,
   } as unknown as PanelLayoutManager;
 
@@ -72,6 +80,7 @@ describe('fixed-column panel keyboard shortcuts', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.root = undefined;
     mocks.focusedPanelId = 'p1';
     mocks.panelIds = ['p1', 'p2'];
     mocks.focusedPanel = {
@@ -208,10 +217,113 @@ describe('fixed-column panel keyboard shortcuts', () => {
     expect(moveTabToPanel).toHaveBeenCalledWith('pane-1', 'p1', 'p2');
 
     mocks.panelIds = ['p1'];
+    mocks.focusedPanel!.tabs = [{ id: 'pane-1' }];
     expect(shortcuts.handleKeyDown(event('PageDown', { metaKey: true, altKey: true }))).toBe(false);
     expect(moveTabToPanel).toHaveBeenCalledOnce();
     shortcuts.cleanup();
   });
+
+  function stackedRows() {
+    mocks.panelIds = ['a', 'b', 'c'];
+    mocks.root = {
+      type: 'split',
+      direction: 'horizontal',
+      sizes: [50, 50],
+      children: [
+        {
+          type: 'split',
+          direction: 'vertical',
+          sizes: [50, 50],
+          children: [
+            { type: 'panel', panelId: 'a' },
+            { type: 'panel', panelId: 'b' },
+          ],
+        },
+        { type: 'panel', panelId: 'c' },
+      ],
+    };
+  }
+
+  function focus(id: string) {
+    mocks.focusedPanelId = id;
+    mocks.focusedPanel = { id, activeTabId: 'pane-1', tabs: [{ id: 'pane-1' }] };
+  }
+
+  it.each([
+    ['a', 'PageDown', 'c'],
+    ['b', 'PageDown', 'c'],
+    ['c', 'PageUp', 'a'],
+  ])('moves from row %s to the neighboring column', (source, key, destination) => {
+    stackedRows();
+    focus(source);
+    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+      isMac: false,
+    });
+    const keyEvent = event(key, { ctrlKey: true, altKey: true });
+
+    expect(shortcuts.handleKeyDown(keyEvent)).toBe(true);
+    expect(keyEvent.defaultPrevented).toBe(true);
+    expect(moveTabToPanel).toHaveBeenCalledExactlyOnceWith('pane-1', source, destination);
+    expect(moveTabToSplitLevel).not.toHaveBeenCalled();
+    shortcuts.cleanup();
+  });
+
+  it.each([
+    ['stacked row', 'PageUp', 'before'],
+    ['tab stack', 'PageDown', 'after'],
+  ] as const)('detaches a %s at the column edge', (kind, key, position) => {
+    if (kind === 'stacked row') {
+      stackedRows();
+      focus('a');
+    } else {
+      mocks.panelIds = ['p1'];
+    }
+    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+      isMac: true,
+    });
+    const keyEvent = event(key, { metaKey: true, altKey: true });
+
+    expect(shortcuts.handleKeyDown(keyEvent)).toBe(true);
+    expect(keyEvent.defaultPrevented).toBe(true);
+    expect(moveTabToSplitLevel).toHaveBeenCalledExactlyOnceWith(
+      'pane-1',
+      mocks.focusedPanelId,
+      [],
+      position,
+      'horizontal',
+    );
+    expect(moveTabToPanel).not.toHaveBeenCalled();
+    shortcuts.cleanup();
+  });
+
+  it.each(['no focus', 'no active pane', 'stale active pane', 'single pane', 'four columns'])(
+    'leaves movement unhandled with %s',
+    (reason) => {
+      if (reason === 'no focus') {
+        mocks.focusedPanelId = null;
+        mocks.focusedPanel = null;
+      } else if (reason === 'no active pane') {
+        mocks.focusedPanel!.activeTabId = null;
+      } else if (reason === 'stale active pane') {
+        mocks.focusedPanel!.activeTabId = 'missing';
+      } else if (reason === 'single pane') {
+        mocks.panelIds = ['p1'];
+        mocks.focusedPanel!.tabs = [{ id: 'pane-1' }];
+      } else {
+        mocks.panelIds = ['p1', 'p2', 'p3', 'p4'];
+      }
+      const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+        isMac: false,
+      });
+      const keyEvent = event('PageUp', { ctrlKey: true, altKey: true });
+
+      expect(shortcuts.handleKeyDown(keyEvent)).toBe(false);
+      expect(keyEvent.defaultPrevented).toBe(false);
+      expect(moveTabToPanel).not.toHaveBeenCalled();
+      expect(moveTabToSplitLevel).not.toHaveBeenCalled();
+      shortcuts.cleanup();
+    },
+  );
 
   it('does not consume disabled pane, focus, or column creation commands', () => {
     mocks.focusedPanel = { id: 'p1', activeTabId: 'pane-1', tabs: [{ id: 'pane-1' }] };
@@ -294,6 +406,7 @@ describe('fixed-column panel keyboard shortcuts', () => {
       expect(selectNextTab).not.toHaveBeenCalled();
       expect(onFocusAdjacentColumn).not.toHaveBeenCalled();
       expect(moveTabToPanel).not.toHaveBeenCalled();
+      expect(moveTabToSplitLevel).not.toHaveBeenCalled();
       expect(splitPanel).not.toHaveBeenCalled();
       expect(shortcuts.leaderActive).toBe(false);
 

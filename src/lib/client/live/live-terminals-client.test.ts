@@ -21,6 +21,7 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
 } from './backend-transport';
 import { LiveTerminalsClient } from './live-terminals-client';
 
@@ -516,6 +517,45 @@ describe('LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)', () => {
 
     dispose();
     expect(offFn).toHaveBeenCalledTimes(1);
-    expect(mockedUnsubscribe).toHaveBeenCalledWith('sub-term-1');
+    expect(mockedUnsubscribe).toHaveBeenCalledWith('sub-term-1', undefined);
   });
+});
+
+it('keeps an explicit terminal origin for write, resize, buffer replay and kill', async () => {
+  mockedRequest.mockResolvedValue({ data: btoa('saved output') });
+  const client = new LiveTerminalsClient();
+  await client.write('term-a', 'x', 'workspace-a');
+  await client.resize('term-a', 90, 30, 'workspace-a');
+  expect(await client.getBuffer('term-a', 512, 'workspace-a')).toBe('saved output');
+  await client.kill('term-a', 'workspace-a');
+  expect(mockedRequest.mock.calls).toEqual([
+    ['terminal.write', { terminalId: 'term-a', data: btoa('x'), workspaceId: 'workspace-a' }],
+    ['terminal.resize', { terminalId: 'term-a', cols: 90, rows: 30, workspaceId: 'workspace-a' }],
+    ['terminal.getBuffer', { terminalId: 'term-a', maxBytes: 512, workspaceId: 'workspace-a' }],
+    ['terminal.kill', { terminalId: 'term-a', workspaceId: 'workspace-a' }],
+  ]);
+});
+
+it('retains terminal subscription origin across reconnect and late disposal', async () => {
+  const replies: Array<(value: { subscriptionId: string }) => void> = [];
+  mockedSubscribe.mockImplementation(() => new Promise((resolve) => replies.push(resolve)));
+  mockedOnNotification.mockReturnValue(() => {});
+  const client = new LiveTerminalsClient();
+  const dispose = client.subscribeEvents('term-a', {}, 'workspace-a');
+  const reconnect = vi.mocked(onBackendReconnected).mock.calls.at(-1)![0];
+  reconnect();
+  replies[1]({ subscriptionId: 'new' });
+  await Promise.resolve();
+  replies[0]({ subscriptionId: 'old' });
+  await Promise.resolve();
+  dispose();
+  expect(mockedUnsubscribe.mock.calls).toEqual([
+    ['old', 'workspace-a'],
+    ['new', 'workspace-a'],
+  ]);
+  expect(
+    mockedSubscribe.mock.calls.every(
+      ([params]) => (params as { workspaceId: string }).workspaceId === 'workspace-a',
+    ),
+  ).toBe(true);
 });

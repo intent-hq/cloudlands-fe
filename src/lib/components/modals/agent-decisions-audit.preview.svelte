@@ -11,6 +11,7 @@
         'switch-long',
         'dismiss-proposal',
         'dismiss-questions',
+        'retire',
         'handoff',
         'handoff-expanded',
         'handoff-blank',
@@ -26,6 +27,7 @@
   import DismissProposalConfirmDialog from '../chat/proposals/DismissProposalConfirmDialog.svelte';
   import DismissQuestionsConfirmDialog from '../chat/questions/DismissQuestionsConfirmDialog.svelte';
   import HarnessFeaturesModal from '../chat/HarnessFeaturesModal.svelte';
+  import RetireAgentModal from './RetireAgentModal.svelte';
   import ReplaceAgentModal from './ReplaceAgentModal.svelte';
   let { state = 'switch-provider' }: { state?: string } = $props();
 </script>
@@ -51,6 +53,8 @@
   <DismissProposalConfirmDialog open />
 {:else if state === 'dismiss-questions'}
   <DismissQuestionsConfirmDialog open />
+{:else if state === 'retire'}
+  <RetireAgentModal open agentName="Design system implementor" onRetire={async () => {}} />
 {:else if state.startsWith('handoff')}
   <ReplaceAgentModal open agentName="Design system implementor" specialist="implementor" />
 {:else}

@@ -5,7 +5,6 @@ import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-m
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
-import { SPECIALISTS } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
 import { cleanErrorMessage } from '$shared/errors/messages';
@@ -23,10 +22,9 @@ import {
   bulkUpsertSessions,
   upsertSession,
 } from '../../agent-session/agent-session-slice';
-import { selectSelectedModel } from '../../model/model-selectors';
+import { selectContextSelectedModel } from '../../provider-catalog/workspace-catalog-selectors';
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
-import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import {
   selectDefaultSpecialistId,
   selectEffectiveBehaviorPrompt,
@@ -176,8 +174,8 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-  const model = yield* selectSelectedModel.effect();
-  const activeProvider = yield* selectActiveProviderId.effect();
+  const model = yield* selectContextSelectedModel.effect(wsId);
+  const activeProvider = yield* selectEffectiveDefaultProviderId.effect(wsId);
   const name = generateSpecialistAgentName(
     'Agent',
     agents.map((agent) => agent.name).filter((value): value is string => !!value),
@@ -225,26 +223,26 @@ function* createSpecialistAgent(
   // active provider. A specialist swaps in its effective coding agent and its
   // explicit model override (undefined ⇒ the daemon resolves the default in
   // that provider's context).
-  let model: string | undefined = yield* selectSelectedModel.effect();
-  let provider: string = yield* selectActiveProviderId.effect();
+  let model: string | undefined = yield* selectContextSelectedModel.effect(wsId);
+  let provider: string = yield* selectEffectiveDefaultProviderId.effect(wsId);
   let behaviorPrompt: string | undefined;
   let reasoningEffort: string | undefined;
   let baseName = 'Agent';
   if (specialistId) {
-    const specialists = yield* selectSpecialists.effect();
+    const specialists = yield* selectSpecialists.effect(wsId);
     const specialist = specialists.find((candidate) => candidate.id === specialistId);
     if (specialist) {
       baseName = specialist.name;
-      provider = yield* selectEffectiveCodingAgent.effect(specialistId);
+      provider = yield* selectEffectiveCodingAgent.effect(specialistId, wsId);
       // Legacy boundary: an explicit frontmatter model may still be a
       // pre-triple compound id — split so the request carries a bare model,
       // its prefix winning provider attribution over the coding agent.
-      const explicit = yield* selectExplicitModel.effect(specialistId);
+      const explicit = yield* selectExplicitModel.effect(specialistId, wsId);
       const pinned = explicit ? splitLegacyCompoundId(explicit) : undefined;
       model = pinned?.modelId || undefined;
       provider = pinned?.providerId || provider;
-      behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
-      reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
+      behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId, wsId);
+      reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId, wsId);
     }
   }
   const name = generateSpecialistAgentName(
@@ -304,33 +302,21 @@ function* runAgentForNote(
   // specialists without auth) and not `hidden` (picker surfaces exclude
   // hidden specialists via filterPickableSpecialists, so Run does too); fall
   // back to implementor for backward compatibility when unset or unavailable.
-  const defaultSpecialistId = yield* selectDefaultSpecialistId.effect();
-  const specialists = yield* selectSpecialists.effect();
+  const defaultSpecialistId = yield* selectDefaultSpecialistId.effect(wsId);
+  const specialists = yield* selectSpecialists.effect(wsId);
   const configured = defaultSpecialistId
     ? specialists.find((candidate) => candidate.id === defaultSpecialistId && !candidate.hidden)
     : undefined;
   const specialistId = configured?.id ?? 'implementor';
-  let model = yield* selectExplicitModel.effect(specialistId);
-  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
-  let reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
-  if (!behaviorPrompt) {
-    const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
-    if (specialist) {
-      behaviorPrompt = specialist.defaultBehaviorPrompt;
-      if (!model) {
-        model = specialist.defaultModel ?? '';
-      }
-      if (!reasoningEffort) {
-        reasoningEffort = specialist.reasoningEffort;
-      }
-    }
-  }
+  let model = yield* selectExplicitModel.effect(specialistId, wsId);
+  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId, wsId);
+  let reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId, wsId);
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
   const initial = agents.find(
     (agent) => String(agent.workspaceId) === wsId && agent.isInitialAgent,
   );
-  const defaultProvider = yield* selectEffectiveDefaultProviderId.effect();
-  const activeProvider = yield* selectActiveProviderId.effect();
+  const defaultProvider = yield* selectEffectiveDefaultProviderId.effect(wsId);
+  const activeProvider = yield* selectEffectiveDefaultProviderId.effect(wsId);
   // Legacy boundary: an explicit frontmatter model may still be a pre-triple
   // compound id — split so the request carries a bare model, its prefix
   // winning provider attribution.
@@ -450,8 +436,8 @@ function* launchAgent(
     // selected model and the active provider (they are paired by the model
     // slice). Provider/model consistency is daemon-validated on `agent.create`
     // (the mismatch error surfaces through showCreationError's guidance toast).
-    const model = config.model ?? (yield* selectSelectedModel.effect());
-    const provider = config.provider ?? (yield* selectActiveProviderId.effect());
+    const model = config.model ?? (yield* selectContextSelectedModel.effect(wsId));
+    const provider = config.provider ?? (yield* selectEffectiveDefaultProviderId.effect(wsId));
     const request = createAgentFromConfigRequested(
       wsId,
       {

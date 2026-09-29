@@ -15,11 +15,15 @@ import { selectPermissionRequestsCollection } from '../permission-selectors';
 const logger = createLogger('PermissionResponseSaga');
 
 function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<void> {
+  const requests = yield* selectPermissionRequestsCollection.effect();
+  const request = getItem(requests, requestId);
+  if (!request) return;
   try {
     const result = yield* call(
       [appClient.agents, appClient.agents.respondPermission],
       requestId,
       outcome,
+      request.workspaceId,
     );
     if (result.success) yield* put(removePermissionRequest(requestId));
     else logger.error('Permission response failed', { requestId, outcome, error: result.error });

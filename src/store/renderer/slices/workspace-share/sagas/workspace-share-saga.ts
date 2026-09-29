@@ -32,6 +32,14 @@
  * links at render time. Failures are logged as bounded codes only.
  */
 
+import { clearGithubUserSearch } from '../../github-user-search/github-user-search-slice';
+import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
+import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
+import { forgeAuthClient } from '$features/forge-auth/renderer/forge-auth.client';
+import {
+  captureIntegrationContext,
+  integrationReconnectSettled,
+} from '$features/integrations-request-context';
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -66,6 +74,8 @@ import {
   selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
+  shareIntegrationAuthRequested,
+  shareIntegrationAuthLoaded,
   closeShareDialog,
   openShareDialog,
   shareAccessWithheld,
@@ -455,8 +465,40 @@ function* refreshOnMembershipChange(
   }
 }
 
+function* loadIntegrationAuth(
+  action: ReturnType<typeof shareIntegrationAuthRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, host] = action.payload;
+  const target = yield* selectShareTarget.effect();
+  if (!target || target.workspaceId !== workspaceId) return;
+  const context = captureIntegrationContext(workspaceId);
+  const { github, gitlab } = yield* all({
+    github: call([githubAuthClient, githubAuthClient.isAuthenticated], workspaceId),
+    gitlab: call(
+      [forgeAuthClient, forgeAuthClient.getStatus],
+      'gitlab' as const,
+      host,
+      workspaceId,
+    ),
+  });
+  if (context.isCurrent())
+    yield* put(
+      shareIntegrationAuthLoaded(target, { github, gitlab: gitlab?.isConfigured === true }),
+    );
+}
+
+export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {
+  yield* call(integrationReconnectSettled);
+  yield* put(clearGithubUserSearch());
+  const target = yield* selectShareTarget.effect();
+  if (!target) return;
+  const host = yield* selectGitLabAuthHost.effect();
+  yield* put(shareIntegrationAuthRequested(target.workspaceId, host || undefined));
+}
+
 export function* workspaceShareSaga(): SagaGenerator<void> {
   yield* all([
+    takeLatest(shareIntegrationAuthRequested, loadIntegrationAuth),
     takeEvery(openShareDialog, requestDataOnOpen),
     takeEvery(closeShareDialog, clearLinksOnClose),
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),

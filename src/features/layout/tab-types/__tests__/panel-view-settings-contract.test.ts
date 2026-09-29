@@ -92,10 +92,10 @@ describe('panel header view settings consolidation', () => {
       async (kind) => {
         const root = await openAppearance(kind);
         const dispatch = vi.spyOn(appStore, 'dispatch');
-        await fireEvent.keyDown(within(root).getByRole('menuitem', { name: /Font style/i }), {
+        await fireEvent.keyDown(within(root).getByRole('menuitem', { name: /^Font /i }), {
           key: 'ArrowRight',
         });
-        const submenu = await screen.findByRole('menu', { name: /^Font style$/i });
+        const submenu = await screen.findByRole('menu', { name: 'Font', exact: true });
         const mono = within(submenu).getByRole('menuitemradio', { name: 'Mono', exact: true });
         await fireEvent.click(mono);
 
@@ -116,7 +116,7 @@ describe('panel header view settings consolidation', () => {
           kind === 'agent' ? 'monospace' : 'sans',
         );
         expect(screen.getByRole('menu', { name: 'Panel appearance' })).toBe(root);
-        expect(screen.getByRole('menu', { name: /^Font style$/i })).toBe(submenu);
+        expect(screen.getByRole('menu', { name: 'Font', exact: true })).toBe(submenu);
       },
     );
 

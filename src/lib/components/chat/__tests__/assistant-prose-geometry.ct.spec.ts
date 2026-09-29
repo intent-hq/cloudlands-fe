@@ -279,6 +279,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         const assertCluster = async (testId: string, expectedRows: number) => {
           const fixture = component.locator(`[data-testid="${testId}"]`);
+          await fixture.scrollIntoViewIfNeeded();
           const rows = fixture.locator('[data-chat-operational-row]');
           await expect(rows).toHaveCount(expectedRows);
           const rowLines = rows.locator('[data-operational-disclosure-row]');
@@ -358,9 +359,10 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('static-operational-cluster', 5);
         await assertCluster('streaming-operational-cluster', 5);
 
+        await expandedGroup.scrollIntoViewIfNeeded();
         const groupRow = expandedGroup.locator('[data-operational-disclosure-row]');
         const groupProse = expandedGroup.locator(
-          '[data-response-group-content] > [data-message-content-block="text"]',
+          '[data-response-group-content] > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="text"]',
         );
         await expect(groupProse).toBeVisible();
         const [groupRowBox, groupProseBox] = await Promise.all([
@@ -374,6 +376,7 @@ for (const theme of ['light', 'dark'] as const) {
           'streaming-expanded-group-operational-rows',
         ]) {
           const nestedGroup = component.locator(`[data-testid="${fixtureId}"]`);
+          await nestedGroup.scrollIntoViewIfNeeded();
           const nestedGroupDisclosure = nestedGroup.locator(
             '[data-testid="response-group-disclosure"]',
           );
@@ -414,6 +417,7 @@ for (const theme of ['light', 'dark'] as const) {
             'group-group',
           ]) {
             const fixture = component.locator(`[data-testid="operational-pair-${mode}-${pair}"]`);
+            await fixture.scrollIntoViewIfNeeded();
             const rows = fixture.locator('[data-operational-row-container]');
             await expect(rows).toHaveCount(2);
             const boxes = await rows.evaluateAll((elements) =>
@@ -463,6 +467,7 @@ for (const theme of ['light', 'dark'] as const) {
           }
         }
 
+        await component.getByTestId('static-operational-cluster').scrollIntoViewIfNeeded();
         const staticRows = component.locator(
           '[data-testid="static-operational-cluster"] [data-operational-cluster-row]',
         );

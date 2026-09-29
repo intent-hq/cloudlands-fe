@@ -1,24 +1,5 @@
 <script lang="ts">
-  /* eslint-disable intent/no-component-async-data-fetch */
-  /**
-   * WebSocket API Settings Component
-   *
-   * Restored from commit 27293564, rewired to use AppClient + daemon RPCs:
-   * - settings.update with server.wsApi.enabled
-   * - server.pairingInfo for QR code + pairing details
-   * - server.rotateToken for token regeneration
-   *
-   * Handles error states (failed start rolls back setting, INTENTD_AUTH_TOKEN
-   * blocks rotation).
-   *
-   * Remote windows edit the host through localMachineClient so server methods
-   * and settings mutations stay on the local daemon.
-   *
-   * This component directly calls appClient methods per the restored pattern from
-   * commit 27293564. The WebSocket API settings are transient UI state that do not
-   * belong in Redux; the settings themselves are persisted by the daemon.
-   */
-  import { onDestroy, tick, type Snippet } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { slide } from '$lib/motion';
   import {
     Button,
@@ -35,14 +16,13 @@
     faQrcode,
   } from '@fortawesome/free-solid-svg-icons';
   import { ContentDialog } from '$lib/components/patterns/confirm';
-  import { notify } from '$lib/components/patterns/notify';
   import {
     SettingsDisclosure,
     SettingsFieldRow,
     SettingsForm,
     defineSettings,
   } from '$lib/components/patterns/settings';
-  import { appClient, localMachineClient } from '$lib/client';
+  import { registerWebsocketCredentials } from '$features/settings/websocket-api-credentials';
   import ListenTargetSelector from './ListenTargetSelector.svelte';
   import type { ListenTargetSelection } from './ListenTargetSelector.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -52,7 +32,16 @@
     selectSelfPublication,
     selectSelfPublicationBusy,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { selfPublicationRequested } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsFormById,
+    selectSettingsFormOperationById,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
+  import { websocketApiRequested } from '$store/renderer/slices/websocket-api/websocket-api-slice';
+  import { selectWebsocketApiSnapshotById } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
@@ -68,46 +57,43 @@
 
   const activeConnectionId$ = selectCurrentConnectionId();
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
-  const client = $derived(isRemote ? localMachineClient : appClient);
-
-  let enabled = $state(false);
+  const formId = crypto.randomUUID();
+  let identity = { formId, sessionId: '' };
+  const form$ = selectSettingsFormById(formId);
+  const snapshot$ = selectWebsocketApiSnapshotById(formId);
+  const save$ = selectSettingsFormOperationById(formId, 'save');
+  const load$ = selectSettingsFormOperationById(formId, 'load');
+  let toggleDraft = $state<boolean | null>(null);
+  const enabled = $derived($snapshot$.enabled);
   let token = $state('');
-  let port = $state<number | null>(null);
-  let certFingerprint = $state('');
-  let localIps = $state<string[]>([]);
-  // Bind candidates unfiltered by the bind set (additive `availableIps`).
-  // Undefined on older daemons, where the selector falls back to the
-  // bind-filtered `localIps` (its union with the bound set keeps the bound
-  // entries visible, but a loopback-only bind then offers nothing to pick).
-  let availableIps = $state<string[] | undefined>(undefined);
-  let _hostname = $state('');
-  let loading = $state(true);
-  let regenerating = $state(false);
+  const port = $derived($snapshot$.port);
+  const certFingerprint = $derived($snapshot$.certFingerprint);
+  const localIps = $derived($snapshot$.localIps);
+  const availableIps = $derived($snapshot$.availableIps);
+  const loading = $derived($load$?.status === 'pending' || (!$form$ && (!isRemote || expanded)));
+  const saving = $derived($save$?.status === 'pending');
+  const regenerating = $derived(saving);
 
   // Port editing state
-  let persistedPort = $state<number>(5181); // persisted setting value
+  const persistedPort = $derived($snapshot$.persistedPort);
   let editedPort = $state<string>('5181'); // input value as string
-  let portSaving = $state(false);
+  const portSaving = $derived(saving || loading);
   const portValid = $derived.by(() => {
     const value = Number(editedPort);
     return Number.isInteger(value) && value >= 1024 && value <= 65535;
   });
 
-  // Listen targets + tunnel state (monorepo tailcat feature). `tunnelSupported`
-  // gates the whole tunnel surface: false on daemons predating the
-  // `server.tunnel.*` settings, so the UI degrades to the plain IP selector.
-  let bindIps = $state<string[]>([]);
-  let bindAddressSupported = $state(false);
-  let tunnelEnabled = $state(false);
-  let tunnelOnly = $state(false);
-  let tunnelSupported = $state(false);
-  let tcAddress = $state('');
-  let listenSaving = $state(false);
+  const bindIps = $derived($snapshot$.bindIps);
+  const bindAddressSupported = $derived($snapshot$.bindAddressSupported);
+  const tunnelEnabled = $derived($snapshot$.tunnelEnabled);
+  const tunnelOnly = $derived($snapshot$.tunnelOnly);
+  const tunnelSupported = $derived($snapshot$.tunnelSupported);
+  const tcAddress = $derived($snapshot$.tcAddress);
+  const listenSaving = $derived(saving || loading);
 
   let showToken = $state(false);
-  let showQr = $state(false);
   let qrDataUrl = $state('');
-  let qrTimer: ReturnType<typeof setTimeout> | null = null;
+  const showQr = $derived(qrDataUrl !== '');
 
   // Publish-self state (spec Phase 2: sync is opt-out, so enabling the WSS
   // API auto-publishes this backend to iCloud Keychain). Loaded alongside the
@@ -128,453 +114,170 @@
   // could refresh state while the old record still exists, skip auto-publish,
   // and then have the queued unpublish delete it — WSS enabled but
   // unpublished (PR #1781 review).
-  let toggleBusy = $state(false);
+  const toggleBusy = $derived(saving || $publicationBusy$);
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
   );
 
   $effect(() => {
-    if (isRemote && !expanded) {
-      loading = false;
-      return;
-    }
-    void loadStatus();
+    const connectionId = $activeConnectionId$;
+    const active = connectionId === LOCAL_CONNECTION_ID || expanded;
+    if (!active) return;
+    const session = { formId, sessionId: crypto.randomUUID() };
+    identity = session;
+    showToken = false;
+    toggleDraft = null;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous mount-only credential receiver, not domain I/O; secrets must remain outside Redux.
+    const dispose = registerWebsocketCredentials(session.formId, session.sessionId, (value) => {
+      token = value.token;
+      qrDataUrl = value.qrDataUrl;
+    });
+    appStore.dispatch(settingsFormOpened(session, 'websocket-api'));
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...session, resource: 'load', requestId: crypto.randomUUID() },
+        { kind: 'load', connectionId },
+      ),
+    );
+    return () => {
+      dispose();
+      appStore.dispatch(settingsFormClosed(session));
+    };
   });
 
-  async function loadStatus() {
-    try {
-      loading = true;
-      const settings = await client.settings.list();
-      if (isRemote && !expanded) return;
-      const wsApiEnabled = settings.find(
-        (s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled',
-      );
-      const wsApiPort = settings.find(
-        (s: { path: string; value: unknown }) => s.path === 'server.wsApi.port',
-      );
-
-      enabled = wsApiEnabled?.value === true;
-
-      // Load persisted port (always, not only when enabled)
-      if (typeof wsApiPort?.value === 'number') {
-        persistedPort = wsApiPort.value;
-        editedPort = String(wsApiPort.value);
-      }
-
-      // Listen targets + tunnel settings (additive; absent on older daemons —
-      // `tunnelSupported` stays false and the tunnel UI is not rendered).
-      const bindAddress = settings.find(
-        (s: { path: string; value: unknown }) => s.path === 'server.bindAddress',
-      );
-      bindAddressSupported = bindAddress !== undefined;
-      bindIps = parseBindAddress(bindAddress?.value);
-      const tunnelSetting = settings.find(
-        (s: { path: string; value: unknown }) => s.path === 'server.tunnel.enabled',
-      );
-      tunnelSupported = tunnelSetting !== undefined;
-      tunnelEnabled = tunnelSetting?.value === true;
-      const tunnelOnlySetting = settings.find(
-        (s: { path: string; value: unknown }) => s.path === 'server.tunnel.only',
-      );
-      // Tunnel-only keeps the persisted bindAddress for later restoration, so
-      // the selector must not present those IPs as active listeners.
-      tunnelOnly = tunnelEnabled && tunnelOnlySetting?.value === true;
-
-      if (enabled) {
-        const info = await client.server.pairingInfo();
-        token = info.token;
-        port = info.port; // bound port from pairing info
-        certFingerprint = info.certFingerprint;
-        localIps = info.localIps;
-        availableIps = info.availableIps;
-        _hostname = info.hostname;
-        tcAddress = info.tcAddress ?? '';
-        await refreshPublishState();
-      }
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_loadStatusError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      loading = false;
+  let appliedPortReset = '';
+  $effect(() => {
+    const reset = $form$?.values.portResetId;
+    if (typeof reset === 'string' && reset !== appliedPortReset) {
+      appliedPortReset = reset;
+      editedPort = String(untrack(() => persistedPort));
     }
+  });
+  let notifiedEnable = '';
+  $effect(() => {
+    const requestId = $form$?.values.enabledAcknowledged;
+    if (typeof requestId === 'string' && requestId !== notifiedEnable) {
+      notifiedEnable = requestId;
+      untrack(() => onEnabled?.());
+    }
+  });
+
+  function handleToggle(checked: boolean) {
+    if (toggleBusy || loading) return;
+    toggleDraft = checked;
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'toggle', enabled: checked, connectionId: $activeConnectionId$ },
+      ),
+    );
   }
 
-  /**
-   * `server.bindAddress` is a single IP string (back-compat) or an array of
-   * IP strings (monorepo#3314) — normalize to an array for the selector.
-   */
-  function parseBindAddress(value: unknown): string[] {
-    if (typeof value === 'string' && value.length > 0) return [value];
-    if (Array.isArray(value)) {
-      return value.filter((v): v is string => typeof v === 'string' && v.length > 0);
-    }
-    return [];
-  }
-
-  /**
-   * Persist a listen-target change: bind IPs → `server.bindAddress`, tunnel →
-   * `server.tunnel.enabled`. Loopback is always bound (every selection
-   * carries at least 127.0.0.1 or 0.0.0.0), so a change always leaves the
-   * tunnel-only posture (`server.tunnel.only=false`). One atomic
-   * settings.update batch; on failure the selector re-syncs from a fresh
-   * loadStatus().
-   */
-  async function handleListenTargetChange(selection: ListenTargetSelection) {
+  $effect(() => {
+    const operation = $save$;
+    if (!operation || operation.status === 'pending' || toggleDraft === null) return;
+    let active = true;
+    // Let the controlled switch observe its optimistic frame before rollback.
+    void tick().then(() => {
+      if (active) toggleDraft = null;
+    });
+    return () => {
+      active = false;
+    };
+  });
+  function handleListenTargetChange(selection: ListenTargetSelection) {
     if (listenSaving) return;
-    listenSaving = true;
-    try {
-      const changes: { path: string; value: unknown }[] = [
-        { path: 'server.bindAddress', value: selection.ips },
-      ];
-      // settings.update is atomic: on daemons predating server.tunnel.* the
-      // unknown paths would reject the whole batch, so only include them when
-      // supported (the selector never emits tunnel selections otherwise).
-      if (tunnelSupported) {
-        changes.push({ path: 'server.tunnel.enabled', value: selection.tunnel });
-        changes.push({ path: 'server.tunnel.only', value: false });
-      }
-      await client.settings.update(changes);
-      bindIps = selection.ips;
-      tunnelEnabled = selection.tunnel;
-      tunnelOnly = false;
-      notify.success(m.settings_listenTargets_saved());
-      // The listen targets changed the published fields (hosts from the new
-      // bind IPs, tc address from the tunnel toggle) — propagate them to the
-      // published self entry (no-op in main when unpublished/suppressed).
-      refreshSelfEntry();
-      // The bound listeners changed — refresh the pairing info (port/IPs/tc).
-      await loadStatus();
-    } catch (error) {
-      notify.error(
-        m.settings_listenTargets_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      await loadStatus();
-    } finally {
-      listenSaving = false;
-    }
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'listen', ...selection, connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  const ALL_INTERFACES = '0.0.0.0';
-  const LOOPBACK = '127.0.0.1';
-  // The daemon treats the IPv6 unspecified address like 0.0.0.0: it must
-  // stand alone and already covers loopback (out-of-band config only).
-  const UNSPECIFIED = new Set([ALL_INTERFACES, '::']);
-
-  const localNetworkEnabled = $derived(!tunnelOnly && bindIps.some((ip) => ip !== LOOPBACK));
-
-  /**
-   * Loopback is always bound: this app and the tailcat sidecar (which forwards
-   * tunnel connections to 127.0.0.1:<port>) reach the daemon over it. Force
-   * it into every persisted bind set unless an unspecified address already
-   * covers it. An empty set (tunnel-only restore) therefore becomes
-   * loopback-only.
-   */
-  function withLoopback(ips: string[]): string[] {
-    if (ips.some((ip) => UNSPECIFIED.has(ip)) || ips.includes(LOOPBACK)) return ips;
-    return [...ips, LOOPBACK];
-  }
-
-  /**
-   * The "Enable Tailcat Tunnel" toggle drives `server.tunnel.enabled`; the
-   * bind set is carried through (loopback-repaired). Disabling from the
-   * tunnel-only posture restores the persisted bind IPs as active listeners
-   * so the daemon never ends up with zero targets.
-   */
   function handleTunnelToggle() {
     if (listenSaving) return;
-    void handleListenTargetChange({ ips: withLoopback(bindIps), tunnel: !tunnelEnabled });
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'tunnel', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  /**
-   * Loopback-only enable default: the daemon binds loopback only out of the
-   * box, so turning the WebSocket API on from that state widens the bind set
-   * to all interfaces. This applies on every enable from loopback-only,
-   * including after choosing loopback in Available Networks.
-   * A bindAddress the user already customized beyond loopback is left alone,
-   * the tunnel is untouched, and a persisted tunnel-only posture is respected
-   * (writing 0.0.0.0 there would contradict tunnel.only=true). Runs under
-   * listenSaving so the network picker and tunnel toggle cannot issue a concurrent
-   * bindAddress write.
-   * Fail-soft: a failure surfaces a toast and never rolls back the toggle.
-   */
-  async function maybeDefaultLocalNetworkAccess() {
-    if (!bindAddressSupported || localNetworkEnabled || tunnelOnly || listenSaving) return;
-    listenSaving = true;
-    try {
-      await client.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
-      bindIps = [ALL_INTERFACES];
-      refreshSelfEntry();
-      // The bound listeners changed — refresh the pairing info (port/IPs).
-      await loadStatus();
-    } catch (error) {
-      notify.error(
-        m.settings_listenTargets_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      listenSaving = false;
-    }
+  function handlePortSave() {
+    if (!portValid || portSaving) return;
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'port', port: Number(editedPort), connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handleCopyTcAddress() {
-    try {
-      await navigator.clipboard.writeText(tcAddress);
-      notify.success(m.settings_tunnel_tcAddress_copied());
-    } catch {
-      notify.error(m.settings_tunnel_tcAddress_copyError());
-    }
+  function handleRegenerate() {
+    if (saving) return;
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'rotate', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handleToggle(checked: boolean) {
-    if (toggleBusy) return;
-    const previousValue = enabled;
-    toggleBusy = true;
-    try {
-      const result = await client.settings.update([
-        { path: 'server.wsApi.enabled', value: checked },
-      ]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === 'server.wsApi.enabled',
-      );
-      if (applied && applied.value !== checked) {
-        notify.error(m.settings_wsApi_startListenerError());
-        enabled = checked;
-        await tick();
-        enabled = applied.value === true;
-        return;
-      }
-
-      enabled = checked;
-      if (checked) {
-        onEnabled?.();
-        await loadStatus();
-        await maybeDefaultLocalNetworkAccess();
-        await maybeAutoPublish();
-      } else {
-        await maybeAutoUnpublish();
-      }
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_toggleError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      enabled = checked;
-      await tick();
-      enabled = previousValue;
-    } finally {
-      toggleBusy = false;
-    }
-  }
-
-  /** Load keychain-sync + self-published state (gates the modal and button). */
-  function refreshPublishState() {
-    // Status loading must continue even if publication state is unavailable.
-    return appStore.dispatch(selfPublicationRequested('load')).catch(() => {});
-  }
-
-  /**
-   * Keep the published self entry fresh after a local change to its published
-   * fields (token rotation, port change): main re-upserts the record from the
-   * live pairing info so keychain sync pushes the new values to the user's
-   * other devices. Strict no-op in main while unpublished or while the "do
-   * not auto-publish" marker is set. Fire-and-forget and fail-soft — the
-   * rotation/port change itself already succeeded.
-   */
-  function refreshSelfEntry() {
-    appStore.dispatch(selfPublicationRequested('refresh'));
-  }
-
-  /**
-   * After a successful toggle-on on the local connection: auto-publish this
-   * backend to iCloud Keychain (sync is opt-out, no opt-in modal). Never on
-   * non-macOS, when sync is explicitly disabled, when a self entry already
-   * exists, or when the "do not auto-publish" marker is set (re-publishing
-   * is button-only). Fail-soft: a publish failure surfaces a toast and never
-   * rolls back the WSS toggle.
-   */
-  function maybeAutoPublish() {
-    return appStore.dispatch(selfPublicationRequested('autoPublish')).catch(() => {});
-  }
-
-  /**
-   * After a successful toggle-off on the local connection: silently remove
-   * this machine's published entry from iCloud Keychain — the record no
-   * longer points at a reachable backend. Never on non-macOS or when no
-   * published self entry exists (the state from the last refresh while WSS
-   * was on; fail-soft when never loaded). Main removes the entry WITHOUT
-   * setting the "do not auto-publish" marker, so toggling WSS back on
-   * auto-publishes again. Fail-soft: an unpublish failure surfaces a toast
-   * and never rolls back the WSS toggle.
-   */
-  function maybeAutoUnpublish() {
-    return appStore.dispatch(selfPublicationRequested('autoUnpublish')).catch(() => {});
-  }
-
   function handlePublishButton() {
-    appStore.dispatch(selfPublicationRequested('publish'));
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'publish', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handlePortSave() {
-    const newPort = Number(editedPort);
-    if (!Number.isInteger(newPort) || newPort < 1024 || newPort > 65535) {
-      return; // invalid input, do nothing
-    }
-
-    try {
-      portSaving = true;
-      const result = await client.settings.update([{ path: 'server.wsApi.port', value: newPort }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === 'server.wsApi.port',
-      );
-      if (applied && applied.value !== newPort) {
-        // Daemon rolled back to a different value (could be the old value or a different one)
-        const rolledBackValue = typeof applied.value === 'number' ? applied.value : persistedPort;
-        notify.error(m.settings_wsApi_portRollbackError());
-        persistedPort = rolledBackValue;
-        editedPort = String(rolledBackValue);
-        return;
-      }
-
-      // Success
-      persistedPort = newPort;
-      if (enabled) {
-        // Refresh pairing info to show the new bound port (separate try/catch so only update failures are treated as save failures)
-        try {
-          const info = await client.server.pairingInfo();
-          port = info.port;
-        } catch {
-          // Pairing info refresh failed, but the setting was saved successfully
-        }
-        // Propagate the new port to the published self entry (no-op in main
-        // when unpublished/suppressed).
-        refreshSelfEntry();
-        notify.success(m.settings_wsApi_portChanged({ port: String(newPort) }));
-      } else {
-        notify.success(m.settings_wsApi_portSaved());
-      }
-    } catch (error) {
-      // Daemon error (e.g., port already in use)
-      notify.error(
-        m.settings_wsApi_portChangeError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedPort = String(persistedPort);
-    } finally {
-      portSaving = false;
-    }
+  function handleCopy() {
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'copy', requestId: crypto.randomUUID() },
+        { kind: 'copy', target: 'token', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handleRegenerate() {
-    try {
-      regenerating = true;
-      const result = await client.server.rotateToken();
-      token = result.token;
-      // Propagate the rotated token to the published self entry (no-op in
-      // main when unpublished/suppressed).
-      refreshSelfEntry();
-      notify.success(m.settings_wsApi_tokenRegenerated());
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('INTENTD_AUTH_TOKEN') || message.includes('token is fixed')) {
-        notify.error(m.settings_wsApi_tokenRotateFixedError());
-      } else {
-        notify.error(m.settings_wsApi_tokenRegenerateError({ error: message }));
-      }
-    } finally {
-      regenerating = false;
-    }
+  function handleCopyFingerprint() {
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'copy', requestId: crypto.randomUUID() },
+        { kind: 'copy', target: 'fingerprint', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handleCopyFingerprint() {
-    try {
-      await navigator.clipboard.writeText(certFingerprint);
-      notify.success(m.settings_wsApi_fingerprintCopied_label());
-    } catch {
-      notify.error(m.ui_imageActionsMenu_copyFailed_error());
-    }
+  function handleCopyTcAddress() {
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'copy', requestId: crypto.randomUUID() },
+        { kind: 'copy', target: 'tc', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(token);
-      notify.success(m.settings_wsApi_tokenCopied());
-    } catch {
-      notify.error(m.settings_wsApi_tokenCopyError());
-    }
+  function handleCopyShareLink() {
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'copy', requestId: crypto.randomUUID() },
+        { kind: 'copy', target: 'share', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  function getPairingUri(): string {
-    // Use one URI for QR pairing and clipboard sharing, including tunnel-only access.
-    return `intent://pair?token=${encodeURIComponent(token)}&host=${localIps
-      .map(encodeURIComponent)
-      .join(',')}&port=${port}&path=/ws${
-      certFingerprint ? `&certFingerprint=${encodeURIComponent(certFingerprint)}` : ''
-    }${tcAddress ? `&tc=${encodeURIComponent(tcAddress)}` : ''}`;
+  function handleShowQr() {
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'qr', requestId: crypto.randomUUID() },
+        { kind: 'qr', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  async function handleCopyShareLink() {
-    if (!port) {
-      notify.error(m.settings_wsApi_serverNotRunning());
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(getPairingUri());
-      notify.success(m.settings_wsApi_shareLink_copied());
-    } catch {
-      notify.error(m.settings_wsApi_shareLink_copyError());
-    }
-  }
-
-  async function handleShowQr() {
-    if (!port) {
-      notify.error(m.settings_wsApi_serverNotRunning());
-      return;
-    }
-    try {
-      const QRCode = (await import('qrcode')).default;
-      qrDataUrl = await QRCode.toDataURL(getPairingUri(), {
-        width: 544,
-        margin: 2,
-        color: { dark: '#000000', light: '#ffffff' },
-      });
-      showQr = true;
-
-      // Auto-dismiss after 30 seconds
-      if (qrTimer) clearTimeout(qrTimer);
-      qrTimer = setTimeout(() => {
-        showQr = false;
-        qrDataUrl = '';
-      }, 30_000);
-    } catch {
-      notify.error(m.settings_wsApi_qrGenerateError());
-    }
-  }
-
   function handleCloseQr() {
-    showQr = false;
-    qrDataUrl = '';
-    if (qrTimer) {
-      clearTimeout(qrTimer);
-      qrTimer = null;
-    }
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'qr', requestId: crypto.randomUUID() },
+        { kind: 'closeQr', connectionId: $activeConnectionId$ },
+      ),
+    );
   }
-
-  onDestroy(() => {
-    if (qrTimer) clearTimeout(qrTimer);
-  });
 
   const connectionSchema = $derived.by(() =>
     defineSettings({
@@ -588,7 +291,7 @@
               id: 'websocket-api-enabled',
               label: m.settings_wsApi_enable_label(),
               description: m.settings_devices_remoteAccess_description(),
-              get: () => enabled,
+              get: () => toggleDraft ?? enabled,
               set: handleToggle,
               disabled: () => loading || toggleBusy,
             },

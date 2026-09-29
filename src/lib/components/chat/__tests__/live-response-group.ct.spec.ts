@@ -388,7 +388,7 @@ test('reconciles a tag-first streaming group through explicit close and completi
   await component.update({ props: { phase: 'live', isStreaming: true } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(component.getByTestId('response-group-name')).toHaveText('Reasoning');
-  await expect(previewChildren).toHaveCount(5);
+  await expect(previewChildren).toHaveCount(6);
   await expect(
     component.locator(
       '[data-operational-preview-content] [data-response-group-child][data-message-content-block="tool_use"]',
@@ -397,7 +397,7 @@ test('reconciles a tag-first streaming group through explicit close and completi
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(expandedChildren).toHaveCount(5);
+  await expect(expandedChildren).toHaveCount(6);
   await expect(
     component.getByText(
       'I will set the workspace title. Then I will read the current spec and inspect the screenshot context.',
@@ -415,7 +415,7 @@ test('reconciles a tag-first streaming group through explicit close and completi
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(previewChildren).toHaveCount(5);
+  await expect(previewChildren).toHaveCount(6);
 
   await component.update({ props: { phase: 'closed', isStreaming: false } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -423,11 +423,11 @@ test('reconciles a tag-first streaming group through explicit close and completi
   await expect(component.getByText('Workspace inspection complete.')).toBeVisible();
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(visibleChildren).toHaveCount(5);
+  await expect(visibleChildren).toHaveCount(6);
 
   await component.update({ props: { phase: 'closed', isStreaming: false } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(visibleChildren).toHaveCount(5);
+  await expect(visibleChildren).toHaveCount(6);
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -445,7 +445,7 @@ test('rehydrates a completed group collapsed and opens its full history', async 
   await expect(component.getByTestId('response-group-snippet')).toHaveCount(0);
   await trigger.press('Enter');
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(component.locator('[data-response-group-child]')).toHaveCount(5);
+  await expect(component.locator('[data-response-group-child]')).toHaveCount(6);
   await expect(
     component.getByText(
       'I will set the workspace title. Then I will read the current spec and inspect the screenshot context.',
