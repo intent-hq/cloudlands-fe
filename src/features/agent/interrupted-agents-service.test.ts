@@ -17,6 +17,7 @@ import {
   notifyInterruptedAgentsModalClosed,
   resolveInterruptedAgents,
 } from './interrupted-agents-service';
+import { LiveAgentsClient } from '$lib/client/live/live-agents-client';
 import type { InterruptedAgent } from '$lib/client/app-client';
 
 describe('interrupted-agents-service', () => {
@@ -349,6 +350,293 @@ describe('interrupted-agents-service', () => {
 
       expect(showHandler).toHaveBeenCalledTimes(1);
       expect(showHandler).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('startup recovery failure discovery', () => {
+    const candidate: InterruptedAgent = {
+      agentId: 'failed-startup',
+      workspaceId: 'ws-1',
+      workspaceName: 'Workspace',
+      agentName: 'Interrupted agent',
+      prevStatus: 'active',
+      interruptedAt: '2026-09-29T00:00:00Z',
+    };
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    async function install(agents: InterruptedAgent[] = []): Promise<void> {
+      mockElectronAPI.invoke.mockResolvedValue({ status: 'connected' });
+      mockAppClient.agents.listInterrupted.mockResolvedValue(agents);
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await vi.advanceTimersByTimeAsync(0);
+      showHandler.mockClear();
+      mockAppClient.agents.listInterrupted.mockClear();
+    }
+    async function flush(): Promise<void> {
+      await vi.advanceTimersByTimeAsync(INTERRUPTED_RECONCILE_DEBOUNCE_MS);
+    }
+
+    it('discovers a failed startup through the real list RPC without reconnecting and offers retry', async () => {
+      let agents: InterruptedAgent[] = [];
+      mockElectronAPI.invoke.mockImplementation(async (channel, payload) => {
+        if (channel === 'backend:get-status') return { status: 'connected' };
+        expect(channel).toBe('backend:request');
+        if (payload.method === 'agent.resolveInterrupted')
+          return { ok: true, result: { resumed: [candidate.agentId], abandoned: [], failed: [] } };
+        expect(payload).toEqual({ method: 'agent.listInterrupted', params: {} });
+        return { ok: true, result: { agents } };
+      });
+      const client = { agents: new LiveAgentsClient() };
+      dispose = installInterruptedAgentsService(client, showHandler);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).not.toHaveBeenCalled();
+      agents = [candidate];
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
+      await resolveInterruptedAgents(client, [candidate.agentId], []);
+      expect(mockElectronAPI.invoke).toHaveBeenCalledWith('backend:request', {
+        method: 'agent.resolveInterrupted',
+        params: { resume: [candidate.agentId] },
+      });
+    });
+
+    it('keeps successful recovery and ordinary updates silent without polling', async () => {
+      await install();
+      notifyInterruptedAgentUpdated(candidate.agentId);
+      await flush();
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('debounces failures, adds newly failed rows, and keeps ordinary membership filtering', async () => {
+      const original = { ...candidate, agentId: 'already-listed' };
+      const unrelated = { ...candidate, agentId: 'unrelated' };
+      await install([original]);
+      mockAppClient.agents.listInterrupted.mockResolvedValue([original, candidate, unrelated]);
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([original, candidate]);
+    });
+
+    it('does not prompt if another window resolved the failure before the query', async () => {
+      await install();
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('keeps dismissed failures hidden while allowing a different newly failed agent', async () => {
+      await install([candidate]);
+      notifyInterruptedAgentsModalClosed();
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      const next = { ...candidate, agentId: 'another-failure' };
+      mockAppClient.agents.listInterrupted.mockResolvedValue([candidate, next]);
+      notifyInterruptedAgentUpdated(next.agentId, true);
+      await flush();
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([next]);
+    });
+
+    it('does not re-open after dismissal while discovery is in flight', async () => {
+      await install([candidate]);
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      notifyInterruptedAgentsModalClosed();
+      finish([candidate]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('retains a failure hint arriving while a prior read closes the dialog', async () => {
+      await install([candidate]);
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId);
+      await flush();
+      const next = { ...candidate, agentId: 'later-failure' };
+      mockAppClient.agents.listInterrupted.mockResolvedValue([next]);
+      notifyInterruptedAgentUpdated(next.agentId, true);
+      finish([]);
+      await flush();
+      expect(showHandler).toHaveBeenLastCalledWith([next]);
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(2);
+    });
+
+    it('retains a repeated failure hint while its previous read is in flight', async () => {
+      await install();
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      mockAppClient.agents.listInterrupted.mockResolvedValue([candidate]);
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      finish([]);
+      await flush();
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
+    });
+
+    it('ignores an older discovery response after a newer read resolves', async () => {
+      await install();
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      finish([candidate]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('keeps pending discovery when the last visible agent is resolved locally', async () => {
+      await install([candidate]);
+      const next = { ...candidate, agentId: 'later-failure' };
+      mockAppClient.agents.listInterrupted.mockResolvedValue([next]);
+      notifyInterruptedAgentUpdated(next.agentId, true);
+      await resolveInterruptedAgents(
+        {
+          agents: {
+            resolveInterrupted: vi
+              .fn()
+              .mockResolvedValue({ resumed: [candidate.agentId], abandoned: [], failed: [] }),
+          },
+        },
+        [candidate.agentId],
+        [],
+      );
+      await flush();
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([next]);
+    });
+
+    it('allows dismissed rows again after reconnect', async () => {
+      await install([candidate]);
+      notifyInterruptedAgentsModalClosed();
+      for (const [channel, listener] of mockElectronAPI.on.mock.calls) {
+        if (channel === 'backend:status') listener({ status: 'connected', reconnected: true });
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
+    });
+
+    it('invalidates discovery immediately on disconnect', async () => {
+      await install();
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      for (const [channel, listener] of mockElectronAPI.on.mock.calls) {
+        if (channel === 'backend:status') listener({ status: 'disconnected' });
+      }
+      finish([candidate]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('ignores a discovery response from before reconnect', async () => {
+      await install();
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      for (const [channel, listener] of mockElectronAPI.on.mock.calls) {
+        if (channel === 'backend:status') listener({ status: 'connected', reconnected: true });
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      finish([candidate]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stale interruption reads', () => {
+    const candidate: InterruptedAgent = {
+      agentId: 'failed-startup',
+      workspaceId: 'ws-1',
+      workspaceName: 'Workspace',
+      agentName: 'Interrupted agent',
+      prevStatus: 'active',
+      interruptedAt: '2026-09-29T00:00:00Z',
+    };
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('ignores an initial read that completes after a newer reconnect read', async () => {
+      let finishOld!: (agents: InterruptedAgent[]) => void;
+      mockElectronAPI.invoke.mockResolvedValue({ status: 'connected' });
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finishOld = resolve;
+          }),
+      );
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await vi.advanceTimersByTimeAsync(0);
+      for (const [channel, listener] of mockElectronAPI.on.mock.calls) {
+        if (channel === 'backend:status') listener({ status: 'connected', reconnected: true });
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      finishOld([candidate]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(2);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('ignores an initial read that completes after disposal', async () => {
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockElectronAPI.invoke.mockResolvedValue({ status: 'connected' });
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await vi.advanceTimersByTimeAsync(0);
+      dispose();
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await vi.advanceTimersByTimeAsync(0);
+      finish([candidate]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(showHandler).not.toHaveBeenCalled();
     });
   });
 

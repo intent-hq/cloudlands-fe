@@ -10,7 +10,8 @@
  * `agent.resolveInterrupted` emits one per resolved agent on both arms,
  * PROTOCOL §5.35) debounce a re-query of `agent.listInterrupted`. Rows
  * resolved by another window/client are pruned; when everything is resolved
- * the modal closes silently (the resolving window already toasted).
+ * the modal closes silently (the resolving window already toasted). A startup
+ * recovery failure hint also discovers newly retryable rows after reservation release.
  */
 import { Logger } from '$shared/logger';
 import { onBackendReconnected, electronAPI } from '$lib/client/live/backend-transport';
@@ -40,11 +41,18 @@ let onShowInterruptedAgents: ((agents: InterruptedAgent[]) => void) | null = nul
 /** Current connection epoch (incremented on each reconnect). */
 let connectionEpoch = 0;
 
-/** Set of epochs we've already checked for interrupted agents. */
-const checkedEpochs = new Set<number>();
-
 /** Agent ids currently listed by the open modal; null when it is closed. */
 let openAgentIds: Set<string> | null = null;
+
+/** Failure hints awaiting an authoritative read; ordinary updates never add ids. */
+const discoveryAgentIds = new Map<string, number>();
+let failureHintVersion = 0;
+/** Locally dismissed/resolved ids stay hidden until the next connection. */
+const dismissedAgentIds = new Set<string>();
+/** Invalidates reads on a newer request, dismissal, disconnect, or disposal. */
+let requestVersion = 0;
+let initialCheckPending = false;
+let connected = false;
 
 /** Debounce timer for the resolved-elsewhere reconciliation re-query. */
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
@@ -66,7 +74,7 @@ function clearReconcileTimer(): void {
  */
 function showInterruptedAgents(agents: InterruptedAgent[]): void {
   openAgentIds = agents.length > 0 ? new Set(agents.map((agent) => agent.agentId)) : null;
-  if (openAgentIds === null) clearReconcileTimer();
+  if (openAgentIds === null && discoveryAgentIds.size === 0) clearReconcileTimer();
   onShowInterruptedAgents?.(agents);
 }
 
@@ -76,6 +84,10 @@ function showInterruptedAgents(agents: InterruptedAgent[]): void {
  * cross-window resolve cannot re-open a dismissed modal.
  */
 export function notifyInterruptedAgentsModalClosed(): void {
+  for (const id of [...(openAgentIds ?? []), ...discoveryAgentIds.keys()])
+    dismissedAgentIds.add(id);
+  discoveryAgentIds.clear();
+  requestVersion += 1;
   openAgentIds = null;
   clearReconcileTimer();
 }
@@ -99,8 +111,15 @@ export async function resolveInterruptedAgents(
     if (abandonIds.length > 0) params.abandon = abandonIds;
 
     const result: ResolveInterruptedResult = await appClient.agents.resolveInterrupted(params);
-    for (const id of [...result.resumed, ...result.abandoned]) openAgentIds?.delete(id);
-    if (openAgentIds?.size === 0) notifyInterruptedAgentsModalClosed();
+    for (const id of [...result.resumed, ...result.abandoned]) {
+      dismissedAgentIds.add(id);
+      discoveryAgentIds.delete(id);
+      openAgentIds?.delete(id);
+    }
+    if (openAgentIds?.size === 0) {
+      openAgentIds = null;
+      if (discoveryAgentIds.size === 0) clearReconcileTimer();
+    }
     logger.info('Resolved interrupted agents', { result });
     import('$lib/components/patterns/notify')
       .then(({ notify }) => {
@@ -144,13 +163,18 @@ export async function resolveInterruptedAgents(
 }
 
 /**
- * Bridge hook: an `agent:updated` event arrived (daemon-events bridge). When
- * the agent is listed by the open modal, debounce a `agent.listInterrupted`
- * re-query and reconcile. No-ops when the modal is closed or the agent is
- * not listed.
+ * Ordinary updates reconcile only listed agents. A startup failure hint may
+ * discover that agent, but listInterrupted remains authoritative if another
+ * client already resolved it. Dismissed agents stay hidden for this connection.
  */
-export function notifyInterruptedAgentUpdated(agentId: string): void {
-  if (!openAgentIds || !openAgentIds.has(agentId)) return;
+export function notifyInterruptedAgentUpdated(
+  agentId: string,
+  startupRecoveryFailed = false,
+): void {
+  if (!connected || !installedAppClient) return;
+  if (startupRecoveryFailed && !dismissedAgentIds.has(agentId))
+    discoveryAgentIds.set(agentId, ++failureHintVersion);
+  else if (!openAgentIds?.has(agentId)) return;
   clearReconcileTimer();
   reconcileTimer = setTimeout(() => {
     reconcileTimer = null;
@@ -158,57 +182,41 @@ export function notifyInterruptedAgentUpdated(agentId: string): void {
   }, INTERRUPTED_RECONCILE_DEBOUNCE_MS);
 }
 
-/**
- * Re-query `agent.listInterrupted` (resolved rows drop out immediately,
- * PROTOCOL §5.35) and prune the modal to the still-listed survivors. All
- * resolved → publish an empty list, closing the modal silently.
- */
+/** Reconcile survivors and explicitly announced failures, never unrelated rows. */
 async function reconcileInterruptedAgents(): Promise<void> {
-  if (!openAgentIds || !installedAppClient) return;
+  if (!installedAppClient || !connected) return;
+  if (!initialCheckPending && !openAgentIds && discoveryAgentIds.size === 0) return;
+  const version = ++requestVersion;
+  const discover = new Map(discoveryAgentIds);
+  const initial = initialCheckPending;
   try {
     const agents: InterruptedAgent[] = await installedAppClient.agents.listInterrupted();
-    if (!openAgentIds) return; // Modal closed while the re-query was in flight.
-    const survivors = agents.filter((agent) => openAgentIds!.has(agent.agentId));
-    logger.info('Reconciled interrupted agents after cross-window resolve', {
-      before: openAgentIds.size,
-      after: survivors.length,
-    });
-    showInterruptedAgents(survivors);
+    if (version !== requestVersion) return;
+    initialCheckPending = false;
+    for (const [id, hintVersion] of discover) {
+      if (discoveryAgentIds.get(id) === hintVersion) discoveryAgentIds.delete(id);
+    }
+    const survivors = agents.filter(
+      (agent) =>
+        !dismissedAgentIds.has(agent.agentId) &&
+        (initial || openAgentIds?.has(agent.agentId) || discover.has(agent.agentId)),
+    );
+    if (survivors.length > 0 || openAgentIds) showInterruptedAgents(survivors);
   } catch (error) {
     logger.error('Failed to reconcile interrupted agents', { error });
   }
 }
 
-/**
- * Check for interrupted agents and show modal if needed.
- * Deduplicates per-epoch so rapid reconnects don't show the modal twice.
- */
-async function checkInterruptedAgents(appClient: any, epoch: number): Promise<void> {
-  if (checkedEpochs.has(epoch)) {
-    logger.debug('Already checked interrupted agents for epoch', { epoch });
-    return;
-  }
-  checkedEpochs.add(epoch);
-
-  try {
-    logger.debug('Checking for interrupted agents', { epoch });
-    const agents = await appClient.agents.listInterrupted();
-    if (agents.length > 0) {
-      logger.info('Found interrupted agents', { count: agents.length, epoch });
-      showInterruptedAgents(agents);
-    } else if (openAgentIds) {
-      // Reconnect-epoch path with the modal open: the fresh (empty) list
-      // replaces the stale one — everything was resolved during the outage.
-      logger.info('No interrupted agents on re-check; closing stale modal', { epoch });
-      showInterruptedAgents([]);
-    } else {
-      logger.debug('No interrupted agents found', { epoch });
-    }
-  } catch (error) {
-    // -32601 (method not found) is handled by LiveAgentsClient and returns
-    // empty array, so any error here is unexpected.
-    logger.error('Failed to check interrupted agents', { error, epoch });
-  }
+/** Begin a fresh connection check, invalidating reads from the previous epoch. */
+function checkInterruptedAgents(): void {
+  connectionEpoch += 1;
+  requestVersion += 1;
+  connected = true;
+  initialCheckPending = true;
+  discoveryAgentIds.clear();
+  dismissedAgentIds.clear();
+  clearReconcileTimer();
+  void reconcileInterruptedAgents();
 }
 
 /**
@@ -234,6 +242,8 @@ export function installInterruptedAgentsService(
   // Disposed flag prevents async catch-up from invoking handlers after teardown.
   let disposed = false;
 
+  const installEpoch = connectionEpoch;
+
   // Catch-up: check if backend is already connected when we install.
   // The main process may have connected before the renderer mounted this
   // service (typical on app launch), so the initial "connected" event
@@ -242,13 +252,8 @@ export function installInterruptedAgentsService(
     try {
       const statusResult = (await api.invoke(BACKEND.GET_STATUS)) as
         { status?: string } | undefined;
-      if (disposed) return;
-      if (statusResult?.status === 'connected') {
-        connectionEpoch += 1;
-        const epoch = connectionEpoch;
-        logger.debug('Backend already connected on install (catch-up)', { epoch });
-        void checkInterruptedAgents(appClient, epoch);
-      }
+      if (disposed || connectionEpoch !== installEpoch) return;
+      if (statusResult?.status === 'connected') checkInterruptedAgents();
     } catch (error) {
       if (disposed) return;
       logger.warn('Failed to query backend status on install', { error });
@@ -259,22 +264,18 @@ export function installInterruptedAgentsService(
   const initialListenerId = api.on(
     BACKEND.STATUS,
     (payload: { status?: string; reconnected?: boolean } | undefined) => {
-      if (payload?.status === 'connected' && !payload.reconnected) {
+      if (payload?.status === 'connected' && !payload.reconnected) checkInterruptedAgents();
+      else if (payload?.status && payload.status !== 'connected') {
+        connected = false;
         connectionEpoch += 1;
-        const epoch = connectionEpoch;
-        logger.debug('Backend connected (initial)', { epoch });
-        void checkInterruptedAgents(appClient, epoch);
+        requestVersion += 1;
+        clearReconcileTimer();
       }
     },
   );
 
   // Listen for reconnects
-  const offReconnect = onBackendReconnected(() => {
-    connectionEpoch += 1;
-    const epoch = connectionEpoch;
-    logger.debug('Backend reconnected', { epoch });
-    void checkInterruptedAgents(appClient, epoch);
-  });
+  const offReconnect = onBackendReconnected(checkInterruptedAgents);
 
   logger.info('Interrupted-agents service installed');
 
@@ -286,7 +287,10 @@ export function installInterruptedAgentsService(
     installedAppClient = null;
     openAgentIds = null;
     clearReconcileTimer();
-    checkedEpochs.clear();
+    connected = false;
+    requestVersion += 1;
+    discoveryAgentIds.clear();
+    dismissedAgentIds.clear();
     logger.info('Interrupted-agents service disposed');
   };
 }
