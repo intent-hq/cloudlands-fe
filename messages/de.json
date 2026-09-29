@@ -3245,6 +3245,8 @@
   "layout_diffTab_stageHunkFailed_error": "Hunk konnte nicht bereitgestellt werden",
   "layout_diffTab_unstageHunkFailed_error": "Bereitstellung des Hunks konnte nicht aufgehoben werden",
   "layout_fileTab_goToChanges_tooltip": "Zu den Änderungen gehen",
+  "layout_fileTab_downloadFile_label": "Datei herunterladen",
+  "layout_fileTab_downloadFailed_error": "Die Datei konnte nicht heruntergeladen werden. Bitte versuche es erneut.",
   "layout_fileTab_deleteFile_tooltip": "Datei löschen",
   "layout_fileTab_errorLoading_label": "Fehler beim Laden der Datei",
   "layout_fileTab_didYouMean_label": "Meinten Sie:",
