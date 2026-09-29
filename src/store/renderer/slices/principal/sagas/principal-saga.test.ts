@@ -35,6 +35,7 @@ import {
   selectCanCreateWorkspace,
   selectCollaborationCapabilities,
   selectHostRole,
+  selectPrincipalActionContext,
 } from '../principal-selectors';
 import { PRINCIPAL_RETRY_DELAYS_MS, principalSaga } from './principal-saga';
 import { BackendError } from '$lib/client/live/backend-transport-types';
@@ -95,7 +96,13 @@ describe('connected principal hydration', () => {
         { id: WorkspaceId('ws-1'), canManage, myRole, ownerPrincipalId: 'real-owner' } as Workspace,
       ]),
     );
-    store.dispatch(setWorkspaceHasLoaded(true, store.state.connections.windowBackendId));
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        store.state.connections.windowBackendId,
+        selectPrincipalActionContext.select(store.state),
+      ),
+    );
   }
   function defer() {
     const requests: Array<{ method: string; resolve: (value: unknown) => void }> = [];
@@ -325,8 +332,8 @@ describe('connected principal hydration', () => {
           connectedIds: ['invited-host'],
         }),
       );
-      workspace(true, role === 'owner' ? 'owner' : 'collaborator');
       await settle();
+      workspace(role !== 'guest', role === 'owner' ? 'owner' : 'collaborator');
       expect(selectHostRole.select(store.state)).toBe(role);
       expect(selectCanCreateWorkspace.select(store.state)).toBe(role !== 'guest');
       expect(selectCanManageWorkspace.select(store.state, 'ws-1')).toBe(role !== 'guest');
@@ -368,8 +375,8 @@ describe('connected principal hydration', () => {
 
   it('waits for the current backend workspace snapshot before granting workspace management', async () => {
     start('first-host');
-    workspace(true);
     await settle();
+    workspace(true);
     expect(selectCanManageWorkspace.select(store.state, 'ws-1')).toBe(true);
     bind('second-host');
     await settle();
@@ -455,8 +462,8 @@ describe('connected principal hydration', () => {
             },
       );
       start();
-      workspace(undefined, 'owner');
       await settle();
+      workspace(undefined, isAdministrator ? 'owner' : 'collaborator');
       expect(selectHostRole.select(store.state)).toBe(isAdministrator ? 'owner' : 'guest');
       expect(selectCanManageWorkspace.select(store.state, 'ws-1')).toBe(isAdministrator);
       expect(selectCanCreateWorkspace.select(store.state)).toBe(isAdministrator);
@@ -566,6 +573,7 @@ describe('connected principal hydration', () => {
     expect(selectCanShareWorkspace.select(store.state, 'ws-1')).toBe(false);
     pending.reply(1);
     await settle();
+    workspace(true); // Current admission's refreshed projection.
     expect(selectCanShareWorkspace.select(store.state, 'ws-1')).toBe(true);
     expect(selectHidesOwnerWorkspaceActions.select(store.state, 'ws-1')).toBe(false);
     expect(selectCollaborationCapabilities.select(store.state).personalPairing).toBe(true);

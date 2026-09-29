@@ -46,8 +46,12 @@ export type WorkspaceState = {
    * stamp to match the active backend.
    */
   loadedBackendId: string | null;
+  capabilityContext: string | null;
   isCreating: boolean;
   pendingDeletions: Record<string, boolean>;
+  deletionTokens: Record<string, string>;
+  invalidatedDeletions: Record<string, string>;
+  deletionSequence: number;
   pendingArchives: Record<string, boolean>;
   pendingCreations: Record<string, Workspace>;
   pendingTitleMutations: Record<string, PendingWorkspaceTitleMutation>;
@@ -71,8 +75,12 @@ export const initialState: WorkspaceState = {
   error: null,
   hasLoaded: false,
   loadedBackendId: null,
+  capabilityContext: null,
   isCreating: false,
   pendingDeletions: {},
+  deletionTokens: {},
+  invalidatedDeletions: {},
+  deletionSequence: 0,
   pendingArchives: {},
   pendingCreations: {},
   pendingTitleMutations: {},
@@ -97,9 +105,9 @@ export const setWorkspaceError = createAction<[error: string | null]>(
  * for so backend-scoped consumers can detect a stale (pre-switch) load; when
  * omitted the previous stamp is kept (legacy/test call sites).
  */
-export const setWorkspaceHasLoaded = createAction<[hasLoaded: boolean, backendId?: string]>(
-  'workspace/setWorkspaceHasLoaded',
-);
+export const setWorkspaceHasLoaded = createAction<
+  [hasLoaded: boolean, backendId?: string, capabilityContext?: string | null]
+>('workspace/setWorkspaceHasLoaded');
 
 export const setWorkspaceCreating = createAction<[isCreating: boolean]>(
   'workspace/setWorkspaceCreating',
@@ -109,11 +117,11 @@ export const replaceWorkspaceList = createAction<[workspaces: Workspace[]]>(
   'workspace/replaceWorkspaceList',
 );
 
-export const markWorkspacePendingDeletion = createAction<[wsId: string]>(
+export const markWorkspacePendingDeletion = createAction<[wsId: string, token?: string]>(
   'workspace/markWorkspacePendingDeletion',
 );
 
-export const clearWorkspacePendingDeletion = createAction<[wsId: string]>(
+export const clearWorkspacePendingDeletion = createAction<[wsId: string, token?: string]>(
   'workspace/clearWorkspacePendingDeletion',
 );
 
@@ -491,11 +499,19 @@ workspaceReducer.with(setWorkspaceError, (state, { payload: [error] }) => {
   if (state.error === error) return state;
   return { ...state, error };
 });
-workspaceReducer.with(setWorkspaceHasLoaded, (state, { payload: [hasLoaded, backendId] }) => {
-  const loadedBackendId = backendId === undefined ? state.loadedBackendId : backendId;
-  if (state.hasLoaded === hasLoaded && state.loadedBackendId === loadedBackendId) return state;
-  return { ...state, hasLoaded, loadedBackendId };
-});
+workspaceReducer.with(
+  setWorkspaceHasLoaded,
+  (state, { payload: [hasLoaded, backendId, capabilityContext = null] }) => {
+    const loadedBackendId = backendId === undefined ? state.loadedBackendId : backendId;
+    if (
+      state.hasLoaded === hasLoaded &&
+      state.loadedBackendId === loadedBackendId &&
+      state.capabilityContext === capabilityContext
+    )
+      return state;
+    return { ...state, hasLoaded, loadedBackendId, capabilityContext };
+  },
+);
 workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) => {
   if (state.isCreating === isCreating) return state;
   return { ...state, isCreating };
@@ -511,17 +527,25 @@ workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) =
     ),
   };
 });
-workspaceReducer.with(markWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
+workspaceReducer.with(markWorkspacePendingDeletion, (state, { payload: [wsId, token] }) => {
   if (state.pendingDeletions[wsId]) return state;
   return {
     ...state,
     pendingDeletions: { ...state.pendingDeletions, [wsId]: true },
+    deletionSequence: state.deletionSequence + 1,
+    deletionTokens: {
+      ...state.deletionTokens,
+      [wsId]: token ?? `event-${state.deletionSequence + 1}`,
+    },
   };
 });
-workspaceReducer.with(clearWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
+workspaceReducer.with(clearWorkspacePendingDeletion, (state, { payload: [wsId, token] }) => {
+  if (token !== undefined && state.deletionTokens[wsId] !== token) return state;
   const next = clearBooleanMapEntry(state.pendingDeletions, wsId);
   if (next === state.pendingDeletions) return state;
-  return { ...state, pendingDeletions: next };
+  const { [wsId]: _token, ...deletionTokens } = state.deletionTokens;
+  const { [wsId]: _invalid, ...invalidatedDeletions } = state.invalidatedDeletions;
+  return { ...state, pendingDeletions: next, deletionTokens, invalidatedDeletions };
 });
 workspaceReducer.with(setPendingCreation, (state, { payload: [workspace] }) => {
   const normalized = mergeWorkspaceEnrichment(state.pendingCreations[workspace.id], workspace);
@@ -539,7 +563,16 @@ workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
   return { ...state, pendingCreations: next };
 });
 workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options] }) => {
-  if (state.pendingDeletions[workspace.id]) return state;
+  if (state.pendingDeletions[workspace.id])
+    return workspace.canManage === false
+      ? {
+          ...state,
+          invalidatedDeletions: {
+            ...state.invalidatedDeletions,
+            [workspace.id]: state.deletionTokens[workspace.id],
+          },
+        }
+      : state;
   // Hide rows carrying the daemon delete-grace-window deadline (see
   // buildVisibleWorkspaceState); drop the entity if it was still visible.
   if (workspace.pendingDeleteAt) {
@@ -575,10 +608,16 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options
 });
 workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
   let workspaces = state.workspaces;
+  let invalidatedDeletions = state.invalidatedDeletions;
 
   for (const action of actions) {
     const [wsId, changes] = action.payload;
-    if (state.pendingDeletions[wsId]) continue;
+    if (state.pendingDeletions[wsId]) {
+      if (changes.canManage === false && state.deletionTokens[wsId]) {
+        invalidatedDeletions = { ...invalidatedDeletions, [wsId]: state.deletionTokens[wsId] };
+      }
+      continue;
+    }
     const existing = getWorkspaceById(workspaces, wsId);
     if (!existing) continue;
 
@@ -597,11 +636,13 @@ workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] 
     workspaces = updateItem(workspaces, updated);
   }
 
-  if (workspaces === state.workspaces) return state;
+  if (workspaces === state.workspaces && invalidatedDeletions === state.invalidatedDeletions)
+    return state;
 
   return {
     ...state,
     workspaces,
+    invalidatedDeletions,
   };
 });
 workspaceReducer.with(
@@ -669,6 +710,7 @@ workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
 workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
   const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
   const hasPendingState =
+    state.pendingDeletions[wsId] ||
     state.pendingArchives[wsId] ||
     state.pendingCreations[wsId] ||
     state.pendingTitleMutations[wsId] ||
@@ -690,6 +732,9 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
     workspaces: existsInCollection
       ? removeItem(state.workspaces, wsId as Workspace['id'])
       : state.workspaces,
+    invalidatedDeletions: state.deletionTokens[wsId]
+      ? { ...state.invalidatedDeletions, [wsId]: state.deletionTokens[wsId] }
+      : state.invalidatedDeletions,
     pendingArchives: nextPendingArchives,
     pendingCreations: nextPendingCreations,
     pendingTitleMutations: nextPendingTitleMutations,
@@ -743,8 +788,12 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   error: null,
   hasLoaded: false,
   loadedBackendId: null,
+  capabilityContext: null,
   isCreating: false,
   pendingDeletions: {},
+  deletionTokens: {},
+  invalidatedDeletions: {},
+  deletionSequence: 0,
   pendingArchives: {},
   pendingCreations: {},
   pendingTitleMutations: {},

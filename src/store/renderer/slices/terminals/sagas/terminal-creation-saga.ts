@@ -26,6 +26,7 @@ function* createTerminalWorker(
   // shortcut still dispatches here, so the request is dropped rather than refused.
   if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) return;
   const context = yield* selectWorkspaceActionContext.effect(workspaceId);
+  if (!context) return;
   try {
     const result: Awaited<ReturnType<typeof appClient.terminals.create>> = yield* call(
       [appClient.terminals, appClient.terminals.create],

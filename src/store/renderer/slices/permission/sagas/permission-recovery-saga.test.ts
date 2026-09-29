@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { initialState, removePermissionRequest, setPendingRequests } from '../permission-slice';
+import {
+  initialState,
+  permissionRequestReceived,
+  removePermissionRequest,
+  setPendingRequests,
+} from '../permission-slice';
 const request = vi.hoisted(() => vi.fn());
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: request }));
 import { recoverPendingPermissions } from './permission-recovery-saga';
@@ -69,5 +74,25 @@ describe('current prompt recovery wire contract', () => {
     request.mockClear();
     await g.start().toPromise();
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('held multi-agent recovery', () => {
+  it('keeps pending A when unrelated B arrives and excludes only A resolved during the read', async () => {
+    let resolve!: (x: unknown) => void;
+    request.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    const f = fixture();
+    const task = f.start();
+    f.channel.put(permissionRequestReceived({ ...prompt, requestId: 'b', sessionId: 'b' }));
+    f.channel.put(removePermissionRequest('resolved-a'));
+    resolve({ requests: [prompt, { ...prompt, requestId: 'resolved-a' }] });
+    await task.toPromise();
+    expect(f.dispatch).toHaveBeenCalledExactlyOnceWith(
+      setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
+    );
   });
 });

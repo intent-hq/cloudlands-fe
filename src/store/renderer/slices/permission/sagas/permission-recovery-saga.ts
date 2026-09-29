@@ -1,11 +1,9 @@
-import { call, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { actionChannel, call, flush, put, type SagaGenerator } from 'typed-redux-saga';
+import { buffers } from 'redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { selectWorkspacePermissionContext } from '../../workspace/workspace-selectors';
-import {
-  selectPermissionRequestsCollection,
-  selectPermissionRecoveryScope,
-} from '../permission-selectors';
+import { selectPermissionRecoveryScope } from '../permission-selectors';
 import { selectAgentSessionsById } from '../../agent-session/agent-session-selectors';
 import {
   permissionRequestReceived,
@@ -21,19 +19,25 @@ export function* recoverPendingPermissions(): SagaGenerator<void> {
     if (!agent.workspaceId) continue;
     const context = yield* selectWorkspacePermissionContext.effect(agent.workspaceId);
     if (!context) continue;
-    const before = yield* selectPermissionRequestsCollection.effect();
+    const changes = yield* actionChannel(
+      [permissionRequestReceived, removePermissionRequest],
+      buffers.expanding(),
+    );
     try {
-      const { result } = yield* race({
-        result: call(
-          backendRequest<{ requests: PermissionRequest[] }>,
-          'agent.pendingPermissions',
-          { agentId: agent.id },
-        ),
-        changed: take([permissionRequestReceived, removePermissionRequest]),
-      });
-      if (!result) continue;
+      const result = yield* call(
+        backendRequest<{ requests: PermissionRequest[] }>,
+        'agent.pendingPermissions',
+        { agentId: agent.id },
+      );
       if (context !== (yield* selectWorkspacePermissionContext.effect(agent.workspaceId))) return;
-      if (before !== (yield* selectPermissionRequestsCollection.effect())) continue;
+      const live = yield* flush(changes);
+      const changedIds = new Set(
+        live.map((action) =>
+          action.type === removePermissionRequest.type
+            ? (action as ReturnType<typeof removePermissionRequest>).payload[0]
+            : (action as ReturnType<typeof permissionRequestReceived>).payload[0].requestId,
+        ),
+      );
       if (
         !Array.isArray(result.requests) ||
         result.requests.some(
@@ -47,11 +51,15 @@ export function* recoverPendingPermissions(): SagaGenerator<void> {
         )
       )
         continue;
-      yield* put(
-        setPendingRequests(result.requests.map((r) => ({ ...r, workspaceId: agent.workspaceId }))),
-      );
+      const pending = result.requests.filter((r) => !changedIds.has(r.requestId));
+      if (pending.length)
+        yield* put(
+          setPendingRequests(pending.map((r) => ({ ...r, workspaceId: agent.workspaceId }))),
+        );
     } catch {
       // Failed recovery leaves live prompts intact; no invented empty success.
+    } finally {
+      changes.close();
     }
   }
 }

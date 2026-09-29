@@ -1,3 +1,4 @@
+import { currentWorkspaceDeletion, type WorkspaceDeletion } from './workspace-deletion';
 /**
  * Workspace IPC Client
  *
@@ -26,17 +27,26 @@ import {
   selectPrincipalActionContext,
   selectWorkspaceCreationVisible,
 } from '../../principal/principal-selectors';
-import { selectWorkspaceActionContext } from '../workspace-selectors';
+import { selectWorkspaceActionContext, selectWorkspaceUpdateContext } from '../workspace-selectors';
 
-function captureMutation(workspaceId?: string) {
+function captureMutation(workspaceId?: string, fields?: string[]) {
   const context = () =>
     workspaceId === undefined
       ? selectWorkspaceCreationVisible.select(store.state)
         ? selectPrincipalActionContext.select(store.state)
         : null
-      : selectWorkspaceActionContext.select(store.state, workspaceId);
+      : fields
+        ? selectWorkspaceUpdateContext.select(store.state, workspaceId, fields)
+        : selectWorkspaceActionContext.select(store.state, workspaceId);
+  const dispatch = store.dispatch;
   const captured = context();
-  return () => captured !== null && captured === context();
+  return () => {
+    try {
+      return store.dispatch === dispatch && captured !== null && captured === context();
+    } catch {
+      return false;
+    }
+  };
 }
 const authorityFailure = () => ({
   ok: false as const,
@@ -134,7 +144,14 @@ export class WorkspaceClient {
     try {
       const requestMutationCounter = this.mutationCounter;
       // Check for pending request (deduplication)
-      const cacheKey = this.getCacheKey(channel, data);
+      const cacheKey =
+        this.getCacheKey(channel, data) +
+        (channel === WORKSPACE_CHANNELS.LIST
+          ? JSON.stringify([
+              store.state.connections.windowBackendId,
+              selectPrincipalActionContext.select(store.state),
+            ])
+          : '');
       this.pruneExpiredCacheEntries();
       const pending = this.pendingRequests.get(cacheKey);
       if (pending) {
@@ -373,7 +390,7 @@ export class WorkspaceClient {
     // Daemon-backed mutation (`workspace.update`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:update` IPC path is gone. The
     // daemon returns the authoritative updated Workspace.
-    const isCurrent = captureMutation(request.id);
+    const isCurrent = captureMutation(request.id, Object.keys(request));
     if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.update(request);
     if (!isCurrent()) return authorityFailure();
@@ -390,15 +407,21 @@ export class WorkspaceClient {
   async delete(
     id: WorkspaceId,
     options?: { undoDelayMs?: number },
-  ): Promise<Result<{ scheduled?: boolean; deleteAt?: string } | void, string>> {
+    operation?: WorkspaceDeletion,
+  ): Promise<
+    | Result<{ scheduled?: boolean; deleteAt?: string } | void, string>
+    | { ok: false; error: string; obsolete: true }
+  > {
     // Daemon-backed mutation (`workspace.delete`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:delete` IPC path is gone. With
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ scheduled, deleteAt }` — surfaced on the Result data.
-    const isCurrent = captureMutation(id);
-    if (!isCurrent()) return authorityFailure();
+    const isCurrent = operation
+      ? () => currentWorkspaceDeletion(operation, id)
+      : captureMutation(id);
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     const result = await appClient.workspaces.delete(id, options);
-    if (!isCurrent()) return authorityFailure();
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     // Clear cache for this workspace after deletion
     if (result.success) {
       this.clearCache(id);
@@ -411,14 +434,21 @@ export class WorkspaceClient {
     return { ok: false, error: result.error || m.workspace_client_deleteFailed_error() };
   }
 
-  async cancelDelete(id: WorkspaceId): Promise<Result<{ cancelled: boolean }, string>> {
+  async cancelDelete(
+    id: WorkspaceId,
+    operation?: WorkspaceDeletion,
+  ): Promise<
+    Result<{ cancelled: boolean }, string> | { ok: false; error: string; obsolete: true }
+  > {
     // `workspace.cancelDelete` (PROTOCOL §5.1, delete grace window).
     // `cancelled: false` is a race-safe non-error — the deletion already
     // committed, or was never scheduled.
-    const isCurrent = captureMutation(id);
-    if (!isCurrent()) return authorityFailure();
+    const isCurrent = operation
+      ? () => currentWorkspaceDeletion(operation, id)
+      : captureMutation(id);
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     const result = await appClient.workspaces.cancelDelete(id);
-    if (!isCurrent()) return authorityFailure();
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     if (result.success) {
       this.clearCache(id);
       // Also clear list cache since cancelling changes which workspaces are returned

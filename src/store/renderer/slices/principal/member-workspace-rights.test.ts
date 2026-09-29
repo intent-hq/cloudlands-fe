@@ -14,6 +14,7 @@ import {
 } from '../workspace/workspace-selectors';
 import {
   selectCanAdministerHost,
+  selectPrincipalActionContext,
   selectCanCreateWorkspace,
   selectWorkspaceCreationVisible,
 } from './principal-selectors';
@@ -50,6 +51,7 @@ describe('workspace rights stay separate from host membership', () => {
     state.principal.snapshot!.capabilities.hostMembership = true;
     state.principal.snapshot!.principal.hostRole = 'guest';
     state.workspace.loadedBackendId = state.connections.windowBackendId;
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
     expect(selectCanManageWorkspace.select(state, 'retained')).toBe(false);
     expect(selectWorkspaceManagementDenied.select(state, 'retained')).toBe(true);
   });
@@ -65,6 +67,7 @@ describe('workspace rights stay separate from host membership', () => {
     const state = guest('collaborator', true);
     state.principal.snapshot!.capabilities.hostMembership = true;
     state.principal.snapshot!.principal.hostRole = 'member';
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
     expect(selectCanAdministerHost.select(state)).toBe(false);
     expect(selectIsWorkspaceOwner.select(state, 'retained')).toBe(false);
     expect(selectWorkspaceCreationVisible.select(state)).toBe(true);
@@ -78,6 +81,8 @@ describe('workspace rights stay separate from host membership', () => {
     state.principal.presentationVersion++;
     expect(selectWorkspaceCreationVisible.select(state)).toBe(false);
     state.principal.refreshedPresentationVersion = state.principal.presentationVersion;
+    expect(selectWorkspaceActionContext.select(state, 'retained')).toBeNull();
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
     expect(selectWorkspaceActionContext.select(state, 'retained')).not.toBe(context);
     state.workspace.loadedBackendId = 'previous-host';
     expect(selectWorkspaceActionContext.select(state, 'retained')).toBeNull();
@@ -89,6 +94,7 @@ describe('workspace rights stay separate from host membership', () => {
     expect(selectWorkspacePermissionContext.select(state, 'retained')).toBeTruthy();
     state.principal.snapshot!.capabilities.hostMembership = true;
     state.principal.snapshot!.principal.hostRole = 'guest';
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
     expect(selectWorkspaceParticipationContext.select(state, 'retained')).toBeTruthy();
     expect(selectWorkspacePermissionContext.select(state, 'retained')).toBeNull();
     expect(selectWorkspaceCreationVisible.select(state)).toBe(false);

@@ -53,7 +53,7 @@ function* hydrateConnection({ payload: context }: SelectorChannelPayload<string 
         yield* put(principalReceived(read, snapshot));
         retries = 0;
         const accepted = (yield* selectPrincipalState.effect()).snapshot === snapshot;
-        if (accepted && invalidation > 0) yield* put(loadWorkspacesRequested());
+        if (accepted) yield* put(loadWorkspacesRequested());
       } catch (error) {
         yield* put(
           principalReadFailed(

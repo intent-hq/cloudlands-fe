@@ -1,3 +1,4 @@
+import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
@@ -2958,9 +2959,11 @@ function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId:
   });
   const existing = workspaceDeleteTombstoneTimers.get(workspaceId);
   if (existing) clearTimeout(existing);
+  const expire = captureDeletionExpiry(workspaceId);
   const timer = setTimeout(() => {
-    workspaceDeleteTombstoneTimers.delete(workspaceId);
-    appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
+    if (workspaceDeleteTombstoneTimers.get(workspaceId) === timer)
+      workspaceDeleteTombstoneTimers.delete(workspaceId);
+    expire();
   }, tombstoneClearDelayMs(data?.deleteAt));
   workspaceDeleteTombstoneTimers.set(workspaceId, timer);
 }

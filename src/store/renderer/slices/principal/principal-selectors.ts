@@ -95,6 +95,7 @@ export const selectPrincipalActionContext = store.createSelector((state) => {
   return JSON.stringify([
     selectPrincipalConnectionContext.select(state),
     snapshot.principal.id,
+    snapshot.principal.hostMembershipRevision ?? null,
     selectHostRole.select(state),
     state.principal.invalidation,
     state.principal.presentationVersion,
