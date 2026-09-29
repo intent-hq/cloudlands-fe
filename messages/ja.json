@@ -2375,6 +2375,7 @@
   "chat_messageActions_copyMessage_label": "メッセージをコピー",
   "chat_messageActions_copySessionIdHint_label": "Shift を押しながらクリックでセッション ID をコピー",
   "chat_messageActions_scrollToPrevious_label": "前のメッセージへスクロール",
+  "chat_messageActions_previousUserMessage_label": "前のユーザーメッセージ",
   "chat_messageEditor_cancel_label": "キャンセル",
   "chat_messageEditor_send_label": "送信",
   "chat_messageEditor_kbdHint_before": "送信は",

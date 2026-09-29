@@ -29,16 +29,18 @@ describe('MessageActions callbacks', () => {
     for (const callback of userCallbacks) expect(callback).toHaveBeenCalledTimes(1);
     user.unmount();
 
+    const onScrollToPrevious = vi.fn();
     const onRegenerate = vi.fn();
     const onFork = vi.fn();
     const onVote = vi.fn();
     const onCopy = vi.fn();
     const assistant = render(MessageActions, {
-      props: { role: 'assistant', onRegenerate, onFork, onVote, onCopy },
+      props: { role: 'assistant', onRegenerate, onScrollToPrevious, onFork, onVote, onCopy },
     });
     const assistantButtons = assistant.getAllByRole('button');
     expect(assistantButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
       m.chat_messageActions_regenerate_ariaLabel(),
+      m.chat_messageActions_previousUserMessage_label(),
       m.chat_messageActions_fork_ariaLabel(),
       m.chat_messageActions_goodResponse_label(),
       m.chat_messageActions_badResponse_label(),
@@ -46,6 +48,7 @@ describe('MessageActions callbacks', () => {
     ]);
     for (const button of assistantButtons) await fireEvent.click(button);
     expect(onRegenerate).toHaveBeenCalledTimes(1);
+    expect(onScrollToPrevious).toHaveBeenCalledTimes(1);
     expect(onFork).toHaveBeenCalledTimes(1);
     expect(onVote.mock.calls).toEqual([['up'], ['down']]);
     expect(onCopy).toHaveBeenCalledTimes(1);
