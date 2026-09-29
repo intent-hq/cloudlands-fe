@@ -24,7 +24,6 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     onClose: vi.fn(),
     create: vi.fn(),
-    defaultProviderId: 'auggie',
     configuredModels: {} as Record<string, string>,
     selectedModel: undefined as string | undefined,
     defaultReasoningEffort: '',
@@ -44,29 +43,6 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_PROVIDER_CATALOG } =
-    await import('../../../../test/fixtures/provider-catalog.fixture');
-  const providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
-  return createAppStoreMockModule({
-    state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: { auggie: true } },
-      model: { defaultProviderId: mocks.defaultProviderId },
-      providerModels: { byProviderId: {}, clearEpoch: 0 },
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-      workspaceCreateProgress: { byProgressId: {} },
-    }),
-    dispatch: mocks.dispatch,
-  });
-});
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
@@ -279,6 +255,12 @@ vi.mock('svelte-fa', async () => ({
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { store as appStore } from '$store/renderer/store';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 function persistedStates() {
   return mocks.dispatch.mock.calls
@@ -323,11 +305,13 @@ function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRe
   trigger.parentElement!.getBoundingClientRect = vi.fn(() => triggerRect);
 }
 
+let disposeStore: () => void;
+let cancelCatalog: () => void;
+
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    mocks.defaultProviderId = 'auggie';
     mocks.availableProviderIds = ['auggie'];
     mocks.configuredModels = {};
     mocks.selectedModel = undefined;
@@ -345,13 +329,25 @@ describe('NewSpaceModal model-picker composition', () => {
       resolvedReasoningEffort: undefined,
     };
     mocks.create.mockResolvedValue({ ok: false, error: 'Fixture stops after request capture' });
+    disposeStore = appStore.init();
+    appStore.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
+    appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
+    const dispatch = appStore.dispatch.bind(appStore);
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+      mocks.dispatch(action);
+      return dispatch(action);
+    });
+    cancelCatalog = appStore.runSaga(modelReloadSaga);
   });
 
   afterEach(() => {
     cleanup();
+    cancelCatalog();
     sessionStorage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    disposeStore();
   });
 
   it.each(['team', 'single'] as const)(
@@ -543,7 +539,7 @@ describe('NewSpaceModal model-picker composition', () => {
           mocks.specialist.model = 'foreign-model';
           mocks.specialist.defaultModel = 'foreign-model';
         }
-        if (otherDefaultProvider) mocks.defaultProviderId = 'codex';
+        if (otherDefaultProvider) appStore.dispatch(hydrateDefaultProvider('codex'));
       }
       const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
       const team = modeCard(/Agent orchestration/i);
@@ -734,4 +730,27 @@ describe('NewSpaceModal model-picker composition', () => {
       view.unmount();
     }
   });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const providers =
+    await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
+  const models = await import('$store/renderer/slices/model/model-selectors');
+  const catalog =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  const specialists = await import('$store/renderer/slices/specialists/specialists-selectors');
+  const availability =
+    await import('$store/renderer/slices/agent-availability/agent-availability-selectors');
+  return {
+    selectContextProviderEntries: catalog.selectProviderCatalogEntries,
+    selectContextDefaultProvider: providers.selectActiveProviderId,
+    selectContextSelectedModel: models.selectSelectedModel,
+    selectContextEnabledProviders: providers.selectEnabledProviders,
+    selectContextAvailableProviderIds: providers.selectAvailableEnabledProviderIds,
+    selectContextModelProviderIds: providers.selectModelFetchProviderIds,
+    selectContextReadinessLoaded: availability.selectHasCheckedOnce,
+    selectContextProviderWarnings: models.selectAllProviderWarnings,
+    selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextSpecialists: specialists.selectSpecialists,
+  };
 });

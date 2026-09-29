@@ -106,7 +106,7 @@ export interface BackendTransport {
   /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */
   subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T>;
   /** Unsubscribe from daemon events (`events.unsubscribe`). Best-effort. */
-  unsubscribe(subscriptionId: string): Promise<void>;
+  unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void>;
   /** Listen for daemon notifications. Returns a disposer. */
   onNotification(handler: (notification: BackendNotification) => void): () => void;
   /**

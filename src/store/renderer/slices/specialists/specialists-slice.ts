@@ -82,12 +82,14 @@ export interface FileSpecialistWritePayload {
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface FileSpecialistReference {
   id: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 // ============================================================================

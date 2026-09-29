@@ -18,6 +18,7 @@ import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
+import { workspaceCatalogRequested } from '../../provider-catalog/provider-catalog-slice';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
   selectBundledSpecialists,
@@ -247,6 +248,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
         spec,
         scope,
         payload.workspacePath,
+        ...(payload.workspaceId ? [payload.workspaceId] : []),
       );
     } else {
       yield* call(
@@ -255,13 +257,16 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
         spec,
         scope,
         payload.workspacePath,
+        ...(payload.workspaceId ? [payload.workspaceId] : []),
       );
     }
     // The daemon write succeeded: settle the promise before the list refetch
     // (which handles its own failures) so awaiting callers aren't blocked on it.
     yield* put(action.success(undefined as never));
     settled = true;
-    yield* call(refetchSpecialists, context);
+    if (scope === 'project' && payload.workspaceId)
+      yield* put(workspaceCatalogRequested(payload.workspaceId));
+    else yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to save file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_saveFailed_error());
@@ -287,10 +292,13 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
       ref.id,
       ref.scope ?? 'user',
       ref.workspacePath,
+      ...(ref.workspaceId ? [ref.workspaceId] : []),
     );
     yield* put(action.success(undefined as never));
     settled = true;
-    yield* call(refetchSpecialists, context);
+    if (ref.scope === 'project' && ref.workspaceId)
+      yield* put(workspaceCatalogRequested(ref.workspaceId));
+    else yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to delete file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_deleteFailed_error());

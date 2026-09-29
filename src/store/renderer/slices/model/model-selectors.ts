@@ -181,15 +181,21 @@ export const selectModelFallbackInfo = store.createSelector((state, agentId: str
  * providers resolve through the session-lifetime provider-models cache.
  */
 export const selectModelDisplayName = store.createSelector(
-  (state, providerId: string, modelId: string): string | undefined => {
+  (state, providerId: string, modelId: string, workspaceId?: string): string | undefined => {
     const bareId = splitLegacyCompoundId(modelId).modelId;
     const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
-    if (models && (!providerId || providerId === state.model.availableModelsProviderId)) {
+    if (
+      !workspaceId &&
+      models &&
+      (!providerId || providerId === state.model.availableModelsProviderId)
+    ) {
       const label = getItem(models, bareId)?.label;
       if (label) return label;
     }
     if (providerId) {
-      const cached = state.providerModels?.byProviderId[providerId];
+      const cached = workspaceId
+        ? state.providerModels?.byWorkspaceId?.[workspaceId]?.[providerId]
+        : state.providerModels?.byProviderId[providerId];
       return cached?.models.find((model) => model.value === bareId)?.label;
     }
     return undefined;
@@ -235,15 +241,18 @@ export const selectProviderModelEffortLevels = store.createSelector(
     state,
     providerId: string | undefined,
     modelId: string | null | undefined,
+    workspaceId?: string,
   ): string[] | undefined => {
     if (!modelId) return undefined;
-    if (!providerId || providerId === state.model?.availableModelsProviderId) {
+    if (!workspaceId && (!providerId || providerId === state.model?.availableModelsProviderId)) {
       const levels = selectModelEffortLevels.select(state, modelId);
       if (levels) return levels;
     }
     if (providerId) {
       const baseId = toBaseModelId(modelId);
-      const cached = state.providerModels?.byProviderId[providerId];
+      const cached = workspaceId
+        ? state.providerModels?.byWorkspaceId?.[workspaceId]?.[providerId]
+        : state.providerModels?.byProviderId[providerId];
       return cached?.models.find((model) => toBaseModelId(model.value) === baseId)?.effortLevels;
     }
     return undefined;
@@ -267,11 +276,35 @@ export const selectAgentModelEffortLevels = store.createSelector(
     if (Array.isArray(session.effortLevels) && session.effortLevels.length > 0) {
       return session.effortLevels;
     }
-    const rawProviderId = getAgentProvider(session, selectEffectiveDefaultProviderId.select(state));
-    const providerId = rawProviderId
-      ? selectNormalizedProviderId.select(state, rawProviderId)
+    const settings = session.workspaceId
+      ? (state.providerCatalog?.byWorkspaceId?.[session.workspaceId]?.settings ?? [])
+      : undefined;
+    const configuredProvider = settings?.find(
+      (entry) => entry.path === 'model.defaultProvider',
+    )?.value;
+    const fallbackProvider = settings
+      ? typeof configuredProvider === 'string'
+        ? configuredProvider
+        : ''
       : selectEffectiveDefaultProviderId.select(state);
-    const model = session.model ?? selectSelectedModel.select(state, providerId);
-    return selectProviderModelEffortLevels.select(state, providerId, model);
+    const rawProviderId = getAgentProvider(session, fallbackProvider);
+    const providerId = selectNormalizedProviderId.select(
+      state,
+      rawProviderId ?? fallbackProvider,
+      session.workspaceId,
+    );
+    const defaults = settings?.find((entry) => entry.path === 'model.providerDefaults')?.value;
+    const configuredModel =
+      defaults && typeof defaults === 'object'
+        ? (defaults as Record<string, unknown>)[providerId]
+        : undefined;
+    const model =
+      session.model ??
+      (settings
+        ? typeof configuredModel === 'string'
+          ? configuredModel
+          : ''
+        : selectSelectedModel.select(state, providerId));
+    return selectProviderModelEffortLevels.select(state, providerId, model, session.workspaceId);
   },
 );

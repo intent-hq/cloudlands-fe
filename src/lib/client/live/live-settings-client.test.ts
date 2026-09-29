@@ -41,6 +41,7 @@ function deferred<T>() {
 
 afterEach(() => {
   __resetSettingsReadCacheForTests();
+  mockedRequest.mockReset();
   vi.clearAllMocks();
 });
 
@@ -376,7 +377,7 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     expect(await client.getMcpServers()).toEqual([]);
   });
 
-  it('getWorkspaceDisabledMcpServerNames reads the workspace-scoped mcp.servers.list (§5.22)', async () => {
+  it('getWorkspaceDisabledMcpServerKeys reads the workspace-scoped mcp.servers.list (§5.22)', async () => {
     // Workspace-scoped read: every entry adds `workspaceDisabled: boolean`.
     mockedRequest.mockResolvedValueOnce({
       servers: [
@@ -400,15 +401,15 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     });
     const client = new LiveSettingsClient();
 
-    const result = await client.getWorkspaceDisabledMcpServerNames('ws-1');
+    const result = await client.getWorkspaceDisabledMcpServerKeys('ws-1');
     expect(mockedRequest).toHaveBeenCalledWith('mcp.servers.list', { workspaceId: 'ws-1' });
-    expect(result).toEqual(['filesystem']);
+    expect(result).toEqual(['srv-fs']);
   });
 
-  it('getWorkspaceDisabledMcpServerNames folds a transport failure to null', async () => {
+  it('getWorkspaceDisabledMcpServerKeys folds a transport failure to null', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveSettingsClient();
-    expect(await client.getWorkspaceDisabledMcpServerNames('ws-1')).toBeNull();
+    expect(await client.getWorkspaceDisabledMcpServerKeys('ws-1')).toBeNull();
   });
 
   it('toggleWorkspaceMcpServer sends the workspace-scoped mcp.servers.toggle (§5.22)', async () => {
@@ -696,63 +697,71 @@ describe('LiveSettingsClient domain accessors map FE shapes ↔ BE paths', () =>
     });
   });
 
-  it('round-trips independent quick-action effort fields through settings RPCs', async () => {
-    const values = {
-      defaultReasoningEffort: 'medium',
-      typeReasoningEffortOverrides: { fast: 'high' },
-      providerSettings: {
-        codex: {
-          defaultModel: '',
-          typeOverrides: { commit: '', pr: '', review: '', fast: '' },
-          defaultReasoningEffort: 'low',
-          typeReasoningEffortOverrides: { commit: 'high' },
+  it.each([undefined, 'workspace-effort'])(
+    'round-trips independent quick-action effort fields with origin %s',
+    async (workspaceId) => {
+      const values = {
+        defaultReasoningEffort: 'medium',
+        typeReasoningEffortOverrides: { fast: 'high' },
+        providerSettings: {
+          codex: {
+            defaultModel: '',
+            typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+            defaultReasoningEffort: 'low',
+            typeReasoningEffortOverrides: { commit: 'high' },
+          },
         },
-      },
-    };
-    mockedRequest.mockResolvedValueOnce({ applied: [] });
-    const client = new LiveSettingsClient();
-    await client.setBackgroundAgentSettings(values);
-    expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
-      changes: [
-        { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
-        { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'high' } },
-        { path: 'quickActions.providerSettings', value: values.providerSettings },
-      ],
-    });
-    mockedRequest.mockResolvedValueOnce({
-      settings: [
-        {
-          path: 'quickActions.defaultReasoningEffort',
-          label: '',
-          description: '',
-          category: 'agents',
-          type: 'string',
-          value: 'medium',
-        },
-        {
-          path: 'quickActions.typeReasoningEffortOverrides',
-          label: '',
-          description: '',
-          category: 'agents',
-          type: 'object',
-          value: { fast: 'high' },
-        },
-        {
-          path: 'quickActions.providerSettings',
-          label: '',
-          description: '',
-          category: 'agents',
-          type: 'object',
-          value: values.providerSettings,
-        },
-      ],
-    });
-    expect(await client.getBackgroundAgentSettings()).toEqual({
-      defaultModel: '',
-      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
-      ...values,
-    });
-  });
+      };
+      mockedRequest.mockResolvedValueOnce({ applied: [] });
+      const client = new LiveSettingsClient();
+      await client.setBackgroundAgentSettings(values);
+      expect(mockedRequest).toHaveBeenCalledWith('settings.update', {
+        changes: [
+          { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'high' } },
+          { path: 'quickActions.providerSettings', value: values.providerSettings },
+        ],
+      });
+      mockedRequest.mockResolvedValueOnce({
+        settings: [
+          {
+            path: 'quickActions.defaultReasoningEffort',
+            label: '',
+            description: '',
+            category: 'agents',
+            type: 'string',
+            value: 'medium',
+          },
+          {
+            path: 'quickActions.typeReasoningEffortOverrides',
+            label: '',
+            description: '',
+            category: 'agents',
+            type: 'object',
+            value: { fast: 'high' },
+          },
+          {
+            path: 'quickActions.providerSettings',
+            label: '',
+            description: '',
+            category: 'agents',
+            type: 'object',
+            value: values.providerSettings,
+          },
+        ],
+      });
+      expect(await client.getBackgroundAgentSettings(workspaceId)).toEqual({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+        ...values,
+      });
+      if (workspaceId) {
+        expect(mockedRequest).toHaveBeenLastCalledWith('settings.list', { workspaceId });
+      } else {
+        expect(mockedRequest).toHaveBeenLastCalledWith('settings.list');
+      }
+    },
+  );
 
   it('getMcpServers preserves the daemon-assigned id so status events can resolve name', async () => {
     // The `mcp.servers:status-changed` bridge (§6.5) receives `{ serverId, status }`
@@ -891,5 +900,103 @@ describe('LiveSettingsClient user-rule accessors (rules.* — PROTOCOL §5.21)',
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('rule content exceeds');
+  });
+});
+
+describe('MCP stable identity wire contracts', () => {
+  const wire = [
+    { id: 'srv-a', name: 'Desktop tools', transport: 'http', url: 'https://a.test', enabled: true },
+    { id: 'srv-b', name: 'Desktop tools', transport: 'http', url: 'https://b.test', enabled: true },
+  ];
+  it('deletes only the missing sibling and updates the selected ID', async () => {
+    mockedRequest.mockResolvedValueOnce({ servers: wire }).mockResolvedValue({ success: true });
+    const result = await new LiveSettingsClient().setMcpServers([
+      { id: 'srv-b', name: 'Renamed tools', type: 'http', url: 'https://edited.test' },
+    ]);
+    expect(result.success).toBe(true);
+    expect(mockedRequest.mock.calls).toEqual([
+      ['mcp.servers.list'],
+      ['mcp.servers.delete', { serverId: 'srv-a' }],
+      [
+        'mcp.servers.update',
+        {
+          serverId: 'srv-b',
+          config: {
+            id: 'srv-b',
+            name: 'Renamed tools',
+            transport: 'http',
+            url: 'https://edited.test',
+            enabled: true,
+          },
+        },
+      ],
+    ]);
+  });
+  it('rejects a name-only match against duplicate names before mutations', async () => {
+    mockedRequest.mockResolvedValueOnce({ servers: wire });
+    const result = await new LiveSettingsClient().setMcpServers([
+      { name: 'Desktop tools', type: 'http', url: 'https://a.test' },
+    ]);
+    expect(result.success).toBe(false);
+    expect(mockedRequest.mock.calls).toEqual([['mcp.servers.list']]);
+  });
+  it('rejects duplicate IDs before mutations', async () => {
+    const result = await new LiveSettingsClient().setMcpServers([
+      { id: 'srv-a', name: 'first', type: 'http' },
+      { id: 'srv-a', name: 'second', type: 'http' },
+    ]);
+    expect(result.success).toBe(false);
+    expect(mockedRequest.mock.calls.every(([method]) => method === 'mcp.servers.list')).toBe(true);
+  });
+});
+
+describe('workspace settings routing', () => {
+  it('keeps concurrent and late workspace reads separate, including global invalidation', async () => {
+    const a = deferred<unknown>();
+    mockedRequest.mockImplementation(async (_method, params) => {
+      const workspaceId = (params as { workspaceId?: string }).workspaceId;
+      if (workspaceId === 'A') return a.promise;
+      return { definition: { path: 'model.default' }, value: workspaceId ?? 'direct' };
+    });
+    const pendingA = readSetting('model.default', 'A');
+    expect((await readSetting('model.default', 'B'))?.value).toBe('B');
+    a.resolve({ definition: { path: 'model.default' }, value: 'A' });
+    expect((await pendingA)?.value).toBe('A');
+    expect((await readSetting('model.default', 'B'))?.value).toBe('B');
+    expect(mockedRequest).toHaveBeenCalledWith('settings.get', {
+      path: 'model.default',
+      workspaceId: 'A',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('settings.get', {
+      path: 'model.default',
+      workspaceId: 'B',
+    });
+    invalidateSettingsReadCache(['model.default']);
+    await readSetting('model.default', 'B');
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+});
+
+it('routes workspace snapshots and MCP reads while keeping the global rules sentinel', async () => {
+  mockedRequest.mockResolvedValue({ settings: [], servers: [], content: '', enabled: true });
+  const client = new LiveSettingsClient();
+  await client.list('A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('settings.list', { workspaceId: 'A' });
+  await client.getMcpServers('A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('mcp.servers.list', { workspaceId: 'A' });
+  await client.getMcpServerStatuses(['server'], 'A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('mcp.servers.getStatus', {
+    serverId: 'server',
+    workspaceId: 'A',
+  });
+  await client.getUserRule('agent', 'A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('rules.get', {
+    ruleType: 'agent',
+    workspaceId: 'A',
+  });
+  await client.getUserRule('agent');
+  expect(mockedRequest).toHaveBeenLastCalledWith('rules.get', {
+    ruleType: 'agent',
+    workspaceId: 'global',
   });
 });

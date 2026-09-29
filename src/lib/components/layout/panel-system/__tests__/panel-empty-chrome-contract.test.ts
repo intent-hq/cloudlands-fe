@@ -63,7 +63,6 @@ describe('empty panel chrome', () => {
     expect(panel).not.toContain('data-empty-panel-close');
     expect(panel).not.toContain('tabindex="-1"');
     expect(tabBar).toContain('data-empty-panel-header');
-    expect(tabBar).toContain('{@render addPanelColumnButton()}');
     expect(tabBar).not.toContain('panelColumnCountMenu');
     expect(tabBar).toContain('{@render panelCloseButton()}');
   });

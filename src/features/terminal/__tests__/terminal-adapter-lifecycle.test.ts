@@ -259,7 +259,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
 
     adapter.dispose();
 
-    expect(terminals.kill).toHaveBeenCalledWith('term-1');
+    expect(terminals.kill).toHaveBeenCalledWith('term-1', 'ws-1');
   });
 
   it('defers xterm renderer disposal until queued viewport work has drained', async () => {
@@ -331,7 +331,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     const xterm = (adapter as any).xterm;
     xterm.dataHandler('\x7f');
 
-    expect(terminals.write).toHaveBeenCalledWith('term-1', '\x7f');
+    expect(terminals.write).toHaveBeenCalledWith('term-1', '\x7f', 'ws-1');
   });
 
   it('passes PTY erase echo unchanged from terminal:data to xterm.write', () => {
@@ -373,7 +373,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
 
     adapter.resize(120, 40);
 
-    expect(terminals.resize).toHaveBeenCalledWith('term-1', 120, 40);
+    expect(terminals.resize).toHaveBeenCalledWith('term-1', 120, 40, 'ws-1');
   });
 });
 

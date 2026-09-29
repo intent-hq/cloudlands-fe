@@ -22,7 +22,6 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { surfaceClasses } from '$lib/components/ui/surface-context';
   import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -86,8 +85,6 @@
 
   const logger = createLogger('SimpleRichInput');
 
-  const defaultProviderId$ = selectEffectiveDefaultProviderId();
-  const providerCatalogEntries$ = selectProviderCatalogEntries();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
@@ -97,11 +94,11 @@
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
     void $providerCatalogEntries$;
-    return selectNormalizedProviderId.select(appStore.state, providerId);
+    return selectNormalizedProviderId.select(appStore.state, providerId, workspace?.id);
   }
   function providerDisplayName(providerId: string): string {
     void $providerCatalogEntries$;
-    return selectProviderDisplayName.select(appStore.state, providerId);
+    return selectProviderDisplayName.select(appStore.state, providerId, workspace?.id);
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -257,6 +254,13 @@
     onHistoryNext,
   }: Props = $props();
 
+  // Selector readables are created at component init; mirror the reactive prop
+  // so a composer moved between workspaces follows that workspace's skill roster.
+  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  const defaultProviderId$ = selectEffectiveDefaultProviderId(workspaceIdStore);
+  const providerCatalogEntries$ = selectProviderCatalogEntries(workspaceIdStore);
+
   function updateValue(nextValue: string) {
     value = nextValue;
     onvaluechange?.(nextValue);
@@ -294,10 +298,6 @@
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
-  // Selector readables are created at component init; mirror the reactive prop
-  // so a composer moved between workspaces follows that workspace's skill roster.
-  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
-  const workspaceIdStore = writable(workspace?.id ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
   });
@@ -605,13 +605,7 @@
           ? 'hover'
           : 'rest',
   );
-  const edgeShadow = $derived(
-    ringState === 'drag'
-      ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
-      : ringState === 'hover'
-        ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
-        : undefined,
-  );
+  const edgeShadow = 'none';
   const composerStyle = $derived(
     `${
       isAutoExpand
@@ -1460,8 +1454,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-    surfaceClasses(2, 2),
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',

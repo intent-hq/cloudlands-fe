@@ -13,9 +13,12 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => ({}), dispatch: dispatchMock });
 });
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: { select: () => undefined },
-}));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    selectAgentSession: Object.assign(() => readable(undefined), { select: () => undefined }),
+  };
+});
 
 vi.mock('$lib/utils/tool-classifier', async () => {
   const { faWrench } = await import('@fortawesome/free-solid-svg-icons');

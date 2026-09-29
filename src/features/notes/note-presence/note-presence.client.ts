@@ -114,8 +114,11 @@ export async function subscribeNotePresence(
 }
 
 /** Release the lease; best-effort (the daemon drops it on close anyway). */
-export function unsubscribeNotePresence(subscriptionId: string): void {
-  void backendRequest('note.presence.unsubscribe', { subscriptionId }).catch(() => {
+export function unsubscribeNotePresence(subscriptionId: string, workspaceId?: string): void {
+  void backendRequest('note.presence.unsubscribe', {
+    subscriptionId,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
+  }).catch(() => {
     // Best-effort: a dropped connection has already released the lease.
   });
 }

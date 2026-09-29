@@ -11,6 +11,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import AgentBackendSettings from './AgentBackendSettings.svelte';
 import { warmImport } from '../../../test/warm-import';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
 
 const mocks = vi.hoisted(() => ({
   mockSettingsGet: vi.fn(),
@@ -338,6 +351,26 @@ describe('AgentBackendSettings — agent memory budget', () => {
     pending[1]();
     await waitFor(() => expect((screen.getByRole('slider') as HTMLInputElement).value).toBe('100'));
     expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('100');
+  });
+
+  it('can restore the original above-catalog budget after saving a smaller budget', async () => {
+    const configuredMb = TOTAL_RAM_MB * 2;
+    mockSettings({ budget: { value: configuredMb, max: TOTAL_RAM_MB } });
+    mocks.mockSettingsUpdate.mockImplementation(async (changes) => changes);
+    render(AgentBackendSettings);
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '2048' } });
+    await fireEvent.blur(input);
+    await waitFor(() =>
+      expect((screen.getByRole('slider') as HTMLInputElement).value).toBe('2048'),
+    );
+    await fireEvent.input(input, { target: { value: String(configuredMb) } });
+    await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+        { path: MEMORY_BUDGET_PATH, value: configuredMb },
+      ]),
+    );
   });
 
   it('never has two writes for the same setting in flight at once', async () => {
@@ -832,6 +865,23 @@ describe('AgentBackendSettings — ACP Node heap limit', () => {
     const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
     expect(input.min).toBe(String(HEAP_MIN_MB));
     expect(input.max).toBe(String(HEAP_MAX_MB));
+  });
+
+  it('can restore the original below-catalog heap cap after saving a higher cap', async () => {
+    mockSettings({ heap: { value: 512, min: 1024, max: 65536 } });
+    mocks.mockSettingsUpdate.mockImplementation(async (changes) => changes);
+    render(AgentBackendSettings);
+    const input = (await waitFor(() => screen.getByLabelText(HEAP_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '4096' } });
+    await fireEvent.blur(input);
+    await waitFor(() => expect(screen.getByText(/Current: 4,096 MB/)).toBeTruthy());
+    await fireEvent.input(input, { target: { value: '512' } });
+    await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+        { path: ACP_HEAP_PATH, value: 512 },
+      ]),
+    );
   });
 
   it('persists a typed cap with the exact settings.update payload', async () => {

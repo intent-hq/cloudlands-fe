@@ -20,6 +20,8 @@ export type LiveClientCollection = Collection<LiveClient, 'clientId'>;
 export type WorkspaceBrowserClientsState = {
   /** `workspace.getBrowserClient` result; null until the first read lands. */
   browserClient: WorkspaceBrowserClient | null;
+  liveClients?: LiveClientCollection;
+  liveClientsLoaded?: boolean;
   /**
    * Bumped by every `browser:tab-*` event. The panel-layout registry saga
    * reads it before and after a `browser.listTabs` read: a changed value

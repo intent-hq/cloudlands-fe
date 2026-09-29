@@ -63,14 +63,28 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({
+      model: { defaultProviderId: 'direct', providerModels: { direct: 'direct-model' } },
+      providerCatalog: {
+        byWorkspaceId: {
+          'ws-1': {
+            catalog: { providers: [] },
+            settings: [
+              { path: 'model.defaultProvider', value: 'workspace-provider' },
+              {
+                path: 'model.providerDefaults',
+                value: { 'workspace-provider': 'workspace-model' },
+              },
+            ],
+            readiness: {},
+            specialists: [],
+          },
+        },
+      },
+    }),
     dispatch: dispatchMock,
   });
 });
-
-vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectSelectedModel: { select: vi.fn(() => 'test-model') },
-}));
 
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
@@ -154,6 +168,9 @@ describe('AgentActionBlock creation confirmation', () => {
       expect.objectContaining({
         name: 'Run the confirmation task',
         nameExplicitlySet: false,
+        workspaceId: 'ws-1',
+        provider: 'workspace-provider',
+        model: 'workspace-model',
       }),
     );
     action.success({ id: 'agent-confirmed', name: 'Confirmed Agent' });

@@ -137,6 +137,57 @@ describe('node agent compatibility', () => {
     state = agentSessionReducer(state, bulkUpsertSessions([session()]));
     expect(row(state)).toMatchObject(remote);
   });
+  it('starts a reused agent ID with only its new workspace node provenance', () => {
+    let state = agentSessionReducer(initialState, upsertSession(session(remote)));
+    state = agentSessionReducer(
+      state,
+      bulkUpsertSessions([
+        session({
+          workspaceId: WorkspaceId('ws-other'),
+          checkpoint: checkpoint('1'),
+        }),
+      ]),
+    );
+    expect(row(state)).toMatchObject({ workspaceId: 'ws-other', checkpoint: checkpoint('1') });
+    for (const key of [
+      'nodeId',
+      'leaseId',
+      'placement',
+      'effectiveIsolation',
+      'nodeState',
+      'nodePath',
+    ]) {
+      expect(row(state)).not.toHaveProperty(key);
+    }
+    expect(state.agentIdsByWorkspace['ws-remote']).toBeUndefined();
+    expect(state.agentIdsByWorkspace['ws-other']).toEqual(['agent-remote']);
+  });
+  it.each(['agent:updated', 'agent:status-changed', 'hub:checkpoint'])(
+    'ignores late %s from a previous workspace while accepting the current workspace',
+    (type) => {
+      const current = session({
+        ...remote,
+        workspaceId: WorkspaceId('ws-other'),
+        nodeId: 'node-other',
+        nodePath: '/other/checkout',
+        checkpoint: checkpoint('1'),
+      });
+      const before = agentSessionReducer(initialState, upsertSession(current));
+      const after = agentSessionReducer(before, event(type, { ...remote, status: 'halted' }));
+      expect(row(after)).toEqual(row(before));
+      const accepted = agentSessionReducer(
+        after,
+        eventReceived('ws-other', {
+          id: 'event-current',
+          type,
+          workspaceId: 'ws-other',
+          timestamp: '2026-09-28T09:00:03Z',
+          data: { agentId: 'agent-remote', workspaceId: 'ws-other', checkpoint: checkpoint('2') },
+        } as WorkspaceEvent),
+      );
+      expect(row(accepted)).toHaveProperty('checkpoint.id', 'checkpoint-1-2');
+    },
+  );
   it('treats halted as stopped even with stale tool activity', () => {
     expect(
       isAgentRunningState({

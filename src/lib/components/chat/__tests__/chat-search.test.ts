@@ -72,6 +72,22 @@ describe('chat search utilities', () => {
     ]);
   });
 
+  it('provides a disclosure path for counted thinking inside a live group', () => {
+    const message = assistant(
+      'live-thinking',
+      [
+        { type: 'text', text: '<group:Inspection>' },
+        { type: 'thinking', text: 'Completed searchable thought.' },
+        { type: 'tool_use', id: 'later-tool', name: 'view', input: {} },
+      ],
+      true,
+    );
+    expect(findChatSearchMatches([message], 'searchable thought', new Map())[0]).toMatchObject({
+      blockPath: 'b:0:c:0',
+      disclosurePath: ['thinking:b:0:c:0'],
+    });
+  });
+
   it('indexes live adjacent text while excluding reasoning history', () => {
     const message = assistant(
       'assistant-adjacent-preview',

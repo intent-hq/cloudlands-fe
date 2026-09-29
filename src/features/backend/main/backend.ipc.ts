@@ -3085,17 +3085,20 @@ export function registerBackendHandlers(): void {
     }
   });
 
-  ipcMain.handle(BACKEND.UNSUBSCRIBE, async (event, params: { subscriptionId?: string }) => {
-    try {
-      const result = await getBackendClientForIpcEvent(event).client.request(
-        'events.unsubscribe',
-        params,
-      );
-      return { ok: true, result };
-    } catch (error) {
-      return { ok: false, error: toErrorPayload(error) };
-    }
-  });
+  ipcMain.handle(
+    BACKEND.UNSUBSCRIBE,
+    async (event, params: { subscriptionId?: string; workspaceId?: string }) => {
+      try {
+        const result = await getBackendClientForIpcEvent(event).client.request(
+          'events.unsubscribe',
+          params,
+        );
+        return { ok: true, result };
+      } catch (error) {
+        return { ok: false, error: toErrorPayload(error) };
+      }
+    },
+  );
 
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);

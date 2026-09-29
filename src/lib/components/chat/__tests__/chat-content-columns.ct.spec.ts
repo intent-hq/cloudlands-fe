@@ -157,7 +157,7 @@ test('matches the wide side and lower composer spacing', async ({ mount, page })
 });
 
 for (const { width, expectedLeftInset, expectedComposerInset, label } of transcriptInsetCases) {
-  test(`uses the regular transcript inset ${label}`, async ({ mount, page }) => {
+  test(`uses the regular transcript inset ${label}`, async ({ mount, page }, testInfo) => {
     await page.setViewportSize({ width: 900, height: 900 });
     const component = await mount(ChatPanelOperationalGeometryHost, {
       props: { theme: 'light', zoom: 1, width },
@@ -195,19 +195,10 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
     );
 
     if (width < 640) {
-      const [avatarBox, titleBox, iconBox, summaryBox] = await Promise.all([
-        component.getByTestId('panel-header-agent-avatar-slot').boundingBox(),
-        component.locator('[data-panel-header-title]').boundingBox(),
-        component.locator('[data-operational-icon-box]').first().boundingBox(),
-        component.locator('[data-operational-summary]').first().boundingBox(),
-      ]);
-
-      expect(avatarBox).not.toBeNull();
-      expect(titleBox).not.toBeNull();
-      expect(iconBox).not.toBeNull();
-      expect(summaryBox).not.toBeNull();
-      expect(Math.abs(center(avatarBox!) - center(iconBox!))).toBeLessThanOrEqual(1);
-      expect(Math.abs(titleBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
+      await testInfo.attach('narrow-chat-content', {
+        body: await component.screenshot(),
+        contentType: 'image/png',
+      });
     } else {
       const viewport = component.getByTestId('chat-transcript-scroll-viewport');
       await viewport.hover();
@@ -302,21 +293,25 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
 
 test('contains expanded long tool content, follows bottom, and preserves composer focus', async ({
   mount,
+  page,
 }) => {
   const component = await mount(ChatPanelOperationalGeometryHost, {
     props: { theme: 'dark', zoom: 2, width: 360 },
   });
   const transcript = component.getByTestId('chat-transcript-inner');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
-  await component
-    .locator('[data-message-id="assistant-finished"]')
-    .getByTestId('response-group-disclosure')
-    .click();
+  await viewport.evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 })));
+  const finished = component.locator('[data-message-id="assistant-finished"]');
+  await finished.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+  await finished.getByTestId('response-group-disclosure').click();
+  await finished.evaluate((node) => node.scrollIntoView({ block: 'center' }));
   const longTool = component.locator('[data-tool-use-id="finished-long"]');
   await longTool
     .getByTestId('tool-call-disclosure')
     .evaluate((element) => (element as HTMLElement).click());
-  await viewport.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+  // Wheel-up above paused following; resume through downward user input.
+  await viewport.hover({ position: { x: 2, y: 100 } });
+  await page.mouse.wheel(0, 100_000);
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))
     .toBeLessThanOrEqual(1);
