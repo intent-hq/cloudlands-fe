@@ -215,6 +215,12 @@
     );
   }
 
+  const navigationState$ = store.createSelector((state) => ({
+    historyIds:
+      state.agentSessions?.historySegmentsByAgentId?.[agentId]?.messages.map((m) => m.id) ?? [],
+    busy: state.chatState?.byAgentId[agentId]?.fetchingHistorySeek ?? false,
+  }))();
+  let pageResponses = $state(0);
   let panelMounted = $state(true);
   let pageRequests = $state<string[]>([]);
   const pendingPages: (() => void)[] = [];
@@ -238,6 +244,7 @@
       const pageIndex = pageRequests.length;
       pageRequests = [...pageRequests, token ?? anchor ?? 'unanchored'];
       if (deferPages) await new Promise<void>((resolve) => pendingPages.push(resolve));
+      pageResponses++;
       const page = conversationPages[pageIndex];
       if (!page) throw new Error('Unexpected extra page');
       if ('error' in page) throw new Error(page.error);
@@ -266,6 +273,8 @@
   data-theme={theme}
 >
   <Toast />
+  <span class="sr-only" data-testid="navigation-state">{JSON.stringify($navigationState$)}</span>
+  <span class="sr-only" data-testid="page-responses">{pageResponses}</span>
   <span class="sr-only" data-testid="page-requests">{JSON.stringify(pageRequests)}</span>
   <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
     >Release page</button

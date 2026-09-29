@@ -4924,15 +4924,49 @@
       cancelPreviousMessageLoad();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') cancel();
+      if (event.key === 'Escape') {
+        cancel();
+        return;
+      }
+      // Match followBottom's scroll keys, while leaving editing and control
+      // navigation to the focused element. Scroll events alone may be our own.
+      if (
+        event.defaultPrevented ||
+        !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)
+      )
+        return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        isFocusInEditableElement(target) ||
+        target?.closest(
+          'button, a[href], [role="button"], [role="link"], [role="slider"], [role="spinbutton"]',
+        )
+      )
+        return;
+      cancel();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      // Use followBottom's gutter geometry, including RTL and scaled panels.
+      if (event.button !== 0 || event.target !== container) return;
+      const gutterWidth = Math.max(0, container.offsetWidth - container.clientWidth);
+      if (gutterWidth === 0) return;
+      const rect = container.getBoundingClientRect();
+      const visualGutterWidth = gutterWidth * (rect.width / container.offsetWidth);
+      const inGutter =
+        getComputedStyle(container).direction === 'rtl'
+          ? event.clientX <= rect.left + visualGutterWidth
+          : event.clientX >= rect.right - visualGutterWidth;
+      if (inGutter) cancel();
     };
     container.addEventListener('wheel', cancel, { passive: true });
     container.addEventListener('touchstart', cancel, { passive: true });
     container.addEventListener('keydown', onKeyDown);
+    container.addEventListener('pointerdown', onPointerDown);
     return () => {
       container.removeEventListener('wheel', cancel);
       container.removeEventListener('touchstart', cancel);
       container.removeEventListener('keydown', onKeyDown);
+      container.removeEventListener('pointerdown', onPointerDown);
     };
   });
 

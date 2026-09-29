@@ -3,6 +3,9 @@ import type { AgentMessage } from '$shared/types';
 import { expect, test } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
+// Chromium hides native scrollbars in headless mode unless this default is removed.
+test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
+
 function bottomMenu(component: Locator, page: Page) {
   const trigger = component
     .locator('[data-panel-content-header]')
@@ -760,6 +763,158 @@ for (const cancel of ['wheel', 'discard', 'newer-navigation'] as const) {
     await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
   });
 }
+
+for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const) {
+  test(`pending unloaded navigation yields to actual ${input} input and can retry`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatMessageNavigatorIntegrationHost, {
+      props: {
+        messages: automatedTail,
+        historyStartLoaded: false,
+        deferPages: true,
+        conversationPages: [
+          conversationPage([
+            historyMessage('stale-human', 'user', 'Cancelled history must never be installed', 899),
+            ...automatedTail,
+          ]),
+          conversationPage([
+            historyMessage('retry-human', 'user', 'Prompt from a fresh navigation', 899),
+            ...automatedTail,
+          ]),
+        ],
+      },
+    });
+    const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+    const source = component.locator('[data-message-id="reply-tail"]');
+    const arrow = source.getByRole('button', { name: 'Previous user message' });
+    const state = component.getByTestId('navigation-state');
+    await source.hover();
+    await arrow.press('Enter');
+    await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+    await expect(state).toHaveText('{"historyIds":[],"busy":true}');
+    // Programmatic positioning is not user intent. Start midway so every key
+    // and the native scrollbar thumb drag can actually move the viewport.
+    await scroll.evaluate((node) => {
+      node.tabIndex = -1;
+      node.focus();
+      node.scrollTop = (node.scrollHeight - node.clientHeight) / 2;
+    });
+    await expect(state).toHaveText('{"historyIds":[],"busy":true}');
+    const before = await scroll.evaluate((node) => node.scrollTop);
+    if (input === 'scrollbar') {
+      const geometry = await scroll.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          x: rect.right - (node.offsetWidth - node.clientWidth) / 2,
+          y: rect.top + rect.height / 2,
+          gutter: node.offsetWidth - node.clientWidth,
+        };
+      });
+      expect(geometry.gutter).toBeGreaterThan(0);
+      await page.mouse.move(geometry.x, geometry.y);
+      await page.mouse.down();
+      await page.mouse.move(geometry.x, geometry.y + 90, { steps: 6 });
+      await page.mouse.up();
+    } else {
+      await page.keyboard.press(input);
+    }
+    await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).not.toBe(before);
+    // Wait out Chromium's keyboard scrolling before measuring the reader position.
+    await page.waitForTimeout(350);
+    const readingOffset = async () =>
+      source.evaluate(
+        (node, container) =>
+          node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
+        await scroll.elementHandle(),
+      );
+    const readerOffset = await readingOffset();
+    await expect(state).toHaveText('{"historyIds":[],"busy":false}');
+    await expect(arrow).toBeEnabled();
+    await releasePage(component);
+    await expect(component.getByTestId('page-responses')).toHaveText('1');
+    await expect(state).toHaveText('{"historyIds":[],"busy":false}');
+    await page.waitForTimeout(350);
+    expect(await readingOffset()).toBeCloseTo(readerOffset, 0);
+    await expect(component.locator('[data-message-id="stale-human"]')).toHaveCount(0);
+    await expect(arrow).toBeEnabled();
+
+    await arrow.press('Enter');
+    await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail","reply-tail"]');
+    await expect(state).toHaveText('{"historyIds":[],"busy":true}');
+    await releasePage(component);
+    await expectAtMessage(component, 'retry-human');
+    await expect(state).toContainText('"busy":false');
+  });
+}
+
+test('pending unloaded navigation preserves editing, controls, and programmatic scroll', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      deferPages: true,
+      conversationPages: [
+        conversationPage([
+          historyMessage('loaded-human', 'user', 'The requested prompt', 899),
+          ...automatedTail,
+        ]),
+      ],
+    },
+  });
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  const source = component.locator('[data-message-id="reply-tail"]');
+  const state = component.getByTestId('navigation-state');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expect(state).toHaveText('{"historyIds":[],"busy":true}');
+
+  // Exercise bubbling events from nested editors and interactive content using
+  // real keyboard input, without coupling this test to a particular message tool.
+  for (const kind of ['input', 'textarea', 'contenteditable', 'button', 'link', 'handled']) {
+    await scroll.evaluate((node, kind) => {
+      const control = document.createElement(
+        kind === 'contenteditable' || kind === 'handled' ? 'div' : kind === 'link' ? 'a' : kind,
+      );
+      control.dataset.testid = 'nested-control';
+      control.tabIndex = 0;
+      control.style.cssText = 'position:fixed;top:100px;left:100px;z-index:100;width:180px';
+      control.textContent = 'Message control';
+      if (kind === 'contenteditable') control.contentEditable = 'true';
+      if (kind === 'link') control.setAttribute('href', '#message');
+      if (kind === 'handled')
+        control.addEventListener('keydown', (event) => event.preventDefault());
+      node.appendChild(control);
+    }, kind);
+    const control = scroll.getByTestId('nested-control');
+    await control.click();
+    for (const key of ['PageUp', 'PageDown', 'Home', 'End']) {
+      await control.press(key);
+      await expect(state).toHaveText('{"historyIds":[],"busy":true}');
+    }
+    await control.evaluate((node) => node.remove());
+  }
+  const composer = component.locator('.tiptap-editor[contenteditable="true"]');
+  await composer.fill('Draft remains editable');
+  await composer.press('Home');
+  await expect(composer).toHaveText('Draft remains editable');
+  await scroll.evaluate((node) => {
+    node.tabIndex = -1;
+    node.focus();
+    node.scrollTop = (node.scrollHeight - node.clientHeight) / 2;
+  });
+  await page.waitForTimeout(100);
+  await expect(state).toHaveText('{"historyIds":[],"busy":true}');
+  await releasePage(component);
+  await expectAtMessage(component, 'loaded-human');
+  await expect(state).toContainText('"busy":false');
+});
 
 test('unloaded walk reaches confirmed conversation start without a human', async ({
   mount,
