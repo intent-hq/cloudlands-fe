@@ -29,6 +29,7 @@ vi.mock(
     const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
+      selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => []),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
