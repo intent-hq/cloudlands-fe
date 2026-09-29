@@ -42,6 +42,7 @@ test.afterAll(async () => server?.close());
 test('keeps resource tiles and compact header insets exact across the geometry matrix', async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.evaluate(async () => {
@@ -64,8 +65,6 @@ test('keeps resource tiles and compact header insets exact across the geometry m
         '[data-resource-icon-tile]',
         '[data-resource-icon-glyph]',
         '[data-panel-tab-bar] [data-resource-icon-tile]',
-        '[data-testid="chat-message-navigator-trigger"] svg',
-        '[data-testid="chat-scroll-to-bottom-button"] svg',
         '[data-testid="panel-actions-trigger"] svg',
         '[data-testid="panel-close-button"] svg',
       ]) {
@@ -80,12 +79,6 @@ test('keeps resource tiles and compact header insets exact across the geometry m
         '[data-panel-tab-bar] [data-resource-icon-tile]',
       )!;
       const probe = scenario.querySelector<HTMLElement>('[data-resource-semantic-probe]')!;
-      const listGlyph = scenario.querySelector<HTMLElement>(
-        '[data-testid="chat-message-navigator-trigger"] svg',
-      )!;
-      const arrowGlyph = scenario.querySelector<HTMLElement>(
-        '[data-testid="chat-scroll-to-bottom-button"] svg',
-      )!;
       const kebabGlyph = scenario.querySelector<HTMLElement>(
         '[data-testid="panel-actions-trigger"] svg',
       )!;
@@ -112,10 +105,6 @@ test('keeps resource tiles and compact header insets exact across the geometry m
         foreground: tileStyle.color,
         expectedBackground: probeStyle.backgroundColor,
         expectedForeground: probeStyle.color,
-        listWidth: getComputedStyle(listGlyph).width,
-        listHeight: getComputedStyle(listGlyph).height,
-        arrowWidth: getComputedStyle(arrowGlyph).width,
-        arrowHeight: getComputedStyle(arrowGlyph).height,
         kebabWidth: getComputedStyle(kebabGlyph).width,
         kebabHeight: getComputedStyle(kebabGlyph).height,
         closeWidth: getComputedStyle(closeGlyph).width,
@@ -137,17 +126,32 @@ test('keeps resource tiles and compact header insets exact across the geometry m
 
   expect(results).toHaveLength(48);
   for (const result of results) {
+    // Panel actions mount in a portal only while their owning menu is open.
+    // Bind each measurement to this scenario's trigger, not another panel's menu.
+    const scenario = page.locator(`[data-resource-geometry-case="${result.scenario}"]`);
+    const trigger = scenario
+      .locator('[data-panel-tabless-header]')
+      .getByTestId('panel-actions-trigger');
+    await trigger.press('Enter');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menuId = await trigger.getAttribute('aria-controls');
+    expect(menuId, result.scenario).toBeTruthy();
+    const menu = page.locator(`[id="${menuId}"]`);
+    await expect(menu).toBeVisible();
+    for (const testId of ['chat-message-navigator-trigger', 'chat-scroll-to-bottom-button']) {
+      const icon = menu.getByTestId(testId).locator('[data-slot="menu-item-leading"] svg');
+      await expect(icon, result.scenario).toHaveCount(1);
+      await expect(icon, result.scenario).toHaveCSS('width', '16px');
+      await expect(icon, result.scenario).toHaveCSS('height', '16px');
+    }
+    await page.keyboard.press('Escape');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(menu).toBeHidden();
     expect(result.tileWidth, result.scenario).toBe('24px');
     expect(result.tileHeight, result.scenario).toBe('24px');
     expect(result.radius, result.scenario).toBe('7px');
     expect(result.glyphWidth, result.scenario).toBe('16px');
     expect(result.glyphHeight, result.scenario).toBe('16px');
-    // Shared-control alignment: the navigator trigger uses CHAT_ICON_SIZE.compact (16px, 898107a1 #2531)
-    // and the panel kebab/close icons moved from 14px to 16px (8eb767aa #2533); scroll keeps its 16px icon.
-    expect(result.listWidth, result.scenario).toBe('16px');
-    expect(result.listHeight, result.scenario).toBe('16px');
-    expect(result.arrowWidth, result.scenario).toBe('16px');
-    expect(result.arrowHeight, result.scenario).toBe('16px');
     expect(result.kebabWidth, result.scenario).toBe('16px');
     expect(result.kebabHeight, result.scenario).toBe('16px');
     expect(result.closeWidth, result.scenario).toBe('16px');

@@ -41,6 +41,7 @@
 
 {#snippet headerActions()}
   <ChatMessageNavigator
+    embedded
     messages={[{ id: 'message-1', text: 'Geometry message' }]}
     isAtBottom={false}
     onSelectMessage={() => true}
