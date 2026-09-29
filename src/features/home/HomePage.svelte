@@ -298,37 +298,40 @@
       </header>
       <div class="min-h-0 flex-1 overflow-hidden"><ChiefCard expanded embedded isActive /></div>
     {:else}
-      <header class="flex flex-wrap items-start justify-between gap-3 px-6 pb-4 pt-5">
-        <div class="min-w-0">
-          <h1
-            class="break-words text-lg font-medium tracking-tight"
-            title={selectedRepository?.repoPath}
-          >
-            {heading}
-          </h1>
-          {#if selectedRepository}<HomeRepositoryMetadata
-              workspaces={scopedWorkspaces}
-              repository={selectedRepository}
-            />{/if}
-        </div>
-        {#if !$collaborator$}<Button variant="primary" size="sm" onclick={createWorkspace}
-            >{#snippet leadingIcon()}<Fa icon={faPlus} />{/snippet}{m.home_new_workspace()}</Button
-          >{/if}
-      </header>
       <Tabs.Root
         value={tab}
         onValueChange={(value) => {
           if (value === 'workspaces' || value === 'prs' || value === 'linear')
             updateView({ tab: value });
         }}
-        variant="subtle"
+        variant="underline"
         class="flex min-h-0 flex-1 flex-col"
       >
-        <Tabs.List class="shrink-0 px-5" aria-label={m.home_views()}>
-          <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-          <Tabs.Trigger value="prs">{m.home_tab_prs()}</Tabs.Trigger>
-          <Tabs.Trigger value="linear">{m.home_tab_linear()}</Tabs.Trigger>
-        </Tabs.List>
+        <header
+          class="home-header flex shrink-0 flex-wrap items-center gap-x-6 border-b border-border px-5"
+        >
+          <h1
+            class="home-heading min-w-0 truncate text-sm font-medium"
+            title={selectedRepository?.repoPath ?? heading}
+          >
+            {heading}
+          </h1>
+          <Tabs.List class="home-tabs shrink-0 gap-5 px-0" aria-label={m.home_views()}>
+            <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
+            <Tabs.Trigger value="prs">{m.home_tab_prs()}</Tabs.Trigger>
+            <Tabs.Trigger value="linear">{m.home_tab_linear()}</Tabs.Trigger>
+          </Tabs.List>
+          {#if !$collaborator$}<div class="home-create ml-auto py-2">
+              <Button variant="primary" size="sm" onclick={createWorkspace}
+                >{#snippet leadingIcon()}<Fa
+                    icon={faPlus}
+                  />{/snippet}{m.home_new_workspace()}</Button
+              >
+            </div>{/if}
+        </header>
+        {#if selectedRepository}<div class="border-b border-border px-5 pb-3">
+            <HomeRepositoryMetadata workspaces={scopedWorkspaces} repository={selectedRepository} />
+          </div>{/if}
         <Tabs.Content value="workspaces" class="min-h-0 flex-1 overflow-hidden">
           <div class="workspace-content h-full min-h-0" class:has-selection={!!selectedWorkspace}>
             <section
@@ -514,6 +517,17 @@
     grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 1fr);
   }
   @container (max-width: 1000px) {
+    .home-header {
+      column-gap: 1rem;
+    }
+    .home-header :global(.home-tabs) {
+      order: 3;
+      flex-basis: 100%;
+    }
+    .home-heading {
+      flex: 1;
+      padding-block: 0.75rem;
+    }
     .workspace-row-repo {
       display: none;
     }

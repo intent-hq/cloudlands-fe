@@ -150,8 +150,8 @@
   class="home-integrations flex h-full min-h-0 flex-1 flex-col"
   data-home-integrations={kind}
 >
-  <div class="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
-    <div class="min-w-40 max-w-sm flex-1">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-2">
+    <div class="min-w-40 max-w-60 flex-1">
       <Input
         type="search"
         value={query}
@@ -160,30 +160,18 @@
         oninput={(event) => search(event.currentTarget.value)}
       />
     </div>
-    <div class="ml-auto shrink-0">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={m.home_integrations_refresh()}
-        tooltip={m.home_integrations_refresh()}
-        loading={view.status === 'loading'}
-        disabled={!!preview || view.status === 'loading' || view.loadingMore}
-        onclick={() => appStore.dispatch(refreshHomeIntegrations())}
-        ><Fa icon={faArrowRotateRight} /></Button
-      >
+    <div class="flex flex-wrap items-center gap-1">
+      {#each filters as filter (filter.value)}
+        <Button
+          variant="ghost"
+          size="sm"
+          active={view.filter === filter.value && !(kind === 'linear' && query.trim())}
+          aria-pressed={view.filter === filter.value && !(kind === 'linear' && query.trim())}
+          disabled={!!preview || (kind === 'linear' && !!query.trim())}
+          onclick={() => search(query, filter.value)}>{filter.label}</Button
+        >
+      {/each}
     </div>
-  </div>
-  <div class="flex flex-wrap items-center gap-1 border-b border-border px-5 py-2">
-    {#each filters as filter (filter.value)}
-      <Button
-        variant="ghost"
-        size="sm"
-        active={view.filter === filter.value && !(kind === 'linear' && query.trim())}
-        aria-pressed={view.filter === filter.value && !(kind === 'linear' && query.trim())}
-        disabled={!!preview || (kind === 'linear' && !!query.trim())}
-        onclick={() => search(query, filter.value)}>{filter.label}</Button
-      >
-    {/each}
     {#if isPr}
       <div class="ml-auto flex gap-1">
         <Button
@@ -204,6 +192,18 @@
         >
       </div>
     {/if}
+    <div class="ml-auto shrink-0">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={m.home_integrations_refresh()}
+        tooltip={m.home_integrations_refresh()}
+        loading={view.status === 'loading'}
+        disabled={!!preview || view.status === 'loading' || view.loadingMore}
+        onclick={() => appStore.dispatch(refreshHomeIntegrations())}
+        ><Fa icon={faArrowRotateRight} /></Button
+      >
+    </div>
   </div>
   {#if !isPr}<p class="border-b border-border px-5 py-2 type-caption text-muted-foreground">
       {query.trim()

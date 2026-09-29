@@ -9,6 +9,17 @@ test('Home filters and previews workspaces without entering them', async ({
   const component = await mount(Preview);
   const list = component.getByRole('listbox', { name: 'Workspaces' });
   await expect(list.getByRole('option')).toHaveCount(6);
+  await component.getByRole('tab', { name: 'Pull requests', exact: true }).click();
+  await expect(component.getByRole('tab', { name: 'Pull requests', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.keyboard.press('ArrowLeft');
+  await expect(component.getByRole('tab', { name: 'Workspaces', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(list.getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: /^Needs you/ }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
   await list.getByRole('option').first().focus();
