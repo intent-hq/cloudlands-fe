@@ -55,9 +55,11 @@ type SettlementCapture6036 = {
 
 function geometry(element: Element) {
   const root = element as HTMLElement;
-  const capture = (globalThis as typeof globalThis & {
-    __walkthroughSettlement6036?: SettlementCapture6036;
-  }).__walkthroughSettlement6036;
+  const capture = (
+    globalThis as typeof globalThis & {
+      __walkthroughSettlement6036?: SettlementCapture6036;
+    }
+  ).__walkthroughSettlement6036;
   if (capture) {
     if (capture.target === null) capture.target = root;
     else if (capture.target !== root) capture.incomplete = true;
@@ -198,10 +200,13 @@ async function sampleChange(
   return root.evaluate(
     async (element, { source, index, resizeWidth, interrupt }) => {
       const read = new Function(`return (${source})`)() as typeof geometry;
-      const capture = (globalThis as typeof globalThis & {
-        __walkthroughSettlement6036?: SettlementCapture6036;
-      }).__walkthroughSettlement6036;
-      if (capture) capture.segment = `${interrupt ? 'rapid' : resizeWidth ? 'resize' : 'step'}:${index}:${resizeWidth ?? 'unchanged'}`;
+      const capture = (
+        globalThis as typeof globalThis & {
+          __walkthroughSettlement6036?: SettlementCapture6036;
+        }
+      ).__walkthroughSettlement6036;
+      if (capture)
+        capture.segment = `${interrupt ? 'rapid' : resizeWidth ? 'resize' : 'step'}:${index}:${resizeWidth ?? 'unchanged'}`;
       const samples = [read(element)];
       element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
       if (resizeWidth) {
@@ -262,9 +267,11 @@ for (const width of [960, 662, 420]) {
         const navigationsBeforeCollection = mainNavigationCount;
         try {
           payload = await page.evaluate((boundary) => {
-            const capture = (globalThis as typeof globalThis & {
-              __walkthroughSettlement6036?: SettlementCapture6036;
-            }).__walkthroughSettlement6036;
+            const capture = (
+              globalThis as typeof globalThis & {
+                __walkthroughSettlement6036?: SettlementCapture6036;
+              }
+            ).__walkthroughSettlement6036;
             if (!capture) return { boundary, incomplete: true, reason: 'missing-buffer' };
             return {
               boundary,
@@ -272,7 +279,10 @@ for (const width of [960, 662, 420]) {
               count: capture.count,
               overflow: capture.overflow,
               incomplete:
-                capture.incomplete || capture.overflow || capture.target === null || capture.count === 0,
+                capture.incomplete ||
+                capture.overflow ||
+                capture.target === null ||
+                capture.count === 0,
               targetBound: capture.target !== null,
               records: capture.records.slice(0, capture.count),
               snapshots: capture.snapshots,
@@ -280,7 +290,12 @@ for (const width of [960, 662, 420]) {
             };
           }, boundary);
         } catch (error) {
-          payload = { boundary, incomplete: true, reason: 'collection-error', error: String(error) };
+          payload = {
+            boundary,
+            incomplete: true,
+            reason: 'collection-error',
+            error: String(error),
+          };
         }
         payload.documentContinuity = {
           bindingStarted: selectedBindingStarted,
@@ -295,9 +310,10 @@ for (const width of [960, 662, 420]) {
           mainNavigationCount !== navigationsBeforeCollection;
         try {
           const serialized = JSON.stringify(payload);
-          const body = Buffer.byteLength(serialized, 'utf8') <= 8 * 1024 * 1024
-            ? serialized
-            : JSON.stringify({ boundary, incomplete: true, reason: 'attachment-cap' });
+          const body =
+            Buffer.byteLength(serialized, 'utf8') <= 8 * 1024 * 1024
+              ? serialized
+              : JSON.stringify({ boundary, incomplete: true, reason: 'attachment-cap' });
           await testInfo.attach('settlement-decisions', {
             body,
             contentType: 'application/json',
@@ -311,15 +327,21 @@ for (const width of [960, 662, 420]) {
       let paintIncomplete = false;
       const paintEvidence: Record<string, unknown>[] = [];
       const observeFailedSegmentPaint = async (
-        root: Locator, index: number, resizeWidth: number,
+        root: Locator,
+        index: number,
+        resizeWidth: number,
         samples: Awaited<ReturnType<typeof sampleChange>>,
       ) => {
         if (!captureSelected || paintAttempted || samples.at(-1)?.settled !== false) return;
         paintAttempted = true;
         const event: Record<string, unknown> = {
-          index, resizeWidth, failedSample: samples.at(-1),
-          hostStartedAt: Date.now(), incomplete: false,
-          qualification: 'After sample return; target capture may scroll/wait. Neither image is the original sampled frame.',
+          index,
+          resizeWidth,
+          failedSample: samples.at(-1),
+          hostStartedAt: Date.now(),
+          incomplete: false,
+          qualification:
+            'After sample return; target capture may scroll/wait. Neither image is the original sampled frame.',
         };
         paintEvidence.push(event);
         try {
@@ -330,9 +352,15 @@ for (const width of [960, 662, 420]) {
             throw new Error('Unexpected diagnostic viewport');
           }
           const d = before.settlementDiagnostic;
-          if (!Number.isFinite(d.rootWidth) || !Number.isFinite(d.rootHeight) ||
-              d.rootWidth <= 0 || d.rootHeight <= 0 || d.rootWidth > 1600 ||
-              d.rootHeight > 1200 || d.rootWidth * d.rootHeight > 1_500_000) {
+          if (
+            !Number.isFinite(d.rootWidth) ||
+            !Number.isFinite(d.rootHeight) ||
+            d.rootWidth <= 0 ||
+            d.rootHeight <= 0 ||
+            d.rootWidth > 1600 ||
+            d.rootHeight > 1200 ||
+            d.rootWidth * d.rootHeight > 1_500_000
+          ) {
             throw new Error('Target exceeds finite paint-capture bounds');
           }
           const attachPNG = async (name: string, png: Buffer) => {
@@ -340,13 +368,24 @@ for (const width of [960, 662, 420]) {
             await testInfo.attach(name, { body: png, contentType: 'image/png' });
           };
           const beforeNavigationCount = mainNavigationCount;
-          await attachPNG('unsettled-segment-viewport', await page.screenshot({
-            animations: 'allow', caret: 'initial', fullPage: false, timeout: 2_000,
-          }));
+          await attachPNG(
+            'unsettled-segment-viewport',
+            await page.screenshot({
+              animations: 'allow',
+              caret: 'initial',
+              fullPage: false,
+              timeout: 2_000,
+            }),
+          );
           event.afterViewport = await root.evaluate(geometry);
-          await attachPNG('unsettled-segment-target-later', await root.screenshot({
-            animations: 'allow', caret: 'initial', timeout: 2_000,
-          }));
+          await attachPNG(
+            'unsettled-segment-target-later',
+            await root.screenshot({
+              animations: 'allow',
+              caret: 'initial',
+              timeout: 2_000,
+            }),
+          );
           event.afterTarget = await root.evaluate(geometry);
           event.beforeNavigationCount = beforeNavigationCount;
           event.afterNavigationCount = mainNavigationCount;
@@ -367,8 +406,12 @@ for (const width of [960, 662, 420]) {
         paintAttachmentAttempted = true;
         try {
           await testInfo.attach('unsettled-segment-paint-context', {
-            body: JSON.stringify({ attempted: paintAttempted, incomplete: paintIncomplete,
-              documentLost: selectedDocumentLost, events: paintEvidence }),
+            body: JSON.stringify({
+              attempted: paintAttempted,
+              incomplete: paintIncomplete,
+              documentLost: selectedDocumentLost,
+              events: paintEvidence,
+            }),
             contentType: 'application/json',
           });
         } catch (error) {
@@ -379,9 +422,11 @@ for (const width of [960, 662, 420]) {
       try {
         if (captureSelected) {
           await page.addInitScript(() => {
-            (globalThis as typeof globalThis & {
-              __walkthroughSettlement6036?: SettlementCapture6036;
-            }).__walkthroughSettlement6036 = {
+            (
+              globalThis as typeof globalThis & {
+                __walkthroughSettlement6036?: SettlementCapture6036;
+              }
+            ).__walkthroughSettlement6036 = {
               target: null,
               records: new Array<Record<string, unknown> | null>(4096).fill(null),
               count: 0,
@@ -457,9 +502,9 @@ for (const width of [960, 662, 420]) {
           const navigationOffsets = samples.map(
             (sample) => sample.controlOffset - sample.footerOffset,
           );
-          expect(Math.max(...navigationOffsets) - Math.min(...navigationOffsets)).toBeLessThanOrEqual(
-            1,
-          );
+          expect(
+            Math.max(...navigationOffsets) - Math.min(...navigationOffsets),
+          ).toBeLessThanOrEqual(1);
           if (motion === 'reduced')
             expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
           else expect(samples.some((sample) => sample.animationCount > 0)).toBe(true);
@@ -511,9 +556,9 @@ for (const width of [960, 662, 420]) {
           expect(final.fonts.length).toBeGreaterThanOrEqual(5);
           expect(Math.min(...final.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
           expect(Math.min(...final.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
-          expect(final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
-            true,
-          );
+          expect(
+            final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12),
+          ).toBe(true);
           const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
           expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
           if (motion === 'reduced') {
@@ -534,7 +579,9 @@ for (const width of [960, 662, 420]) {
               mainNavigationCount,
               lost: selectedDocumentLost,
               incomplete: !selectedBindingStarted || selectedDocumentLost,
-              paintAttempted, paintIncomplete, paintAttachmentAttempted,
+              paintAttempted,
+              paintIncomplete,
+              paintAttachmentAttempted,
             };
             try {
               await testInfo.attach('settlement-document-continuity', {

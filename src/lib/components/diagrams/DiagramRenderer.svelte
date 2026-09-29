@@ -350,18 +350,20 @@
     previousSnapshot?: string,
     finiteAnimationCount: number | null = null,
   ) {
-    const capture = (globalThis as typeof globalThis & {
-      __walkthroughSettlement6036?: {
-        target: Element | null;
-        records: (Record<string, unknown> | null)[];
-        count: number;
-        overflow: boolean;
-        incomplete: boolean;
-        segment: string;
-        snapshots: string[];
-        serializedUnits: number;
-      };
-    }).__walkthroughSettlement6036;
+    const capture = (
+      globalThis as typeof globalThis & {
+        __walkthroughSettlement6036?: {
+          target: Element | null;
+          records: (Record<string, unknown> | null)[];
+          count: number;
+          overflow: boolean;
+          incomplete: boolean;
+          segment: string;
+          snapshots: string[];
+          serializedUnits: number;
+        };
+      }
+    ).__walkthroughSettlement6036;
     if (!rendererEl || !capture || capture.target !== rendererEl) return;
     try {
       if (capture.count >= 4096) {
@@ -374,8 +376,11 @@
         const existing = capture.snapshots.indexOf(value);
         if (existing !== -1) return existing;
         const units = JSON.stringify(value).length;
-        if (units > 32768 || capture.snapshots.length >= 256 ||
-            capture.serializedUnits + units > 2 * 1024 * 1024) {
+        if (
+          units > 32768 ||
+          capture.snapshots.length >= 256 ||
+          capture.serializedUnits + units > 2 * 1024 * 1024
+        ) {
           capture.overflow = capture.incomplete = true;
           return null;
         }
@@ -393,7 +398,10 @@
       const record = {
         sampledAt: performance.now(),
         segment: capture.segment,
-        snapshotIndex, previousSnapshotIndex, movingEdges, finiteAnimationCount,
+        snapshotIndex,
+        previousSnapshotIndex,
+        movingEdges,
+        finiteAnimationCount,
         revision,
         currentRevision: settlementRevision,
         state: currentStateId,
@@ -433,7 +441,16 @@
         (finiteAnimationCount = activeFiniteAnimations().length) > 0;
       if (!active && previousSnapshot !== undefined && snapshot === previousSnapshot) {
         if (stateJustChanged) {
-          recordSettlementDecision(revision, 'tick', active, true, true, snapshot, previousSnapshot, finiteAnimationCount);
+          recordSettlementDecision(
+            revision,
+            'tick',
+            active,
+            true,
+            true,
+            snapshot,
+            previousSnapshot,
+            finiteAnimationCount,
+          );
           stateJustChanged = false;
           settlementFrame = undefined;
           void tick().then(() => {
@@ -448,7 +465,16 @@
           });
           return;
         }
-        recordSettlementDecision(revision, 'settled', active, true, true, snapshot, previousSnapshot, finiteAnimationCount);
+        recordSettlementDecision(
+          revision,
+          'settled',
+          active,
+          true,
+          true,
+          snapshot,
+          previousSnapshot,
+          finiteAnimationCount,
+        );
         diagramSettled = true;
         motionPhase = 'settled';
         stopStepViewportTracking();
@@ -461,7 +487,9 @@
         active,
         previousSnapshot !== undefined,
         active || previousSnapshot === undefined ? null : false,
-        snapshot, previousSnapshot, finiteAnimationCount,
+        snapshot,
+        previousSnapshot,
+        finiteAnimationCount,
       );
       monitorDiagramSettlement(revision, active ? undefined : snapshot);
     });
