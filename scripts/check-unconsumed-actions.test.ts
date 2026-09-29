@@ -21,6 +21,204 @@ const slice = (handlers: string[] = [], creators: string[] = []) => ({
   ].join('\n'),
 });
 
+describe('inline actionChannel predicates', () => {
+  const inspect = (
+    consumer: string,
+    {
+      effectImport = "import { actionChannel } from 'typed-redux-saga';",
+      parameters = '',
+      extraFiles = [] as { path: string; content: string }[],
+    } = {},
+  ) =>
+    inspectUnconsumedActions(
+      [
+        slice(),
+        {
+          path: SAGA,
+          content: [
+            SAGA_IMPORT,
+            effectImport,
+            ACTIONS_IMPORT,
+            `export function* demoSaga(${parameters}) {`,
+            "  yield* put(a({ id: 'x' }));",
+            '  yield* put(b());',
+            consumer,
+            '}',
+          ].join('\n'),
+        },
+        ...extraFiles,
+      ],
+      noExceptions,
+    );
+
+  const aViolation = `${SLICE}:3: action a is dispatched but has no reducer case or explicit watcher; dispatched at ${SAGA}:5`;
+  const bViolation = `${SLICE}:4: action b is dispatched but has no reducer case or explicit watcher; dispatched at ${SAGA}:6`;
+
+  it('recognizes the original cancellation predicate without consuming a sibling action', () => {
+    const result = inspect(`yield* actionChannel((action: { type: string; payload?: unknown }) => {
+      if (!Array.isArray(action.payload) || action.payload[0] !== workspaceId) return false;
+      if (action.type === workspaceUnmounted.type) return true;
+      if (action.type === repositoryContextDemanded.type) {
+        return action.payload[2] === undefined || action.payload[2] === admission;
+      }
+      return (
+        action.type === a.type &&
+        action.payload[1] === demandId &&
+        (capturedAdmission === undefined
+          ? action.payload[2] === undefined
+          : action.payload[2] === admission)
+      );
+    }, buffers.sliding(1));`);
+    expect(result.violations).toEqual([bViolation]);
+    expect(result.actionCount).toBe(2);
+    expect(result.dispatchedCount).toBe(2);
+    expect(result.exceptionCount).toBe(0);
+  });
+
+  it.each([
+    'yield* actionChannel((event) => event.type === a.type);',
+    "yield* actionChannel((event) => event.type === 'demo/a');",
+    'yield* actionChannel((event) => event.type === a.type && event.payload[0] === workspaceId);',
+    'yield* actionChannel((event) => { if (event.type !== a.type) return false; return event.type === a.type; });',
+  ])('accepts a returned match through the predicate parameter: %s', (consumer) => {
+    expect(inspect(consumer).violations).toEqual([bViolation]);
+  });
+
+  it('keeps imported effect aliases and namespace provenance', () => {
+    expect(
+      inspect('yield* channel((event) => event.type === a.type);', {
+        effectImport: "import { actionChannel as channel } from 'redux-saga/effects';",
+      }).violations,
+    ).toEqual([bViolation]);
+    expect(
+      inspect('yield* effects.actionChannel((event) => event.type === a.type);', {
+        effectImport: "import * as effects from 'typed-redux-saga';",
+      }).violations,
+    ).toEqual([bViolation]);
+  });
+
+  it('follows an existing effect re-export without admitting a local lookalike', () => {
+    const effectImport = "import { actionChannel } from './effects';";
+    const path = 'src/store/renderer/slices/demo/sagas/effects.ts';
+    const consumer = 'yield* actionChannel((event) => event.type === a.type);';
+    expect(
+      inspect(consumer, {
+        effectImport,
+        extraFiles: [{ path, content: "export { actionChannel } from 'typed-redux-saga';" }],
+      }).violations,
+    ).toEqual([bViolation]);
+    expect(
+      inspect(consumer, {
+        effectImport,
+        extraFiles: [{ path, content: 'export const actionChannel = (filter) => filter;' }],
+      }).violations,
+    ).toEqual([aViolation, bViolation]);
+  });
+
+  it.each([
+    ['false result', '(event) => { if (event.type === a.type) return false; return false; }'],
+    ['discarded comparison', '(event) => { event.type === a.type; return false; }'],
+    ['logged comparison', '(event) => { console.log(event.type === a.type); return false; }'],
+    ['comment', '(event) => { /* return event.type === a.type; */ return false; }'],
+    ['string', '(event) => { const text = "return event.type === a.type"; return false; }'],
+    ['reversed operands', '(event) => a.type === event.type'],
+    ['negative equality', '(event) => event.type !== a.type'],
+    ['negation', '(event) => !(event.type === a.type)'],
+    ['constant false conjunct', '(event) => event.type === a.type && false'],
+    ['false first conjunct', '(event) => false && event.type === a.type'],
+    ['negated true conjunct', '(event) => event.type === a.type && !true'],
+    ['false conditional conjunct', '(event) => event.type === a.type && (flag ? false : false)'],
+    ['null conjunct', '(event) => event.type === a.type && null'],
+    ['zero conjunct', '(event) => event.type === a.type && 0'],
+    ['empty string conjunct', "(event) => event.type === a.type && ''"],
+    ['conflicting action conjunct', '(event) => event.type === a.type && event.type === b.type'],
+    ['broad predicate', "(event) => event.type.startsWith('demo/')"],
+    ['broad disjunction', '(event) => event.type === a.type || true'],
+    ['foreign object', '(event) => other.type === a.type'],
+    ['shadowed creator', '(a) => a.type === a.type'],
+    ['destructured parameter', '({ type }) => type === a.type'],
+    ['default parameter', '(event = other) => event.type === a.type'],
+    ['async result', 'async (event) => event.type === a.type'],
+    ['unreachable return', '(event) => { return false; return event.type === a.type; }'],
+    [
+      'false branch only',
+      '(event) => { if (event.type === a.type) return false; return event.type === a.type; }',
+    ],
+    [
+      'reversed rejecting guard',
+      '(event) => { if (a.type === event.type) return false; return event.type === a.type; }',
+    ],
+    [
+      'negated rejecting guard',
+      '(event) => { if (!(event.type !== a.type)) return false; return event.type === a.type; }',
+    ],
+    [
+      'always rejected branch',
+      '(event) => { if (true) return false; return event.type === a.type; }',
+    ],
+    ['nested function', '(event) => { const match = () => event.type === a.type; return false; }'],
+    ['nested shadow', '(event) => ((event) => event.type === a.type)(other)'],
+    ['nested returned callback', '(event) => () => event.type === a.type'],
+    ['reassigned parameter', '(event) => { event = other; return event.type === a.type; }'],
+    ['changed type', '(event) => { event.type = other.type; return event.type === a.type; }'],
+    [
+      'mutation in guard',
+      '(event) => { if (event = other) return false; return event.type === a.type; }',
+    ],
+  ])('does not credit %s', (_name, predicate) => {
+    expect(inspect(`yield* actionChannel(${predicate});`).violations).toEqual([
+      aViolation,
+      bViolation,
+    ]);
+  });
+
+  it.each([
+    'const unused = (event) => event.type === a.type; yield* actionChannel(() => false);',
+    'const named = (event) => event.type === a.type; yield* actionChannel(named);',
+    'yield* actionChannel(wrap((event) => event.type === a.type));',
+    'yield* unrelated((event) => event.type === a.type);',
+    'yield* take((event) => event.type === a.type);',
+  ])('does not infer an inline channel from a different shape: %s', (consumer) => {
+    expect(inspect(consumer).violations).toEqual([aViolation, bViolation]);
+  });
+
+  it('rejects shadowed effect and creator bindings, including namespace imports', () => {
+    const consumer = 'yield* actionChannel((event) => event.type === a.type);';
+    expect(inspect(consumer, { parameters: 'actionChannel' }).violations).toEqual([
+      aViolation,
+      bViolation,
+    ]);
+    expect(inspect(`{ const actionChannel = unrelated; ${consumer} }`).violations).toEqual([
+      aViolation,
+      bViolation,
+    ]);
+    expect(inspect(consumer, { parameters: 'a' }).violations).toEqual([aViolation, bViolation]);
+    expect(
+      inspect('yield* effects.actionChannel((event) => event.type === a.type);', {
+        effectImport: "import * as effects from 'typed-redux-saga';",
+        parameters: 'effects',
+      }).violations,
+    ).toEqual([aViolation, bViolation]);
+  });
+
+  it('does not count an inline channel confined to a test source', () => {
+    expect(
+      inspect('', {
+        extraFiles: [
+          {
+            path: SAGA.replace('.ts', '.spec.ts'),
+            content: [
+              "import { actionChannel } from 'typed-redux-saga';",
+              ACTIONS_IMPORT,
+              'actionChannel((event) => event.type === a.type);',
+            ].join('\n'),
+          },
+        ],
+      }).violations,
+    ).toEqual([aViolation, bViolation]);
+  });
+});
+
 const saga = (body: string[], { path = SAGA, actions = ACTIONS_IMPORT } = {}) => ({
   path,
   content: [SAGA_IMPORT, actions, 'export function* demoSaga() {', ...body, '}'].join('\n'),

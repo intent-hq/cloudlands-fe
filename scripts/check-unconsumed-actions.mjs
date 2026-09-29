@@ -44,6 +44,10 @@ const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
 //   (`take*`, `actionChannel`, `takeLatestByContext`, ...) whose pattern is a
 //   creator, a local creator array, a `creator.type` access, or the literal
 //   type string.
+// - Inline actionChannel predicates: a final returned conjunction containing
+//   the original parameter's `type === creator.type` (or a known type string).
+//   Earlier guard-only returns may reject other inputs; arbitrary control flow,
+//   named predicates, nested functions and general guard satisfiability are not analyzed.
 // Not covered: creators reached through aliases or re-exports the resolvers
 // do not follow, hand-built plain action objects (`{ type: 'x/y' }`), and
 // watcher wrappers such as `fork(takeLeading, pattern, worker)` — those
@@ -131,6 +135,171 @@ function collectActions(sources, actionFactory) {
   return { actions, typeIndex };
 }
 
+const unparenthesized = (expression) => {
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+  return expression;
+};
+
+// Bind this source only: the existing provenance resolver still owns imports and
+// re-exports. Symbols distinguish real module bindings and the predicate parameter
+// from same-spelled locals without type-checking or loading the application graph.
+function predicateSymbols(source) {
+  const options = { noLib: true, noResolve: true, allowNonTsExtensions: true };
+  const host = ts.createCompilerHost(options);
+  host.getSourceFile = (fileName) => (fileName === source.fileName ? source : undefined);
+  return ts.createProgram([source.fileName], options, host).getTypeChecker();
+}
+
+function inlineChannelOrigins(source, predicate, callee, checker, resolvePattern) {
+  if (
+    !ts.isArrowFunction(predicate) ||
+    predicate.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword) ||
+    predicate.parameters.length !== 1
+  )
+    return [];
+  const parameter = predicate.parameters[0];
+  if (!ts.isIdentifier(parameter.name) || parameter.initializer || parameter.dotDotDotToken)
+    return [];
+  const parameterSymbol = checker.getSymbolAtLocation(parameter.name);
+  if (!parameterSymbol) return [];
+
+  const moduleReference = (expression) => {
+    while (ts.isPropertyAccessExpression(expression)) expression = expression.expression;
+    if (!ts.isIdentifier(expression)) return false;
+    return checker.getSymbolAtLocation(expression)?.declarations?.some((declaration) => {
+      if (ts.isImportSpecifier(declaration) || ts.isNamespaceImport(declaration)) return true;
+      return (
+        ts.isVariableDeclaration(declaration) &&
+        ts.isVariableStatement(declaration.parent.parent) &&
+        declaration.parent.parent.parent === source
+      );
+    });
+  };
+  if (!moduleReference(callee)) return [];
+
+  let unsupported = false;
+  visit(predicate.body, (node) => {
+    if (
+      ts.isFunctionLike(node) ||
+      ts.isDeleteExpression(node) ||
+      ts.isPostfixUnaryExpression(node) ||
+      (ts.isPrefixUnaryExpression(node) &&
+        [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)) ||
+      (ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment)
+    )
+      unsupported = true;
+  });
+  if (unsupported) return [];
+
+  const typeOrigin = (expression, reversed = false) => {
+    const left = unparenthesized(reversed ? expression.right : expression.left);
+    const right = unparenthesized(reversed ? expression.left : expression.right);
+    if (
+      !ts.isPropertyAccessExpression(left) ||
+      left.name.text !== 'type' ||
+      !ts.isIdentifier(left.expression) ||
+      checker.getSymbolAtLocation(left.expression) !== parameterSymbol
+    )
+      return undefined;
+    if (ts.isStringLiteralLike(right)) return resolvePattern(right);
+    return ts.isPropertyAccessExpression(right) &&
+      right.name.text === 'type' &&
+      moduleReference(right)
+      ? resolvePattern(right)
+      : undefined;
+  };
+  const conjuncts = (expression) => {
+    expression = unparenthesized(expression);
+    return ts.isBinaryExpression(expression) &&
+      expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+      ? [...conjuncts(expression.left), ...conjuncts(expression.right)]
+      : [expression];
+  };
+  // Only literal values, logical operators and the known candidate action type
+  // establish truth here. Payload/admission guards remain unknown, not evaluated.
+  const truth = (expression, origin) => {
+    expression = unparenthesized(expression);
+    if (expression.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (expression.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (expression.kind === ts.SyntaxKind.NullKeyword) return false;
+    if (ts.isNumericLiteral(expression)) return Number(expression.text) !== 0;
+    if (ts.isStringLiteralLike(expression)) return expression.text.length > 0;
+    if (ts.isConditionalExpression(expression)) {
+      const condition = truth(expression.condition, origin);
+      const yes = truth(expression.whenTrue, origin);
+      const no = truth(expression.whenFalse, origin);
+      return condition === true ? yes : condition === false ? no : yes === no ? yes : undefined;
+    }
+    if (
+      ts.isPrefixUnaryExpression(expression) &&
+      expression.operator === ts.SyntaxKind.ExclamationToken
+    ) {
+      const value = truth(expression.operand, origin);
+      return value === undefined ? undefined : !value;
+    }
+    if (!ts.isBinaryExpression(expression)) return undefined;
+    const operator = expression.operatorToken.kind;
+    if (
+      [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(
+        operator,
+      )
+    ) {
+      const matched = typeOrigin(expression) ?? typeOrigin(expression, true);
+      if (matched)
+        return operator === ts.SyntaxKind.EqualsEqualsEqualsToken
+          ? matched === origin
+          : matched !== origin;
+    }
+    const left = truth(expression.left, origin);
+    const right = truth(expression.right, origin);
+    if (operator === ts.SyntaxKind.AmpersandAmpersandToken)
+      return left === false || right === false
+        ? false
+        : left === true && right === true
+          ? true
+          : undefined;
+    if (operator === ts.SyntaxKind.BarBarToken)
+      return left === true || right === true
+        ? true
+        : left === false && right === false
+          ? false
+          : undefined;
+    return undefined;
+  };
+
+  let returned = predicate.body;
+  const guards = [];
+  if (ts.isBlock(returned)) {
+    const statements = returned.statements;
+    const last = statements.at(-1);
+    if (!last || !ts.isReturnStatement(last) || !last.expression) return [];
+    for (const statement of statements.slice(0, -1)) {
+      if (!ts.isIfStatement(statement) || statement.elseStatement) return [];
+      let branch = statement.thenStatement;
+      if (ts.isBlock(branch) && branch.statements.length === 1) branch = branch.statements[0];
+      if (!ts.isReturnStatement(branch) || !branch.expression) return [];
+      guards.push(statement.expression);
+    }
+    returned = last.expression;
+  }
+  const origins = new Set(
+    conjuncts(returned)
+      .filter(
+        (part) =>
+          ts.isBinaryExpression(part) &&
+          part.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken,
+      )
+      .map((part) => typeOrigin(part))
+      .filter(Boolean),
+  );
+  return [...origins].filter(
+    (origin) =>
+      truth(returned, origin) !== false && guards.every((guard) => truth(guard, origin) !== true),
+  );
+}
+
 export function inspectUnconsumedActions(
   files,
   { exceptions = UNCONSUMED_ACTION_EXCEPTIONS } = {},
@@ -163,6 +332,7 @@ export function inspectUnconsumedActions(
 
   for (const [filePath, source] of sources) {
     if (source.parseDiagnostics.length > 0) continue;
+    let predicateChecker;
     const { effectNames, effectNamespaces } = effectBindingsFor(
       source,
       filePath,
@@ -189,6 +359,17 @@ export function inspectUnconsumedActions(
       if (!effect || !PATTERN_EFFECTS.has(effect)) return;
       const pattern = watcherPattern(effect, node);
       if (!pattern) return;
+      if (effect === 'actionChannel' && ts.isArrowFunction(pattern)) {
+        predicateChecker ??= predicateSymbols(source);
+        for (const origin of inlineChannelOrigins(
+          source,
+          pattern,
+          callee,
+          predicateChecker,
+          (expression) => resolvePattern(filePath, expression),
+        ))
+          handled.add(origin);
+      }
       const candidates = localArray(source, pattern);
       for (const candidate of candidates.length > 0 ? candidates : [pattern]) {
         const origin = resolvePattern(filePath, candidate);
