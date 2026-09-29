@@ -482,9 +482,9 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         }
         return [...context.getImageData(0, 0, 1, 1).data];
       };
-      const tokenColor = (token: string) => {
+      const tokenColor = (token: string, opacity = '100%') => {
         const probe = document.createElement('span');
-        probe.style.color = `hsl(var(${token}))`;
+        probe.style.color = `hsl(var(${token}) / ${opacity})`;
         document.body.append(probe);
         const color = getComputedStyle(probe).color;
         probe.remove();
@@ -499,6 +499,13 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         foreground: tokenColor('--foreground'),
         mutedForeground: tokenColor('--muted-foreground'),
         mutedText: paint([tokenColor('--muted-foreground')]),
+        neutralCachedMarker: tokenColor('--muted-foreground', '82%'),
+        successCachedMarker: tokenColor('--success', '82%'),
+        cachedMarker: paint([
+          surface,
+          getComputedStyle(element.querySelector('.composition-key[data-metric="cached"]')!)
+            .backgroundColor,
+        ]),
         appRingColor: tokenColor('--ring'),
         neutralFocusColor,
         neutralFocus: paint([neutralFocusColor]),
@@ -522,6 +529,15 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         ).map((part) => getComputedStyle(part).color),
       };
     });
+    for (const colors of [segmentColors, keyColors]) {
+      const cached = colors.find(({ metric }) => metric === 'cached')!;
+      expect(cached.color).toBe(navigatorColors.neutralCachedMarker);
+      expect(cached.color).not.toBe(navigatorColors.successCachedMarker);
+    }
+    expect(
+      contrastRatio(navigatorColors.cachedMarker, navigatorColors.surface),
+      `${theme} cached marker`,
+    ).toBeGreaterThanOrEqual(3);
     expect(navigatorColors.active).toHaveLength(2);
     expect(navigatorColors.active.every(({ color }) => color === navigatorColors.foreground)).toBe(
       true,
@@ -776,6 +792,24 @@ test('retains each selected dimension and reaches message-only scopes', async ({
 
   const messageAgent = agentGroup.getByRole('radio', { name: /Agent messages/ });
   const messageModel = modelGroup.getByRole('radio', { name: /Model Message Only/ });
+  for (const control of [messageAgent, messageModel]) {
+    await expect(control).toBeVisible();
+    await expect(control.locator('[data-slot="button-label"]')).not.toBeVisible();
+    await expect(control).toHaveAccessibleDescription('9 human messages and 1 agent message');
+  }
+  await agentBeta.focus();
+  await agentBeta.press('End');
+  await expect(messageAgent).toBeFocused();
+  await messageAgent.press('Space');
+  await finalModel.focus();
+  await finalModel.press('End');
+  await expect(messageModel).toBeFocused();
+  await messageModel.press('Enter');
+  await expect(messageAgent).toBeChecked();
+  await expect(messageModel).toBeChecked();
+  await expect(messages).toHaveText('9 human messages and 1 agent message');
+  await messageAgent.press('Home');
+  await messageModel.press('Home');
   await messageAgent.dispatchEvent('pointerdown', { pointerType: 'touch' });
   await messageModel.dispatchEvent('pointerdown', { pointerType: 'touch' });
   await expect(messageAgent).toHaveAttribute('aria-checked', 'true');

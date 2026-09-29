@@ -884,6 +884,7 @@
                               variant="plain"
                               role="radio"
                               class="message-only-control block h-auto min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent !px-1 !py-0.5 text-left text-xs font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
+                              labelClass="invisible"
                               data-preview-active={rowKey(rowTarget(row)) ===
                               rowKey(rowTarget(previewAgentRow))
                                 ? 'true'
@@ -1009,6 +1010,7 @@
                               variant="plain"
                               role="radio"
                               class="message-only-control block h-auto min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent !px-1 !py-0.5 text-left text-xs font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
+                              labelClass="invisible"
                               data-preview-active={rowKey(rowTarget(row)) ===
                               rowKey(rowTarget(previewModelRow))
                                 ? 'true'
@@ -1122,12 +1124,10 @@
   .composition-strip-segment {
     flex: 0 0 auto;
   }
-
   .composition-strip-segment[data-metric='cached'],
   .composition-key[data-metric='cached'] {
-    background: hsl(var(--success) / 82%);
+    background: hsl(var(--muted-foreground) / 82%);
   }
-
   .composition-strip-segment[data-metric='input'],
   .composition-key[data-metric='input'] {
     background: hsl(var(--token-usage-input) / 84%);
