@@ -1788,6 +1788,8 @@
   "workspace_repoSelector_pickARepo_tab": "選擇儲存庫",
   "workspace_repoSelector_recent_label": "最近",
   "workspace_repoSelector_remoteServer_tab": "遠端伺服器",
+  "workspace_repoSelector_removeRecent_ariaLabel": "從最近使用的儲存庫中移除 {repository}",
+  "workspace_repoSelector_removeRecent_tooltip": "從最近使用的儲存庫中移除",
   "workspace_repoSelector_removeSetup_tooltip": "移除設定",
   "workspace_repoSelector_repoExists_label": "儲存庫已存在——我們將基於它建立{isolationLabel}",
   "workspace_repoSelector_retrySuggestions_label": "重試",
