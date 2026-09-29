@@ -95,6 +95,7 @@ test('keeps resource tiles and compact header insets exact across the geometry m
       return {
         scenario: (scenario as HTMLElement).dataset.resourceGeometryCase,
         scale: Number((scenario as HTMLElement).dataset.zoom),
+        width: Number((scenario as HTMLElement).dataset.width),
         kind: tile.dataset.resourceKind,
         tileWidth: tileStyle.width,
         tileHeight: tileStyle.height,
@@ -147,9 +148,9 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     await page.keyboard.press('Escape');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(menu).toBeHidden();
-    expect(result.tileWidth, result.scenario).toBe('24px');
-    expect(result.tileHeight, result.scenario).toBe('24px');
-    expect(result.radius, result.scenario).toBe('7px');
+    expect(result.tileWidth, result.scenario).toBe('26px');
+    expect(result.tileHeight, result.scenario).toBe('26px');
+    expect(result.radius, result.scenario).toBe('5px');
     expect(result.glyphWidth, result.scenario).toBe('16px');
     expect(result.glyphHeight, result.scenario).toBe('16px');
     expect(result.kebabWidth, result.scenario).toBe('16px');
@@ -163,15 +164,15 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     expect(result.stripHeight, result.scenario).toBe('20px');
     expect(result.centerX, result.scenario).toBeLessThanOrEqual(0.5);
     expect(result.centerY, result.scenario).toBeLessThanOrEqual(0.5);
-    // Upstream pane-stack polish (668dd5c2) adds 4px inline inset and retains the 0.5px optical offset.
-    expect((result.leftInset - result.topInset) / result.scale, result.scenario).toBeCloseTo(
-      3.5,
+    // Header simplification (#2973) uses a centered 26px tile in a 52px header.
+    // Its 8px outer inset + 1px selector border + 4px padding is 13px;
+    // compact selectors (<=420px) use 6px padding, increasing that inset to 15px.
+    expect(result.leftInset / result.scale, result.scenario).toBeCloseTo(
+      result.width <= 420 ? 15 : 13,
       1,
     );
-    expect((result.leftInset - result.bottomInset) / result.scale, result.scenario).toBeCloseTo(
-      4.5,
-      1,
-    );
+    expect(result.topInset / result.scale, result.scenario).toBeCloseTo(13, 1);
+    expect(result.bottomInset / result.scale, result.scenario).toBeCloseTo(13, 1);
   }
 });
 
