@@ -336,7 +336,7 @@
           if (value === 'workspaces' || value === 'prs' || value === 'linear')
             updateView({ tab: value });
         }}
-        variant="underline"
+        variant="subtle"
         class="flex min-h-0 flex-1 flex-col"
       >
         <Tabs.List class="shrink-0 px-5" aria-label={m.home_views()}>
@@ -393,7 +393,10 @@
                   onRetry={() => store.dispatch(loadWorkspacesRequested())}
                   >{#snippet message()}{$workspaceError$}{/snippet}</ErrorState
                 >
-              {:else if !$hasLoaded$}<LoadingState recipe="list" />
+              {:else if !$hasLoaded$}<LoadingState
+                  recipe="list"
+                  label={m.home_integrations_loading()}
+                />
               {:else if filteredWorkspaces.length === 0}
                 <EmptyState class="flex-1" emphasis="prominent">
                   {#snippet title()}<h2>
