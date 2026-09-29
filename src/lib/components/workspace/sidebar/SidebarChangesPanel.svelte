@@ -79,6 +79,7 @@
     type WorkspaceGitRootEntry,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
+  import RepositoryContextSummary from '$features/accept-changes/components/RepositoryContextSummary.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
@@ -738,7 +739,7 @@
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(
-        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"]',
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"], [data-repository-summary]',
       )
     ) {
       return;
@@ -1113,6 +1114,11 @@
           onRefreshActionChange={onRefreshActionChange
             ? (action) => (secondaryRefreshAction = action)
             : undefined}
+        />
+        <RepositoryContextSummary
+          root={selectedSecondaryRoot
+            ? { workspaceId, kind: 'registered', gitRootId: selectedSecondaryRoot.key }
+            : { workspaceId, kind: 'primary' }}
         />
 
         {#if isBrowsingSecondaryRoot}
