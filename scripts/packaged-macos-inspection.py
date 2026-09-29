@@ -24,7 +24,7 @@ import time
 import zipfile
 
 PRODUCT = "13a6cbe92681f7e3f6858ad7d5ce414375935b2c"
-PREVIOUS = "ea28a8e733c9b5699923b6e74b0142950af38d5b"
+PREVIOUS = "a0b8875cdc98ffe806c15d58746b0fb13983e62e"
 REPO = "intent-hq/cloudlands-fe"
 BRANCH = "diagnostic/b76t-packaged-readiness"
 WORKFLOW = ".github/workflows/packaged-macos-inspection.yml"
@@ -599,11 +599,11 @@ OPAQUE_COMMANDS = {"LC_SEGMENT_64", "LC_SYMTAB", "LC_DYSYMTAB", "LC_UUID",
 
 
 def typed_canvas_commands(text, full_path, legacy):
-    """Conservative text-envelope classification; never waives the existing -L guard.
+    """Conservative exact-canvas ID/dependency classification with legacy agreement.
 
     Header counts and cmdsize sums reject incomplete command envelopes. Opaque
-    bodies are not independently decoded Mach-O structures. Actual native output
-    formatting remains to be demonstrated; unsupported forms stop, not normalize.
+    bodies are not independently decoded Mach-O structures. The retained V85 native
+    format is supported; unsupported forms stop, not normalize.
     """
     require(len(text.encode("utf-8")) <= 1048576 and text.endswith("\n")
             and all(ord(x) >= 32 or x in "\t\n" for x in text), "typed text bound/encoding")
@@ -660,7 +660,7 @@ def typed_canvas_commands(text, full_path, legacy):
         records.append(row)
     require(size_sum == header["sizeofcmds"], "typed total command size")
     ids = [r for r in records if r["command"] == "LC_ID_DYLIB"]
-    require(len(ids) <= 1 and (not ids or header["filetype"] == 6), "typed duplicate/inconsistent install ID")
+    require(len(ids) == 1 and header["filetype"] == 6, "typed missing/duplicate/inconsistent install ID")
     linkers = [r for r in records if r["command"] in {"LC_ID_DYLINKER", "LC_LOAD_DYLINKER"}]
     require(len(linkers) <= 1 and not any(r["command"] == "LC_ID_DYLINKER" for r in linkers),
             "typed duplicate/inconsistent dylinker")
@@ -673,7 +673,7 @@ def typed_canvas_commands(text, full_path, legacy):
         names.append(match.group(1))
     require(names == [r["path"] for r in records if r["command"] in DYLIB_LOADS | {"LC_ID_DYLIB"}],
             "typed/legacy names differ")
-    return dict(header=header, commands=records, interpretation="diagnostic only; existing unsafe-load rejection remains",
+    return dict(header=header, commands=records, interpretation="exact canvas install ID recorded separately; every dependency and runpath remains checked",
                 limitations="opaque command bodies not decoded; no dyld resolution, ABI or runtime compatibility proof")
 
 
@@ -696,13 +696,14 @@ def observe_canvas(ops, evidence, p, app, legacy):
     evidence.write("canvas-typed-commands.json", dict(parsed, capture=capture.name,
                    rawSha256=sha(capture.read_bytes()), argv=argv, toolIdentity=tool,
                    fileIdentity=before, fileSha256=CANVAS_SHA))
-    # Diagnose every supported path-bearing load command, including those -L
-    # omits. An ID is recorded separately, never used to bypass the old guard.
+    # Check every supported path-bearing load command, including those -L
+    # omits. Only the typed ID is separate; equal dependency names still reject.
     for row in parsed["commands"]:
         if row["classification"] in ("dependency", "runpath"):
             dep = row["path"]
             require(not dep.startswith("/") or dep.startswith(("/usr/lib/", "/System/Library/", str(app) + "/")),
                     "typed non-system external absolute load path")
+    return parsed
 
 
 
@@ -764,7 +765,14 @@ def inspect(ops, evidence, dmg):
                 require("arm64" in ops.text([TOOLS["lipo"], "-archs", str(p)]).split(), "arm64 absent")
                 output = ops.text([TOOLS["otool"], "-m", "-L", str(p)])
                 if str(p.relative_to(app)) == CANVAS_PATH:
-                    observe_canvas(ops, evidence, p, app, output)
+                    parsed = observe_canvas(ops, evidence, p, app, output)
+                    loads.append(dict(path=str(p.relative_to(app)),
+                        installID=next(r["path"] for r in parsed["commands"] if r["command"] == "LC_ID_DYLIB"),
+                        dependencies=[dict(path=r["path"], command=r["command"],
+                            resolution="inventory only; dyld/ABI not executed")
+                            for r in parsed["commands"] if r["classification"] == "dependency"],
+                        runpaths=[r["path"] for r in parsed["commands"] if r["classification"] == "runpath"]))
+                    continue
                 dependencies = []
                 for line in output.splitlines()[1:]:
                     dep = line.strip().split(" (compatibility version", 1)[0]
