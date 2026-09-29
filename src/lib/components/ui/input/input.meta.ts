@@ -10,6 +10,7 @@ export const inputMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/accept-changes/components/NativeReviewAttempt.svelte',
     'src/features/accept-changes/components/RepositorySelectionEditor.svelte',
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/layout/components/content-header/ContentHeader.svelte',

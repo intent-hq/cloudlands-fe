@@ -41,7 +41,16 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspace),
+  selectWorkspaceHostOperationContext: mocks.selector(() => null),
 }));
+
+vi.mock(
+  '$store/renderer/slices/user-preferences/user-preferences-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<object>()),
+    selectLabsMultiplayerEnabled: mocks.selector(() => false),
+  }),
+);
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   updateWorkspaceEntity: vi.fn((...args: unknown[]) => ({
