@@ -34,7 +34,13 @@
     activeSlug,
     activePath = '/sandbox',
     children,
-  }: { activeSlug?: string; activePath?: string; children?: Snippet } = $props();
+    onThemeChange,
+  }: {
+    activeSlug?: string;
+    activePath?: string;
+    children?: Snippet;
+    onThemeChange?: (theme: 'light' | 'dark') => void;
+  } = $props();
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
   let colorTheme = $state<CatalogColorTheme>(defaultCatalogPreferences.colorTheme);
   let motion = $state<CatalogMotion>(defaultCatalogPreferences.motion);
@@ -134,6 +140,10 @@
       root.classList.toggle('catalog-component-fit', initialRootComponentFit);
       for (const property of [...priorRootProperties.keys()]) restoreRootProperty(root, property);
     };
+  });
+
+  $effect(() => {
+    if (hydrated) onThemeChange?.(resolvedTheme);
   });
 
   $effect(() => {
