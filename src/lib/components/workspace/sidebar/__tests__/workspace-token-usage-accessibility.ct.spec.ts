@@ -1995,6 +1995,8 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   });
   await sidebarScroll.evaluate((element) => element.scrollTo({ top: 0 }));
   await page.setViewportSize({ width: 280, height: 520 });
+  // Viewport resizing returns before the window resize handler updates the portal.
+  await expect.poll(async () => (await details.boundingBox())!.width).toBeCloseTo(264, 0);
   const compositionRows = details.locator('.token-composition-row');
   const agentSection = page.getByTestId('token-usage-by-agent');
   const modelSection = page.getByTestId('token-usage-by-model');

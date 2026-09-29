@@ -56,12 +56,12 @@
     kind: BreakdownKind;
     id: string;
   }
-
   let { workspaceId }: Props = $props();
   let expanded = $state(false);
   let disclosureElement: HTMLButtonElement | null = $state(null);
   let detailsElement: HTMLElement | undefined = $state();
-  let overlayStyle = $state('position: fixed; visibility: hidden;');
+  // Inherited visibility transitions can block focus on display:contents Button wrappers.
+  let overlayStyle = $state('position: fixed; opacity: 0; pointer-events: none;');
   let hoveredTarget: ScopeTarget | null = $state(null);
   let focusedTarget: ScopeTarget | null = $state(null);
   let persistedAgentTarget: ScopeTarget | null = $state(null);
@@ -514,7 +514,7 @@
       ? Math.max(viewportPadding, anchor.top - overlayGap - renderedHeight)
       : anchor.bottom + overlayGap;
 
-    overlayStyle = `position: fixed; visibility: visible; top: ${top}px; left: ${left}px; width: ${width}px; max-height: ${availableHeight}px;`;
+    overlayStyle = `position: fixed; top: ${top}px; left: ${left}px; width: ${width}px; max-height: ${availableHeight}px;`;
   }
 
   function closeOverlay({ restoreFocus = false } = {}) {
@@ -594,7 +594,7 @@
 
   $effect(() => {
     if (!expanded) {
-      overlayStyle = 'position: fixed; visibility: hidden;';
+      overlayStyle = 'position: fixed; opacity: 0; pointer-events: none;';
       hoveredTarget = null;
       focusedTarget = null;
       return;
