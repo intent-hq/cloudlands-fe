@@ -231,8 +231,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(navigation).toContain('aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
-    expect(navigation).toContain('aria-pressed={active}');
     expect(navigation).not.toContain('aria-haspopup');
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');

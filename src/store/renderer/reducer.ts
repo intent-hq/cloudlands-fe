@@ -1,3 +1,5 @@
+import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
+import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
@@ -106,6 +108,8 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  homeIntegrations: homeIntegrationsReducer,
+  homeWorkspaces: homeWorkspacesReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,

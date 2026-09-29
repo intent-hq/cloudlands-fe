@@ -31,6 +31,11 @@ const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'c
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
+    pattern: /workspace-lifecycle-slice\.ts#backendReconnected$/,
+    rationale:
+      'accept-changes status and Home integration data independently refresh after backend reconnect',
+  },
+  {
     pattern: /workspace-lifecycle-slice\.ts#workspace(?:Deleted|Unmounted|Mounted)$/,
     rationale: 'lifecycle cleanup and restore fan out across independent domains',
   },

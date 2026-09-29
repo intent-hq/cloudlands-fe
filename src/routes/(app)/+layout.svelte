@@ -132,10 +132,7 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import {
-    togglePanel,
-    setShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -615,9 +612,11 @@
       description: 'Command Palette (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCommandPalette,
     });
-    // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
+    // Cmd+O (Mac) / Ctrl+O (Win/Linux) opens Home.
     registerWorkspaceSpacesShortcut(paletteShortcuts, {
-      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      toggleSpaces: () => {
+        void goto('/');
+      },
       resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
@@ -989,13 +988,18 @@
           class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
           data-sidebar-panel-frame
         >
-          <SidebarPanel />
+          {#if routePathname !== '/'}
+            <SidebarPanel />
+          {/if}
         </div>
 
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
-            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm"
+            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {routePathname ===
+            '/'
+              ? ''
+              : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">

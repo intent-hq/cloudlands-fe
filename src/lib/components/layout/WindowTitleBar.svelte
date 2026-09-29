@@ -94,7 +94,7 @@
 
   // Align the workspace controls (tabs) with the left panel's right edge
   // when a sidebar panel is open; tracks the panel width live.
-  const sidebarPanelOpen = $derived(Boolean($panelItem$));
+  const sidebarPanelOpen = $derived(page.url.pathname !== '/' && Boolean($panelItem$));
   const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
   const workspaceTabScrollerMarginLeftPx = $derived(
     getWorkspaceTabScrollerMarginLeftPx(
@@ -152,6 +152,7 @@
   onMount(() => reducedMotion.cleanup);
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
+    if (page.url.pathname === '/') return m.home_page_title();
     if (focusedTab?.title && workspace?.title) {
       return `${focusedTab.title} — ${workspace.title}`;
     }

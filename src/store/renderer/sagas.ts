@@ -1,3 +1,4 @@
+import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 /**
  * Root app saga registry.
  *
@@ -139,6 +140,7 @@ export function* hardwareConsoleSaga() {
 
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
+  homeIntegrationsSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,

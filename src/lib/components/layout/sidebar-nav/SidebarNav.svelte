@@ -1,78 +1,49 @@
 <script lang="ts">
-  /** SidebarNav - Compact global navigation for the window title bar. */
-
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { m } from '$shared/paraglide/messages.js';
-  import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
-  import { isCombinedWorkspacePanelItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import { Button } from '$lib/components/ui/button';
-  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
+  import Fa from 'svelte-fa';
+  import { faHouse } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import {
     TITLEBAR_NAVIGATION_CONTROL_CLASS,
     TITLEBAR_NAVIGATION_GLYPH_CLASS,
   } from '../titlebar-navigation';
   import TitlebarNavigationTooltip from '../TitlebarNavigationTooltip.svelte';
+  import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
-  import {
-    selectPanelItem,
-    selectOnboardingActive,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { togglePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$store/renderer/store';
-  const panelItem$ = selectPanelItem();
   const onboardingActive$ = selectOnboardingActive();
-
-  const navItems: { id: SidebarNavItem }[] = [{ id: 'all-workspaces' }];
-
-  function isItemActive(id: SidebarNavItem): boolean {
-    // Highlight the sidebar button for either Workspaces or Intent.
-    if ($panelItem$ === id) return true;
-    if (
-      id === 'all-workspaces' &&
-      $panelItem$ !== null &&
-      isCombinedWorkspacePanelItem($panelItem$)
-    )
-      return true;
-    return false;
-  }
-
-  function handleClick(id: SidebarNavItem) {
-    // Primary activation toggles the persistent Workspaces / Intent sidebar.
-    appStore.dispatch(togglePanel(id));
-  }
 </script>
 
 {#if !$onboardingActive$}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <nav
-    class="group/nav sidebar-nav flex h-8 shrink-0 items-center gap-0.5"
+    class="sidebar-nav flex h-8 shrink-0 items-center gap-0.5"
     aria-label={m.layout_sidebarNav_ariaLabel()}
     data-top-navigation
   >
-    <div class="flex items-center gap-0.5">
-      {#each navItems as item (item.id)}
-        {@const active = isItemActive(item.id)}
-        <TitlebarNavigationTooltip
-          label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-          shortcut="mod+o"
-        >
-          <Button
-            variant="ghost-light"
-            size="icon"
-            iconOnly
-            class={cn('sidebar-nav-btn relative', TITLEBAR_NAVIGATION_CONTROL_CLASS)}
-            onclick={() => handleClick(item.id)}
-            aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-            aria-pressed={active}
-            data-nav-item={item.id}
-            data-titlebar-spaces-control
-          >
-            <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
-              <IntentNavigationIcon name="sidebar" size={16} class="pointer-events-none size-4!" />
-            </span>
-          </Button>
-        </TitlebarNavigationTooltip>
-      {/each}
-    </div>
+    <TitlebarNavigationTooltip label={m.home_navigation_description()} shortcut="mod+o">
+      <Button
+        variant="ghost-light"
+        size="icon"
+        iconOnly
+        class={cn('sidebar-nav-btn relative', TITLEBAR_NAVIGATION_CONTROL_CLASS)}
+        onclick={() => goto('/')}
+        aria-label={m.home_navigation_label()}
+        aria-current={page.url.pathname === '/' ? 'page' : undefined}
+        data-nav-item="home"
+        data-titlebar-spaces-control
+      >
+        <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
+          <Fa icon={faHouse} class="pointer-events-none size-4" />
+        </span>
+        {#if page.url.pathname === '/'}
+          <span
+            class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-foreground"
+            aria-hidden="true"
+          ></span>
+        {/if}
+      </Button>
+    </TitlebarNavigationTooltip>
   </nav>
 {/if}
