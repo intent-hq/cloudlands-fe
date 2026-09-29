@@ -1099,10 +1099,13 @@ describe('workspace selectors', () => {
       expect(state.pendingDeletions['ws-1']).toBe(true);
     });
 
-    it('is a no-op when only the deletion tombstone remains', () => {
+    it('invalidates rollback while preserving the deletion tombstone and absent row', () => {
       const state = workspaceReducer(initialState, markWorkspacePendingDeletion('ws-1'));
       const next = workspaceReducer(state, workspaceDeleted('ws-1', []));
-      expect(next).toBe(state);
+      expect(next.workspaces).toBe(state.workspaces);
+      expect(next.pendingDeletions).toBe(state.pendingDeletions);
+      expect(next.deletionTokens).toBe(state.deletionTokens);
+      expect(next.invalidatedDeletions['ws-1']).toBe(state.deletionTokens['ws-1']);
     });
 
     it('clears the workspace from recency.lastViewedAt map', () => {

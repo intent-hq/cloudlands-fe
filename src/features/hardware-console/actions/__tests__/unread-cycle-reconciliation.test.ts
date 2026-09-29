@@ -1,3 +1,5 @@
+import { store } from '$store/renderer/store';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * End-to-end regression coverage for multi-window unread-cycle divergence:
  * per-window Redux stores can miss `workspace:attention-changed` deltas
@@ -122,7 +124,11 @@ function startHarness() {
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ ...baseState, workspace: workspaceState }) },
+    {
+      channel,
+      dispatch,
+      getState: () => withLegacyPrincipal({ ...baseState, workspace: workspaceState }),
+    },
     lifecycleReadSaga,
   );
   return { channel, dispatch, task, workspaces: () => workspaceState.workspaces };
@@ -198,7 +204,9 @@ const definition = () => {
 };
 
 describe('unread-cycle reconciliation (multi-window divergence)', () => {
+  let dispose: () => void;
   beforeEach(() => {
+    dispose = store.init();
     vi.clearAllMocks();
     resetActionKeyCycleCursors();
     mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [] });
@@ -206,6 +214,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
   });
 
   afterEach(() => {
+    dispose();
     vi.clearAllMocks();
   });
 

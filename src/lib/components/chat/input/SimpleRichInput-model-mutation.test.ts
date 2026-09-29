@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -234,6 +235,7 @@ beforeEach(() => {
     skills: { byWorkspaceId: {} },
     multiPanelContext: { panels: [], selections: [] },
   };
+  fixture.state = withLegacyPrincipal(fixture.state);
   fixture.dispatch.mockImplementation((action) => {
     fixture.state.agentSessions = agentSessionReducer(fixture.state.agentSessions, action);
     fixture.state.model = modelReducer(fixture.state.model, action);

@@ -451,7 +451,12 @@ describe('workspaceInitializerSaga', () => {
         return action;
       };
       const task = runSaga(
-        { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+        {
+          channel,
+          dispatch,
+          context: ownerContext,
+          getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+        },
         workspaceInitializerSaga,
       );
       try {
@@ -479,6 +484,8 @@ describe('workspaceInitializerSaga', () => {
         let reloaded = initialState;
         await runSaga(
           {
+            context: ownerContext,
+            getState: () => withLegacyPrincipal({}),
             dispatch: (action) => {
               reloaded = workspaceInitializerReducer(reloaded, action);
             },
@@ -517,7 +524,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     };
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     try {
@@ -563,7 +575,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     };
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     try {
@@ -611,7 +628,10 @@ describe('workspaceInitializerSaga', () => {
       value: { dismissedRecentRepoKeys: { 'local:/app': true, 'local:/other': false, bad: 'yes' } },
     });
     const dispatch = vi.fn();
-    await runSaga({ dispatch }, hydrateWorkspaceInitializerWorker).toPromise();
+    await runSaga(
+      { dispatch, context: ownerContext, getState: () => withLegacyPrincipal({}) },
+      hydrateWorkspaceInitializerWorker,
+    ).toPromise();
     expect(dispatch.mock.calls[0][0].payload[0].dismissedRecentRepoKeys).toEqual({
       'local:/app': true,
     });

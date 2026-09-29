@@ -1,5 +1,6 @@
 import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -341,6 +342,11 @@ beforeEach(() => {
   mockRoleState.current = withLegacyPrincipal(
     mockRoleState.reset(),
   ) as unknown as typeof mockRoleState.current;
+  mockRoleState.current.workspace.workspaces = {
+    idField: 'id',
+    ids: ['ws-1'],
+    map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } },
+  };
   catalogChannel = stdChannel();
   catalogTask = runSaga(
     {
@@ -669,6 +675,7 @@ describe('ModelPicker guest / collaborator lock', () => {
     state.principal.snapshot!.principal.isAdministrator = false;
     state.workspace.workspaces.map['ws-1'].canManage = true;
     state.workspace.loadedBackendId = state.connections.windowBackendId;
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
     Object.assign(mockRoleState.current, state);
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
     activeProviderId$.set('claude-code');

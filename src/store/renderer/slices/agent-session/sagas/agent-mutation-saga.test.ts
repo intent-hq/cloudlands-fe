@@ -51,7 +51,8 @@ import { agentAttentionToastId } from '$features/agent/agent-attention-toast-ser
 import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { store as appStore } from '$store/renderer/store';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { AgentStatus } from '$shared/types';
 import {
   refreshWorkspaceSubscriptionEntriesRequested,
@@ -161,7 +162,13 @@ const GUEST_SESSION: GuestSessionRecord = {
 function windowIdentity(guest = false) {
   return withLegacyPrincipal(
     {
-      workspace: { ...workspaceInitialState, hasLoaded: true },
+      workspace: {
+        ...workspaceInitialState,
+        hasLoaded: true,
+        workspaces: createCollection('id', [
+          { id: WS, myRole: guest ? 'collaborator' : 'owner' } as Workspace,
+        ]),
+      },
       daemonHealth: { ...daemonHealthInitialState },
       connections: guest
         ? connectionsReducer(

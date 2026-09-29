@@ -5,7 +5,7 @@ import {
   type PullRequestInfo,
   type Workspace,
 } from '$shared/types';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
 import {
@@ -66,7 +66,7 @@ export const selectWorkspaceListLoadedForBackend = store.createSelector<
 });
 
 /** Structural rows/tabs may survive reconnect; their capability projection may not. */
-export const selectWorkspaceCapabilitiesReady = store.createSelector((state) => {
+const selectWorkspaceCapabilitiesReady = store.createSelector((state) => {
   const context = selectPrincipalActionContext.select(state);
   return (
     context !== null &&
@@ -191,7 +191,7 @@ export const selectCanManageWorkspace = store.createSelector<[wsId: string], boo
     const role = selectHostRole.select(state);
     if (!snapshot || role === null) return false;
     // Virtual host administration never inherits member workspace rights.
-    if (wsId === CHIEF_WORKSPACE_ID) return role === 'owner';
+    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role === 'owner';
     const workspace = selectWorkspaceById.select(state, wsId);
     if (!workspace) return false;
     if (snapshot.capabilities.hostMembership) {
@@ -210,7 +210,7 @@ export const selectWorkspaceManagementDenied = store.createSelector<[wsId: strin
     if (selectPrincipalRevoked.select(state)) return true;
     const role = selectHostRole.select(state);
     if (role === null) return false;
-    if (wsId === CHIEF_WORKSPACE_ID) return role !== 'owner';
+    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role !== 'owner';
     const workspace = selectWorkspaceById.select(state, wsId);
     if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
       return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === false;
@@ -220,7 +220,7 @@ export const selectWorkspaceManagementDenied = store.createSelector<[wsId: strin
 );
 
 /** Existing owner controls remain ordinary UI; member management is an experimental surface. */
-export const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], boolean>(
+const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
     selectCanManageWorkspace.select(state, wsId) &&
     (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),

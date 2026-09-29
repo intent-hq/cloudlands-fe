@@ -243,7 +243,7 @@ const mockReduxState = vi.hoisted(
       keyConfigured: { elevenlabs: true, openai: false },
     },
     // The mic gate also reads the caller's workspace role (multiplayer w3);
-    // an unloaded list reads as owner without consulting the collection.
+    // admitted owner fixtures explicitly hydrate their workspace rows.
     workspace: { hasLoaded: false, workspaces: null },
     // The role gate also rules out a guest window (multiplayer w4): this
     // window's backend is not a joined host, and the guest list has settled
@@ -324,6 +324,13 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 import SimpleRichInput from './SimpleRichInput.svelte';
 beforeEach(() => {
+  mockReduxState.workspace = {
+    hasLoaded: true,
+    workspaces: createCollection(
+      'id',
+      ['ws-1', 'ws-2'].map((id) => ({ id, myRole: 'owner' })),
+    ),
+  };
   const admitted = withLegacyPrincipal(mockReduxState);
   Object.assign(mockReduxState, {
     principal: admitted.principal,
@@ -2162,7 +2169,11 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     (window as any).__tiptapInsertMentionCalls = [];
-    mockReduxState.daemonHealth = { hostLocality: null, transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: null,
+      transport: null,
+    };
     addMockSession('ws-1', createSession());
   });
 
@@ -2597,7 +2608,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   beforeEach(() => {
     vi.clearAllMocks();
     (window as any).__tiptapInsertMentionCalls = [];
-    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'local',
+      transport: null,
+    };
     addMockSession('ws-1', createSession());
   });
 
@@ -2632,7 +2647,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'remote',
+      transport: null,
+    };
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
 
     render(SimpleRichInput, { props: baseProps() });
@@ -2679,7 +2698,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   });
 
   it('file-only drops behave exactly as before when remote (no folder involved)', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'remote',
+      transport: null,
+    };
 
     render(SimpleRichInput, { props: baseProps() });
     const image = makeFile('photo.png', 'image/png');

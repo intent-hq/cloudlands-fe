@@ -669,6 +669,9 @@ describe('panelLayoutSaga', () => {
     async (_label, route, revealDropped) => {
       window.history.pushState({}, '', route);
       let state: any = storeState();
+      state.workspace.workspaces = createCollection('id', [
+        { id: WS_1, myRole: 'owner' } as Workspace,
+      ]);
       state.panelLayout.byWorkspaceId[WS_1].columnCount = 2;
       const focusedBefore = state.panelLayout.byWorkspaceId[WS_1].focusedPanelId;
       const channel = stdChannel();

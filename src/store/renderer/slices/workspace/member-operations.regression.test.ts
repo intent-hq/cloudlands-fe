@@ -34,6 +34,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { workspaceClient } from './utils/workspace.client';
 import type { Workspace } from '$shared/types';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 const mock = vi.hoisted(() => ({
   delete: vi.fn(),
   cancelDelete: vi.fn(),
@@ -146,6 +147,15 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 describe('real store, operation saga and client authority composition', () => {
+  it.each(['owner', 'member', 'guest'] as const)(
+    'virtual root keeps its explicit %s scope',
+    (role) => {
+      admit(role);
+      expect(selectWorkspaceActionContext.select(store.state, ROOT_WORKSPACE_ID) !== null).toBe(
+        role === 'owner',
+      );
+    },
+  );
   it('does not infer legacy owner authority from a missing workspace row', async () => {
     admitLegacyPrincipal();
     store.dispatch(removeWorkspaceEntity(row.id));
