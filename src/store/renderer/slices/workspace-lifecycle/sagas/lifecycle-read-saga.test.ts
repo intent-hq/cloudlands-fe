@@ -259,7 +259,10 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
-      { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
+      {
+        type: 'workspace/replaceWorkspaceList',
+        payload: [[workspace], { complete: false, deletionTokens: {} }],
+      },
       { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
       { type: 'workspace/loadRecencyData', payload: [{ lastViewedAt: { [WS]: 42 } }] },
     ]);
@@ -446,7 +449,10 @@ describe('lifecycleReadSaga', () => {
       await settle();
       expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
       expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([
-        { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
+        {
+          type: 'workspace/replaceWorkspaceList',
+          payload: [[workspace], { complete: false, deletionTokens: {} }],
+        },
       ]);
       expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
         { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
