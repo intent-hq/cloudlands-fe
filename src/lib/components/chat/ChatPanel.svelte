@@ -4761,7 +4761,7 @@
     };
   });
 
-  // Scroll to previous user-authored message from the current sticky one.
+  // Scroll to the previous user-authored message from the clicked transcript row.
   // Automated rows (wakes, system, agent-origin) are skipped; when the
   // current message is itself automated, the walk starts from its position
   // in the full message order. No preceding user message → scroll to top.
@@ -6787,6 +6787,7 @@
                                 ? undefined
                                 : (newText, model, blocks) =>
                                     handleEditMessage(message.id, newText, model, blocks)}
+                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                               onRegenerate={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}

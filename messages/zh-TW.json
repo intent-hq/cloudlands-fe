@@ -2375,6 +2375,7 @@
   "chat_messageActions_copyMessage_label": "複製訊息",
   "chat_messageActions_copySessionIdHint_label": "按住 Shift 複製會話 ID",
   "chat_messageActions_scrollToPrevious_label": "捲動到上一條訊息",
+  "chat_messageActions_previousUserMessage_label": "上一則使用者訊息",
   "chat_messageEditor_cancel_label": "取消",
   "chat_messageEditor_send_label": "傳送",
   "chat_messageEditor_kbdHint_before": "按",
