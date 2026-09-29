@@ -1,4 +1,10 @@
 import type {
+  NativeReviewOwner,
+  NativeReviewInput,
+  NativeReviewRetirement,
+  NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import type {
   RepositorySelectionEdit,
   RepositorySelectionSession,
   SelectionRetirement,
@@ -395,6 +401,11 @@ export type RepositoryContextUpdate =
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
 export interface WorkspacesClient {
+  beginNativeReview(
+    owner: NativeReviewOwner,
+    input: NativeReviewInput,
+    handler: (kind: NativeReviewRetirement) => void,
+  ): Promise<NativeReviewSession>;
   beginRepositorySelectionEdit(
     request: RepositorySelectionEdit,
     handler: (kind: SelectionRetirement) => void,

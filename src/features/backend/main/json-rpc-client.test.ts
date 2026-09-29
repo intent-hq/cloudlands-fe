@@ -1386,4 +1386,32 @@ describe('private repository connection evidence', () => {
       server: { capabilities: { repositoryContext: 1 } },
     });
   });
+  it('confirms native review only on the current physical hello, preserving ordinary requests', async () => {
+    const { client, sockets } = await start();
+    expect(client.getRepositoryConnection()?.nativeReview).toBe(false);
+    const hello = client.request('client.hello');
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
+    sockets[0].receive(
+      JSON.stringify({
+        id: 2,
+        result: { clientId: 'native', server: { capabilities: { nativeReview: 1 } } },
+      }) + '\n',
+    );
+    await hello;
+    const confirmed = client.getRepositoryConnection()!;
+    expect(confirmed.nativeReview).toBe(true);
+    const next = client.request('client.hello');
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(3));
+    sockets[0].receive(
+      JSON.stringify({
+        id: 3,
+        result: { clientId: 'older', server: { capabilities: { nativeReview: '1' } } },
+      }) + '\n',
+    );
+    await next;
+    expect(client.getRepositoryConnection()?.nativeReview).toBe(false);
+    await expect(
+      client.requestOnCapturedConnection(confirmed, 'accept-changes.prepare', {}),
+    ).rejects.toThrow();
+  });
 });

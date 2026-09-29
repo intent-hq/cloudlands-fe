@@ -1,3 +1,4 @@
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/types';
 
@@ -8,6 +9,7 @@ vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
   captureBackendRepositoryRoute: vi.fn(),
   captureBackendRepositorySelection: vi.fn(),
+  prepareBackendNativeReview: vi.fn(),
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
@@ -25,6 +27,7 @@ import {
   backendRequest,
   captureBackendRepositoryRoute,
   captureBackendRepositorySelection,
+  prepareBackendNativeReview,
 } from './backend-transport';
 import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
@@ -1231,5 +1234,37 @@ it('opens selection editing through its explicit facade without a generic mutati
   expect(captureBackendRepositorySelection).toHaveBeenCalledWith(root);
   expect(mockedRequest).not.toHaveBeenCalled();
   await result.release();
+  expect(session.release).toHaveBeenCalledOnce();
+});
+
+it('uses the native preparation facade without any generic mutation or selection grant', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const input = {
+    workspaceId: root.workspaceId,
+    action: 'create-pr' as const,
+    review: { root, choice: { kind: 'saved' as const } },
+  };
+  const session = {
+    preview: {
+      ...nativeFixture.prepare,
+      reviewPreparation: { ...nativeFixture.prepare.reviewPreparation, root },
+      root,
+      expiresAfterMs: 300000 as const,
+    },
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(prepareBackendNativeReview).mockResolvedValueOnce(session as never);
+  mockedRequest.mockClear();
+  const opened = await new LiveWorkspacesClient().beginNativeReview(
+    { root, attemptId: 'original', admission: 'A', hostContext: 'A' },
+    input,
+    vi.fn(),
+  );
+  expect(prepareBackendNativeReview).toHaveBeenCalledWith(input);
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await opened.release();
   expect(session.release).toHaveBeenCalledOnce();
 });

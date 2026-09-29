@@ -918,6 +918,13 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    NATIVE_REVIEW: {
+      PREPARE: 'backend:native-review:prepare',
+      EXECUTE: 'backend:native-review:execute',
+      RECONCILE: 'backend:native-review:reconcile',
+      RELEASE: 'backend:native-review:release',
+      RETIRED: 'backend:native-review:retired',
+    },
     REPOSITORY_SELECTION: {
       CAPTURE: 'backend:repository-selection:capture',
       CONFIRM: 'backend:repository-selection:confirm',
@@ -1061,6 +1068,7 @@ export const IPC_CHANNELS = {
 export const EVENT_CHANNELS = [
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
+  IPC_CHANNELS.BACKEND.NATIVE_REVIEW.RETIRED,
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',

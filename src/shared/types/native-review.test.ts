@@ -452,3 +452,13 @@ describe('native captured identities and strict scalar decoding', () => {
     ).toBe(false);
   });
 });
+
+// Services omits account facts for a non-admin native Member. Authored from Core8f.
+describe('omitted native connection observations', () => {
+  it.each(['source', 'target'] as const)('preserves an omitted %s connection', (side) => {
+    const value = structuredClone(fixture.prepare.reviewPreparation);
+    Reflect.deleteProperty(value[side], 'connection');
+    expect(NativeReviewPreparationSchema.parse(value)).toEqual(value);
+    expect(NativeReviewPreparationSchema.parse(value)[side]).not.toHaveProperty('connection');
+  });
+});

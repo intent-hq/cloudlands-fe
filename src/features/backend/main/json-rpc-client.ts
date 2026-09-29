@@ -38,6 +38,7 @@ export interface RepositoryConnection {
   readonly identity: object;
   readonly repositoryContext: boolean;
   readonly repositorySelection: boolean;
+  readonly nativeReview: boolean;
 }
 
 /** Main-private physical evidence, never sent to the renderer. */
@@ -279,6 +280,9 @@ export class JsonRpcClient extends EventEmitter {
       repositorySelection:
         (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
           ?.capabilities?.repositorySelection === 1,
+      nativeReview:
+        (result as { server?: { capabilities?: { nativeReview?: unknown } } }).server?.capabilities
+          ?.nativeReview === 1,
       repositoryContext:
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,

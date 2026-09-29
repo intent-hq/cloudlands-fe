@@ -412,3 +412,22 @@ describe('captured request correlation for presentation', () => {
     expect(view.history[0]?.result?.commitHash).toBe('B');
   });
 });
+
+describe('omitted native account provenance', () => {
+  it.each(['source', 'target'] as const)(
+    'retains independent receipts without grouping an omitted %s connection',
+    (side) => {
+      const old = commitResponse();
+      const next = response();
+      Reflect.deleteProperty(old.reviewExecution!.preparation[side], 'connection');
+      Reflect.deleteProperty(next.reviewExecution!.preparation[side], 'connection');
+      const view = projectNativeReviewResult(next, [old]);
+      if (view.kind !== 'native') throw new Error('Expected native');
+      expect(view.history).toEqual([old, next]);
+      expect(view.compatibleHistory).toEqual([next]);
+      expect(view.history[0]?.reviewExecution?.gitReceipts).toEqual([
+        { stage: 'commit', commitHash: 'local-B' },
+      ]);
+    },
+  );
+});

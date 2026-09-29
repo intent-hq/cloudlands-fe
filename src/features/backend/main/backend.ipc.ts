@@ -1,3 +1,5 @@
+import { createNativeReviewFeed } from './native-review-feed';
+import { registerNativeReviewHandlers } from './native-review-lifecycle';
 /**
  * IPC bridge between the renderer's LiveAppClient and the main-process
  * JSON-RPC client for the intentd daemon.
@@ -385,6 +387,8 @@ const selectionFeeds = new WeakMap<
   ReturnType<typeof createRepositorySelectionFeed>
 >();
 let selectionRoutes: ReturnType<typeof registerRepositorySelectionHandlers> | undefined;
+const nativeReviewFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createNativeReviewFeed>>();
+let nativeReviewRoutes: ReturnType<typeof registerNativeReviewHandlers> | undefined;
 let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
@@ -942,6 +946,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
+  nativeReviewRoutes?.retireBackend(id);
   backendClients.delete(id);
   invitedConnectionGuards.delete(id);
   if (id === LOCAL_CONNECTION_ID) {
@@ -959,6 +964,7 @@ export function disconnectBackendClient(id: string): void {
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   repositoryFeeds.get(instance)?.dispose();
   selectionFeeds.get(instance)?.dispose();
+  nativeReviewFeeds.get(instance)?.dispose();
   instance.dispose();
   // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
   // already-disconnected client emits no status change, so the forwarder
@@ -1286,11 +1292,13 @@ function createAdditionalBackendClient(
   if (typeof instance.onRepositoryConnectionEvent === 'function') {
     repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
+    nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
   instance.on('notification', (notification: JsonRpcNotification) => {
     if (
       notification.method === 'workspace.repositoryContext.retired' ||
-      notification.method === 'workspace.repositorySelection.retired'
+      notification.method === 'workspace.repositorySelection.retired' ||
+      notification.method === 'accept-changes.retired'
     )
       return;
     if (backendClients.get(id) !== instance) return;
@@ -3235,6 +3243,14 @@ export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
+  nativeReviewRoutes = registerNativeReviewHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    prepare: (client, connection, input) => {
+      const feed = nativeReviewFeeds.get(client);
+      if (!feed) return Promise.reject(new Error('NATIVE_REVIEW_UNAVAILABLE'));
+      return feed.prepare(connection, input);
+    },
+  });
   selectionRoutes = registerRepositorySelectionHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, root) => {
@@ -3269,7 +3285,13 @@ export function registerBackendHandlers(): void {
         method === 'workspace.repositorySelection.save' ||
         method === 'workspace.repositorySelection.reset' ||
         method === 'workspace.repositorySelection.reconcile' ||
-        method === 'workspace.repositorySelection.release'
+        method === 'workspace.repositorySelection.release' ||
+        method === 'accept-changes.reconcile' ||
+        method === 'accept-changes.release' ||
+        ((method === 'accept-changes.prepare' || method === 'accept-changes.execute') &&
+          payload.params !== null &&
+          typeof payload.params === 'object' &&
+          Object.prototype.hasOwnProperty.call(payload.params, 'review'))
       ) {
         return {
           ok: false,
@@ -4218,6 +4240,7 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   selectionRoutes?.dispose();
+  nativeReviewRoutes?.dispose();
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
     if (id === LOCAL_CONNECTION_ID) {
@@ -4229,6 +4252,7 @@ export function disposeAllBackendClients(): void {
     disposeTransferConnectionsForBackend(id);
     repositoryFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
+    nativeReviewFeeds.get(instance)?.dispose();
     instance.dispose();
   }
 }

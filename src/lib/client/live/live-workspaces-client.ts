@@ -1,4 +1,11 @@
 import type {
+  NativeReviewOwner,
+  NativeReviewInput,
+  NativeReviewRetirement,
+  NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import { createNativeReviewTransport } from './native-review-transport';
+import type {
   RepositorySelectionEdit,
   SelectionRetirement,
 } from '$shared/types/repository-selection';
@@ -148,6 +155,13 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
+  beginNativeReview(
+    owner: NativeReviewOwner,
+    input: NativeReviewInput,
+    handler: (kind: NativeReviewRetirement) => void,
+  ): Promise<NativeReviewSession> {
+    return createNativeReviewTransport().begin(owner, input, handler);
+  }
   beginRepositorySelectionEdit(
     request: RepositorySelectionEdit,
     handler: (kind: SelectionRetirement) => void,

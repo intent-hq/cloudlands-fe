@@ -42,8 +42,8 @@ function sameBranchTarget(
     left.branch === right.branch &&
     left.providerProjectId !== null &&
     left.providerProjectId === right.providerProjectId &&
-    left.connection !== null &&
-    right.connection !== null &&
+    left.connection != null &&
+    right.connection != null &&
     sameRepositoryConnectionScope(left.connection, right.connection)
   );
 }

@@ -1,4 +1,13 @@
 import type {
+  NativeReviewOwner,
+  NativeReviewInput,
+  NativeReviewPreparedView,
+  NativeReviewTextCommand,
+  NativeReviewObservation,
+  NativeReviewRetirement,
+} from '$shared/types/native-review-operation';
+import type { NativeReviewAttemptState } from './repository-context-types';
+import type {
   RepositorySelectionEdit,
   SelectionCommand,
   SelectionPreview,
@@ -103,7 +112,11 @@ repositoryContextReducer.with(
 );
 
 repositoryContextReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
-  const cleared = clearWorkspaceState(state, workspaceId);
+  let cleared = clearWorkspaceState(state, workspaceId);
+  for (const attempt of getItems(state.nativeReviewAttempts ?? emptyNativeAttempts)) {
+    if (attempt.owner.root.workspaceId === workspaceId)
+      cleared = closeNativeAttempt(cleared, attempt.owner);
+  }
   let edits = state.selectionEdits;
   if (!edits) return cleared;
   for (const edit of getItems(edits))
@@ -325,4 +338,133 @@ repositoryContextReducer.with(repositorySelectionEditCleared, (state, { payload:
   ownedEdit(state, owner)
     ? { ...state, selectionEdits: removeItem(state.selectionEdits ?? emptyEdits, owner.editId) }
     : state,
+);
+
+// Native preparation owns one action, independently of context and selection reads.
+export const nativeReviewEditRequested = createAction<
+  [owner: NativeReviewOwner, input: NativeReviewInput]
+>('repositoryContext/nativeReviewAttemptRequested');
+export const nativeReviewConfirmRequested = createAction<
+  [owner: NativeReviewOwner, command: NativeReviewTextCommand]
+>('repositoryContext/nativeReviewConfirmRequested');
+export const nativeReviewReconcileRequested = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewReconcileRequested',
+);
+export const nativeReviewEditEnded = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewAttemptEnded',
+);
+export const nativeReviewEditStarted = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewAttemptStarted',
+);
+export const nativeReviewPreviewReceived = createAction<
+  [owner: NativeReviewOwner, preview: NativeReviewPreparedView]
+>('repositoryContext/nativeReviewPreviewReceived');
+export const nativeReviewCommandStarted = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewCommandStarted',
+);
+export const nativeReviewObserved = createAction<
+  [owner: NativeReviewOwner, observation: NativeReviewObservation]
+>('repositoryContext/nativeReviewObserved');
+export const nativeReviewRetired = createAction<
+  [owner: NativeReviewOwner, kind: NativeReviewRetirement]
+>('repositoryContext/nativeReviewRetired');
+export const nativeReviewUnavailable = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewUnavailable',
+);
+export const nativeReviewEditCleared = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewAttemptCleared',
+);
+const emptyNativeAttempts = createCollection<NativeReviewAttemptState, 'attemptId'>('attemptId');
+function ownedNativeAttempt(state: RepositoryContextState, owner: NativeReviewOwner) {
+  const entry = getItem(state.nativeReviewAttempts ?? emptyNativeAttempts, owner.attemptId);
+  return entry &&
+    entry.owner.admission === owner.admission &&
+    entry.owner.hostContext === owner.hostContext &&
+    repositoryRootKey(entry.owner.root) === repositoryRootKey(owner.root)
+    ? entry
+    : undefined;
+}
+function updateNativeAttempt(
+  state: RepositoryContextState,
+  owner: NativeReviewOwner,
+  update: Partial<NativeReviewAttemptState>,
+) {
+  return ownedNativeAttempt(state, owner)
+    ? {
+        ...state,
+        nativeReviewAttempts: updateItem(state.nativeReviewAttempts ?? emptyNativeAttempts, {
+          ...update,
+          attemptId: owner.attemptId,
+        }),
+      }
+    : state;
+}
+repositoryContextReducer.with(nativeReviewEditStarted, (state, { payload: [owner] }) => {
+  const edits = state.nativeReviewAttempts ?? emptyNativeAttempts;
+  if (owner.admission === null || getItem(edits, owner.attemptId) || getItems(edits).length >= 32)
+    return state;
+  return {
+    ...state,
+    nativeReviewAttempts: addItem(edits, {
+      attemptId: owner.attemptId,
+      owner: { ...owner, root: { ...owner.root } },
+      status: 'capturing',
+      preview: null,
+      observation: null,
+    }),
+  };
+});
+repositoryContextReducer.with(
+  nativeReviewPreviewReceived,
+  (state, { payload: [owner, preview] }) => {
+    if (
+      ownedNativeAttempt(state, owner)?.status !== 'capturing' ||
+      repositoryRootKey(preview.root) !== repositoryRootKey(owner.root)
+    )
+      return state;
+    return updateNativeAttempt(state, owner, { status: 'ready', preview });
+  },
+);
+repositoryContextReducer.with(nativeReviewCommandStarted, (state, { payload: [owner] }) =>
+  ownedNativeAttempt(state, owner)?.status === 'ready'
+    ? updateNativeAttempt(state, owner, { status: 'pending' })
+    : state,
+);
+repositoryContextReducer.with(nativeReviewObserved, (state, { payload: [owner, observation] }) => {
+  const old = ownedNativeAttempt(state, owner);
+  if (!old) return state;
+  const retained = observation;
+  return updateNativeAttempt(state, owner, {
+    observation: {
+      ...retained,
+      current: observation.current && old.status !== 'retired' && old.status !== 'closed',
+    },
+  });
+});
+repositoryContextReducer.with(nativeReviewRetired, (state, { payload: [owner, kind] }) => {
+  const old = ownedNativeAttempt(state, owner);
+  if (!old || old.status === 'closed') return state;
+  return updateNativeAttempt(state, owner, {
+    status: kind === 'closed' ? 'closed' : 'retired',
+    preview: null,
+    observation: old.observation ? { ...old.observation, current: false } : null,
+  });
+});
+repositoryContextReducer.with(nativeReviewUnavailable, (state, { payload: [owner] }) =>
+  updateNativeAttempt(state, owner, { status: 'unavailable', preview: null }),
+);
+function closeNativeAttempt(state: RepositoryContextState, owner: NativeReviewOwner) {
+  const original = ownedNativeAttempt(state, owner);
+  return updateNativeAttempt(state, owner, {
+    status: 'closed',
+    preview: null,
+    observation: original?.observation ? { ...original.observation, current: false } : null,
+  });
+}
+repositoryContextReducer.with(nativeReviewEditCleared, (state, { payload: [owner] }) =>
+  closeNativeAttempt(state, owner),
+);
+// Redux subscribers may end the demand before a buffered saga command is delivered.
+repositoryContextReducer.with(nativeReviewEditEnded, (state, { payload: [owner] }) =>
+  closeNativeAttempt(state, owner),
 );

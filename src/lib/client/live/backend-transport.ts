@@ -1,3 +1,4 @@
+import type { NativeReviewInput } from '$shared/types/native-review-operation';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { BackendError } from './backend-transport-types';
 /**
@@ -141,4 +142,17 @@ export function onBackendNotification(handler: (n: BackendNotification) => void)
  */
 export function onBackendReconnected(handler: () => void): () => void {
   return resolveBackendTransport().onReconnected(handler);
+}
+
+/** One captured transport; no ordinary request fallback or subsequent re-resolution. */
+export function prepareBackendNativeReview(input: NativeReviewInput) {
+  const transport = resolveBackendTransport();
+  if (!transport.prepareNativeReview)
+    return Promise.reject(
+      new BackendError({
+        code: 'NATIVE_REVIEW_UNAVAILABLE',
+        message: 'NATIVE_REVIEW_UNAVAILABLE',
+      }),
+    );
+  return transport.prepareNativeReview(input);
 }

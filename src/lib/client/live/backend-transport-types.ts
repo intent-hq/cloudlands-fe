@@ -1,3 +1,4 @@
+import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
 import type { RepositorySelectionSession } from '$shared/types/repository-selection';
 /**
  * Transport-agnostic contract for the renderer's live backend seam.
@@ -122,6 +123,7 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  prepareNativeReview?(input: NativeReviewInput): Promise<NativeReviewSession>;
   captureRepositorySelection?(root: RepositoryRootIdentity): Promise<RepositorySelectionSession>;
   /** Absent on older or non-Electron transports; never fall back to ordinary request. */
   captureRepositoryRoute?(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute>;

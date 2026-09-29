@@ -1,4 +1,9 @@
 import type {
+  NativeReviewOwner,
+  NativeReviewPreparedView,
+  NativeReviewObservation,
+} from '$shared/types/native-review-operation';
+import type {
   RepositorySelectionEdit,
   SelectionPreview,
   SelectionObservation,
@@ -60,7 +65,15 @@ export interface RepositorySelectionEditState {
   observation: SelectionObservation | null;
 }
 
+export interface NativeReviewAttemptState {
+  attemptId: string;
+  owner: NativeReviewOwner;
+  status: 'capturing' | 'ready' | 'pending' | 'retired' | 'closed' | 'unavailable';
+  preview: NativeReviewPreparedView | null;
+  observation: NativeReviewObservation | null;
+}
 export interface RepositoryContextState {
+  nativeReviewAttempts?: Collection<NativeReviewAttemptState, 'attemptId'>;
   selectionEdits?: Collection<RepositorySelectionEditState, 'editId'>;
   byWorkspaceId: Record<string, RepositoryContextWorkspaceState>;
 }

@@ -12,6 +12,7 @@ import {
   backendRequest,
   captureBackendRepositoryRoute,
   captureBackendRepositorySelection,
+  prepareBackendNativeReview,
   backendSubscribe,
   backendUnsubscribe,
   detectLiveStateCapability,
@@ -371,4 +372,25 @@ it('selection fixture is explicit, isolated and reset without ordinary request f
   await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({
     code: 'REPOSITORY_SELECTION_UNAVAILABLE',
   });
+});
+
+it('supports the real facade native seam independently of generic requests and resets its handler', async () => {
+  const backend = installMockBackend();
+  const input = {
+    workspaceId: 'ws',
+    action: 'create-pr' as const,
+    review: {
+      root: { workspaceId: 'ws', kind: 'primary' as const },
+      choice: { kind: 'saved' as const },
+    },
+  };
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
+  const handler = vi.fn(async () => {
+    throw new Error('native refused');
+  });
+  backend.onNativeReviewPrepare(handler);
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('native refused');
+  expect(handler).toHaveBeenCalledWith(input);
+  resetMockBackend();
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
 });

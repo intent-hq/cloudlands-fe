@@ -1,3 +1,6 @@
+import { selectWorkspaceHostOperationContext } from '../workspace/workspace-selectors';
+import type { NativeReviewOwner } from '$shared/types/native-review-operation';
+import type { NativeReviewAttemptState } from './repository-context-types';
 import type { RepositorySelectionEdit } from '$shared/types/repository-selection';
 import type { RepositorySelectionEditState } from './repository-context-types';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -79,3 +82,36 @@ export const selectRepositorySelectionForEdit: AppSelector<
     ? edit
     : null;
 });
+
+/** Presentation of only the original edit owner; no private route or server reference. */
+export const selectNativeReviewForOwner: AppSelector<
+  NativeReviewAttemptState | null,
+  [owner: NativeReviewOwner]
+> = store.createSelector((state, owner) => {
+  if (owner.admission === null || selectPrincipalAdmissionContext.select(state) !== owner.admission)
+    return null;
+  if (
+    owner.hostContext === null ||
+    selectWorkspaceHostOperationContext.select(state, owner.root.workspaceId) !== owner.hostContext
+  )
+    return null;
+  const edits = state.repositoryContext.nativeReviewAttempts;
+  const edit = edits ? getItem(edits, owner.attemptId) : undefined;
+  return edit &&
+    edit.status !== 'closed' &&
+    edit.owner.admission === owner.admission &&
+    edit.owner.hostContext === owner.hostContext &&
+    repositoryRootKey(edit.owner.root) === repositoryRootKey(owner.root)
+    ? edit
+    : null;
+});
+
+/** Internal occupancy survives public closure; it cannot grant a preparation or a new command. */
+export const selectNativeReviewOccupancy: AppSelector<
+  NativeReviewAttemptState | undefined,
+  [attemptId: string]
+> = store.createSelector((state, attemptId) =>
+  state.repositoryContext.nativeReviewAttempts
+    ? getItem(state.repositoryContext.nativeReviewAttempts, attemptId)
+    : undefined,
+);

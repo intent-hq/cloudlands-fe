@@ -16,7 +16,7 @@ import {
 export const NativeReviewBranchTargetSchema = z.object({
   repository: RepositoryTargetSchema,
   providerProjectId: z.string().nullable(),
-  connection: RepositoryConnectionScopeSchema.nullable(),
+  connection: RepositoryConnectionScopeSchema.nullable().optional(),
   branch: z.string(),
 });
 export type NativeReviewBranchTarget = z.infer<typeof NativeReviewBranchTargetSchema>;

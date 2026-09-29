@@ -1,3 +1,4 @@
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
 /**
  * Unit tests for the Electron-IPC `BackendTransport` broadcast fan-outs.
  *
@@ -781,5 +782,144 @@ describe('selection session over the actual renderer IPC transport', () => {
       createElectronIpcBackendTransport().captureRepositorySelection!(root),
     ).rejects.toThrow();
     expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+});
+
+describe('native review original renderer bridge', () => {
+  const channels = IPC_CHANNELS.BACKEND.NATIVE_REVIEW;
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const input = {
+    workspaceId: root.workspaceId,
+    action: 'create-pr' as const,
+    review: { root, choice: { kind: 'saved' as const } },
+  };
+  const preview = {
+    ...nativeFixture.prepare,
+    reviewPreparation: { ...nativeFixture.prepare.reviewPreparation, root },
+    root,
+    expiresAfterMs: 300000,
+  };
+  it.each([
+    ['execute', true],
+    ['execute', false],
+    ['reconciliation', true],
+    ['reconciliation', false],
+  ] as const)(
+    'preserves %s uncertainty %s when later reconciliation fails',
+    async (source, uncertain) => {
+      const api = installFakeApi();
+      const reviewExecution = {
+        ...nativeFixture.execute.reviewExecution,
+        outcome: uncertain
+          ? { status: 'uncertain', stage: 'create-pr', message: 'Original response lost' }
+          : nativeFixture.execute.reviewExecution.outcome,
+      };
+      const original = {
+        current: false,
+        uncertain,
+        execute:
+          source === 'execute'
+            ? {
+                ...nativeFixture.execute,
+                operationId: 'native',
+                root,
+                state: 'settled',
+                reviewExecution,
+              }
+            : null,
+        reconciliation:
+          source === 'reconciliation'
+            ? { operationId: 'native', root, state: 'settled', reviewExecution }
+            : null,
+      };
+      api.invoke
+        .mockResolvedValueOnce({ ok: true, result: { id: 'native', preview } } as never)
+        .mockResolvedValueOnce({ ok: true, result: original } as never)
+        .mockRejectedValueOnce(new Error('Receipt retrieval failed'))
+        .mockResolvedValue({ ok: true, result: { released: true } } as never);
+      const session = await createElectronIpcBackendTransport().prepareNativeReview!(input);
+      expect(await (source === 'execute' ? session.confirm({}) : session.reconcile())).toEqual(
+        original,
+      );
+      api.emit(channels.RETIRED, { id: 'native', kind: 'admission' });
+      expect(await session.reconcile()).toEqual(original);
+      expect(api.invoke.mock.calls.filter(([name]) => name === channels.EXECUTE)).toHaveLength(
+        source === 'execute' ? 1 : 0,
+      );
+      await session.release();
+    },
+  );
+  it('reserves one text command and preserves uncertainty without fake execution data', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result:
+            channel === channels.PREPARE
+              ? { id: 'native', preview }
+              : { current: false, uncertain: true, execute: null, reconciliation: null },
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().prepareNativeReview!(input);
+    const first = session.confirm({ prTitle: 'T' });
+    expect(session.confirm({ prTitle: 'T' })).toBe(first);
+    await expect(session.confirm({ prTitle: 'other' })).rejects.toThrow();
+    expect(await first).toEqual({
+      current: false,
+      uncertain: true,
+      execute: null,
+      reconciliation: null,
+    });
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.EXECUTE)).toHaveLength(1);
+    expect(api.invoke).toHaveBeenCalledWith(channels.EXECUTE, {
+      id: 'native',
+      root,
+      command: { prTitle: 'T' },
+    });
+    installFakeApi();
+    await expect(session.reconcile()).rejects.toThrow();
+    await session.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'native', root });
+  });
+  it('retains retirement during preparation and releases malformed known references', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(async (channel) => {
+      if (channel === channels.PREPARE) {
+        api.emit(channels.RETIRED, { id: 'native', kind: 'closed' });
+        return { ok: true, result: { id: 'native', preview } } as never;
+      }
+      return { ok: true, result: { released: true } } as never;
+    });
+    await expect(createElectronIpcBackendTransport().prepareNativeReview!(input)).rejects.toThrow();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'native', root });
+  });
+  it('reserves dispatch before synchronous IPC reentrancy and releases without waiting for execution', async () => {
+    const api = installFakeApi();
+    let nested: Promise<unknown> | undefined;
+    let complete!: (value: unknown) => void;
+    api.invoke.mockImplementation((channel) => {
+      if (channel === channels.PREPARE)
+        return Promise.resolve({ ok: true, result: { id: 'native', preview } }) as never;
+      if (channel === channels.EXECUTE) {
+        nested = session.reconcile().catch((error) => error);
+        return new Promise((resolve) => {
+          complete = resolve as never;
+        }) as never;
+      }
+      return Promise.resolve({ ok: true, result: { released: true } }) as never;
+    });
+    const session = await createElectronIpcBackendTransport().prepareNativeReview!(input);
+    const run = session.confirm({ prTitle: 'T' });
+    expect(await nested).toBeInstanceOf(Error);
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.RECONCILE)).toHaveLength(0);
+    await session.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'native', root });
+    complete({
+      ok: true,
+      result: { current: true, uncertain: true, execute: null, reconciliation: null },
+    });
+    expect(await run).toMatchObject({ current: false, uncertain: true });
   });
 });
