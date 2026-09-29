@@ -53,6 +53,8 @@ const dismissedAgentIds = new Set<string>();
 let requestVersion = 0;
 let initialCheckPending = false;
 let connected = false;
+let reconcileInFlight = false;
+let reconcileAgain = false;
 
 /** Debounce timer for the resolved-elsewhere reconciliation re-query. */
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,6 +89,7 @@ export function notifyInterruptedAgentsModalClosed(): void {
   for (const id of [...(openAgentIds ?? []), ...discoveryAgentIds.keys()])
     dismissedAgentIds.add(id);
   discoveryAgentIds.clear();
+  reconcileAgain = false;
   requestVersion += 1;
   openAgentIds = null;
   clearReconcileTimer();
@@ -182,11 +185,27 @@ export function notifyInterruptedAgentUpdated(
   }, INTERRUPTED_RECONCILE_DEBOUNCE_MS);
 }
 
+/**
+ * The global event subscription is live. Catch up failures from its connection
+ * gap, without clearing local dismissals or starting an overlapping read.
+ */
+export function notifyInterruptedAgentsSubscriptionReady(): void {
+  if (!connected || !installedAppClient) return;
+  initialCheckPending = true;
+  clearReconcileTimer();
+  void reconcileInterruptedAgents();
+}
+
 /** Reconcile survivors and explicitly announced failures, never unrelated rows. */
 async function reconcileInterruptedAgents(): Promise<void> {
   if (!installedAppClient || !connected) return;
   if (!initialCheckPending && !openAgentIds && discoveryAgentIds.size === 0) return;
   const version = ++requestVersion;
+  if (reconcileInFlight) {
+    reconcileAgain = true;
+    return;
+  }
+  reconcileInFlight = true;
   const discover = new Map(discoveryAgentIds);
   const initial = initialCheckPending;
   try {
@@ -204,6 +223,13 @@ async function reconcileInterruptedAgents(): Promise<void> {
     if (survivors.length > 0 || openAgentIds) showInterruptedAgents(survivors);
   } catch (error) {
     logger.error('Failed to reconcile interrupted agents', { error });
+  } finally {
+    reconcileInFlight = false;
+    if (reconcileAgain) {
+      reconcileAgain = false;
+      clearReconcileTimer();
+      void reconcileInterruptedAgents();
+    }
   }
 }
 
@@ -267,6 +293,7 @@ export function installInterruptedAgentsService(
       if (payload?.status === 'connected' && !payload.reconnected) checkInterruptedAgents();
       else if (payload?.status && payload.status !== 'connected') {
         connected = false;
+        reconcileAgain = false;
         connectionEpoch += 1;
         requestVersion += 1;
         clearReconcileTimer();
@@ -288,6 +315,7 @@ export function installInterruptedAgentsService(
     openAgentIds = null;
     clearReconcileTimer();
     connected = false;
+    reconcileAgain = false;
     requestVersion += 1;
     discoveryAgentIds.clear();
     dismissedAgentIds.clear();

@@ -15,6 +15,7 @@ import {
   installInterruptedAgentsService,
   notifyInterruptedAgentUpdated,
   notifyInterruptedAgentsModalClosed,
+  notifyInterruptedAgentsSubscriptionReady,
   resolveInterruptedAgents,
 } from './interrupted-agents-service';
 import { LiveAgentsClient } from '$lib/client/live/live-agents-client';
@@ -443,6 +444,29 @@ describe('interrupted-agents-service', () => {
       expect(showHandler).toHaveBeenCalledExactlyOnceWith([next]);
     });
 
+    it('preserves local dismissal when the event subscription becomes ready', async () => {
+      await install([candidate]);
+      notifyInterruptedAgentsModalClosed();
+      notifyInterruptedAgentsSubscriptionReady();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it('retries a failed initial read at subscription readiness', async () => {
+      mockElectronAPI.invoke.mockResolvedValue({ status: 'connected' });
+      mockAppClient.agents.listInterrupted.mockRejectedValueOnce(
+        new Error('Transient read failure'),
+      );
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await vi.advanceTimersByTimeAsync(0);
+      mockAppClient.agents.listInterrupted.mockResolvedValue([candidate]);
+      notifyInterruptedAgentsSubscriptionReady();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(2);
+      expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
+    });
+
     it('does not re-open after dismissal while discovery is in flight', async () => {
       await install([candidate]);
       let finish!: (agents: InterruptedAgent[]) => void;
@@ -498,7 +522,7 @@ describe('interrupted-agents-service', () => {
       expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
     });
 
-    it('ignores an older discovery response after a newer read resolves', async () => {
+    it('coalesces a burst during an in-flight discovery into one trailing read', async () => {
       await install();
       let finish!: (agents: InterruptedAgent[]) => void;
       mockAppClient.agents.listInterrupted.mockImplementationOnce(
@@ -509,10 +533,14 @@ describe('interrupted-agents-service', () => {
       );
       notifyInterruptedAgentUpdated(candidate.agentId, true);
       await flush();
-      notifyInterruptedAgentUpdated(candidate.agentId, true);
-      await flush();
+      for (let i = 0; i < 3; i += 1) {
+        notifyInterruptedAgentUpdated(candidate.agentId, true);
+        await flush();
+      }
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
       finish([candidate]);
       await vi.advanceTimersByTimeAsync(0);
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(2);
       expect(showHandler).not.toHaveBeenCalled();
     });
 
