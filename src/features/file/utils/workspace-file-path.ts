@@ -6,12 +6,15 @@ export function workspaceRelativeFilePath(
   root: string | null | undefined,
 ): string | null {
   if (!filePath || isTildePath(filePath)) return null;
-  const normalized = filePath.replace(/\\/g, '/');
+  // A backslash is a filename character on POSIX, not a separator. Prefer
+  // the workspace root to disambiguate relative paths from Windows paths.
+  const windowsStyle = /^[A-Za-z]:[/\\]|^[/\\]{2}/.test(root ?? filePath);
+  const normalized = windowsStyle ? filePath.replace(/\\/g, '/') : filePath;
   let relativePath = normalized;
   if (isAbsolutePath(filePath)) {
     if (!root) return null;
-    const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
-    const caseInsensitive = /^[A-Za-z]:\//.test(normalizedRoot) || normalizedRoot.startsWith('//');
+    const normalizedRoot = (windowsStyle ? root.replace(/\\/g, '/') : root).replace(/\/+$/, '');
+    const caseInsensitive = windowsStyle;
     const comparedPath = caseInsensitive ? normalized.toLowerCase() : normalized;
     const comparedRoot = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
     if (!comparedPath.startsWith(`${comparedRoot}/`)) return null;

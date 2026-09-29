@@ -10,6 +10,9 @@ describe('workspace file downloads', () => {
     ['C:\\Work\\docs\\Report.PDF', 'c:\\work', 'docs/Report.PDF', 'Report.PDF'],
     ['\\\\server\\share\\work\\image.png', '\\\\SERVER\\share\\work', 'image.png', 'image.png'],
     ['notes/café.txt', undefined, 'notes/café.txt', 'café.txt'],
+    ['/repo/Q1\\report.txt', '/repo', 'Q1\\report.txt', 'Q1\\report.txt'],
+    ['Q1\\report.txt', '/repo', 'Q1\\report.txt', 'Q1\\report.txt'],
+    ['docs\\Report.PDF', 'C:\\Work', 'docs/Report.PDF', 'Report.PDF'],
     ['/file.txt', '/', 'file.txt', 'file.txt'],
   ])(
     'sends %s as a workspace-relative source and preserves its filename',
