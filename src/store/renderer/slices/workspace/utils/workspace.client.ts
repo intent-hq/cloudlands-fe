@@ -1,4 +1,8 @@
-import { currentWorkspaceDeletion, type WorkspaceDeletion } from './workspace-deletion';
+import {
+  currentWorkspaceDeletion,
+  terminalWorkspaceDeletion,
+  type WorkspaceDeletion,
+} from './workspace-deletion';
 /**
  * Workspace IPC Client
  *
@@ -430,7 +434,10 @@ export class WorkspaceClient {
       : captureMutation(id);
     if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     const result = await appClient.workspaces.delete(id, options);
-    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
+    // A terminal event may precede this reply. Preserve its actual result only
+    // for the original token/admission; it grants no further mutation authority.
+    if (!isCurrent() && !(operation && terminalWorkspaceDeletion(operation, id)))
+      return { ...authorityFailure(), obsolete: true };
     // Clear cache for this workspace after deletion
     if (result.success) {
       this.clearCache(id);

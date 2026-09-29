@@ -434,6 +434,257 @@ describe('residual bulk intent ownership through real saga and client', () => {
     await settle();
     return dispatch;
   }
+  it.each(['before', 'after'] as const)(
+    'keeps the original bulk grace when authoritative deletion arrives %s the reply',
+    async (timing) => {
+      let resolve!: (value: unknown) => void;
+      mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      const dispatch = await startBulk();
+      const token = store.state.workspace.deletionTokens[row.id];
+      expect(mock.delete).toHaveBeenCalledExactlyOnceWith(row.id, undefined);
+      if (timing === 'before') dispatch(workspaceDeleted(row.id, []));
+      resolve({ success: true });
+      await settle();
+      expect(mock.delete.mock.calls).toEqual([
+        [row.id, undefined],
+        [second.id, undefined],
+      ]);
+      await vi.advanceTimersByTimeAsync(5000);
+      if (timing === 'after') dispatch(workspaceDeleted(row.id, []));
+      dispatch(replaceWorkspaceList([row, second]));
+      dispatch(setWorkspaceEntity(row, { detailRead: true }));
+      expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+      expect(store.state.workspace.deletionTokens[row.id]).toBe(token);
+      expect(mock.notify.success).toHaveBeenCalledTimes(1);
+      expect(mock.notify.error).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(54_999);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+    },
+  );
+  it('retains a confirmed removal without fabricating a successful RPC result', async () => {
+    let resolve!: (value: unknown) => void;
+    mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const dispatch = await startBulk();
+    const token = store.state.workspace.deletionTokens[row.id];
+    dispatch(workspaceDeleted(row.id, []));
+    resolve({ success: false, error: 'actual first RPC failure' });
+    await settle();
+    expect(mock.delete.mock.calls).toEqual([
+      [row.id, undefined],
+      [second.id, undefined],
+    ]);
+    expect(mock.notify.error).toHaveBeenCalledTimes(1);
+    expect(mock.notify.success).toHaveBeenCalledTimes(1);
+    expect(store.state.workspace.deletionTokens[row.id]).toBe(token);
+    dispatch(replaceWorkspaceList([row, second]));
+    expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+  });
+  it('retains the confirmed terminal tombstone against a late projection', async () => {
+    let resolve!: (value: unknown) => void;
+    mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const dispatch = await startBulk();
+    const token = store.state.workspace.deletionTokens[row.id];
+    dispatch(workspaceDeleted(row.id, []));
+    resolve({ success: true });
+    await settle();
+    expect.soft(store.state.workspace.deletionTokens[row.id]).toBe(token);
+    dispatch(replaceWorkspaceList([row, second]));
+    expect.soft(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect.soft(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+  });
+  it.each(['timeout', 'throw'] as const)(
+    'preserves a terminal target’s actual %s and continues its current sibling',
+    async (outcome) => {
+      let resolve!: (value: unknown) => void;
+      let reject!: (reason: Error) => void;
+      mock.delete.mockReturnValueOnce(
+        new Promise((a, b) => {
+          resolve = a;
+          reject = b;
+        }),
+      );
+      const dispatch = await startBulk();
+      dispatch(workspaceDeleted(row.id, []));
+      if (outcome === 'throw') reject(new Error('actual transport failure'));
+      else resolve({ success: false, error: 'delete timed out' });
+      await settle();
+      expect(mock.delete.mock.calls).toEqual([
+        [row.id, undefined],
+        [second.id, undefined],
+      ]);
+      expect(mock.notify.success).toHaveBeenCalledTimes(1);
+      expect(mock.notify.info).toHaveBeenCalledTimes(outcome === 'timeout' ? 1 : 0);
+      expect(mock.notify.error).toHaveBeenCalledTimes(outcome === 'throw' ? 1 : 0);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+    },
+  );
+  it('starts terminal failure grace at its reply while the next RPC is still held', async () => {
+    let first!: (value: unknown) => void, last!: (value: unknown) => void;
+    mock.delete
+      .mockReturnValueOnce(new Promise((r) => (first = r)))
+      .mockReturnValueOnce(new Promise((r) => (last = r)));
+    const dispatch = await startBulk();
+    dispatch(workspaceDeleted(row.id, []));
+    first({ success: false, error: 'actual failure' });
+    await settle();
+    expect(mock.delete).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(59_999);
+    dispatch(replaceWorkspaceList([row, second]));
+    expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+    last({ success: true });
+    await settle();
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+    expect(mock.notify.error).toHaveBeenCalledTimes(1);
+    expect(mock.notify.success).toHaveBeenCalledTimes(1);
+  });
+  it('retains removal observed after a failed reply while the original bulk is still active', async () => {
+    let last!: (value: unknown) => void;
+    mock.delete
+      .mockResolvedValueOnce({ success: false, error: 'actual failure' })
+      .mockReturnValueOnce(new Promise((r) => (last = r)));
+    const dispatch = await startBulk();
+    expect(mock.delete).toHaveBeenCalledTimes(2);
+    dispatch(workspaceDeleted(row.id, []));
+    last({ success: true });
+    await settle();
+    dispatch(replaceWorkspaceList([row, second]));
+    expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    expect(mock.notify.error).toHaveBeenCalledTimes(1);
+    expect(mock.notify.success).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+  });
+  it('does not send another mutation for a queued target already authoritatively removed', async () => {
+    let resolve!: (value: unknown) => void;
+    mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const dispatch = await startBulk();
+    dispatch(workspaceDeleted(second.id, []));
+    resolve({ success: true });
+    await settle();
+    expect(mock.delete).toHaveBeenCalledExactlyOnceWith(row.id, undefined);
+    expect(mock.notify.success).toHaveBeenCalledTimes(1);
+    expect((await workspaceClient.delete(second.id)).ok).toBe(false);
+    expect((await workspaceClient.cancelDelete(second.id)).ok).toBe(false);
+    expect(mock.delete).toHaveBeenCalledTimes(1);
+    expect(mock.cancelDelete).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(store.state.workspace.pendingDeletions[second.id]).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[second.id]).toBeUndefined();
+  });
+  it('cancelled held terminal delete keeps only owned grace and ignores a late reply', async () => {
+    let resolve!: (value: unknown) => void;
+    mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const dispatch = await startBulk();
+    dispatch(workspaceDeleted(row.id, []));
+    task!.cancel();
+    await task!.toPromise();
+    await settle();
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    expect(store.state.workspace.pendingDeletions[second.id]).toBeUndefined();
+    expect(store.state.workspaceOperations.bulkOperationInFlight).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000);
+    resolve({ success: true });
+    await settle();
+    expect(mock.delete).toHaveBeenCalledTimes(1);
+    expect(mock.notify.success).not.toHaveBeenCalled();
+    expect(mock.notify.error).not.toHaveBeenCalled();
+    dispatch(replaceWorkspaceList([row, second]));
+    expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(54_999);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+  });
+  it.each(['before', 'after'] as const)(
+    'does not let terminal receipt clear a %s capability denial',
+    async (timing) => {
+      let resolve!: (value: unknown) => void;
+      mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      const dispatch = await startBulk();
+      const deny = () => dispatch(replaceWorkspaceList([{ ...row, canManage: false }, second]));
+      if (timing === 'before') deny();
+      dispatch(workspaceDeleted(row.id, []));
+      if (timing === 'after') deny();
+      dispatch(workspaceDeleted(row.id, []));
+      resolve({ success: true });
+      await settle();
+      expect(mock.delete).toHaveBeenCalledTimes(1);
+      expect(mock.notify.success).not.toHaveBeenCalled();
+      expect(mock.notify.error).not.toHaveBeenCalled();
+      dispatch(replaceWorkspaceList([row, second]));
+      expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+    },
+  );
+  it.each(['unshared', 'replaced'] as const)(
+    'does not treat a %s purge as a terminal deletion receipt',
+    async (cause) => {
+      let resolve!: (value: unknown) => void;
+      mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      const dispatch = await startBulk();
+      dispatch(workspaceDeleted(row.id, [], cause));
+      resolve({ success: true });
+      await settle();
+      expect(mock.delete).toHaveBeenCalledTimes(1);
+      expect(mock.notify.success).not.toHaveBeenCalled();
+      expect(mock.notify.error).not.toHaveBeenCalled();
+      expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    },
+  );
+  it.each(['readmission', 'backend', 'store', 'new token'] as const)(
+    'a terminal receipt from %s cannot settle the original bulk',
+    async (change) => {
+      let resolve!: (value: unknown) => void;
+      mock.delete.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      const dispatch = await startBulk();
+      if (change === 'store') {
+        dispose();
+        dispose = store.init();
+        admitLegacyPrincipal();
+        store.dispatch(setLabsMultiplayerEnabled(true));
+        admit('member');
+        loaded();
+      } else if (change === 'backend') dispatch(backendReconnected());
+      else if (change === 'readmission') {
+        dispatch(
+          hostMembershipChanged({ principalId: 'principal', action: 'updated', revision: 2 }),
+        );
+        admit('member', 2);
+        loaded();
+      }
+      store.dispatch(clearWorkspacePendingDeletion(row.id));
+      store.dispatch(markWorkspacePendingDeletion(row.id, 'new-terminal'));
+      store.dispatch(workspaceDeleted(row.id, []));
+      resolve({ success: true });
+      await settle();
+      expect(mock.delete).toHaveBeenCalledTimes(1);
+      expect(store.state.workspace.deletionTokens[row.id]).toBe('new-terminal');
+      expect(mock.notify.success).not.toHaveBeenCalled();
+      expect(mock.notify.error).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(store.state.workspace.deletionTokens[row.id]).toBe('new-terminal');
+    },
+  );
   it.each(
     ['readmission', 'backend', 'store'].flatMap((change) =>
       [true, false].map((success) => ({ change, success })),

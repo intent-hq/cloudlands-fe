@@ -51,6 +51,8 @@ export type WorkspaceState = {
   pendingDeletions: Record<string, boolean>;
   deletionTokens: Record<string, string>;
   invalidatedDeletions: Record<string, string>;
+  /** Authoritative removal for a specific pending deletion; never grants rollback. */
+  terminalDeletions: Record<string, string>;
   deletionSequence: number;
   pendingArchives: Record<string, boolean>;
   pendingCreations: Record<string, Workspace>;
@@ -80,6 +82,7 @@ export const initialState: WorkspaceState = {
   pendingDeletions: {},
   deletionTokens: {},
   invalidatedDeletions: {},
+  terminalDeletions: {},
   deletionSequence: 0,
   pendingArchives: {},
   pendingCreations: {},
@@ -562,7 +565,14 @@ workspaceReducer.with(clearWorkspacePendingDeletion, (state, { payload: [wsId, t
   if (next === state.pendingDeletions) return state;
   const { [wsId]: _token, ...deletionTokens } = state.deletionTokens;
   const { [wsId]: _invalid, ...invalidatedDeletions } = state.invalidatedDeletions;
-  return { ...state, pendingDeletions: next, deletionTokens, invalidatedDeletions };
+  const { [wsId]: _terminal, ...terminalDeletions } = state.terminalDeletions;
+  return {
+    ...state,
+    pendingDeletions: next,
+    deletionTokens,
+    invalidatedDeletions,
+    terminalDeletions,
+  };
 });
 workspaceReducer.with(setPendingCreation, (state, { payload: [workspace] }) => {
   const normalized = mergeWorkspaceEnrichment(state.pendingCreations[workspace.id], workspace);
@@ -724,7 +734,7 @@ workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
     detailHydrated: pruneDetailHydrated(state.detailHydrated, (id) => id !== wsId),
   };
 });
-workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
+workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId, , cause = 'deleted'] }) => {
   const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
   const hasPendingState =
     state.pendingDeletions[wsId] ||
@@ -749,9 +759,16 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
     workspaces: existsInCollection
       ? removeItem(state.workspaces, wsId as Workspace['id'])
       : state.workspaces,
-    invalidatedDeletions: state.deletionTokens[wsId]
-      ? { ...state.invalidatedDeletions, [wsId]: state.deletionTokens[wsId] }
-      : state.invalidatedDeletions,
+    // A removal receipt cannot erase an earlier denial. Other purge causes
+    // remain invalidations, even if a terminal event arrives afterwards.
+    terminalDeletions:
+      cause === 'deleted' && state.deletionTokens[wsId]
+        ? { ...state.terminalDeletions, [wsId]: state.deletionTokens[wsId] }
+        : state.terminalDeletions,
+    invalidatedDeletions:
+      cause !== 'deleted' && state.deletionTokens[wsId]
+        ? { ...state.invalidatedDeletions, [wsId]: state.deletionTokens[wsId] }
+        : state.invalidatedDeletions,
     pendingArchives: nextPendingArchives,
     pendingCreations: nextPendingCreations,
     pendingTitleMutations: nextPendingTitleMutations,
@@ -810,6 +827,7 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   pendingDeletions: {},
   deletionTokens: {},
   invalidatedDeletions: {},
+  terminalDeletions: {},
   deletionSequence: 0,
   pendingArchives: {},
   pendingCreations: {},

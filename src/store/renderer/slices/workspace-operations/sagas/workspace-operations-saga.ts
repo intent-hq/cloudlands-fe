@@ -516,7 +516,7 @@ function* computeBulkDeleteActiveWork(
 function* performBulkDelete(
   operations: WorkspaceDeletion[],
   current: () => boolean,
-  deletedIds: string[],
+  graceIds: string[],
 ): SagaGenerator<string[]> {
   const notify = yield* call(getToast);
   if (!current()) return [];
@@ -528,7 +528,13 @@ function* performBulkDelete(
   let timeoutCount = 0;
   let failCount = 0;
   for (const operation of operations) {
-    if (!current() || !operation.current()) break;
+    if (!current()) break;
+    if (operation.terminal() === 'removed') {
+      graceIds.push(operation.workspaceId);
+      yield* spawn(clearTombstoneAfterGrace, operation.workspaceId, operation);
+      continue;
+    }
+    if (!operation.current()) break;
     try {
       const result = yield* call(
         [workspaceClient, workspaceClient.delete],
@@ -536,19 +542,25 @@ function* performBulkDelete(
         undefined,
         operation,
       );
-      if (!current() || !operation.current()) break;
-      if (result.ok) {
-        deleteCount++;
-        deletedIds.push(operation.workspaceId);
+      if (!current() || (!operation.current() && operation.terminal() !== 'removed')) break;
+      if (result.ok || operation.terminal() === 'removed') {
+        graceIds.push(operation.workspaceId);
         yield* put(removeWorkspaceEntity(operation.workspaceId));
         yield* spawn(clearTombstoneAfterGrace, operation.workspaceId, operation);
-      } else if (result.error?.includes('timed out')) timeoutCount++;
+      }
+      if (result.ok) deleteCount++;
+      else if (result.error?.includes('timed out')) timeoutCount++;
       else failCount++;
     } catch {
+      if (!current() || (!operation.current() && operation.terminal() !== 'removed')) break;
+      if (operation.terminal() === 'removed') {
+        graceIds.push(operation.workspaceId);
+        yield* spawn(clearTombstoneAfterGrace, operation.workspaceId, operation);
+      }
       failCount++;
     }
   }
-  if (!current()) return deletedIds;
+  if (!current()) return graceIds;
   if (deleteCount > 0) {
     notify.success(
       deleteCount === 1
@@ -570,7 +582,7 @@ function* performBulkDelete(
         : m.workspace_ops_deleteFailedCount_many({ count: failCount }),
     );
   }
-  return deletedIds;
+  return graceIds;
 }
 
 function* bulkDelete(): SagaGenerator<void> {
@@ -606,20 +618,25 @@ function* bulkDelete(): SagaGenerator<void> {
     selectPrincipalActionContext.select(store.state) === admission;
   yield* put(bulkOperationStarted({ kind: 'delete', workspaceIds: reservedIds }));
   yield* put(closeBulkDeleteConfirm());
-  const deletedIds: string[] = [];
+  const graceIds: string[] = [];
   try {
     for (const operation of ownedOperations) {
       if (!current() || !operation.begin(false)) return;
     }
     for (const operation of ownedOperations) {
-      if (!current() || !operation.current()) return;
+      if (!current()) return;
+      if (operation.terminal() === 'removed') continue;
+      if (!operation.current()) return;
       yield* call(navigateAwayIfViewing, operation.workspaceId);
     }
-    yield* performBulkDelete(ownedOperations, current, deletedIds);
+    yield* performBulkDelete(ownedOperations, current, graceIds);
   } finally {
-    const deletedIdSet = new Set(deletedIds);
+    const graceIdSet = new Set(graceIds);
     for (const operation of ownedOperations) {
-      if (!deletedIdSet.has(operation.workspaceId)) operation.expire();
+      if (graceIdSet.has(operation.workspaceId)) continue;
+      if (operation.terminal() !== null)
+        yield* spawn(clearTombstoneAfterGrace, operation.workspaceId, operation);
+      else operation.expire();
     }
     // An obsolete admission may settle its own UI lock; it cannot settle a
     // replacement store or another operation's lock/tombstones/notifications.

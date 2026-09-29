@@ -15,6 +15,8 @@ export type WorkspaceDeletion = {
   readonly workspaceId: Workspace['id'];
   begin(hide?: boolean): boolean;
   current(): boolean;
+  /** Original-context removal receipt; a denied receipt permits only owned grace. */
+  terminal(): 'removed' | 'denied' | null;
   restore(): void;
   expire(): void;
 };
@@ -39,11 +41,25 @@ export function captureWorkspaceDeletion(workspace: Workspace): WorkspaceDeletio
     sameStore() &&
     selectPrincipalActionContext.select(store.state) === admission &&
     (begun
-      ? owned() && store.state.workspace.invalidatedDeletions[workspace.id] !== token
+      ? owned() &&
+        store.state.workspace.invalidatedDeletions[workspace.id] !== token &&
+        store.state.workspace.terminalDeletions[workspace.id] !== token
       : selectWorkspaceActionContext.select(store.state, workspace.id) === admission);
   const operation: WorkspaceDeletion = {
     workspaceId: workspace.id,
     current,
+    terminal() {
+      if (
+        !begun ||
+        !owned() ||
+        selectPrincipalActionContext.select(store.state) !== admission ||
+        store.state.workspace.terminalDeletions[workspace.id] !== token
+      )
+        return null;
+      return store.state.workspace.invalidatedDeletions[workspace.id] === token
+        ? 'denied'
+        : 'removed';
+    },
     begin(hide = true) {
       if (begun || !current() || store.state.workspace.pendingDeletions[workspace.id]) return false;
       dispatch(markWorkspacePendingDeletion(workspace.id, token));
@@ -66,6 +82,13 @@ export function captureWorkspaceDeletion(workspace: Workspace): WorkspaceDeletio
 
 export function currentWorkspaceDeletion(operation: WorkspaceDeletion, id: string): boolean {
   return issued.has(operation) && operation.workspaceId === id && operation.current();
+}
+
+/** Only settles a sent delete; it cannot admit a new delete or Undo. */
+export function terminalWorkspaceDeletion(operation: WorkspaceDeletion, id: string): boolean {
+  return (
+    issued.has(operation) && operation.workspaceId === id && operation.terminal() === 'removed'
+  );
 }
 
 /** Capture timers at scheduling time, including event/bulk tombstones. */

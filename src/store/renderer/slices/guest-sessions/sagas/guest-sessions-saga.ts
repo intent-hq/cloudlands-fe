@@ -794,7 +794,7 @@ function* tearDownOnGuestAuthRejection(
       cleanups.push([workspaceId, agentId]);
     }
     yield* put(destroyOwnedTabsForWorkspace(workspaceId));
-    yield* put(workspaceDeleted(workspaceId, [...agentIds]));
+    yield* put(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
     try {
       yield* call(closeWorkspaceTabAndNavigateAway, workspaceId);
     } catch (error) {
