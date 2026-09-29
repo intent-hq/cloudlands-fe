@@ -69,6 +69,7 @@
     onClose?: () => void;
     showDeleteOption?: boolean;
     showArchiveOption?: boolean;
+    showPathCopy?: boolean;
     showFileNameCopy?: boolean;
     showFileActions?: boolean;
     workspaceFolderPath?: string;
@@ -94,6 +95,7 @@
     onClose = undefined,
     showDeleteOption = true,
     showArchiveOption = false,
+    showPathCopy = true,
     showFileNameCopy = false,
     showFileActions = true,
     workspaceFolderPath = '',
@@ -632,17 +634,18 @@
           ],
         });
       }
-      result.push({
-        id: 'copy-absolute-path',
-        label: m.ui_workspaceActions_copyAbsolutePath_label(),
-        icon: faCopy,
-        disabled: !resolvedPath,
-        dividerBefore: result.length > 0,
-        onClick: () => {
-          void copyAbsolutePath();
-        },
-      });
-      if (!isWorkspaceRoot)
+      if (showPathCopy)
+        result.push({
+          id: 'copy-absolute-path',
+          label: m.ui_workspaceActions_copyAbsolutePath_label(),
+          icon: faCopy,
+          disabled: !resolvedPath,
+          dividerBefore: result.length > 0,
+          onClick: () => {
+            void copyAbsolutePath();
+          },
+        });
+      if (showPathCopy && !isWorkspaceRoot)
         result.push({
           id: 'copy-relative-path',
           label: m.ui_workspaceActions_copyRelativePath_label(),

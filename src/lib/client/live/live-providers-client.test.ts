@@ -2,8 +2,7 @@
  * Wire-contract tests for the live providers domain (PROTOCOL §5.38).
  *
  * Asserts (a) the exact JSON-RPC request the client emits on the
- * `backend:request` channel (`providers.catalog`, `{}` params — daemon-global,
- * no `workspaceId`), (b) a PROTOCOL-shaped response passes through verbatim
+ * `backend:request` channel (direct and workspace-originated catalogs), (b) a PROTOCOL-shaped response passes through verbatim
  * (registry order preserved, gated-off rows and optional fields intact), and
  * (c) divergent payloads and transport failures THROW — the FE never silently
  * absorbs a wire mismatch (fix-site is the BE or PROTOCOL.md).
@@ -86,6 +85,15 @@ describe('LiveProvidersClient', () => {
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
       method: 'providers.catalog',
       params: {},
+    });
+  });
+
+  it('preserves a workspace catalog destination', async () => {
+    mockInvoke.mockResolvedValue({ ok: true, result: CATALOG });
+    expect(await client.catalog('workspace-A')).toEqual(CATALOG);
+    expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      method: 'providers.catalog',
+      params: { workspaceId: 'workspace-A' },
     });
   });
 

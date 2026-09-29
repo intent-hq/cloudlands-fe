@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readable, writable } from 'svelte/store';
 
@@ -93,7 +93,11 @@ vi.mock('$lib/components/ui/dropdown', async () => {
 });
 
 vi.mock('$features/agent/components/AgentProviderIcon.svelte', async () => {
-  const mod = await import('../../__tests__/mocks/ProviderIcon.svelte');
+  // Plain tsc's wildcard Svelte declaration omits module-script exports.
+  const mod =
+    (await import('../../__tests__/mocks/ProviderIcon.svelte')) as typeof import('../../__tests__/mocks/ProviderIcon.svelte') & {
+      hasProviderIcon: (providerId: string | undefined) => boolean;
+    };
   return { default: mod.default, hasProviderIcon: mod.hasProviderIcon };
 });
 
@@ -107,15 +111,11 @@ vi.mock('$features/agent/reasoning-effort', () => ({
   applyReasoningEffort: vi.fn(async () => true),
 }));
 
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+function startCatalogOwner() {
+  disposeStore = appStore.init();
   // Hydrated catalog with the synthetic `anthropic` provider these regressions
   // use, so the real provider-catalog selectors resolve ids/display names.
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const providerCatalog = providerCatalogReducer(
-    initialState,
+  appStore.dispatch(
     providerCatalogLoaded({
       providers: [
         {
@@ -158,26 +158,31 @@ vi.mock('$store/renderer/store', async () => {
       defaultProviderId: 'auggie',
     }),
   );
-
-  return createAppStoreMockModule({
-    state: () => ({
-      sessions,
-      providerCatalog,
-      providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: 'auggie' },
-      // The picker's guest/collaborator gate reads the caller role: a settled
-      // owner window keeps these label regressions on the unlocked path.
-      workspace: { hasLoaded: false, workspaces: { idField: 'id', map: {}, ids: [] } },
-      connections: { windowBackendId: 'local', hasReceivedList: true },
-      guestSessions: {
-        sessions: { idField: 'id', map: {}, ids: [] },
-        hasReceivedList: true,
-        listUnavailable: false,
+  appStore.dispatch(hydrateDefaultProvider('auggie'));
+  appStore.dispatch(
+    workspaceCatalogReceived(
+      'ws-1',
+      {
+        catalog: { providers: Object.values(appStore.state.providerCatalog.providers.map) },
+        settings: [{ path: 'model.defaultProvider', value: 'auggie' }] as never,
+        specialists: [],
+        readiness: {},
       },
-    }),
-    dispatch: mockReduxDispatch,
+      appStore.state.providerCatalog.workspaceEpoch ?? 0,
+    ),
+  );
+  // Keep these label regressions on the settled owner-window path.
+  appStore.dispatch(
+    connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+  );
+  appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  const dispatch = appStore.dispatch.bind(appStore);
+  vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+    mockReduxDispatch(action);
+    return dispatch(action);
   });
-});
+  cancelCatalog = appStore.runSaga(modelReloadSaga);
+}
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => {
   const selectAgentSession = Object.assign(
@@ -200,7 +205,10 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
   return { selectAgentSession, selectAgentReasoningEffort };
 });
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-slice', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/agent-session/agent-session-slice')
+  >()),
   updateSession: (agentId: string, updates: Partial<Session>) => ({
     type: 'agentSessions/updateSession',
     payload: [agentId, updates],
@@ -254,7 +262,8 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
   }),
 }));
 
-vi.mock('$shared/types/agent-session', () => ({
+vi.mock('$shared/types/agent-session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$shared/types/agent-session')>()),
   getAgentProvider: (session: Session) =>
     session.provider ?? (session.metadata?.provider as string | undefined),
   isAgentSession: (session: Session | undefined) => !!session && !('isPending' in session),
@@ -268,6 +277,14 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import {
+  providerCatalogLoaded,
+  workspaceCatalogReceived,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
 import ModelPicker from '../ModelPicker.svelte';
@@ -279,6 +296,9 @@ warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../../ui/__tests__/mocks/button.svelte'));
 warmImport(() => import('../../__tests__/mocks/SlotOnly.svelte'));
 warmImport(() => import('../../__tests__/mocks/ProviderIcon.svelte'));
+
+let disposeStore: () => void;
+let cancelCatalog: () => void;
 
 describe('ModelPicker trigger label regressions', () => {
   beforeEach(() => {
@@ -294,10 +314,14 @@ describe('ModelPicker trigger label regressions', () => {
     activeProviderId$.set('auggie');
     enabledProviderIds$.set(['auggie']);
     providerWarnings$.set({});
+    startCatalogOwner();
   });
 
   afterEach(() => {
     cleanup();
+    cancelCatalog();
+    vi.restoreAllMocks();
+    disposeStore();
     document.body.innerHTML = '';
   });
 
@@ -329,12 +353,11 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    const text = screen.getByRole('button').textContent ?? '';
-    expect(text).toContain('Claude Opus 4.8');
-    expect(text).not.toContain('claude-opus-4-8');
+    await waitFor(() => {
+      const text = screen.getByRole('button').textContent ?? '';
+      expect(text).toContain('Claude Opus 4.8');
+      expect(text).not.toContain('claude-opus-4-8');
+    });
   });
 
   it('resolves a provider-prefixed session model id against a bare catalog row', () => {
@@ -366,10 +389,9 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8 (High)');
+    await waitFor(() =>
+      expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8 (High)'),
+    );
   });
 
   it('does not silently flip to the first available model when selectedModel becomes undefined', async () => {
@@ -436,7 +458,7 @@ describe('ModelPicker trigger label regressions', () => {
         selectedModel: undefined,
         defaultModelId: 'auggie:balanced',
         showDefaultOption: true,
-        formatDefaultModelLabel: (model) => `Inherited: ${model}`,
+        formatDefaultModelLabel: (model: string) => `Inherited: ${model}`,
         isLocked: true,
       },
     });
@@ -606,13 +628,14 @@ describe('ModelPicker trigger label regressions', () => {
       }),
     );
 
-    await tick();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'claude-code',
-    );
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    await waitFor(() => {
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+        'claude-code',
+      );
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+        workspaceId: 'ws-1',
+      });
+    });
   });
 
   it('attributes a bare session model to the agent provider when that provider is outside the enabled set (guest window)', async () => {
@@ -644,14 +667,15 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
-    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'claude-code',
-    );
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+        workspaceId: 'ws-1',
+      });
+      expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+        'claude-code',
+      );
+    });
   });
 
   it('does not render a provider icon for unknown provider IDs', () => {
@@ -740,15 +764,14 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    const text = screen.getByRole('button').textContent ?? '';
-    expect(text).toContain('Claude Opus 4.8');
-    expect(text).not.toContain('Sonnet 4.6');
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'claude-code',
-    );
+    await waitFor(() => {
+      const text = screen.getByRole('button').textContent ?? '';
+      expect(text).toContain('Claude Opus 4.8');
+      expect(text).not.toContain('Sonnet 4.6');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+        'claude-code',
+      );
+    });
   });
 
   it('maps a legacy <provider>:default selection to the catalog isDefault row', () => {
@@ -877,4 +900,20 @@ describe('ModelPicker trigger label regressions', () => {
     expect(text).toContain('Auggie Butler');
     expect(text).not.toContain('default');
   });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { selectProviderCatalogEntries } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  return {
+    selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextDefaultProvider: () => readable('auggie'),
+    selectContextSelectedModel: () => selectedModel$,
+    selectContextEnabledProviders: () => readable({}),
+    selectContextAvailableProviderIds: () => enabledProviderIds$,
+    selectContextModelProviderIds: () => enabledProviderIds$,
+    selectContextReadinessLoaded: () => readable(true),
+    selectContextProviderWarnings: () => providerWarnings$,
+    selectContextProviderStaleFlags: () => readable({}),
+  };
 });

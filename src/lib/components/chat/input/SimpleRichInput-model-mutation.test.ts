@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 
@@ -14,7 +15,22 @@ const fixture = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => fixture.state, dispatch: fixture.dispatch });
+  const module = createAppStoreMockModule({
+    state: () => ({ ...fixture.state }),
+    dispatch: fixture.dispatch,
+    // Match production selectors instead of re-emitting unchanged catalogs.
+    dedupeEmits: true,
+  });
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (selectorFunc) => {
+    const selector = createSelector(selectorFunc);
+    selector.effect = function* (...args) {
+      return yield select(selectorFunc, ...args);
+    };
+    return selector;
+  };
+  return module;
 });
 vi.mock('$lib/client', () => ({
   appClient: { agents: { setReasoningEffort: fixture.setEffort } },
@@ -71,6 +87,7 @@ import {
 import {
   initialState as catalogInitial,
   providerCatalogLoaded,
+  workspaceCatalogReceived,
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import {
@@ -80,7 +97,11 @@ import {
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import SimpleRichInput from './SimpleRichInput.svelte';
+
+let catalogChannel: ReturnType<typeof stdChannel> | undefined;
+let catalogTask: Task | undefined;
 
 const workspace = { id: 'model-tests', path: '/tmp/model-tests', name: 'Models' } as Workspace;
 const emitState = () => (store as typeof store & { emitState(): void }).emitState();
@@ -92,7 +113,28 @@ const modelRequest = (providerId: string, modelId: string) => ({
   modelId,
 });
 
+function seedWorkspaceCatalog() {
+  fixture.state.providerCatalog = providerCatalogReducer(
+    fixture.state.providerCatalog,
+    workspaceCatalogReceived(
+      'model-tests',
+      {
+        catalog: { providers: Object.values(fixture.state.providerCatalog.providers.map) },
+        settings: [
+          { path: 'model.defaultProvider', value: fixture.state.model.defaultProviderId },
+          { path: 'model.providerDefaults', value: fixture.state.model.providerModels },
+          { path: 'providers.enabled', value: fixture.state.providerSettings.enabledProviders },
+        ] as never,
+        readiness: fixture.state.agentAvailability.providerStatusMap,
+        specialists: [],
+      },
+      0,
+    ),
+  );
+}
+
 function mount(overrides: Record<string, unknown> = {}) {
+  seedWorkspaceCatalog();
   return render(SimpleRichInput, {
     props: {
       value: '',
@@ -155,8 +197,20 @@ beforeEach(() => {
     },
     model: { ...modelInitial, defaultProviderId: 'auggie' },
     providerCatalog: providerCatalogReducer(
-      catalogInitial,
-      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+      providerCatalogReducer(catalogInitial, providerCatalogLoaded(MOCK_PROVIDER_CATALOG)),
+      workspaceCatalogReceived(
+        'model-tests',
+        {
+          catalog: MOCK_PROVIDER_CATALOG,
+          settings: [
+            { path: 'model.defaultProvider', value: 'auggie' },
+            { path: 'providers.enabled', value: { auggie: true, codex: true } },
+          ] as never,
+          readiness: { auggie: { available: true }, codex: { available: true } },
+          specialists: [],
+        },
+        0,
+      ),
     ),
     providerModels: modelsInitial,
     providerSettings: { enabledProviders: { auggie: true, codex: true } },
@@ -185,17 +239,45 @@ beforeEach(() => {
     fixture.state.model = modelReducer(fixture.state.model, action);
     fixture.state.providerModels = providerModelsReducer(fixture.state.providerModels, action);
     fixture.state.providerCatalog = providerCatalogReducer(fixture.state.providerCatalog, action);
+    if (action.type === providerCatalogLoaded.type) seedWorkspaceCatalog();
     emitState();
+    catalogChannel?.put(action);
     return action;
   });
   fixture.setModel.mockResolvedValue({ success: true, data: { success: true } });
   fixture.setEffort.mockResolvedValue({ success: true });
   registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, fixture.setModel);
+  expect(catalogTask?.isRunning() ?? false).toBe(false);
+  catalogChannel = stdChannel();
+  catalogTask = runSaga(
+    {
+      channel: catalogChannel,
+      dispatch: fixture.dispatch,
+      getState: () => store.state,
+      context: {
+        reduxStore: {
+          getState: () => store.state,
+          subscribe: (listener: () => void) => store.getReadableState().subscribe(listener),
+        },
+      },
+    },
+    modelReloadSaga,
+  );
+  expect(catalogTask.isRunning()).toBe(true);
 });
 
-afterEach(() => {
-  cleanup();
-  unregisterMockIpcHandler(AGENT_CHANNELS.SET_MODEL);
+afterEach(async () => {
+  try {
+    cleanup();
+  } finally {
+    catalogTask?.cancel();
+    catalogChannel?.close();
+    catalogChannel = undefined;
+    unregisterMockIpcHandler(AGENT_CHANNELS.SET_MODEL);
+    await catalogTask?.toPromise();
+    expect(catalogTask?.isCancelled()).toBe(true);
+    expect(catalogTask?.isRunning()).toBe(false);
+  }
 });
 
 describe('real composer model mutation ownership', () => {

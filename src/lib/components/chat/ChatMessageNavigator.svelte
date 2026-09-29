@@ -8,6 +8,8 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
+  import * as Menu from '$lib/components/ui/menu';
+  import { faComment, faArrowDown } from '@fortawesome/free-solid-svg-icons';
   import { menuItem } from '$lib/components/ui/menu';
   import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { m } from '$shared/paraglide/messages.js';
@@ -24,6 +26,7 @@
     onOpen?: () => void;
     /** True while the full-history index fetch is in flight (no cached index yet). */
     isLoadingIndex?: boolean;
+    embedded?: boolean;
   }
 
   let {
@@ -33,6 +36,7 @@
     onScrollToBottom,
     onOpen,
     isLoadingIndex = false,
+    embedded = false,
   }: Props = $props();
   let open = $state(false);
   let query = $state('');
@@ -146,6 +150,11 @@
     searchInput?.focus();
   }
 
+  async function handleSubmenuSelect() {
+    await tick();
+    if (open) searchInput?.focus();
+  }
+
   function isNavigatorContentTarget(target: Node): boolean {
     if (contentElement?.contains(target)) return true;
     if (!(target instanceof Element)) return false;
@@ -173,6 +182,7 @@
   }
 
   function handleSearchKeydown(event: KeyboardEvent) {
+    if (embedded) event.stopPropagation();
     if (event.key === 'Escape') {
       event.preventDefault();
       open = false;
@@ -198,155 +208,193 @@
   }
 </script>
 
-<div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
-  <Popover.Root bind:open onOpenChange={handleOpenChange}>
-    <Popover.Trigger bind:ref={triggerElement}>
-      {#snippet child({ props })}
-        <Button
-          {...props}
-          variant="ghost-light"
-          size="icon-sm"
-          active={open}
-          aria-label={m.chat_messageNavigator_open_ariaLabel()}
-          tooltip={m.chat_messageNavigator_open_ariaLabel()}
-          tooltipDisabled={open}
-          tooltipSide="bottom"
-          tooltipDelayDuration={300}
-          aria-expanded={open}
-          onkeydown={handleTriggerKeydown}
-          data-testid="chat-message-navigator-trigger"
-        >
-          <ChatTextIcon
-            size={CHAT_ICON_SIZE.compact}
-            weight="regular"
-            mirrored={false}
-            aria-hidden="true"
-            class="size-4!"
-            data-chat-message-navigator-chat-icon
-          />
-        </Button>
-      {/snippet}
-    </Popover.Trigger>
-    <Popover.Portal>
-      <Popover.Content
-        bind:ref={contentElement}
-        role="dialog"
-        aria-label={m.chat_messageNavigator_open_ariaLabel()}
-        align="end"
-        side="bottom"
-        sideOffset={4}
-        {collisionBoundary}
-        collisionPadding={8}
-        trapFocus={false}
-        onOpenAutoFocus={handleOpenAutoFocus}
-        onCloseAutoFocus={handleCloseAutoFocus}
-        onFocusOutside={handleFocusOutside}
-        data-chat-message-navigator-content={navigatorId}
-        class="{DROPDOWN_SURFACE_CLASS} w-[28rem]"
-      >
-        <div
-          class="flex min-h-0 min-w-0 max-h-full flex-1 flex-col overflow-hidden"
-          data-testid="chat-message-navigator-panel"
-        >
-          <Input
-            bind:ref={searchInput}
-            value={query}
-            oninput={handleInput}
-            onkeydown={handleSearchKeydown}
-            role="combobox"
-            aria-label={m.chat_messageNavigator_search_ariaLabel()}
-            aria-controls={filteredMessages.length > 0 ? listboxId : undefined}
-            aria-expanded="true"
-            aria-autocomplete="list"
-            aria-activedescendant={activeOptionId}
-            autocomplete="off"
-            placeholder={m.chat_messageNavigator_search_placeholder()}
-            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground"
-            data-testid="chat-message-navigator-search"
-          />
-          <!-- Persistent live region: announcements only fire for content
+{#snippet messageList()}
+  <div
+    class="flex min-h-0 min-w-0 max-h-full flex-1 flex-col overflow-hidden"
+    data-testid="chat-message-navigator-panel"
+  >
+    <Input
+      bind:ref={searchInput}
+      value={query}
+      oninput={handleInput}
+      onkeydown={handleSearchKeydown}
+      role="combobox"
+      aria-label={m.chat_messageNavigator_search_ariaLabel()}
+      aria-controls={filteredMessages.length > 0 ? listboxId : undefined}
+      aria-expanded="true"
+      aria-autocomplete="list"
+      aria-activedescendant={activeOptionId}
+      autocomplete="off"
+      placeholder={m.chat_messageNavigator_search_placeholder()}
+      class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground"
+      data-testid="chat-message-navigator-search"
+    />
+    <!-- Persistent live region: announcements only fire for content
                changes inside an already-rendered live region, so the container
                stays mounted and only the loading row toggles. -->
-          <div
-            role="status"
-            aria-live="polite"
-            class="shrink-0"
-            data-testid="chat-message-navigator-loading-region"
-          >
-            {#if isLoadingIndex}
-              <div
-                class="type-caption flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
-                data-testid="chat-message-navigator-loading"
-              >
-                <IntentMarkLoader size={16} />
-                <span>{m.chat_messageNavigator_loading_label()}</span>
-              </div>
-            {/if}
-          </div>
-          {#if filteredMessages.length > 0}
-            <div
-              id={listboxId}
-              role="listbox"
-              onscroll={handleListboxScroll}
-              class="mt-[var(--space-1)] min-h-0 min-w-0 flex-1 max-h-72 overflow-x-hidden overflow-y-auto overscroll-contain"
-            >
-              {#each filteredMessages as message, index (message.id)}
-                <Tooltip
-                  content={message.text}
-                  side="left"
-                  align="center"
-                  delayDuration={300}
-                  size="sm"
-                  class="block h-(--control-height-large) w-full min-w-0 max-w-full"
-                  contentClass="max-w-[min(28rem,calc(100vw-var(--space-4)))] break-words text-left"
-                >
-                  <Button
-                    type="button"
-                    variant="plain"
-                    labelClass="overflow-hidden whitespace-nowrap text-left text-ellipsis"
-                    id={optionId(message.id)}
-                    role="option"
-                    tabindex={-1}
-                    aria-selected={index === activeIndex}
-                    class={cn(
-                      menuItem(),
-                      OPTION_LIST_ROW_CLASS,
-                      'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
-                      index === activeIndex && 'bg-accent text-accent-foreground',
-                    )}
-                    onclick={() => void selectMessage(message.id)}
-                    onkeydown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        void selectMessage(message.id);
-                      }
-                    }}
-                    onpointermove={() => {
-                      if (activeIndex !== index || anchorToEnd) moveActiveTo(index);
-                    }}
-                    data-testid="chat-message-navigator-result"
-                    data-navigation-message-id={message.id}
-                  >
-                    <span
-                      class="block min-w-0 max-w-full flex-1 overflow-hidden whitespace-nowrap text-left text-ellipsis font-normal"
-                    >
-                      {message.text}
-                    </span>
-                  </Button>
-                </Tooltip>
-              {/each}
-            </div>
-          {:else if !isLoadingIndex}
-            <div
-              class="type-caption px-2 py-6 text-left text-muted-foreground"
-              data-testid="chat-message-navigator-empty"
-            >
-              {m.chat_messageNavigator_empty_label()}
-            </div>
-          {/if}
+    <div
+      role="status"
+      aria-live="polite"
+      class="shrink-0"
+      data-testid="chat-message-navigator-loading-region"
+    >
+      {#if isLoadingIndex}
+        <div
+          class="type-caption flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
+          data-testid="chat-message-navigator-loading"
+        >
+          <IntentMarkLoader size={16} />
+          <span>{m.chat_messageNavigator_loading_label()}</span>
         </div>
-      </Popover.Content>
-    </Popover.Portal>
-  </Popover.Root>
-  <ScrollToBottomButton disabled={isAtBottom} onclick={onScrollToBottom} />
-</div>
+      {/if}
+    </div>
+    {#if filteredMessages.length > 0}
+      <div
+        id={listboxId}
+        role="listbox"
+        onscroll={handleListboxScroll}
+        class="mt-[var(--space-1)] min-h-0 min-w-0 flex-1 max-h-72 overflow-x-hidden overflow-y-auto overscroll-contain"
+      >
+        {#each filteredMessages as message, index (message.id)}
+          <Tooltip
+            content={message.text}
+            side="left"
+            align="center"
+            delayDuration={300}
+            size="sm"
+            class="block w-full min-w-0 max-w-full {embedded ? '' : 'h-(--control-height-large)'}"
+            contentClass="max-w-[min(28rem,calc(100vw-var(--space-4)))] break-words text-left"
+          >
+            <Button
+              type="button"
+              variant="plain"
+              labelClass="overflow-hidden whitespace-nowrap text-left text-ellipsis"
+              id={optionId(message.id)}
+              role="option"
+              tabindex={-1}
+              aria-selected={index === activeIndex}
+              class={cn(
+                menuItem(),
+                OPTION_LIST_ROW_CLASS,
+                'max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
+                !embedded &&
+                  'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large)',
+                embedded
+                  ? 'hover:bg-hover hover:text-foreground'
+                  : 'hover:bg-accent/60 hover:text-accent-foreground',
+                index === activeIndex &&
+                  (embedded ? 'bg-selected text-foreground' : 'bg-accent text-accent-foreground'),
+              )}
+              onclick={() => void selectMessage(message.id)}
+              onkeydown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  void selectMessage(message.id);
+                }
+              }}
+              onpointermove={() => {
+                if (activeIndex !== index || anchorToEnd) moveActiveTo(index);
+              }}
+              data-testid="chat-message-navigator-result"
+              data-navigation-message-id={message.id}
+              data-panel-menu-row={embedded || undefined}
+            >
+              <span
+                class="block min-w-0 max-w-full flex-1 overflow-hidden whitespace-nowrap text-left text-ellipsis font-normal"
+              >
+                {message.text}
+              </span>
+            </Button>
+          </Tooltip>
+        {/each}
+      </div>
+    {:else if !isLoadingIndex}
+      <div
+        class="type-caption px-2 py-6 text-left text-muted-foreground"
+        data-testid="chat-message-navigator-empty"
+      >
+        {m.chat_messageNavigator_empty_label()}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#if embedded}
+  <Menu.Sub bind:open onOpenChange={handleOpenChange}>
+    <Menu.SubTrigger
+      icon={faComment}
+      onSelect={handleSubmenuSelect}
+      data-testid="chat-message-navigator-trigger"
+    >
+      {m.chat_messageNavigator_menu_label()}
+    </Menu.SubTrigger>
+    <Menu.SubContent
+      bind:ref={contentElement}
+      class="w-[28rem] max-w-[calc(100vw-1rem)]"
+      onOpenAutoFocus={handleOpenAutoFocus}
+      data-chat-message-navigator-content={navigatorId}
+    >
+      {@render messageList()}
+    </Menu.SubContent>
+  </Menu.Sub>
+  <Menu.CommandItem
+    icon={faArrowDown}
+    label={m.chat_chatPanel_scrollToBottom_tooltip()}
+    disabled={isAtBottom}
+    onSelect={onScrollToBottom}
+    data-testid="chat-scroll-to-bottom-button"
+  />
+{:else}
+  <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
+    <Popover.Root bind:open onOpenChange={handleOpenChange}>
+      <Popover.Trigger bind:ref={triggerElement}>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost-light"
+            size="icon-sm"
+            active={open}
+            aria-label={m.chat_messageNavigator_open_ariaLabel()}
+            tooltip={m.chat_messageNavigator_open_ariaLabel()}
+            tooltipDisabled={open}
+            tooltipSide="bottom"
+            tooltipDelayDuration={300}
+            aria-expanded={open}
+            onkeydown={handleTriggerKeydown}
+            data-testid="chat-message-navigator-trigger"
+          >
+            <ChatTextIcon
+              size={CHAT_ICON_SIZE.compact}
+              weight="regular"
+              mirrored={false}
+              aria-hidden="true"
+              class="size-4!"
+              data-chat-message-navigator-chat-icon
+            />
+          </Button>
+        {/snippet}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          bind:ref={contentElement}
+          role="dialog"
+          aria-label={m.chat_messageNavigator_open_ariaLabel()}
+          align="end"
+          side="bottom"
+          sideOffset={4}
+          {collisionBoundary}
+          collisionPadding={8}
+          trapFocus={false}
+          onOpenAutoFocus={handleOpenAutoFocus}
+          onCloseAutoFocus={handleCloseAutoFocus}
+          onFocusOutside={handleFocusOutside}
+          data-chat-message-navigator-content={navigatorId}
+          class="{DROPDOWN_SURFACE_CLASS} w-[28rem]"
+        >
+          {@render messageList()}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+    <ScrollToBottomButton disabled={isAtBottom} onclick={onScrollToBottom} />
+  </div>
+{/if}

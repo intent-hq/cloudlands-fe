@@ -21,10 +21,11 @@ permissions:
   contents: read
   pull-requests: read
 
-# Never cancel a release in progress
+# Shared with source releases, alpha, stable and cleanup. Queue pending writers.
 concurrency:
-  group: cloudlands-beta-promotion
+  group: cloudlands-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   promote-to-beta:

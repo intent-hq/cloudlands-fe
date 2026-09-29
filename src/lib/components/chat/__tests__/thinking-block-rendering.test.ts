@@ -7,7 +7,8 @@
  * sites must read it, not only the legacy `content` field the FE's own
  * <think>-tag parser produces.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, screen } from '@testing-library/svelte';
+import { fireEvent, render } from './operational-renderer-test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -670,12 +671,26 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     expect(document.body.textContent).toContain('Then I will read the current spec');
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     const responseGroup = screen.getByTestId('response-group');
     expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
@@ -687,7 +702,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(history[1]).toContain('Invoking workspace API to set title');
     expect(history[2]).toContain('Set workspace title and read the current spec');
     expect(history[3]).toContain('Planning clarification questions on formatting issues');
-    expect(history[4]).toContain('Ask for the expected agent chat layout');
+    expect(history[4]).toContain('Planning code inspection and question sequencing');
+    expect(history[5]).toContain('Ask for the expected agent chat layout');
     const historyTitles = [
       ...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]'),
     ].map((title) => title.textContent?.trim());
@@ -718,7 +734,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Workspace ready');
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     expect(document.body.textContent).toContain('Then I will read the current spec');
 
     const completedContent = [
@@ -736,7 +759,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
   });
@@ -970,7 +1000,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     const childBoundaries = group.querySelectorAll('[data-reasoning-section-boundary]');
     expect(childBoundaries).toHaveLength(2);
-    expect(childBoundaries[1].previousElementSibling?.textContent).toContain('Review input.');
+    expect(
+      childBoundaries[1].closest('[data-operational-window-key]')?.previousElementSibling
+        ?.textContent,
+    ).toContain('Review input.');
     expect(childBoundaries[1].textContent).toContain('Specifying task requirements');
     expect(group.textContent?.match(/Review input\./g)).toHaveLength(1);
     expect(group.textContent?.match(/Specifying task requirements/g)).toHaveLength(1);

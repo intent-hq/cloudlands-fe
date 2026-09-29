@@ -79,13 +79,31 @@ describe('modelReloadSaga', () => {
         }),
       )
       .mockResolvedValueOnce([{ value: 'gpt-5', label: 'GPT-5' }]);
-    const current = { model: { defaultProviderId: 'auggie' } };
+    let current = { model: { defaultProviderId: 'auggie' } };
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => current }, modelReloadSaga);
+    const listeners = new Set<() => void>();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => current,
+        context: {
+          reduxStore: {
+            getState: () => current,
+            subscribe: (listener: () => void) => {
+              listeners.add(listener);
+              return () => listeners.delete(listener);
+            },
+          },
+        },
+      },
+      modelReloadSaga,
+    );
     channel.put(reloadModelsForProvider());
     await settle();
-    current.model.defaultProviderId = 'codex';
+    current = { model: { defaultProviderId: 'codex' } };
+    for (const listener of listeners) listener();
     channel.put(reloadModelsForProvider());
     await settle();
     resolveFirst([{ value: 'stale', label: 'Stale' }]);
@@ -113,5 +131,6 @@ describe('modelReloadSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+    expect(listeners.size).toBe(0);
   });
 });

@@ -43,6 +43,11 @@ export interface McpServerConfig {
   id?: string;
 }
 
+/** Stable identity for saved servers, with a legacy/unsaved name fallback. */
+export function getMcpServerKey(server: Pick<McpServerConfig, 'id' | 'name'>): string {
+  return server.id ?? server.name;
+}
+
 /** Server with status and tools */
 export interface McpServerWithStatus extends McpServerConfig {
   status: McpServerStatus;

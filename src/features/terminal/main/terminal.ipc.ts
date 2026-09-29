@@ -278,6 +278,7 @@ class DaemonTerminalRegistry {
       try {
         await getClientForBackend(this.backendId).request('terminal.kill', {
           terminalId: terminal.daemonTerminalId,
+          workspaceId: terminal.workspaceId,
         });
       } catch (error) {
         logger.warn('[Terminal] terminal.kill failed', {
@@ -301,7 +302,10 @@ class DaemonTerminalRegistry {
     for (const terminal of this.terminals.values()) {
       if (terminal.isAlive) {
         getClientForBackend(this.backendId)
-          .request('terminal.kill', { terminalId: terminal.daemonTerminalId })
+          .request('terminal.kill', {
+            terminalId: terminal.daemonTerminalId,
+            workspaceId: terminal.workspaceId,
+          })
           .catch(() => {});
       }
     }
@@ -473,6 +477,7 @@ export function registerTerminalHandlers() {
               try {
                 await getClientForBackend(backendId).request('terminal.resize', {
                   terminalId: existing.daemonTerminalId,
+                  workspaceId: existing.workspaceId,
                   cols,
                   rows,
                 });
@@ -582,6 +587,7 @@ export function registerTerminalHandlers() {
         try {
           await getClientForBackend(backendId).request('terminal.write', {
             terminalId: terminal.daemonTerminalId,
+            workspaceId: terminal.workspaceId,
             data: encodeBase64(data),
           });
           return { success: true };
@@ -612,6 +618,7 @@ export function registerTerminalHandlers() {
         try {
           await getClientForBackend(backendId).request('terminal.resize', {
             terminalId: terminal.daemonTerminalId,
+            workspaceId: terminal.workspaceId,
             cols,
             rows,
           });
@@ -673,6 +680,7 @@ export function registerTerminalHandlers() {
         try {
           await getClientForBackend(backendId).request('terminal.write', {
             terminalId: terminal.daemonTerminalId,
+            workspaceId: terminal.workspaceId,
             data: encodeBase64('\r'),
           });
           return { success: true };
@@ -841,6 +849,7 @@ async function createTerminalFromBackend(options: {
       client
         .request('terminal.write', {
           terminalId: spawn.terminal.daemonTerminalId,
+          workspaceId,
           data: encodeBase64(payload),
         })
         .catch((error) => {

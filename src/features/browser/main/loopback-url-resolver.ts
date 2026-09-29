@@ -13,6 +13,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { relayErrorMessage } from '../../backend/main/json-rpc-errors';
 import { TunnelForbiddenError } from '../../backend/main/tunnel-manager';
 import {
   classifyLoopbackHost,
@@ -25,6 +26,17 @@ const logger = new Logger('LoopbackUrlResolver');
 
 /** Timeout for the remote-rewrite reachability probe. */
 const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
+
+/** Preserve the failed stage's detail without exposing credentials or arbitrary error data. */
+function tunnelFailureDetail(error: unknown): string {
+  const detail = relayErrorMessage(error);
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (cause instanceof Error || typeof cause === 'string') {
+    const causeDetail = relayErrorMessage(cause);
+    if (causeDetail !== detail) return `${detail} (${causeDetail})`;
+  }
+  return detail;
+}
 
 /**
  * Minimal tunnel surface the resolver and the `browser.exec` tunnel actions
@@ -225,13 +237,17 @@ export async function resolveRewrittenRemoteTarget(
   // The getter may lazily construct the provider; a construction failure
   // must degrade to the best-effort error result below, not reject.
   let tunnel: TunnelProvider | null = null;
+  // i18n-ignore (agent-facing protocol diagnostic)
+  let forwardingFailure = 'tunnel provider is unavailable';
   try {
     tunnel = getTunnelProvider?.() ?? null;
   } catch (providerError) {
+    // i18n-ignore (agent-facing protocol diagnostic)
+    forwardingFailure = `tunnel provider failed: ${tunnelFailureDetail(providerError)}`;
     logger.warn('Tunnel provider unavailable for rewritten remote URL', {
       requestedUrl: rewrite.requestedUrl,
       rewrittenUrl: rewrite.url,
-      error: providerError instanceof Error ? providerError.message : String(providerError),
+      error: forwardingFailure,
     });
   }
   if (tunnel) {
@@ -278,11 +294,13 @@ export async function resolveRewrittenRemoteTarget(
         tunneled: true,
       };
     } catch (tunnelError) {
+      // i18n-ignore (agent-facing protocol diagnostic)
+      forwardingFailure = `tunnel forwarding failed: ${tunnelFailureDetail(tunnelError)}`;
       logger.warn('Tunnel fallback failed for rewritten remote URL', {
         requestedUrl: rewrite.requestedUrl,
         rewrittenUrl: rewrite.url,
         remotePort: Number(port),
-        error: tunnelError instanceof Error ? tunnelError.message : String(tunnelError),
+        error: forwardingFailure,
       });
       // Owner-only refusal (multiplayer w3): a collaborator credential can
       // never forward, so the reachability lecture below does not apply.
@@ -303,7 +321,7 @@ export async function resolveRewrittenRemoteTarget(
     tunneled: false,
     error: rewrite.requiresTunnel
       ? // i18n-ignore (agent-facing protocol error, not user-facing)
-        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel because the saved remote transport endpoint is client loopback, but port ${port} could not be forwarded (${detail}).` // i18n-ignore (agent-facing protocol error)
+        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel because the saved remote transport endpoint is client loopback, but port ${port} could not be forwarded (${forwardingFailure}).` // i18n-ignore (agent-facing protocol error)
       : // i18n-ignore (agent-facing protocol error, not user-facing)
         `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` + // i18n-ignore (agent-facing protocol error)
         // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -311,7 +329,7 @@ export async function resolveRewrittenRemoteTarget(
         // i18n-ignore (agent-facing protocol error, not user-facing)
         `The server on the daemon machine is likely listening on 127.0.0.1 only — it must bind 0.0.0.0 to accept remote ` +
         // i18n-ignore (agent-facing protocol error, not user-facing)
-        `connections — or a firewall is blocking port ${port}.`,
+        `connections — or a firewall is blocking port ${port}. Tunnel fallback: ${forwardingFailure}.`,
   };
 }
 

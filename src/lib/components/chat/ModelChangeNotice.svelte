@@ -13,14 +13,19 @@
   import { formatModelChangeLabel, type ModelChangeNoticeInfo } from './model-change-notice';
 
   interface Props {
+    workspaceId?: string;
     notice: ModelChangeNoticeInfo;
     /** Fallback text (message content) when the metadata fields are absent. */
     fallbackText?: string;
   }
 
-  let { notice, fallbackText = m.chat_modelChangeNotice_fallback_label() }: Props = $props();
+  let {
+    notice,
+    workspaceId,
+    fallbackText = m.chat_modelChangeNotice_fallback_label(),
+  }: Props = $props();
 
-  const label = $derived(formatModelChangeLabel(notice, fallbackText));
+  const label = $derived(formatModelChangeLabel(notice, fallbackText, workspaceId));
 </script>
 
 <div class="model-change-notice my-4 flex w-full min-w-0 items-center gap-3" role="status">

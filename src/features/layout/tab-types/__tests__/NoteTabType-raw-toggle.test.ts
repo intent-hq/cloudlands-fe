@@ -423,7 +423,7 @@ $$\frac{1}{2}$$
     });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    const fontMenu = screen.getByRole('menuitem', { name: /Font Style/i });
+    const fontMenu = screen.getByRole('menuitem', { name: /^Font/ });
     fontMenu.focus();
     await fireEvent.keyDown(fontMenu, { key: 'ArrowRight' });
 

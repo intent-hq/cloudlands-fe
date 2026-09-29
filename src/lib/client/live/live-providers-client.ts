@@ -1,7 +1,7 @@
 /**
  * Live providers domain backed by the intentd daemon (PROTOCOL §5.38).
  *
- * `providers.catalog` is daemon-global (no `workspaceId`, `{}` params) and
+ * `providers.catalog` is daemon-owned (optional `workspaceId` routing context) and
  * returns the full static provider registry — every registered row (gated-off
  * included, `visible` carries the daemon-evaluated verdict) in registry
  * order. The data is compiled into the daemon, so the result only changes
@@ -22,10 +22,8 @@ import type { AppClient, ProvidersClient } from '../app-client';
 import { backendRequest } from './backend-transport';
 
 export class LiveProvidersClient implements ProvidersClient {
-  async catalog(): Promise<ProviderCatalogResult> {
-    // Parsing the empty params is living documentation that §5.38 takes no
-    // parameters — the strict schema throws if anything is ever added here.
-    const params = ProviderCatalogRequestSchema.parse({});
+  async catalog(workspaceId?: string): Promise<ProviderCatalogResult> {
+    const params = ProviderCatalogRequestSchema.parse(workspaceId ? { workspaceId } : {});
     const result = await backendRequest<unknown>(PROVIDERS_CATALOG_METHOD, params);
     return ProviderCatalogResponseSchema.parse(result);
   }

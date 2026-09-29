@@ -22,10 +22,11 @@ permissions:
   # Needed by the notifier step's `gh pr view` calls (GH_TOKEN=github.token)
   pull-requests: read
 
-# Never cancel a release in progress
+# Shared with source releases, promotions and cleanup. Queue pending writers.
 concurrency:
   group: cloudlands-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   # Tag resolution/validation, the package.json version check, and the

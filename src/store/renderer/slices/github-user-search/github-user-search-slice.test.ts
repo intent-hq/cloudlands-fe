@@ -76,12 +76,16 @@ describe('githubUserSearchReducer', () => {
 
   it('resets to initial state on clear', () => {
     const populated = {
+      ...initialState,
       results: createCollection<GithubUserSearchItem, 'login'>('login', [mockUser('octocat', 1)]),
       loading: false,
       error: null,
       lastQuery: 'octo',
     };
 
-    expect(githubUserSearchReducer(populated, clearGithubUserSearch())).toEqual(initialState);
+    expect(githubUserSearchReducer(populated, clearGithubUserSearch())).toEqual({
+      ...initialState,
+      revision: populated.revision + 1,
+    });
   });
 });
