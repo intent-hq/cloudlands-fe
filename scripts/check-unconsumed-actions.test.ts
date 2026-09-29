@@ -418,3 +418,179 @@ describe('unconsumed action guard', () => {
     expect(wholeSlice.violations).toEqual([]);
   });
 });
+
+describe('selection predicates with immutable payload bindings', () => {
+  const choices = '(action.type === a.type || action.type === b.type || action.type === c.type)';
+  const bindings = 'const first = action.payload?.[0]; const candidate = first as Edit;';
+  const inspect = (
+    body: string,
+    {
+      parameters = '',
+      effectImport = "import { actionChannel } from 'typed-redux-saga';",
+      callee = 'actionChannel',
+    } = {},
+  ) =>
+    inspectUnconsumedActions(
+      [
+        slice(
+          [],
+          ["export const c = createAction('demo/c');", "export const d = createAction('demo/d');"],
+        ),
+        {
+          path: SAGA,
+          content: [
+            SAGA_IMPORT,
+            effectImport,
+            "import { a, b, c, d } from '../demo-slice';",
+            `export function* demoSaga(${parameters}) {`,
+            "yield* put(a({ id: 'x' })); yield* put(b()); yield* put(c()); yield* put(d());",
+            `yield* ${callee}((action: { type: string; payload?: unknown[] }) => { ${body} });`,
+            '}',
+          ].join('\n'),
+        },
+      ],
+      noExceptions,
+    );
+  const missing = (result: ReturnType<typeof inspect>) =>
+    result.violations.map((violation) => /action (\w+) is dispatched/.exec(violation)?.[1]);
+
+  it('recognizes all three final alternatives in the accepted guarded selection shape', () => {
+    const result = inspect(`
+      const first = action.payload?.[0];
+      if (action.type === workspaceUnmounted.type) return first === owner.root.workspaceId;
+      if (!first || typeof first !== 'object' || !('root' in first) ||
+          !('editId' in first) || !('admission' in first)) return false;
+      const candidate = first as Edit;
+      if (candidate.admission !== admission || !candidate.root) return false;
+      if (action.type === editRequested.type)
+        return candidate.editId !== owner.editId && rootKey(candidate.root) === rootKey(owner.root);
+      return same(candidate, owner) && ${choices};
+    `);
+    expect(missing(result)).toEqual(['d']);
+    expect(result.actionCount).toBe(4);
+    expect(result.dispatchedCount).toBe(4);
+    expect(result.exceptionCount).toBe(0);
+  });
+
+  it.each([
+    `${bindings} return same(candidate, owner) && ${choices};`,
+    `${bindings} return ${choices} && same(candidate, owner);`,
+    'const payload = action.payload; const first = payload[0]; const candidate = <Edit>first; return same(candidate, owner) && ' +
+      choices +
+      ';',
+    'const first: unknown = (action.payload?.[0]); const candidate = (first as Edit); return ' +
+      choices +
+      ';',
+  ])('recognizes only payload-derived immutable local bindings: %s', (body) => {
+    expect(missing(inspect(body))).toEqual(['d']);
+  });
+
+  it.each([
+    `${bindings} return action.type === a.type;`,
+    `${bindings} return action.type === a.type && same(candidate, owner);`,
+    `${bindings} if (action.type !== a.type) return false; return action.type === a.type;`,
+  ])('keeps the original direct and conjunctive forms with bindings: %s', (body) => {
+    expect(missing(inspect(body))).toEqual(['b', 'c', 'd']);
+  });
+
+  it('does not credit an explicitly rejected or contradictory alternative', () => {
+    expect(
+      missing(inspect(`${bindings} if (action.type === b.type) return false; return ${choices};`)),
+    ).toEqual(['b', 'd']);
+    expect(missing(inspect(`${bindings} return ${choices} && action.type !== b.type;`))).toEqual([
+      'b',
+      'd',
+    ]);
+  });
+
+  it.each([
+    ['true accepting arm', `${bindings} return same(candidate, owner) && (${choices} || true);`],
+    ['unknown accepting arm', `${bindings} return same(candidate, owner) && (${choices} || flag);`],
+    ['broad accepting arm', `${bindings} return ${choices} || action.type.startsWith('demo/');`],
+    [
+      'unknown inside disjunction',
+      `${bindings} return (action.type === a.type || candidate) && same(candidate, owner);`,
+    ],
+    ['false conjunction', `${bindings} return ${choices} && false;`],
+    ['contradictory conjunction', `${bindings} return ${choices} && action.type === d.type;`],
+    ['always-blocking guard', `${bindings} if (true) return false; return ${choices};`],
+    [
+      'attempted constant guard alias',
+      `const blocked = true; if (blocked) return false; return ${choices};`,
+    ],
+    [
+      'asserted constant guard alias',
+      `const blocked = (true as boolean); if (blocked) return false; return ${choices};`,
+    ],
+    [
+      'computed constant guard alias',
+      `${bindings} const blocked = !!first || true; if (blocked) return false; return ${choices};`,
+    ],
+    [
+      'unused equality declaration',
+      `const unused = action.type === a.type; return action.type === b.type;`,
+    ],
+    [
+      'unused equality statement',
+      `${bindings} action.type === a.type; return action.type === b.type;`,
+    ],
+    ['guard-only comparison', `${bindings} if (action.type === a.type) return false; return true;`],
+    ['mutable let binding', `let first = action.payload?.[0]; return ${choices};`],
+    ['mutable var binding', `var first = action.payload?.[0]; return ${choices};`],
+    ['missing initializer', `const first; return ${choices};`],
+    ['destructured binding', `const [first] = action.payload; return ${choices};`],
+    ['foreign payload binding', `const first = other.payload?.[0]; return ${choices};`],
+    ['call initializer', `const first = selectPayload(action); return ${choices};`],
+    ['dynamic element access', `const first = action.payload[index]; return ${choices};`],
+    ['fallback initializer', `const first = action.payload?.[0] || {}; return ${choices};`],
+    [
+      'unasserted local alias',
+      `const first = action.payload?.[0]; const candidate = first; return ${choices};`,
+    ],
+    ['whole-parameter alias', `const alias = action as Edit; return ${choices};`],
+    [
+      'forward local alias',
+      `const candidate = first as Edit; const first = action.payload?.[0]; return ${choices};`,
+    ],
+    [
+      'unsupported sibling declaration',
+      `const first = action.payload?.[0], flag = true; return ${choices};`,
+    ],
+    ['parameter mutation', `${bindings} action = other; return ${choices};`],
+    ['payload mutation', `${bindings} candidate.root = other; return ${choices};`],
+    ['action import shadowing', `const a = action.payload?.[0] as Edit; return ${choices};`],
+    ['parameter shadowing', `const action = other.payload; return ${choices};`],
+    ['nested function', `${bindings} const nested = () => true; return ${choices};`],
+    ['nested returned body', `${bindings} return (() => ${choices})();`],
+    ['nested block', `${bindings} { const ignored = action.payload; } return ${choices};`],
+    [
+      'nested guard control flow',
+      `${bindings} if (flag) { if (other) return false; } return ${choices};`,
+    ],
+  ])('keeps %s uncredited', (_name, body) => {
+    expect(missing(inspect(body))).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('requires original module-bound effect and action symbols with local bindings', () => {
+    const body = `${bindings} return same(candidate, owner) && ${choices};`;
+    expect(missing(inspect(body, { parameters: 'actionChannel' }))).toEqual(['a', 'b', 'c', 'd']);
+    expect(missing(inspect(body, { parameters: 'a' }))).toEqual(['a', 'b', 'c', 'd']);
+    const namespace = {
+      effectImport: "import * as effects from 'typed-redux-saga';",
+      callee: 'effects.actionChannel',
+    };
+    expect(missing(inspect(body, namespace))).toEqual(['d']);
+    expect(missing(inspect(body, { ...namespace, parameters: 'effects' }))).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+    expect(missing(inspect(body, { effectImport: 'const actionChannel = unrelated;' }))).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+  });
+});

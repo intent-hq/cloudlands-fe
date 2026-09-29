@@ -269,6 +269,46 @@ function inlineChannelOrigins(source, predicate, callee, checker, resolvePattern
     return undefined;
   };
 
+  // Only immutable projections of this parameter's payload may introduce locals.
+  // Assertions can narrow an already attributed local; arbitrary aliases and
+  // computed initializers never supply action origins or guard truth values.
+  const payloadSymbols = new Set();
+  const payloadValue = (expression, asserted = false) => {
+    expression = unparenthesized(expression);
+    if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression))
+      return payloadValue(expression.expression, true);
+    if (ts.isIdentifier(expression))
+      return asserted && payloadSymbols.has(checker.getSymbolAtLocation(expression));
+    if (ts.isPropertyAccessExpression(expression)) {
+      if (
+        expression.name.text === 'payload' &&
+        ts.isIdentifier(expression.expression) &&
+        checker.getSymbolAtLocation(expression.expression) === parameterSymbol
+      )
+        return true;
+      return payloadValue(expression.expression, true);
+    }
+    return (
+      ts.isElementAccessExpression(expression) &&
+      (ts.isNumericLiteral(expression.argumentExpression) ||
+        ts.isStringLiteralLike(expression.argumentExpression)) &&
+      payloadValue(expression.expression, true)
+    );
+  };
+  const alternatives = (expression) => {
+    expression = unparenthesized(expression);
+    if (!ts.isBinaryExpression(expression)) return undefined;
+    if (expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+      const origin = typeOrigin(expression);
+      return origin ? [origin] : undefined;
+    }
+    if (expression.operatorToken.kind !== ts.SyntaxKind.BarBarToken) return undefined;
+    const left = alternatives(expression.left);
+    const right = alternatives(expression.right);
+    // Every accepting arm must explicitly name an original-parameter type.
+    return left && right ? [...left, ...right] : undefined;
+  };
+
   let returned = predicate.body;
   const guards = [];
   if (ts.isBlock(returned)) {
@@ -276,6 +316,21 @@ function inlineChannelOrigins(source, predicate, callee, checker, resolvePattern
     const last = statements.at(-1);
     if (!last || !ts.isReturnStatement(last) || !last.expression) return [];
     for (const statement of statements.slice(0, -1)) {
+      if (ts.isVariableStatement(statement)) {
+        if (!(statement.declarationList.flags & ts.NodeFlags.Const)) return [];
+        for (const declaration of statement.declarationList.declarations) {
+          if (
+            !ts.isIdentifier(declaration.name) ||
+            !declaration.initializer ||
+            !payloadValue(declaration.initializer)
+          )
+            return [];
+          const symbol = checker.getSymbolAtLocation(declaration.name);
+          if (!symbol || symbol === parameterSymbol || payloadSymbols.has(symbol)) return [];
+          payloadSymbols.add(symbol);
+        }
+        continue;
+      }
       if (!ts.isIfStatement(statement) || statement.elseStatement) return [];
       let branch = statement.thenStatement;
       if (ts.isBlock(branch) && branch.statements.length === 1) branch = branch.statements[0];
@@ -284,16 +339,7 @@ function inlineChannelOrigins(source, predicate, callee, checker, resolvePattern
     }
     returned = last.expression;
   }
-  const origins = new Set(
-    conjuncts(returned)
-      .filter(
-        (part) =>
-          ts.isBinaryExpression(part) &&
-          part.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken,
-      )
-      .map((part) => typeOrigin(part))
-      .filter(Boolean),
-  );
+  const origins = new Set(conjuncts(returned).flatMap((part) => alternatives(part) ?? []));
   return [...origins].filter(
     (origin) =>
       truth(returned, origin) !== false && guards.every((guard) => truth(guard, origin) !== true),
