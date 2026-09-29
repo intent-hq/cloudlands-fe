@@ -348,6 +348,185 @@
     | { id: number; revision: number; caller: 'settlement' | 'changeState'; write: number }
     | undefined;
 
+  // Diagnostic only: observe existing resize deliveries in the selected catalog host.
+  type ResizeDeliveryToken6036 = {
+    capture: ResizeDeliveryCapture6036;
+    target: Element;
+    host: Element;
+    emitter: Element;
+    emitterId: number;
+    sequence: number;
+  };
+  type ResizeDeliveryCapture6036 = {
+    target: Element | null;
+    records: (Record<string, unknown> | null)[];
+    count: number;
+    segment: string;
+    serializedUnits: number;
+    overflow: boolean;
+    incomplete: boolean;
+    resizeDelivery6036?: {
+      target: Element;
+      host: Element;
+      emitters: WeakMap<Element, number>;
+      emitterCount: number;
+      sequence: number;
+      recordCount: number;
+      units: number;
+    };
+  };
+
+  function observeResizeDelivery6036(
+    phase: 'before' | 'after',
+    entries: ResizeObserverEntry[],
+    resizeLane: Element,
+    token?: ResizeDeliveryToken6036 | null,
+  ): ResizeDeliveryToken6036 | null {
+    return untrack(() => {
+      const capture = (
+        globalThis as typeof globalThis & {
+          __walkthroughSettlement6036?: ResizeDeliveryCapture6036;
+        }
+      ).__walkthroughSettlement6036;
+      if (phase === 'after' && !token) return null;
+      if (token && (capture !== token.capture || capture?.target !== token.target)) {
+        token.capture.incomplete = true;
+        if (capture) capture.incomplete = true;
+        return null;
+      }
+      if (!capture?.target || !rendererEl) {
+        if (token) token.capture.incomplete = true;
+        return null;
+      }
+      try {
+        const target = capture.target;
+        const host = target.closest('[data-testid="catalog-scene-focus"]');
+        if (!host || !target.isConnected) {
+          capture.incomplete = true;
+          return null;
+        }
+        if (rendererEl.closest('[data-testid="catalog-scene-focus"]') !== host) {
+          if (token) capture.incomplete = true;
+          return null;
+        }
+        if (
+          capture.overflow ||
+          capture.count >= 4096 ||
+          capture.serializedUnits >= 2 * 1024 * 1024
+        ) {
+          capture.overflow = capture.incomplete = true;
+          return null;
+        }
+        const ledger = (capture.resizeDelivery6036 ??= {
+          target,
+          host,
+          emitters: new WeakMap<Element, number>(),
+          emitterCount: 0,
+          sequence: 0,
+          recordCount: 0,
+          units: 0,
+        });
+        if (ledger.target !== target || ledger.host !== host) {
+          capture.incomplete = true;
+          return null;
+        }
+        if (phase === 'before') {
+          let emitterId = ledger.emitters.get(rendererEl);
+          if (emitterId === undefined) {
+            if (ledger.emitterCount >= 64) {
+              capture.overflow = capture.incomplete = true;
+              return null;
+            }
+            emitterId = ++ledger.emitterCount;
+            ledger.emitters.set(rendererEl, emitterId);
+          }
+          if (ledger.sequence >= 128) {
+            capture.overflow = capture.incomplete = true;
+            return null;
+          }
+          token = {
+            capture,
+            target,
+            host,
+            emitter: rendererEl,
+            emitterId,
+            sequence: ++ledger.sequence,
+          };
+        }
+        if (!token || token.emitter !== rendererEl || token.host !== host) {
+          capture.incomplete = true;
+          return null;
+        }
+        if (
+          entries.some((entry) => entry.target !== scrollContainerEl && entry.target !== resizeLane)
+        ) {
+          capture.incomplete = true;
+          return null;
+        }
+        if (entries.length > 2 || typeof diagram.id !== 'string' || diagram.id.length > 256) {
+          capture.overflow = capture.incomplete = true;
+          return null;
+        }
+        const readStartedAt = performance.now();
+        const rect = (element: Element) => {
+          const box = element.getBoundingClientRect();
+          return [box.x, box.y, box.width, box.height];
+        };
+        const documentElement = target.ownerDocument.scrollingElement;
+        const record = {
+          sampledAt: performance.now(),
+          decision: 'resize-delivery',
+          segment: capture.segment,
+          resizeDelivery: {
+            phase,
+            sequence: token.sequence,
+            emitterId: token.emitterId,
+            emitterIsTarget: rendererEl === target,
+            diagramId: diagram.id,
+            site: 'DiagramRenderer:ResizeObserver:updateFitScale+flushSync',
+            emitterRevision: settlementRevision,
+            emitterTransitionRevision: transitionRevision,
+            layoutResizeRevision,
+            emitterState: currentStateId,
+            emitterPhase: motionPhase,
+            inputs: { noteLaneWidth, scrollContainerWidth, layoutWidthLimit, fitScale, resizing },
+            deliveredEntries: entries.map((entry) => ({
+              target: entry.target === scrollContainerEl ? 'scroll-container' : 'resize-lane',
+              width: entry.contentRect.width,
+              height: entry.contentRect.height,
+            })),
+            emitterRect: rect(rendererEl),
+            targetRect: rect(target),
+            hostRect: rect(host),
+            documentScroll: documentElement
+              ? [documentElement.scrollLeft, documentElement.scrollTop]
+              : null,
+            readStartedAt,
+            readEndedAt: performance.now(),
+          },
+        };
+        record.sampledAt = performance.now();
+        const units = JSON.stringify(record).length;
+        if (
+          ledger.recordCount >= 256 ||
+          ledger.units + units > 128 * 1024 ||
+          capture.serializedUnits + units > 2 * 1024 * 1024
+        ) {
+          capture.overflow = capture.incomplete = true;
+          return null;
+        }
+        ledger.recordCount += 1;
+        ledger.units += units;
+        capture.serializedUnits += units;
+        capture.records[capture.count++] = record;
+        return token;
+      } catch {
+        capture.incomplete = true;
+        return null;
+      }
+    });
+  }
+
   function observeStepViewport6036(
     phase: 'settlement-before' | 'step-before' | 'call-after' | 'write-before' | 'write-after',
     revision?: number,
@@ -1249,7 +1428,8 @@
       scrollContainerWidth = scrollContainerEl!.clientWidth;
       updateFitScale();
     });
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
+      const resizeDelivery6036 = observeResizeDelivery6036('before', entries, resizeLane);
       if (
         automaticallyFitState &&
         scrollContainerWidth !== null &&
@@ -1280,6 +1460,7 @@
           resizeFrame = undefined;
         });
       }
+      observeResizeDelivery6036('after', entries, resizeLane, resizeDelivery6036);
     });
     observer.observe(scrollContainerEl);
     if (resizeLane !== scrollContainerEl) observer.observe(resizeLane);
