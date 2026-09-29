@@ -250,7 +250,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -775,12 +775,6 @@
     }
   }
   let scrollButtonVisibility: ReturnType<typeof createScrollBottomButtonVisibility> | null = null;
-  // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
-  // scrolling crosses back to the bottom and auto-follow re-engages. Purely
-  // decorative (aria-hidden, pointer-events-none) so it can never intercept
-  // hover hit-tests or land in the tab order (monorepo#2508).
-  let showLockConfirmation = $state(false);
-  let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
   const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
   const activeAnimationFrames = new Map<number, (active: boolean) => void>();
 
@@ -817,25 +811,6 @@
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
     cancelActiveFrames();
-  });
-  const LOCK_CONFIRMATION_DURATION_MS = 1500;
-
-  function flashLockConfirmation(): void {
-    if (!isActive) return;
-    if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
-    showLockConfirmation = true;
-    lockConfirmationTimer = setTimeout(() => {
-      if (!isActive) return;
-      showLockConfirmation = false;
-      lockConfirmationTimer = null;
-    }, LOCK_CONFIRMATION_DURATION_MS);
-  }
-
-  $effect(() => {
-    if (isActive || lockConfirmationTimer === null) return;
-    clearTimeout(lockConfirmationTimer);
-    lockConfirmationTimer = null;
-    showLockConfirmation = false;
   });
 
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
@@ -4702,7 +4677,6 @@
       onVisibilityChange: (visible) => {
         showScrollToBottom = visible;
       },
-      onRelock: flashLockConfirmation,
     });
     scrollButtonVisibility.update(distanceFromBottom);
 
@@ -4883,10 +4857,6 @@
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
     cancelAllSendTransitions();
-    if (lockConfirmationTimer !== null) {
-      clearTimeout(lockConfirmationTimer);
-      lockConfirmationTimer = null;
-    }
     if (cachedScrollRestoreRetryFrame !== null) {
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
@@ -6994,19 +6964,6 @@
         </div>
       </div>
     {/if}
-    {#if showLockConfirmation}
-      <!-- Transient re-lock confirmation: purely decorative feedback that
-           auto-follow re-engaged on reaching the bottom. Never interactive:
-           aria-hidden keeps it out of the accessibility tree and
-           pointer-events-none out of hover hit-tests (monorepo#2508). -->
-      <div
-        aria-hidden="true"
-        data-testid="chat-scroll-lock-confirmation"
-        class="lock-confirmation pointer-events-none absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-sm border border-border bg-sidebar text-muted-foreground"
-      >
-        <Fa icon={faLock} class="w-3! h-3!" />
-      </div>
-    {/if}
   </div>
 
   <!-- Message Input with Aurora Background -->
@@ -7251,29 +7208,12 @@
     animation: highlight-flash calc(var(--spring-slow) * 6) var(--spring-exit-ease);
   }
 
-  /* Transient scroll re-lock confirmation: hold briefly, then fade out.
-     Forwards fill keeps it invisible until the element unmounts. */
-  .lock-confirmation {
-    animation: lock-confirmation-fade calc(var(--spring-slow) * 6) var(--spring-exit-ease) forwards;
-  }
-
   @container style(--motion-reduced: 1) {
-    .lock-confirmation,
     :global(.message-highlight-flash),
     :global(.highlight-flash),
     .input-flash :global(.rich-input-container) {
       animation: none;
       opacity: 0.9;
-    }
-  }
-
-  @keyframes lock-confirmation-fade {
-    0%,
-    40% {
-      opacity: 0.9;
-    }
-    100% {
-      opacity: 0;
     }
   }
 
