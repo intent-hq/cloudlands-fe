@@ -6848,5 +6848,6 @@
   "inviteConsent_account_choose_title": "アカウントを選択",
   "inviteConsent_account_choose_description": "この招待で使用する保存済みアカウントを選択してください。",
   "inviteConsent_returning_description": "このホストに保存された個人用認証情報を使用します。Gitサービスへの再ログインや新たな本人確認は必要ありません。",
-  "settings_backendSync_invitedPending": "招待セッションの同期は保留中です。Intent が再試行します。"
+  "settings_backendSync_invitedPending": "招待セッションの同期は保留中です。Intent が再試行します。",
+  "workspace_client_accessChanged_error": "ワークスペースへのアクセスが変更されました。再接続後に操作を開き直してください。"
 }

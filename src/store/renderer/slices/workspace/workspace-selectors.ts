@@ -22,6 +22,7 @@ import {
   selectHostRole,
   selectPrincipalSnapshot,
   selectPrincipalRevoked,
+  selectPrincipalActionContext,
 } from '../principal/principal-selectors';
 import type {
   WorkflowStage,
@@ -170,7 +171,7 @@ export const selectCanManageWorkspace = store.createSelector<[wsId: string], boo
   (state, wsId) => {
     const snapshot = selectPrincipalSnapshot.select(state);
     const role = selectHostRole.select(state);
-    if (!snapshot || (role !== 'owner' && role !== 'member')) return false;
+    if (!snapshot || role === null) return false;
     // Virtual host administration never inherits member workspace rights.
     if (wsId === CHIEF_WORKSPACE_ID) return role === 'owner';
     const workspace = selectWorkspaceById.select(state, wsId);
@@ -180,8 +181,10 @@ export const selectCanManageWorkspace = store.createSelector<[wsId: string], boo
         workspace?.canManage === true
       );
     }
-    // Explicit legacy owner behavior only; a legacy guest never acquires member rights.
-    return role === 'owner' && workspace?.myRole !== 'collaborator';
+    // A guest may retain ownership of one workspace without owning the host.
+    return (
+      workspace?.myRole === 'owner' || (role === 'owner' && workspace?.myRole !== 'collaborator')
+    );
   },
 );
 
@@ -191,7 +194,6 @@ export const selectWorkspaceManagementDenied = store.createSelector<[wsId: strin
     if (selectPrincipalRevoked.select(state)) return true;
     const role = selectHostRole.select(state);
     if (role === null) return false;
-    if (role === 'guest') return true;
     if (wsId === CHIEF_WORKSPACE_ID) return role !== 'owner';
     const workspace = selectWorkspaceById.select(state, wsId);
     if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
@@ -223,7 +225,7 @@ export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: stri
 /** Actual ownership stays distinct from management; members remain collaborators. */
 export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
-    selectCanAdministerHost.select(state) &&
+    !!selectPrincipalSnapshot.select(state) &&
     selectWorkspaceById.select(state, wsId)?.myRole === 'owner',
 );
 
@@ -792,3 +794,40 @@ export const selectWorkspaceProgressActions = store.createSelector<
       return [];
   }
 });
+
+/** Current workspace management proof; never inferred from an open tab or remembered dialog. */
+export const selectWorkspaceActionContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectWorkspaceManagementVisible.select(state, wsId)
+      ? selectPrincipalActionContext.select(state)
+      : null,
+);
+
+/** Collaborators retain ordinary chat/permission rights, without management authority. */
+export const selectWorkspaceParticipationContext = store.createSelector<
+  [wsId: string],
+  string | null
+>((state, wsId) => {
+  const snapshot = selectPrincipalSnapshot.select(state);
+  if (!snapshot) return null;
+  if (
+    snapshot.capabilities.hostMembership &&
+    !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
+  )
+    return null;
+  if (wsId === CHIEF_WORKSPACE_ID && !selectCanAdministerHost.select(state)) return null;
+  if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
+    return null;
+  const row = selectWorkspaceById.select(state, wsId);
+  if (!row || (row.myRole !== 'owner' && row.myRole !== 'collaborator' && row.canManage !== true))
+    return null;
+  return selectPrincipalActionContext.select(state);
+});
+
+/** Current shared-host prompt service uses canManage; legacy guest prompts keep their wire rights. */
+export const selectWorkspacePermissionContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
+      ? selectWorkspaceActionContext.select(state, wsId)
+      : selectWorkspaceParticipationContext.select(state, wsId),
+);

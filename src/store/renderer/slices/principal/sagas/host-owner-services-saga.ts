@@ -1,7 +1,9 @@
-import { all, call, put } from 'typed-redux-saga';
+import { all, call, fork, put } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { selectHostAdministrationContext } from '../principal-selectors';
 import { initializeGitHubAuth, logoutCompleted } from '../../github-auth/github-auth-slice';
+import { initializeGitLabAuth, resetGitLabAdmission } from '../../gitlab-auth/gitlab-auth-slice';
+import { gitlabAuthSaga } from '../../gitlab-auth/sagas/gitlab-auth-saga';
 import { githubAuthSaga } from '../../github-auth/sagas/github-auth-saga';
 import { actionKeySaga } from '../../hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from '../../hardware-console/sagas/hardware-console-device-saga';
@@ -31,9 +33,13 @@ export function* hostOwnerServicesSaga() {
   yield* takeLatestFromSelector(
     selectHostAdministrationContext,
     function* ({ payload }: SelectorChannelPayload<string | null>) {
+      yield* put(resetGitLabAdmission());
       yield* put(logoutCompleted());
       yield* put(hostRequirementsReset());
       if (!payload) return;
+      // Start listeners before dispatch; admission, not a lab toggle, owns the cold read.
+      yield* fork(gitlabAuthSaga);
+      yield* put(initializeGitLabAuth(undefined, 'status-only'));
       yield* all([
         call(hostRequirementsSaga),
         call(hardwareConsoleSaga),

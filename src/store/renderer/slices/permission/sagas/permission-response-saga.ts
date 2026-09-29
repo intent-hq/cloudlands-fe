@@ -1,4 +1,5 @@
-import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { permissionRecoverySaga } from './permission-recovery-saga';
+import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { appClient, type PermissionOutcome } from '$lib/client';
@@ -10,6 +11,7 @@ import {
   removePermissionRequest,
   selectPermissionOption,
 } from '../permission-slice';
+import { selectWorkspacePermissionContext } from '../../workspace/workspace-selectors';
 import { selectPermissionRequestsCollection } from '../permission-selectors';
 
 const logger = createLogger('PermissionResponseSaga');
@@ -17,7 +19,9 @@ const logger = createLogger('PermissionResponseSaga');
 function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<void> {
   const requests = yield* selectPermissionRequestsCollection.effect();
   const request = getItem(requests, requestId);
-  if (!request) return;
+  if (!request?.workspaceId) return;
+  const context = yield* selectWorkspacePermissionContext.effect(request.workspaceId);
+  if (!context) return;
   try {
     const result = yield* call(
       [appClient.agents, appClient.agents.respondPermission],
@@ -25,6 +29,8 @@ function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<
       outcome,
       request.workspaceId,
     );
+    if (context !== (yield* selectWorkspacePermissionContext.effect(request.workspaceId))) return;
+    if (getItem(yield* selectPermissionRequestsCollection.effect(), requestId) !== request) return;
     if (result.success) yield* put(removePermissionRequest(requestId));
     else logger.error('Permission response failed', { requestId, outcome, error: result.error });
   } catch (error) {
@@ -62,6 +68,7 @@ function* handleOptionSelection(
 }
 
 export function* permissionResponseSaga(): SagaGenerator<void> {
+  yield* fork(permissionRecoverySaga);
   yield* takeEvery(approvePermission, approve);
   yield* takeEvery(denyPermission, deny);
   yield* takeEvery(cancelPermission, cancelRequest);

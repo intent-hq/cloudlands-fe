@@ -6848,5 +6848,6 @@
   "inviteConsent_account_choose_title": "Elige una cuenta",
   "inviteConsent_account_choose_description": "Elige la cuenta guardada que usarás para esta invitación.",
   "inviteConsent_returning_description": "Intent usará la credencial personal guardada para este host. No hace falta iniciar sesión ni demostrar tu identidad de nuevo en el proveedor de Git.",
-  "settings_backendSync_invitedPending": "La sincronización de sesiones invitadas está pendiente. Intent lo volverá a intentar."
+  "settings_backendSync_invitedPending": "La sincronización de sesiones invitadas está pendiente. Intent lo volverá a intentar.",
+  "workspace_client_accessChanged_error": "El acceso al espacio de trabajo ha cambiado. Vuelve a abrir la acción después de reconectar."
 }

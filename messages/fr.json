@@ -6848,5 +6848,6 @@
   "inviteConsent_account_choose_title": "Choisir un compte",
   "inviteConsent_account_choose_description": "Choisissez le compte enregistré à utiliser pour cette invitation.",
   "inviteConsent_returning_description": "Intent utilisera les identifiants personnels enregistrés pour cet hôte. Aucune nouvelle connexion ni preuve d’identité auprès de la forge n’est nécessaire.",
-  "settings_backendSync_invitedPending": "La synchronisation des sessions invitées est en attente. Intent réessaiera."
+  "settings_backendSync_invitedPending": "La synchronisation des sessions invitées est en attente. Intent réessaiera.",
+  "workspace_client_accessChanged_error": "L’accès à l’espace de travail a changé. Rouvrez l’action après la reconnexion."
 }

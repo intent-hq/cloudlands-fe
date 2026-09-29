@@ -17,6 +17,8 @@ import {
   selectPermissionOption,
   type PermissionRequest,
 } from '../permission-slice';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { permissionResponseSaga } from './permission-response-saga';
 
 const settle = async () => {
@@ -53,7 +55,15 @@ function harness(requests: PermissionRequest[] = [request('request-1')]) {
     permission = permissionReducer(permission, action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ permission }) },
+    {
+      channel,
+      dispatch,
+      getState: () =>
+        withLegacyPrincipal({
+          permission,
+          workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'owner' }]) },
+        }),
+    },
     permissionResponseSaga,
   );
   return {

@@ -1,4 +1,11 @@
 <script lang="ts">
+  import {
+    selectWorkspaceCreationVisible,
+    selectPrincipalActionContext,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
+  const currentHostRole$ = selectHostRole();
   /* eslint-disable max-lines */
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
@@ -42,6 +49,7 @@
     selectWorkspaceInitializerLastSubmittedAgent,
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
+    selectWorkspaceInitializerDefaultParentPath,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
@@ -458,6 +466,7 @@
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
   const recentRepos$ = selectWorkspaceInitializerRecentRepos();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
 
   const savedState = $compactFormState$;
@@ -699,6 +708,7 @@
       currentRepoPath: repoPath,
       hasLastSelectedRepo: !!lastSelectedRepo,
       recentRepos,
+      canCreateMember: $currentHostRole$ === 'member' && $canCreateWorkspace$,
     });
 
     if (hydrationAction === 'wait') return;
@@ -709,6 +719,17 @@
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
       applyLastSelectedRepo(mapRecentRepoToSelection(recentRepos[0]));
+    } else if (hydrationAction === 'create-member-default') {
+      // Ordinary editable New selection, under the member's local default.
+      // Workspace and agent IDs still come only from the daemon's create reply.
+      const parent = $defaultParentPath$ || '~/Developer';
+      const separator = parent.includes('\\') ? '\\' : '/';
+      applyLastSelectedRepo({
+        path: `${parent.replace(/[\\/]+$/, '')}${separator}workspace-${crypto.randomUUID()}`,
+        type: 'local',
+        isNewRepo: true,
+        isValidPath: true,
+      });
     }
   });
 
@@ -858,7 +879,7 @@
     (async () => {
       try {
         const result =
-          typeof window !== 'undefined' && window.electronAPI
+          $currentHostRole$ === 'owner' && typeof window !== 'undefined' && window.electronAPI
             ? await invoke<any>('system:check-git')
             : undefined;
         if (result?.success && result.data) {
@@ -1468,7 +1489,8 @@
   // daemon-confirmed missing git (false) or a still-pending probe (null) gates.
   // A failed/placing attachment pill also blocks (retry or remove to proceed).
   const isValid = $derived(
-    (gitAvailable === true || gitAvailable === 'unknown') &&
+    $canCreateWorkspace$ &&
+      (gitAvailable === true || gitAvailable === 'unknown') &&
       !!repoPath &&
       isValidPath &&
       (isNewRepo || !!branch || repoType === 'remote') &&
@@ -1685,7 +1707,12 @@
   }
 
   async function handleSubmit() {
-    if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
+    const admission = selectPrincipalActionContext.select(appStore.state);
+    const current = () =>
+      admission !== null &&
+      admission === selectPrincipalActionContext.select(appStore.state) &&
+      selectWorkspaceCreationVisible.select(appStore.state);
+    if (!current() || !isValid || isCreating || isEnhancing || isProcessingImages) return;
     // Attachments still placing or failed block the create: a failed pill
     // must be retried or removed first (no silent drop, no base64 fallback).
     if (hasBlockingAttachments(contextItems)) return;
@@ -2116,6 +2143,7 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
+      if (!current()) return;
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
@@ -2137,6 +2165,7 @@
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (!current()) return;
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
       const workspace = result.data.workspace;
@@ -2149,6 +2178,7 @@
       // navigation stays an empty shell so drawer migration cannot compete.
       try {
         const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        if (!current()) return;
         getPanelLayoutManager(workspace.id).clearLayout();
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
@@ -2156,11 +2186,13 @@
       try {
         const { workspaceStorageManager } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (!current()) return;
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
       }
 
+      if (!current()) return;
       appStore.dispatch(setWorkspaceEntity(workspace));
       if (initialAgentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
@@ -2207,6 +2239,7 @@
           return;
         }
       }
+      if (!current()) return;
 
       // Register a picked repo as a path-less GitHub recent so re-picking it
       // prefills the tab (keyed by the owner/repo shorthand, no local path).
@@ -2273,9 +2306,11 @@
 
       // Clear before navigation can unmount the form and flush its draft.
       clearForm();
+      if (!current()) return;
       await goto(`/workspace/${workspace.id}`);
       oncreate?.();
     } catch (err) {
+      if (!current()) return;
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2655,9 +2690,16 @@
    */
   async function placeAndSendFirstMessage(): Promise<boolean> {
     const pending = pendingFirstMessage;
+    const admission = selectPrincipalActionContext.select(appStore.state);
+    const current = () =>
+      admission !== null &&
+      admission === selectPrincipalActionContext.select(appStore.state) &&
+      selectWorkspaceCreationVisible.select(appStore.state);
+    if (!current()) return false;
     if (!pending) return true;
 
     const redemption = await redeemStagedAttachments(pending.workspaceId, contextItems);
+    if (!current()) return false;
     contextItems = redemption.items;
     if (redemption.failedCount > 0) {
       error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
@@ -2670,6 +2712,7 @@
     // verbatim made every staged-attachment first send fail before reaching
     // the daemon (monorepo#2576).
     const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
+    if (!current()) return false;
     if (!sendResult.sent) {
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,

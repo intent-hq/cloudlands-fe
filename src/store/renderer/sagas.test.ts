@@ -78,7 +78,6 @@ describe('renderer app saga registry', () => {
       'proposalLifecycleSaga',
       'settingsProposalHistorySaga',
       'specialistProposalHistorySaga',
-      'gitlabAuthSaga',
       'githubRepoSearchSaga',
       'githubUserSearchSaga',
       'sentryAuthSaga',
@@ -119,7 +118,7 @@ describe('renderer app saga registry', () => {
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
     ]);
-    expect(new Set(sagas).size).toBe(106);
+    expect(new Set(sagas).size).toBe(103);
   });
 
   it('returns one cancellation handler per registered saga', () => {
@@ -128,9 +127,9 @@ describe('renderer app saga registry', () => {
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(106);
+    expect(store.runSaga).toHaveBeenCalledTimes(103);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(106).fill(cancel));
+    expect(handlers).toEqual(Array(103).fill(cancel));
   });
 
   it('starts every hardware-console owner exactly once under one cancellable composition', () => {

@@ -51,7 +51,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, tick, untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
@@ -843,7 +843,7 @@
   });
   $effect(() => {
     const connection = $connection$;
-    recentRepos = [];
+    appStore.dispatch(setWorkspaceInitializerRecentRepos([]));
     isLoading = true;
     if (connection) void untrack(() => loadRecentRepos(connection));
   });

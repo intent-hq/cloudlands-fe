@@ -83,9 +83,12 @@ vi.mock('./slices/github-auth/sagas/github-auth-saga', async () => {
   };
 });
 
+vi.mock('./slices/gitlab-auth/sagas/gitlab-auth-saga', () => ({ gitlabAuthSaga: function* () {} }));
+
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { initializeGitHubAuth } from './slices/github-auth/github-auth-slice';
+import { initializeGitLabAuth } from './slices/gitlab-auth/gitlab-auth-slice';
 import { hostRequirementsReset } from './slices/host-requirements/host-requirements-slice';
 
 describe('host-owned settings lifecycle', () => {
@@ -126,6 +129,7 @@ describe('host-owned settings lifecycle', () => {
         'account',
       ]);
       expect(dispatch).toHaveBeenCalledWith(initializeGitHubAuth());
+      expect(dispatch).toHaveBeenCalledWith(initializeGitLabAuth(undefined, 'status-only'));
       admit('member');
       expect(effects.cancelled).toEqual(effects.started);
       expect(dispatch).toHaveBeenLastCalledWith(hostRequirementsReset());

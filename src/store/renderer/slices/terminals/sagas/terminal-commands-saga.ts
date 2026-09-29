@@ -34,6 +34,7 @@ function* closeActiveTerminalWorker(
   action: ReturnType<typeof closeActiveTerminalRequested>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
+  if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) return;
   const terminalId = yield* selectActiveTerminalIdForWorkspace.effect(workspaceId);
   if (!terminalId) return;
   yield* put(removeTerminal(workspaceId, terminalId));

@@ -87,3 +87,23 @@ export const selectCollaborationCapabilities = store.createSelector((state) => {
     collaborationIdentity: ready && capabilities?.collaborationIdentity === true,
   };
 });
+
+/** A menu or async action belongs to one admitted principal and presentation lifetime. */
+export const selectPrincipalActionContext = store.createSelector((state) => {
+  const snapshot = selectPrincipalSnapshot.select(state);
+  if (!snapshot) return null;
+  return JSON.stringify([
+    selectPrincipalConnectionContext.select(state),
+    snapshot.principal.id,
+    selectHostRole.select(state),
+    state.principal.invalidation,
+    state.principal.presentationVersion,
+  ]);
+});
+
+/** Owner single-user creation stays ordinary; members must enable and refresh Multiplayer. */
+export const selectWorkspaceCreationVisible = store.createSelector(
+  (state) =>
+    selectCanCreateWorkspace.select(state) &&
+    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+);

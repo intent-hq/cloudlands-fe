@@ -21,6 +21,27 @@ import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 
+import { store } from '../../../store';
+import {
+  selectPrincipalActionContext,
+  selectWorkspaceCreationVisible,
+} from '../../principal/principal-selectors';
+import { selectWorkspaceActionContext } from '../workspace-selectors';
+
+function captureMutation(workspaceId?: string) {
+  const context = () =>
+    workspaceId === undefined
+      ? selectWorkspaceCreationVisible.select(store.state)
+        ? selectPrincipalActionContext.select(store.state)
+        : null
+      : selectWorkspaceActionContext.select(store.state, workspaceId);
+  const captured = context();
+  return () => captured !== null && captured === context();
+}
+const authorityFailure = () => ({
+  ok: false as const,
+  error: m.workspace_client_accessChanged_error(),
+});
 const logger = new Logger('WorkspaceClient');
 const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
 
@@ -311,7 +332,10 @@ export class WorkspaceClient {
     logger.info(
       `[WorkspaceClient] create called: title=${request.title}, hasInitialAgent=${!!ia}, specialist=${ia?.specialist}, model=${ia?.model}, keys=${ia ? Object.keys(ia).join(',') : 'none'}`,
     );
+    const isCurrent = captureMutation();
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.create(request);
+    if (!isCurrent()) return authorityFailure();
     logger.info('[WorkspaceClient] create result', {
       success: result.success,
       scope: request.scope,
@@ -349,7 +373,10 @@ export class WorkspaceClient {
     // Daemon-backed mutation (`workspace.update`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:update` IPC path is gone. The
     // daemon returns the authoritative updated Workspace.
+    const isCurrent = captureMutation(request.id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.update(request);
+    if (!isCurrent()) return authorityFailure();
     if (result.success && result.workspace) {
       // Clear cache for this workspace after update
       this.clearCache(request.id);
@@ -368,7 +395,10 @@ export class WorkspaceClient {
     // AppClient seam; the legacy `workspace:delete` IPC path is gone. With
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ scheduled, deleteAt }` — surfaced on the Result data.
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.delete(id, options);
+    if (!isCurrent()) return authorityFailure();
     // Clear cache for this workspace after deletion
     if (result.success) {
       this.clearCache(id);
@@ -385,7 +415,10 @@ export class WorkspaceClient {
     // `workspace.cancelDelete` (PROTOCOL §5.1, delete grace window).
     // `cancelled: false` is a race-safe non-error — the deletion already
     // committed, or was never scheduled.
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.cancelDelete(id);
+    if (!isCurrent()) return authorityFailure();
     if (result.success) {
       this.clearCache(id);
       // Also clear list cache since cancelling changes which workspaces are returned
@@ -398,7 +431,10 @@ export class WorkspaceClient {
   async archive(id: WorkspaceId): Promise<Result<void, string>> {
     // Daemon-backed mutation (`workspace.archive`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:archive` IPC path is gone.
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.archive(id);
+    if (!isCurrent()) return authorityFailure();
     // Clear cache for this workspace and list cache after archiving
     if (result.success) {
       this.clearCache(id);
@@ -412,7 +448,10 @@ export class WorkspaceClient {
   async unarchive(id: WorkspaceId): Promise<Result<void, string>> {
     // Daemon-backed mutation (`workspace.unarchive`, PROTOCOL §5.1) — the
     // archive-undo path routes through the same seam as archive.
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.unarchive(id);
+    if (!isCurrent()) return authorityFailure();
     // Clear cache for this workspace and list cache after unarchiving
     if (result.success) {
       this.clearCache(id);

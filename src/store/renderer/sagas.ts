@@ -49,7 +49,6 @@ import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga'
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
-import { gitlabAuthSaga } from './slices/gitlab-auth/sagas/gitlab-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
@@ -184,7 +183,6 @@ export const sagas = [
   proposalLifecycleSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
-  gitlabAuthSaga,
   githubRepoSearchSaga,
   githubUserSearchSaga,
   sentryAuthSaga,

@@ -41,7 +41,7 @@ describe('legacy authority and capability selectors', () => {
     { role: 'owner', myRole: 'owner', manage: true, share: true, owner: true },
     { role: 'owner', myRole: 'collaborator', manage: false, share: false, owner: false },
     { role: 'owner', myRole: undefined, manage: true, share: false, owner: false },
-    { role: 'guest', myRole: 'owner', manage: false, share: false, owner: false },
+    { role: 'guest', myRole: 'owner', manage: true, share: true, owner: true },
     { role: 'guest', myRole: 'collaborator', manage: false, share: false, owner: false },
     { role: 'guest', myRole: undefined, manage: false, share: false, owner: false },
   ] as const)(

@@ -158,7 +158,37 @@ describe('ShareWorkspaceDialog — owner gate', () => {
 });
 
 describe('ShareWorkspaceDialog — forge gate', () => {
-  it('shows the connect-first state instead of the sharing controls when no forge is connected', async () => {
+  it('leaves an unpinned invite available while canonical GitLab status is pending', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      identitySeamSupported: true,
+      gitlabHost: '',
+      gitlabStatusReady: false,
+      onCreateInvite,
+    });
+    const input = screen.getByLabelText(/Restrict to a GitLab user/);
+    await fireEvent.input(input, { target: { value: 'mara' } });
+    expect(screen.getByRole('button', { name: /Create invite/ }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    await fireEvent.submit(input.closest('form')!);
+    expect(onCreateInvite).not.toHaveBeenCalled();
+    await fireEvent.input(input, { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+  it('offers account-free sharing without an owner Connect action to a member', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ githubConnected: false, canAdministerHost: false, onCreateInvite });
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+
+  it('offers an optional owner connection alongside account-free sharing', async () => {
     const onConnectGitHub = vi.fn();
     const onOpenConnections = vi.fn();
     renderDialog({
@@ -170,7 +200,7 @@ describe('ShareWorkspaceDialog — forge gate', () => {
 
     expect(screen.getByTestId('share-github-required')).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: /Restrict to a/ })).toBeNull();
-    expect(screen.queryByTestId('share-member-row')).toBeNull();
+    expect(screen.getAllByTestId('share-member-row')).toHaveLength(2);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
@@ -191,7 +221,7 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     expect(screen.queryByLabelText(/Restrict to a/)).toBeNull();
   });
 
-  it('lets a GitLab-only host share: free-text GitLab pin, no typeahead, bare login on submit', async () => {
+  it('binds the GitLab-only pin to the canonical host without typeahead', async () => {
     const onCreateInvite = vi.fn();
     const onSearchUsers = vi.fn();
     renderDialog({
@@ -212,8 +242,11 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     expect(pin.getAttribute('aria-expanded')).toBe('false');
 
     await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
-    // One identity forge: the daemon resolves the pin on its own, so no `pin` rides along.
-    expect(onCreateInvite).toHaveBeenCalledWith('dave');
+    // A seam-capable daemon receives the status-confirmed instance even with one forge.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
   });
 });
 
