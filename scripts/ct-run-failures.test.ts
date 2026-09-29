@@ -749,6 +749,177 @@ describe('main', () => {
     };
   }
 
+  const attempt = (mark: string, suffix = '') =>
+    `${T}  ${mark}  19 [chromium] › src/lib/a.ct.spec.ts:3:1 › case${suffix} (1.2s)`;
+
+  it.each([
+    { name: 'completed failed attempts', lines: [attempt('✘'), attempt('✘', ' (retry #1)')] },
+    { name: 'passing-only partial log', lines: [attempt('✓')] },
+    { name: 'retry followed by a pass', lines: [attempt('✘'), attempt('✓', ' (retry #1)')] },
+    { name: 'duplicate attempt records', lines: [attempt('✘'), attempt('✘')] },
+    {
+      name: 'incomplete attempt line',
+      lines: [`${T}  ✘  19 [chromium] › src/lib/a.ct.spec.ts:`],
+    },
+    { name: 'empty log', lines: [] },
+  ])('reports unknown counts for a cancelled shard with $name', ({ lines }) => {
+    const { io, stdout } = capture();
+    const { runner } = fakeRunner({
+      jobs: { total_count: 1, jobs: [{ ...JOBS.jobs[3], conclusion: 'cancelled' }] },
+      logs: { 33: [...requiredLaneHeader(3), ...lines].join('\n') },
+    });
+    expect(main([RUN_ID, '--json'], { createRunner: () => runner, ...io })).toBe(0);
+    const report = JSON.parse(stdout());
+    expect(report.totals).toEqual({ failed: null, flaky: null, redShards: 1 });
+    expect(report.knownCounts).toEqual({ failed: 0, flaky: 0 });
+    expect(report.unknownShards).toBe(1);
+    expect(report.shards[0]).toMatchObject({
+      conclusion: 'cancelled',
+      source: null,
+      cases: [],
+      countsUnknown: true,
+    });
+  });
+
+  it('does not use an advisory summary to fill missing required-lane counts', () => {
+    const { io, stdout } = capture();
+    const { runner } = fakeRunner({
+      jobs: { total_count: 1, jobs: [{ ...JOBS.jobs[3], conclusion: 'cancelled' }] },
+      logs: {
+        33: [...requiredLaneHeader(3), attempt('✘'), ...advisoryLane(FLAKY_SUMMARY)].join('\n'),
+      },
+    });
+    expect(main([RUN_ID, '--json'], { createRunner: () => runner, ...io })).toBe(0);
+    const report = JSON.parse(stdout());
+    expect(report.totals).toEqual({ failed: null, flaky: null, redShards: 1 });
+    expect(report.shards[0].cases).toEqual([]);
+    expect(report.shards[0].countsUnknown).toBe(true);
+  });
+
+  it.each([
+    { status: 'failed', listed: false },
+    { status: 'flaky', listed: false },
+    { status: 'failed', listed: true },
+    { status: 'flaky', listed: true },
+  ])('marks an incomplete $status summary unknown (listed=$listed)', ({ status, listed }) => {
+    const knownCounts = { failed: 0, flaky: 0, [status]: listed ? 1 : 0 };
+    const log = [
+      ...requiredLaneHeader(3),
+      `${T}  ${listed ? 2 : 1} ${status}`,
+      ...(listed ? [`${T}    [chromium] › src/lib/a.ct.spec.ts:3:1 › first`] : []),
+    ].join('\n');
+    for (const json of [true, false]) {
+      const { io, stdout } = capture();
+      const { runner } = fakeRunner({
+        jobs: { total_count: 1, jobs: [{ ...JOBS.jobs[3], conclusion: 'cancelled' }] },
+        logs: { 33: log },
+      });
+      expect(
+        main([RUN_ID, ...(json ? ['--json'] : [])], { createRunner: () => runner, ...io }),
+      ).toBe(0);
+      if (json) {
+        const report = JSON.parse(stdout());
+        expect(report.totals).toEqual({ failed: null, flaky: null, redShards: 1 });
+        expect(report.knownCounts).toEqual(knownCounts);
+        expect(report.unknownShards).toBe(1);
+        expect(report.shards[0]).toMatchObject({ source: 'log', countsUnknown: true });
+        expect(report.shards[0].cases).toEqual(
+          listed
+            ? [
+                {
+                  status,
+                  specFile: 'src/lib/a.ct.spec.ts',
+                  location: 'src/lib/a.ct.spec.ts:3:1',
+                  title: 'first',
+                },
+              ]
+            : [],
+        );
+      } else {
+        expect(stdout()).toContain('Total: unknown');
+        expect(stdout()).toContain(
+          `Known: ${knownCounts.failed} failed, ${knownCounts.flaky} flaky`,
+        );
+        if (listed) expect(stdout()).toContain('src/lib/a.ct.spec.ts:3:1  first');
+      }
+    }
+  });
+
+  it('keeps confirmed failures visible beside an unknown cancelled shard in text', () => {
+    const { io, stdout } = capture();
+    const { runner } = fakeRunner({
+      jobs: {
+        total_count: 2,
+        jobs: [JOBS.jobs[2], { ...JOBS.jobs[3], conclusion: 'cancelled' }],
+      },
+      logs: { 33: [...requiredLaneHeader(3), attempt('✘')].join('\n') },
+    });
+    expect(main([RUN_ID], { createRunner: () => runner, ...io })).toBe(0);
+    expect(stdout()).toContain('lib/a.ct.spec.ts:3:1  breaks');
+    expect(stdout()).toContain('Total: unknown');
+    expect(stdout()).toContain('Known: 1 failed, 0 flaky');
+    expect(stdout()).toContain('1 shard without complete counts');
+    expect(stdout()).toContain(`/job/22`);
+    expect(stdout()).toContain(`/job/33`);
+  });
+
+  it.each([
+    { secondProject: 'chromium', countsUnknown: true },
+    { secondProject: 'firefox', countsUnknown: false },
+  ])(
+    'checks summary completeness without double-counting $secondProject records',
+    ({ secondProject, countsUnknown }) => {
+      const { io, stdout } = capture();
+      const { runner } = fakeRunner({
+        jobs: { total_count: 1, jobs: [{ ...JOBS.jobs[3], conclusion: 'cancelled' }] },
+        logs: {
+          33: [
+            ...requiredLaneHeader(3),
+            `${T}  2 failed`,
+            `${T}    [chromium] › src/lib/a.ct.spec.ts:3:1 › first`,
+            `${T}    [${secondProject}] › src/lib/a.ct.spec.ts:3:1 › first`,
+          ].join('\n'),
+        },
+      });
+      expect(main([RUN_ID, '--json'], { createRunner: () => runner, ...io })).toBe(0);
+      const report = JSON.parse(stdout());
+      expect(report.shards[0].cases).toHaveLength(1);
+      if (countsUnknown) {
+        expect(report.totals).toEqual({ failed: null, flaky: null, redShards: 1 });
+        expect(report.knownCounts).toEqual({ failed: 1, flaky: 0 });
+        expect(report.shards[0].countsUnknown).toBe(true);
+      } else {
+        expect(report.totals).toEqual({ failed: 1, flaky: 0, redShards: 1 });
+        expect(report.shards[0]).not.toHaveProperty('countsUnknown');
+      }
+    },
+  );
+
+  it('keeps complete passing-only and duplicate flaky summaries authoritative', () => {
+    for (const [summary, expected] of [
+      [[`${T}  1 passed (1.0s)`], { failed: 0, flaky: 0, redShards: 1 }],
+      [[...FLAKY_SUMMARY.slice(0, 2), FLAKY_SUMMARY[1]], { failed: 0, flaky: 1, redShards: 1 }],
+    ] as const) {
+      const { io, stdout } = capture();
+      const { runner } = fakeRunner({
+        jobs: { total_count: 1, jobs: [{ ...JOBS.jobs[3], conclusion: 'cancelled' }] },
+        logs: {
+          33: [
+            ...requiredLaneHeader(3),
+            attempt('✘'),
+            attempt('✓', ' (retry #1)'),
+            ...summary,
+          ].join('\n'),
+        },
+      });
+      expect(main([RUN_ID, '--json'], { createRunner: () => runner, ...io })).toBe(0);
+      const report = JSON.parse(stdout());
+      expect(report.totals).toEqual(expected);
+      expect(report).not.toHaveProperty('unknownShards');
+      expect(report.shards[0]).not.toHaveProperty('countsUnknown');
+    }
+  });
+
   it.each([
     { status: 'queued', json: false },
     { status: 'in_progress', json: false },
@@ -820,7 +991,8 @@ describe('main', () => {
     const code = main([RUN_ID], { createRunner: () => runner, ...io });
     expect(code).toBe(0);
     expect(stdout()).toContain(`Run ${RUN_ID} (${DEFAULT_REPO}, attempt 1) — Component Tests`);
-    expect(stdout()).toContain('Total: 1 failed, 1 flaky across 3 red shards');
+    expect(stdout()).toContain('Total: unknown (1 shard without complete counts)');
+    expect(stdout()).toContain('Known: 1 failed, 1 flaky across 3 red shards');
     expect(stderr()).toMatch(/^warning: shard 3\/4: no JSON report artifact/);
   });
 
@@ -830,7 +1002,9 @@ describe('main', () => {
     expect(main([RUN_ID, '--json'], { createRunner: () => runner, ...io })).toBe(0);
     const parsed = JSON.parse(stdout());
     expect(parsed.runId).toBe(RUN_ID);
-    expect(parsed.totals).toEqual({ failed: 1, flaky: 1, redShards: 3 });
+    expect(parsed.totals).toEqual({ failed: null, flaky: null, redShards: 3 });
+    expect(parsed.knownCounts).toEqual({ failed: 1, flaky: 1 });
+    expect(parsed.unknownShards).toBe(1);
   });
 
   it('exits 2 naming the run when it has no CT jobs', () => {

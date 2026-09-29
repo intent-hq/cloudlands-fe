@@ -20,6 +20,7 @@ import {
   casesFromJsonReport,
   casesFromListLog,
   formatReport,
+  hasCompleteListLogSummary,
   hasListLogSummary,
   parseCtJobs,
   requiredLaneLog,
@@ -164,7 +165,7 @@ const LOG_WARNING =
   'no JSON report artifact — derived from the list-reporter summary; locations may point at generator helpers';
 const NO_LANE_WARNING =
   'required-lane step not found in the job log — parsed the whole log; an advisory quarantine summary may mask the required lane';
-const NO_SUMMARY_NOTE = 'red, no test summary found — see job URL';
+const NO_SUMMARY_NOTE = 'red, no test summary found — case counts unknown; see job URL';
 
 /**
  * Resolve the run's shards and their cases through `runner`. Returns
@@ -233,7 +234,17 @@ export function collectRun({ runId, repo, attempt, runner }) {
     if (!hasListLogSummary(log)) return { ...job, source: null, cases: [], note: NO_SUMMARY_NOTE };
     if (laneLog === null) warnings.push(`shard ${job.shard}/${job.shardCount}: ${NO_LANE_WARNING}`);
     warnings.push(`shard ${job.shard}/${job.shardCount}: ${LOG_WARNING}`);
-    return { ...job, source: 'log', cases: casesFromListLog(log) };
+    return {
+      ...job,
+      source: 'log',
+      cases: casesFromListLog(log),
+      ...(!hasCompleteListLogSummary(log)
+        ? {
+            countsUnknown: true,
+            note: 'source: log — incomplete test summary; case counts unknown; see job URL',
+          }
+        : {}),
+    };
   });
   return { shards, attempt: resolvedAttempt, warnings };
 }

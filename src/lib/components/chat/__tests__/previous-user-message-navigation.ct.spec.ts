@@ -181,69 +181,121 @@ test('previous-message action leaves bottom and stays at successive user message
     .toBeLessThanOrEqual(2);
 });
 
-for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-  test(`previous-message action skips automated turns and reaches a lazy first message with ${reducedMotion} motion`, async ({
-    mount,
-    page,
-  }, testInfo) => {
-    await page.emulateMedia({ reducedMotion });
-    const message = (
-      id: string,
-      role: AgentMessage['role'],
-      text: string,
-      metadata?: AgentMessage['metadata'],
-    ): AgentMessage => ({
-      id,
-      role,
-      timestamp: '2026-08-16T04:00:00.000Z',
-      contentBlocks: [{ type: 'text', text }],
-      metadata,
+for (const sourceRole of ['user', 'assistant'] as const) {
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`${sourceRole} previous-message action skips automated turns and reaches a lazy first message with ${reducedMotion} motion`, async ({
+      mount,
+      page,
+    }, testInfo) => {
+      await page.emulateMedia({ reducedMotion });
+      const message = (
+        id: string,
+        role: AgentMessage['role'],
+        text: string,
+        metadata?: AgentMessage['metadata'],
+      ): AgentMessage => ({
+        id,
+        role,
+        timestamp: '2026-08-16T04:00:00.000Z',
+        contentBlocks: [{ type: 'text', text }],
+        metadata,
+      });
+      const messages = [
+        message('first', 'user', 'First authored prompt', { type: 'question_answers' }),
+        message('response-first', 'assistant', 'Long earlier response. '.repeat(600)),
+        ...Array.from({ length: 22 }, (_, index) => [
+          message(`automated-${index}`, 'user', '[TASK WAKE] A background update', {
+            ...[
+              { type: 'hook_wake' },
+              { type: 'pr_monitor_wake' },
+              { source: 'system' },
+              { fromAgentId: 'agent-9' },
+            ][index % 4],
+          }),
+          message(`response-automated-${index}`, 'assistant', 'Background response. '.repeat(14)),
+        ]).flat(),
+        message('last', 'user', 'Last authored prompt'),
+        message('response-last', 'assistant', 'Latest response. '.repeat(14)),
+      ];
+      const component = await mount(ChatMessageNavigatorIntegrationHost, { props: { messages } });
+      const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+      const down = bottomMenu(component, page);
+      await down.expectAtBottom(true);
+      const first = component.locator('[data-message-id="first"]');
+      await expect(first.locator('[data-lazy-visible]')).toHaveAttribute(
+        'data-lazy-visible',
+        'false',
+      );
+      const sourceId = sourceRole === 'assistant' ? 'response-automated-21' : 'last';
+      const source = component.locator(`[data-message-id="${sourceId}"]`);
+      await source.hover();
+      await source
+        .getByRole('button', {
+          name: sourceRole === 'assistant' ? 'Previous user message' : 'Scroll to previous message',
+        })
+        .press('Enter');
+      await page.waitForTimeout(700);
+      await expect(first).toContainText('First authored prompt');
+      const offset = await first.evaluate(
+        (node, container) =>
+          node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
+        await scroll.elementHandle(),
+      );
+      expect(Math.abs(offset)).toBeLessThanOrEqual(3);
+      await down.expectAtBottom(false);
+      if (sourceRole === 'assistant') {
+        const readingPosition = await scroll.evaluate((node) => node.scrollTop);
+        await component
+          .getByTestId('append-streaming-message')
+          .evaluate((node: HTMLButtonElement) => node.click());
+        await page.waitForTimeout(700);
+        expect(await scroll.evaluate((node) => node.scrollTop)).toBeCloseTo(readingPosition, 0);
+      }
+      await first.hover();
+      await first.getByRole('button', { name: 'Scroll to previous message' }).click();
+      await page.waitForTimeout(700);
+      const fallbackPosition = await scroll.evaluate((node) => node.scrollTop);
+      expect(fallbackPosition).toBe(0);
+      await testInfo.attach('first-message-navigation', {
+        body: JSON.stringify({ reducedMotion, offset, fallbackPosition }),
+        contentType: 'application/json',
+      });
+      await component.screenshot({ path: testInfo.outputPath('first-message-fallback.png') });
     });
-    const messages = [
-      message('first', 'user', 'First authored prompt'),
-      message('response-first', 'assistant', 'Long earlier response. '.repeat(600)),
-      ...Array.from({ length: 22 }, (_, index) => [
-        message(`automated-${index}`, 'user', '[TASK WAKE] A background update', {
-          type: 'task_wake',
-        }),
-        message(`response-automated-${index}`, 'assistant', 'Background response. '.repeat(14)),
-      ]).flat(),
-      message('last', 'user', 'Last authored prompt'),
-      message('response-last', 'assistant', 'Latest response. '.repeat(14)),
-    ];
-    const component = await mount(ChatMessageNavigatorIntegrationHost, { props: { messages } });
-    const scroll = component.getByTestId('chat-transcript-scroll-viewport');
-    const down = bottomMenu(component, page);
-    await down.expectAtBottom(true);
-    const first = component.locator('[data-message-id="first"]');
-    await expect(first.locator('[data-lazy-visible]')).toHaveAttribute(
-      'data-lazy-visible',
-      'false',
-    );
-    const last = component.locator('[data-message-id="last"]');
-    await last.hover();
-    await last.getByRole('button', { name: 'Scroll to previous message' }).press('Enter');
-    await page.waitForTimeout(700);
-    await expect(first).toContainText('First authored prompt');
-    const offset = await first.evaluate(
-      (node, container) =>
-        node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
-      await scroll.elementHandle(),
-    );
-    expect(Math.abs(offset)).toBeLessThanOrEqual(3);
-    await down.expectAtBottom(false);
-    await first.hover();
-    await first.getByRole('button', { name: 'Scroll to previous message' }).click();
-    await page.waitForTimeout(700);
-    const fallbackPosition = await scroll.evaluate((node) => node.scrollTop);
-    expect(fallbackPosition).toBe(0);
-    await testInfo.attach('first-message-navigation', {
-      body: JSON.stringify({ reducedMotion, offset, fallbackPosition }),
-      contentType: 'application/json',
-    });
-    await component.screenshot({ path: testInfo.outputPath('first-message-fallback.png') });
-  });
+  }
 }
+
+test('assistant navigation falls back to the top without an earlier human message', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const messages: AgentMessage[] = [
+    {
+      id: 'wake',
+      role: 'user',
+      timestamp: '2026-09-29T06:00:00Z',
+      metadata: { source: 'system' },
+      contentBlocks: [{ type: 'text', text: 'Automated wake' }],
+    },
+    {
+      id: 'reply',
+      role: 'assistant',
+      timestamp: '2026-09-29T06:00:01Z',
+      contentBlocks: [{ type: 'text', text: 'A long background reply. '.repeat(300) }],
+    },
+  ];
+  const component = await mount(ChatMessageNavigatorIntegrationHost, { props: { messages } });
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  await bottomMenu(component, page).expectAtBottom(true);
+  expect(await scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  const action = component
+    .locator('[data-message-id="reply"]')
+    .getByRole('button', { name: 'Previous user message' });
+  await action.focus();
+  await action.press('Enter');
+  await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+});
 
 test('keyboard message navigation releases follow and can return to bottom', async ({
   mount,
@@ -288,4 +340,105 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     contentType: 'application/json',
   });
   await component.screenshot({ path: testInfo.outputPath('keyboard-return-to-bottom.png') });
+});
+
+function historyMessage(
+  id: string,
+  role: AgentMessage['role'],
+  text: string,
+  seq: number,
+): AgentMessage {
+  return {
+    id,
+    role,
+    seq,
+    timestamp: '2026-09-29T06:00:00Z',
+    contentBlocks: [{ type: 'text', text }],
+  };
+}
+
+test('history-only assistant navigates to its loaded human prompt', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      historyMessages: [
+        historyMessage('older-human', 'user', 'Earlier prompt', 1),
+        historyMessage('older-reply', 'assistant', 'Earlier answer. '.repeat(80), 2),
+        historyMessage('history-human', 'user', 'The loaded history prompt', 3),
+        historyMessage('history-reply', 'assistant', 'The loaded history response. '.repeat(30), 4),
+      ],
+      messages: [
+        historyMessage('live-human', 'user', 'Latest prompt', 5),
+        historyMessage('live-reply', 'assistant', 'Latest response. '.repeat(80), 6),
+      ],
+    },
+  });
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  const source = component.locator('[data-message-id="history-reply"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  const target = component.locator('[data-message-id="history-human"]');
+  await expect
+    .poll(async () =>
+      Math.abs(
+        await target.evaluate(
+          (node, container) =>
+            node.getBoundingClientRect().top -
+            (container as HTMLElement).getBoundingClientRect().top,
+          await scroll.elementHandle(),
+        ),
+      ),
+    )
+    .toBeLessThanOrEqual(3);
+  expect(await scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
+});
+
+test('previous-message actions stop at unloaded history boundaries', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      historyGap: true,
+      historyStartLoaded: false,
+      historyMessages: [
+        historyMessage('history-orphan', 'assistant', 'Earlier prompt is not loaded', 2),
+        historyMessage('history-human', 'user', 'Loaded older prompt', 3),
+        historyMessage('history-reply', 'assistant', 'Loaded older answer', 4),
+      ],
+      messages: [
+        historyMessage('live-orphan', 'assistant', 'Prompt is inside the unloaded gap', 10),
+        historyMessage('live-human', 'user', 'Loaded latest prompt', 11),
+        historyMessage('live-reply', 'assistant', 'Loaded latest answer. '.repeat(80), 12),
+      ],
+    },
+  });
+  await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+  for (const id of ['history-orphan', 'live-orphan']) {
+    const row = component.locator(`[data-message-id="${id}"]`);
+    await row.hover();
+    await expect(row.getByRole('button', { name: 'Previous user message' })).toHaveCount(0);
+  }
+  for (const id of ['history-human', 'live-human']) {
+    const row = component.locator(`[data-message-id="${id}"]`);
+    await row.hover();
+    await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toHaveCount(0);
+  }
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  for (const segment of ['history', 'live']) {
+    const row = component.locator(`[data-message-id="${segment}-reply"]`);
+    await row.hover();
+    await row.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    const target = component.locator(`[data-message-id="${segment}-human"]`);
+    await expect
+      .poll(async () =>
+        Math.abs(
+          await target.evaluate(
+            (node, container) =>
+              node.getBoundingClientRect().top -
+              (container as HTMLElement).getBoundingClientRect().top,
+            await scroll.elementHandle(),
+          ),
+        ),
+      )
+      .toBeLessThanOrEqual(3);
+  }
 });

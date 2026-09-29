@@ -207,6 +207,8 @@
       labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
+    /** Provider-local settings cannot persist a selection owned by another provider. */
+    allowProviderSwitch?: boolean;
     isCompact?: boolean;
     isLocked?: boolean;
     lockedTitle?: string;
@@ -271,6 +273,7 @@
     onModelChange = () => {},
     confirmModelChange,
     providerId,
+    allowProviderSwitch = true,
     isCompact = false,
     isLocked = false,
     lockedTitle,
@@ -469,11 +472,11 @@
   // and a disabled default has no re-home target, so its rows must not be
   // selectable (intent#5737). Same settings blind spot as above for guests.
   const selectableProviderIds = $derived(
-    isGuestLocked
-      ? $availableEnabledProviderIds$
-      : $availableEnabledProviderIds$.filter(
-          (pid) => !isProviderDisabledInSettings($enabledProviders$, pid),
-        ),
+    $availableEnabledProviderIds$.filter(
+      (pid) =>
+        (allowProviderSwitch || normalizeProviderId(pid) === effectiveProviderId) &&
+        (isGuestLocked || !isProviderDisabledInSettings($enabledProviders$, pid)),
+    ),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
@@ -1914,6 +1917,10 @@
       modelValue === USE_DEFAULT_VALUE
         ? undefined
         : resolvePickedTriple(modelValue, activeBrowseProviderId);
+    if (pick && !allowProviderSwitch && pick.providerId !== effectiveProviderId) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
     const fromProviderId = selectedModelProviderId || effectiveProviderId;
     const confirmation = ++confirmationRevision;
     // Gate user-picked changes to a *different* model behind the optional
