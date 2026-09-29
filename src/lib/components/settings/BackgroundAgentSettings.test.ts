@@ -2,8 +2,7 @@
  * @vitest-environment jsdom
  *
  * Covers the quick-action settings pane (#1627): the default picker AND the
- * per-action override rows all render the multi-provider ModelPicker (no
- * single-active-provider Dropdown asymmetry), override picks dispatch
+ * per-action override rows all render ModelPicker scoped to the active provider, override picks dispatch
  * setTypeOverride ('' for "use default"), and the `fast` row surfaces the
  * auggie-only `agent.enhancePrompt` gate when the catalog is hydrated and
  * the effective provider is not auggie (hidden pre-hydration to avoid a
@@ -148,21 +147,37 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
   it('dispatches setTypeOverride with the picked model for an override row', async () => {
     render(BackgroundAgentSettings);
     // Index 0 is the default picker; 1..3 are commit/pr/fast overrides.
-    await fireEvent.click(screen.getAllByTestId('pick-model')[1]);
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[1]);
     expect(mocks.dispatched).toHaveLength(1);
     expect(mocks.dispatched).toContainEqual({
       type: 'backgroundAgentSettings/setTypeOverride',
-      payload: [{ type: 'commit', model: 'user-picked-model' }],
+      payload: [{ type: 'commit', model: 'bare-picked-model' }],
     });
+  });
+
+  it('rejects model callbacks without provider ownership, including compound IDs', async () => {
+    render(BackgroundAgentSettings);
+    for (const id of ['pick-model', 'pick-cross-provider-model']) {
+      for (const button of screen.getAllByTestId(id)) await fireEvent.click(button);
+    }
+    expect(mocks.dispatched).toEqual([]);
+  });
+
+  it('rejects a stale pick from a different provider instead of reinterpreting its bare ID', async () => {
+    mocks.effectiveProviderId.value = 'claude-code';
+    render(BackgroundAgentSettings);
+    for (const button of screen.getAllByTestId('pick-model-with-triple'))
+      await fireEvent.click(button);
+    expect(mocks.dispatched).toEqual([]);
   });
 
   it('sets and clears the quick-action default without changing action overrides', async () => {
     mocks.typeOverrides.value = { commit: 'pinned-commit', pr: '', review: '', fast: '' };
     render(BackgroundAgentSettings);
-    await fireEvent.click(screen.getAllByTestId('pick-model')[0]);
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
     await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
     expect(mocks.dispatched).toEqual([
-      { type: 'backgroundAgentSettings/setDefaultModel', payload: ['user-picked-model'] },
+      { type: 'backgroundAgentSettings/setDefaultModel', payload: ['bare-picked-model'] },
       { type: 'backgroundAgentSettings/setDefaultModel', payload: [''] },
     ]);
   });
