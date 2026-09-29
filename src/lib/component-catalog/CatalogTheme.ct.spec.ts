@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../test/ct-test';
-import CatalogDiffThemeHost from '../../test/fixtures/CatalogDiffThemeHost.svelte';
+import CatalogDiffThemeHost from '../../test/__tests__/CatalogDiffThemeHost.svelte';
 
 async function textContrast(locator: Locator) {
   return locator.evaluate((element) => {
