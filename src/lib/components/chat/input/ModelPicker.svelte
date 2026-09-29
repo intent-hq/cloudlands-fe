@@ -1627,26 +1627,6 @@
     !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
-  // The selected model isn't in the catalog yet, but its provider hasn't
-  // settled — show a spinner in the trigger rather than a warning that would
-  // flip back to normal a moment later (transient warning on refresh).
-  const showModelLoading = $derived(
-    !!agentId &&
-      $fallbackInfo$ === null &&
-      !isSelectedModelProviderDisabled &&
-      isSelectedModelMissingFromCatalog &&
-      (!$hasCheckedOnce$ ||
-        isLoadingModels ||
-        !allProvidersLoaded ||
-        isSelectedModelProviderPending),
-  );
-
-  const modelLoadingTitle = $derived(
-    m.chat_modelPicker_loadingProviderModels_label({
-      provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
-    }),
-  );
-
   // Warning message to display
   const warningMessage = $derived.by(() => {
     if (isSelectedModelProviderDisabled) {
@@ -2157,11 +2137,7 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelLoading}
-            <span class="size-3 shrink-0" title={modelLoadingTitle}>
-              <IntentMarkLoader size={12} />
-            </span>
-          {:else if showModelWarning}
+          {#if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
