@@ -42,10 +42,10 @@ const executable = process.env.NATIVE_REVIEW_DRIVER;
 const source = process.env.NATIVE_REVIEW_DRIVER_SOURCE;
 if (!evidence || !executable || !source)
   throw new Error('Explicit evidence, pinned executable and frozen source required');
-const executableHash = '5bed0a98e35e3e61348408bb4cc748e1ccb6dfb435bc11d14b2afc40398753d8';
+const executableHash = '6724613a18429dd561c6a856b6f6d7b06aa1437558a52504e4c4bdc02b993b64';
 const identity = {
-  sourceCommit: '9c412560c616b6b852d702776e2732a35ba6e1f7',
-  sourceTree: 'df4d07af4992edcfc49e7f6632e0c933bdc17fe5',
+  sourceCommit: '99f366ba44a5b2265295809fb77ed30ae50f1f6f',
+  sourceTree: '4f78029b5505a689d9df0a7b405f043515eb5fbd',
   executableSha256: executableHash,
   sourceSha256: '',
 };
@@ -783,7 +783,7 @@ test.beforeAll(async () => {
     bytes: artifact.size,
     mode: artifact.mode & 0o777,
     sha: hash(await readFile(executable!)),
-  }).toEqual({ regular: true, bytes: 266605984, mode: 0o555, sha: executableHash });
+  }).toEqual({ regular: true, bytes: 267474832, mode: 0o555, sha: executableHash });
   identity.sourceSha256 = hash(
     await readFile(join(source!, 'crates/intentd/tests/e2e_native_review_wire.rs')),
   );
