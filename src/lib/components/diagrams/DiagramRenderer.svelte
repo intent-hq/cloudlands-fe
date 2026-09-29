@@ -376,6 +376,213 @@
     };
   };
 
+  // Diagnostic-only reserved record. Payload plus padding is exactly 4096 UTF-16 units.
+  // Charged once to the primary ledger and once to the RO ledger if it is created.
+  type FirstRejection6036 = {
+    decision: 'first-rejection';
+    schema: 1;
+    status: 'armed' | 'observed' | 'inherited-unknown' | 'encoding-failed';
+    payload: Record<string, unknown>;
+    padding: string;
+  };
+  type RejectionCapture6036 = {
+    target: Element | null;
+    records: (Record<string, unknown> | null)[];
+    count: number;
+    serializedUnits: number;
+    overflow: boolean;
+    incomplete: boolean;
+    segment: string;
+    snapshots?: string[];
+    resizeDelivery6036?: {
+      emitters: WeakMap<Element, number>;
+      emitterCount: number;
+      sequence: number;
+      recordCount: number;
+      units: number;
+    };
+    firstRejection6036?: FirstRejection6036;
+  };
+
+  function rejectionNumber6036(value: unknown): unknown[] {
+    return typeof value === 'number' &&
+      Number.isFinite(value) &&
+      Math.abs(value) <= Number.MAX_SAFE_INTEGER
+      ? ['value', value]
+      : ['unavailable'];
+  }
+
+  function rejectionRecord6036(
+    value: unknown,
+    reason?: string,
+    kind = 'recorder',
+    phase = 'unavailable',
+    token?: ResizeDeliveryToken6036 | null,
+    attemptedUnits?: number,
+    facts?: readonly number[],
+  ): FirstRejection6036 | undefined {
+    return untrack(() => {
+      const capture = value as RejectionCapture6036 | undefined;
+      if (!capture?.target || !Array.isArray(capture.records)) return undefined;
+      try {
+        let record = capture.firstRejection6036;
+        const inherited = capture.overflow || capture.incomplete;
+        if (!reason && !inherited) return record;
+        const ledger = capture.resizeDelivery6036;
+        const counters = [
+          rejectionNumber6036(capture.count),
+          rejectionNumber6036(capture.serializedUnits),
+          capture.snapshots ? rejectionNumber6036(capture.snapshots.length) : ['unavailable'],
+          ledger ? rejectionNumber6036(ledger.recordCount) : ['unavailable'],
+          ledger ? rejectionNumber6036(ledger.units) : ['unavailable'],
+          ledger ? rejectionNumber6036(ledger.emitterCount) : ['unavailable'],
+          ledger ? rejectionNumber6036(ledger.sequence) : ['unavailable'],
+          rejectionNumber6036(scrollObservationSequence6036),
+          rejectionNumber6036(scrollElementSequence6036),
+          rejectionNumber6036(movingEdgeIds.size),
+        ];
+        if (!record) {
+          if (
+            capture.count >= 4096 ||
+            capture.serializedUnits + 4096 > 2 * 1024 * 1024 ||
+            (ledger && (ledger.recordCount + 1 > 256 || ledger.units + 4096 > 128 * 1024))
+          ) {
+            // No space to preserve a reason: absence plus the original veto stays unknown.
+            capture.overflow = capture.incomplete = true;
+            return undefined;
+          }
+          record = {
+            decision: 'first-rejection',
+            schema: 1,
+            status: 'armed',
+            payload: {},
+            padding: '',
+          };
+          record.padding = ' '.repeat(4096 - JSON.stringify(record).length);
+          capture.records[capture.count++] = record;
+          capture.serializedUnits += 4096;
+          capture.firstRejection6036 = record;
+          if (ledger) {
+            ledger.recordCount += 1;
+            ledger.units += 4096;
+          }
+        }
+        // Every header-only path remains incomplete; never clear an inherited veto.
+        capture.incomplete = true;
+        if (record.status !== 'armed') return record;
+        const segment =
+          typeof capture.segment === 'string' && capture.segment.length <= 128
+            ? ['value', capture.segment]
+            : ['unavailable'];
+        record.status = inherited ? 'inherited-unknown' : 'observed';
+        record.payload = {
+          reason: inherited ? 'inherited-unknown' : reason,
+          kind: inherited ? 'unknown' : kind,
+          phase: inherited ? 'unknown' : phase,
+          observedAt: rejectionNumber6036(performance.now()),
+          segment,
+          revision: rejectionNumber6036(settlementRevision),
+          emitter: rejectionNumber6036(
+            token?.emitterId ?? (rendererEl ? ledger?.emitters.get(rendererEl) : undefined),
+          ),
+          sequence: token ? rejectionNumber6036(token.sequence) : ['unavailable'],
+          attemptedUTF16: inherited
+            ? ['unknown']
+            : attemptedUnits === undefined
+              ? ['not-computed']
+              : rejectionNumber6036(attemptedUnits),
+          counters,
+          facts: inherited
+            ? ['unknown']
+            : facts
+              ? facts.map(rejectionNumber6036)
+              : ['not-computed'],
+        };
+        record.padding = '';
+        const size = JSON.stringify(record).length;
+        if (size > 4096) {
+          record.status = 'encoding-failed';
+          record.payload = { reason: 'encoding-failed', complete: false };
+          capture.incomplete = true;
+        }
+        record.padding = ' '.repeat(4096 - JSON.stringify(record).length);
+        return record;
+      } catch {
+        capture.incomplete = true;
+        return undefined;
+      }
+    });
+  }
+
+  // Commit reservation and ordinary event together; an armed header is never published alone.
+  function admitDiagnosticRecord6036(
+    value: unknown,
+    record: Record<string, unknown>,
+    units: number,
+    resizeDelivery = false,
+  ): boolean {
+    return untrack(() => {
+      const capture = value as RejectionCapture6036;
+      try {
+        const ledger = capture.resizeDelivery6036;
+        const extra = capture.firstRejection6036 ? 0 : 1;
+        const reservedUnits = extra * 4096;
+        if (
+          capture.count + extra + 1 > 4096 ||
+          capture.serializedUnits + reservedUnits + units > 2 * 1024 * 1024 ||
+          (resizeDelivery && !ledger) ||
+          (ledger &&
+            (ledger.recordCount + extra + (resizeDelivery ? 1 : 0) > 256 ||
+              ledger.units + reservedUnits + (resizeDelivery ? units : 0) > 128 * 1024))
+        ) {
+          const reason =
+            capture.count + extra + 1 > 4096
+              ? 'admission.primary-records'
+              : capture.serializedUnits + reservedUnits + units > 2 * 1024 * 1024
+                ? 'admission.primary-units'
+                : !ledger
+                  ? 'admission.missing-ledger'
+                  : ledger.recordCount + extra + (resizeDelivery ? 1 : 0) > 256
+                    ? 'admission.secondary-records'
+                    : 'admission.secondary-units';
+          rejectionRecord6036(
+            capture,
+            reason,
+            resizeDelivery ? 'resize-delivery' : 'settlement',
+            'admit',
+            undefined,
+            units,
+          );
+          capture.overflow = capture.incomplete = true;
+          return false;
+        }
+        const header: FirstRejection6036 = capture.firstRejection6036 ?? {
+          decision: 'first-rejection',
+          schema: 1,
+          status: 'armed',
+          payload: {},
+          padding: '',
+        };
+        if (extra) header.padding = ' '.repeat(4096 - JSON.stringify(header).length);
+        const index = capture.count;
+        if (extra) capture.records[index] = header;
+        capture.records[index + extra] = record;
+        capture.count = index + extra + 1;
+        capture.serializedUnits += reservedUnits + units;
+        if (ledger) {
+          ledger.recordCount += extra + (resizeDelivery ? 1 : 0);
+          ledger.units += reservedUnits + (resizeDelivery ? units : 0);
+        }
+        capture.firstRejection6036 = header;
+        return true;
+      } catch {
+        rejectionRecord6036(capture, 'admission.exception', 'recorder', 'admit');
+        capture.incomplete = true;
+        return false;
+      }
+    });
+  }
+
   function observeResizeDelivery6036(
     phase: 'before' | 'after',
     entries: ResizeObserverEntry[],
@@ -388,25 +595,49 @@
           __walkthroughSettlement6036?: ResizeDeliveryCapture6036;
         }
       ).__walkthroughSettlement6036;
+      rejectionRecord6036(capture);
       if (phase === 'after' && !token) return null;
       if (token && (capture !== token.capture || capture?.target !== token.target)) {
+        rejectionRecord6036(
+          token.capture,
+          'ro.capture-target-change',
+          'resize-delivery',
+          phase,
+          token,
+        );
         token.capture.incomplete = true;
-        if (capture) capture.incomplete = true;
+        if (capture) {
+          rejectionRecord6036(capture, 'ro.capture-target-change', 'resize-delivery', phase, token);
+          capture.incomplete = true;
+        }
         return null;
       }
       if (!capture?.target || !rendererEl) {
-        if (token) token.capture.incomplete = true;
+        if (token) {
+          rejectionRecord6036(
+            token.capture,
+            'ro.missing-target-emitter',
+            'resize-delivery',
+            phase,
+            token,
+          );
+          token.capture.incomplete = true;
+        }
         return null;
       }
       try {
         const target = capture.target;
         const host = target.closest('[data-testid="catalog-scene-focus"]');
         if (!host || !target.isConnected) {
+          rejectionRecord6036(capture, 'ro.host-disconnected', 'resize-delivery', phase, token);
           capture.incomplete = true;
           return null;
         }
         if (rendererEl.closest('[data-testid="catalog-scene-focus"]') !== host) {
-          if (token) capture.incomplete = true;
+          if (token) {
+            rejectionRecord6036(capture, 'ro.host-mismatch', 'resize-delivery', phase, token);
+            capture.incomplete = true;
+          }
           return null;
         }
         if (
@@ -414,6 +645,13 @@
           capture.count >= 4096 ||
           capture.serializedUnits >= 2 * 1024 * 1024
         ) {
+          rejectionRecord6036(
+            capture,
+            capture.count >= 4096 ? 'primary.records' : 'primary.units-entry',
+            'resize-delivery',
+            phase,
+            token,
+          );
           capture.overflow = capture.incomplete = true;
           return null;
         }
@@ -423,10 +661,11 @@
           emitters: new WeakMap<Element, number>(),
           emitterCount: 0,
           sequence: 0,
-          recordCount: 0,
-          units: 0,
+          recordCount: rejectionRecord6036(capture) ? 1 : 0,
+          units: rejectionRecord6036(capture) ? 4096 : 0,
         });
         if (ledger.target !== target || ledger.host !== host) {
+          rejectionRecord6036(capture, 'ro.ledger-identity', 'resize-delivery', phase, token);
           capture.incomplete = true;
           return null;
         }
@@ -434,6 +673,7 @@
           let emitterId = ledger.emitters.get(rendererEl);
           if (emitterId === undefined) {
             if (ledger.emitterCount >= 64) {
+              rejectionRecord6036(capture, 'ro.emitters', 'resize-delivery', phase, token);
               capture.overflow = capture.incomplete = true;
               return null;
             }
@@ -441,6 +681,7 @@
             ledger.emitters.set(rendererEl, emitterId);
           }
           if (ledger.sequence >= 128) {
+            rejectionRecord6036(capture, 'ro.sequences', 'resize-delivery', phase, token);
             capture.overflow = capture.incomplete = true;
             return null;
           }
@@ -454,16 +695,35 @@
           };
         }
         if (!token || token.emitter !== rendererEl || token.host !== host) {
+          rejectionRecord6036(capture, 'ro.token-identity', 'resize-delivery', phase, token);
           capture.incomplete = true;
           return null;
         }
         if (
           entries.some((entry) => entry.target !== scrollContainerEl && entry.target !== resizeLane)
         ) {
+          rejectionRecord6036(
+            capture,
+            'ro.entry-role',
+            'resize-delivery',
+            phase,
+            token,
+            undefined,
+            [entries.length],
+          );
           capture.incomplete = true;
           return null;
         }
         if (entries.length > 2 || typeof diagram.id !== 'string' || diagram.id.length > 256) {
+          rejectionRecord6036(
+            capture,
+            entries.length > 2 ? 'ro.entry-count' : 'ro.diagram-id',
+            'resize-delivery',
+            phase,
+            token,
+            undefined,
+            [entries.length, typeof diagram.id === 'string' ? diagram.id.length : NaN],
+          );
           capture.overflow = capture.incomplete = true;
           return null;
         }
@@ -512,15 +772,25 @@
           ledger.units + units > 128 * 1024 ||
           capture.serializedUnits + units > 2 * 1024 * 1024
         ) {
+          rejectionRecord6036(
+            capture,
+            ledger.recordCount >= 256
+              ? 'ro.records'
+              : ledger.units + units > 128 * 1024
+                ? 'ro.units'
+                : 'primary.units-append',
+            'resize-delivery',
+            phase,
+            token,
+            units,
+          );
           capture.overflow = capture.incomplete = true;
           return null;
         }
-        ledger.recordCount += 1;
-        ledger.units += units;
-        capture.serializedUnits += units;
-        capture.records[capture.count++] = record;
+        if (!admitDiagnosticRecord6036(capture, record, units, true)) return null;
         return token;
       } catch {
+        rejectionRecord6036(capture, 'ro.exception', 'resize-delivery', phase, token);
         capture.incomplete = true;
         return null;
       }
@@ -546,14 +816,25 @@
         }
       ).__walkthroughSettlement6036;
       if (!rendererEl || !capture || capture.target !== rendererEl) return null;
+      rejectionRecord6036(capture);
       if (capture.overflow || capture.count >= 4096 || capture.serializedUnits >= 2 * 1024 * 1024) {
+        rejectionRecord6036(
+          capture,
+          capture.count >= 4096 ? 'primary.records' : 'primary.units-entry',
+          'viewport',
+          phase,
+        );
         capture.overflow = capture.incomplete = true;
         return null;
       }
       try {
         if (phase === 'settlement-before' || phase === 'step-before') {
-          if (activeScrollObservation6036) capture.incomplete = true;
+          if (activeScrollObservation6036) {
+            rejectionRecord6036(capture, 'viewport.active-overlap', 'viewport', phase);
+            capture.incomplete = true;
+          }
           if (scrollObservationSequence6036 >= 4096) {
+            rejectionRecord6036(capture, 'viewport.invocations', 'viewport', phase);
             capture.overflow = true;
             throw new Error('scroll callback capacity');
           }
@@ -566,6 +847,7 @@
         }
         const observation = activeScrollObservation6036;
         if (!observation) {
+          rejectionRecord6036(capture, 'viewport.missing-invocation', 'viewport', phase);
           capture.incomplete = true;
           return null;
         }
@@ -574,6 +856,7 @@
           let value = scrollElementIds6036.get(element);
           if (value === undefined) {
             if (scrollElementSequence6036 >= 64) {
+              rejectionRecord6036(capture, 'viewport.identities', 'viewport', phase);
               capture.overflow = true;
               throw new Error('scroll identity capacity');
             }
@@ -593,6 +876,15 @@
         const ancestors = [];
         for (let element = rendererEl.parentElement; element; element = element.parentElement) {
           if (ancestors.length >= 16) {
+            rejectionRecord6036(
+              capture,
+              'viewport.ancestors',
+              'viewport',
+              phase,
+              undefined,
+              undefined,
+              [ancestors.length],
+            );
             capture.overflow = true;
             throw new Error('scroll ancestor capacity');
           }
@@ -637,6 +929,7 @@
         if (phase === 'call-after') activeScrollObservation6036 = undefined;
         return observation.id;
       } catch {
+        rejectionRecord6036(capture, 'viewport.exception', 'viewport', phase);
         capture.incomplete = true;
         return null;
       }
@@ -678,8 +971,10 @@
       }
     ).__walkthroughSettlement6036;
     if (!rendererEl || !capture || capture.target !== rendererEl) return;
+    rejectionRecord6036(capture);
     try {
       if (capture.count >= 4096) {
+        rejectionRecord6036(capture, 'primary.records', decision, 'append');
         capture.overflow = true;
         capture.incomplete = true;
         return;
@@ -694,6 +989,18 @@
           capture.snapshots.length >= 256 ||
           capture.serializedUnits + units > 2 * 1024 * 1024
         ) {
+          rejectionRecord6036(
+            capture,
+            units > 32768
+              ? 'snapshot.item-units'
+              : capture.snapshots.length >= 256
+                ? 'snapshot.count'
+                : 'primary.units-snapshot',
+            decision,
+            'intern',
+            undefined,
+            units,
+          );
           capture.overflow = capture.incomplete = true;
           return null;
         }
@@ -707,7 +1014,10 @@
         if (movingEdges.length === 64) break;
         movingEdges.push(edgeId);
       }
-      if (movingEdgeIds.size > 64) capture.overflow = capture.incomplete = true;
+      if (movingEdgeIds.size > 64) {
+        rejectionRecord6036(capture, 'primary.moving-edges', decision, 'append');
+        capture.overflow = capture.incomplete = true;
+      }
       const record = {
         sampledAt: performance.now(),
         scrollObservationId,
@@ -730,12 +1040,13 @@
       };
       const units = JSON.stringify(record).length;
       if (capture.serializedUnits + units > 2 * 1024 * 1024) {
+        rejectionRecord6036(capture, 'primary.units-append', decision, 'append', undefined, units);
         capture.overflow = capture.incomplete = true;
         return;
       }
-      capture.serializedUnits += units;
-      capture.records[capture.count++] = record;
+      admitDiagnosticRecord6036(capture, record, units);
     } catch {
+      rejectionRecord6036(capture, 'primary.exception', decision, 'append');
       capture.incomplete = true;
     }
   }
