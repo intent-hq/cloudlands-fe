@@ -26,7 +26,8 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { build, type Plugin } from 'vite';
+import { build, loadConfigFromFile, transformWithEsbuild, type Plugin } from 'vite';
+import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import type { Fixture, Ready, WireRecord } from './main';
 import type {
   NativeReviewInput,
@@ -55,6 +56,12 @@ const groups = [
   ['04 admitted work and document socket lifetime', ['frontend', 'held-stop']],
   ['05 uncertain original POST without replay', ['frontend']],
 ] as const;
+const uiGroups = [
+  ['06 UI Owner explicit create and cancellation', ['frontend']],
+  ['07 UI Member reuse closure and Guest denial', ['frontend', 'held-stop']],
+  ['08 UI uncertain POST and original Check result', ['frontend']],
+] as const;
+const uiMode = process.env.NATIVE_REVIEW_UI === '1';
 let bundle: string;
 const python = '/usr/bin/python3';
 const hash = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -85,6 +92,174 @@ window.native = { results: {}, errors: {}, retirements: [], current: null,
  async close() { closeRead(); await Promise.allSettled([...sessions.values()].map(s=>s.release())); }
 };
 `;
+const uiRenderer = `
+  import { mount, unmount } from 'svelte';
+  import { all, fork, join } from 'typed-redux-saga';
+  import type { Task } from 'redux-saga';
+  import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+  import { store } from '$store/renderer/store';
+  import { connectionsSaga } from '$store/renderer/slices/connections/sagas/connections-saga';
+  import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
+  import { principalSaga } from '$store/renderer/slices/principal/sagas/principal-saga';
+  import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+  import { repositoryContextSaga } from '$store/renderer/slices/repository-context/sagas/repository-context-saga';
+  import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    selectPrincipalAdmissionContext,
+    selectPrincipalSnapshot,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectWorkspaceItems,
+    selectWorkspaceHostOperationContext,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
+
+
+import App from '${join(root, 'test/fixtures/native-review-native/ui-renderer.svelte')}';
+import '${join(root, 'src/app.css')}';
+const target = document.getElementById('ui');
+if (!target) throw new Error('Original UI mount target missing');
+const component = mount(App, {target});
+let closing: Promise<unknown> | null = null;
+  const faults: string[] = [];
+  const tasks: Array<{
+    name: string;
+    task: Task;
+    iteratorDone: boolean;
+    joined: boolean;
+    done: Promise<void>;
+  }> = [];
+  let rootStarted!: () => void;
+  const started = new Promise<void>((resolve) => (rootStarted = resolve));
+  function* roots() {
+    for (const saga of [
+      connectionsSaga,
+      daemonEventsSaga,
+      principalSaga,
+      lifecycleReadSaga,
+      repositoryContextSaga,
+    ]) {
+      let finish!: () => void;
+      const row = {
+        name: saga.name,
+        task: null as unknown as Task,
+        iteratorDone: false,
+        joined: false,
+        done: new Promise<void>((resolve) => (finish = resolve)),
+      };
+      row.task = yield* fork(function* originalRoot() {
+        try {
+          yield* saga();
+        } catch (error) {
+          faults.push(saga.name + ': ' + String(error));
+          throw error;
+        } finally {
+          // Reached only after the delegated production iterator's finally has completed.
+          row.iteratorDone = true;
+          finish();
+        }
+      });
+      tasks.push(row);
+    }
+    rootStarted();
+    yield* all(tasks.map((row) => join(row.task)));
+  }
+  const stopRoot = store.runSaga(roots);
+  const api = window.electronAPI;
+  if (!api) throw new Error('The original generated Electron preload is required');
+  const buffered: any[] = [];
+  let snapshotDone = false;
+  let statusClosed = false;
+  function applyStatus(payload: any, snapshot: boolean) {
+    store.dispatch(
+      connectionStatusChanged(payload.status, payload.transport, {
+        sidecarGaveUp: payload.sidecarGaveUp,
+        sidecarStartupFailed: payload.sidecarStartupFailed,
+        reason: snapshot ? payload.sidecarStartupFailedReason : payload.reason,
+        reconnectAttempts: payload.reconnectAttempts,
+        connectionLimited: payload.connectionLimited,
+        connectionLimitRetryAfterMs: payload.connectionLimitRetryAfterMs,
+        daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
+      }),
+    );
+  }
+  // Listener-first, original snapshot then buffered transitions; no fabricated healthy status.
+  const statusListener = api.on(IPC_CHANNELS.BACKEND.STATUS, (payload: any) => {
+    if (!snapshotDone) buffered.push(payload);
+    else if (!statusClosed) applyStatus(payload, false);
+  });
+  const bootstrap = api.invoke(IPC_CHANNELS.BACKEND.GET_STATUS).then(
+    (value) => {
+      if (!statusClosed) {
+        applyStatus(value, true);
+        for (const payload of buffered) applyStatus(payload, false);
+      }
+      buffered.length = 0;
+      snapshotDone = true;
+    },
+    (error) => {
+      faults.push('Original status snapshot: ' + String(error));
+      throw error;
+    },
+  );
+  function snapshot() {
+    const state = store.state;
+    return {
+      faults,
+      role: selectHostRole.select(state),
+      admission: selectPrincipalAdmissionContext.select(state),
+      hasReceivedList: state.connections.hasReceivedList,
+      windowBackendId: state.connections.windowBackendId,
+      subscriptionGeneration: state.workspaceEvents.subscriptionGeneration,
+      workspaceLoaded: state.workspace.hasLoaded,
+      workspaceAdmission: state.workspace.loadedPrincipalContext,
+      workspaces: selectWorkspaceItems.select(state).map((row) => ({
+        id: row.id,
+        hostContext: selectWorkspaceHostOperationContext.select(state, row.id),
+      })),
+      attempts: (state.repositoryContext.nativeReviewAttempts
+        ? getItems(state.repositoryContext.nativeReviewAttempts)
+        : []
+      ).map((row) => ({
+        owner: row.owner,
+        publicView: selectNativeReviewForOwner.select(state, row.owner),
+      })),
+    };
+  }
+  async function close() {
+    if (closing) return closing;
+    closing = (async () => {
+      await component.dismiss(); // Actual child onDestroy ends the original owner/demand.
+      statusClosed = true;
+      api.offById(IPC_CHANNELS.BACKEND.STATUS, statusListener);
+      await bootstrap;
+      await started;
+      for (const row of tasks) row.task.cancel();
+      await Promise.all(
+        tasks.map(async (row) => {
+          await row.done;
+          await row.task.toPromise();
+          row.joined = true;
+        }),
+      );
+      const final = snapshot();
+      stopRoot();
+      await unmount(component);
+      return {
+        producersClosed: statusClosed && snapshotDone,
+        faults,
+        final,
+        tasks: tasks.map(({ name, iteratorDone, joined }) => ({ name, iteratorDone, joined })),
+      };
+    })();
+    return closing;
+  }
+
+Object.assign(window,{native:{ui:true},nativeUi:{snapshot,close,async dismiss(){await component.dismiss();return snapshot();}}});
+`;
+const activeRenderer = uiMode ? uiRenderer : renderer;
 // Node/libuv stdio "pipe" is a socketpair. This controller owns a genuine
 // anonymous pipe and the original supervisor Child; its wait is not a native receipt.
 const pipeController = String.raw`
@@ -174,7 +349,7 @@ const modules = (label: string): Plugin => ({
       [...ids].sort().map(async (id) => {
         const virtual =
           id === '\0native-renderer'
-            ? renderer
+            ? activeRenderer
             : id === '\0native-socket-observer'
               ? socketShim
               : null;
@@ -187,6 +362,37 @@ const modules = (label: string): Plugin => ({
       }),
     );
     record(evidence!, `${label}-inputs`, inputs);
+    if (uiMode && label === 'renderer') {
+      const required = [
+        'test/fixtures/native-review-native/ui-renderer.svelte',
+        'src/lib/components/workspace/PullRequestCreator.svelte',
+        'src/features/accept-changes/components/NativeReviewAttempt.svelte',
+        'src/lib/components/patterns/confirm/ConfirmHost.svelte',
+        'src/store/renderer/configured-store.ts',
+        'src/store/renderer/slices/principal/sagas/principal-saga.ts',
+        'src/store/renderer/slices/connections/sagas/connections-saga.ts',
+        'src/store/renderer/slices/workspace-events/sagas/daemon-events-saga.ts',
+        'src/store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts',
+        'src/store/renderer/slices/repository-context/sagas/repository-context-saga.ts',
+        'src/store/renderer/slices/repository-context/sagas/native-review-saga.ts',
+        'src/lib/client/live/live-workspaces-client.ts',
+        'src/lib/client/live/electron-ipc-transport.ts',
+      ];
+      const proof = required.map((path) => {
+        const id = join(root, path);
+        const chunk = Object.values(output).find(
+          (item) => item.type === 'chunk' && item.modules[id]?.renderedLength > 0,
+        );
+        if (!chunk || chunk.type !== 'chunk') throw new Error('Missing actual UI path: ' + path);
+        return {
+          path,
+          input: inputs.find((item) => item.id === id),
+          renderedLength: chunk.modules[id].renderedLength,
+          chunk: chunk.fileName,
+        };
+      });
+      record(evidence!, 'ui-build-preflight', proof);
+    }
     if (label === 'main.mjs') {
       const clientId = join(root, 'src/features/backend/main/json-rpc-client.ts');
       const wrapperId = '\0native-socket-observer';
@@ -312,7 +518,7 @@ test.beforeAll(async () => {
       resolved: await realpath(python),
       sha256: hash(await readFile(python)),
     },
-    groups,
+    groups: uiMode ? uiGroups : groups,
     workers: 1,
     retries: 0,
     driverLifetimeSeconds: 150,
@@ -321,7 +527,7 @@ test.beforeAll(async () => {
     executable,
     source,
     socketShimHash: hash(socketShim),
-    rendererHash: hash(renderer),
+    rendererHash: hash(activeRenderer),
   });
   bundle = await mkdtemp(join(tmpdir(), 'native-review-electron-code-'));
   await symlink(await realpath(join(root, 'node_modules')), join(bundle, 'node_modules'));
@@ -362,33 +568,76 @@ test.beforeAll(async () => {
     });
     await copyFile(join(bundle, name), join(evidence!, name));
   }
+  // Reuse the application's exact renderer resolution, including its existing
+  // icon compatibility mappings; do not replace components or install packages.
+  const appConfig = uiMode
+    ? await loadConfigFromFile(
+        { command: 'build', mode: 'production' },
+        join(root, 'vite.config.mjs'),
+        root,
+        'silent',
+      )
+    : null;
+  if (uiMode && !appConfig?.config.resolve?.alias)
+    throw new Error('Original renderer aliases missing');
+  if (uiMode)
+    record(evidence!, 'renderer-config-input', {
+      path: join(root, 'vite.config.mjs'),
+      sha256: hash(await readFile(join(root, 'vite.config.mjs'))),
+      aliases: appConfig!.config.resolve!.alias,
+      qualification:
+        'Unchanged application resolution and defines only; fixture owns its build plugins and entry',
+    });
   await build({
     configFile: false,
     logLevel: 'error',
-    resolve: { alias },
+    resolve: {
+      alias: appConfig?.config.resolve?.alias ?? alias,
+      conditions: ['browser', 'svelte'],
+    },
+    define: appConfig?.config.define,
     plugins: [
+      ...(uiMode ? [svelte({ configFile: false, preprocess: vitePreprocess() })] : []),
       modules('renderer'),
       {
         name: 'inline-native-facade',
         resolveId(id) {
           if (id === 'native-renderer') return '\0native-renderer';
         },
-        load(id) {
-          if (id === '\0native-renderer') return renderer;
+        async load(id) {
+          if (id === '\0native-renderer')
+            return uiMode
+              ? (
+                  await transformWithEsbuild(activeRenderer, 'native-ui-entry.ts', {
+                    loader: 'ts',
+                    target: 'es2022',
+                  })
+                ).code
+              : activeRenderer;
         },
       },
     ],
     build: {
+      target: 'es2022',
       outDir: bundle,
       emptyOutDir: false,
       minify: false,
       rollupOptions: {
         input: 'native-renderer',
-        output: { format: 'es', entryFileNames: 'renderer.js', inlineDynamicImports: true },
+        output: {
+          format: 'es',
+          entryFileNames: 'renderer.js',
+          inlineDynamicImports: true,
+          assetFileNames: (asset) =>
+            asset.names.some((name) => name.endsWith('.css'))
+              ? 'renderer.js.css'
+              : 'assets/[name]-[hash][extname]',
+        },
       },
     },
   });
   await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
+  if (uiMode) await copyFile(join(bundle, 'renderer.js.css'), join(evidence!, 'renderer.js.css'));
   record(
     evidence!,
     'compiled',
@@ -691,7 +940,7 @@ async function withDriver(
     runId,
     ...identity,
     lifetimeSeconds: 150,
-    scenarios: groups[index][1],
+    scenarios: index < 5 ? groups[index][1] : uiGroups[index - 5][1],
   });
   const descriptorHash = hash(await readFile(join(dir, 'descriptor.json')));
   const child = spawn(
@@ -787,6 +1036,9 @@ async function withDriver(
       ],
       env: {
         ...environment(home),
+        ...(uiMode
+          ? { NATIVE_REVIEW_UI: '1', NATIVE_REVIEW_UI_ROLE: index === 6 ? 'member' : 'owner' }
+          : {}),
         DISPLAY: process.env.DISPLAY!,
         XDG_RUNTIME_DIR: join(dir, 'runtime'),
       },
@@ -806,6 +1058,7 @@ async function withDriver(
       b: await pageFor(app, 'local-B'),
       packet,
     });
+    if (uiMode) record(dir, 'ui-quiescence', await main(app, (f) => f.quiesceUi()));
     await main(app, (f) => f.join());
     const before = await packet('before-stop');
     if (!before.source) throw new Error('Original main observations missing');
@@ -827,6 +1080,11 @@ async function withDriver(
       inventory.rows.map((row) => row.request),
     );
     expect(after.pending).toBe(0);
+    if (uiMode) {
+      expect(after.completionFaults).toEqual([]);
+      expect(after.outstandingOriginals).toBe(0);
+      expect(after.completions).toEqual(before.source.completions);
+    }
     const originals = finalInventory.rows.map(({ request, originalResponse, history }) => ({
       request,
       originalResponse,
@@ -1126,5 +1384,239 @@ test(groups[4][0], async () =>
     await confirm(a, 'lost-post', { prTitle: 'Uncertain original write' });
     const final = await packet('lost-post-retained', history);
     expect(final.hosts[0].effects).toEqual(first.hosts[0].effects);
+  }),
+);
+
+const uiSnapshot = (page: Page) => page.evaluate(() => (window as any).nativeUi.snapshot());
+async function uiReady(page: Page, role: string) {
+  if (!uiMode) throw new Error('UI cases require the actual component renderer');
+  await expect.poll(async () => (await uiSnapshot(page)).role).toBe(role);
+  await expect.poll(async () => (await uiSnapshot(page)).hasReceivedList).toBe(true);
+  await expect.poll(async () => (await uiSnapshot(page)).subscriptionGeneration).toBeTruthy();
+  await expect.poll(async () => (await uiSnapshot(page)).admission).toBeTruthy();
+  const value = await uiSnapshot(page);
+  expect(value.hasReceivedList).toBe(true);
+  expect(value.subscriptionGeneration).toBeTruthy();
+  expect(value.admission).toBeTruthy();
+  expect(value.faults).toEqual([]);
+  if (role !== 'guest') {
+    await expect
+      .poll(async () => (await uiSnapshot(page)).workspaceAdmission)
+      .toBe(value.admission);
+    await expect(page.getByRole('button', { name: 'Start a review', exact: true })).toBeVisible();
+  }
+}
+async function uiPrepare(page: Page, title: string) {
+  await page.getByRole('button', { name: 'Start a review', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare merge request', exact: true }).click();
+  await expect
+    .poll(async () => (await uiSnapshot(page)).attempts.at(-1)?.publicView?.status)
+    .toBe('ready');
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title);
+  await page
+    .getByRole('textbox', { name: 'Description', exact: true })
+    .fill('Text retained by the actual standalone form');
+  return (await uiSnapshot(page)).attempts.at(-1).publicView.preview as NativeReviewPreparedView;
+}
+async function uiConfirmation(page: Page, prepared: NativeReviewPreparedView, title: string) {
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Create this merge request?' });
+  await expect(dialog).toBeVisible();
+  for (const value of [
+    title,
+    prepared.reviewPreparation.target.repository.projectPath,
+    prepared.reviewPreparation.target.repository.instanceBaseUrl,
+    prepared.reviewPreparation.source.branch,
+    prepared.reviewPreparation.target.branch,
+  ])
+    await expect(dialog).toContainText(value);
+  return dialog;
+}
+async function uiOutcome(page: Page, status: 'created' | 'reused' | 'uncertain') {
+  await expect
+    .poll(
+      async () =>
+        (await uiSnapshot(page)).attempts.at(-1)?.publicView?.observation?.execute?.reviewExecution
+          ?.outcome.status,
+    )
+    .toBe(status);
+  const observation = (await uiSnapshot(page)).attempts.at(-1).publicView
+    .observation as NativeReviewObservation;
+  const execution = settled(observation, status);
+  await expect(page.locator('[data-native-outcome]').first()).toHaveAttribute(
+    'data-native-outcome',
+    status,
+  );
+  await expect(page.locator('[data-native-publication]').first()).toHaveAttribute(
+    'data-native-publication',
+    execution.publication.state,
+  );
+  expect(execution.gitReceipts).toEqual([]);
+  if (execution.outcome.status === 'created' || execution.outcome.status === 'reused') {
+    const review = execution.outcome.review;
+    await expect(page.getByRole('link', { name: review.title, exact: true })).toHaveAttribute(
+      'href',
+      review.url,
+    );
+    for (const value of [
+      review.resource.repository.projectPath,
+      review.resource.repository.instanceBaseUrl,
+      review.headSha ?? 'Unknown',
+    ])
+      await expect(
+        page.getByRole('region', { name: 'Original execution', exact: true }),
+      ).toContainText(value);
+  }
+  return observation;
+}
+function nativeRequests(packet: any, method: string) {
+  return packet.source.records.filter(
+    (row: WireRecord) =>
+      row.direction === 'request' && row.envelope.method === 'accept-changes.' + method,
+  );
+}
+function noGitChanges(before: any, after: any) {
+  for (const host of [0, 1]) {
+    for (const key of ['primaryHead', 'registeredHead', 'index', 'worktree'])
+      expect(after.hosts[host][key]).toEqual(before.hosts[host][key]);
+    expect(after.hosts[host].effects.pushes).toBe(before.hosts[host].effects.pushes);
+  }
+}
+
+test(uiGroups[0][0], async () =>
+  withDriver(5, async ({ a, b, ready, packet }) => {
+    await uiReady(a, 'owner');
+    await uiReady(b, 'owner');
+    const baseline = await packet('ui-owner-before-action', await uiSnapshot(a));
+    expect(nativeRequests(baseline, 'prepare')).toEqual([]);
+    expect(nativeRequests(baseline, 'execute')).toEqual([]);
+    const title = 'Explicit standalone Owner request';
+    const prepared = await uiPrepare(a, title);
+    expect(prepared.reviewPreparation.root).toEqual({
+      kind: 'primary',
+      workspaceId: ready.hosts[0].workspaceId,
+    });
+    const dialog = await uiConfirmation(a, prepared, title);
+    await a.screenshot({ path: join(evidence!, 'ui-owner-confirmation.png') });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(a.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(title);
+    const cancelled = await packet('ui-owner-cancelled', await uiSnapshot(a));
+    expect(nativeRequests(cancelled, 'execute')).toEqual([]);
+    for (const host of [0, 1])
+      expect(cancelled.hosts[host].effects).toEqual(baseline.hosts[host].effects);
+    noGitChanges(baseline, cancelled);
+    await (
+      await uiConfirmation(a, prepared, title)
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    const observation = await uiOutcome(a, 'created');
+    const after = await packet('ui-owner-created', {
+      prepared,
+      observation,
+      renderer: await uiSnapshot(a),
+    });
+    expect(nativeRequests(after, 'execute')).toHaveLength(1);
+    expect(after.hosts[0].effects.posts).toBe(1);
+    expect(after.hosts[1].effects).toEqual(baseline.hosts[1].effects);
+    noGitChanges(baseline, after);
+    await expect(a.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(title);
+    await a.screenshot({ path: join(evidence!, 'ui-owner-created.png') });
+  }),
+);
+
+test(uiGroups[1][0], async () =>
+  withDriver(6, async ({ app, a, b, ready, packet }) => {
+    await uiReady(a, 'member');
+    await uiReady(b, 'owner');
+    const baseline = await packet('ui-member-before-action', await uiSnapshot(a));
+    const prepared = await uiPrepare(a, 'Member submitted suggestion');
+    expect(prepared.reviewPreparation.source.connection ?? null).toBeNull();
+    expect(prepared.reviewPreparation.target.connection ?? null).toBeNull();
+    await (
+      await uiConfirmation(a, prepared, 'Member submitted suggestion')
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    const observation = await uiOutcome(a, 'reused');
+    await packet('ui-member-reused', { prepared, observation, renderer: await uiSnapshot(a) });
+    await a.screenshot({ path: join(evidence!, 'ui-member-reused.png') });
+    // A new explicit lifetime, not a retry of the completed operation.
+    const held = await uiPrepare(a, 'Separate Member lifetime');
+    expect(held.reviewPreparation.operationId).not.toBe(prepared.reviewPreparation.operationId);
+    const barrier = await arm(ready, held.reviewPreparation.operationId, 'GET');
+    await (
+      await uiConfirmation(a, held, 'Separate Member lifetime')
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    await packet('ui-member-admitted', await entered(ready, barrier.id));
+    const closed = await a.evaluate(() => (window as any).nativeUi.dismiss());
+    expect(closed.attempts.every((row: any) => row.publicView === null)).toBe(true);
+    await control(ready, { command: 'releaseBarrier', host: 0, barrierId: barrier.id });
+    await main(app, (f) => f.join());
+    const finished = await packet('ui-member-original-after-unmount', await uiSnapshot(a));
+    expect(stopInventory(finished.source).rows.every((row) => row.complete)).toBe(true);
+    expect((await uiSnapshot(a)).attempts.every((row: any) => row.publicView === null)).toBe(true);
+    noGitChanges(baseline, finished);
+    record(evidence!, 'ui-member-retired-producers', await main(app, (f) => f.quiesceUi(false)));
+    await main(app, (f) => f.role('guest'));
+    await main(app, (f) => f.navigate());
+    await a.waitForFunction(() => !!(window as any).nativeUi);
+    await uiReady(a, 'guest');
+    const beforeGuest = await packet('ui-guest-before-action', await uiSnapshot(a));
+    const start = a.getByRole('button', { name: 'Start a review', exact: true });
+    if (await start.count()) {
+      await start.click();
+      await expect(
+        a.getByRole('button', { name: 'Prepare merge request', exact: true }),
+      ).toBeDisabled();
+    }
+    await expect(a.getByRole('button', { name: 'Create', exact: true })).toHaveCount(0);
+    const denied = await packet('ui-guest-denied', await uiSnapshot(a));
+    expect(nativeRequests(denied, 'prepare')).toEqual(nativeRequests(beforeGuest, 'prepare'));
+    expect(nativeRequests(denied, 'execute')).toEqual(nativeRequests(beforeGuest, 'execute'));
+    for (const host of [0, 1])
+      expect(denied.hosts[host].effects).toEqual(beforeGuest.hosts[host].effects);
+    noGitChanges(beforeGuest, denied);
+    await a.screenshot({ path: join(evidence!, 'ui-guest-denied.png') });
+  }),
+);
+
+test(uiGroups[2][0], async () =>
+  withDriver(7, async ({ a, ready, packet }) => {
+    await uiReady(a, 'owner');
+    const baseline = await packet('ui-uncertain-before-action');
+    const title = 'Uncertain standalone request';
+    const prepared = await uiPrepare(a, title);
+    const barrier = await arm(
+      ready,
+      prepared.reviewPreparation.operationId,
+      'POST',
+      'loseAfterPost',
+    );
+    await (
+      await uiConfirmation(a, prepared, title)
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    const observation = await uiOutcome(a, 'uncertain');
+    const first = await packet('ui-uncertain-original', { prepared, barrier, observation });
+    expect(first.hosts[0].effects.posts).toBe(1);
+    expect(nativeRequests(first, 'execute')).toHaveLength(1);
+    await expect(a.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(title);
+    await a.getByRole('button', { name: 'Check result', exact: true }).click();
+    await expect(
+      a.getByRole('region', { name: 'Original result check', exact: true }),
+    ).toBeVisible();
+    const checked = (await uiSnapshot(a)).attempts.at(-1).publicView
+      .observation as NativeReviewObservation;
+    expect(checked.execute).toEqual(observation.execute);
+    expect(checked.reconciliation?.reviewExecution?.outcome.status).toBe('uncertain');
+    const after = await packet('ui-uncertain-original-check', checked);
+    expect(nativeRequests(after, 'execute')).toEqual(nativeRequests(first, 'execute'));
+    expect(after.hosts[0].effects).toEqual(first.hosts[0].effects);
+    noGitChanges(baseline, after);
+    await a.screenshot({ path: join(evidence!, 'ui-uncertain-check.png') });
   }),
 );

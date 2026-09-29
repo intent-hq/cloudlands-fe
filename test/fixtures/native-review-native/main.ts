@@ -8,6 +8,159 @@ import { StringDecoder } from 'node:string_decoder';
 import { stampWindowWithBackend } from '../../../src/main/window-backend';
 import type { BackendConnectionConfig } from '../../../src/features/backend/main/backend-connection';
 import type { NativeReviewInput } from '../../../src/shared/types/native-review-operation';
+import { JsonRpcClient } from '../../../src/features/backend/main/json-rpc-client';
+
+/** Passive original-call ledger. Its observers never replace the returned value or Promise. */
+export function completionLedger() {
+  const rows: Array<Record<string, any>> = [];
+  const faults: string[] = [];
+  const pending = new Set<Promise<unknown>>();
+  const listeners = new Set<() => void>();
+  let sequence = 0;
+  let sealed = false;
+  const changed = () => {
+    for (const listener of [...listeners]) listener();
+  };
+  function invoke<T>(
+    fn: (...args: any[]) => T,
+    receiver: unknown,
+    args: unknown[],
+    metadata: Record<string, unknown>,
+    project: (value: unknown) => unknown = (value) => value,
+  ): T {
+    if (sealed) faults.push('Original work issued after quiescence');
+    if (rows.length >= 1024) faults.push('Original completion ledger overflow');
+    const row: Record<string, any> = { sequence: sequence++, ...metadata, state: 'pending' };
+    if (rows.length < 1024) rows.push(row);
+    const settle = (state: string, value: unknown) => {
+      row.state = state;
+      try {
+        row.value = state === 'fulfilled' ? project(value) : String(value);
+        if (JSON.stringify(rows).length > 16_777_216) faults.push('Completion evidence byte bound');
+      } catch (error) {
+        faults.push('Unobserved original completion: ' + String(error));
+      }
+      changed();
+    };
+    let result: T;
+    try {
+      result = Reflect.apply(fn, receiver, args);
+    } catch (error) {
+      settle('thrown', error);
+      throw error;
+    }
+    if (result && typeof (result as any).then === 'function' && !(result instanceof Promise))
+      faults.push('Unobserved non-native Promise completion');
+    if (result instanceof Promise) {
+      pending.add(result);
+      void result.then(
+        (value) => {
+          pending.delete(result);
+          settle('fulfilled', value);
+        },
+        (error) => {
+          pending.delete(result);
+          settle('rejected', error);
+        },
+      );
+    } else settle('fulfilled', result);
+    changed();
+    return result;
+  }
+  async function join(producersClosed: () => boolean, released: () => boolean, seal = true) {
+    while (true) {
+      if (faults.length) throw new Error(faults.join('; '));
+      if (producersClosed() && pending.size === 0 && released()) {
+        sealed = seal;
+        return { producersClosed: true, pending: 0, sealed, rows: rows.length };
+      }
+      await new Promise<void>((resolve) => {
+        const next = () => {
+          listeners.delete(next);
+          resolve();
+        };
+        listeners.add(next);
+      });
+    }
+  }
+  return { rows, faults, pending, invoke, join, changed };
+}
+
+/** Native/context payloads stay complete; bootstrap data is explicitly metadata-only. */
+export function observationValue(method: string, value: any): unknown {
+  if (/^(accept-changes\.|workspace\.repositoryContext)/.test(method)) {
+    if (/"(?:token|authorization|password|secret)"\s*:/i.test(JSON.stringify(value) ?? ''))
+      throw new Error('Unsafe qualified envelope');
+    return value;
+  }
+  return {
+    metadataOnly: true,
+    method,
+    type: typeof value,
+    subscriptionId: value?.subscriptionId,
+    ok: value?.ok,
+    success: value?.success,
+    removed: value?.removed,
+    unsubscribed: value?.unsubscribed,
+    redacted: 'bootstrap/auth/config payload intentionally not retained',
+  };
+}
+
+/** Correlate cleanup to the same original client/connection, never matching IDs alone. */
+export function disposalComplete(rows: Array<Record<string, any>>): boolean {
+  const calls = rows.filter((row) => row.layer === 'client');
+  const ids = calls.map((row) => row.callId);
+  if (new Set(ids).size !== ids.length) throw new Error('Duplicate original call identity');
+  for (const row of calls) {
+    if (row.state === 'pending') return false;
+    if (row.state !== 'fulfilled') continue; // Terminal errors are preserved, not release acks.
+    const kind =
+      row.method === 'workspace.repositoryContext.capture'
+        ? ['workspace.repositoryContext.release', 'lifetimeId', 'repositoryLifetimeId']
+        : row.method === 'accept-changes.prepare'
+          ? ['accept-changes.release', 'operationId', 'operationId']
+          : row.method === 'events.subscribe'
+            ? ['events.unsubscribe', 'subscriptionId', 'subscriptionId']
+            : null;
+    if (!kind) continue;
+    if (
+      ![row.callId, row.clientId, row.socketId].every(
+        (id) => typeof id === 'string' && id.length > 0,
+      ) ||
+      (row.method !== 'events.subscribe' && typeof row.connectionId !== 'string')
+    )
+      throw new Error('Missing original cleanup identity');
+    const id = (row.value?.reviewOperation ?? row.value)?.[kind[1]];
+    if (typeof id !== 'string' || !id) throw new Error('Unobserved original lease identity');
+    const matches = calls.filter(
+      (candidate) =>
+        candidate.method === kind[0] &&
+        candidate.clientId === row.clientId &&
+        (row.method === 'events.subscribe'
+          ? candidate.socketId === row.socketId
+          : candidate.connectionId === row.connectionId) &&
+        (row.method === 'events.subscribe' ||
+          (candidate.params?.workspaceId === row.params?.workspaceId &&
+            (row.method === 'workspace.repositoryContext.capture'
+              ? candidate.params?.gitRootId === row.params?.gitRootId
+              : JSON.stringify(candidate.params?.root) ===
+                JSON.stringify(row.params?.review?.root)))) &&
+        candidate.params?.[kind[2]] === id,
+    );
+    if (!matches.length || matches.some((candidate) => candidate.state === 'pending')) return false;
+    if (
+      !matches.some(
+        (candidate) =>
+          candidate.state === 'fulfilled' &&
+          (kind[0] === 'events.unsubscribe'
+            ? candidate.value?.success === true
+            : candidate.value?.released === true),
+      )
+    )
+      throw new Error('Original cleanup has no successful release acknowledgement');
+  }
+  return true;
+}
 
 type Envelope = Record<string, any>;
 export interface WireRecord {
@@ -43,6 +196,56 @@ async function run() {
   const records: WireRecord[] = [];
   const faults: string[] = [];
   const allocations = new Map<string, { socket: Duplex; host: number; config: object }>();
+  const uiMode = process.env.NATIVE_REVIEW_UI === '1';
+  const completions = completionLedger();
+  const identities = new WeakMap<object, string>();
+  const objectId = (object: object | null) => {
+    if (!object) return null;
+    if (!identities.has(object)) identities.set(object, randomUUID());
+    return identities.get(object)!;
+  };
+  let activeCall: string | null = null;
+  // Install before backend registration/client allocation. A captured rejection may have no wire.
+  if (uiMode) {
+    for (const name of ['request', 'requestOnCapturedConnection'] as const) {
+      const original = JsonRpcClient.prototype[name];
+      const observed = function (this: JsonRpcClient, ...args: any[]) {
+        const captured = name === 'requestOnCapturedConnection';
+        const connection = captured ? args[0] : this.getRepositoryConnection();
+        const method = args[captured ? 1 : 0];
+        const params = args[captured ? 2 : 1];
+        const allocation = [...allocations].findLast(
+          ([, value]) => value.config === this.getConfig() && !value.socket.destroyed,
+        );
+        const callId = randomUUID();
+        const prior = activeCall;
+        activeCall = callId;
+        try {
+          return completions.invoke(
+            original,
+            this,
+            args,
+            {
+              layer: 'client',
+              callId,
+              method,
+              captured,
+              clientId: objectId(this),
+              connectionId: objectId(connection),
+              incarnationId: objectId(connection?.incarnation ?? null),
+              socketId: allocation?.[0] ?? null,
+              params: observationValue(method, params),
+            },
+            (value) => observationValue(method, value),
+          );
+        } finally {
+          activeCall = prior;
+        }
+      };
+      if (!Reflect.set(JsonRpcClient.prototype, name, observed))
+        throw new Error('Original client observer could not be installed');
+    }
+  }
   let observedBytes = 0;
   function observe(socket: Duplex, config: BackendConnectionConfig, probe = false) {
     const host = config.transport === 'uds' ? 1 : 0;
@@ -54,7 +257,7 @@ async function run() {
       faults.push('Unexpected original socket target');
     }
     const socketId = randomUUID();
-    const nativeIds = new Set<string>();
+    const nativeIds = new Map<string, string>();
     const buffers = { request: '', response: '' };
     const decoders = { request: new StringDecoder('utf8'), response: new StringDecoder('utf8') };
     let invalid = false;
@@ -73,6 +276,18 @@ async function run() {
           buffers[direction] = buffers[direction].slice(end + 1);
           if (!raw.trim()) continue;
           const envelope = JSON.parse(raw) as Envelope;
+          if (uiMode && direction === 'request' && activeCall) {
+            const original = completions.rows.find((row) => row.callId === activeCall);
+            if (!original) faults.push('Original issuing future missing');
+            else {
+              original.wireRequests ??= [];
+              original.wireRequests.push({
+                socketId,
+                requestId: envelope.id,
+                method: envelope.method,
+              });
+            }
+          }
           const request =
             direction === 'request' &&
             typeof envelope.method === 'string' &&
@@ -82,20 +297,44 @@ async function run() {
               'accept-changes.reconcile',
               'accept-changes.release',
             ].includes(envelope.method);
-          if (request) nativeIds.add(String(envelope.id));
+          const additional =
+            uiMode && direction === 'request' && typeof envelope.method === 'string';
+          if (request || additional) nativeIds.set(String(envelope.id), envelope.method);
           const response = direction === 'response' && nativeIds.has(String(envelope.id));
-          const notice = direction === 'response' && envelope.method === 'accept-changes.retired';
-          if (!request && !response && !notice) continue;
+          const notice =
+            direction === 'response' &&
+            (envelope.method === 'accept-changes.retired' ||
+              (uiMode && envelope.method === 'workspace.repositoryContext.retired'));
+          if (!request && !additional && !response && !notice) continue;
+          const method = envelope.method ?? nativeIds.get(String(envelope.id)) ?? '';
+          const qualified = /^(accept-changes\.|workspace\.repositoryContext)/.test(method);
           observedBytes += Buffer.byteLength(raw);
           if (records.length >= 1024 || observedBytes > 16_777_216)
             throw new Error('Native observation bound');
-          if (/"(?:token|authorization|password|secret)"\s*:/i.test(raw))
+          if (qualified && /"(?:token|authorization|password|secret)"\s*:/i.test(raw))
             throw new Error('Unsafe native frame');
           records.push({
             socketId,
             host,
             direction: notice ? 'notification' : direction,
-            envelope,
+            envelope:
+              !uiMode || qualified
+                ? envelope
+                : {
+                    jsonrpc: envelope.jsonrpc,
+                    id: envelope.id,
+                    method,
+                    ...(direction === 'request'
+                      ? { params: observationValue(method, envelope.params), callId: activeCall }
+                      : envelope.error
+                        ? {
+                            error: {
+                              code: envelope.error.code,
+                              message: 'bootstrap diagnostic redacted',
+                            },
+                          }
+                        : { result: observationValue(method, envelope.result) }),
+                  },
           });
         }
       } catch (error) {
@@ -186,7 +425,31 @@ async function run() {
     return Reflect.apply(originalHandle, this, [
       channel,
       function (this: unknown, event, ...args) {
-        const result = Reflect.apply(listener, this, [event, ...args]);
+        const result = uiMode
+          ? completions.invoke(
+              listener,
+              this,
+              [event, ...args],
+              {
+                layer: 'ipc',
+                channel,
+                sender: event.sender.id,
+                frame: event.senderFrame?.routingId,
+                document: event.senderFrame?.url,
+                main: event.senderFrame === event.sender.mainFrame,
+                args:
+                  channel.startsWith('backend:native-review:') ||
+                  channel.startsWith('backend:repository:')
+                    ? args
+                    : { metadataOnly: true, method: args[0]?.method },
+              },
+              (value) =>
+                channel.startsWith('backend:native-review:') ||
+                channel.startsWith('backend:repository:')
+                  ? value
+                  : observationValue(channel, value),
+            )
+          : Reflect.apply(listener, this, [event, ...args]);
         if (channel.startsWith('backend:native-review:')) {
           const record: Record<string, unknown> = {
             channel,
@@ -221,15 +484,22 @@ async function run() {
   };
   const http = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
-    if (request.url === '/renderer.js') {
-      response.setHeader('Content-Type', 'text/javascript');
-      response.end(await readFile(rendererPath));
+    if (request.url === '/renderer.js' || request.url === '/style.css') {
+      response.setHeader(
+        'Content-Type',
+        request.url.endsWith('.css') ? 'text/css' : 'text/javascript',
+      );
+      response.end(
+        await readFile(request.url.endsWith('.css') ? rendererPath + '.css' : rendererPath),
+      );
       return;
     }
     response.setHeader('Content-Type', 'text/html');
     response.end(
-      '<!doctype html><title>Native review fixture</title><script type="module" src="/renderer.js"></script>' +
-        (request.url === '/frame' ? '' : '<iframe src="/frame"></iframe>'),
+      '<!doctype html><title>Native review fixture</title>' +
+        (uiMode ? '<link rel="stylesheet" href="/style.css"><main id="ui"></main>' : '') +
+        '<script type="module" src="/renderer.js"></script>' +
+        (uiMode || request.url === '/frame' ? '' : '<iframe src="/frame"></iframe>'),
     );
   });
   await app.whenReady();
@@ -239,14 +509,18 @@ async function run() {
   const clients = new Map<string, ReturnType<typeof backend.getLocalBackendClient>>();
   const backendIds = new Map<string, string>();
   async function confirmed(client: ReturnType<typeof backend.getLocalBackendClient>) {
-    if (client.getRepositoryConnection()?.nativeReview) return;
+    const admitted = () => {
+      const original = client.getRepositoryConnection();
+      return original?.nativeReview && (!uiMode || original.repositoryContext);
+    };
+    if (admitted()) return;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         cleanup();
         reject(new Error('Confirmed native hello deadline'));
       }, 10000);
       const check = () => {
-        if (client.getRepositoryConnection()?.nativeReview) {
+        if (admitted()) {
           cleanup();
           resolve();
         }
@@ -275,7 +549,9 @@ async function run() {
     await confirmed(client);
     return { client, id: value.id };
   }
-  const owner = await remote('owner');
+  const owner = await remote(
+    uiMode && process.env.NATIVE_REVIEW_UI_ROLE === 'member' ? 'member' : 'owner',
+  );
   clients.set('host-A', owner.client);
   backendIds.set('host-A', owner.id);
   const local = backend.getLocalBackendClient();
@@ -315,6 +591,13 @@ async function run() {
         faults,
         ipcRecords,
         pending: pending.size,
+        ...(uiMode
+          ? {
+              completions: completions.rows,
+              completionFaults: completions.faults,
+              outstandingOriginals: completions.pending.size,
+            }
+          : {}),
         allocations: [...allocations].map(([socketId, a]) => ({
           socketId,
           host: a.host,
@@ -327,6 +610,28 @@ async function run() {
     },
     async join() {
       await Promise.allSettled([...pending]);
+    },
+    async quiesceUi(seal = true) {
+      if (!uiMode) throw new Error('UI quiescence requires the actual renderer');
+      const producers = [];
+      for (const [key, window] of windows) {
+        if (window.isDestroyed()) throw new Error('Unobserved renderer disposal');
+        const receipt = await window.webContents.executeJavaScript('window.nativeUi.close()');
+        if (
+          !receipt.producersClosed ||
+          receipt.tasks.length !== 5 ||
+          receipt.tasks.some((task: any) => !task.iteratorDone || !task.joined) ||
+          receipt.faults.length
+        )
+          throw new Error('Original renderer tasks did not complete');
+        producers.push({ key, sender: window.webContents.id, receipt });
+      }
+      const joined = await completions.join(
+        () => producers.length === windows.size,
+        () => pending.size === 0 && disposalComplete(completions.rows),
+        seal,
+      );
+      return { producers, joined };
     },
     async role(role: 'owner' | 'member' | 'guest') {
       backend.disconnectBackendClient(backendIds.get('host-A')!);
