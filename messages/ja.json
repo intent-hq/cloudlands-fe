@@ -1788,6 +1788,8 @@
   "workspace_repoSelector_pickARepo_tab": "リポジトリを選択",
   "workspace_repoSelector_recent_label": "最近",
   "workspace_repoSelector_remoteServer_tab": "リモートサーバー",
+  "workspace_repoSelector_removeRecent_ariaLabel": "最近のリポジトリから {repository} を削除",
+  "workspace_repoSelector_removeRecent_tooltip": "最近のリポジトリから削除",
   "workspace_repoSelector_removeSetup_tooltip": "セットアップを削除",
   "workspace_repoSelector_repoExists_label": "リポジトリが存在します — そこから {isolationLabel} を作成します",
   "workspace_repoSelector_retrySuggestions_label": "再試行",

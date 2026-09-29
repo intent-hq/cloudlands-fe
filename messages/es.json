@@ -1788,6 +1788,8 @@
   "workspace_repoSelector_pickARepo_tab": "Elegir un repositorio",
   "workspace_repoSelector_recent_label": "Recientes",
   "workspace_repoSelector_remoteServer_tab": "Servidor remoto",
+  "workspace_repoSelector_removeRecent_ariaLabel": "Quitar {repository} de los repositorios recientes",
+  "workspace_repoSelector_removeRecent_tooltip": "Quitar de los repositorios recientes",
   "workspace_repoSelector_removeSetup_tooltip": "Quitar configuración",
   "workspace_repoSelector_repoExists_label": "El repositorio existe: crearemos un {isolationLabel} a partir de él",
   "workspace_repoSelector_retrySuggestions_label": "Reintentar",

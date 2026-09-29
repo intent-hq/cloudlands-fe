@@ -1788,6 +1788,8 @@
   "workspace_repoSelector_pickARepo_tab": "저장소 선택",
   "workspace_repoSelector_recent_label": "최근",
   "workspace_repoSelector_remoteServer_tab": "원격 서버",
+  "workspace_repoSelector_removeRecent_ariaLabel": "최근 저장소에서 {repository} 제거",
+  "workspace_repoSelector_removeRecent_tooltip": "최근 저장소에서 제거",
   "workspace_repoSelector_removeSetup_tooltip": "설정 제거",
   "workspace_repoSelector_repoExists_label": "저장소가 있습니다 — 여기에서 {isolationLabel}을(를) 만듭니다",
   "workspace_repoSelector_retrySuggestions_label": "다시 시도",
