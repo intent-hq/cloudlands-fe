@@ -1,3 +1,59 @@
+<script module lang="ts">
+  import { store } from '$store/renderer/store';
+  import {
+    selectRepositoryContextForDemand,
+    selectNativeReviewForOwner,
+  } from '$store/renderer/slices/repository-context/repository-context-selectors';
+  import { executionScopeKey, repositoryTargetKey } from '$shared/types/repository-context';
+  import type { RepositoryContextDemand } from '$store/renderer/slices/repository-context/repository-context-types';
+  import type { NativeReviewOwner } from '$shared/types/native-review-operation';
+  import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
+
+  const selectNativeRead = store.createSelector((state, demand: RepositoryContextDemand | null) => {
+    const view = demand ? selectRepositoryContextForDemand.select(state, demand) : null;
+    const entry =
+      view?.status === 'ready'
+        ? view.roots.find(
+            (r) => r.root.kind === 'primary' && r.root.workspaceId === demand?.workspaceId,
+          )
+        : null;
+    const selected =
+      entry?.reviewSelection.outcome.state === 'resolved'
+        ? entry.reviewSelection.outcome.target
+        : null;
+    const target =
+      selected &&
+      entry?.targets.some(
+        (item) =>
+          repositoryTargetKey(item.target) === repositoryTargetKey(selected) &&
+          item.availability === 'connected',
+      )
+        ? selected
+        : null;
+    const destinationKey =
+      target && view?.scope
+        ? JSON.stringify([
+            demand?.workspaceId,
+            executionScopeKey(view.scope),
+            repositoryTargetKey(target),
+            entry?.branch,
+          ])
+        : null;
+    return {
+      view,
+      target,
+      destinationKey,
+      contextKey:
+        destinationKey && view?.revision
+          ? JSON.stringify([destinationKey, view.revision.epoch, view.revision.sequence])
+          : null,
+    };
+  });
+  const selectNativeAttempt = store.createSelector((state, owner: NativeReviewOwner | null) =>
+    owner ? selectNativeReviewForOwner.select(state, owner) : null,
+  );
+</script>
+
 <script lang="ts">
   import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
   import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -77,8 +133,8 @@
     faRobot,
     faStop,
   } from '@fortawesome/free-solid-svg-icons';
-  import { tick, untrack } from 'svelte';
-  import { readable, writable } from 'svelte/store';
+  import { tick, untrack, onDestroy } from 'svelte';
+  import { readable, writable, toStore } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
   import DividerButton from './DividerButton.svelte';
@@ -90,7 +146,22 @@
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
 
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectPrincipalAdmissionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    repositoryContextDemanded,
+    repositoryContextDemandEnded,
+    nativeReviewConfirmRequested,
+    nativeReviewCompanionRequested,
+    nativeReviewReconcileRequested,
+    nativeReviewEditEnded,
+  } from '$store/renderer/slices/repository-context/repository-context-slice';
+  import { confirm } from '$lib/components/patterns/confirm';
+  import type { NativeReviewExecution } from '$shared/types/native-review';
+
   interface Props {
+    /** Primary sidebar opts into qualified native preparation; other callers retain their existing flow. */
+    nativeReview?: boolean;
     workspaceId: string;
     activeFilePath?: string | null;
     activeFileStaged?: boolean | null;
@@ -147,6 +218,7 @@
   }
 
   let {
+    nativeReview = false,
     workspaceId,
     activeFilePath = null,
     activeFileStaged = null,
@@ -327,15 +399,299 @@
   let pendingPRWorkspaceId: string | null = null;
   let authBannerKey = $state(0);
 
+  const nativeEnabled = selectLabsMultiplayerEnabled();
+  const nativeAdmission = selectPrincipalAdmissionContext();
+  let nativeDemand = $state.raw<RepositoryContextDemand | null>(null);
+  let nativeIntent = $state.raw<NativeSidebarReviewIntent | null>(null);
+  let nativeChild = $state.raw<NativeReviewOwner | null>(null);
+  let nativeBranch = $state('');
+  let nativeMessage = $state('');
+  let nativeQueued = $state<string | null>(null);
+  let nativeConfirming = $state<string | null>(null);
+  let nativeParentClaimed = $state(false);
+  let nativeChildClaimed = $state(false);
+  let nativeChecking = $state<string | null>(null);
+  let nativeReadChanged = $state(false);
+  let nativeReadKey = $state<string | null>(null);
+  const nativeRead = selectNativeRead(toStore(() => nativeDemand));
+  const nativeParentView = selectNativeAttempt(toStore(() => nativeIntent?.owner ?? null));
+  const nativeChildView = selectNativeAttempt(toStore(() => nativeChild));
+  const nativeMode = $derived(
+    nativeReview && $nativeEnabled && $nativeRead.target?.provider !== 'github',
+  );
+  const nativeCommitResult = $derived($nativeParentView?.observation?.execute);
+  const nativeCanContinue = $derived(
+    !!nativeIntent &&
+      !nativeChild &&
+      !nativeConfirming &&
+      $nativeParentView?.status !== 'unavailable' &&
+      nativeCommitResult?.state === 'settled' &&
+      nativeCommitResult.success &&
+      !$nativeParentView?.observation?.uncertain &&
+      nativeCommitResult.reviewExecution?.outcome.status === 'not-attempted' &&
+      nativeCommitResult.reviewExecution.gitReceipts.length === 1 &&
+      nativeCommitResult.reviewExecution.gitReceipts[0].stage === 'commit',
+  );
+
+  function endNativeOwners() {
+    const parent = nativeIntent?.owner,
+      child = nativeChild;
+    nativeIntent = null;
+    nativeChild = null;
+    nativeQueued = null;
+    nativeConfirming = null;
+    nativeParentClaimed = false;
+    nativeChildClaimed = false;
+    nativeChecking = null;
+    if (child) appStore.dispatch(nativeReviewEditEnded(child));
+    if (parent) appStore.dispatch(nativeReviewEditEnded(parent));
+  }
+  function closeNative() {
+    endNativeOwners();
+    const original = nativeDemand;
+    nativeDemand = null;
+    if (original)
+      appStore.dispatch(
+        repositoryContextDemandEnded(original.workspaceId, original.demandId, original.admission),
+      );
+  }
+  function startNativeRead() {
+    closeNative();
+    nativeReadChanged = false;
+    nativeReadKey = null;
+    const original = Object.freeze({
+      workspaceId,
+      demandId: crypto.randomUUID(),
+      admission: selectPrincipalAdmissionContext.select(appStore.state),
+    });
+    nativeDemand = original;
+    appStore.dispatch(
+      repositoryContextDemanded(original.workspaceId, original.demandId, original.admission),
+    );
+  }
+  function togglePRDrawer() {
+    prDrawerOpen = !prDrawerOpen;
+    if (prDrawerOpen) {
+      onMergeDrawerToggle(false);
+      if (nativeReview && $nativeEnabled) {
+        nativeBranch = $workspace$?.baseRef ?? '';
+        nativeMessage = _commitMessage;
+        startNativeRead();
+      }
+    } else closeNative();
+  }
+  function nativeEligible(owner: NativeReviewOwner) {
+    const original = nativeIntent;
+    if (
+      !original ||
+      (owner !== original.owner && owner !== nativeChild) ||
+      !prDrawerOpen ||
+      listOnly ||
+      workspaceId !== owner.root.workspaceId ||
+      selectWorkspaceHostOperationContext.select(appStore.state, workspaceId) !==
+        owner.hostContext ||
+      selectPrincipalAdmissionContext.select(appStore.state) !== owner.admission
+    )
+      return false;
+    const read = selectNativeRead.select(appStore.state, nativeDemand);
+    if (read.destinationKey !== original.destinationKey) return false;
+    if (!nativeParentClaimed && read.contextKey !== original.contextKey) return false;
+    return selectNativeReviewForOwner.select(appStore.state, owner)?.status === 'ready';
+  }
+  function prepareNativeCommit() {
+    const read = selectNativeRead.select(appStore.state, nativeDemand);
+    if (
+      nativeIntent ||
+      nativeReadChanged ||
+      !hasStaged ||
+      !nativeBranch.trim() ||
+      !nativeMessage.trim() ||
+      !prTitle.trim() ||
+      read.target?.provider !== 'gitlab' ||
+      !read.contextKey ||
+      read.contextKey !== nativeReadKey ||
+      !read.destinationKey
+    )
+      return;
+    const admission = selectPrincipalAdmissionContext.select(appStore.state);
+    const hostContext = selectWorkspaceHostOperationContext.select(appStore.state, workspaceId);
+    if (!admission || !hostContext || !isOwner || listOnly) return;
+    const owner: NativeReviewOwner = Object.freeze({
+      root: Object.freeze({ workspaceId, kind: 'primary' }),
+      attemptId: crypto.randomUUID(),
+      admission,
+      hostContext,
+    });
+    const intent: NativeSidebarReviewIntent = Object.freeze({
+      owner,
+      targetBranch: nativeBranch,
+      commitMessage: nativeMessage,
+      prTitle,
+      prBody: prDescription,
+      contextKey: read.contextKey,
+      destinationKey: read.destinationKey,
+    });
+    nativeIntent = intent;
+    backgroundGitActionsService.prepareNativeReview(intent);
+  }
+  /** The only queue consumer entry: display the original prepared first confirmation. */
+  export async function triggerNativeReview(intent: NativeSidebarReviewIntent) {
+    const original = nativeIntent;
+    if (
+      !original ||
+      original.owner.attemptId !== intent.owner.attemptId ||
+      original.owner.admission !== intent.owner.admission ||
+      original.owner.hostContext !== intent.owner.hostContext ||
+      original.owner.root.workspaceId !== intent.owner.root.workspaceId ||
+      intent.owner.root.kind !== 'primary' ||
+      original.contextKey !== intent.contextKey ||
+      original.commitMessage !== intent.commitMessage ||
+      original.prTitle !== intent.prTitle ||
+      original.prBody !== intent.prBody ||
+      original.targetBranch !== intent.targetBranch ||
+      nativeParentClaimed ||
+      nativeConfirming ||
+      !nativeEligible(original.owner)
+    )
+      return;
+    const view = selectNativeReviewForOwner.select(appStore.state, original.owner);
+    if (!view?.preview?.valid) return;
+    const prepared = view.preview.reviewPreparation;
+    nativeConfirming = original.owner.attemptId;
+    try {
+      const agreed = await confirm({
+        title: m.workspace_commitDrawer_commit_label(),
+        description:
+          (view.preview.filesCount === 1
+            ? m.workspace_commitDrawer_stagedWillCommit_one()
+            : m.workspace_commitDrawer_stagedWillCommit_many({
+                count: formatInteger(view.preview.filesCount),
+              })) +
+          '\n' +
+          original.commitMessage +
+          '\n' +
+          prepared.target.repository.projectPath +
+          ' (' +
+          prepared.target.repository.instanceBaseUrl +
+          ')\n' +
+          prepared.source.branch +
+          ' → ' +
+          prepared.target.branch,
+        confirmLabel: m.workspace_commitDrawer_commit_label(),
+        cancelLabel: m.workspace_prCreator_cancel_label(),
+      });
+      if (!agreed || nativeParentClaimed || !nativeEligible(original.owner)) return;
+      nativeParentClaimed = true;
+      appStore.dispatch(
+        nativeReviewConfirmRequested(original.owner, { commitMessage: original.commitMessage }),
+      );
+    } finally {
+      if (nativeConfirming === original.owner.attemptId) nativeConfirming = null;
+    }
+  }
+  function prepareNativeChild() {
+    const original = nativeIntent;
+    if (!original || !nativeCanContinue || nativeChild || !prDrawerOpen) return;
+    const child: NativeReviewOwner = Object.freeze({
+      ...original.owner,
+      attemptId: crypto.randomUUID(),
+    });
+    nativeChild = child;
+    appStore.dispatch(nativeReviewCompanionRequested(original.owner, child));
+  }
+  async function confirmNativeChild() {
+    const original = nativeIntent,
+      child = nativeChild;
+    if (!original || !child || nativeChildClaimed || nativeConfirming || !nativeEligible(child))
+      return;
+    const view = selectNativeReviewForOwner.select(appStore.state, child);
+    if (!view?.preview?.valid) return;
+    const prepared = view.preview.reviewPreparation;
+    nativeConfirming = child.attemptId;
+    try {
+      const agreed = await confirm({
+        title: m.native_review_confirm_title(),
+        description: m.native_review_confirm_description({
+          title: original.prTitle,
+          project:
+            prepared.target.repository.projectPath +
+            ' (' +
+            prepared.target.repository.instanceBaseUrl +
+            ')',
+          source: prepared.source.branch,
+          target: prepared.target.branch,
+        }),
+        confirmLabel: m.workspace_prCreator_create_label(),
+        cancelLabel: m.workspace_prCreator_cancel_label(),
+      });
+      if (!agreed || nativeChildClaimed || !nativeEligible(child)) return;
+      nativeChildClaimed = true;
+      appStore.dispatch(
+        nativeReviewConfirmRequested(child, { prTitle: original.prTitle, prBody: original.prBody }),
+      );
+    } finally {
+      if (nativeConfirming === child.attemptId) nativeConfirming = null;
+    }
+  }
+  function checkNative(owner: NativeReviewOwner) {
+    if (nativeChecking || !selectNativeReviewForOwner.select(appStore.state, owner)) return;
+    nativeChecking = owner.attemptId;
+    appStore.dispatch(nativeReviewReconcileRequested(owner));
+  }
+  $effect(() => {
+    const read = $nativeRead;
+    if (!nativeDemand) return;
+    if (!nativeReadKey && read.contextKey) nativeReadKey = read.contextKey;
+    else if (nativeReadKey && read.contextKey !== nativeReadKey) nativeReadChanged = true;
+    if (
+      nativeIntent &&
+      ((nativeParentClaimed &&
+        read.view?.status === 'ready' &&
+        read.destinationKey !== nativeIntent.destinationKey) ||
+        (!nativeParentClaimed && nativeReadChanged))
+    )
+      endNativeOwners();
+  });
+  $effect(() => {
+    const original = nativeIntent;
+    if (
+      nativeDemand &&
+      (nativeDemand.workspaceId !== workspaceId || nativeDemand.admission !== $nativeAdmission)
+    )
+      closeNative();
+    if (
+      original &&
+      (workspaceId !== original.owner.root.workspaceId ||
+        listOnly ||
+        original.owner.admission !== $nativeAdmission ||
+        original.owner.hostContext !== $hostOperationContext$)
+    )
+      closeNative();
+  });
+  $effect(() => {
+    if (
+      nativeIntent &&
+      $nativeParentView?.status === 'ready' &&
+      nativeQueued !== nativeIntent.owner.attemptId &&
+      backgroundGitActionsService.enqueueNativeReview(nativeIntent)
+    )
+      nativeQueued = nativeIntent.owner.attemptId;
+  });
+  $effect(() => {
+    if ($nativeParentView?.observation || $nativeChildView?.observation) nativeChecking = null;
+  });
+  onDestroy(closeNative);
+
   // Auto-close PR drawer when nothing to show
   $effect(() => {
-    const shouldClose = prDrawerOpen && !hasStaged && !hasCommits;
+    const shouldClose = prDrawerOpen && !nativeDemand && !hasStaged && !hasCommits;
     if (shouldClose) prDrawerOpen = false;
   });
 
   // Sync PR title/description from accept-changes state
   $effect(() => {
     const ac = $acceptChangesState$;
+    if (nativeIntent) return;
     if (ac.prTitle && ac.prTitle !== prTitle) {
       prTitle = ac.prTitle;
     }
@@ -431,6 +787,13 @@
     prTitle?: string;
     prDescription?: string;
   }) {
+    if (
+      nativeReview &&
+      $nativeEnabled &&
+      (nativeIntent ||
+        selectNativeRead.select(appStore.state, nativeDemand).target?.provider !== 'github')
+    )
+      return;
     const operationWorkspaceId = opts?.workspaceId ?? workspaceId;
     const operationContext = selectWorkspaceHostOperationContext.select(
       appStore.state,
@@ -783,6 +1146,72 @@
   }
 </script>
 
+{#snippet nativeFacts(execution: NativeReviewExecution | undefined)}
+  {#if execution}
+    {@const outcome = execution.outcome}
+    {#each execution.gitReceipts as receipt, index (index)}
+      <p class="break-all" data-native-receipt>
+        {receipt.stage === 'commit'
+          ? m.native_review_commitReceipt_description({ sha: receipt.commitHash })
+          : m.native_review_pushReceipt_description({ sha: receipt.pushedSha })}
+      </p>
+    {/each}
+    {#if outcome.status === 'created' || outcome.status === 'reused'}
+      <p data-native-outcome={outcome.status}>
+        {outcome.status === 'created'
+          ? m.native_review_created_label()
+          : m.native_review_reused_label()}
+      </p>
+      <a class="break-all" href={outcome.review.url} target="_blank" rel="noreferrer"
+        >{outcome.review.title}</a
+      >
+      <p class="break-all">
+        {outcome.review.resource.repository.projectPath} ({outcome.review.resource.repository
+          .instanceBaseUrl})
+      </p>
+      <p>
+        {m.native_review_source_label()}: {outcome.review.sourceBranch ??
+          m.repository_details_unknown_label()}
+      </p>
+      <p>
+        {m.native_review_target_label()}: {outcome.review.targetBranch ??
+          m.repository_details_unknown_label()}
+      </p>
+    {:else if outcome.status === 'failed' || outcome.status === 'uncertain'}
+      <p data-native-outcome={outcome.status}>
+        {outcome.status === 'failed'
+          ? m.native_review_failed_label()
+          : m.native_review_uncertain_description()}
+      </p>
+      <p class="break-words">{outcome.message}</p>
+    {/if}
+    <p data-native-publication={execution.publication.state}>
+      {execution.publication.state === 'included'
+        ? m.native_review_included_description()
+        : execution.publication.state === 'local-ahead'
+          ? m.native_review_localAhead_description()
+          : execution.publication.state === 'diverged'
+            ? m.native_review_diverged_description()
+            : execution.publication.state === 'remote-branch-missing'
+              ? m.native_review_missingBranch_description()
+              : m.native_review_unknownPublication_description()}
+    </p>
+    <p class="break-all">
+      {m.native_review_localSha_label()}: {execution.publication.localHeadSha ??
+        m.repository_details_unknown_label()}
+    </p>
+    <p class="break-all">
+      {m.native_review_remoteSha_label()}: {'remoteSourceSha' in execution.publication
+        ? (execution.publication.remoteSourceSha ?? m.repository_details_unknown_label())
+        : m.repository_details_unknown_label()}
+    </p>
+  {/if}
+{/snippet}
+
+{#if nativeReview && $nativeEnabled && isOwner && !$hostOperationContext$}
+  <p role="status">{m.native_review_unavailable_description()}</p>
+{/if}
+
 <!-- Divider with Create PR, Push Commits button, or Synced status (only when
      the primary workspace has a remote, and never in listOnly mode) -->
 {#if hasRemote && !listOnly}
@@ -799,7 +1228,7 @@
           ? m.workspace_prSection_pushCommit_one()
           : m.workspace_prSection_pushCommit_many({ count: formatInteger(unpushedCount) })}
       </DividerButton>
-    {:else if canHostOperations && ((!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
+    {:else if (nativeIntent || canHostOperations) && (nativeIntent || (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
       <!-- Show Create PR + Merge buttons when no open PR and not post-merge
            (accept-changes.execute / accept-changes.mergePR / github.*, owner-only) -->
       <div class="w-full flex gap-1">
@@ -808,12 +1237,9 @@
           tooltipContents={!hasStaged && !hasCommits
             ? m.workspace_prSection_noChangesForPr_tooltip()
             : ''}
-          onclick={() => {
-            prDrawerOpen = !prDrawerOpen;
-            if (prDrawerOpen) onMergeDrawerToggle(false);
-          }}
+          onclick={togglePRDrawer}
           expanded={prDrawerOpen}
-          disabled={!hasStaged && !hasCommits}
+          disabled={!nativeIntent && !hasStaged && !hasCommits}
         >
           {m.workspace_prSection_createPr_label()}
         </DividerButton>
@@ -824,7 +1250,10 @@
             : ''}
           onclick={() => {
             onMergeDrawerToggle(!mergeDrawerOpen);
-            if (!mergeDrawerOpen) prDrawerOpen = false;
+            if (!mergeDrawerOpen) {
+              prDrawerOpen = false;
+              closeNative();
+            }
           }}
           expanded={mergeDrawerOpen}
           disabled={!hasStaged && !hasCommits}
@@ -833,7 +1262,168 @@
         </DividerButton>
       </div>
       <DividerPanel open={prDrawerOpen}>
-        {#if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
+        {#if nativeMode}
+          <section class="min-w-0 space-y-3" aria-label={m.native_review_title_label()}>
+            {#if !nativeDemand}<Button onclick={startNativeRead}
+                >{m.native_review_start_label()}</Button
+              >
+            {:else if $nativeRead.view?.status === 'loading'}<p role="status">
+                {m.repository_details_loading_description()}
+              </p>{/if}
+            {#if nativeReadChanged && !nativeParentClaimed}
+              <p role="status">{m.native_review_targetContextChanged_description()}</p>
+              <Button onclick={startNativeRead}>{m.native_review_start_label()}</Button>
+            {/if}
+            {#if nativeDemand && !$hostOperationContext$}<p role="status">
+                {m.native_review_unavailable_description()}
+              </p>
+            {:else if nativeDemand && ($nativeRead.target?.provider === 'gitlab' || nativeIntent)}
+              <label class="block text-xs text-subtle" for="sidebar-native-branch"
+                >{m.native_review_target_label()}</label
+              >
+              <Input
+                id="sidebar-native-branch"
+                bind:value={nativeBranch}
+                disabled={!!nativeIntent || nativeReadChanged}
+              />
+              <p class="text-xs text-subtle">{m.native_review_targetChoice_description()}</p>
+              <label class="block text-xs text-subtle" for="sidebar-native-commit"
+                >{m.workspace_mergePanel_commitMessage_label()}</label
+              >
+              <Input
+                id="sidebar-native-commit"
+                bind:value={nativeMessage}
+                disabled={!!nativeIntent}
+              />
+              <label class="block text-xs text-subtle" for="sidebar-native-title"
+                >{m.workspace_prCreator_titleField_label()}</label
+              >
+              <Input id="sidebar-native-title" bind:value={prTitle} disabled={!!nativeIntent} />
+              <label class="block text-xs text-subtle" for="sidebar-native-body"
+                >{m.workspace_prCreator_descriptionField_label()}</label
+              >
+              <Textarea
+                id="sidebar-native-body"
+                value={prDescription}
+                oninput={(e) => (prDescription = e.currentTarget.value)}
+                readonly={!!nativeIntent}
+              />
+              {#if nativeReadChanged && !nativeParentClaimed}<p role="status">
+                  {m.native_review_targetContextChanged_description()}
+                </p>{/if}
+              {#if !nativeIntent}
+                <Button
+                  onclick={prepareNativeCommit}
+                  disabled={!hasStaged ||
+                    !nativeBranch.trim() ||
+                    !nativeMessage.trim() ||
+                    !prTitle.trim() ||
+                    nativeReadChanged ||
+                    !$hostOperationContext$}
+                >
+                  {m.workspace_commitDrawer_commit_label()}
+                </Button>
+              {:else}
+                {#if $nativeParentView?.preview}
+                  <p>
+                    {m.workspace_commitDrawer_stagedWillCommit_many({
+                      count: formatInteger($nativeParentView.preview.filesCount),
+                    })}
+                  </p>
+                {/if}
+                {#if !nativeParentClaimed && !$nativeParentView?.observation}
+                  <Button
+                    onclick={() => nativeIntent && triggerNativeReview(nativeIntent)}
+                    disabled={$nativeParentView?.status !== 'ready' ||
+                      !$nativeParentView.preview?.valid ||
+                      !!nativeConfirming}
+                  >
+                    {$nativeParentView?.status === 'capturing'
+                      ? m.workspace_prSection_preparing_label()
+                      : m.workspace_commitDrawer_commit_label()}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onclick={endNativeOwners}
+                    disabled={!!nativeConfirming}>{m.native_review_changeTarget_label()}</Button
+                  >
+                {/if}
+                {#if !$nativeParentView || $nativeParentView.status === 'unavailable'}<p
+                    role="status"
+                  >
+                    {m.native_review_unavailable_description()}
+                  </p>{/if}
+                {#if nativeParentClaimed && !$nativeParentView?.observation}<p role="status">
+                    {m.native_review_pending_description()}
+                  </p>{/if}
+                {#if $nativeParentView?.observation}
+                  {@render nativeFacts($nativeParentView.observation.execute?.reviewExecution)}
+                  {#if $nativeParentView.observation.uncertain}<p role="status">
+                      {m.native_review_uncertain_description()}
+                    </p>{/if}
+                  {#if $nativeParentView.observation.uncertain}<Button
+                      onclick={() => nativeIntent && checkNative(nativeIntent.owner)}
+                      disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
+                    >{/if}
+                {/if}
+                {#if nativeCanContinue}<Button onclick={prepareNativeChild}
+                    >{m.native_review_prepare_label()}</Button
+                  >{/if}
+                {#if nativeChild}
+                  {#if $nativeChildView?.status === 'capturing'}<p role="status">
+                      {m.native_review_preparing_description()}
+                    </p>{/if}
+                  {#if !$nativeChildView || $nativeChildView.status === 'unavailable'}<p
+                      role="status"
+                    >
+                      {m.native_review_unavailable_description()}
+                    </p>{/if}
+                  {#if $nativeChildView?.preview}
+                    <p class="break-all" data-native-child-destination>
+                      {$nativeChildView.preview.reviewPreparation.target.repository.projectPath} ({$nativeChildView
+                        .preview.reviewPreparation.target.repository.instanceBaseUrl})
+                    </p>
+                    <p>
+                      {$nativeChildView.preview.reviewPreparation.source.branch} → {$nativeChildView
+                        .preview.reviewPreparation.target.branch}
+                    </p>
+                    {#if !nativeChildClaimed}<Button
+                        onclick={confirmNativeChild}
+                        disabled={$nativeChildView.status !== 'ready' ||
+                          !$nativeChildView.preview.valid ||
+                          !!nativeConfirming}>{m.workspace_prCreator_create_label()}</Button
+                      >{/if}
+                  {/if}
+                  {#if nativeChildClaimed && !$nativeChildView?.observation}<p role="status">
+                      {m.native_review_pending_description()}
+                    </p>{/if}
+                  {#if $nativeChildView?.observation}
+                    {@render nativeFacts($nativeChildView.observation.execute?.reviewExecution)}
+                    {#if $nativeChildView.observation.reconciliation?.reviewExecution}{@render nativeFacts(
+                        $nativeChildView.observation.reconciliation.reviewExecution,
+                      )}{/if}
+                    {#if $nativeChildView.observation.uncertain}<p role="status">
+                        {m.native_review_uncertain_description()}
+                      </p>{/if}
+                    {#if $nativeChildView.observation.uncertain || $nativeChildView.observation.execute?.state === 'pending'}<Button
+                        onclick={() => nativeChild && checkNative(nativeChild)}
+                        disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
+                      >{/if}
+                  {/if}
+                {/if}
+              {/if}
+            {:else if nativeDemand && $nativeRead.view?.status !== 'loading'}<p role="status">
+                {m.native_review_unavailable_description()}
+              </p>{/if}
+            <Button
+              variant="ghost"
+              onclick={() => {
+                closeNative();
+                prDrawerOpen = false;
+              }}>{m.workspace_prCreator_cancel_label()}</Button
+            >
+          </section>
+        {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
           <GitHubAuthBanner onSuccess={() => {}} />
         {:else}
           {@const stagedDescription = hasStaged

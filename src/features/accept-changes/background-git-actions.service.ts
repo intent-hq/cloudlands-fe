@@ -8,7 +8,10 @@
 
 import { AcceptChangesClient } from './accept-changes.client';
 import { commit as commitViaSeam } from '$features/git/git-write-service';
-import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
+import {
+  refreshRequested,
+  setPendingAutoAction,
+} from '$store/renderer/slices/changes/changes-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -16,6 +19,10 @@ import { m } from '$shared/paraglide/messages.js';
 import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { store as appStore } from '$store/renderer/store';
+
+import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
+import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
+import { nativeReviewEditRequested } from '$store/renderer/slices/repository-context/repository-context-slice';
 
 const logger = createLogger('BackgroundGitActionsService');
 
@@ -46,6 +53,36 @@ interface CreatePRResult {
 }
 
 class BackgroundGitActionsService {
+  /** Prepare only the captured staged commit. The root worker owns its session. */
+  prepareNativeReview(intent: NativeSidebarReviewIntent): void {
+    appStore.dispatch(
+      nativeReviewEditRequested(intent.owner, {
+        workspaceId: intent.owner.root.workspaceId,
+        action: 'commit',
+        review: {
+          root: intent.owner.root,
+          choice: { kind: 'saved' },
+          targetBranch: intent.targetBranch,
+          companion: { kind: 'create-pr' },
+        },
+      }),
+    );
+  }
+
+  /** The explicit user producer queues a prepared original owner, never a write. */
+  enqueueNativeReview(intent: NativeSidebarReviewIntent): boolean {
+    const view = selectNativeReviewForOwner.select(appStore.state, intent.owner);
+    if (view?.status !== 'ready' || !view.preview?.valid || view.observation) return false;
+    appStore.dispatch(
+      setPendingAutoAction(intent.owner.root.workspaceId, {
+        action: 'native-review',
+        workspaceId: intent.owner.root.workspaceId,
+        intent,
+      }),
+    );
+    return true;
+  }
+
   /**
    * Commit staged changes.
    * Extracted from SidebarChangesPanel handleCommit() lines 2166-2196.

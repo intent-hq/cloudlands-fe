@@ -572,6 +572,14 @@
         commitMessage = ac.commitMessage;
       }
 
+      // A native prepared intent opens its original confirmation on the mounted primary root.
+      // It is never an automatic write or a request to capture a replacement owner.
+      if (pending?.action === 'native-review') {
+        appStore.dispatch(setPendingAutoAction(workspaceId, null));
+        if (!browsingSecondaryRoot && owner && pending.workspaceId === workspaceId)
+          void prSectionRef?.triggerNativeReview(pending.intent);
+        return;
+      }
       // Handle pending auto-actions
       if (pending && !browsingSecondaryRoot) {
         appStore.dispatch(setPendingAutoAction(workspaceId, null));
@@ -1296,6 +1304,7 @@
               }}
               {mergePanelContent}
               bind:this={prSectionRef}
+              nativeReview
             />
 
             <!-- Post-merge options - shown when workspace is completed (commits merged to trunk).
