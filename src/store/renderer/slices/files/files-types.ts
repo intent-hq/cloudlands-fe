@@ -27,6 +27,18 @@ export type FileContentSaveOptions = {
   intent?: 'save' | 'restore';
 };
 
+export type FileContentUpdateOptions = {
+  /** The standalone files route retains explicit-save behavior. */
+  autoSave?: boolean;
+};
+
+export type FileDeleteOptions = {
+  absolutePath: string;
+  tabId?: string;
+  /** Editor deletion restores the current draft; tree deletion reads the disk. */
+  content?: string;
+};
+
 export type FilesWorkspaceState = {
   files: Collection<FileContentEntry, 'path'>;
 };

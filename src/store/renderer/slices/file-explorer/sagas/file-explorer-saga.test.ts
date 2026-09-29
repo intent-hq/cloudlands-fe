@@ -3,12 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   addExpandedPath,
   addLoadingPath,
   expandToPathRequested,
   fileExplorerReducer,
+  fileSearchRequested,
+  fileSearchReleased,
+  refreshDirectoryRequested,
   hydrateFileExplorerRequested,
   initialState,
   initializeFileExplorer,
@@ -20,6 +24,37 @@ import {
   setRootNode,
 } from '../file-explorer-slice';
 import { fileExplorerSaga } from './file-explorer-saga';
+
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/client/live/backend-transport')>();
+  return { ...actual, backendRequest: vi.fn() };
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+function startExplorer() {
+  const channel = stdChannel();
+  let fileExplorer = initialState;
+  const dispatch = (action: Parameters<typeof fileExplorerReducer>[1]) => {
+    fileExplorer = fileExplorerReducer(fileExplorer, action);
+    channel.put(action);
+  };
+  const task = runSaga({ channel, dispatch, getState: () => ({ fileExplorer }) }, fileExplorerSaga);
+  return {
+    dispatch,
+    task,
+    state: () => fileExplorer,
+    search: (id: string) => getItem(fileExplorer.searches, id),
+  };
+}
 
 const settle = async () => {
   await Promise.resolve();
@@ -35,7 +70,112 @@ const root = {
 };
 
 describe('fileExplorerSaga', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    vi.mocked(backendRequest).mockReset();
+  });
+
+  it('isolates search consumers and workspaces, rejects stale results, and cancels released loaders', async () => {
+    vi.useFakeTimers();
+    const old = deferred<{ files: string[] }>();
+    const latest = deferred<{ files: string[] }>();
+    const independent = deferred<{ files: string[] }>();
+    vi.mocked(backendRequest)
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(independent.promise)
+      .mockReturnValueOnce(latest.promise);
+    const h = startExplorer();
+    try {
+      h.dispatch(fileSearchRequested('ws-1', 'tree-1', 'r1', 'old'));
+      h.dispatch(fileSearchRequested('ws-2', 'tree-2', 'r2', 'other'));
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(fileSearchRequested('ws-1', 'tree-1', 'r3', 'latest'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(vi.mocked(backendRequest).mock.calls).toEqual([
+        ['search.fileNames', { workspaceId: 'ws-1', pattern: 'old', limit: 100 }],
+        ['search.fileNames', { workspaceId: 'ws-2', pattern: 'other', limit: 100 }],
+        ['search.fileNames', { workspaceId: 'ws-1', pattern: 'latest', limit: 100 }],
+      ]);
+      expect(h.search('tree-1')?.loading).toBe(false);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(h.search('tree-1')?.loading).toBe(true);
+      latest.resolve({ files: ['src/latest.ts'] });
+      independent.resolve({ files: ['other.ts'] });
+      await settle();
+      old.resolve({ files: ['stale.ts'] });
+      await settle();
+      expect(h.search('tree-1')).toMatchObject({ paths: ['src/latest.ts'], loading: false });
+      expect(h.search('tree-2')).toMatchObject({ paths: ['other.ts'], loading: false });
+      const abandoned = deferred<{ files: string[] }>();
+      vi.mocked(backendRequest).mockReturnValueOnce(abandoned.promise);
+      h.dispatch(fileSearchRequested('ws-1', 'tree-1', 'r4', 'abandoned'));
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(fileSearchReleased('ws-1', 'tree-1'));
+      abandoned.resolve({ files: ['late.ts'] });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(h.search('tree-1')).toBeUndefined();
+      expect(h.search('tree-2')?.paths).toEqual(['other.ts']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('retains search failures and ignores late completions after workspace teardown', async () => {
+    vi.useFakeTimers();
+    const pending = deferred<{ files: string[] }>();
+    vi.mocked(backendRequest)
+      .mockRejectedValueOnce(new Error('search unavailable'))
+      .mockReturnValueOnce(pending.promise);
+    const h = startExplorer();
+    try {
+      h.dispatch(fileSearchRequested('ws-1', 'tree', 'r1', 'failure'));
+      await vi.advanceTimersByTimeAsync(550);
+      expect(h.search('tree')).toMatchObject({
+        error: 'search unavailable',
+        paths: [],
+        loading: false,
+      });
+      h.dispatch(fileSearchRequested('ws-1', 'tree', 'r2', 'pending'));
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(workspaceUnmounted('ws-1'));
+      pending.resolve({ files: ['late.ts'] });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(h.search('tree')).toBeUndefined();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('coalesces directory event bursts without blocking another workspace', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof appClient.files.listDirectory>>>();
+    const list = vi
+      .spyOn(appClient.files, 'listDirectory')
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue([]);
+    const h = startExplorer();
+    try {
+      for (const ws of ['ws-1', 'ws-2']) {
+        h.dispatch(setFileExplorerWorkspacePath(ws, '/repo'));
+        h.dispatch(setRootNode(ws, root));
+      }
+      for (const file of ['a', 'b', 'c'])
+        h.dispatch(refreshDirectoryRequested('ws-1', `/repo/src/${file}.ts`));
+      h.dispatch(refreshDirectoryRequested('ws-2', '/repo/src/a.ts'));
+      expect(list.mock.calls).toEqual([
+        ['ws-1', 'src'],
+        ['ws-2', 'src'],
+      ]);
+      pending.resolve([]);
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+      expect(list.mock.calls[2]).toEqual(['ws-1', 'src']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
 
   it('initializes from exact tree fields and anchors relative children', async () => {
     vi.spyOn(appClient.files, 'explorerTree').mockResolvedValue({

@@ -26,6 +26,13 @@ export const selectFileExplorerState = store.createSelector<
   return state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
 });
 
+export const selectFileExplorerSearch = store.createSelector(
+  (state, wsId: string, consumerId: string) => {
+    const search = getItem(state.fileExplorer.searches, consumerId);
+    return search?.workspaceId === wsId ? search : undefined;
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Individual field selectors
 // ---------------------------------------------------------------------------

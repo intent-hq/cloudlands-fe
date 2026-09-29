@@ -19,7 +19,7 @@ function artifact(suite, shard, shardCount, artifactName, advisory = false) {
 
 export const BROWSER_ARTIFACTS = Object.freeze([
   ...[1, 2, 3, 4].map((shard) => artifact('ct', shard, 4, `playwright-ct-report-${shard}-of-4`)),
-  ...[1, 2].map((shard) => artifact('root', shard, 2, `playwright-root-report-${shard}`)),
+  ...[1, 2, 3, 4].map((shard) => artifact('root', shard, 4, `playwright-root-report-${shard}`)),
   artifact('electron', 1, 1, 'playwright-electron-lifetime-report'),
   artifact('quarantine', 1, 1, 'playwright-ct-report-quarantine', true),
 ]);

@@ -2,7 +2,7 @@ import { store } from '../../store';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { selectProviderModels } from '../model/model-selectors';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
-import { selectSpecialists } from '../specialists/specialists-selectors';
+import { selectSpecialistFilePath, selectSpecialists } from '../specialists/specialists-selectors';
 import { selectActiveProviderId } from './provider-settings-selectors';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -19,9 +19,11 @@ import { m } from '$shared/paraglide/messages.js';
  *   agent covers them).
  */
 export const selectProviderInUseReasons = store.createSelector((state): Record<string, string> => {
-  const reasons: Record<string, string> = {};
+  const reasons = new Map<string, Set<string>>();
   const addReason = (providerId: string, reason: string) => {
-    if (!reasons[providerId]) reasons[providerId] = reason;
+    const providerReasons = reasons.get(providerId) ?? new Set<string>();
+    providerReasons.add(reason);
+    reasons.set(providerId, providerReasons);
   };
 
   // Only an explicitly selected global model counts as a pin. The
@@ -42,10 +44,30 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
   }
 
   for (const specialist of selectSpecialists.select(state)) {
+    // Both selectors use the winning file before the first bundled record.
+    // Read from the same state so an overridden definition cannot supply the path.
+    const path = selectSpecialistFilePath.select(state, specialist.id);
+    const source = specialist.source
+      ? {
+          project: m.settings_providers_pinSourceProject_label(),
+          user: m.settings_providers_pinSourceUser_label(),
+          bundled: m.settings_providers_pinSourceBundled_label(),
+          builtin: m.settings_providers_pinSourceBuiltin_label(),
+          'electron-store': m.settings_providers_pinSourceLegacy_label(),
+        }[specialist.source]
+      : undefined;
+    const withProvenance = (reason: string): string => {
+      if (source && path) {
+        return m.settings_providers_inUseSourcePath_label({ reason, source, path });
+      }
+      if (source) return m.settings_providers_inUseSource_label({ reason, source });
+      if (path) return m.settings_providers_inUsePath_label({ reason, path });
+      return reason;
+    };
     if (specialist.codingAgent) {
       addReason(
         specialist.codingAgent,
-        m.settings_providers_inUseSpecialistAgent_label({ name: specialist.name }),
+        withProvenance(m.settings_providers_inUseSpecialistAgent_label({ name: specialist.name })),
       );
     }
     // Explicit model pin.
@@ -55,25 +77,31 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
           splitLegacyCompoundId(specialist.defaultModel).providerId ?? defaultProviderId;
         addReason(
           providerId,
-          m.settings_providers_inUseSpecialistModel_label({
-            name: specialist.name,
-            model: specialist.defaultModel,
-          }),
+          withProvenance(
+            m.settings_providers_inUseSpecialistModel_label({
+              name: specialist.name,
+              model: specialist.defaultModel,
+            }),
+          ),
         );
       } else if (!specialist.codingAgent) {
         // Bare model id with no explicit agent resolves to the default provider.
         addReason(
           defaultProviderId,
-          m.settings_providers_inUseSpecialistModel_label({
-            name: specialist.name,
-            model: specialist.defaultModel,
-          }),
+          withProvenance(
+            m.settings_providers_inUseSpecialistModel_label({
+              name: specialist.name,
+              model: specialist.defaultModel,
+            }),
+          ),
         );
       }
     }
   }
 
-  return reasons;
+  return Object.fromEntries(
+    [...reasons].map(([providerId, entries]) => [providerId, [...entries].join('\n')]),
+  );
 });
 
 /** Reason a provider cannot be disabled, or null when it is not in use. */
