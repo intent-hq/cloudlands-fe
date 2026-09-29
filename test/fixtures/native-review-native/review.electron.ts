@@ -1875,10 +1875,15 @@ test(uiGroups[1][0], async () =>
     const start = a.getByRole('button', { name: 'Start a review', exact: true });
     if (await start.count()) {
       await start.click();
-      await expect(
-        a.getByRole('button', { name: 'Prepare merge request', exact: true }),
-      ).toBeDisabled();
     }
+    const refusal = a.getByRole('status');
+    await expect(refusal).toHaveText(
+      'This review cannot be prepared with the current repository and access.',
+    );
+    await expect(refusal).toBeVisible();
+    await expect(
+      a.getByRole('button', { name: 'Prepare merge request', exact: true }),
+    ).toHaveCount(0);
     await expect(a.getByRole('button', { name: 'Create', exact: true })).toHaveCount(0);
     const denied = await packet('ui-guest-denied', await uiSnapshot(a));
     expect(nativeRequests(denied, 'prepare')).toEqual(nativeRequests(beforeGuest, 'prepare'));
