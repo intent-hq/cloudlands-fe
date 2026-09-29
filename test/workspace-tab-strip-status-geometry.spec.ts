@@ -8,9 +8,12 @@ import { stripObservation } from './strip-observation.mjs';
 
 const observation = stripObservation();
 let detachObservation = () => {};
-test.beforeEach(({ page }, info) => { detachObservation = observation.page(page, baseUrl, info); });
+test.beforeEach(({ page }, info) => {
+  detachObservation = observation.page(page, baseUrl, info);
+});
 test.afterEach(({}, info) => {
-  for (const error of info.errors) observation.event('test-error', { error: String(error.message).slice(0, 512) });
+  for (const error of info.errors)
+    observation.event('test-error', { error: String(error.message).slice(0, 512) });
   detachObservation();
 });
 
@@ -220,9 +223,15 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   observation.event('server-close-start');
-  try { await server?.close(); observation.close(); }
-  catch (error) { observation.event('server-close-error', { error: String(error).slice(0, 512) }); throw error; }
-  finally { observation.finish(); }
+  try {
+    await server?.close();
+    observation.close();
+  } catch (error) {
+    observation.event('server-close-error', { error: String(error).slice(0, 512) });
+    throw error;
+  } finally {
+    observation.finish();
+  }
 });
 
 async function mountStrip(
@@ -244,133 +253,138 @@ async function mountStrip(
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
   observation.event('mount-evaluate-start');
   try {
-  await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
-    Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
-    Object.assign(globalThis, {
-      __workspaceTabScenario: {
-        currentId: 'active',
-        actions: [],
-        tabOrder: ['active', 'inactive', 'plain', 'loading'],
-        workspaces: [
-          { id: 'active', title: 'Active workspace with a materially longer title' },
-          { id: 'inactive', title: 'Inactive workspace with a materially longer title' },
-          { id: 'plain', title: 'Workspace with the default idle status' },
-        ],
-        statuses: {
-          active: statusValue(['running']),
-          inactive: statusValue(['failed', 'blocker', 'question', 'review']),
-        },
-      },
-    });
-    function statusValue(categories: string[]) {
-      const items = categories.map((category) => ({ category, count: 1, agentNames: [] }));
-      return { agentCount: 1, categories: items, visibleCategories: items, hiddenCategoryCount: 0 };
-    }
-    const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
-      import('/@id/svelte'),
-      import('/src/lib/components/layout/WorkspaceTabStrip.svelte'),
-    ]);
-    document.body.replaceChildren();
-    const target = document.createElement('div');
-    target.className = 'window-title-bar';
-    document.body.append(target);
-    const mask = document.createElement('div');
-    mask.dataset.activeTabBorderMask = '';
-    mask.style.cssText = 'position:absolute;height:1px;';
-    target.append(mask);
-    const stripProps = {
-      onActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
-        mask.style.left = bounds ? `${bounds.left}px` : '';
-        mask.style.width = bounds ? `${bounds.width}px` : '';
-      },
-      onActiveTabTrackingChange(tracking: boolean) {
-        mask.dataset.tracking = String(tracking);
-        mask.style.transition = tracking
-          ? 'none'
-          : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
-      },
-    };
-    if (panelOpen === undefined || panelWidth === undefined) {
-      target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
-      mount(Strip, { target, props: stripProps });
-    } else {
-      target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;
-      const controls = document.createElement('div');
-      controls.dataset.titlebarWorkspaceControls = '';
-      controls.style.cssText = 'display:flex;min-width:0;align-items:center;gap:4px;';
-      target.append(controls);
-
-      const launcher = document.createElement('button');
-      launcher.dataset.workspaceRepoLauncher = '';
-      launcher.style.cssText = 'width:32px;height:32px;';
-      controls.append(launcher);
-
-      const frame = document.createElement('div');
-      frame.style.cssText = 'display:flex;padding-left:8px;width:100%;';
-      const sidebar = document.createElement('div');
-      sidebar.dataset.sidebarPanelFrame = '';
-      sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
-      const main = document.createElement('main');
-      main.className =
-        'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm';
-      main.style.cssText = 'height:200px;';
-      frame.append(sidebar, main);
-      target.append(frame);
-
-      let currentPanelOpen = panelOpen;
-      let currentPanelWidth = panelWidth;
-      let component: ReturnType<typeof mount> | null = null;
-      // Under reduced motion the tokens.css blanket gives every element a
-      // 0.01ms transition-duration, so each inline change below spawns a real
-      // CSSTransition that holds the previous geometry until the document
-      // timeline passes its start (one or two frames). Gate on those
-      // transitions settling instead of counting frames.
-      const settlePanelLayout = async () => {
-        for (;;) {
-          const animations = [controls, sidebar].flatMap((element) => element.getAnimations());
-          if (animations.length === 0) return;
-          await Promise.allSettled(animations.map((animation) => animation.finished));
-        }
-      };
-      const applyPanelLayout = async () => {
-        const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
-        controls.style.marginLeft = `${offset}px`;
-        controls.style.width = `calc(100% - ${offset}px)`;
-        sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
-        await settlePanelLayout();
-      };
-      const renderStrip = async () => {
-        if (component) await unmount(component);
-        component = mount(Strip, {
-          target: controls,
-          props: stripProps,
-        });
-        controls.append(launcher);
-        await tick();
-        await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
-      };
-      await applyPanelLayout();
-      await renderStrip();
-
+    await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
+      Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+      document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
       Object.assign(globalThis, {
-        async __setWorkspacePanelWidth(width: number) {
-          currentPanelWidth = width;
-          await applyPanelLayout();
+        __workspaceTabScenario: {
+          currentId: 'active',
+          actions: [],
+          tabOrder: ['active', 'inactive', 'plain', 'loading'],
+          workspaces: [
+            { id: 'active', title: 'Active workspace with a materially longer title' },
+            { id: 'inactive', title: 'Inactive workspace with a materially longer title' },
+            { id: 'plain', title: 'Workspace with the default idle status' },
+          ],
+          statuses: {
+            active: statusValue(['running']),
+            inactive: statusValue(['failed', 'blocker', 'question', 'review']),
+          },
         },
-        async __setWorkspacePanelOpen(open: boolean) {
-          currentPanelOpen = open;
-          await applyPanelLayout();
-          await renderStrip();
-        },
-        __remountWorkspaceTabStrip: renderStrip,
       });
-    }
-    await tick();
-    await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
-  }, options);
-  observation.event('mount-evaluate-success');
+      function statusValue(categories: string[]) {
+        const items = categories.map((category) => ({ category, count: 1, agentNames: [] }));
+        return {
+          agentCount: 1,
+          categories: items,
+          visibleCategories: items,
+          hiddenCategoryCount: 0,
+        };
+      }
+      const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
+        import('/@id/svelte'),
+        import('/src/lib/components/layout/WorkspaceTabStrip.svelte'),
+      ]);
+      document.body.replaceChildren();
+      const target = document.createElement('div');
+      target.className = 'window-title-bar';
+      document.body.append(target);
+      const mask = document.createElement('div');
+      mask.dataset.activeTabBorderMask = '';
+      mask.style.cssText = 'position:absolute;height:1px;';
+      target.append(mask);
+      const stripProps = {
+        onActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
+          mask.style.left = bounds ? `${bounds.left}px` : '';
+          mask.style.width = bounds ? `${bounds.width}px` : '';
+        },
+        onActiveTabTrackingChange(tracking: boolean) {
+          mask.dataset.tracking = String(tracking);
+          mask.style.transition = tracking
+            ? 'none'
+            : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)';
+        },
+      };
+      if (panelOpen === undefined || panelWidth === undefined) {
+        target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
+        mount(Strip, { target, props: stripProps });
+      } else {
+        target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;
+        const controls = document.createElement('div');
+        controls.dataset.titlebarWorkspaceControls = '';
+        controls.style.cssText = 'display:flex;min-width:0;align-items:center;gap:4px;';
+        target.append(controls);
+
+        const launcher = document.createElement('button');
+        launcher.dataset.workspaceRepoLauncher = '';
+        launcher.style.cssText = 'width:32px;height:32px;';
+        controls.append(launcher);
+
+        const frame = document.createElement('div');
+        frame.style.cssText = 'display:flex;padding-left:8px;width:100%;';
+        const sidebar = document.createElement('div');
+        sidebar.dataset.sidebarPanelFrame = '';
+        sidebar.style.cssText = `flex:0 0 ${panelOpen ? panelWidth : 0}px;`;
+        const main = document.createElement('main');
+        main.className =
+          'workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm';
+        main.style.cssText = 'height:200px;';
+        frame.append(sidebar, main);
+        target.append(frame);
+
+        let currentPanelOpen = panelOpen;
+        let currentPanelWidth = panelWidth;
+        let component: ReturnType<typeof mount> | null = null;
+        // Under reduced motion the tokens.css blanket gives every element a
+        // 0.01ms transition-duration, so each inline change below spawns a real
+        // CSSTransition that holds the previous geometry until the document
+        // timeline passes its start (one or two frames). Gate on those
+        // transitions settling instead of counting frames.
+        const settlePanelLayout = async () => {
+          for (;;) {
+            const animations = [controls, sidebar].flatMap((element) => element.getAnimations());
+            if (animations.length === 0) return;
+            await Promise.allSettled(animations.map((animation) => animation.finished));
+          }
+        };
+        const applyPanelLayout = async () => {
+          const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
+          controls.style.marginLeft = `${offset}px`;
+          controls.style.width = `calc(100% - ${offset}px)`;
+          sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
+          await settlePanelLayout();
+        };
+        const renderStrip = async () => {
+          if (component) await unmount(component);
+          component = mount(Strip, {
+            target: controls,
+            props: stripProps,
+          });
+          controls.append(launcher);
+          await tick();
+          await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+        };
+        await applyPanelLayout();
+        await renderStrip();
+
+        Object.assign(globalThis, {
+          async __setWorkspacePanelWidth(width: number) {
+            currentPanelWidth = width;
+            await applyPanelLayout();
+          },
+          async __setWorkspacePanelOpen(open: boolean) {
+            currentPanelOpen = open;
+            await applyPanelLayout();
+            await renderStrip();
+          },
+          __remountWorkspaceTabStrip: renderStrip,
+        });
+      }
+      await tick();
+      await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+    }, options);
+    observation.event('mount-evaluate-success');
   } catch (error) {
     observation.event('mount-evaluate-error', { error: String(error).slice(0, 512) });
     throw error;
