@@ -6,7 +6,10 @@
   } from '$store/renderer/slices/repository-context/repository-context-selectors';
   import { executionScopeKey, repositoryTargetKey } from '$shared/types/repository-context';
   import type { RepositoryContextDemand } from '$store/renderer/slices/repository-context/repository-context-types';
-  import type { NativeReviewOwner } from '$shared/types/native-review-operation';
+  import type {
+    NativeReviewOwner,
+    NativeReviewObservation,
+  } from '$shared/types/native-review-operation';
   import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
 
   const selectNativeRead = store.createSelector((state, demand: RepositoryContextDemand | null) => {
@@ -1208,6 +1211,31 @@
   {/if}
 {/snippet}
 
+{#snippet nativeObservationDetails(observation: NativeReviewObservation)}
+  {#if observation.execute}
+    {@const execute = observation.execute}
+    <section aria-label={m.native_review_execution_label()} class="space-y-2">
+      <h3 class="font-medium">{m.native_review_execution_label()}</h3>
+      {#if execute.error}<p role="alert" class="break-words">{execute.error}</p>{/if}
+      {#each execute.steps as step (step.id)}
+        {#if step.error}<p role="alert" class="break-words">{step.error}</p>{/if}
+      {/each}
+      {#if !execute.success}<p>{m.native_review_incomplete_description()}</p>{/if}
+      {#if execute.reviewExecution}
+        {@render nativeFacts(execute.reviewExecution)}
+      {:else}<p>{m.native_review_pending_description()}</p>{/if}
+    </section>
+  {/if}
+  {#if observation.reconciliation}
+    <section aria-label={m.native_review_reconciliation_label()} class="space-y-2">
+      <h3 class="font-medium">{m.native_review_reconciliation_label()}</h3>
+      {#if observation.reconciliation.reviewExecution}
+        {@render nativeFacts(observation.reconciliation.reviewExecution)}
+      {:else}<p>{m.native_review_pending_description()}</p>{/if}
+    </section>
+  {/if}
+{/snippet}
+
 {#if nativeReview && $nativeEnabled && isOwner && !$hostOperationContext$}
   <p role="status">{m.native_review_unavailable_description()}</p>
 {/if}
@@ -1263,7 +1291,11 @@
       </div>
       <DividerPanel open={prDrawerOpen}>
         {#if nativeMode}
-          <section class="min-w-0 space-y-3" aria-label={m.native_review_title_label()}>
+          <section
+            class="min-w-0 space-y-3"
+            aria-label={m.native_review_title_label()}
+            data-native-sidebar-review
+          >
             {#if !nativeDemand}<Button onclick={startNativeRead}
                 >{m.native_review_start_label()}</Button
               >
@@ -1357,11 +1389,11 @@
                     {m.native_review_pending_description()}
                   </p>{/if}
                 {#if $nativeParentView?.observation}
-                  {@render nativeFacts($nativeParentView.observation.execute?.reviewExecution)}
+                  {@render nativeObservationDetails($nativeParentView.observation)}
                   {#if $nativeParentView.observation.uncertain}<p role="status">
                       {m.native_review_uncertain_description()}
                     </p>{/if}
-                  {#if $nativeParentView.observation.uncertain}<Button
+                  {#if $nativeParentView.observation.uncertain || $nativeParentView.observation.execute?.state === 'pending'}<Button
                       onclick={() => nativeIntent && checkNative(nativeIntent.owner)}
                       disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
                     >{/if}
@@ -1398,10 +1430,7 @@
                       {m.native_review_pending_description()}
                     </p>{/if}
                   {#if $nativeChildView?.observation}
-                    {@render nativeFacts($nativeChildView.observation.execute?.reviewExecution)}
-                    {#if $nativeChildView.observation.reconciliation?.reviewExecution}{@render nativeFacts(
-                        $nativeChildView.observation.reconciliation.reviewExecution,
-                      )}{/if}
+                    {@render nativeObservationDetails($nativeChildView.observation)}
                     {#if $nativeChildView.observation.uncertain}<p role="status">
                         {m.native_review_uncertain_description()}
                       </p>{/if}

@@ -392,6 +392,62 @@ describe('original sidebar lifetime and truthful receipts', () => {
 });
 
 describe('original target and child completion boundaries', () => {
+  it('shows original execution failure without a review payload and keeps only original Check available', async () => {
+    await mount({ delayCommand: true });
+    const dispatch = vi.spyOn(store, 'dispatch');
+    await drafts();
+    await commit();
+    await waitFor(() => expect(commands()).toHaveLength(1));
+    const request = commands()[0];
+    request.finish({
+      current: true,
+      uncertain: false,
+      reconciliation: null,
+      execute: {
+        operationId: request.id,
+        root: request.root,
+        state: 'pending',
+        success: false,
+        error: 'Original commit did not report completion',
+        steps: [{ id: 'commit', name: 'Commit', status: 'failed', error: 'Original step failed' }],
+      },
+    });
+    const owner = recordedActions(dispatch, nativeReviewEditRequested)[0].payload[0];
+    await waitFor(() =>
+      expect(
+        getItem(store.state.repositoryContext.nativeReviewAttempts!, owner.attemptId)?.observation
+          ?.execute?.error,
+      ).toBe('Original commit did not report completion'),
+    );
+    const original = await screen.findByRole('region', { name: 'Original execution' });
+    expect(within(original).getByText('Original commit did not report completion')).toBeTruthy();
+    expect(within(original).getByText('Original step failed')).toBeTruthy();
+    expect(within(original).getByText('This execution did not report success.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check result' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Prepare merge request' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change target branch' })).toBeNull();
+    expect(commands()).toHaveLength(1);
+    expect(fixture.captures).toHaveLength(1);
+  });
+  it('labels the original child execution separately from its explicit later result check', async () => {
+    await mount({ scene: 'uncertain' });
+    await drafts();
+    await commit();
+    await child();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Check result' }));
+    const checked = await screen.findByRole('region', { name: 'Original result check' });
+    await within(checked).findByText('Existing merge request reused');
+    const executions = screen.getAllByRole('region', { name: 'Original execution' });
+    expect(executions).toHaveLength(2);
+    expect(within(executions[0]).getByText('Completed commit: staged-parent-B')).toBeTruthy();
+    expect(within(executions[1]).getByText(/The result is uncertain/)).toBeTruthy();
+    expect(within(executions[1]).queryByText('Existing merge request reused')).toBeNull();
+    expect(commands()).toHaveLength(2);
+    expect(fixture.requests.filter((r) => r.kind === 'reconcile').map((r) => r.id)).toEqual([
+      fixture.captures[1].id,
+    ]);
+    expect(fixture.captures).toHaveLength(2);
+  });
   it.each(['bad..ref', 'missing/branch', 'feature/details'])(
     'retains every draft after controlled preparation refusal for %s',
     async (branch) => {

@@ -747,7 +747,7 @@
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(
-        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"], [data-repository-summary]',
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"], [data-repository-summary], [data-native-sidebar-review]',
       )
     ) {
       return;
