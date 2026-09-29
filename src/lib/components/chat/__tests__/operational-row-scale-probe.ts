@@ -1,6 +1,12 @@
 import { gzipSync } from 'node:zlib';
 import type { Page, TestInfo } from '@playwright/test';
-type Frame = { time: number; mounts: number; mounted: number };
+type Frame = {
+  time: number;
+  mounts: number;
+  mounted: number;
+  actionBars: number;
+  tooltips: number;
+};
 type ObserverTarget = {
   id: number;
   node: WeakRef<Element>;
@@ -97,6 +103,8 @@ export async function instrument(page: Page) {
       }
     };
     let mounts = 0;
+    let actionBars = 0;
+    let tooltips = 0;
     const observer = new MutationObserver((records) => {
       const added = new Set<Element>();
       for (const record of records) {
@@ -113,6 +121,18 @@ export async function instrument(page: Page) {
           node.querySelectorAll('[data-chat-operational-row]').forEach((row) => added.add(row));
         }
       }
+      const controls = new Set<Element>();
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches('[data-slot="action-bar"], [data-tooltip-trigger]')) controls.add(node);
+          node
+            .querySelectorAll('[data-slot="action-bar"], [data-tooltip-trigger]')
+            .forEach((control) => controls.add(control));
+        }
+      }
+      actionBars += [...controls].filter((node) => node.matches('[data-slot="action-bar"]')).length;
+      tooltips += [...controls].filter((node) => node.matches('[data-tooltip-trigger]')).length;
       mounts += added.size;
       if (added.size) performance.mark(`row-mounts:${added.size}`);
     });
@@ -131,9 +151,13 @@ export async function instrument(page: Page) {
       probe.frames.push({
         time,
         mounts,
+        actionBars,
+        tooltips,
         mounted: document.querySelectorAll('[data-chat-operational-row]').length,
       });
       mounts = 0;
+      actionBars = 0;
+      tooltips = 0;
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);

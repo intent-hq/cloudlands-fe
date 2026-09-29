@@ -5931,6 +5931,7 @@
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
       data-testid="chat-transcript-scroll-viewport"
+      data-message-controls-root
     >
       <div
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
