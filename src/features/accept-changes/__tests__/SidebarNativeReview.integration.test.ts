@@ -15,6 +15,15 @@ import {
 } from '$store/renderer/slices/repository-context/repository-context-slice';
 import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  selectAcceptChangesStatus,
+  selectPostMergeState,
+} from '$store/renderer/slices/git/git-selectors';
+import { selectStagedWorkingChanges } from '$store/renderer/slices/changes/changes-selectors';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+import type { ComponentProps } from 'svelte';
+import PRSection from '$lib/components/workspace/sidebar/PRSection.svelte';
 import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
 
 warmImport(() => import('$lib/components/workspace/sidebar/SidebarChangesPanel.svelte'));
@@ -553,4 +562,257 @@ describe('original target and child completion boundaries', () => {
     ).toEqual([]);
     expect(fixture.captures).toHaveLength(2);
   });
+});
+
+// These controls wait for the real status worker before looking for the native entry.
+async function mountWithoutOrigin(options: SidebarFixtureOptions = {}, labs = true) {
+  fixture = installSidebarNativeFixture({ ...options, withoutOrigin: true, baseRef: 'trunk' });
+  if (!labs) store.dispatch(setLabsMultiplayerEnabled(false));
+  render((await import('$lib/components/patterns/confirm/ConfirmHost.svelte')).default);
+  const mounted = render(
+    (await import('$lib/components/workspace/sidebar/SidebarChangesPanel.svelte')).default,
+    { workspaceId: sidebarWorkspaceId },
+  );
+  if (options.role !== 'guest-owner' && options.role !== 'stale-guest') {
+    await waitFor(() => {
+      expect(selectAcceptChangesStatus.select(store.state, sidebarWorkspaceId)).toMatchObject({
+        hasRemote: false,
+        remoteUrl: null,
+      });
+      expect(selectPostMergeState.select(store.state, sidebarWorkspaceId).hasRemote).toBe(false);
+      expect(selectStagedWorkingChanges.select(store.state, sidebarWorkspaceId)).toHaveLength(1);
+    });
+  }
+  return mounted;
+}
+async function resolveNamedRemote() {
+  await waitFor(() => expect(fixture.base.reads.length).toBeGreaterThan(0));
+  fixture.finishContext();
+}
+async function openNamedRemote() {
+  await resolveNamedRemote();
+  await fireEvent.click(await screen.findByTestId('pr-create-button'));
+  await screen.findByRole('textbox', { name: 'Target branch' });
+}
+
+describe('native entry after delivered false origin status', () => {
+  it.each(['owner', 'member'] as const)(
+    'opens the saved named-remote entry for %s and confirms each original operation separately',
+    async (role) => {
+      await mountWithoutOrigin({ role });
+      const dispatch = vi.spyOn(store, 'dispatch');
+      await openNamedRemote();
+      expect(
+        (screen.getByRole('textbox', { name: 'Target branch' }) as HTMLInputElement).value,
+      ).toBe('trunk');
+      await drafts('release/literal ');
+      await commit(false);
+      expect(commands()).toHaveLength(0);
+      expect(fixture.captures).toHaveLength(1);
+      expect(fixture.captures[0].input).toEqual({
+        workspaceId: sidebarWorkspaceId,
+        action: 'commit',
+        review: {
+          root: { workspaceId: sidebarWorkspaceId, kind: 'primary' },
+          choice: { kind: 'saved' },
+          targetBranch: 'release/literal ',
+          companion: { kind: 'create-pr' },
+        },
+      });
+      const owner = recordedActions(dispatch, nativeReviewEditRequested)[0].payload[0];
+      const queued = recordedActions(dispatch, setPendingAutoAction).find(
+        (a) => a.payload[1]?.action === 'native-review',
+      )?.payload[1];
+      expect(queued?.action === 'native-review' ? queued.intent.owner : null).toEqual(owner);
+      await commit();
+      await screen.findByText('Completed commit: staged-parent-B');
+      await child(false);
+      expect(commands()).toHaveLength(1);
+      expect(fixture.captures[1].companionOf).toBe(fixture.captures[0].id);
+      const pair = recordedActions(dispatch, nativeReviewCompanionRequested)[0].payload;
+      expect(pair[0]).toEqual(owner);
+      expect(pair[1].attemptId).not.toBe(owner.attemptId);
+      await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      await fireEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Create' }),
+      );
+      await screen.findByText('Merge request created');
+      expect(commands().map((r) => r.command)).toEqual([
+        { commitMessage: 'Commit original staged files' },
+        { prTitle: 'Original review title', prBody: 'Original review body' },
+      ]);
+      expect(fixture.base.selectionRequests).toHaveLength(0);
+      expect(
+        fixture.readRequests.some((r) => /stage|push|execute|update|branches/i.test(r.method)),
+      ).toBe(false);
+    },
+  );
+  it.each(['unknown', 'selection-required', 'loading'] as const)(
+    'does not turn the no-origin %s read into command authority',
+    async (context) => {
+      await mountWithoutOrigin({ context });
+      await waitFor(() => expect(fixture.base.reads.length).toBeGreaterThan(0));
+      if (context !== 'loading') {
+        fixture.finishContext();
+        await screen.findByText(
+          'This review cannot be prepared with the current repository and access.',
+        );
+      } else {
+        expect(screen.queryByRole('textbox', { name: 'Target branch' })).toBeNull();
+      }
+      expect(fixture.captures).toHaveLength(0);
+      expect(commands()).toHaveLength(0);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    },
+  );
+  it.each(['guest-owner', 'stale-guest'] as const)(
+    'refuses no-origin %s admission without starting command work',
+    async (role) => {
+      await mountWithoutOrigin({ role });
+      if (role === 'guest-owner')
+        await screen.findByText(
+          'This review cannot be prepared with the current repository and access.',
+        );
+      expect(
+        selectWorkspaceHostOperationContext.select(store.state, sidebarWorkspaceId),
+      ).toBeNull();
+      expect(fixture.base.captures).toHaveLength(0);
+      expect(screen.queryByTestId('pr-create-button')).toBeNull();
+      expect(fixture.captures).toHaveLength(0);
+      expect(commands()).toHaveLength(0);
+    },
+  );
+  it('keeps GitHub origin-dependent after the original context resolves', async () => {
+    await mountWithoutOrigin({ context: 'github' });
+    await resolveNamedRemote();
+    await waitFor(() => expect(screen.queryByTestId('pr-create-button')).toBeNull());
+    expect(screen.queryByRole('textbox', { name: 'Target branch' })).toBeNull();
+    expect(fixture.captures).toHaveLength(0);
+    expect(commands()).toHaveLength(0);
+  });
+  it('keeps Labs-off entry origin-dependent without a native demand', async () => {
+    await mountWithoutOrigin({}, false);
+    expect(screen.queryByTestId('pr-create-button')).toBeNull();
+    expect(fixture.base.captures).toHaveLength(0);
+    expect(fixture.captures).toHaveLength(0);
+  });
+  it.each(['close', 'unmount', 'host', 'admission', 'workspace', 'mode'] as const)(
+    'ends the original no-origin demand and unused owner on %s',
+    async (change) => {
+      const mounted = await mountWithoutOrigin();
+      await openNamedRemote();
+      const dispatch = vi.spyOn(store, 'dispatch');
+      await drafts();
+      await commit(false);
+      const owner = recordedActions(dispatch, nativeReviewEditRequested)[0].payload[0];
+      const original = fixture.base.captures[0].id;
+      if (change === 'close') await fireEvent.click(screen.getByTestId('pr-create-button'));
+      if (change === 'unmount') mounted.unmount();
+      if (change === 'host') fixture.base.admit('host-B');
+      if (change === 'admission') fixture.grant('guest-owner');
+      if (change === 'workspace')
+        await mounted.rerender({ workspaceId: 'another-original-workspace' });
+      if (change === 'mode') store.dispatch(setLabsMultiplayerEnabled(false));
+      await waitFor(() => expect(fixture.base.releases).toContain(original));
+      await waitFor(() => expect(fixture.releases).toContain(fixture.captures[0].id));
+      expect(selectNativeReviewForOwner.select(store.state, owner)).toBeNull();
+      expect(commands()).toHaveLength(0);
+      expect(fixture.captures).toHaveLength(1);
+    },
+  );
+  it.each([true, false])(
+    'keeps listOnly=%s and non-opted-in callers origin-dependent',
+    async (listOnly) => {
+      fixture = installSidebarNativeFixture({ withoutOrigin: true });
+      const props: ComponentProps<typeof PRSection> = {
+        workspaceId: sidebarWorkspaceId,
+        nativeReview: listOnly,
+        listOnly,
+        hasStaged: true,
+        hasUnstaged: false,
+        hasCommits: false,
+        hasOpenPR: false,
+        hasRemote: false,
+        hasPRs: false,
+        pullRequests: [],
+        commits: [],
+        pushedCommits: [],
+        allCommits: [],
+        stagedChanges: [],
+        trunkBranch: 'trunk',
+        targetBranch: 'trunk',
+        repoPath: '/fixture',
+        repoType: 'local',
+        commitMessage: 'Original',
+        hasUnpushedCommits: false,
+        unpushedCount: 0,
+        hasPushedCommits: false,
+        isDiverged: false,
+        isBehind: false,
+        behindCount: 0,
+        isMergedToTrunk: false,
+        areAllPRsMerged: false,
+        hasResetToTrunk: false,
+        isContentMergedToTrunk: false,
+        hasNewWorkAfterMerge: false,
+        isPRMerged: false,
+        mergeDrawerOpen: false,
+        onMergeDrawerToggle: () => {},
+      };
+      render(PRSection, props);
+      expect(screen.queryByTestId('pr-create-button')).toBeNull();
+      expect(fixture.base.captures).toHaveLength(0);
+      expect(fixture.captures).toHaveLength(0);
+    },
+  );
+});
+
+describe('origin status delivery preserves original command ownership', () => {
+  it.each([false, true])(
+    'late origin status keeps the original read and owner (claimed %s)',
+    async (claimed) => {
+      fixture = installSidebarNativeFixture({
+        withoutOrigin: true,
+        delayStatus: true,
+        baseRef: 'trunk',
+      });
+      render((await import('$lib/components/patterns/confirm/ConfirmHost.svelte')).default);
+      render(
+        (await import('$lib/components/workspace/sidebar/SidebarChangesPanel.svelte')).default,
+        { workspaceId: sidebarWorkspaceId },
+      );
+      await waitFor(() => {
+        expect(selectStagedWorkingChanges.select(store.state, sidebarWorkspaceId)).toHaveLength(1);
+        expect(fixture.statusReplies).toHaveLength(1);
+      });
+      await fireEvent.click(await screen.findByTestId('pr-create-button'));
+      await resolveNamedRemote();
+      await screen.findByRole('textbox', { name: 'Target branch' });
+      await drafts();
+      await commit(false);
+      const context = fixture.base.captures[0].id;
+      const parent = fixture.captures[0].id;
+      if (claimed) {
+        await commit();
+        await screen.findByText('Completed commit: staged-parent-B');
+      }
+      fixture.statusReplies[0].finish();
+      await waitFor(() =>
+        expect(selectPostMergeState.select(store.state, sidebarWorkspaceId).hasRemote).toBe(false),
+      );
+      expect(selectAcceptChangesStatus.select(store.state, sidebarWorkspaceId)).toMatchObject({
+        hasRemote: false,
+        remoteUrl: null,
+      });
+      expect(fixture.base.captures).toHaveLength(1);
+      expect(fixture.base.releases).not.toContain(context);
+      expect(fixture.releases).not.toContain(parent);
+      expect(fixture.captures).toHaveLength(1);
+      if (!claimed) await commit();
+      await screen.findByText('Completed commit: staged-parent-B');
+      expect(screen.getByRole('button', { name: 'Prepare merge request' })).toBeTruthy();
+      expect(commands()).toHaveLength(1);
+      expect(fixture.captures).toHaveLength(1);
+    },
+  );
 });

@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import {
   installSummaryFixture,
+  summaryContext,
   previewWorkspaceId,
   type SelectionFixtureOptions,
   type SummaryScene,
@@ -30,6 +31,9 @@ export interface SidebarFixtureOptions {
   role?: SelectionFixtureOptions['role'];
   context?: SummaryScene;
   baseRef?: string;
+  /** Deliver origin-only status independently of the saved named-remote context read. */
+  withoutOrigin?: boolean;
+  delayStatus?: boolean;
   delayPrepare?: boolean;
   delayCommand?: boolean;
   refusePrepare?: boolean;
@@ -38,9 +42,13 @@ export interface SidebarFixtureOptions {
   onBoundary?: (transcript: string) => void;
 }
 export function installSidebarNativeFixture(options: SidebarFixtureOptions = {}) {
-  const base = installSummaryFixture(options.context ?? 'self-managed', false, {
-    role: options.role ?? 'owner',
-  });
+  const base = installSummaryFixture(
+    options.withoutOrigin ? 'loading' : (options.context ?? 'self-managed'),
+    false,
+    {
+      role: options.role ?? 'owner',
+    },
+  );
   store.dispatch(
     setWorkspaceEntity({
       ...selectWorkspaceById.select(store.state, previewWorkspaceId)!,
@@ -89,6 +97,7 @@ export function installSidebarNativeFixture(options: SidebarFixtureOptions = {})
   }> = [];
   const releases: string[] = [];
   const readRequests: Array<{ method: string; params?: unknown }> = [];
+  const statusReplies: Array<{ finish(): void }> = [];
   const pending = new Set<Promise<unknown>>();
   function track<T>(promise: Promise<T>) {
     pending.add(promise);
@@ -251,17 +260,28 @@ export function installSidebarNativeFixture(options: SidebarFixtureOptions = {})
           return { ok: true, result: { commits: [], boundarySha: 'base-A', nextToken: null } };
         case 'file-tracking.getAgentLocks':
           return { ok: true, result: { locks: [] } };
-        case 'accept-changes.getStatus':
-          return {
+        case 'accept-changes.getStatus': {
+          const reply = {
             ok: true,
             result: {
-              hasRemote: true,
+              hasRemote: !options.withoutOrigin,
+              ...(options.withoutOrigin ? { remoteUrl: null } : {}),
               aheadOfTrunk: 0,
               behindTrunk: 0,
               hasConflicts: false,
               isContentMergedToTrunk: false,
             },
           };
+          if (!options.delayStatus) return reply;
+          let finish!: () => void;
+          const promise = track(
+            new Promise((resolve) => {
+              finish = () => resolve(reply);
+            }),
+          );
+          statusReplies.push({ finish });
+          return promise;
+        }
         case 'pr.refresh':
           return { ok: true, result: { pullRequests: [] } };
         case 'git.prStatus':
@@ -281,8 +301,24 @@ export function installSidebarNativeFixture(options: SidebarFixtureOptions = {})
     releases,
     transcript,
     readRequests,
+    statusReplies,
     retire,
     result,
+    finishContext() {
+      if (!options.withoutOrigin)
+        throw new Error('Only the explicit no-origin context is deferred');
+      const context = summaryContext(options.context ?? 'self-managed');
+      for (const root of context.roots) {
+        root.remotes = root.remotes.map((remote) => ({ ...remote, name: 'forge' }));
+        root.reviewSelection.saved = { mode: 'explicit-remote', remoteName: 'forge' };
+        if (root.reviewSelection.outcome.state === 'resolved')
+          root.reviewSelection.outcome = {
+            ...root.reviewSelection.outcome,
+            source: 'explicit-remote',
+          };
+      }
+      base.reads.forEach((read) => read.finish(context));
+    },
     grant(role: NonNullable<SelectionFixtureOptions['role']>) {
       base.grant(role);
       store.dispatch(
@@ -296,6 +332,8 @@ export function installSidebarNativeFixture(options: SidebarFixtureOptions = {})
       stopReads();
       stopStatus();
       // Settle only these controlled original futures; no commands or observations are dispatched.
+      statusReplies.forEach((reply) => reply.finish());
+      base.reads.forEach((read) => read.finish());
       captures.forEach((c) => c.finish());
       requests.forEach((r) => r.finish());
       await Promise.allSettled([...pending]);

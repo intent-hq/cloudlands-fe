@@ -405,6 +405,8 @@
   const nativeEnabled = selectLabsMultiplayerEnabled();
   const nativeAdmission = selectPrincipalAdmissionContext();
   let nativeDemand = $state.raw<RepositoryContextDemand | null>(null);
+  let nativeDemandHost =
+    $state<ReturnType<typeof selectWorkspaceHostOperationContext.select>>(null);
   let nativeIntent = $state.raw<NativeSidebarReviewIntent | null>(null);
   let nativeChild = $state.raw<NativeReviewOwner | null>(null);
   let nativeBranch = $state('');
@@ -419,6 +421,9 @@
   const nativeRead = selectNativeRead(toStore(() => nativeDemand));
   const nativeParentView = selectNativeAttempt(toStore(() => nativeIntent?.owner ?? null));
   const nativeChildView = selectNativeAttempt(toStore(() => nativeChild));
+  const nativeEntryWithoutOrigin = $derived(
+    nativeReview && $nativeEnabled && !listOnly && isOwner && !hasRemote,
+  );
   const nativeMode = $derived(
     nativeReview && $nativeEnabled && $nativeRead.target?.provider !== 'github',
   );
@@ -453,6 +458,7 @@
     endNativeOwners();
     const original = nativeDemand;
     nativeDemand = null;
+    nativeDemandHost = null;
     if (original)
       appStore.dispatch(
         repositoryContextDemandEnded(original.workspaceId, original.demandId, original.admission),
@@ -467,6 +473,7 @@
       demandId: crypto.randomUUID(),
       admission: selectPrincipalAdmissionContext.select(appStore.state),
     });
+    nativeDemandHost = selectWorkspaceHostOperationContext.select(appStore.state, workspaceId);
     nativeDemand = original;
     appStore.dispatch(
       repositoryContextDemanded(original.workspaceId, original.demandId, original.admission),
@@ -479,7 +486,7 @@
       if (nativeReview && $nativeEnabled) {
         nativeBranch = $workspace$?.baseRef ?? '';
         nativeMessage = _commitMessage;
-        startNativeRead();
+        if (!nativeDemand) startNativeRead();
       }
     } else closeNative();
   }
@@ -641,6 +648,18 @@
     nativeChecking = owner.attemptId;
     appStore.dispatch(nativeReviewReconcileRequested(owner));
   }
+  // Resolve the original read before deciding whether a saved named remote has a native entry.
+  // Origin-only status is not repository qualification or command permission.
+  $effect(() => {
+    const originalWorkspace = workspaceId;
+    const originalAdmission = $nativeAdmission;
+    const originalHost = $hostOperationContext$;
+    if (!nativeEntryWithoutOrigin || !originalWorkspace || !originalAdmission || !originalHost)
+      return;
+    untrack(() => {
+      if (!nativeDemand) startNativeRead();
+    });
+  });
   $effect(() => {
     const read = $nativeRead;
     if (!nativeDemand) return;
@@ -659,7 +678,13 @@
     const original = nativeIntent;
     if (
       nativeDemand &&
-      (nativeDemand.workspaceId !== workspaceId || nativeDemand.admission !== $nativeAdmission)
+      (nativeDemand.workspaceId !== workspaceId ||
+        nativeDemand.admission !== $nativeAdmission ||
+        nativeDemandHost !== $hostOperationContext$ ||
+        !nativeReview ||
+        !$nativeEnabled ||
+        listOnly ||
+        !isOwner)
     )
       closeNative();
     if (
@@ -1236,8 +1261,187 @@
   {/if}
 {/snippet}
 
+{#snippet nativeReviewForm()}
+  <section
+    class="min-w-0 space-y-3"
+    aria-label={m.native_review_title_label()}
+    data-native-sidebar-review
+  >
+    {#if !nativeDemand}<Button onclick={startNativeRead}>{m.native_review_start_label()}</Button>
+    {:else if $nativeRead.view?.status === 'loading'}<p role="status">
+        {m.repository_details_loading_description()}
+      </p>{/if}
+    {#if nativeReadChanged && !nativeParentClaimed}
+      <p role="status">{m.native_review_targetContextChanged_description()}</p>
+      <Button onclick={startNativeRead}>{m.native_review_start_label()}</Button>
+    {/if}
+    {#if nativeDemand && !$hostOperationContext$}<p role="status">
+        {m.native_review_unavailable_description()}
+      </p>
+    {:else if nativeDemand && ($nativeRead.target?.provider === 'gitlab' || nativeIntent)}
+      <label class="block text-xs text-subtle" for="sidebar-native-branch"
+        >{m.native_review_target_label()}</label
+      >
+      <Input
+        id="sidebar-native-branch"
+        bind:value={nativeBranch}
+        disabled={!!nativeIntent || nativeReadChanged}
+      />
+      <p class="text-xs text-subtle">{m.native_review_targetChoice_description()}</p>
+      <label class="block text-xs text-subtle" for="sidebar-native-commit"
+        >{m.workspace_mergePanel_commitMessage_label()}</label
+      >
+      <Input id="sidebar-native-commit" bind:value={nativeMessage} disabled={!!nativeIntent} />
+      <label class="block text-xs text-subtle" for="sidebar-native-title"
+        >{m.workspace_prCreator_titleField_label()}</label
+      >
+      <Input id="sidebar-native-title" bind:value={prTitle} disabled={!!nativeIntent} />
+      <label class="block text-xs text-subtle" for="sidebar-native-body"
+        >{m.workspace_prCreator_descriptionField_label()}</label
+      >
+      <Textarea
+        id="sidebar-native-body"
+        value={prDescription}
+        oninput={(e) => (prDescription = e.currentTarget.value)}
+        readonly={!!nativeIntent}
+      />
+      {#if nativeReadChanged && !nativeParentClaimed}<p role="status">
+          {m.native_review_targetContextChanged_description()}
+        </p>{/if}
+      {#if !nativeIntent}
+        <Button
+          onclick={prepareNativeCommit}
+          disabled={!hasStaged ||
+            !nativeBranch.trim() ||
+            !nativeMessage.trim() ||
+            !prTitle.trim() ||
+            nativeReadChanged ||
+            !$hostOperationContext$}
+        >
+          {m.workspace_commitDrawer_commit_label()}
+        </Button>
+      {:else}
+        {#if $nativeParentView?.preview && !nativeParentClaimed}
+          <p>
+            {$nativeParentView.preview.filesCount === 1
+              ? m.workspace_commitDrawer_stagedWillCommit_one()
+              : m.workspace_commitDrawer_stagedWillCommit_many({
+                  count: formatInteger($nativeParentView.preview.filesCount),
+                })}
+          </p>
+        {/if}
+        {#if !nativeParentClaimed && !$nativeParentView?.observation}
+          <Button
+            onclick={() => nativeIntent && triggerNativeReview(nativeIntent)}
+            disabled={$nativeParentView?.status !== 'ready' ||
+              !$nativeParentView.preview?.valid ||
+              !!nativeConfirming}
+          >
+            {$nativeParentView?.status === 'capturing'
+              ? m.workspace_prSection_preparing_label()
+              : m.workspace_commitDrawer_commit_label()}
+          </Button>
+          <Button variant="secondary" onclick={endNativeOwners} disabled={!!nativeConfirming}
+            >{m.native_review_changeTarget_label()}</Button
+          >
+        {/if}
+        {#if !$nativeParentView || $nativeParentView.status === 'unavailable'}<p role="status">
+            {m.native_review_unavailable_description()}
+          </p>{/if}
+        {#if nativeParentClaimed && !$nativeParentView?.observation}<p role="status">
+            {m.native_review_pending_description()}
+          </p>{/if}
+        {#if $nativeParentView?.observation}
+          {@render nativeObservationDetails($nativeParentView.observation)}
+          {#if $nativeParentView.observation.uncertain}<p role="status">
+              {m.native_review_uncertain_description()}
+            </p>{/if}
+          {#if $nativeParentView.observation.uncertain || $nativeParentView.observation.execute?.state === 'pending'}<Button
+              onclick={() => nativeIntent && checkNative(nativeIntent.owner)}
+              disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
+            >{/if}
+        {/if}
+        {#if nativeCanContinue}<Button onclick={prepareNativeChild}
+            >{m.native_review_prepare_label()}</Button
+          >{/if}
+        {#if nativeChild}
+          {#if $nativeChildView?.status === 'capturing'}<p role="status">
+              {m.native_review_preparing_description()}
+            </p>{/if}
+          {#if !$nativeChildView || $nativeChildView.status === 'unavailable'}<p role="status">
+              {m.native_review_unavailable_description()}
+            </p>{/if}
+          {#if $nativeChildView?.preview}
+            <p class="break-all" data-native-child-destination>
+              {$nativeChildView.preview.reviewPreparation.target.repository.projectPath} ({$nativeChildView
+                .preview.reviewPreparation.target.repository.instanceBaseUrl})
+            </p>
+            <p>
+              {$nativeChildView.preview.reviewPreparation.source.branch} → {$nativeChildView.preview
+                .reviewPreparation.target.branch}
+            </p>
+            {#if !nativeChildClaimed}<Button
+                onclick={confirmNativeChild}
+                disabled={$nativeChildView.status !== 'ready' ||
+                  !$nativeChildView.preview.valid ||
+                  !!nativeConfirming}>{m.workspace_prCreator_create_label()}</Button
+              >{/if}
+          {/if}
+          {#if nativeChildClaimed && !$nativeChildView?.observation}<p role="status">
+              {m.native_review_pending_description()}
+            </p>{/if}
+          {#if $nativeChildView?.observation}
+            {@render nativeObservationDetails($nativeChildView.observation)}
+            {#if $nativeChildView.observation.uncertain}<p role="status">
+                {m.native_review_uncertain_description()}
+              </p>{/if}
+            {#if $nativeChildView.observation.uncertain || $nativeChildView.observation.execute?.state === 'pending'}<Button
+                onclick={() => nativeChild && checkNative(nativeChild)}
+                disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
+              >{/if}
+          {/if}
+        {/if}
+      {/if}
+    {:else if nativeDemand && $nativeRead.view?.status !== 'loading'}<p role="status">
+        {m.native_review_unavailable_description()}
+      </p>{/if}
+    <Button
+      variant="ghost"
+      onclick={() => {
+        closeNative();
+        prDrawerOpen = false;
+      }}>{m.workspace_prCreator_cancel_label()}</Button
+    >
+  </section>
+{/snippet}
+
 {#if nativeReview && $nativeEnabled && isOwner && !$hostOperationContext$}
   <p role="status">{m.native_review_unavailable_description()}</p>
+{/if}
+
+<!-- A qualified native entry is independent of the legacy origin-only status. -->
+{#if nativeEntryWithoutOrigin && canHostOperations}
+  {#if (!nativeDemand || $nativeRead.target?.provider === 'gitlab' || (prDrawerOpen && nativeMode)) && (nativeIntent || (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
+    <TimelineDivider>
+      <DividerButton
+        data-testid="pr-create-button"
+        tooltipContents={!hasStaged && !hasCommits
+          ? m.workspace_prSection_noChangesForPr_tooltip()
+          : ''}
+        onclick={togglePRDrawer}
+        expanded={prDrawerOpen}
+        disabled={!nativeIntent && !hasStaged && !hasCommits}
+        >{m.workspace_prSection_createPr_label()}</DividerButton
+      >
+      <DividerPanel open={prDrawerOpen}>
+        {@render nativeReviewForm()}
+      </DividerPanel>
+    </TimelineDivider>
+  {:else if $nativeRead.view?.status === 'loading'}
+    <p role="status">{m.repository_details_loading_description()}</p>
+  {:else if $nativeRead.target?.provider !== 'github'}
+    <p role="status">{m.native_review_unavailable_description()}</p>
+  {/if}
 {/if}
 
 <!-- Divider with Create PR, Push Commits button, or Synced status (only when
@@ -1291,169 +1495,7 @@
       </div>
       <DividerPanel open={prDrawerOpen}>
         {#if nativeMode}
-          <section
-            class="min-w-0 space-y-3"
-            aria-label={m.native_review_title_label()}
-            data-native-sidebar-review
-          >
-            {#if !nativeDemand}<Button onclick={startNativeRead}
-                >{m.native_review_start_label()}</Button
-              >
-            {:else if $nativeRead.view?.status === 'loading'}<p role="status">
-                {m.repository_details_loading_description()}
-              </p>{/if}
-            {#if nativeReadChanged && !nativeParentClaimed}
-              <p role="status">{m.native_review_targetContextChanged_description()}</p>
-              <Button onclick={startNativeRead}>{m.native_review_start_label()}</Button>
-            {/if}
-            {#if nativeDemand && !$hostOperationContext$}<p role="status">
-                {m.native_review_unavailable_description()}
-              </p>
-            {:else if nativeDemand && ($nativeRead.target?.provider === 'gitlab' || nativeIntent)}
-              <label class="block text-xs text-subtle" for="sidebar-native-branch"
-                >{m.native_review_target_label()}</label
-              >
-              <Input
-                id="sidebar-native-branch"
-                bind:value={nativeBranch}
-                disabled={!!nativeIntent || nativeReadChanged}
-              />
-              <p class="text-xs text-subtle">{m.native_review_targetChoice_description()}</p>
-              <label class="block text-xs text-subtle" for="sidebar-native-commit"
-                >{m.workspace_mergePanel_commitMessage_label()}</label
-              >
-              <Input
-                id="sidebar-native-commit"
-                bind:value={nativeMessage}
-                disabled={!!nativeIntent}
-              />
-              <label class="block text-xs text-subtle" for="sidebar-native-title"
-                >{m.workspace_prCreator_titleField_label()}</label
-              >
-              <Input id="sidebar-native-title" bind:value={prTitle} disabled={!!nativeIntent} />
-              <label class="block text-xs text-subtle" for="sidebar-native-body"
-                >{m.workspace_prCreator_descriptionField_label()}</label
-              >
-              <Textarea
-                id="sidebar-native-body"
-                value={prDescription}
-                oninput={(e) => (prDescription = e.currentTarget.value)}
-                readonly={!!nativeIntent}
-              />
-              {#if nativeReadChanged && !nativeParentClaimed}<p role="status">
-                  {m.native_review_targetContextChanged_description()}
-                </p>{/if}
-              {#if !nativeIntent}
-                <Button
-                  onclick={prepareNativeCommit}
-                  disabled={!hasStaged ||
-                    !nativeBranch.trim() ||
-                    !nativeMessage.trim() ||
-                    !prTitle.trim() ||
-                    nativeReadChanged ||
-                    !$hostOperationContext$}
-                >
-                  {m.workspace_commitDrawer_commit_label()}
-                </Button>
-              {:else}
-                {#if $nativeParentView?.preview && !nativeParentClaimed}
-                  <p>
-                    {$nativeParentView.preview.filesCount === 1
-                      ? m.workspace_commitDrawer_stagedWillCommit_one()
-                      : m.workspace_commitDrawer_stagedWillCommit_many({
-                          count: formatInteger($nativeParentView.preview.filesCount),
-                        })}
-                  </p>
-                {/if}
-                {#if !nativeParentClaimed && !$nativeParentView?.observation}
-                  <Button
-                    onclick={() => nativeIntent && triggerNativeReview(nativeIntent)}
-                    disabled={$nativeParentView?.status !== 'ready' ||
-                      !$nativeParentView.preview?.valid ||
-                      !!nativeConfirming}
-                  >
-                    {$nativeParentView?.status === 'capturing'
-                      ? m.workspace_prSection_preparing_label()
-                      : m.workspace_commitDrawer_commit_label()}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onclick={endNativeOwners}
-                    disabled={!!nativeConfirming}>{m.native_review_changeTarget_label()}</Button
-                  >
-                {/if}
-                {#if !$nativeParentView || $nativeParentView.status === 'unavailable'}<p
-                    role="status"
-                  >
-                    {m.native_review_unavailable_description()}
-                  </p>{/if}
-                {#if nativeParentClaimed && !$nativeParentView?.observation}<p role="status">
-                    {m.native_review_pending_description()}
-                  </p>{/if}
-                {#if $nativeParentView?.observation}
-                  {@render nativeObservationDetails($nativeParentView.observation)}
-                  {#if $nativeParentView.observation.uncertain}<p role="status">
-                      {m.native_review_uncertain_description()}
-                    </p>{/if}
-                  {#if $nativeParentView.observation.uncertain || $nativeParentView.observation.execute?.state === 'pending'}<Button
-                      onclick={() => nativeIntent && checkNative(nativeIntent.owner)}
-                      disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
-                    >{/if}
-                {/if}
-                {#if nativeCanContinue}<Button onclick={prepareNativeChild}
-                    >{m.native_review_prepare_label()}</Button
-                  >{/if}
-                {#if nativeChild}
-                  {#if $nativeChildView?.status === 'capturing'}<p role="status">
-                      {m.native_review_preparing_description()}
-                    </p>{/if}
-                  {#if !$nativeChildView || $nativeChildView.status === 'unavailable'}<p
-                      role="status"
-                    >
-                      {m.native_review_unavailable_description()}
-                    </p>{/if}
-                  {#if $nativeChildView?.preview}
-                    <p class="break-all" data-native-child-destination>
-                      {$nativeChildView.preview.reviewPreparation.target.repository.projectPath} ({$nativeChildView
-                        .preview.reviewPreparation.target.repository.instanceBaseUrl})
-                    </p>
-                    <p>
-                      {$nativeChildView.preview.reviewPreparation.source.branch} → {$nativeChildView
-                        .preview.reviewPreparation.target.branch}
-                    </p>
-                    {#if !nativeChildClaimed}<Button
-                        onclick={confirmNativeChild}
-                        disabled={$nativeChildView.status !== 'ready' ||
-                          !$nativeChildView.preview.valid ||
-                          !!nativeConfirming}>{m.workspace_prCreator_create_label()}</Button
-                      >{/if}
-                  {/if}
-                  {#if nativeChildClaimed && !$nativeChildView?.observation}<p role="status">
-                      {m.native_review_pending_description()}
-                    </p>{/if}
-                  {#if $nativeChildView?.observation}
-                    {@render nativeObservationDetails($nativeChildView.observation)}
-                    {#if $nativeChildView.observation.uncertain}<p role="status">
-                        {m.native_review_uncertain_description()}
-                      </p>{/if}
-                    {#if $nativeChildView.observation.uncertain || $nativeChildView.observation.execute?.state === 'pending'}<Button
-                        onclick={() => nativeChild && checkNative(nativeChild)}
-                        disabled={!!nativeChecking}>{m.repository_selection_check_label()}</Button
-                      >{/if}
-                  {/if}
-                {/if}
-              {/if}
-            {:else if nativeDemand && $nativeRead.view?.status !== 'loading'}<p role="status">
-                {m.native_review_unavailable_description()}
-              </p>{/if}
-            <Button
-              variant="ghost"
-              onclick={() => {
-                closeNative();
-                prDrawerOpen = false;
-              }}>{m.workspace_prCreator_cancel_label()}</Button
-            >
-          </section>
+          {@render nativeReviewForm()}
         {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
           <GitHubAuthBanner onSuccess={() => {}} />
         {:else}
