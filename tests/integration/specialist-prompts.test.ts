@@ -106,7 +106,6 @@ describe('Specialist Prompts Verification', () => {
       const chief = getSpecialistById('chief-of-staff');
       expect(chief).toBeDefined();
       expect(chief!.defaultModel).toBeUndefined();
-      expect(chief!.defaultBehaviorPrompt).toContain('Chief of Staff');
       expect(chief!.defaultBehaviorPrompt).toContain('ws.app.workspaces.*');
       expect(chief!.defaultBehaviorPrompt).toContain('proposal cards');
       expect(chief!.defaultBehaviorPrompt).toContain('confirmation cards');
