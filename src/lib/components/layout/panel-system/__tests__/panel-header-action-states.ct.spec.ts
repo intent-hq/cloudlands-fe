@@ -65,12 +65,9 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   });
   await search.press('Enter');
   await expect(component).toHaveAttribute('data-selected-message', 'first');
-  await root.getByTestId('chat-scroll-to-bottom-button').click();
-  await trigger.click();
-  await expect(root.getByTestId('chat-scroll-to-bottom-button')).toHaveAttribute(
-    'aria-disabled',
-    'true',
-  );
+  await expect(search).toBeHidden();
+  await expect(navigation).toHaveAttribute('aria-expanded', 'false');
+  await expect(root.getByTestId('chat-scroll-to-bottom-button')).toHaveCount(0);
   await testInfo.attach('agent-actions', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -83,7 +80,7 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   });
 });
 
-test('additional action dismisses the menu while header expansion and close remain accessible', async ({
+test('prompt selection dismisses its submenu while header expansion and close remain accessible', async ({
   mount,
   page,
 }, testInfo) => {
@@ -96,19 +93,21 @@ test('additional action dismisses the menu while header expansion and close rema
     .getByTestId('panel-actions-trigger');
   await trigger.press('Enter');
   await expect(page.getByRole('menuitem', { name: /Zoom Panel/ })).toHaveCount(0);
-  await page.getByTestId('chat-scroll-to-bottom-button').press('Enter');
-  await expect(page.getByRole('menu')).toBeHidden();
-  await expect(trigger).toBeFocused();
-  await trigger.press('Enter');
-  await expect(page.getByTestId('chat-scroll-to-bottom-button')).toHaveAttribute(
-    'aria-disabled',
-    'true',
-  );
-  await testInfo.attach('scroll-action-disabled-after-selection', {
+  const navigation = page.getByTestId('chat-message-navigator-trigger');
+  await navigation.focus();
+  await page.keyboard.press('ArrowRight');
+  const search = page.getByTestId('chat-message-navigator-search');
+  await search.fill('Keep actions');
+  await search.press('Enter');
+  await expect(component).toHaveAttribute('data-selected-message', 'last');
+  await expect(search).toBeHidden();
+  await testInfo.attach('prompt-submenu-dismissed-after-selection', {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toBeHidden();
+  await expect(trigger).toBeFocused();
   await expect(component).toHaveAttribute('data-expanded-panel-id', '');
   await component.locator('[data-panel-tabless-header]').dblclick({ position: { x: 2, y: 2 } });
   await expect(component).toHaveAttribute('data-expanded-panel-id', 'simple-agent-header-panel');

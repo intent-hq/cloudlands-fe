@@ -107,7 +107,7 @@ test.describe('chat message navigator production path', () => {
       const panelActionsButton = headerActions.getByTestId('panel-actions-trigger');
       const closeButton = headerActions.getByTestId('panel-close-button');
       const listButton = page.getByTestId('chat-message-navigator-trigger');
-      const downButton = page.getByTestId('chat-scroll-to-bottom-button');
+      const downButton = page.getByTestId('chat-floating-scroll-to-bottom-button');
       await expectUniqueVisible(header);
       await expectUniqueVisible(panelActionsButton);
       await expectUniqueVisible(closeButton);
@@ -125,7 +125,8 @@ test.describe('chat message navigator production path', () => {
       );
       await panelActionsButton.click();
       await expectUniqueVisible(listButton);
-      await expect(downButton).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.getByTestId('chat-scroll-to-bottom-button')).toHaveCount(0);
+      await expect(downButton).toHaveCount(0);
 
       const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(1);
@@ -307,8 +308,7 @@ test.describe('chat message navigator production path', () => {
       await panelActionsButton.focus();
       await page.keyboard.press('Tab');
       await expect(closeButton).toBeFocused();
-      await panelActionsButton.click();
-      await expect(downButton).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(downButton).toBeVisible();
       await downButton.click();
       await expect(panelActionsButton).toHaveAttribute('aria-expanded', 'false');
       await expect
@@ -319,7 +319,7 @@ test.describe('chat message navigator production path', () => {
         )
         .toBeLessThanOrEqual(2);
       await panelActionsButton.click();
-      await expect(downButton).toHaveAttribute('aria-disabled', 'true');
+      await expect(downButton).toHaveCount(0);
       await listButton.click();
       await pickerForTrigger(page, listButton);
       await test.info().attach(`navigator-${state.theme}-${state.zoom}`, {
