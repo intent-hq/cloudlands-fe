@@ -149,9 +149,14 @@ vi.mock('../intentd-version-pin', () => ({
 
 // Preserve the real PinMismatchError + resolveBackendConfig; stub captureFingerprint.
 const mockCaptureFingerprint = vi.hoisted(() => vi.fn());
+const mockTestWssConnection = vi.hoisted(() => vi.fn());
 vi.mock('../backend-connection', async (importActual) => {
   const actual = await importActual<typeof import('../backend-connection')>();
-  return { ...actual, captureFingerprint: mockCaptureFingerprint };
+  return {
+    ...actual,
+    captureFingerprint: mockCaptureFingerprint,
+    testWssConnection: mockTestWssConnection,
+  };
 });
 
 const importedPrincipal = vi.hoisted(() => ({ inspect: vi.fn() }));
@@ -426,6 +431,7 @@ beforeEach(() => {
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
+  mockTestWssConnection.mockReset().mockResolvedValue(undefined);
   store.setHostname.mockResolvedValue(undefined);
   store.setDaemonVersion.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
@@ -2069,7 +2075,48 @@ describe('connections:* IPC handlers', () => {
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 
+  it.each([
+    { hosts: [REMOTE.host, '192.168.1.5'], tcAddress: null },
+    { hosts: [REMOTE.host], tcAddress: TC_ADDRESS },
+  ])(
+    'tests the saved fallback routes when the entered address is unchanged (%j)',
+    async (routes) => {
+      store.list.mockResolvedValue([LOCAL, { ...REMOTE, ...routes }]);
+      mockCaptureFingerprint.mockResolvedValue({ ok: false, code: 'connect-failed' });
+      const { mod, openOrFocus } = await loadModule();
+      const liveClient = await mod.connectBackendClient(REMOTE.id);
+      const lifecycleBefore = [...lifecycle.events];
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:test')!;
+
+      await expect(
+        handler({}, { id: REMOTE.id, host: REMOTE.host, port: REMOTE.port }),
+      ).resolves.toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+      expect(mockTestWssConnection).toHaveBeenCalledWith({
+        transport: 'wss',
+        host: REMOTE.host,
+        hosts: routes.hosts,
+        port: REMOTE.port,
+        fingerprint: REMOTE.fingerprint,
+        token: 'secret-token',
+        tcAddress: routes.tcAddress ?? undefined,
+      });
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(mod.getBackendClientForConnection(REMOTE.id)).toBe(liveClient);
+      expect(lifecycle.events).toEqual(lifecycleBefore);
+      expect(store.updateMetadata).not.toHaveBeenCalled();
+      expect(store.replaceSecret).not.toHaveBeenCalled();
+      expect(store.setActiveId).not.toHaveBeenCalled();
+      expect(store.setHosts).not.toHaveBeenCalled();
+      expect(openOrFocus).not.toHaveBeenCalled();
+    },
+  );
+
   it('tests unsaved address values with the saved secret without saving or opening a window', async () => {
+    store.list.mockResolvedValue([
+      LOCAL,
+      { ...REMOTE, hosts: [REMOTE.host, '192.168.1.5'], tcAddress: TC_ADDRESS },
+    ]);
     mockCaptureFingerprint.mockResolvedValue({
       ok: true,
       fingerprint: REMOTE.fingerprint,
@@ -2099,7 +2146,130 @@ describe('connections:* IPC handlers', () => {
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
     expect(openOrFocus).not.toHaveBeenCalled();
+    expect(mockTestWssConnection).not.toHaveBeenCalled();
   });
+
+  it('validates an edited port explicitly even when a saved fallback works', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, tcAddress: TC_ADDRESS }]);
+    mockCaptureFingerprint.mockResolvedValueOnce({ ok: false, code: 'timeout' });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:test')!({}, { id: REMOTE.id, host: REMOTE.host, port: 9443 }),
+    ).resolves.toEqual({ status: 'failed', reason: 'timeout' });
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith({ host: REMOTE.host, port: 9443 });
+    expect(mockTestWssConnection).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, false])(
+    'uses the store route list without enabling detected hosts (%s)',
+    async (detectHosts) => {
+      store.list.mockResolvedValue([LOCAL, { ...REMOTE, hosts: [REMOTE.host], detectHosts }]);
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+
+      await expect(
+        findHandler('connections:test')!(
+          {},
+          { id: REMOTE.id, host: REMOTE.host, port: REMOTE.port },
+        ),
+      ).resolves.toMatchObject({ status: 'success' });
+      expect(mockTestWssConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: REMOTE.host,
+          hosts: [REMOTE.host],
+          tcAddress: undefined,
+        }),
+      );
+      expect(store.getDetectHosts).not.toHaveBeenCalled();
+      expect(store.setHosts).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses sanitized dial hosts instead of a legacy saved loopback primary', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, host: '127.0.0.1', hosts: ['10.0.0.5'] }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:test')!({}, { id: REMOTE.id, host: '127.0.0.1', port: REMOTE.port }),
+    ).resolves.toMatchObject({ status: 'success' });
+    expect(mockTestWssConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: '10.0.0.5',
+        hosts: ['10.0.0.5'],
+      }),
+    );
+  });
+
+  it('uses the write-only token override for all saved routes without decrypting or persisting', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, tcAddress: TC_ADDRESS }]);
+    store.getDecryptedToken.mockRejectedValue(new Error('undecryptable saved token'));
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:test')!(
+      {},
+      {
+        id: REMOTE.id,
+        host: REMOTE.host,
+        port: REMOTE.port,
+        token: 'preview-token',
+      },
+    );
+    expect(result).toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+    expect(mockTestWssConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'preview-token',
+        tcAddress: TC_ADDRESS,
+      }),
+    );
+    expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'pin',
+      {
+        status: 'fingerprint-confirmation-required',
+        expectedFingerprint: REMOTE.fingerprint,
+        actualFingerprint: 'DD:EE:FF',
+      },
+    ],
+    ['no-certificate', { status: 'failed', reason: 'no-certificate' }],
+    ['auth', { status: 'authentication-rejected', statusCode: 403 }],
+    ['timeout', { status: 'failed', reason: 'timeout' }],
+    ['unreachable', { status: 'failed', reason: 'connect-failed' }],
+  ])(
+    'returns structured guidance for a saved-route %s failure without raw errors',
+    async (kind, expected) => {
+      const { AuthRejectedError, PinMismatchError } = await import('../backend-connection');
+      const error =
+        kind === 'pin' || kind === 'no-certificate'
+          ? new PinMismatchError(REMOTE.fingerprint, kind === 'pin' ? 'DD:EE:FF' : '')
+          : kind === 'auth'
+            ? new AuthRejectedError(403)
+            : Object.assign(new Error('raw failure with secret-material'), {
+                code: kind === 'timeout' ? 'ETIMEDOUT' : 'ECONNREFUSED',
+              });
+      mockTestWssConnection.mockRejectedValue(error);
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+
+      await expect(
+        findHandler('connections:test')!(
+          {},
+          { id: REMOTE.id, host: REMOTE.host, port: REMOTE.port },
+        ),
+      ).resolves.toEqual(expected);
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(store.updateMetadata).not.toHaveBeenCalled();
+      expect(store.replaceSecret).not.toHaveBeenCalled();
+    },
+  );
 
   it('tests a write-only secret override without decrypting or persisting it', async () => {
     store.getDecryptedToken.mockRejectedValue(new Error('stored secret is undecryptable'));

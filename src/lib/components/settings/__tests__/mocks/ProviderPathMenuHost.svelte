@@ -9,21 +9,31 @@
 </script>
 
 <script lang="ts">
+  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import { store as appStore } from '$store/renderer/store';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { checkSingleProviderSuccess } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
     loadEnabledProvidersFromStorage,
-    setActiveProvider,
+    providerPathsLoaded,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { selectProviderPathsRevision } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import ProviderSelector from '../../ProviderSelector.svelte';
 
-  // CT initializes an isolated renderer store without persistence/probe sagas.
-  // Keep production provider/menu/form components; seed only their data inputs.
+  // CT exercises focus handoff with seeded provider/path data and no running sagas.
+  // The read saga's wire behavior has its own provider-settings-read-saga tests.
+  appStore.dispatch(
+    providerPathsLoaded(selectProviderPathsRevision.select(appStore.state), {
+      configured: {},
+      resolved: { auggie: '/fixture/bin/auggie' },
+      secondary: {},
+      npxPackages: {},
+    }),
+  );
   appStore.dispatch(providerCatalogLoaded(catalog));
   appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
-  appStore.dispatch(setActiveProvider('auggie'));
+  appStore.dispatch(hydrateDefaultProvider('auggie'));
   appStore.dispatch(checkSingleProviderSuccess('auggie', { available: true, authenticated: true }));
   appStore.dispatch(checkSingleProviderSuccess('antigravity', { available: false }));
 

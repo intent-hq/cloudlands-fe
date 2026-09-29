@@ -1,6 +1,10 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, delay, put, take } from 'typed-redux-saga';
+import { actionChannel, all, call, delay, put, take } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { settingsFormSaga } from './settings-form-saga';
+import { settingsMigrationsSaga } from './settings-migrations-saga';
+import { websocketApiSaga } from '../../websocket-api/sagas/websocket-api-saga';
+import { rtkSettingsSaga } from '../../rtk-settings/sagas/rtk-settings-saga';
 
 import { appClient } from '$lib/client';
 import type { AppliedSettingChange } from '$lib/client/app-client';
@@ -13,6 +17,11 @@ import {
   selectHostAdministrationContext,
 } from '../../principal/principal-selectors';
 import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
+
+import {
+  fastModeHydrationStarted,
+  fastModeSupportReceived,
+} from '../../provider-settings/provider-settings-slice';
 
 const logger = createLogger('SettingsHydrationSaga');
 
@@ -55,7 +64,13 @@ function* readSettingsSnapshotSaga() {
         }));
         // The shared apply seam emits hydration actions only. It never calls
         // settings.update, so the boot snapshot cannot echo back into persistence.
-        return { changes, revision: snapshot.revision };
+        return {
+          changes,
+          revision: snapshot.revision,
+          fastModeSupported: settings.some(
+            (s) => s.path === 'providers.fastMode' && s.type === 'object',
+          ),
+        };
       }
       logger.error('settings hydration returned an empty snapshot, retrying');
     } catch (error) {
@@ -76,20 +91,25 @@ function* readSettingsSnapshotSaga() {
 
 export function* hydrateSettingsOnceSaga() {
   yield* put(notificationVolumeHydrationStarted());
+  yield* put(fastModeHydrationStarted());
   const snapshot = yield* call(readSettingsSnapshotSaga);
-  if (snapshot) yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+  if (snapshot) {
+    yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+    yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
+  }
 }
 
-function* hydrateAuthorizedSettings({ payload: context }: SelectorChannelPayload<string | null>) {
-  if (!context) return;
-  // Subscribe before reading so changes racing the snapshot remain ordered.
-  // A new authority context creates a fresh channel and revision watermark.
+function* settingsSnapshotLoop() {
   const channel = yield* actionChannel(settingsChangesReceived, buffers.expanding());
   try {
     yield* put(notificationVolumeHydrationStarted());
+    yield* put(fastModeHydrationStarted());
     const snapshot = yield* call(readSettingsSnapshotSaga);
     let revision = snapshot?.revision ?? -1;
-    if (snapshot) yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+    if (snapshot) {
+      yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+      yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
+    }
     while (true) {
       const settings = yield* take(channel);
       const incomingRevision = settings.payload[1];
@@ -105,5 +125,17 @@ function* hydrateAuthorizedSettings({ payload: context }: SelectorChannelPayload
 }
 
 export function* settingsHydrationSaga() {
-  yield* takeLatestFromSelector(selectHostAdministrationContext, hydrateAuthorizedSettings);
+  yield* takeLatestFromSelector(
+    selectHostAdministrationContext,
+    function* ({ payload: context }: SelectorChannelPayload<string | null>) {
+      if (!context) return;
+      yield* all([
+        call(settingsMigrationsSaga),
+        call(settingsSnapshotLoop),
+        call(settingsFormSaga),
+        call(websocketApiSaga),
+        call(rtkSettingsSaga),
+      ]);
+    },
+  );
 }

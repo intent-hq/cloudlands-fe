@@ -8,7 +8,7 @@ import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
  * so the adapter's newline framing + event-push path exercise the same code
  * a live daemon would.
  */
-import type { ChildProcess } from 'node:child_process';
+import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import dns from 'node:dns';
 import { EventEmitter } from 'node:events';
@@ -41,6 +41,7 @@ import {
   PinMismatchError,
   raceDuplexSockets,
   resolveBackendConfig,
+  testWssConnection,
   TUNNEL_RACE_HOST,
   tunnelRaceAttempt,
   WebSocketDuplex,
@@ -50,6 +51,7 @@ import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
 import { createTunneledSocket, TUNNEL_CONNECT_TIMEOUT_MS } from './tailcat-tunnel';
+import * as tailcatTunnel from './tailcat-tunnel';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to
 // load the real Node implementation (same pattern as `ssh-manager.ts`).
@@ -645,6 +647,8 @@ class FakeWssDaemon {
   secureConnections = 0;
   /** Decrypted application bytes received across all TLS sessions. */
   decryptedBytes = 0;
+  readonly sockets = new Set<net.Socket>();
+  upgradeGate: Promise<void> | undefined;
   handler: (req: {
     id?: number | string;
     method: string;
@@ -657,13 +661,23 @@ class FakeWssDaemon {
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('connection', (socket) => {
+      this.sockets.add(socket);
+      socket.once('close', () => this.sockets.delete(socket));
+    });
     this.server.on('secureConnection', (socket) => {
       this.secureConnections += 1;
       socket.on('data', (chunk: Buffer) => {
         this.decryptedBytes += chunk.length;
       });
     });
-    this.wss = new WebSocketServer({ server: this.server });
+    this.wss = new WebSocketServer({
+      server: this.server,
+      verifyClient: (_info, done) => {
+        if (this.upgradeGate) void this.upgradeGate.then(() => done(true));
+        else done(true);
+      },
+    });
     this.wss.on('connection', (socket, req) => {
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
@@ -1377,6 +1391,41 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect((await failed).message).toBe('ECONNREFUSED b');
   });
 
+  it('preserves an authentication rejection when another route fails later', async () => {
+    const a = new FakeCandidate();
+    const b = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'a', create: () => a },
+      { host: 'b', create: () => b },
+    ]);
+    const failed = new Promise<Error>((resolve) => facade.once('error', resolve));
+    a.emit('error', new AuthRejectedError(401));
+    b.emit('error', new Error('ECONNREFUSED'));
+    expect(await failed).toBeInstanceOf(AuthRejectedError);
+    expect(a.destroyed).toBe(true);
+    expect(b.destroyed).toBe(true);
+  });
+
+  it('preserves an authentication rejection when remaining routes time out', async () => {
+    vi.useFakeTimers();
+    try {
+      const rejected = new FakeCandidate();
+      const stalled = new FakeCandidate();
+      const facade = raceDuplexSockets([
+        { host: 'rejected', create: () => rejected },
+        { host: 'stalled', create: () => stalled },
+      ]);
+      const failed = new Promise<Error>((resolve) => facade.once('error', resolve));
+      rejected.emit('error', new AuthRejectedError(403));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await failed).toMatchObject({ statusCode: 403 });
+      expect(stalled.destroyed).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('continues past a pin mismatch — a later good candidate still wins (iOS model)', async () => {
     const bad = new FakeCandidate();
     const good = new FakeCandidate();
@@ -1735,33 +1784,34 @@ describe('tunnel candidate connect bound in the wss race', () => {
   );
 });
 
+/**
+ * Fake tailcat child: instead of dialing the tc mesh, relays its stdio to
+ * the FakeWssDaemon's TLS port — the same pipe topology the real client
+ * binary provides, so the forwarder-loopback capture path runs end to end.
+ */
+class FakeRelayChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  killed = false;
+  constructor(remotePort?: number) {
+    super();
+    if (remotePort === undefined) return;
+    const socket = net.connect(remotePort, '127.0.0.1');
+    this.stdin.pipe(socket);
+    socket.pipe(this.stdout);
+    this.once('exit', () => socket.destroy());
+  }
+  kill(): boolean {
+    this.killed = true;
+    this.emit('exit', 0);
+    return true;
+  }
+}
+
 describe('captureFingerprint through the tailcat tunnel (tc-address host)', () => {
   let daemon: FakeWssDaemon;
   const TOKEN = 'c'.repeat(64);
-
-  /**
-   * Fake tailcat child: instead of dialing the tc mesh, relays its stdio to
-   * the FakeWssDaemon's TLS port — the same pipe topology the real client
-   * binary provides, so the forwarder-loopback capture path runs end to end.
-   */
-  class FakeRelayChild extends EventEmitter {
-    stdin = new PassThrough();
-    stdout = new PassThrough();
-    stderr = new PassThrough();
-    killed = false;
-    constructor(remotePort: number) {
-      super();
-      const socket = net.connect(remotePort, '127.0.0.1');
-      this.stdin.pipe(socket);
-      socket.pipe(this.stdout);
-      this.once('exit', () => socket.destroy());
-    }
-    kill(): boolean {
-      this.killed = true;
-      this.emit('exit', 0);
-      return true;
-    }
-  }
 
   beforeAll(async () => {
     daemon = new FakeWssDaemon();
@@ -1776,12 +1826,47 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     vi.unstubAllEnvs();
   });
 
-  it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
-    'reopens a saved Tailcat host without DNS and preserves spawn bytes (tcAddress: %s)',
-    async (tcAddress) => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailcat-reconnect-'));
-      const script = path.join(tmpDir, 'tailcat');
-      const argsFile = path.join(tmpDir, 'args.jsonl');
+  async function withSavedTailcatRelay(
+    tcAddress: string | undefined,
+    packageScope: 'configured' | 'module parent',
+    verify: (fixture: {
+      connect: (fingerprint?: string) => Duplex;
+      argv: () => unknown;
+      dnsHosts: () => unknown[];
+      childCount: () => number;
+    }) => Promise<void>,
+  ): Promise<void> {
+    // The global Vitest temp guard removes its root even after failure. Keep
+    // these owned diagnostics outside it so an unconfirmed child keeps its
+    // original executable/argv files, without weakening that global guard.
+    const evidenceRoot = path.resolve(
+      process.env.INTENT_TAILCAT_FIXTURE_EVIDENCE_DIR ?? '.cache/tailcat-fixtures',
+    );
+    fs.mkdirSync(evidenceRoot, { recursive: true });
+    const tmpDir = fs.mkdtempSync(path.join(evidenceRoot, 'tailcat-reconnect-'));
+    const relayDir = packageScope === 'module parent' ? path.join(tmpDir, 'relay') : tmpDir;
+    const script = path.join(relayDir, 'tailcat');
+    const argsFile = path.join(relayDir, 'args.jsonl');
+    const receiptPath = `${tmpDir}.json`;
+    const failures: unknown[] = [];
+    const sockets: Duplex[] = [];
+    const children: Array<{
+      child: ChildProcess;
+      closed: Promise<void>;
+      receipt: Record<string, unknown>;
+    }> = [];
+    let closeConfirmed = false;
+    let removed = false;
+    let restoreTunnel: (() => void) | undefined;
+    let restoreLookup: (() => void) | undefined;
+    try {
+      if (packageScope === 'module parent') {
+        fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"type":"module"}\n');
+        fs.mkdirSync(relayDir);
+      }
+      // An extensionless executable inherits package scope from its directory.
+      // Keep the original relay bytes CommonJS even inside this ESM repository.
+      fs.writeFileSync(path.join(relayDir, 'package.json'), '{"type":"commonjs"}\n');
       fs.writeFileSync(
         script,
         `#!${process.execPath}
@@ -1796,43 +1881,208 @@ socket.on('error', () => process.exit(1));
       );
       vi.stubEnv('TAILCAT_BIN', script);
       const lookup = vi.spyOn(dns, 'lookup');
-      try {
-        const config = {
-          transport: 'wss' as const,
-          host: TC_ADDRESS,
-          port: daemon.port,
-          token: TOKEN,
-          fingerprint: daemon.fingerprint,
-          tcAddress,
-        };
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const socket = createBackendSocket(config);
-          try {
-            await new Promise<void>((resolve, reject) => {
-              socket.once('connect', resolve);
-              socket.once('error', reject);
-            });
-          } finally {
-            socket.destroy();
-          }
-        }
-        expect(
+      restoreLookup = () => lookup.mockRestore();
+      const create = tailcatTunnel.createTunneledSocket;
+      const tunnelSpy = vi
+        .spyOn(tailcatTunnel, 'createTunneledSocket')
+        .mockImplementation((options) =>
+          create({
+            ...options,
+            // Observe real processes; keep the executable, argv, pipe topology
+            // and production connect deadline unchanged.
+            spawn: (command, args, spawnOptions) => {
+              const started = Date.now();
+              const child = nodeSpawn(command, args, spawnOptions);
+              const receipt: Record<string, unknown> = {
+                pid: child.pid,
+                args,
+                stdoutBytes: 0,
+                stderr: '',
+              };
+              const closed = new Promise<void>((resolve) => {
+                child.once('close', () => {
+                  receipt.closeMs = Date.now() - started;
+                  resolve();
+                });
+              });
+              children.push({ child, closed, receipt });
+              child.stdout.on('data', (chunk: Buffer) => {
+                receipt.stdoutBytes = Number(receipt.stdoutBytes) + chunk.length;
+              });
+              child.stderr.on('data', (chunk: Buffer) => {
+                receipt.stderr = (String(receipt.stderr) + chunk.toString('utf8')).slice(0, 4096);
+              });
+              child.once('spawn', () => {
+                receipt.spawnMs = Date.now() - started;
+              });
+              child.once('error', (error) => {
+                receipt.error = error.message;
+              });
+              child.once('exit', (code, signal) => {
+                Object.assign(receipt, { code, signal, exitMs: Date.now() - started });
+              });
+              return child;
+            },
+          }),
+        );
+      restoreTunnel = () => tunnelSpy.mockRestore();
+      await verify({
+        connect(fingerprint = daemon.fingerprint) {
+          const socket = createBackendSocket({
+            transport: 'wss',
+            host: TC_ADDRESS,
+            port: daemon.port,
+            token: TOKEN,
+            fingerprint,
+            tcAddress,
+          });
+          sockets.push(socket);
+          return socket;
+        },
+        argv: () =>
           fs
             .readFileSync(argsFile, 'utf8')
             .trim()
             .split('\n')
             .map((line) => JSON.parse(line)),
-        ).toEqual([
-          [TC_ADDRESS, String(daemon.port)],
-          [TC_ADDRESS, String(daemon.port)],
-        ]);
-        // Node may call lookup for numeric loopback too; no opaque address
-        // may reach the resolver, including a lowercased version of it.
-        expect(lookup.mock.calls.map(([host]) => host)).toEqual(['127.0.0.1', '127.0.0.1']);
-      } finally {
-        lookup.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        dnsHosts: () => lookup.mock.calls.map(([host]) => host),
+        childCount: () => children.length,
+      });
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      for (const socket of sockets) {
+        try {
+          socket.destroy();
+        } catch (error) {
+          failures.push(error);
+        }
       }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        // Observe production teardown, including its TERM/KILL grace. Never
+        // add a test-owned kill or adopt a child to turn failure into success.
+        await Promise.race([
+          Promise.all(children.map(({ closed }) => closed)),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`Tailcat child close unconfirmed; retained ${tmpDir}`)),
+              3000,
+            );
+          }),
+        ]);
+        expect(
+          children.every(({ child }) => child.exitCode !== null || child.signalCode !== null),
+        ).toBe(true);
+        closeConfirmed = true;
+      } catch (error) {
+        failures.push(error);
+      } finally {
+        clearTimeout(timer);
+        // Restoration cannot depend on diagnostic reads, serialization or log
+        // output succeeding. Preserve each independent failure in the report.
+        for (const restore of [restoreTunnel, restoreLookup]) {
+          try {
+            restore?.();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+      }
+      try {
+        const receipt = JSON.stringify({
+          platform: process.platform,
+          arch: process.arch,
+          node: process.version,
+          execPath: process.execPath,
+          explicitAddress: tcAddress !== undefined,
+          packageScope,
+          relayDir,
+          tmpDir,
+          closeConfirmed,
+          children: children.map(({ receipt }) => receipt),
+          argv: fs.existsSync(argsFile) ? fs.readFileSync(argsFile, 'utf8') : null,
+        });
+        fs.writeFileSync(receiptPath, receipt);
+        console.info('Tailcat reconnect fixture receipt', receipt);
+      } catch (error) {
+        failures.push(error);
+      }
+      if (closeConfirmed) {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+          removed = true;
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `Tailcat fixture failed; ${removed ? 'closed fixture removed' : `fixture retained at ${tmpDir}`}; receipt target ${receiptPath}`,
+      );
+    }
+  }
+
+  describe.each(['configured', 'module parent'] as const)(
+    'saved relay package scope: %s',
+    (packageScope) => {
+      it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
+        'reopens a saved Tailcat host without DNS and preserves spawn bytes (tcAddress: %s)',
+        async (tcAddress) => {
+          await withSavedTailcatRelay(tcAddress, packageScope, async (fixture) => {
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const socket = fixture.connect();
+              try {
+                await new Promise<void>((resolve, reject) => {
+                  socket.once('connect', resolve);
+                  socket.once('error', reject);
+                });
+              } finally {
+                socket.destroy();
+              }
+            }
+            expect(fixture.argv()).toEqual([
+              [TC_ADDRESS, String(daemon.port)],
+              [TC_ADDRESS, String(daemon.port)],
+            ]);
+            expect(fixture.dnsHosts()).toEqual(['127.0.0.1', '127.0.0.1']);
+            expect(fixture.childCount()).toBe(2);
+          });
+        },
+      );
+
+      it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
+        'rejects a wrong pin through a real saved Tailcat executable before sending token bytes (tcAddress: %s)',
+        async (tcAddress) => {
+          await withSavedTailcatRelay(tcAddress, packageScope, async (fixture) => {
+            const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+            daemon.lastAuthHeader = 'sentinel-not-overwritten';
+            daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+            const before = daemon.decryptedBytes;
+            const socket = fixture.connect(wrong);
+            try {
+              await expect(
+                new Promise<void>((resolve, reject) => {
+                  socket.once('connect', resolve);
+                  socket.once('error', reject);
+                }),
+              ).rejects.toBeInstanceOf(PinMismatchError);
+            } finally {
+              socket.destroy();
+            }
+            // Same observation window as the existing direct/TOFU pin controls.
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            expect(daemon.decryptedBytes).toBe(before);
+            expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+            expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
+            expect(fixture.argv()).toEqual([[TC_ADDRESS, String(daemon.port)]]);
+            expect(fixture.dnsHosts()).toEqual(['127.0.0.1']);
+            expect(fixture.childCount()).toBe(1);
+          });
+        },
+      );
     },
   );
 
@@ -1959,5 +2209,248 @@ describe('multi-host wss connect through JsonRpcClient (#1746)', () => {
     await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
     expect(errors.some((e) => e instanceof PinMismatchError)).toBe(true);
     client.dispose();
+  });
+});
+
+describe('testWssConnection saved-route probes', () => {
+  let daemon: FakeWssDaemon;
+  const TOKEN = 'saved-route-test-token';
+
+  beforeAll(async () => {
+    daemon = new FakeWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    daemon.upgradeGate = undefined;
+    daemon.handler = () => ({ result: null });
+  });
+
+  function config() {
+    return {
+      transport: 'wss' as const,
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      fingerprint: daemon.fingerprint,
+    };
+  }
+
+  function relay(port: number | null = daemon.port) {
+    const children: FakeRelayChild[] = [];
+    const tunnels: Duplex[] = [];
+    const spawnArgs: string[][] = [];
+    let didSpawn!: () => void;
+    const spawned = new Promise<void>((resolve) => {
+      didSpawn = resolve;
+    });
+    const create = tailcatTunnel.createTunneledSocket;
+    vi.spyOn(tailcatTunnel, 'resolveTailcatBinaryPath').mockReturnValue(__filename);
+    vi.spyOn(tailcatTunnel, 'createTunneledSocket').mockImplementation((options) => {
+      const tunnel = create({
+        ...options,
+        spawn: (_command, args) => {
+          spawnArgs.push(args);
+          const child = new FakeRelayChild(port ?? undefined);
+          children.push(child);
+          didSpawn();
+          return child as unknown as ChildProcess;
+        },
+      });
+      tunnels.push(tunnel);
+      return tunnel;
+    });
+    return { children, tunnels, spawnArgs, spawned };
+  }
+
+  it('succeeds through one deduplicated alternate while the primary stalls, then closes both', async () => {
+    let accepted!: () => void;
+    daemon.upgradeGate = new Promise<void>((resolve) => {
+      accepted = resolve;
+    });
+    const sockets = new Set<net.Socket>();
+    const stalled = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.resume();
+      socket.once('close', () => sockets.delete(socket));
+      accepted();
+    });
+    await new Promise<void>((resolve) => stalled.listen(daemon.port, '127.0.0.2', resolve));
+    const handshakes = daemon.secureConnections;
+    const request = vi.fn(() => ({ result: null }));
+    daemon.handler = request;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await testWssConnection({
+        ...config(),
+        host: '127.0.0.2',
+        hosts: ['127.0.0.2', daemon.host, `  ${daemon.host}  `, ''],
+      });
+      // No clock advancement: success cannot wait for the stalled primary's deadline.
+      expect(vi.getTimerCount()).toBe(0);
+      expect(daemon.secureConnections - handshakes).toBe(1);
+      expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+      expect(new URL(daemon.lastUpgradeUrl!, 'https://localhost').searchParams.get('token')).toBe(
+        TOKEN,
+      );
+      expect(request).not.toHaveBeenCalled();
+      vi.useRealTimers();
+      await vi.waitFor(() => {
+        expect(sockets.size).toBe(0);
+        expect(daemon.sockets.size).toBe(0);
+      });
+    } finally {
+      vi.useRealTimers();
+      accepted();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+    }
+  });
+
+  it.each([undefined, TC_ADDRESS])(
+    'succeeds directly without an available tunnel (%s)',
+    async (tcAddress) => {
+      vi.spyOn(tailcatTunnel, 'resolveTailcatBinaryPath').mockReturnValue(null);
+      await expect(testWssConnection({ ...config(), tcAddress })).resolves.toBeUndefined();
+      await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+    },
+  );
+
+  it('fails locally for a tunnel-only device when Tailcat is unavailable', async () => {
+    vi.spyOn(tailcatTunnel, 'resolveTailcatBinaryPath').mockReturnValue(null);
+    const lookup = vi.spyOn(dns, 'lookup');
+    await expect(testWssConnection({ ...config(), host: TC_ADDRESS })).rejects.toThrow(
+      'tailcat binary unavailable',
+    );
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('succeeds through the saved Tailcat route when the primary refuses and closes its relay', async () => {
+    const tunnel = relay();
+    await expect(
+      testWssConnection({ ...config(), host: '127.0.0.2', tcAddress: TC_ADDRESS }),
+    ).resolves.toBeUndefined();
+    expect(tunnel.spawnArgs).toEqual([[TC_ADDRESS, String(daemon.port)]]);
+    expect(tunnel.children).toHaveLength(1);
+    expect(tunnel.children[0].killed).toBe(true);
+    expect(tunnel.tunnels[0].destroyed).toBe(true);
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+    await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+  });
+
+  it('kills an already-started stalled Tailcat relay when the direct route succeeds', async () => {
+    const tunnel = relay(null);
+    daemon.upgradeGate = tunnel.spawned;
+    await expect(
+      testWssConnection({ ...config(), tcAddress: TC_ADDRESS }),
+    ).resolves.toBeUndefined();
+    expect(tunnel.children).toHaveLength(1);
+    expect(tunnel.children[0].killed).toBe(true);
+    expect(tunnel.tunnels[0].destroyed).toBe(true);
+    await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+  });
+
+  it.each(['direct', 'tunnel'])(
+    'never sends credentials to a mismatching %s certificate',
+    async (route) => {
+      const tunnel = route === 'tunnel' ? relay() : undefined;
+      const bytes = daemon.decryptedBytes;
+      const header = daemon.lastAuthHeader;
+      const wrongPin = 'FF:'.repeat(31) + 'FF';
+      await expect(
+        testWssConnection({
+          ...config(),
+          host: route === 'tunnel' ? TC_ADDRESS : daemon.host,
+          fingerprint: wrongPin,
+        }),
+      ).rejects.toMatchObject({ expected: wrongPin, actual: daemon.fingerprint });
+      if (tunnel) {
+        expect(tunnel.children[0].killed).toBe(true);
+        expect(tunnel.tunnels[0].destroyed).toBe(true);
+      }
+      await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+      expect(daemon.decryptedBytes).toBe(bytes);
+      expect(daemon.lastAuthHeader).toBe(header);
+    },
+  );
+
+  it.each([401, 403])(
+    'requires a successful authenticated upgrade (%s rejection)',
+    async (statusCode) => {
+      const rejecting = new RejectingWssDaemon();
+      rejecting.statusCode = statusCode;
+      await rejecting.start();
+      const tunnel = relay(rejecting.port);
+      try {
+        await expect(
+          testWssConnection({
+            ...config(),
+            port: rejecting.port,
+            tcAddress: TC_ADDRESS,
+          }),
+        ).rejects.toMatchObject({ name: 'AuthRejectedError', statusCode });
+        expect(rejecting.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+        expect(tunnel.children[0].killed).toBe(true);
+        expect(tunnel.tunnels[0].destroyed).toBe(true);
+      } finally {
+        await rejecting.stop();
+      }
+    },
+  );
+
+  it.each([[], ['127.0.0.2']])(
+    'bounds failed direct routes with one deadline (%j)',
+    async (hosts) => {
+      let accepted!: () => void;
+      const connected = new Promise<void>((resolve) => {
+        accepted = resolve;
+      });
+      const sockets = new Set<net.Socket>();
+      const stalled = net.createServer((socket) => {
+        sockets.add(socket);
+        socket.resume();
+        socket.once('close', () => sockets.delete(socket));
+        accepted();
+      });
+      await new Promise<void>((resolve) => stalled.listen(0, '127.0.0.1', resolve));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const outcome = testWssConnection({
+          ...config(),
+          port: (stalled.address() as AddressInfo).port,
+          hosts,
+        }).catch((error: unknown) => error);
+        await connected;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(await outcome).toMatchObject({ code: 'ETIMEDOUT' });
+        expect(vi.getTimerCount()).toBe(0);
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(sockets.size).toBe(0));
+      } finally {
+        vi.useRealTimers();
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => stalled.close(() => resolve()));
+      }
+    },
+  );
+
+  it('closes a stalled Tailcat relay on its bounded timeout', async () => {
+    const tunnel = relay(null);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const outcome = testWssConnection({ ...config(), host: TC_ADDRESS }).catch(
+      (error: unknown) => error,
+    );
+    await tunnel.spawned;
+    await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS);
+    expect(await outcome).toMatchObject({ code: 'ETIMEDOUT' });
+    expect(tunnel.children[0].killed).toBe(true);
+    expect(tunnel.tunnels[0].destroyed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

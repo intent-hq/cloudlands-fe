@@ -15,6 +15,22 @@ import {
   selectProviderCatalogEntry,
 } from '../provider-catalog/provider-catalog-selectors';
 
+export const selectProviderSettingsSessionRequests = store.createSelector(
+  (state, sessionId: string) =>
+    getItems(state.providerSettings.requests).filter((request) => request.sessionId === sessionId),
+);
+export const selectProviderSettingsSessionActive = store.createSelector(
+  (state, sessionId: string) => state.providerSettings.sessions.includes(sessionId),
+);
+export const selectProviderWriteRevision = store.createSelector(
+  (state, resource: string) => state.providerSettings.writeRevisions?.[resource] ?? 0,
+);
+export const selectProviderPaths = store.createSelector((state) => state.providerSettings.paths);
+export const selectProviderPathsRevision = store.createSelector(
+  (state) => state.providerSettings.pathsRevision,
+);
+export const selectPiAdapter = store.createSelector((state) => state.providerSettings.piAdapter);
+
 /**
  * Default provider id — the provider leg of the default model triple
  * (`model.defaultProvider`). The standalone `providers.active` concept is
@@ -151,4 +167,24 @@ export const selectModelFetchProviderIds = store.createSelector((state): string[
 export const selectIsActiveProviderAvailable = store.createSelector((state): boolean => {
   const activeProviderId = selectActiveProviderId.select(state);
   return selectAvailableEnabledProviderIds.select(state).includes(activeProviderId);
+});
+
+export const selectProviderFastModeState = store.createSelector(
+  (state) => state.providerSettings.fastMode,
+);
+
+export const selectProviderFastModeValues = store.createSelector(
+  (state): Record<string, boolean> => {
+    const fastMode = state.providerSettings.fastMode;
+    const values = { ...fastMode?.confirmed };
+    for (const [id, edit] of Object.entries(fastMode?.pending ?? {})) values[id] = edit.enabled;
+    return values;
+  },
+);
+
+export const selectFastModeSupportedProviders = store.createSelector((state): string[] => {
+  if (!state.providerSettings.fastMode?.supported) return [];
+  return ['claude-code', 'codex'].filter(
+    (id) => selectProviderCatalogEntry.select(state, id)?.supportsFastMode === true,
+  );
 });

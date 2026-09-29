@@ -750,7 +750,7 @@ describe('shared browser jobs and nightly routing', () => {
     const ct = jobLines('test-ct', browserWorkflow);
     expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
     expect(field(ct, 'fail-fast')).toBe('false');
-    expect(jobField(ct, 'timeout-minutes')).toBe('30');
+    expect(jobField(ct, 'timeout-minutes')).toBe('40');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=8192',
     );
@@ -866,7 +866,7 @@ describe('shared browser jobs and nightly routing', () => {
       if (job === 'test-ct') {
         expect(args).toContain('--shard=1/4');
         expect(args).toContain('--fail-on-flaky-tests');
-      } else if (job === 'test-playwright') expect(args).toContain('--shard=1/2');
+      } else if (job === 'test-playwright') expect(args).toContain('--shard=1/4');
       // Exercise Playwright's real discovery/exit policy without starting a browser.
       // Reuse the required lane's flags with an isolated empty test directory.
       const config = join(root, 'empty.config.cjs');
@@ -957,9 +957,9 @@ describe('root Playwright hosted shards', () => {
     route: 'success',
   };
 
-  it('schedules both shards independently within the existing worker and memory budgets', () => {
+  it('schedules four shards independently within the existing worker and memory budgets', () => {
     const shards: number[] = JSON.parse(field(testPlaywright, 'shard'));
-    expect(shards).toEqual([1, 2]);
+    expect(shards).toEqual([1, 2, 3, 4]);
     expect(field(testPlaywright, 'fail-fast')).toBe('false');
     expect(
       new Set(shards.map((shard) => expandShard(jobField(testPlaywright, 'name'), shard))).size,
@@ -992,13 +992,16 @@ describe('root Playwright hosted shards', () => {
     ).toBe(false);
   });
 
-  it.each([1, 2])(
+  it.each([1, 2, 3, 4])(
     'passes the complete selection for shard %i and preserves a failed exit',
     (shard) => {
       const root = temporaryDirectory('root-playwright-shard-');
       writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nprintf "%s\\n" "$@"\nexit "$TEST_EXIT"\n', {
         mode: 0o755,
       });
+      expect(expandShard(jobField(testPlaywright, 'name'), shard)).toBe(
+        `Playwright (root ${shard}/4)`,
+      );
       const command = expandShard(field(step('Root Playwright tests'), 'run'), shard);
       for (const status of [0, 7]) {
         const result = bash(
@@ -1012,7 +1015,7 @@ describe('root Playwright hosted shards', () => {
           'test:playwright',
           '--project=chromium',
           '--workers=1',
-          `--shard=${shard}/2`,
+          `--shard=${shard}/4`,
           '--reporter=list,html,json',
         ]);
       }

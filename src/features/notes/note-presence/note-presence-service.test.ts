@@ -65,7 +65,7 @@ describe('note presence session', () => {
     transport.request.mockReset();
     transport.request.mockImplementation(async (method) => {
       if (method === 'principal.me') return { id: 'principal-me', login: 'me' };
-      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB, workspaceId: 'ws-1' };
       return {};
     });
   });
@@ -114,7 +114,7 @@ describe('note presence session', () => {
 
     // The reply and its seq-0 snapshot arrive from the same socket chunk: the
     // notification is dispatched before the reply's promise callbacks run.
-    resolveSubscribe({ subscriptionId: SUB });
+    resolveSubscribe({ subscriptionId: SUB, workspaceId: 'ws-1' });
     push({ seq: 0, kind: 'snapshot', snapshot: { viewers: [viewer('principal-b', null)] } });
     push({ seq: 1, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-c', null) } });
     for (const handler of transport.notificationHandlers) {
@@ -406,7 +406,9 @@ describe('note presence session', () => {
     a.release();
     expect(calls('note.presence.unsubscribe')).toEqual([]);
     b.release();
-    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+    expect(calls('note.presence.unsubscribe')).toEqual([
+      { subscriptionId: SUB, workspaceId: 'ws-1' },
+    ]);
 
     const c = joinNotePresence('ws-1', 'note-1');
     await settle();
@@ -462,7 +464,9 @@ describe('note presence session', () => {
 
     // seq 2 (a `left`) was lost: the roster can no longer be trusted.
     push({ seq: 3, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-d', null) } });
-    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+    expect(calls('note.presence.unsubscribe')).toEqual([
+      { subscriptionId: SUB, workspaceId: 'ws-1' },
+    ]);
     // The stale roster is kept (not flashed empty) until the fresh snapshot lands.
     expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b', 'principal-c']);
     await settle();
@@ -484,8 +488,8 @@ describe('note presence session', () => {
     expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b']);
     session.release();
     expect(calls('note.presence.unsubscribe')).toEqual([
-      { subscriptionId: SUB },
-      { subscriptionId: SUB2 },
+      { subscriptionId: SUB, workspaceId: 'ws-1' },
+      { subscriptionId: SUB2, workspaceId: 'ws-1' },
     ]);
   });
 
@@ -494,7 +498,9 @@ describe('note presence session', () => {
     await settle();
     push({ seq: 1, kind: 'delta', delta: { kind: 'joined', viewer: viewer('principal-b', null) } });
     expect(session.getViewers()).toEqual([]);
-    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+    expect(calls('note.presence.unsubscribe')).toEqual([
+      { subscriptionId: SUB, workspaceId: 'ws-1' },
+    ]);
     await settle();
     expect(calls('note.presence.subscribe')).toHaveLength(2);
     session.release();
@@ -508,7 +514,7 @@ describe('note presence session', () => {
         if (identityReads === 1) throw new Error('transport down');
         return { id: 'principal-me' };
       }
-      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB, workspaceId: 'ws-1' };
       return {};
     });
     const session = joinNotePresence('ws-1', 'note-1');
@@ -530,7 +536,7 @@ describe('note presence session', () => {
   it('registers once the daemon reports no principal id', async () => {
     transport.request.mockImplementation(async (method) => {
       if (method === 'principal.me') return {};
-      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB, workspaceId: 'ws-1' };
       return {};
     });
     const session = joinNotePresence('ws-1', 'note-1');
@@ -547,7 +553,7 @@ describe('note presence session', () => {
           resolveIdentity = resolve;
         });
       }
-      if (method === 'note.presence.subscribe') return { subscriptionId: SUB };
+      if (method === 'note.presence.subscribe') return { subscriptionId: SUB, workspaceId: 'ws-1' };
       return {};
     });
     const session = joinNotePresence('ws-1', 'note-1');
@@ -567,6 +573,8 @@ describe('note presence session', () => {
     });
     expect(session.getViewers().map((v) => v.principalId)).toEqual(['principal-b']);
     session.release();
-    expect(calls('note.presence.unsubscribe')).toEqual([{ subscriptionId: SUB }]);
+    expect(calls('note.presence.unsubscribe')).toEqual([
+      { subscriptionId: SUB, workspaceId: 'ws-1' },
+    ]);
   });
 });

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
+import { all, call } from 'typed-redux-saga';
+import { providerSettingsSaga } from '../../provider-settings/sagas/provider-settings-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ update: vi.fn(), updateSnapshot: undefined as any }));
@@ -15,7 +17,10 @@ vi.mock('$lib/client', () => ({
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import { initialState as providerSettingsInitialState } from '../../provider-settings/provider-settings-slice';
+import {
+  initialState as providerSettingsInitialState,
+  providerSettingsReducer,
+} from '../../provider-settings/provider-settings-slice';
 
 import {
   hydrateDefaultProvider,
@@ -28,12 +33,16 @@ import {
   setSelectedModel,
 } from '../model-slice';
 import {
-  modelSelectionSaga,
+  modelSelectionSaga as selectionOwner,
   persistDefaultReasoningEffortWorker,
   persistSelectedModelsWorker,
   handleSelectModel,
   PROVIDER_DEFAULTS_RETRY_DELAYS_MS,
 } from './model-selection-saga';
+
+function* modelSelectionSaga() {
+  yield* all([call(selectionOwner), call(providerSettingsSaga)]);
+}
 
 const settle = async () => {
   await Promise.resolve();
@@ -49,6 +58,7 @@ function state() {
       loaded: true,
     },
     model: {
+      ...modelInitialState,
       providerModels: { auggie: 'sonnet4.5' },
       defaultReasoningEffort: 'high',
       defaultProviderId: 'auggie',
@@ -56,27 +66,48 @@ function state() {
   };
 }
 
+function selectionEnvironment(
+  current: Omit<ReturnType<typeof state>, 'model'> & { model: typeof modelInitialState },
+) {
+  const channel = stdChannel();
+  const dispatch = vi.fn((action) => {
+    current.model = modelReducer(current.model, action);
+    current.providerSettings = providerSettingsReducer(current.providerSettings, action);
+    channel.put(action);
+    return action;
+  });
+  const environment = { channel, dispatch, getState: () => current };
+  const owner = runSaga(environment, providerSettingsSaga);
+  return { environment, dispatch, owner };
+}
+
 describe('modelSelectionSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.update.mockResolvedValue([]);
     mocks.updateSnapshot = undefined;
   });
 
   it('lands a known compound provider switch before requesting its reload', async () => {
-    const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: state },
-      handleSelectModel,
-      selectModel('codex:gpt-5'),
-    ).toPromise();
+    const { environment, dispatch, owner } = selectionEnvironment(state());
+    try {
+      await runSaga(environment, handleSelectModel, selectModel('codex:gpt-5')).toPromise();
 
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      {
-        type: 'providerSettings/setAtomicDefaultModel',
-        payload: [{ providerId: 'codex', model: 'gpt-5' }],
-      },
-      { type: 'model/reloadModelsForProvider', payload: [] },
-    ]);
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        {
+          type: 'providerSettings/setAtomicDefaultModel',
+          payload: [{ providerId: 'codex', model: 'gpt-5' }],
+        },
+        {
+          type: 'providerSettings/atomicDefaultModelAccepted',
+          payload: [{ providerId: 'codex', model: 'gpt-5' }],
+        },
+        { type: 'model/reloadModelsForProvider', payload: [] },
+      ]);
+    } finally {
+      owner.cancel();
+      await owner.toPromise();
+    }
   });
 
   it('keeps a compound Claude model pick authoritative over stale provider hydration', async () => {
@@ -88,16 +119,17 @@ describe('modelSelectionSaga', () => {
         loaded: true,
       },
     };
-    const dispatch = vi.fn((action) => {
-      current.model = modelReducer(current.model, action);
-      return action;
-    });
-
-    await runSaga(
-      { dispatch, getState: () => current },
-      handleSelectModel,
-      selectModel('claude-code:opus-4-1'),
-    ).toPromise();
+    const { environment, owner } = selectionEnvironment(current);
+    try {
+      await runSaga(
+        environment,
+        handleSelectModel,
+        selectModel('claude-code:opus-4-1'),
+      ).toPromise();
+    } finally {
+      owner.cancel();
+      await owner.toPromise();
+    }
     current.model = modelReducer(current.model, hydrateDefaultProvider('auggie'));
 
     expect(current.model.defaultProviderId).toBe('claude-code');
@@ -120,20 +152,25 @@ describe('modelSelectionSaga', () => {
       ...state(),
       providerCatalog: { providers: createCollection('id', []), loaded: false },
     };
-    const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => preCatalog },
-      handleSelectModel,
-      selectModel('claude-code:fable5'),
-    ).toPromise();
+    const { environment, dispatch, owner } = selectionEnvironment(preCatalog);
+    try {
+      await runSaga(environment, handleSelectModel, selectModel('claude-code:fable5')).toPromise();
 
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      {
-        type: 'providerSettings/setAtomicDefaultModel',
-        payload: [{ providerId: 'claude-code', model: 'fable5' }],
-      },
-      { type: 'model/reloadModelsForProvider', payload: [] },
-    ]);
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        {
+          type: 'providerSettings/setAtomicDefaultModel',
+          payload: [{ providerId: 'claude-code', model: 'fable5' }],
+        },
+        {
+          type: 'providerSettings/atomicDefaultModelAccepted',
+          payload: [{ providerId: 'claude-code', model: 'fable5' }],
+        },
+        { type: 'model/reloadModelsForProvider', payload: [] },
+      ]);
+    } finally {
+      owner.cancel();
+      await owner.toPromise();
+    }
   });
 
   it('persists the exact daemon settings path with the session picks overlaid on the map', async () => {

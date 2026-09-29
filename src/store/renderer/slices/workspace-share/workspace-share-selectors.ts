@@ -150,3 +150,7 @@ export const selectWorkspaceRosterRemoveError = store.createSelector(
   (state, workspaceId?: string) =>
     workspaceId ? getRosterState(state.workspaceShare, workspaceId).removeError : null,
 );
+
+export const selectShareIntegrationAuth = store.createSelector(
+  (state) => state.workspaceShare.integrationAuth,
+);

@@ -56,7 +56,7 @@
     setWorkspaceHasLoaded,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
@@ -76,7 +76,7 @@
     return previous;
   });
   appStore.dispatch(guestSessionsListUnavailable());
-  appStore.dispatch(setActiveProvider(''));
+  appStore.dispatch(hydrateDefaultProvider(''));
   appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
   appStore.dispatch(setChiefActiveAgentId(null));
   appStore.dispatch(replaceWorkspaceList(workspaces));

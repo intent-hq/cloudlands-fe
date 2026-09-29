@@ -18,13 +18,185 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { appClient } from '$lib/client';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
-import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  removeSession,
+  updateSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  focusPanel,
+  initializeLayout,
+  setActiveTab,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { applyReasoningEffort } from '$features/agent/reasoning-effort';
 import { consoleOwnerChanged } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import EffortPicker from '$lib/components/chat/input/EffortPicker.svelte';
+import EncoderCycleHud from '../EncoderCycleHud.svelte';
+import { m } from '$shared/paraglide/messages.js';
 
 useEncoderEffortHarness();
+
+describe('conversation targeting', () => {
+  it.each([
+    { selection: 'seeded', inherited: false, agentId: 'agent-1' },
+    { selection: 'clicked', inherited: false, agentId: 'agent-2' },
+    { selection: 'clicked', inherited: true, agentId: 'agent-2' },
+    { selection: 'focused', inherited: false, agentId: 'agent-2' },
+    { selection: 'restored', inherited: false, agentId: 'agent-2' },
+  ])(
+    'persists effort for the $selection conversation (inherited model: $inherited)',
+    async ({ selection, inherited, agentId }) => {
+      // Same provider/model and ascending catalog as the user report. Only the
+      // panel selection differs from the workspace loader's first agent.
+      const levels = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+      state.model.availableModels = createCollection('value', [
+        { value: 'gpt-6-astra', label: 'GPT-6 Astra', effortLevels: levels },
+      ]);
+      state.model.providerModels.codex = 'gpt-6-astra';
+      for (const workspace of Object.values(state.providerCatalog.byWorkspaceId)) {
+        workspace.settings[1].value = { codex: 'gpt-6-astra' };
+      }
+      for (const workspace of Object.values(state.providerModels.byWorkspaceId)) {
+        workspace.codex.models = [
+          { value: 'gpt-6-astra', label: 'GPT-6 Astra', effortLevels: levels },
+        ];
+      }
+      for (const id of ['agent-1', 'agent-2']) {
+        mocks.dispatch(
+          updateSession(id, {
+            model: inherited ? undefined : 'gpt-6-astra',
+            reasoningEffort: 'high',
+          }),
+        );
+      }
+      if (selection === 'clicked') {
+        mocks.dispatch(focusPanel('ws-1', 'chat'));
+        mocks.dispatch(setActiveTab('ws-1', agentId, 'chat'));
+      }
+      if (selection === 'restored' || selection === 'focused') {
+        mocks.dispatch(
+          initializeLayout('ws-1', {
+            root: {
+              type: 'split',
+              direction: 'horizontal',
+              sizes: [50, 50],
+              children: [
+                { type: 'panel', panelId: 'chat' },
+                { type: 'panel', panelId: 'restored-chat' },
+              ],
+            },
+            focusedPanelId: selection === 'restored' ? 'restored-chat' : 'chat',
+            panels: {
+              chat: state.panelLayout.byWorkspaceId['ws-1'].panels.chat,
+              'restored-chat': {
+                id: 'restored-chat',
+                activeTabId: 'restored-agent',
+                tabs: [
+                  {
+                    id: 'restored-agent',
+                    type: 'agent',
+                    agentId,
+                    workspaceId: 'ws-1',
+                    title: 'Restored conversation',
+                    closable: true,
+                  },
+                ],
+              },
+            },
+          }),
+        );
+        if (selection === 'focused') mocks.dispatch(focusPanel('ws-1', 'restored-chat'));
+      }
+      expect(state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId).toBe('agent-1');
+      const saved = structuredClone(state.agentSessions.byAgentId);
+      request.mockImplementation(async (method, params) => {
+        if (method === 'agent.update') {
+          const {
+            agentId: id,
+            workspaceId,
+            changes,
+          } = params as {
+            agentId: string;
+            workspaceId: string;
+            changes: { reasoningEffort: string | null };
+          };
+          expect(saved[id].workspaceId).toBe(workspaceId);
+          saved[id] = { ...saved[id], ...changes };
+          return { success: true, agent: saved[id] };
+        }
+        if (method === 'agent.get')
+          return { agent: saved[(params as { agentId: string }).agentId] };
+        throw new Error(`Unexpected method ${method}`);
+      });
+      ready();
+      render(EncoderCycleHud);
+      render(EffortPicker, { agentId, workspaceId: 'ws-1' });
+      manager().emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+      await flush();
+      expect(mutations()).toEqual([
+        ['agent.update', { agentId, workspaceId: 'ws-1', changes: { reasoningEffort: 'xhigh' } }],
+      ]);
+      expect(saved[agentId].reasoningEffort).toBe('xhigh');
+      expect(effort(agentId)).toBe('xhigh');
+      const otherId = agentId === 'agent-1' ? 'agent-2' : 'agent-1';
+      expect(saved[otherId].reasoningEffort).toBe('high');
+      expect(effort(otherId)).toBe('high');
+      expect(effort('agent-3')).toBeNull();
+      expect(state.hardwareConsole.encoderEffortFeedback?.target.agentId).toBe(agentId);
+      expect(screen.getByRole('status').textContent).toContain(m.chat_effortPicker_level_xhigh());
+      expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('3');
+
+      // Re-read persisted protocol state through the real client after evicting
+      // the optimistic session; the selected conversation keeps its new effort.
+      mocks.dispatch(removeSession(agentId));
+      const restored = await appClient.agents.get(agentId);
+      expect(restored).not.toBeNull();
+      mocks.dispatch(bulkUpsertSessions([restored!]));
+      await flush();
+      expect(request).toHaveBeenLastCalledWith('agent.get', { agentId });
+      expect(effort(agentId)).toBe('xhigh');
+      expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('3');
+      expect(mocks.notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['note', 'browser', 'empty', 'missing-agent', 'foreign-agent'] as const)(
+    'does not fall back to the first agent when the focused panel has %s content',
+    async (content) => {
+      ready();
+      const tab = {
+        id: 'other-tab',
+        type: content === 'note' || content === 'browser' ? content : ('agent' as const),
+        title: 'Other content',
+        closable: true,
+        agentId: content === 'foreign-agent' ? 'agent-3' : 'missing',
+      };
+      mocks.dispatch(
+        initializeLayout('ws-1', {
+          root: { type: 'panel', panelId: 'other' },
+          focusedPanelId: 'other',
+          panels: {
+            other: {
+              id: 'other',
+              activeTabId: content === 'empty' ? null : tab.id,
+              tabs: content === 'empty' ? [] : [tab],
+            },
+          },
+        }),
+      );
+      manager().turn();
+      await flush();
+      expect(mutations()).toEqual([]);
+      expect(effort()).toBeNull();
+      expect(effort('agent-2')).toBeNull();
+      expect(effort('agent-3')).toBeNull();
+      expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+    },
+  );
+});
 
 type EffortProtocol = 'modern' | 'legacy';
 
@@ -344,7 +516,7 @@ describe.each<EffortProtocol>(['modern', 'legacy'])('%s effort lifecycle', (prot
     },
   );
 
-  it.each(['owner', 'workspace', 'cancel'] as const)(
+  it.each(['owner', 'workspace', 'panel', 'cancel'] as const)(
     'abandons reconnected work after %s loss without reviving input',
     async (boundary) => {
       ready();
@@ -361,6 +533,8 @@ describe.each<EffortProtocol>(['modern', 'legacy'])('%s effort lifecycle', (prot
       else if (boundary === 'workspace') {
         state.tabState.currentTabId = 'ws-2';
         publish();
+      } else if (boundary === 'panel') {
+        mocks.dispatch(setActiveTab('ws-1', 'agent-2', 'chat'));
       } else {
         device.dispose();
         for (const task of tasks) task.cancel();

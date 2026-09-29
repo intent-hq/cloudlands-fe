@@ -143,6 +143,26 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
   });
 
+  it('hides node paths even when the head daemon is local', async () => {
+    seedLocality('local');
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          placement: { target: 'remote', checkout: 'isolated' },
+          nodePath: '/node/private/checkout',
+          metadata: { sandboxPath: '/node/private/checkout' },
+        }),
+      ]),
+    );
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+    expect(await screen.findByText('Open')).toBeTruthy();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    expect(mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder')).toBe(
+      false,
+    );
+  });
+
   it('hides the reveal item when the daemon is remote', async () => {
     seedLocality('remote');
     appStore.dispatch(

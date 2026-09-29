@@ -16,7 +16,8 @@ import {
   isInaccessible,
 } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -77,6 +78,9 @@ const mocks = vi.hoisted(() => {
     // Raw store state for the unmocked selectors (e.g. the default provider
     // read by selectEffectiveDefaultProviderId).
     storeState: { value: {} as Record<string, unknown> },
+    rulesState: undefined as unknown,
+    rulesDispatch: (_action: { type: string }) => {},
+    emitRulesState: () => {},
     dispatched: [] as { type: string; payload: unknown[] }[],
     getUserRule: vi.fn(async () => ({ content: 'Original instructions' })),
     updateUserRule: vi.fn(async () => ({ success: true })),
@@ -95,12 +99,24 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
-    state: () => mocks.storeState.value,
+  const { select } = await import('typed-redux-saga');
+  const module = createAppStoreMockModule({
+    state: () => ({ ...mocks.storeState.value, userPreferences: mocks.rulesState }),
     dispatch: (action: { type: string; payload: unknown[] }) => {
       mocks.dispatched.push(action);
+      mocks.rulesDispatch(action);
     },
   });
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (callback) => {
+    const selector = createSelector(callback);
+    selector.effect = function* (...args: unknown[]) {
+      return yield* select(callback, ...args);
+    };
+    return selector;
+  };
+  mocks.emitRulesState = module.store.emitState;
+  return module;
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -151,7 +167,7 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 vi.mock(
   '$store/renderer/slices/provider-settings/provider-settings-slice',
   async (importOriginal) => ({
-    // Keep the real action creators/reducer (e.g. `setAtomicDefaultModel`,
+    // Keep the real action creators/reducer (e.g. `atomicDefaultModelAccepted`,
     // `activeProviderPersistRejected`) so the model-slice reducer this file
     // exercises directly in the monorepo#4102 reproduction test below stays
     // wired to its actual dependencies; only `setActiveProvider` is
@@ -245,9 +261,33 @@ import {
   initialState as modelInitialState,
   modelReducer,
 } from '$store/renderer/slices/model/model-slice';
-import { setAtomicDefaultModel } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { atomicDefaultModelAccepted } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
 import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
+import { userPreferencesReducer } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { agentRulesSaga } from '$store/renderer/slices/user-preferences/sagas/agent-rules-saga';
+
+let rulesTask: Task;
+beforeEach(() => {
+  let userPreferences = userPreferencesReducer(undefined, { type: '@@init' } as never);
+  mocks.rulesState = userPreferences;
+  const channel = stdChannel();
+  mocks.rulesDispatch = (action) => {
+    userPreferences = userPreferencesReducer(userPreferences, action as never);
+    mocks.rulesState = userPreferences;
+    mocks.emitRulesState();
+    channel.put(action);
+  };
+  rulesTask = runSaga(
+    { channel, dispatch: mocks.rulesDispatch, getState: () => ({ userPreferences }) },
+    agentRulesSaga,
+  );
+});
+afterEach(async () => {
+  cleanup();
+  rulesTask.cancel();
+  await rulesTask.toPromise();
+});
 
 describe('AIBehaviorEditor workspace ownership', () => {
   const projectSpecialist = {
@@ -315,6 +355,7 @@ describe('AIBehaviorEditor workspace ownership', () => {
           behaviorPrompt: 'updated project prompt',
           scope: 'project',
           workspacePath: '/projects/example',
+          workspaceId: 'workspace-project',
         },
       ],
     });
@@ -412,13 +453,13 @@ describe('DefaultAgentModelSettings Default model picker', () => {
     // Drive the REAL (unmocked) production reducer through the exact action
     // the picker's `updateGlobalDefault` dispatch resolves to
     // (`model-selection-saga` persists a cross-provider pick as one
-    // `setAtomicDefaultModel` action — see model-selection-saga.test.ts's
+    // `atomicDefaultModelAccepted` action — see model-selection-saga.test.ts's
     // "persists a cross-provider default as one revision-bearing atomic
     // batch"), so this assertion exercises the actual persistence contract
     // rather than a value poked directly into the mocked selector.
     const modelState = modelReducer(
       modelInitialState,
-      setAtomicDefaultModel({ providerId: 'codex', model: 'cross-provider-model' }),
+      atomicDefaultModelAccepted({ providerId: 'codex', model: 'cross-provider-model' }),
     );
     expect(modelState.defaultProviderId).toBe('codex');
     expect(modelState.providerModels.codex).toBe('cross-provider-model');
@@ -594,6 +635,7 @@ describe('DefaultAgentModelSettings reset all to default', () => {
           model: undefined,
           scope: 'project',
           workspacePath: '/projects/example',
+          workspaceId: 'workspace-project',
         }),
       ],
     });

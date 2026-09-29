@@ -13,6 +13,8 @@ import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type { StoreState } from '../../types';
 import {
   selectAllCatalogProviderIds,
+  selectNormalizedProviderId,
+  selectProviderDisplayName,
   selectEffectiveDefaultProviderId,
   selectProviderAuthFailureGuidance,
   selectProviderCatalogEntries,
@@ -178,29 +180,22 @@ describe('provider-catalog selectors', () => {
     ).toBeUndefined();
   });
 
-  it('selectProviderAuthFailureGuidance treats the legacy acp provider value as unset', () => {
-    // 'acp' is the protocol name, not a provider id (mirrors getAgentProvider):
-    // resolution must fall through to the compound-model prefix instead of
-    // healing 'acp' to the default provider's row.
+  it('keeps unresolved explicit aliases separate from model prefixes and configured defaults', () => {
     const state = storeWith(hydrated, {}, { activeProviderId: 'auggie' });
-    const viaModelPrefix = selectProviderAuthFailureGuidance.select(
-      state,
-      'acp',
-      'pi:some-model',
-      'authentication required',
-    );
-    // pi's row has no authErrorPatterns → no match; the default (auggie) row
-    // WOULD match, so guidance must be null, not auggie's login command.
-    expect(viaModelPrefix).toBeNull();
-    // With no model either, 'acp' resolves like an unset provider (default row).
+    expect(
+      selectProviderAuthFailureGuidance.select(
+        state,
+        'acp',
+        'pi:some-model',
+        'authentication required',
+      ),
+    ).toBeNull();
     expect(
       selectProviderAuthFailureGuidance.select(state, 'acp', null, 'authentication required'),
-    ).toEqual({
-      providerId: 'auggie',
-      loginCommandHint: 'auggie login',
-      showClaudeDesktopNote: false,
-    });
-    // An explicit real provider id still wins.
+    ).toBeNull();
+    expect(
+      selectProviderAuthFailureGuidance.select(state, undefined, null, 'authentication required'),
+    ).toMatchObject({ providerId: 'auggie' });
     expect(
       selectProviderAuthFailureGuidance.select(state, 'auggie', null, 'auggie login'),
     ).toMatchObject({ providerId: 'auggie' });
@@ -231,4 +226,98 @@ describe('provider-catalog selectors', () => {
     // it resolves through the persisted map instead.
     expect(selectProviderEnabledFromCatalog.select(storeWith(withLocked), 'nope')).toBe(false);
   });
+});
+
+describe('authoritative provider alias identity', () => {
+  const aliases = ['acp', 'augment', 'default'];
+  const aliasCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded({
+      providers: [CATALOG.providers[0], { ...CATALOG.providers[2], legacyAliases: aliases }],
+    }),
+  );
+
+  it.each(aliases)(
+    'resolves %s through advertised metadata despite a different disabled default',
+    (alias) => {
+      const state = storeWith(
+        aliasCatalog,
+        { auggie: false, pi: false },
+        { activeProviderId: 'auggie' },
+      );
+      expect(selectNormalizedProviderId.select(state, alias)).toBe('pi');
+      expect(selectProviderDisplayName.select(state, alias)).toBe('Pi');
+    },
+  );
+
+  it('preserves exact canonical IDs ahead of alias claims', () => {
+    const catalog = providerCatalogReducer(
+      initialState,
+      providerCatalogLoaded({
+        providers: [{ ...CATALOG.providers[0], legacyAliases: ['pi'] }, CATALOG.providers[2]],
+      }),
+    );
+    expect(selectNormalizedProviderId.select(storeWith(catalog), 'pi')).toBe('pi');
+  });
+
+  it.each(['future-provider', 'acp', 'augment', 'default', ''])(
+    'preserves unresolved %s before hydration and on an older daemon',
+    (raw) => {
+      for (const catalog of [initialState, hydrated]) {
+        const state = storeWith(catalog, {}, { activeProviderId: 'auggie' });
+        expect(selectNormalizedProviderId.select(state, raw)).toBe(raw);
+        expect(selectProviderDisplayName.select(state, raw)).toBe(raw);
+      }
+    },
+  );
+});
+
+it('retains only scoped MCP identity during refresh and clears it across connection and workspace lifetimes', async () => {
+  const { workspaceCatalogReceived, workspaceCatalogInvalidated } =
+    await import('./provider-catalog-slice');
+  const { selectWorkspaceMcpServerName } = await import('../mcp-settings/mcp-settings-selectors');
+  const { workspaceUnmounted, workspaceDeleted } =
+    await import('../workspace-lifecycle/workspace-lifecycle-slice');
+  const { removeWorkspaceEntity } = await import('../workspace/workspace-slice');
+  const snapshot = (name: string) => ({
+    catalog: CATALOG,
+    settings: [],
+    specialists: [],
+    readiness: {},
+    mcpServers: [{ id: 'shared-id', name, type: 'stdio' as const, command: 'node' }],
+  });
+  let current = providerCatalogReducer(
+    initialState,
+    workspaceCatalogReceived('A', snapshot('A-server'), 0),
+  );
+  current = providerCatalogReducer(current, workspaceCatalogReceived('B', snapshot('B-server'), 0));
+  const refreshing = providerCatalogReducer(current, workspaceCatalogInvalidated());
+  expect(refreshing.byWorkspaceId).toEqual({});
+  expect(selectWorkspaceMcpServerName.select(storeWith(refreshing), 'A', 'shared-id')).toBe(
+    'A-server',
+  );
+  expect(selectWorkspaceMcpServerName.select(storeWith(refreshing), 'B', 'shared-id')).toBe(
+    'B-server',
+  );
+  expect(
+    selectWorkspaceMcpServerName.select(storeWith(refreshing), 'missing', 'shared-id'),
+  ).toBeUndefined();
+  const reconnected = providerCatalogReducer(refreshing, workspaceCatalogInvalidated(true));
+  expect(
+    selectWorkspaceMcpServerName.select(storeWith(reconnected), 'A', 'shared-id'),
+  ).toBeUndefined();
+  for (const cleanup of [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity]) {
+    const cleared = providerCatalogReducer(refreshing, cleanup('A'));
+    expect(
+      selectWorkspaceMcpServerName.select(storeWith(cleared), 'A', 'shared-id'),
+    ).toBeUndefined();
+    expect(selectWorkspaceMcpServerName.select(storeWith(cleared), 'B', 'shared-id')).toBe(
+      'B-server',
+    );
+  }
+  const removed = providerCatalogReducer(
+    refreshing,
+    workspaceCatalogReceived('A', { ...snapshot('A-server'), mcpServers: [] }, 1),
+  );
+  expect(selectWorkspaceMcpServerName.select(storeWith(removed), 'A', 'shared-id')).toBeUndefined();
 });

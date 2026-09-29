@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.184.6",
+  "version": "2.189.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -333,6 +333,7 @@
     "katex": "0.16.47",
     "marked": "^18.0.11",
     "node-pty": "1.1.0",
+    "pdfjs-dist": "6.3.289",
     "unique-names-generator": "^4.7.1",
     "uuid": "^14.0.2",
     "ws": "^8.21.3",

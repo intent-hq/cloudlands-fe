@@ -10,6 +10,7 @@ import {
   takeEvery,
   takeLatest,
 } from 'typed-redux-saga';
+import { buffers, eventChannel } from 'redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -22,11 +23,18 @@ import {
   PROVIDER_AVAILABILITY_KEY_TO_ID,
   type ProviderAvailabilityResult,
 } from '$shared/types/provider-availability';
-import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
+import {
+  takeLatestInContext,
+  takeSingleFlightInContext,
+} from '../../../utils/context-saga-effects';
 import {
   selectHasCheckedOnce,
   selectProviderCheckEpochMap,
   selectProviderLoadingMap,
+  selectIsAnyProviderLoading,
+  selectProviderDiscoveryRevision,
+  selectProviderModelsRefreshPending,
+  selectProviderModelsRefreshRevision,
 } from '../agent-availability-selectors';
 import {
   checkAllProvidersComplete,
@@ -39,9 +47,17 @@ import {
   ensureProvidersChecked,
   setAllProvidersLoading,
   setNpxStatus,
+  providerAvailabilityPanelOpened,
+  providerAvailabilityPanelClosed,
+  providerDiscoveryStarted,
+  providerDiscoverySettled,
+  providerModelsRefreshHandled,
+  providerAvailabilityStopped,
 } from '../agent-availability-slice';
 import type { ProviderStatus } from '../agent-availability-types';
 import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
+import { reloadModelsForProvider } from '../../model/model-slice';
+import { providerModelsCacheCleared } from '../../provider-models/provider-models-slice';
 
 const logger = createLogger('ProviderAvailabilitySaga');
 
@@ -79,29 +95,75 @@ export function* checkSingleProviderWorker(providerId: string) {
     if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
     logger.error(`Provider availability check failed for ${providerId}`, { error });
     yield* put(checkSingleProviderFailure(providerId, epoch));
+  } finally {
+    if (yield* cancelled()) yield* put(checkSingleProviderFailure(providerId, epoch));
   }
 }
 
-export function* checkAllProvidersWorker() {
+function* discoverProviders(silent: boolean) {
+  const connection = yield* selectPrincipalConnectionContext.effect();
+  yield* put(providerDiscoveryStarted());
+  const revision = yield* selectProviderDiscoveryRevision.effect();
+  try {
+    const result = yield* call(
+      invoke<IpcResult<ProviderAvailabilityResult>>,
+      IPC_CHANNELS.PROVIDERS.GET_AVAILABILITY,
+    );
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return false;
+    if (!result?.success || !result.data) {
+      yield* put(
+        providerDiscoverySettled(revision, {
+          error: silent ? null : result?.error || m.settings_providers_checkError(),
+          failed: true,
+        }),
+      );
+      return false;
+    }
+    yield* put(
+      providerDiscoverySettled(revision, {
+        hiddenProviders: result.data.hiddenProviders,
+        error: null,
+      }),
+    );
+    if (result.data.npx) yield* put(setNpxStatus(result.data.npx));
+    return true;
+  } catch (error) {
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return false;
+    yield* put(
+      providerDiscoverySettled(revision, {
+        error: silent
+          ? null
+          : error instanceof Error
+            ? error.message
+            : m.settings_providers_unknownError(),
+        failed: true,
+      }),
+    );
+    return false;
+  }
+}
+
+export function* checkAllProvidersWorker(silent = false) {
+  const refreshModels = yield* selectProviderModelsRefreshPending.effect();
+  const refreshRevision = yield* selectProviderModelsRefreshRevision.effect();
   const connection = yield* selectPrincipalConnectionContext.effect();
   const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
   yield* put(setAllProvidersLoading(Object.fromEntries(providerIds.map((id) => [id, true]))));
 
   try {
-    try {
-      const result: IpcResult<ProviderAvailabilityResult> = yield* call(
-        invoke<IpcResult<ProviderAvailabilityResult>>,
-        IPC_CHANNELS.PROVIDERS.GET_AVAILABILITY,
-      );
-      if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
-      if (result?.success && result.data?.npx) {
-        yield* put(setNpxStatus(result.data.npx));
-      }
-    } catch (error) {
-      logger.warn('GET_AVAILABILITY call failed; npx status unavailable', { error });
+    const [discovered] = yield* all([
+      call(discoverProviders, silent),
+      all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId))),
+    ]);
+    if (
+      discovered &&
+      refreshModels &&
+      refreshRevision === (yield* selectProviderModelsRefreshRevision.effect())
+    ) {
+      yield* put(providerModelsRefreshHandled(refreshRevision));
+      yield* put(providerModelsCacheCleared());
+      yield* put(reloadModelsForProvider());
     }
-
-    yield* all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId)));
   } finally {
     const wasCancelled = yield* cancelled();
     if (!wasCancelled && connection === (yield* selectPrincipalConnectionContext.effect()))
@@ -109,16 +171,46 @@ export function* checkAllProvidersWorker() {
   }
 }
 
-function* handleCheckAllProvidersRequest(_action: ReturnType<typeof checkAllProvidersRequested>) {
+function* handleCheckAllProvidersRequest(action: ReturnType<typeof checkAllProvidersRequested>) {
   yield* race({
-    checked: call(checkAllProvidersWorker),
+    checked: call(checkAllProvidersWorker, action.payload[1] === true),
     changed: take(hostExecutionConnectionChanged),
   });
 }
 
 function* handleEnsureProvidersChecked(_action: ReturnType<typeof ensureProvidersChecked>) {
   const hasCheckedOnce = yield* selectHasCheckedOnce.effect();
-  if (!hasCheckedOnce) yield* put(checkAllProvidersRequested());
+  if (!hasCheckedOnce && !(yield* selectIsAnyProviderLoading.effect()))
+    yield* put(checkAllProvidersRequested());
+}
+
+function* watchPanelRefresh(
+  action:
+    | ReturnType<typeof providerAvailabilityPanelOpened>
+    | ReturnType<typeof providerAvailabilityPanelClosed>,
+) {
+  if (action.type === providerAvailabilityPanelClosed.type) return;
+  const events = eventChannel<boolean>((emit) => {
+    const focus = () => emit(true);
+    const visibility = () => {
+      if (document.visibilityState === 'visible') emit(true);
+    };
+    window.addEventListener('focus', focus);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.removeEventListener('focus', focus);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, buffers.sliding(1));
+  try {
+    yield* put(checkAllProvidersRequested());
+    while (true) {
+      yield* take(events);
+      yield* put(checkAllProvidersRequested(false, true));
+    }
+  } finally {
+    events.close();
+  }
 }
 
 function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProviderRequested>) {
@@ -195,18 +287,28 @@ function* dismissClaudeLoginOnSuccess(action: ReturnType<typeof claudeLoginStart
   }
 }
 
-/** Catalog and connection refreshes are owned by hostExecutionSaga. */
 export function* providerAvailabilitySaga() {
-  // Register request ownership before async catalog hydration so setup's one
-  // boot-time ensure cannot be missed. This removes the need for setup polling
-  // without initiating an extra sweep from provider availability itself.
-  yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
-  yield* takeEvery(claudeLoginRequested, coalesceClaudeLoginRequests, {});
-  yield* takeLatest(claudeLoginStarted, dismissClaudeLoginOnSuccess);
-  yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
-  yield* takeSingleFlightInContext(
-    checkAllProvidersRequested,
-    () => 'all-providers',
-    handleCheckAllProvidersRequest,
-  );
+  try {
+    // Register request ownership before async catalog hydration so setup's one
+    // boot-time ensure cannot be missed. This removes the need for setup polling
+    // without initiating an extra sweep from provider availability itself.
+    yield* takeEvery(checkSingleProviderRequested, handleSingleProviderRequest);
+    yield* takeEvery(claudeLoginRequested, coalesceClaudeLoginRequests, {});
+    yield* takeLatest(claudeLoginStarted, dismissClaudeLoginOnSuccess);
+    yield* takeEvery(ensureProvidersChecked, handleEnsureProvidersChecked);
+    yield* takeSingleFlightInContext(
+      checkAllProvidersRequested,
+      () => 'all-providers',
+      handleCheckAllProvidersRequest,
+    );
+    yield* takeLatestInContext(
+      [providerAvailabilityPanelOpened, providerAvailabilityPanelClosed],
+      (action) => action.payload[0],
+      watchPanelRefresh,
+    );
+    // Keep this owner alive so root teardown reaches its cleanup block.
+    yield* take(providerAvailabilityStopped);
+  } finally {
+    yield* put(providerAvailabilityStopped());
+  }
 }

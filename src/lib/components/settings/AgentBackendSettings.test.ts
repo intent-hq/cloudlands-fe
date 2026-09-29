@@ -6,6 +6,19 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import AgentBackendSettings from './AgentBackendSettings.svelte';
 import { warmImport } from '../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
@@ -171,7 +184,7 @@ describe('AgentBackendSettings', () => {
     render(AgentBackendSettings);
 
     const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
-    expect(input.value).toBe('10');
+    await waitFor(() => expect(input.value).toBe('10'));
 
     await fireEvent.input(input, { target: { value: '-5' } });
     await fireEvent.blur(input);
@@ -228,7 +241,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_off_label());
+    await waitFor(() =>
+      expect(trigger.textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_off_label(),
+      ),
+    );
   });
 
   it('renders "System Messages Only" when the daemon reports systemOnly', async () => {
@@ -237,8 +254,10 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(
-      m.settings_agentBackend_flushQueuedMessages_systemOnly_label(),
+    await waitFor(() =>
+      expect(trigger.textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_systemOnly_label(),
+      ),
     );
   });
 
@@ -248,7 +267,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_off_label());
+    await waitFor(() =>
+      expect(trigger.textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_off_label(),
+      ),
+    );
   });
 
   it('persists a selection of systemOnly via settings.update with the exact payload', async () => {
@@ -295,6 +318,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
+    await waitFor(() =>
+      expect(trigger.textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_off_label(),
+      ),
+    );
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });

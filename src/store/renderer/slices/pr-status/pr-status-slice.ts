@@ -6,6 +6,7 @@
  * tracks refresh metadata (loading, rate-limiting, errors).
  */
 
+import { backendReconnected } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
@@ -67,3 +68,6 @@ prStatusReducer.with(prStatusRefreshCompleted, (state, action) => {
     lastError: error ?? null,
   });
 });
+
+// Refresh timestamps and loading flags belong to the connection that produced them.
+prStatusReducer.with(backendReconnected, () => initialState);

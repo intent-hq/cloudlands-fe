@@ -32,12 +32,14 @@ import {
   selectWorkspaceInitializerLastSubmittedAgent,
   selectWorkspaceInitializerOnboardingFormState,
   selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerDismissedRecentRepoKeys,
   selectWorkspaceInitializerRemoteSetups,
 } from '../workspace-initializer-selectors';
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
+  dismissWorkspaceInitializerRecentRepo,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerBranchForRepo,
@@ -146,6 +148,7 @@ function* buildWorkspaceInitializerBag() {
   const branchByRepo = yield* selectWorkspaceInitializerBranchByRepo.effect();
   const defaultParentPath = yield* selectWorkspaceInitializerDefaultParentPath.effect();
   const recentRepos = yield* selectWorkspaceInitializerRecentRepos.effect();
+  const dismissedRecentRepoKeys = yield* selectWorkspaceInitializerDismissedRecentRepoKeys.effect();
   const remoteSetups = yield* selectWorkspaceInitializerRemoteSetups.effect();
   const lastSubmittedAgent = yield* selectWorkspaceInitializerLastSubmittedAgent.effect();
   return {
@@ -155,6 +158,7 @@ function* buildWorkspaceInitializerBag() {
     branchByRepo,
     defaultParentPath,
     recentRepos,
+    dismissedRecentRepoKeys,
     remoteSetups,
     lastSubmittedAgent,
   } satisfies WorkspaceInitializerHydrationState;
@@ -249,6 +253,13 @@ export function* hydrateWorkspaceInitializerWorker() {
       defaultParentPath:
         typeof daemonBag.defaultParentPath === 'string' ? daemonBag.defaultParentPath : undefined,
       recentRepos: objectArray<WorkspaceInitializerRecentRepo>(daemonBag.recentRepos),
+      dismissedRecentRepoKeys: isRecord(daemonBag.dismissedRecentRepoKeys)
+        ? Object.fromEntries(
+            Object.entries(daemonBag.dismissedRecentRepoKeys).filter(
+              (entry): entry is [string, true] => entry[1] === true,
+            ),
+          )
+        : undefined,
       remoteSetups: objectArray<WorkspaceInitializerRemoteSetup>(daemonBag.remoteSetups),
       lastSubmittedAgent: isRecord(daemonBag.lastSubmittedAgent)
         ? (daemonBag.lastSubmittedAgent as WorkspaceInitializerAgentSettings)
@@ -316,6 +327,7 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       setWorkspaceInitializerBranchForRepo,
       setWorkspaceInitializerDefaultParentPath,
       setWorkspaceInitializerRecentRepos,
+      dismissWorkspaceInitializerRecentRepo,
       setWorkspaceInitializerRemoteSetups,
       upsertWorkspaceInitializerRemoteSetup,
       removeWorkspaceInitializerRemoteSetup,
@@ -344,9 +356,14 @@ function* hydrateOwnerInitializer({ payload: context }: SelectorChannelPayload<s
   const persistenceTask = yield* fork(watchWorkspaceInitializerPersistence, gate);
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
-  gate.settled = true;
-  if (gate.queued && hydrated) yield* call(persistWorkspaceInitializerWorker);
+  // Keep the watcher gated until startup writes finish. Mutations during a save
+  // request another latest-state snapshot, never a concurrent whole-bag update.
+  while (gate.queued && hydrated) {
+    gate.queued = false;
+    yield* call(persistWorkspaceInitializerWorker);
+  }
   gate.queued = false;
+  gate.settled = true;
 
   yield* join(persistenceTask);
 }

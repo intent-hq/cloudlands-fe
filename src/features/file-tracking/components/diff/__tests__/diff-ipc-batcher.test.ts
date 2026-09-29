@@ -99,6 +99,64 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     vi.useRealTimers();
   });
 
+  it('drops an aborted caller before the queued head request starts', async () => {
+    mockDaemon();
+    const controller = new AbortController();
+    const result = batchedGitDiff('cancel-queued', false, 'a.ts', { signal: controller.signal });
+    controller.abort();
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toBeUndefined();
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'does not enrich an aborted path while preserving a live peer (%s same path)',
+    async (samePath) => {
+      let resolveDiff!: (value: unknown) => void;
+      const pending = new Promise((resolve) => {
+        resolveDiff = resolve;
+      });
+      mockedRequest.mockImplementation(async (method) =>
+        method === 'git.diffs' ? pending : { content: 'LOCAL' },
+      );
+      const controller = new AbortController();
+      const abandoned = batchedGitDiff('cancel-peer', false, 'a.ts', { signal: controller.signal });
+      const peer = batchedGitDiff('cancel-peer', false, samePath ? 'a.ts' : 'b.ts');
+      await vi.runAllTimersAsync();
+      controller.abort();
+      resolveDiff([
+        { path: 'a.ts', hunks: [HUNK] },
+        { path: 'b.ts', hunks: [HUNK] },
+      ]);
+      await expect(abandoned).resolves.toBeUndefined();
+      await expect(peer).resolves.toMatchObject({ oldContent: 'LOCAL', newContent: 'LOCAL' });
+      const livePath = samePath ? 'a.ts' : 'b.ts';
+      expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([
+        ['git.showFile', { workspaceId: 'cancel-peer', filePath: livePath, ref: ':0' }],
+        ['file.read', { workspaceId: 'cancel-peer', path: livePath }],
+      ]);
+    },
+  );
+
+  it('does not start full-tree recovery after its only caller aborts', async () => {
+    let resolveDiff!: (value: unknown) => void;
+    mockedRequest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDiff = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const result = batchedGitDiff('cancel-recovery', false, '/elsewhere/a.ts', {
+      signal: controller.signal,
+    });
+    await vi.runAllTimersAsync();
+    controller.abort();
+    resolveDiff([]);
+    await expect(result).resolves.toBeUndefined();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('coalesces same-tick unstaged requests into one git.diffs read and composes ":0" + file.read contents', async () => {
     mockDaemon({
       diffs: [

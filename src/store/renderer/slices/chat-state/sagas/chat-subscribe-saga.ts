@@ -294,7 +294,7 @@ function createSubscriptionAcquisition(
   agentId: string,
   onTranscript: (transcript: ChatTranscript) => void,
   onPhase: (phase: ChatLiveStreamPhase) => void,
-  options?: { sinceMessageId: string },
+  options?: { sinceMessageId?: string; workspaceId?: string },
 ): SubscriptionAcquisition {
   let unsubscribe: AsyncUnsubscribe | undefined;
   let disposeRequested = false;
@@ -321,7 +321,7 @@ function createSubscriptionAcquisition(
     agentId: string,
     handler: (transcript: ChatTranscript) => void,
     onPhase: (phase: ChatLiveStreamPhase) => void,
-    options?: { sinceMessageId: string },
+    options?: { sinceMessageId?: string; workspaceId?: string },
   ) => MaybePromise<AsyncUnsubscribe>;
   const raw = options
     ? subscribe(agentId, onTranscript, onPhase, options)
@@ -759,7 +759,10 @@ function* openSubscription(
         emit({ kind: 'transcript', agentId, token: transition.token, transcript }),
       (phase: ChatLiveStreamPhase) =>
         emit({ kind: 'phase', agentId, token: transition.token, phase }),
-      sinceMessageId === undefined ? undefined : { sinceMessageId },
+      {
+        ...(sinceMessageId !== undefined ? { sinceMessageId } : {}),
+        ...(transition.wsId !== undefined ? { workspaceId: transition.wsId } : {}),
+      },
     );
     slot.acquisition = acquisition;
     const unsubscribe = yield* call(acquisition.wait);

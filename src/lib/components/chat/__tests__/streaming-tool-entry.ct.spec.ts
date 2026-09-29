@@ -212,6 +212,12 @@ test('inserts a reduced-motion tool row immediately without intermediate heights
   const samples = await finishSampling(host, page);
   const finalHeight = samples.at(-1)!.heights[2];
   expect(finalHeight).toBeGreaterThan(10);
-  for (const sample of samples) expect(sample.heights[2]).toBeCloseTo(finalHeight, 1);
+  // Admission is budgeted even without motion. From the first mounted frame
+  // onward the row must always have its full height and never animate.
+  const firstMounted = samples.findIndex((sample) => sample.heights[2] !== undefined);
+  expect(firstMounted).toBeGreaterThanOrEqual(0);
+  for (const sample of samples.slice(firstMounted))
+    expect(sample.heights[2]).toBeCloseTo(finalHeight, 1);
+  expect(await page.evaluate(() => (window as MotionWindow).entryAnimations?.length ?? 0)).toBe(0);
   await expectBottomLocked(host);
 });

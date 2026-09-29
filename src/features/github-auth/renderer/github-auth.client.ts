@@ -15,9 +15,12 @@ export const githubAuthClient = {
   /**
    * Check if user is authenticated with GitHub via the daemon
    */
-  async isAuthenticated(): Promise<boolean> {
+  async isAuthenticated(workspaceId?: string): Promise<boolean> {
     try {
-      return await invoke<boolean>(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED);
+      return await invoke<boolean>(
+        GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return false;
     }
@@ -26,9 +29,12 @@ export const githubAuthClient = {
   /**
    * Get GitHub user info (may be null if not available from daemon API)
    */
-  async getUser(): Promise<GitHubUser | null> {
+  async getUser(workspaceId?: string): Promise<GitHubUser | null> {
     try {
-      return await invoke<GitHubUser | null>(GITHUB_AUTH_CHANNELS.GET_USER);
+      return await invoke<GitHubUser | null>(
+        GITHUB_AUTH_CHANNELS.GET_USER,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return null;
     }
@@ -78,9 +84,12 @@ export const githubAuthClient = {
   /**
    * Get full authentication state for UI
    */
-  async getAuthState(): Promise<GitHubAuthState> {
+  async getAuthState(workspaceId?: string): Promise<GitHubAuthState> {
     try {
-      return await invoke<GitHubAuthState>(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE);
+      return await invoke<GitHubAuthState>(
+        GITHUB_AUTH_CHANNELS.GET_AUTH_STATE,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return {
         isAuthenticated: false,
@@ -93,9 +102,12 @@ export const githubAuthClient = {
   /**
    * Get GitHub status from daemon API
    */
-  async getStatus(): Promise<GitHubAuthStatus> {
+  async getStatus(workspaceId?: string): Promise<GitHubAuthStatus> {
     try {
-      return await invoke<GitHubAuthStatus>(GITHUB_AUTH_CHANNELS.GET_STATUS);
+      return await invoke<GitHubAuthStatus>(
+        GITHUB_AUTH_CHANNELS.GET_STATUS,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return {
         isConfigured: false,
@@ -109,10 +121,10 @@ export const githubAuthClient = {
   /**
    * List GitHub repositories for the authenticated user
    */
-  async listRepos(page?: number): Promise<GithubRepo[]> {
+  async listRepos(page?: number, workspaceId?: string): Promise<GithubRepo[]> {
     const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
       GITHUB_AUTH_CHANNELS.LIST_REPOS,
-      { page },
+      { page, ...(workspaceId === undefined ? {} : { workspaceId }) },
     );
     if (!result.success) throw new Error(result.error || 'Repository discovery failed'); // i18n-ignore (wire-error fallback)
     return result.data ?? [];
@@ -126,11 +138,12 @@ export const githubAuthClient = {
    */
   async searchRepos(
     query: string,
+    workspaceId?: string,
   ): Promise<{ success: boolean; data?: GithubRepo[]; error?: string }> {
     try {
       return await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
         GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
-        { query },
+        { query, ...(workspaceId === undefined ? {} : { workspaceId }) },
       );
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -143,11 +156,12 @@ export const githubAuthClient = {
    */
   async searchUsers(
     query: string,
+    workspaceId?: string,
   ): Promise<{ success: boolean; data?: GithubUserSearchHit[]; error?: string }> {
     try {
       return await invoke<{ success: boolean; data?: GithubUserSearchHit[]; error?: string }>(
         GITHUB_AUTH_CHANNELS.SEARCH_USERS,
-        { query },
+        { query, ...(workspaceId === undefined ? {} : { workspaceId }) },
       );
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };

@@ -1,3 +1,4 @@
+import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession, Note } from '$shared/types';
@@ -98,6 +99,7 @@ const { notifyInterruptedAgentUpdatedSpy } = vi.hoisted(() => ({
 }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
   notifyInterruptedAgentUpdated: notifyInterruptedAgentUpdatedSpy,
+  notifyInterruptedAgentsSubscriptionReady: vi.fn(),
 }));
 
 // Fake the navigate-away helper so the bridge's `workspace:deleted` navigation
@@ -2330,7 +2332,7 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
       }),
     );
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('ignores malformed agent:stream:activity payloads (missing/empty agentId or messageId)', async () => {
@@ -2384,7 +2386,7 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     );
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(readAgentSessionField('lastAgentResponse')).toBe('text for an unhydrated agent');
     expect(readAgentSessionField('digest')).toBe('Hydrated preview');
   });
@@ -3609,6 +3611,32 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
       queuedRetryRecords: agent?.queuedRetryRecords ?? {},
     };
   }
+
+  it('ignores queue and question-marker events from another workspace with the same agent ID', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [{ id: 'ours', content: 'ours', position: 0, queuedAt: '2026-01-02T00:00:00Z' }],
+      }),
+    );
+    const before = appStore.state.agentQueue.byAgentId[AGENT];
+    const foreignQueue = notification('agent:queue:updated', { agentId: AGENT, queue: [] });
+    foreignQueue.params.event.workspaceId = 'workspace-other';
+    handler(foreignQueue);
+    expect(appStore.state.agentQueue.byAgentId[AGENT]).toEqual(before);
+    const foreignMarker = notification('agent:updated', {
+      agentId: AGENT,
+      pendingQuestionsMessageId: 'foreign-marker',
+    });
+    foreignMarker.params.event.workspaceId = 'workspace-other';
+    handler(foreignMarker);
+    expect(
+      appStore.state.agentSessions.byAgentId[AGENT].metadata?.pendingQuestionsMessageId,
+    ).not.toBe('foreign-marker');
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+  });
 
   it('renders the BE queue snapshot from a PROTOCOL §5.5 agent:queue:updated payload', async () => {
     await primeBridge();
@@ -4921,6 +4949,7 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     const requests = readPermissionRequests();
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
+      workspaceId: WS,
       requestId: REQUEST_ID,
       sessionId: AGENT,
       title: 'Run command',
@@ -5034,7 +5063,7 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
       await flush();
 
       expect(dismissAgentAttentionToastSpy.mock.calls).toEqual([[AGENT]]);
-      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     },
   );
 
@@ -5242,7 +5271,7 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
     await flush();
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
   });
 });
@@ -5284,6 +5313,29 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     };
   }
 
+  it('keeps live same-name server events independent by ID', async () => {
+    appStore.dispatch(
+      setServers([
+        { id: 'srv-a', name: 'same', type: 'http' },
+        { id: 'srv-b', name: 'same', type: 'http' },
+      ]),
+    );
+    await primeBridge();
+    capturedHandlers[0]!(
+      mcpNotification({
+        serverId: 'srv-a',
+        status: { serverId: 'srv-a', state: 'error', lastError: 'first failed' },
+      }),
+    );
+    capturedHandlers[0]!(
+      mcpNotification({ serverId: 'srv-b', status: { serverId: 'srv-b', state: 'running' } }),
+    );
+    expect(appStore.state.mcpSettings.statusMap['srv-a']).toBe('error');
+    expect(appStore.state.mcpSettings.statusMap['srv-b']).toBe('connected');
+    expect(appStore.state.mcpSettings.errorMessages['srv-a']).toBe('first failed');
+    expect(appStore.state.mcpSettings.errorMessages['srv-b']).toBeUndefined();
+  });
+
   function readStatus(name: string): McpServerStatus | undefined {
     return appStore.state.mcpSettings.statusMap[name];
   }
@@ -5291,7 +5343,7 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
   it("running → sets statusMap[name] = 'connected' and clears any prior error", async () => {
     seedMcpServer('srv-fs', 'filesystem');
     // Prime a prior error to prove the handler clears it on recovery.
-    appStore.dispatch(setServerErrorMessage('filesystem', 'boot failed'));
+    appStore.dispatch(setServerErrorMessage('srv-fs', 'boot failed'));
 
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5303,8 +5355,8 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
       }),
     );
 
-    expect(readStatus('filesystem')).toBe('connected');
-    expect(appStore.state.mcpSettings.errorMessages.filesystem).toBeUndefined();
+    expect(readStatus('srv-fs')).toBe('connected');
+    expect(appStore.state.mcpSettings.errorMessages['srv-fs']).toBeUndefined();
   });
 
   it("error → sets 'error' status and surfaces lastError via setServerErrorMessage", async () => {
@@ -5319,8 +5371,8 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
       }),
     );
 
-    expect(readStatus('github')).toBe('error');
-    expect(appStore.state.mcpSettings.errorMessages.github).toBe('connect ECONNREFUSED');
+    expect(readStatus('srv-gh')).toBe('error');
+    expect(appStore.state.mcpSettings.errorMessages['srv-gh']).toBe('connect ECONNREFUSED');
   });
 
   it("auth_required → preserves the daemon's recovery message", async () => {
@@ -5339,8 +5391,8 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
       }),
     );
 
-    expect(readStatus('figma')).toBe('auth_required');
-    expect(appStore.state.mcpSettings.errorMessages.figma).toBe(
+    expect(readStatus('srv-figma')).toBe('auth_required');
+    expect(appStore.state.mcpSettings.errorMessages['srv-figma']).toBe(
       'authenticate or check configured credentials',
     );
   });
@@ -5353,12 +5405,12 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     handler(
       mcpNotification({ serverId: 'srv-a', status: { serverId: 'srv-a', state: 'starting' } }),
     );
-    expect(readStatus('alpha')).toBe('configured');
+    expect(readStatus('srv-a')).toBe('configured');
 
     handler(
       mcpNotification({ serverId: 'srv-a', status: { serverId: 'srv-a', state: 'stopped' } }),
     );
-    expect(readStatus('alpha')).toBe('stopped');
+    expect(readStatus('srv-a')).toBe('stopped');
   });
 
   it('drops events for an unknown serverId (no FE state mutation)', async () => {
@@ -5410,7 +5462,19 @@ describe('daemonEventsBridge (wire contract — mcpServerToggled on workspace:up
   afterEach(() => vi.clearAllMocks());
 
   function seedMcpServer(id: string, name: string): void {
-    appStore.dispatch(setServers([{ id, name, type: 'stdio', command: 'npx' }]));
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        WS_TOGGLE,
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [{ id, name, type: 'stdio', command: 'npx' }],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
   }
 
   function toggledNotification(changes: Record<string, unknown>) {
@@ -5442,12 +5506,12 @@ describe('daemonEventsBridge (wire contract — mcpServerToggled on workspace:up
       toggledNotification({ mcpServerToggled: { serverId: 'srv-fs', workspaceDisabled: true } }),
     );
 
-    expect(readDisabled()).toEqual({ filesystem: true });
+    expect(readDisabled()).toEqual({ 'srv-fs': true });
   });
 
   it('re-enable delta → clears the name from byWorkspaceId', async () => {
     seedMcpServer('srv-fs', 'filesystem');
-    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { filesystem: true }));
+    appStore.dispatch(setWorkspaceDisabledMcpServers(WS_TOGGLE, { 'srv-fs': true }));
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -5624,7 +5688,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(CREATED_AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(CREATED_AGENT, WS);
     const state = appStore.state as {
       agentSessions: {
         byAgentId: Record<string, AgentSession>;
@@ -5719,7 +5783,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
     const state = appStore.state as {
       agentSessions: { byAgentId: Record<string, AgentSession> };
@@ -5745,8 +5809,8 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     handler(notification('agent:updated', { agentId: AGENT }));
 
     expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(1, AGENT);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(2, AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(1, AGENT, WS);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(2, AGENT, WS);
 
     resolveFirst();
     await flush();
@@ -5772,8 +5836,22 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT);
+    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT, false);
   });
+
+  it.each([true, false, 'true', undefined])(
+    'only forwards a boolean startup failure hint (%s)',
+    async (startupRecoveryFailed) => {
+      capturedHandlers[0]!(
+        notification('agent:updated', { agentId: AGENT, startupRecoveryFailed }),
+      );
+      await flush();
+      expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(
+        AGENT,
+        startupRecoveryFailed === true,
+      );
+    },
+  );
 
   it('ignores agent:created/renamed/updated payloads missing agentId (schema guard)', async () => {
     const handler = capturedHandlers[0]!;
@@ -5827,7 +5905,7 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     handler(notification('agent:retired', { agentId: AGENT }));
     await flush();
     expect(retiredCountOf(WS)).toBe(2);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
 
     handler(notification('agent:restored', { agentId: AGENT }));
     await flush();
@@ -5841,7 +5919,7 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     await flush();
 
     expect(retiredCountOf(WS)).toBe(0);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('agent:deleted on a known retired row nudges the count down in lockstep with its removal', async () => {
@@ -6047,7 +6125,7 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     handler(notification('agent:created', { agentId: 'agent-vanished' }));
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished');
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished', WS);
     expect(scopeCountsOf()).toEqual(COUNTS);
   });
 
@@ -6456,8 +6534,14 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       handler(notification('agent:retired', { agentId: PARENT }));
       await settle();
       seedSession({ id: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      // Model the successful metadata refresh before deleting the restored row.
+      // A no-op mock would leave it retired, so deletion correctly owes no count.
+      refreshAgentSessionAfterEventSpy.mockImplementationOnce(async () => {
+        seedSession({ id: PARENT as never });
+      });
       handler(notification('agent:restored', { agentId: PARENT }));
       await settle();
+      expect(appStore.state.agentSessions.byAgentId[PARENT].retiredAt).toBeUndefined();
       handler(notification('agent:deleted', { agentId: PARENT }));
       await settle();
 
@@ -10386,7 +10470,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
 
     handler(notification('agent:status-changed', { agentId: AGENT, status: 'responding' }));
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
@@ -10410,7 +10494,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
 
     handler(notification('agent:idle', { agentId: AGENT }));
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
@@ -10772,7 +10856,7 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
 
     // The withHydratedSession seam fetches the session shell once — never a
     // transcript page walk.
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-unknown');
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-unknown', WS);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
@@ -10845,7 +10929,7 @@ describe('daemonEventsBridge (STAB-22 back-compat — agent:message falls back t
     );
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
@@ -10875,6 +10959,31 @@ describe('daemonEventsBridge (STAB-22 back-compat — agent:message falls back t
     // Trailing coalesce: the burst collapsed into exactly one follow-up.
     expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('drops a queued metadata refresh when routing is disposed before the reply', async () => {
+    seedSession({ messages: [] });
+    let finish!: () => void;
+    ensureAgentSessionSpy.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }) as never,
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'old-1', role: 'assistant' }),
+    );
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'old-2', role: 'assistant' }),
+    );
+    const { disposeDaemonEventsRoutingState } = await import('./daemon-events-bridge.client');
+    disposeDaemonEventsRoutingState();
+    finish();
+    await flush();
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('retires the fallback once the daemon emits agent:last-message', async () => {
@@ -13563,3 +13672,177 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(cleared);
   });
 });
+
+it.each(['server-workspace', 'server-direct'])(
+  'workspace routing regression: MCP toggle resolves %s in its workspace',
+  async (serverId) => {
+    appStore.init();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    const workspaceId = 'workspace-independent-mcp';
+    appStore.dispatch(
+      setServers([{ id: 'server-direct', name: 'direct', type: 'stdio', command: 'npx' }]),
+    );
+    const { workspaceCatalogReceived } =
+      await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        workspaceId,
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [{ id: serverId, name: 'workspace-server', type: 'stdio', command: 'npx' }],
+          mcpStatuses: [],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
+    appStore.dispatch(setWorkspaceDisabledMcpServers(workspaceId, {}));
+    await primeBridge();
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-independent-mcp',
+          workspaceId,
+          timestamp: '2026-09-28T06:00:00.000Z',
+          type: 'workspace:updated',
+          actor: { type: 'system', id: 'daemon' },
+          data: {
+            workspaceId,
+            changes: { mcpServerToggled: { serverId, workspaceDisabled: true } },
+          },
+        },
+      },
+    });
+    expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual({
+      [serverId]: true,
+    });
+  },
+);
+
+it.each([
+  [true, 'server-A', false],
+  [true, 'shared-id', true],
+  [false, 'shared-id', false],
+] as const)(
+  'workspace lifecycle regression: MCP toggle burst starting %s for %s (saga first=%s)',
+  async (firstDisabled, serverId, sagaFirst) => {
+    const { runSaga, stdChannel } = await import('redux-saga');
+    const { workspaceCatalogSaga } =
+      await import('$store/renderer/slices/provider-catalog/workspace-catalog-saga');
+    const { workspaceMounted } =
+      await import('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice');
+    const { appClient } = await import('$lib/client');
+    appStore.init();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    const workspaceId = 'mcp-burst-A';
+    const server = {
+      id: serverId,
+      name: 'workspace-server',
+      type: 'stdio' as const,
+      command: 'npx',
+    };
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        workspaceId,
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [server],
+          mcpStatuses: [],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
+    appStore.dispatch(
+      setWorkspaceDisabledMcpServers(workspaceId, firstDisabled ? {} : { [server.id]: true }),
+    );
+    appStore.dispatch(setServers([{ ...server, name: 'global-server' }]));
+    appStore.dispatch(
+      workspaceCatalogReceived(
+        'mcp-burst-B',
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [],
+          readiness: {},
+          mcpServers: [{ ...server, name: 'B-server' }],
+        },
+        appStore.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
+    );
+    appStore.dispatch(setWorkspaceDisabledMcpServers('mcp-burst-B', {}));
+    appStore.dispatch(workspaceMounted(workspaceId));
+    let release!: (value: { providers: [] }) => void;
+    const pending = new Promise<{ providers: [] }>((resolve) => (release = resolve));
+    const spies = [
+      vi
+        .spyOn(appClient.providers, 'catalog')
+        .mockResolvedValue({ providers: [] })
+        .mockReturnValueOnce(pending),
+      vi.spyOn(appClient.settings, 'list').mockResolvedValue([]),
+      vi.spyOn(appClient.specialists, 'list').mockResolvedValue([]),
+      vi.spyOn(appClient.settings, 'getMcpServers').mockResolvedValue([server]),
+      vi.spyOn(appClient.settings, 'getMcpServerStatuses').mockResolvedValue([]),
+    ];
+    backendRequestSpy.mockImplementation(() => Promise.resolve({ providers: [] }));
+    await primeBridge();
+    const channel = stdChannel();
+    const dispatch = (action: any) => {
+      appStore.dispatch(action);
+      channel.put(action);
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => appStore.state },
+      workspaceCatalogSaga,
+    );
+    const emitToggle = (disabled: boolean) => {
+      for (const h of sagaFirst ? [...capturedHandlers].reverse() : [...capturedHandlers])
+        h({
+          method: 'events.event',
+          params: {
+            event: {
+              id: 'mcp-burst-' + disabled,
+              workspaceId,
+              timestamp: '2026-09-28T07:55:00.000Z',
+              type: 'workspace:updated',
+              actor: { type: 'system', id: 'daemon' },
+              data: {
+                workspaceId,
+                changes: { mcpServerToggled: { serverId: server.id, workspaceDisabled: disabled } },
+              },
+            },
+          },
+        });
+    };
+    try {
+      emitToggle(firstDisabled);
+      await flush();
+      expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
+        firstDisabled ? { [server.id]: true } : {},
+      );
+      expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]).toBeUndefined();
+      emitToggle(!firstDisabled);
+      await flush();
+      release({ providers: [] });
+      for (let i = 0; i < 20; i++) await flush();
+      expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]?.mcpServers).toEqual([
+        server,
+      ]);
+      expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
+        firstDisabled ? {} : { [server.id]: true },
+      );
+      expect(appStore.state.mcpSettings.byWorkspaceId['mcp-burst-B']?.disabledServers).toEqual({});
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      for (const spy of spies) spy.mockRestore();
+    }
+  },
+);

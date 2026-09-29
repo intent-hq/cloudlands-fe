@@ -157,6 +157,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     // Handle file:// links
     if (url.startsWith('file://')) {
+      if (options.canOpenFile?.() === false) return false;
       return await openInExternalEditor(url);
     }
 
@@ -174,8 +175,11 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
  */
 async function handleIntentLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
+    const { parseIntentLink, handleIntentLink: handleIntent } =
+      await import('$lib/utils/workspaces-link-handler');
+    if (options.canOpenFile && parseIntentLink(url).type === 'file' && !options.canOpenFile())
+      return false;
     focusSourcePanel(options);
-    const { handleIntentLink: handleIntent } = await import('$lib/utils/workspaces-link-handler');
     return await handleIntent(url, {
       workspaceId: options.workspaceId,
       sourcePanelId: options.sourcePanelId,
@@ -325,6 +329,7 @@ async function openFilePathLink(
   fromResolvedUrl: boolean,
 ): Promise<boolean> {
   try {
+    if (options.canOpenFile?.() === false) return false;
     const decodedTarget = decodePathTarget(target);
     if (!decodedTarget || decodedTarget.includes('\0')) return false;
 
@@ -554,7 +559,7 @@ export function createGlobalLinkClickHandler(
   container.addEventListener('click', clickHandler);
 
   // Also set up tooltip behavior on the same container
-  const cleanupTooltip = createLinkTooltipHandler(container);
+  const cleanupTooltip = createLinkTooltipHandler(container, options);
 
   return () => {
     container.removeEventListener('click', clickHandler);
@@ -604,12 +609,16 @@ export function createLinkClickHandler(options: LinkHandlerOptions) {
  * cleanup();
  * ```
  */
-export function createLinkTooltipHandler(container: HTMLElement): () => void {
+export function createLinkTooltipHandler(
+  container: HTMLElement,
+  options: Pick<LinkHandlerOptions, 'workspaceId'> = {},
+): () => void {
   let currentAnchor: HTMLAnchorElement | null = null;
 
   // Lazy-import the tooltip functions to avoid circular deps
   // and keep the module lightweight until first hover
-  let showFn: ((anchor: HTMLAnchorElement, url: string) => void) | null = null;
+  let showFn: ((anchor: HTMLAnchorElement, url: string, workspaceId?: string) => void) | null =
+    null;
   let hideFn: (() => void) | null = null;
 
   async function ensureImported() {
@@ -632,10 +641,13 @@ export function createLinkTooltipHandler(container: HTMLElement): () => void {
       if (anchor === currentAnchor) return; // Already tracking this anchor
       currentAnchor = anchor;
 
+      const workspaceId =
+        options.workspaceId ??
+        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId;
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
         if (currentAnchor === anchor && showFn) {
-          showFn(anchor, anchor.href);
+          showFn(anchor, anchor.href, workspaceId);
         }
       });
     } else if (currentAnchor) {

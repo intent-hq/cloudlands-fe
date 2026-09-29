@@ -60,6 +60,8 @@
     searchValue?: string;
     /** Selection mode */
     multiple?: boolean;
+    /** Close after a single value pick; composed controls can opt out. */
+    closeOnSelect?: boolean;
     /** Whether the dropdown is disabled */
     disabled?: boolean;
     /** Open state */
@@ -114,6 +116,7 @@
     searchChrome = false,
     searchValue = $bindable(''),
     multiple = false,
+    closeOnSelect = true,
     disabled = false,
     open = $bindable(false),
     variant = 'default',
@@ -432,7 +435,7 @@
     } else {
       value = option.value;
       onchange?.(option.value, event);
-      handleClose();
+      if (closeOnSelect) handleClose();
     }
   }
 

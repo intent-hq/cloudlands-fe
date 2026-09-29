@@ -634,16 +634,20 @@ test('clears tooltip suppression after pointer cancellation and task-trigger rem
   // dispatchEvent does not move the mouse; cancellation must start outside so
   // the later hover is a fresh pointer entry after the trigger click (intent#6033).
   await outside.hover();
-  await outside.dispatchEvent('pointerdown', {
-    pointerType: 'mouse',
-    pointerId: 17,
-    button: 0,
-    isPrimary: true,
-  });
-  await outside.dispatchEvent('pointercancel', {
-    pointerType: 'mouse',
-    pointerId: 17,
-    isPrimary: true,
+  // Cancel in the same browser turn, before the popover's deferred outside
+  // dismissal clears the active pointer ID. Separate driver calls race it.
+  await outside.evaluate((element) => {
+    const pointer = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      pointerType: 'mouse',
+      pointerId: 17,
+      button: 0,
+      isPrimary: true,
+    };
+    element.dispatchEvent(new PointerEvent('pointerdown', pointer));
+    element.dispatchEvent(new PointerEvent('pointercancel', pointer));
   });
   await page.keyboard.press('Escape');
   await expect(popover).toBeHidden();

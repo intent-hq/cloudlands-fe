@@ -1,3 +1,4 @@
+import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 /**
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
@@ -146,7 +147,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
-    const session: AgentSession | null = yield* call(readAgentSession, agentId);
+    const session: AgentSession | null = yield* call(readAgentSession, agentId, wsId);
     if (!session || String(session.workspaceId) !== wsId) {
       return { started, succeeded: true };
     }
@@ -366,6 +367,7 @@ function* hydrateMessageBlockWorker(
       agentId,
       messageId,
       blockId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
     yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
   } catch (error) {

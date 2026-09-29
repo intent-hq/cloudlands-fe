@@ -19,10 +19,11 @@ const mocks = vi.hoisted(() => {
   return {
     readable,
     models,
+    availableProviderIds: ['auggie'],
+    codexModels: [{ value: 'codex-model', label: 'Codex model', effortLevels: ['low', 'high'] }],
     dispatch: vi.fn(),
     onClose: vi.fn(),
     create: vi.fn(),
-    defaultProviderId: 'auggie',
     configuredModels: {} as Record<string, string>,
     selectedModel: undefined as string | undefined,
     defaultReasoningEffort: '',
@@ -42,29 +43,6 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_PROVIDER_CATALOG } =
-    await import('../../../../test/fixtures/provider-catalog.fixture');
-  const providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
-  return createAppStoreMockModule({
-    state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: { auggie: true } },
-      model: { defaultProviderId: mocks.defaultProviderId },
-      providerModels: { byProviderId: {}, clearEpoch: 0 },
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-      workspaceCreateProgress: { byProgressId: {} },
-    }),
-    dispatch: mocks.dispatch,
-  });
-});
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
@@ -81,9 +59,9 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
   selectEnabledProviders: () => mocks.readable({}),
-  selectModelFetchProviderIds: () => mocks.readable(['auggie']),
+  selectModelFetchProviderIds: () => mocks.readable(mocks.availableProviderIds),
   selectIsProviderModelAccessAllowed: () => mocks.readable(true),
-  selectAvailableEnabledProviderIds: () => mocks.readable(['auggie']),
+  selectAvailableEnabledProviderIds: () => mocks.readable(mocks.availableProviderIds),
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -110,7 +88,9 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn(async () => mocks.models),
-  getModelsForProviderForLoadingState: vi.fn(async () => ({ models: mocks.models })),
+  getModelsForProviderForLoadingState: vi.fn(async (providerId: string) => ({
+    models: providerId === 'codex' ? mocks.codexModels : mocks.models,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
@@ -166,7 +146,9 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
 }));
 vi.mock('$features/providers/provider-availability.client', () => ({
   getProviderAvailability: vi.fn(async () => ({
-    providers: { auggie: { available: true } },
+    providers: Object.fromEntries(
+      mocks.availableProviderIds.map((id) => [id, { available: true }]),
+    ),
   })),
 }));
 
@@ -273,6 +255,12 @@ vi.mock('svelte-fa', async () => ({
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { store as appStore } from '$store/renderer/store';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 function persistedStates() {
   return mocks.dispatch.mock.calls
@@ -317,11 +305,14 @@ function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRe
   trigger.parentElement!.getBoundingClientRect = vi.fn(() => triggerRect);
 }
 
+let disposeStore: () => void;
+let cancelCatalog: () => void;
+
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    mocks.defaultProviderId = 'auggie';
+    mocks.availableProviderIds = ['auggie'];
     mocks.configuredModels = {};
     mocks.selectedModel = undefined;
     mocks.defaultReasoningEffort = '';
@@ -338,14 +329,65 @@ describe('NewSpaceModal model-picker composition', () => {
       resolvedReasoningEffort: undefined,
     };
     mocks.create.mockResolvedValue({ ok: false, error: 'Fixture stops after request capture' });
+    disposeStore = appStore.init();
+    appStore.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
+    appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
+    const dispatch = appStore.dispatch.bind(appStore);
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+      mocks.dispatch(action);
+      return dispatch(action);
+    });
+    cancelCatalog = appStore.runSaga(modelReloadSaga);
   });
 
   afterEach(() => {
     cleanup();
+    cancelCatalog();
     sessionStorage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    disposeStore();
   });
+
+  it.each(['team', 'single'] as const)(
+    'preserves a bare non-default provider model and effort in %s mode',
+    async (mode) => {
+      mocks.availableProviderIds = ['auggie', 'codex'];
+      render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+      const card = modeCard(mode === 'team' ? /Agent orchestration/i : /Single agent/i);
+      if (mode === 'single') await fireEvent.click(card);
+      await fireEvent.click(pickerTrigger(card));
+      await fireEvent.click(await within(dialog).findByRole('tab', { name: /Codex/ }));
+      await fireEvent.click(
+        await within(dialog).findByRole('option', { name: 'Codex model', exact: true }),
+      );
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          selectedProvider: 'codex',
+          selectedModel: 'codex-model',
+          modelWasOverridden: true,
+          isTeamMode: mode === 'team',
+        }),
+      );
+      expect(pickerTrigger(card).getAttribute('aria-expanded')).toBe('true');
+      const effort = await within(dialog).findByTestId('effort-picker-trigger');
+      await fireEvent.click(effort);
+      const levels = document.getElementById(effort.getAttribute('aria-controls')!)!;
+      await fireEvent.pointerUp(within(levels).getByRole('option', { name: 'High' }), {
+        pointerType: 'mouse',
+      });
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          selectedProvider: 'codex',
+          selectedModel: 'codex-model',
+          selectedReasoningEffort: 'high',
+        }),
+      );
+      expect(mocks.onClose).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -397,7 +439,7 @@ describe('NewSpaceModal model-picker composition', () => {
       });
     });
 
-    await fireEvent.click(pickerTrigger(team));
+    expect(pickerTrigger(team).getAttribute('aria-expanded')).toBe('true');
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
     const reasoningListbox = document.getElementById(
@@ -497,7 +539,7 @@ describe('NewSpaceModal model-picker composition', () => {
           mocks.specialist.model = 'foreign-model';
           mocks.specialist.defaultModel = 'foreign-model';
         }
-        if (otherDefaultProvider) mocks.defaultProviderId = 'codex';
+        if (otherDefaultProvider) appStore.dispatch(hydrateDefaultProvider('codex'));
       }
       const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
       const team = modeCard(/Agent orchestration/i);
@@ -518,7 +560,7 @@ describe('NewSpaceModal model-picker composition', () => {
         });
       }
 
-      await fireEvent.click(pickerTrigger(team));
+      if (!explicitModel) await fireEvent.click(pickerTrigger(team));
       const reasoningTrigger = await screen.findByTestId('effort-picker-trigger');
       await fireEvent.click(reasoningTrigger);
       const reasoningListbox = document.getElementById(
@@ -584,7 +626,7 @@ describe('NewSpaceModal model-picker composition', () => {
     await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
     expect(team.getAttribute('aria-pressed')).toBe('true');
 
-    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(await within(dialog).findByRole('listbox')).toBeTruthy();
     await fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
@@ -612,7 +654,7 @@ describe('NewSpaceModal model-picker composition', () => {
     );
     await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
 
-    await fireEvent.click(modelTrigger);
+    expect(modelTrigger.getAttribute('aria-expanded')).toBe('true');
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
@@ -688,4 +730,27 @@ describe('NewSpaceModal model-picker composition', () => {
       view.unmount();
     }
   });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const providers =
+    await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
+  const models = await import('$store/renderer/slices/model/model-selectors');
+  const catalog =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  const specialists = await import('$store/renderer/slices/specialists/specialists-selectors');
+  const availability =
+    await import('$store/renderer/slices/agent-availability/agent-availability-selectors');
+  return {
+    selectContextProviderEntries: catalog.selectProviderCatalogEntries,
+    selectContextDefaultProvider: providers.selectActiveProviderId,
+    selectContextSelectedModel: models.selectSelectedModel,
+    selectContextEnabledProviders: providers.selectEnabledProviders,
+    selectContextAvailableProviderIds: providers.selectAvailableEnabledProviderIds,
+    selectContextModelProviderIds: providers.selectModelFetchProviderIds,
+    selectContextReadinessLoaded: availability.selectHasCheckedOnce,
+    selectContextProviderWarnings: models.selectAllProviderWarnings,
+    selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextSpecialists: specialists.selectSpecialists,
+  };
 });

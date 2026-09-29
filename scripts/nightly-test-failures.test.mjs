@@ -140,31 +140,34 @@ describe('gh-only reporter functional workflow', () => {
     expect(f.readState().issues[0].body).toContain('attempt 1');
     expect(f.readState().issues[0].body).toContain('Latest seen: 2026-09-26T02:45:00Z');
   });
-  it('collects eight ZIP reports with skipped workflow placeholders and replays one Bug without duplicate writes', () => {
-    const data = fixture();
-    data.documents['playwright-root-report-2'].report = report('flaky');
-    data.documents['playwright-ct-report-quarantine'].report.suites = [];
-    data.documents['playwright-ct-report-quarantine'].outcome.testCount = 0;
-    const f = functional(data);
-    expect(f.call('collect', ['--run', '1234']).status).toBe(0);
-    const plan = JSON.parse(readFileSync(join(f.out, 'plan.json'), 'utf8'));
-    expect(plan.lanes).toHaveLength(8);
-    expect(plan.incidents).toEqual([]);
-    expect(plan.items).toHaveLength(1);
-    expect(plan.items[0].suite).toBe('root');
-    expect(f.call('publish', ['--write']).status).toBe(0);
-    expect(f.call('publish', ['--write']).status).toBe(0);
-    const state = f.readState();
-    expect(state.issues).toHaveLength(1);
-    expect(state.comments).toHaveLength(0);
-    expect(state.issues[0].type.name).toBe('Bug');
-    expect(state.issues[0].assignees[0].login).toBe('panghy');
-    expect(state.calls.filter((c) => c.method !== 'GET')).toHaveLength(1);
-    expect(state.calls.some((c) => c.args[1].includes('filter=all'))).toBe(true);
-    expect(existsSync(join(f.root, 'artifact-executed'))).toBe(false);
-    expect(existsSync(join(f.out, 'package.json'))).toBe(false);
-    expect(readFileSync(join(f.out, 'summary.md'), 'utf8')).toContain('issues/1');
-  });
+  it.each([3, 4])(
+    'collects ten ZIP reports and replays a root shard %i Bug without duplicate writes',
+    (shard) => {
+      const data = fixture();
+      data.documents[`playwright-root-report-${shard}`].report = report('flaky');
+      data.documents['playwright-ct-report-quarantine'].report.suites = [];
+      data.documents['playwright-ct-report-quarantine'].outcome.testCount = 0;
+      const f = functional(data);
+      expect(f.call('collect', ['--run', '1234']).status).toBe(0);
+      const plan = JSON.parse(readFileSync(join(f.out, 'plan.json'), 'utf8'));
+      expect(plan.lanes).toHaveLength(10);
+      expect(plan.incidents).toEqual([]);
+      expect(plan.items).toHaveLength(1);
+      expect(plan.items[0]).toMatchObject({ suite: 'root', shard });
+      expect(f.call('publish', ['--write']).status).toBe(0);
+      expect(f.call('publish', ['--write']).status).toBe(0);
+      const state = f.readState();
+      expect(state.issues).toHaveLength(1);
+      expect(state.comments).toHaveLength(0);
+      expect(state.issues[0].type.name).toBe('Bug');
+      expect(state.issues[0].assignees[0].login).toBe('panghy');
+      expect(state.calls.filter((c) => c.method !== 'GET')).toHaveLength(1);
+      expect(state.calls.some((c) => c.args[1].includes('filter=all'))).toBe(true);
+      expect(existsSync(join(f.root, 'artifact-executed'))).toBe(false);
+      expect(existsSync(join(f.out, 'package.json'))).toBe(false);
+      expect(readFileSync(join(f.out, 'summary.md'), 'utf8')).toContain('issues/1');
+    },
+  );
   it('finds old adopted markers beyond page one, without using eventually indexed search', () => {
     const data = fixture();
     data.documents['playwright-ct-report-1-of-4'].report = report('unexpected');
@@ -294,6 +297,36 @@ describe('gh-only reporter functional workflow', () => {
     expect(status).toBe(1);
     expect(called).toBe(false);
   });
+  it('reads historical two-shard manifests and reports without allowing issue writes', () => {
+    const data = fixture();
+    const oldEntries = entries
+      .filter((entry) => entry.suite !== 'root' || entry.shard <= 2)
+      .map((entry) => (entry.suite === 'root' ? { ...entry, shardCount: 2 } : entry));
+    const oldNames = new Set(['browser-test-manifest', ...oldEntries.map((e) => e.artifactName)]);
+    data.documents['browser-test-manifest'].manifest.artifacts = oldEntries;
+    data.artifacts = data.artifacts.filter((a) => oldNames.has(a.name));
+    data.jobs = data.jobs
+      .filter((job) => !/root [34]\/4/.test(job.name))
+      .map((job) => ({ ...job, name: job.name.replace(/(root .*?)\/4/, '$1/2') }));
+    for (const entry of oldEntries.filter((e) => e.suite === 'root')) {
+      const doc = data.documents[entry.artifactName];
+      doc.outcome.shardCount = 2;
+      doc.report = report('unexpected');
+      doc.report.config.shard = { current: entry.shard, total: 2 };
+    }
+    const f = functional(data);
+    const collected = f.call('collect', ['--run', '1234', '--historical']);
+    expect(collected.status, collected.stderr).toBe(0);
+    const plan = JSON.parse(readFileSync(join(f.out, 'plan.json'), 'utf8'));
+    expect(plan.historicalFailures.map((item) => [item.suite, item.shard, item.status])).toEqual([
+      ['root', 1, 'unexpected'],
+      ['root', 2, 'unexpected'],
+    ]);
+    expect(plan.incidents).toContain('manifest: Incomplete manifest');
+    expect(f.call('publish', ['--write']).status).toBe(1);
+    expect(f.readState().calls.every((call) => call.method === 'GET')).toBe(true);
+  });
+
   it('historical diagnostics are read only even when someone requests write mode later', () => {
     const data = fixture();
     data.run.event = 'pull_request';

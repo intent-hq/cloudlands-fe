@@ -75,6 +75,75 @@ describe('integrations-bridge-seeder', () => {
     vi.clearAllMocks();
   });
 
+  it('retains workspace origin through integration bridge serializers', async () => {
+    mockedRequest.mockResolvedValue({
+      issues: [],
+      pulls: [],
+      users: [],
+      repos: [],
+      nextToken: null,
+    });
+    for (const workspaceId of ['workspace-a', 'workspace-b']) {
+      await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'same', workspaceId });
+      expect(mockedRequest).toHaveBeenLastCalledWith('github.users.search', {
+        query: 'same',
+        workspaceId,
+      });
+      await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'org',
+        repo: 'repo',
+        workspaceId,
+        options: { query: 'same', nextToken: 'cursor' },
+      });
+      expect(mockedRequest.mock.lastCall?.[1]).toMatchObject({
+        workspaceId,
+        query: 'same',
+        nextToken: 'cursor',
+      });
+      await mockInvoke(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, 'same', {
+        nextToken: 'cursor',
+        workspaceId,
+      });
+      expect(mockedRequest).toHaveBeenLastCalledWith('linear.searchIssues', {
+        query: 'same',
+        nextToken: 'cursor',
+        workspaceId,
+      });
+      await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, { project: 'project', workspaceId });
+      expect(mockedRequest).toHaveBeenLastCalledWith('sentry.listIssues', {
+        project: 'project',
+        workspaceId,
+      });
+      await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, {
+        provider: 'gitlab',
+        host: 'forge.example',
+        workspaceId,
+      });
+      expect(mockedRequest).toHaveBeenLastCalledWith('sourceControl.authStatus', {
+        provider: 'gitlab',
+        host: 'forge.example',
+        workspaceId,
+      });
+    }
+  });
+
+  it('separates auth reads for repeated workspace IDs across reconnects', async () => {
+    const old = deferred<unknown>();
+    mockedRequest.mockImplementationOnce(() => old.promise as Promise<never>);
+    const a = mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'a' });
+    mockedRequest.mockResolvedValue({ isConfigured: false });
+    await mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'b' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('github.authStatus', { workspaceId: 'b' });
+    githubLifecycle.reconnected?.();
+    await mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'a' });
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    old.resolve({ isConfigured: true });
+    await a;
+    await expect(
+      mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'a' }),
+    ).resolves.toMatchObject({ isConfigured: false });
+  });
+
   it('single-flights auth reads and refetches after auth events and reconnects', async () => {
     const status = {
       isConfigured: true,

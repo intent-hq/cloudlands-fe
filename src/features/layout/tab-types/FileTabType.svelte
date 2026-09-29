@@ -32,6 +32,9 @@
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { invoke } from '$lib/electron-bridge';
+  import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
+  import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
+  import { notify } from '$lib/components/patterns/notify';
   import { appClient } from '$lib/client';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
@@ -41,6 +44,7 @@
   import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
+  import PdfViewer from '$features/file/components/PdfViewer.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Button } from '$lib/components/ui/button';
@@ -58,7 +62,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
-  import { faFloppyDisk, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faDownload, faFloppyDisk, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
@@ -178,48 +182,24 @@
         : `${repoPath}/${tab.filePath}`
       : null,
   );
+  const isPdfPath = $derived(!!tab.filePath && /\.pdf$/i.test(tab.filePath));
   const isAllowlistedMediaPath = $derived(
     !!tab.filePath && /\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(tab.filePath),
   );
-  const workspaceMediaPath = $derived.by(() => {
-    const filePath = tab.filePath;
-    if (!filePath || !workspaceId || isOutsideWorkspace || !/^[A-Za-z0-9._-]+$/.test(workspaceId)) {
-      return null;
-    }
-
-    const normalizedPath = filePath.replace(/\\/g, '/');
-    let relativePath = normalizedPath;
-    if (isAbsolutePath(filePath)) {
-      if (!repoPath) return null;
-      const normalizedRoot = repoPath.replace(/\\/g, '/').replace(/\/+$/, '');
-      const caseInsensitive =
-        /^[A-Za-z]:\//.test(normalizedRoot) || normalizedRoot.startsWith('//');
-      const comparedPath = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
-      const comparedRoot = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
-      if (!comparedPath.startsWith(`${comparedRoot}/`)) return null;
-      relativePath = normalizedPath.slice(normalizedRoot.length + 1);
-    }
-
-    const segments = relativePath.split('/');
-    if (
-      segments.length === 0 ||
-      segments.some(
-        (segment) =>
-          !segment ||
-          segment === '.' ||
-          segment === '..' ||
-          segment.includes('\0') ||
-          segment.includes('/') ||
-          segment.includes('\\'),
-      ) ||
-      /^[A-Za-z]:/.test(segments[0]) ||
-      !/\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(segments[segments.length - 1])
-    ) {
-      return null;
-    }
-
-    return segments.join('/');
-  });
+  const workspaceFilePath = $derived(
+    workspaceId && /^[A-Za-z0-9._-]+$/.test(workspaceId)
+      ? workspaceRelativeFilePath(tab.filePath, repoPath)
+      : null,
+  );
+  const workspaceMediaPath = $derived(
+    isPdfPath || isAllowlistedMediaPath ? workspaceFilePath : null,
+  );
+  let downloading = $state(false);
+  const downloadReady = $derived(
+    !!workspaceFilePath &&
+      !fileLoading &&
+      (!isAllowlistedMediaPath || resolvedWorkspaceMediaPath === workspaceFilePath),
+  );
   const workspaceMediaUrl = $derived(
     resolvedWorkspaceMediaPath && workspaceId
       ? `workspace-file://${workspaceId}/${resolvedWorkspaceMediaPath
@@ -236,7 +216,7 @@
   // rendering until this completes so an incorrect workspace-file URL is not
   // committed before a unique candidate can retarget the owning tab.
   $effect(() => {
-    if (!isActive) return;
+    if (!isActive || isPdfPath) return;
     const requestedPath = workspaceMediaPath;
     const sourceFilePath = tab.filePath;
     const wsId = workspaceId;
@@ -341,6 +321,7 @@
       wsId &&
       !isOutsideWorkspace &&
       !isAllowlistedMediaPath &&
+      !isPdfPath &&
       !waitingForAbsoluteRoot
     ) {
       appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
@@ -453,6 +434,22 @@
     );
   }
 
+  async function handleDownloadFile() {
+    const path = workspaceFilePath;
+    if (!path || !workspaceId || !downloadReady || downloading) return;
+    downloading = true;
+    try {
+      const result = await downloadWorkspaceFile(workspaceId, path, repoPath);
+      if (!result?.success && !result?.canceled) {
+        notify.error(result?.error?.message || m.layout_fileTab_downloadFailed_error());
+      }
+    } catch {
+      notify.error(m.layout_fileTab_downloadFailed_error());
+    } finally {
+      downloading = false;
+    }
+  }
+
   async function handleDeleteFile() {
     const absolutePath = fileAbsolutePath;
     if (!tab.filePath || !workspaceId || !absolutePath) return;
@@ -531,6 +528,14 @@
         onclick={handleGoToChanges}
       />
     {/if}
+    {#if workspaceFilePath}
+      <Menu.CommandItem
+        icon={faDownload}
+        label={m.layout_fileTab_downloadFile_label()}
+        onclick={handleDownloadFile}
+        disabled={!downloadReady || downloading}
+      />
+    {/if}
     <Menu.CommandItem
       icon={faTrash}
       label={m.layout_fileTab_deleteFile_tooltip()}
@@ -546,6 +551,14 @@
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
         <p>{m.layout_fileTab_outsideWorkspace_label()}</p>
         <p class="text-xs">{tab.filePath}</p>
+      </div>
+    {:else if isPdfPath && workspaceMediaPath}
+      {#if isActive}
+        <PdfViewer {workspaceId} filePath={workspaceMediaPath} />
+      {/if}
+    {:else if isPdfPath}
+      <div class="flex h-full items-center justify-center p-4 text-subtle">
+        <p role="alert">{m.file_pdf_load_error()}</p>
       </div>
     {:else if workspaceMediaUrl}
       <FileViewer

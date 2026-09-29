@@ -1,5 +1,6 @@
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
+import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
@@ -76,6 +77,7 @@ import { backgroundAgentExecutorReducer } from './slices/background-agent-execut
 import { chatStateReducer } from './slices/chat-state/chat-state-slice';
 import { chatChangesReducer } from './slices/chat-changes/chat-changes-slice';
 import { fileExplorerReducer } from './slices/file-explorer/file-explorer-slice';
+import { pdfPreviewReducer } from './slices/pdf-preview/pdf-preview-slice';
 import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
@@ -107,6 +109,7 @@ import { workspaceShareReducer } from './slices/workspace-share/workspace-share-
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
+  settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
   providerModels: providerModelsReducer,
@@ -184,6 +187,7 @@ export const reducers = {
   chatChanges: chatChangesReducer,
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
+  pdfPreview: pdfPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,

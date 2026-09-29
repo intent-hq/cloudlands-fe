@@ -1,9 +1,8 @@
 /**
  * Live specialists domain backed by the intentd daemon (PROTOCOL §5.11).
  *
- * `specialist.list` is global (no workspaceId) and returns the resolved
- * 3-tier view — project (`.intent/specialists/`) overrides user
- * (`~/.intent/specialists/`) overrides bundled — as `{ specialists:
+ * `specialist.list` returns the resolved user and bundled view. Optional
+ * workspaceId selects routing context without adding project definitions — as `{ specialists:
  * SpecialistDef[] }`. The defs are surfaced verbatim; splitting bundled vs
  * file-backed entries into their store slices happens in the seeder. Reads
  * fold transport failures to an empty list so the specialist picker falls
@@ -48,19 +47,22 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * transient failure keeps the last known-good view instead of wiping the
    * store (#610).
    */
-  private async fetchList(provider?: string): Promise<SpecialistDef[]> {
+  private async fetchList(provider?: string, workspaceId?: string): Promise<SpecialistDef[]> {
     // Preview context belongs to this request; global subscriptions keep
     // using the daemon's default context rather than the last picker choice.
     const result =
-      provider === undefined
+      provider === undefined && workspaceId === undefined
         ? await backendRequest<{ specialists?: unknown[] }>('specialist.list')
-        : await backendRequest<{ specialists?: unknown[] }>('specialist.list', { provider });
+        : await backendRequest<{ specialists?: unknown[] }>('specialist.list', {
+            ...(provider ? { provider } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+          });
     return Array.isArray(result?.specialists) ? (result.specialists as SpecialistDef[]) : [];
   }
 
-  async list(provider?: string): Promise<SpecialistDef[]> {
+  async list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]> {
     try {
-      return await this.fetchList(provider);
+      return await this.fetchList(provider, workspaceId);
     } catch {
       return [];
     }
@@ -155,13 +157,21 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     spec: SpecialistDef,
     scope?: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef> {
-    const params: { id: string; spec: SpecialistDef; scope?: string; workspacePath?: string } = {
+    const params: {
+      id: string;
+      spec: SpecialistDef;
+      scope?: string;
+      workspacePath?: string;
+      workspaceId?: string;
+    } = {
       id,
       spec,
     };
     if (scope) params.scope = scope;
     if (workspacePath) params.workspacePath = workspacePath;
+    if (scope === 'project' && workspaceId) params.workspaceId = workspaceId;
 
     const result = await backendRequest<{ specialist: SpecialistDef }>('specialist.create', params);
     return result.specialist;
@@ -172,13 +182,21 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     spec: SpecialistDef,
     scope: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef> {
-    const params: { id: string; spec: SpecialistDef; scope: string; workspacePath?: string } = {
+    const params: {
+      id: string;
+      spec: SpecialistDef;
+      scope: string;
+      workspacePath?: string;
+      workspaceId?: string;
+    } = {
       id,
       spec,
       scope,
     };
     if (workspacePath) params.workspacePath = workspacePath;
+    if (scope === 'project' && workspaceId) params.workspaceId = workspaceId;
 
     const result = await backendRequest<{ specialist: SpecialistDef }>('specialist.edit', params);
     return result.specialist;
@@ -188,12 +206,14 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     id: string,
     scope: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<{ success: true }> {
-    const params: { id: string; scope: string; workspacePath?: string } = {
+    const params: { id: string; scope: string; workspacePath?: string; workspaceId?: string } = {
       id,
       scope,
     };
     if (workspacePath) params.workspacePath = workspacePath;
+    if (scope === 'project' && workspaceId) params.workspaceId = workspaceId;
 
     return await backendRequest<{ success: true }>('specialist.delete', params);
   }

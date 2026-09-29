@@ -103,6 +103,7 @@ import {
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
+  moveActivePaneVertically,
   openHiddenTab,
   openTab,
   openBlankWorkingPanel,
@@ -243,6 +244,7 @@ const HISTORY_ACTIONS = [
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
+  moveActivePaneVertically,
   setActiveTab,
   activateVisibleTab,
   goBack,
@@ -914,6 +916,7 @@ function* saveHistoryAfterDelay(
   if (message.kind === 'cancel') return;
   try {
     if (
+      message.action.type === moveActivePaneVertically.type ||
       message.action.type === movePanel.type ||
       message.action.type === movePanelToRootEdge.type
     ) {

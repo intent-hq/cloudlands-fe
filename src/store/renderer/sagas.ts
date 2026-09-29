@@ -42,6 +42,7 @@ import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-p
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
+import { pdfPreviewSaga } from './slices/pdf-preview/sagas/pdf-preview-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
@@ -80,6 +81,7 @@ import { settingsProposalHistorySaga } from './slices/settings-proposal-history/
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
+import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalog-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
@@ -146,6 +148,7 @@ export const sagas = [
   acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,
+  pdfPreviewSaga,
   filesWriteSaga,
   workspaceNotesSaga,
   noteReadTrackingSaga,
@@ -177,6 +180,7 @@ export const sagas = [
   powerSaga,
   autoUpdateSaga,
   specialistsSaga,
+  workspaceCatalogSaga,
   proposalLifecycleSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,

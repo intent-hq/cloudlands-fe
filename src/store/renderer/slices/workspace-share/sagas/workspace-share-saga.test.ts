@@ -17,8 +17,17 @@ import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-stat
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+vi.unmock('$lib/electron-bridge');
+
+const mocks = vi.hoisted(() => ({ request: vi.fn(), reconnected: new Set<() => void>() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.request,
+  onBackendReconnected: (handler: () => void) => {
+    mocks.reconnected.add(handler);
+    return () => mocks.reconnected.delete(handler);
+  },
+  onBackendNotification: () => () => {},
+}));
 
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { clearInviteLinks, readInviteLink } from '$features/workspace-sharing/invite-link-vault';
@@ -36,6 +45,7 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import {
+  shareIntegrationAuthRequested,
   closeShareDialog,
   getRosterState,
   initialState,
@@ -121,6 +131,7 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
   );
   return withLegacyPrincipal({
     workspaceShare: share,
+    gitlabAuth: { host: 'forge.example' },
     workspace: { workspaces: createCollection('id', workspaces) },
     connections: connectionsInitialState,
     guestSessions: guestSessionsReducer(
@@ -232,6 +243,108 @@ describe('workspaceShareSaga', () => {
     mocks.request.mockReset();
     consoleSpies.warn.mockClear();
     consoleSpies.error.mockClear();
+  });
+
+  it('applies fresh Share auth on first and subsequent reconnects', async () => {
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    const { onBackendReconnected } = await import('$lib/client/live/backend-transport');
+    const { refreshIntegrationAuthAfterReconnect } =
+      await import('$store/renderer/slices/workspace-share/sagas/workspace-share-saga');
+    const h = harness(opened('a'));
+    const stop = onBackendReconnected(() => {
+      runSaga(
+        { dispatch: h.dispatch, getState: () => rootState(h.state(), { a: 'owner' }) },
+        refreshIntegrationAuthAfterReconnect,
+      );
+    });
+    mocks.request.mockImplementation(async (method: string) =>
+      method === 'github.authStatus' || method === 'sourceControl.authStatus'
+        ? { isConfigured: true }
+        : {},
+    );
+    h.dispatch(shareIntegrationAuthRequested('a', 'forge.example'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.state().integrationAuth).toEqual({ github: true, gitlab: true });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      for (const handler of [...mocks.reconnected]) handler();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.state().integrationAuth).toEqual({ github: true, gitlab: true });
+    }
+    h.task.cancel();
+    stop();
+    expect(h.state().integrationAuth).toEqual({ github: true, gitlab: true });
+  });
+
+  it.each(['success', 'error'] as const)(
+    'rejects old Share auth %s after a fresh reconnect result',
+    async (outcome) => {
+      await import('$store/renderer/seeders/integrations-bridge-seeder');
+      const { __resetGitHubAuthStatusForTests } =
+        await import('$features/github-auth/renderer/github-auth-status.client');
+      __resetGitHubAuthStatusForTests();
+      const { refreshIntegrationAuthAfterReconnect } = await import('./workspace-share-saga');
+      const h = harness(opened('a'));
+      let fresh = false;
+      const pending: Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void }> =
+        [];
+      mocks.request.mockImplementation((method: string) => {
+        if (method !== 'github.authStatus' && method !== 'sourceControl.authStatus')
+          return Promise.resolve({});
+        if (fresh) return Promise.resolve({ isConfigured: true });
+        return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+      });
+      h.dispatch(shareIntegrationAuthRequested('a', 'forge.example'));
+      await settle();
+      fresh = true;
+      const reload = runSaga(
+        { dispatch: h.dispatch, getState: () => rootState(h.state(), { a: 'owner' }) },
+        refreshIntegrationAuthAfterReconnect,
+      );
+      for (const handler of [...mocks.reconnected]) handler();
+      await reload.toPromise();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.state().integrationAuth).toEqual({ github: true, gitlab: true });
+      for (const request of pending) {
+        if (outcome === 'success') request.resolve({ isConfigured: false });
+        else request.reject(new Error('old connection'));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.state().integrationAuth).toEqual({ github: true, gitlab: true });
+      h.task.cancel();
+    },
+  );
+
+  it('reads forge credentials for the dialog origin and drops a late prior-session result', async () => {
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    const { __resetGitHubAuthStatusForTests } =
+      await import('$features/github-auth/renderer/github-auth-status.client');
+    __resetGitHubAuthStatusForTests();
+    let resolveA!: (value: unknown) => void;
+    mocks.request.mockImplementation((method: string, params: { workspaceId?: string }) => {
+      if (method === 'github.authStatus' && params.workspaceId === 'a')
+        return new Promise((resolve) => {
+          resolveA = resolve;
+        });
+      if (method === 'github.authStatus') return Promise.resolve({ isConfigured: false });
+      if (method === 'sourceControl.authStatus') return Promise.resolve({ isConfigured: true });
+      return Promise.resolve({ members: [], invites: [], principals: [] });
+    });
+    const h = harness(opened('a'));
+    h.dispatch(shareIntegrationAuthRequested('a', 'forge-a.example'));
+    await settle();
+    expect(calls('github.authStatus').at(-1)).toEqual(['github.authStatus', { workspaceId: 'a' }]);
+    h.dispatch(openShareDialog({ workspaceId: 'b', workspaceTitle: 'B' }));
+    h.dispatch(shareIntegrationAuthRequested('b', 'forge-b.example'));
+    await settle();
+    expect(calls('sourceControl.authStatus').at(-1)).toEqual([
+      'sourceControl.authStatus',
+      { provider: 'gitlab', host: 'forge-b.example', workspaceId: 'b' },
+    ]);
+    resolveA({ isConfigured: true });
+    await settle();
+    expect(h.state().integrationAuth).toEqual({ github: false, gitlab: true });
+    h.task.cancel();
+    __resetGitHubAuthStatusForTests();
   });
 
   it('reads the roster and open invites for the target when the dialog opens', async () => {

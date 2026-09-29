@@ -1,7 +1,14 @@
+import {
+  setActiveProvider,
+  setAtomicDefaultModel,
+} from '../provider-settings/provider-settings-slice';
 import { describe, it, expect } from 'vitest';
 import {
   backgroundAgentSettingsReducer,
   setDefaultModel,
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverride,
+  resetTypeOverride,
   setTypeOverride,
   clearTypeOverride,
   resetSettings,
@@ -11,10 +18,104 @@ import {
   restoreProviderSettings,
   initialState,
   DEFAULT_BACKGROUND_MODEL,
+  backgroundSettingsSaveSettled,
+  backgroundSettingsMigrationRequested,
   type BackgroundAgentSettingsState,
 } from './background-agent-settings-slice';
 
 describe('backgroundAgentSettingsReducer', () => {
+  it('treats migration as local intent and restores the daemon snapshot on rejection', () => {
+    const daemon = {
+      defaultModel: 'haiku4.5',
+      typeOverrides: { commit: 'haiku4.5', pr: 'pr-model', review: '', fast: '' },
+      defaultReasoningEffort: 'high',
+      revision: 7,
+    };
+    const hydrated = backgroundAgentSettingsReducer(initialState, hydrateSettings(daemon));
+    const migrated = backgroundAgentSettingsReducer(
+      hydrated,
+      backgroundSettingsMigrationRequested({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: 'pr-model', review: '', fast: '' },
+      }),
+    );
+    expect(migrated).toMatchObject({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: 'pr-model', review: '', fast: '' },
+      defaultReasoningEffort: 'high',
+      persistencePending: true,
+    });
+    expect(migrated.authoritativeSettings).toBe(hydrated.authoritativeSettings);
+    const rejected = backgroundAgentSettingsReducer(
+      migrated,
+      backgroundSettingsSaveSettled({ generation: 1 }),
+    );
+    expect(rejected).toMatchObject({
+      defaultModel: 'haiku4.5',
+      typeOverrides: daemon.typeOverrides,
+      defaultReasoningEffort: 'high',
+      persistencePending: false,
+      pendingFields: {},
+      authoritativeSettings: hydrated.authoritativeSettings,
+    });
+  });
+
+  it('does not overwrite a pending local selection with an obsolete migration payload', () => {
+    const selected = backgroundAgentSettingsReducer(initialState, setDefaultModel('newest'));
+    const migrated = backgroundAgentSettingsReducer(
+      selected,
+      backgroundSettingsMigrationRequested({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    expect(migrated.defaultModel).toBe('newest');
+    expect(migrated.typeOverrides).toBe(selected.typeOverrides);
+    expect(migrated.authoritativeSettings).toBe(selected.authoritativeSettings);
+    expect(migrated.persistenceGeneration).toBe(2);
+  });
+
+  it('keeps newer picks over stale hydration and old write failures until their acknowledgement', () => {
+    const older = {
+      defaultModel: 'old',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+    };
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultModel('new'));
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeOverride({ type: 'commit', model: 'new-commit' }),
+    );
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('new');
+    expect(state.typeOverrides.commit).toBe('new-commit');
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 0 }));
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('new');
+    expect(state.typeOverrides.commit).toBe('new-commit');
+    state = backgroundAgentSettingsReducer(
+      state,
+      hydrateSettings({
+        defaultModel: 'new',
+        typeOverrides: { ...older.typeOverrides, commit: 'new-commit' },
+      }),
+    );
+    expect(state.persistencePending).toBe(true);
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 2 }));
+    expect(state.pendingFields).toEqual({});
+    expect(state.persistencePending).toBe(false);
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('old');
+  });
+
+  it('allows later hydration after the current write is rejected', () => {
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultModel('failed'));
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 1 }));
+    state = backgroundAgentSettingsReducer(
+      state,
+      hydrateSettings({ defaultModel: 'daemon', typeOverrides: state.typeOverrides }),
+    );
+    expect(state.defaultModel).toBe('daemon');
+  });
   it('should return initial state', () => {
     const state = backgroundAgentSettingsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
@@ -66,6 +167,7 @@ describe('backgroundAgentSettingsReducer', () => {
   describe('resetSettings', () => {
     it('should reset to initial state', () => {
       const prev: BackgroundAgentSettingsState = {
+        ...initialState,
         defaultModel: 'sonnet4.5',
         typeOverrides: {
           commit: 'haiku4.5',
@@ -166,4 +268,62 @@ describe('backgroundAgentSettingsReducer', () => {
       expect(state.typeOverrides.commit).toBe('haiku4.5');
     });
   });
+});
+
+describe('independent effort settings', () => {
+  it('keeps effort when the model is changed or cleared, and clears both on action reset', () => {
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultReasoningEffort('medium'));
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeReasoningEffortOverride({ type: 'commit', effort: 'high' }),
+    );
+    expect(state.typeOverrides.commit).toBe('');
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeOverride({ type: 'commit', model: 'other' }),
+    );
+    state = backgroundAgentSettingsReducer(state, clearTypeOverride('commit'));
+    expect(state.typeReasoningEffortOverrides.commit).toBe('high');
+    state = backgroundAgentSettingsReducer(state, resetTypeOverride('commit'));
+    expect(state.typeReasoningEffortOverrides.commit).toBeUndefined();
+    expect(state.defaultReasoningEffort).toBe('medium');
+  });
+  it('restores older provider snapshots without leaking the outgoing effort', () => {
+    const state = backgroundAgentSettingsReducer(initialState, setDefaultReasoningEffort('high'));
+    const restored = backgroundAgentSettingsReducer(
+      state,
+      restoreProviderSettings({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    expect(restored.defaultReasoningEffort).toBe('');
+    expect(restored.typeReasoningEffortOverrides).toEqual({});
+  });
+});
+
+it('hydrates blank effort as inheritance without dropping future saved candidates', () => {
+  const state = backgroundAgentSettingsReducer(
+    initialState,
+    hydrateSettings({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      defaultReasoningEffort: '  ',
+      typeReasoningEffortOverrides: { commit: ' ', fast: 'future-level' },
+    }),
+  );
+  expect(state.defaultReasoningEffort).toBe('');
+  expect(state.typeReasoningEffortOverrides).toEqual({ fast: 'future-level' });
+});
+
+it('does not mutate provider snapshots or effort for unaccepted switch requests', () => {
+  expect(backgroundAgentSettingsReducer(initialState, setActiveProvider('codex'))).toBe(
+    initialState,
+  );
+  expect(
+    backgroundAgentSettingsReducer(
+      initialState,
+      setAtomicDefaultModel({ providerId: 'codex', model: 'new-model' }),
+    ),
+  ).toBe(initialState);
 });

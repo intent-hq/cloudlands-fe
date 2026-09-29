@@ -34,6 +34,7 @@
 
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    dismissWorkspaceInitializerRecentRepo,
     setWorkspaceInitializerDefaultParentPath,
     setWorkspaceInitializerLastSelectedRepo,
     setWorkspaceInitializerRecentRepos,
@@ -44,10 +45,13 @@
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerRemoteSetups,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
-  import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import type {
+    WorkspaceInitializerRecentRepo,
+    WorkspaceInitializerRemoteSetup,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
@@ -226,21 +230,23 @@
     relativePathFromGitRoot?: string;
     isSubdirectoryOfGitRepo?: boolean;
   } | null>(null);
-  let recentRepos = $state<
-    Array<{
-      path: string;
-      type: 'local' | 'github';
-      githubUrl?: string;
-      name: string;
-      owner?: string;
-    }>
-  >($workspaceInitializerRecentRepos$);
+  const recentRepos = $derived($workspaceInitializerRecentRepos$);
 
-  $effect(() => {
-    if (isLoading) {
-      recentRepos = $workspaceInitializerRecentRepos$;
-    }
-  });
+  async function handleDismissRecentRepo(event: MouseEvent, repo: WorkspaceInitializerRecentRepo) {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget as HTMLButtonElement;
+    const row = button.closest('[data-recent-repo-row]');
+    const nextRow = row?.nextElementSibling ?? row?.previousElementSibling;
+    const nextFocus =
+      nextRow?.querySelector<HTMLButtonElement>('[data-remove-recent-repo]') ??
+      button
+        .closest('[role="dialog"]')
+        ?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+    appStore.dispatch(dismissWorkspaceInitializerRecentRepo({ path: repo.path, type: repo.type }));
+    await tick();
+    nextFocus?.focus();
+  }
 
   // Track if the current input is a recognized GitHub URL
   let detectedGitHub = $state<{ owner: string; repo: string; url: string } | null>(null);
@@ -816,17 +822,13 @@
 
       // Most-recent-first; entries with no recency signal keep their insertion
       // order after the timestamped ones (sort is stable, missing recency = 0).
-      recentRepos = Array.from(repoMap.entries())
+      const refreshedRepos = Array.from(repoMap.entries())
         .sort(([a], [b]) => (recencyByKey.get(b) ?? 0) - (recencyByKey.get(a) ?? 0))
-        .map(([, entry]) => entry)
-        .slice(0, 9);
+        .map(([, entry]) => entry);
 
-      // Save recent repos through Redux if persistence is enabled.
-      if (debugConfig.get('enableFormPersistence')) {
-        // Snapshot so no $state proxy enters the Redux store (src/store/renderer/AGENTS.md §2) —
-        // a proxy in the persisted slice breaks settings.update's IPC structured clone.
-        appStore.dispatch(setWorkspaceInitializerRecentRepos($state.snapshot(recentRepos)));
-      }
+      // Redux applies persisted dismissals to the latest source results, including
+      // removals made while this request was in flight, before enforcing the limit.
+      appStore.dispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
     } catch (err) {
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
       logger.error('Failed to load recent repositories', appError);
@@ -1874,52 +1876,72 @@
                   {#each filteredRepos() as repo, index (repo.path || repo.name)}
                     {@const label = getRecentRepoLabel(repo)}
                     {@const tooltip = getRecentRepoTooltip(repo)}
-                    {#snippet repoRow()}
-                      <ActionRow
-                        selected={index === highlightedIndex}
-                        class="cursor-pointer"
-                        onclick={() => handleSelectRepo(repo)}
-                      >
-                        {#snippet leading()}
-                          {#if label.ownerPrefix}
-                            <GitHubAvatar identity={label.ownerPrefix} class="size-4 rounded-full">
-                              {#snippet fallback()}
-                                <Fa icon={faGithub} class="text-subtle opacity-50" size={12} />
-                              {/snippet}
-                            </GitHubAvatar>
-                          {:else}
-                            <Fa
-                              icon={repo.type === 'github' ? faGithub : faFolder}
-                              class="text-subtle opacity-50"
-                              size={12}
-                            />
-                          {/if}
-                        {/snippet}
-                        {#snippet title()}
-                          <span class="block truncate">
+                    <div class="group/recent-repo flex min-w-0 items-center" data-recent-repo-row>
+                      {#snippet repoRow()}
+                        <ActionRow
+                          selected={index === highlightedIndex}
+                          class="cursor-pointer flex-1"
+                          onclick={() => handleSelectRepo(repo)}
+                        >
+                          {#snippet leading()}
                             {#if label.ownerPrefix}
-                              <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                              <GitHubAvatar
+                                identity={label.ownerPrefix}
+                                class="size-4 rounded-full"
+                              >
+                                {#snippet fallback()}
+                                  <Fa icon={faGithub} class="text-subtle opacity-50" size={12} />
+                                {/snippet}
+                              </GitHubAvatar>
+                            {:else}
+                              <Fa
+                                icon={repo.type === 'github' ? faGithub : faFolder}
+                                class="text-subtle opacity-50"
+                                size={12}
+                              />
                             {/if}
-                            {label.primary}
-                            {#if label.suffix}
-                              <span class="text-subtle ml-1">({label.suffix})</span>
-                            {/if}
-                          </span>
-                        {/snippet}
-                      </ActionRow>
-                    {/snippet}
-                    {#if tooltip}
-                      <Tooltip
-                        content={tooltip}
-                        delayDuration={300}
-                        side="bottom"
-                        class="flex w-full"
-                      >
+                          {/snippet}
+                          {#snippet title()}
+                            <span class="block truncate">
+                              {#if label.ownerPrefix}
+                                <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                              {/if}
+                              {label.primary}
+                              {#if label.suffix}
+                                <span class="text-subtle ml-1">({label.suffix})</span>
+                              {/if}
+                            </span>
+                          {/snippet}
+                        </ActionRow>
+                      {/snippet}
+                      {#if tooltip}
+                        <Tooltip
+                          content={tooltip}
+                          delayDuration={300}
+                          side="bottom"
+                          class="flex min-w-0 flex-1"
+                        >
+                          {@render repoRow()}
+                        </Tooltip>
+                      {:else}
                         {@render repoRow()}
-                      </Tooltip>
-                    {:else}
-                      {@render repoRow()}
-                    {/if}
+                      {/if}
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        size="icon-compact"
+                        iconOnly
+                        data-remove-recent-repo
+                        class="mr-2 shrink-0 opacity-0 pointer-events-none group-hover/recent-repo:opacity-100 group-hover/recent-repo:pointer-events-auto group-focus-within/recent-repo:opacity-100 group-focus-within/recent-repo:pointer-events-auto"
+                        aria-label={m.workspace_repoSelector_removeRecent_ariaLabel({
+                          repository: repo.path,
+                        })}
+                        title={m.workspace_repoSelector_removeRecent_tooltip()}
+                        onclick={(event) => handleDismissRecentRepo(event, repo)}
+                      >
+                        <Fa icon={faXmark} size={12} />
+                      </Button>
+                    </div>
                   {/each}
                 </div>
               {/if}

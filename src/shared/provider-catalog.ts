@@ -2,7 +2,7 @@
  * Typed contract for the daemon's `providers.catalog` RPC (PROTOCOL §5.38 —
  * the static provider registry served over the wire, monorepo#928).
  *
- * Daemon-global: no params and no `workspaceId`. The daemon owns the registry
+ * Workspace reads carry optional routing context; direct reads may omit it. The daemon owns the registry
  * (including the env-var / feature-code `visible` verdict); the FE only
  * consumes the rows. Zod schemas validate the request/response shapes at the
  * wire boundary so a divergent payload fails loudly instead of being silently
@@ -13,8 +13,10 @@ import { z } from 'zod';
 
 export const PROVIDERS_CATALOG_METHOD = 'providers.catalog';
 
-/** `providers.catalog` request — `{}`, no parameters (§5.38). */
-export const ProviderCatalogRequestSchema = z.object({}).strict();
+/** `providers.catalog` request — optional workspace routing context (§5.38). */
+export const ProviderCatalogRequestSchema = z
+  .object({ workspaceId: z.string().min(1).optional() })
+  .strict();
 
 /**
  * One registry row (§5.38). Optional fields are omitted when unset, never
@@ -31,6 +33,8 @@ const ProviderCatalogEntrySchema = z
     shortName: z.string(),
     command: z.string(),
     canBeDisabled: z.boolean(),
+    // Daemon-authoritative historical identities. Absence provides no alias mapping.
+    legacyAliases: z.array(z.string().min(1)).optional(),
     loginCommandHint: z.string().optional(),
     loginDocsUrl: z.string().optional(),
     authErrorPatterns: z.array(z.string()).optional(),
@@ -41,6 +45,7 @@ const ProviderCatalogEntrySchema = z
     // optional here so an older daemon's rows (no such RPC) still validate —
     // consumers treat absence as unsupported.
     supportsTestPrompt: z.boolean().optional(),
+    supportsFastMode: z.boolean().optional(),
   })
   .passthrough();
 

@@ -1,3 +1,4 @@
+import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -513,6 +514,7 @@ const RUNNING_STATUSES: ReadonlySet<string> = new Set([
   'Processing',
   'responding',
   'Responding',
+  'resuming',
 ]);
 
 /** Wire statuses that mean the turn/session ended (lowercase IPC + PascalCase enum). */
@@ -524,6 +526,7 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'failed',
   'error',
   'deleted',
+  'halted',
 ]);
 
 // ============================================================================
@@ -806,6 +809,12 @@ function canonicalSessionUpdates(
     updates.processQueueHint = undefined;
   }
 
+  if (fields.status === AgentStatus.Halted) {
+    updates.isActive = false;
+    updates.isStreaming = false;
+    updates.isProcessing = false;
+    updates.isResponding = false;
+  }
   return updates;
 }
 
@@ -872,7 +881,11 @@ function canonicalFieldsFromWorkspaceEvent(event: {
       },
     ];
   }
-  if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+  if (
+    event.type === 'agent:status-changed' ||
+    event.type === 'agent:session-updated' ||
+    event.type === 'agent:updated'
+  ) {
     return [agentId, data];
   }
   if (event.type === 'agent:subscriptions-changed') {
@@ -1012,6 +1025,7 @@ type SessionComparisonSnapshot = Pick<
   | 'acpSessionId'
   | 'createdAt'
   | 'updatedAt'
+  | 'retiredAt'
   | 'lastActivity'
   | 'hasUnread'
   | 'currentTurnNumber'
@@ -1045,6 +1059,7 @@ type SessionComparisonSnapshot = Pick<
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
   detailFieldsKey: string;
+  nodeFieldsKey: string;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -1073,6 +1088,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    retiredAt: session.retiredAt,
     lastActivity: session.lastActivity,
     hasUnread: session.hasUnread,
     currentTurnNumber: session.currentTurnNumber,
@@ -1119,6 +1135,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
           .join(',')
       : undefined,
     detailFieldsKey: detailFieldsComparisonKey(session),
+    nodeFieldsKey: JSON.stringify(agentNodeUpdates(session)),
     messageCount: messages.length,
     wireMessageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
@@ -1156,7 +1173,8 @@ function applySessionUpsert(
   const finalSession = toStoredSession(session);
   const agentId = String(finalSession.id);
   const wsId = String(session.workspaceId);
-  const existing = getSession(state, agentId);
+  const prior = getSession(state, agentId);
+  const existing = prior?.workspaceId === session.workspaceId ? prior : undefined;
 
   // FE-owned fields never ride the wire snapshot: each one's stored value
   // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
@@ -1271,12 +1289,44 @@ function applySessionUpsert(
     }
   }
 
+  // Placement survives wakes. A legacy-shaped or in-flight pre-placement
+  // snapshot must not erase known path provenance and re-enable head actions.
+  if (existing) {
+    const previousNodeFields = agentNodeUpdates(existing);
+    for (const key of [
+      'nodeId',
+      'leaseId',
+      'placement',
+      'effectiveIsolation',
+      'nodeState',
+      'nodePath',
+    ] as const) {
+      if (
+        !Object.prototype.hasOwnProperty.call(session, key) &&
+        previousNodeFields[key] !== undefined
+      ) {
+        Object.assign(finalSession, { [key]: previousNodeFields[key] });
+      }
+    }
+  }
+  finalSession.checkpoint = currentAgentCheckpoint(existing?.checkpoint, finalSession.checkpoint);
+  if (finalSession.status === AgentStatus.Halted) {
+    finalSession.isStreaming = false;
+    finalSession.isProcessing = false;
+    finalSession.isResponding = false;
+    finalSession.isActive = false;
+    finalSession.turnInFlight = false;
+    finalSession.liveTurnOpen = false;
+    finalSession.liveTurnOpenedAt = undefined;
+  }
+
   const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
   if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
     return state;
   }
 
-  let next = setSession(state, agentId, finalSession);
+  const ownedState = prior && !existing ? removeFromWorkspaceIndex(state, agentId) : state;
+  let next = setSession(ownedState, agentId, finalSession);
   next = registerInWorkspaceIndex(next, agentId, wsId);
   return next;
 }
@@ -1749,6 +1799,14 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] })
   return next;
 });
 agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
+  if (['agent:updated', 'agent:status-changed', 'hub:checkpoint'].includes(event.type)) {
+    const agentId = event.data?.agentId;
+    const existing = typeof agentId === 'string' ? getSession(state, agentId) : undefined;
+    if (existing && existing.workspaceId === event.workspaceId) {
+      const fields = agentNodeUpdates(event.data, existing);
+      if (Object.keys(fields).length) state = updateSessionFields(state, agentId, fields);
+    }
+  }
   const userMessage = userMessageFromWorkspaceEvent(event);
   if (userMessage) {
     return addMessageToSession(state, userMessage[0], userMessage[1]);
@@ -1767,7 +1825,8 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (markers) {
     const [agentId, fields] = markers;
     const existing = getSession(state, agentId);
-    if (!existing) return state;
+    if (!existing || (event.workspaceId && existing.workspaceId !== event.workspaceId))
+      return state;
     const metadata = existing.metadata ?? {};
     if (
       Object.entries(fields).every(
@@ -1795,6 +1854,7 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   // already open) must not wipe the current turn's live tool. The first
   // tool-arm ping of the new turn repopulates the field.
   const existing = getSession(state, agentId);
+  if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
   const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
     ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),

@@ -1,3 +1,4 @@
+import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -125,6 +126,7 @@ function* hydrateSlimImage(
       agentId,
       messageId,
       blockId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
   } catch (error) {
     throw new UnreplayableBlockError('image hydration failed', {

@@ -25,10 +25,12 @@
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeDisclosureTransition } from './disclosure-motion';
@@ -89,6 +91,7 @@
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -121,7 +124,7 @@
   }
 
   function openChatFile(path: string, event?: MouseEvent, line?: number) {
-    if (readOnly) return;
+    if (readOnly || !canOpenAgentPath(appStore.state, agentId)) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
@@ -332,6 +335,7 @@
   );
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
+  let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
@@ -1456,6 +1460,11 @@
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
+{:else if effortChangeNotice}
+  <EffortChangeNotice
+    notice={effortChangeNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if autoUnarchivedNotice}
@@ -1902,6 +1911,7 @@
           <MessageActions
             role="assistant"
             {onRegenerate}
+            {onScrollToPrevious}
             {onFork}
             {onVote}
             onCopy={handleCopy}

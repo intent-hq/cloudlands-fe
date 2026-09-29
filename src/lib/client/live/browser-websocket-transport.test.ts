@@ -598,6 +598,20 @@ describe('BrowserWebSocketTransport', () => {
     transport.dispose();
   });
 
+  it('sends workspace origin on browser subscription cleanup', async () => {
+    const { transport, socket } = createHarness();
+    const pending = transport.unsubscribe('sub-a', 'workspace-a');
+    await connect(socket());
+    const frame = socket().lastFrame();
+    expect(frame).toMatchObject({
+      method: 'events.unsubscribe',
+      params: { subscriptionId: 'sub-a', workspaceId: 'workspace-a' },
+    });
+    socket().receive({ jsonrpc: '2.0', id: frame.id, result: { unsubscribed: true } });
+    await pending;
+    transport.dispose();
+  });
+
   it('rejects in-flight requests when the connection drops, then reconnects with backoff', async () => {
     vi.useFakeTimers();
     const { transport, sockets, socket } = createHarness({

@@ -1,4 +1,5 @@
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -138,6 +139,34 @@ function state(
     workspaceAgents: { byWorkspaceId: { [WS]: { agentIds: [] } } },
     agentSessions: { byAgentId: {} },
     model: { providerModels, defaultProviderId: activeProviderId },
+    providerCatalog: {
+      providers: createCollection<{ id: string }, 'id'>('id'),
+      loaded: true,
+      byWorkspaceId: {
+        [WS]: {
+          catalog: { providers: [] },
+          settings: [
+            { path: 'model.defaultProvider', value: activeProviderId },
+            { path: 'model.providerDefaults', value: providerModels },
+            { path: 'specialists.default', value: defaultSpecialistId },
+          ],
+          readiness: { [activeProviderId]: { available: true } },
+          specialists: [
+            ...fileSpecialists,
+            ...SPECIALISTS.filter(
+              (s) =>
+                !fileSpecialists.some((f) => f.id === s.id) &&
+                !GITHUB_DEPENDENT_SPECIALIST_IDS.has(s.id),
+            ).map((s) => ({
+              ...s,
+              source: 'bundled',
+              model: s.defaultModel,
+              behaviorPrompt: s.defaultBehaviorPrompt,
+            })),
+          ],
+        },
+      },
+    },
     providerSettings: {},
     specialists: {
       ...specialistsInitialState,
@@ -941,3 +970,104 @@ describe('agentCreationSaga', () => {
     });
   });
 });
+
+it('workspace routing regression: existing-workspace creation uses that workspace defaults', async () => {
+  mocks.useRealFactory = false;
+  mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+  const scoped = state('', [], 'codex', { codex: 'direct-model' }) as any;
+  scoped.providerCatalog = {
+    loaded: true,
+    providers: createCollection('id', []),
+    byWorkspaceId: {
+      [WS]: {
+        catalog: { providers: [] },
+        settings: [
+          { path: 'model.defaultProvider', value: 'auggie' },
+          { path: 'model.providerDefaults', value: { auggie: 'workspace-model' } },
+        ],
+        readiness: {},
+        specialists: [],
+      },
+    },
+  };
+  const run = start(() => scoped);
+  try {
+    run.channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workspaceId: WS, provider: 'auggie', model: 'workspace-model' }),
+    );
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
+});
+
+it.each([false, true])(
+  'uses divergent workspace catalogs for creation (specialist=%s)',
+  async (useSpecialist) => {
+    mocks.useRealFactory = false;
+    mocks.createAgent.mockReset();
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const scoped = state('', [], 'direct', { direct: 'direct-model' });
+    const snapshot = (id: string) => ({
+      catalog: { providers: [] },
+      settings: [
+        { path: 'model.defaultProvider', value: `provider-${id}` },
+        { path: 'model.providerDefaults', value: { [`provider-${id}`]: `model-${id}` } },
+      ],
+      readiness: {},
+      specialists: [
+        {
+          id: 'same-specialist',
+          name: `Specialist ${id}`,
+          description: '',
+          source: 'project',
+          codingAgent: `provider-${id}`,
+          model: `specialist-model-${id}`,
+          behaviorPrompt: `prompt-${id}`,
+          reasoningEffort: id === 'A' ? 'low' : 'high',
+        },
+      ],
+    });
+    const initial = {
+      ...scoped,
+      workspace: {
+        workspaces: createCollection(
+          'id',
+          ['A', 'B'].map((id) => ({ id, title: id, repositoryPath: `/repo/${id}` })),
+        ),
+      },
+      providerCatalog: {
+        ...scoped.providerCatalog,
+        byWorkspaceId: { A: snapshot('A'), B: snapshot('B') },
+      },
+    };
+    const run = start(() => initial);
+    try {
+      for (const id of ['A', 'B']) {
+        run.channel.put(
+          useSpecialist
+            ? createAgentWithSpecialistRequested(id, 'same-specialist')
+            : createAgentRequested(id),
+        );
+        await settle();
+        expect(mocks.createAgent).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id }),
+          expect.objectContaining({
+            workspaceId: id,
+            provider: `provider-${id}`,
+            model: useSpecialist ? `specialist-model-${id}` : `model-${id}`,
+            ...(useSpecialist
+              ? { behaviorPrompt: `prompt-${id}`, reasoningEffort: id === 'A' ? 'low' : 'high' }
+              : {}),
+          }),
+        );
+      }
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);

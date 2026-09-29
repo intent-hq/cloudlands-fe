@@ -2754,7 +2754,7 @@ describe('panelLayoutReducer', () => {
       expect(result.layoutHistory).toHaveLength(1);
     });
 
-    it('flattens legacy split layouts to the selected fixed count', () => {
+    it('preserves vertical rows when reconciling the selected horizontal column count', () => {
       const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -2781,8 +2781,11 @@ describe('panelLayoutReducer', () => {
       expect(result.root).toMatchObject({
         type: 'split',
         direction: 'horizontal',
-        children: [{ type: 'panel' }, { type: 'panel' }],
+        children: [state.byWorkspaceId[WS].root, { type: 'panel' }],
       });
+      expect(result.panels.p1).toEqual(state.byWorkspaceId[WS].panels.p1);
+      expect(result.panels.p2).toEqual(state.byWorkspaceId[WS].panels.p2);
+      expect(result.columnCount).toBe(2);
     });
   });
 

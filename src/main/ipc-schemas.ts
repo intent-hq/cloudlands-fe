@@ -74,6 +74,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:user-message:sent',
   // Agent session stats (PROTOCOL §5.24)
   'agent:session-stats-changed',
+  // Hub checkpoint events
+  'hub:checkpoint',
   // Git events
   'git:commit',
   'git:push',

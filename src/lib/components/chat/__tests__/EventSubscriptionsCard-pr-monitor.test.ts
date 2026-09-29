@@ -157,13 +157,16 @@ describe('Chief PR-monitor subscription ownership', () => {
     vi.mocked(backendRequest).mockResolvedValue({ monitors: [] });
     await view.rerender({ workspaceId: OTHER_WORKSPACE, agentId: AGENT });
     await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
-    expect(backendUnsubscribe).toHaveBeenCalledWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+    expect(backendUnsubscribe).toHaveBeenCalledWith(
+      `pr-sub-${CHIEF_WORKSPACE_ID}`,
+      CHIEF_WORKSPACE_ID,
+    );
     expect(backendSubscribe).toHaveBeenLastCalledWith({
       eventTypes: ['prMonitor:*'],
       workspaceId: OTHER_WORKSPACE,
     });
     view.unmount();
-    expect(backendUnsubscribe).toHaveBeenCalledWith(`pr-sub-${OTHER_WORKSPACE}`);
+    expect(backendUnsubscribe).toHaveBeenCalledWith(`pr-sub-${OTHER_WORKSPACE}`, OTHER_WORKSPACE);
   });
 
   it('keeps one live subscription while collapsed and shares it across mounted cards', async () => {
@@ -208,7 +211,10 @@ describe('Chief PR-monitor subscription ownership', () => {
     first.unmount();
     expect(backendUnsubscribe).not.toHaveBeenCalled();
     second.unmount();
-    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(
+      `pr-sub-${CHIEF_WORKSPACE_ID}`,
+      CHIEF_WORKSPACE_ID,
+    );
   });
 
   it.each([false, true])(
@@ -229,7 +235,10 @@ describe('Chief PR-monitor subscription ownership', () => {
       expect(backendSubscribe).toHaveBeenCalledTimes(1);
       expect(backendUnsubscribe).not.toHaveBeenCalled();
       await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
-      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(
+        `pr-sub-${CHIEF_WORKSPACE_ID}`,
+        CHIEF_WORKSPACE_ID,
+      );
 
       vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
       await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
@@ -261,7 +270,10 @@ describe('Chief PR-monitor subscription ownership', () => {
 
     appStore.dispatch(closeWorkspaceTab(OTHER_WORKSPACE));
     await waitFor(() =>
-      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${OTHER_WORKSPACE}`),
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(
+        `pr-sub-${OTHER_WORKSPACE}`,
+        OTHER_WORKSPACE,
+      ),
     );
     view.unmount();
     expect(backendUnsubscribe).toHaveBeenCalledTimes(1);
