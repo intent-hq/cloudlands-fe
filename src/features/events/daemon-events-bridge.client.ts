@@ -1521,8 +1521,12 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
   // open modal listing this agent re-checks agent.listInterrupted (debounced;
-  // no-op when the modal is closed or the agent is not listed).
-  notifyInterruptedAgentUpdated(agentId);
+  // no-op when the modal is closed or the agent is not listed). Startup
+  // recovery failures additionally discover retryable rows after reservation release.
+  notifyInterruptedAgentUpdated(
+    agentId,
+    (event.type as string) === 'agent:updated' && data.startupRecoveryFailed === true,
+  );
 }
 
 /**

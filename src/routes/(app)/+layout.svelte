@@ -1139,9 +1139,9 @@
     agents={interruptedAgents}
     onResumeSelected={handleResumeSelectedAgents}
     onAbandonAll={handleAbandonAllAgents}
-    onClose={() => {
+    onClose={(reason) => {
       showInterruptedAgentsModal = false;
-      notifyInterruptedAgentsModalClosed();
+      notifyInterruptedAgentsModalClosed(reason);
     }}
   />
 

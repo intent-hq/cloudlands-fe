@@ -22,7 +22,7 @@
       abandonIds: string[],
     ) => Resolution | Promise<Resolution>;
     onAbandonAll?: (abandonIds: string[]) => Resolution | Promise<Resolution>;
-    onClose?: () => void;
+    onClose?: (reason: 'dismissed' | 'resolved') => void;
   }
   let {
     open = $bindable(false),
@@ -75,10 +75,10 @@
     knownIds = new Set(agents.map((agent) => agent.agentId));
   });
 
-  function close() {
+  function close(reason: 'dismissed' | 'resolved' = 'dismissed') {
     if (busy) return;
     open = false;
-    onClose?.();
+    onClose?.(reason);
   }
 
   async function resolve(abandon: boolean) {
@@ -100,7 +100,7 @@
       }
       if (agents.every((agent) => resolved.includes(agent.agentId))) {
         busy = false;
-        close();
+        close('resolved');
       }
     } catch {
       error = abandon
