@@ -15,6 +15,12 @@ import type { NpxStatus } from '$shared/types/provider-availability';
 // ---------------------------------------------------------------------------
 
 export const initialState: AgentAvailabilityState = {
+  hiddenProviders: undefined,
+  discoveryRevision: 0,
+  discoveryStatus: 'idle',
+  discoveryError: null,
+  refreshModelsPending: false,
+  refreshModelsRevision: 0,
   providerStatusMap: {},
   providerLoadingMap: {},
   providerCheckEpochMap: {},
@@ -57,9 +63,27 @@ export const checkSingleProviderFailure = createAction<[providerId: string, epoc
 );
 
 /** Request a bulk check of all providers. */
-export const checkAllProvidersRequested = createAction(
+export const checkAllProvidersRequested = createAction<[refreshModels?: boolean, silent?: boolean]>(
   'agentAvailability/checkAllProvidersRequested',
 );
+
+export const providerAvailabilityPanelOpened = createAction<[sessionId: string]>(
+  'agentAvailability/panelOpened',
+);
+export const providerAvailabilityPanelClosed = createAction<[sessionId: string]>(
+  'agentAvailability/panelClosed',
+);
+export const providerDiscoveryStarted = createAction('agentAvailability/discoveryStarted');
+export const providerDiscoverySettled = createAction<
+  [
+    revision: number,
+    outcome: { hiddenProviders?: string[]; error: string | null; failed?: boolean },
+  ]
+>('agentAvailability/discoverySettled');
+export const providerModelsRefreshHandled = createAction<[revision: number]>(
+  'agentAvailability/modelsRefreshHandled',
+);
+export const providerAvailabilityStopped = createAction('agentAvailability/stopped');
 
 export const checkAllProvidersComplete = createAction(
   'agentAvailability/checkAllProvidersComplete',
@@ -106,6 +130,50 @@ export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(
 // ---------------------------------------------------------------------------
 
 export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(initialState);
+agentAvailabilityReducer.with(
+  checkAllProvidersRequested,
+  (state, { payload: [refreshModels, silent] }) => ({
+    ...state,
+    refreshModelsPending: state.refreshModelsPending || refreshModels === true,
+    refreshModelsRevision: state.refreshModelsRevision + (refreshModels === true ? 1 : 0),
+    discoveryError: silent ? state.discoveryError : null,
+  }),
+);
+agentAvailabilityReducer.with(providerDiscoveryStarted, (state) => ({
+  ...state,
+  discoveryRevision: state.discoveryRevision + 1,
+  discoveryStatus: 'pending',
+}));
+agentAvailabilityReducer.with(
+  providerDiscoverySettled,
+  (state, { payload: [revision, outcome] }) =>
+    revision !== state.discoveryRevision
+      ? state
+      : {
+          ...state,
+          hiddenProviders:
+            outcome.failed || outcome.error ? state.hiddenProviders : outcome.hiddenProviders,
+          discoveryError: outcome.error,
+          discoveryStatus: outcome.failed || outcome.error ? 'failure' : 'success',
+        },
+);
+agentAvailabilityReducer.with(providerModelsRefreshHandled, (state, { payload: [revision] }) =>
+  state.refreshModelsPending && revision === state.refreshModelsRevision
+    ? { ...state, refreshModelsPending: false }
+    : state,
+);
+agentAvailabilityReducer.with(providerAvailabilityStopped, (state) => ({
+  ...state,
+  discoveryRevision: state.discoveryRevision + 1,
+  discoveryStatus: state.discoveryStatus === 'pending' ? 'idle' : state.discoveryStatus,
+  refreshModelsPending: false,
+  providerLoadingMap: Object.fromEntries(
+    Object.keys(state.providerLoadingMap).map((id) => [id, false]),
+  ),
+  providerCheckEpochMap: Object.fromEntries(
+    Object.entries(state.providerCheckEpochMap).map(([id, epoch]) => [id, epoch + 1]),
+  ),
+}));
 agentAvailabilityReducer.with(antigravitySetupVerified, (state) => ({
   ...state,
   providerStatusMap: {

@@ -10,6 +10,7 @@ import {
   estimateSeekLandingStartOrdinal,
   estimateVirtualSpacerHeight,
   isConversationStartLoaded,
+  indexPreviousUserMessages,
   mapScrollTopToOrdinal,
   OLDER_HISTORY_INDICATOR_QUIET_MS,
   olderHistoryIndicatorAction,
@@ -1365,5 +1366,90 @@ describe('olderHistoryIndicatorAction (chain-scoped loading indicator)', () => {
   it('quiet window hides within the ~500ms budget', () => {
     expect(OLDER_HISTORY_INDICATOR_QUIET_MS).toBeGreaterThan(0);
     expect(OLDER_HISTORY_INDICATOR_QUIET_MS).toBeLessThanOrEqual(500);
+  });
+});
+
+describe('indexPreviousUserMessages', () => {
+  const row = (id: string, role: 'user' | 'assistant', day = '01') =>
+    msg(id, role, `2026-08-${day}T10:00:00Z`);
+
+  it('resolves history-only sources and crosses a contiguous history/live junction', () => {
+    const human = row('human', 'user');
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [human, row('history-reply', 'assistant')],
+        [row('live-reply', 'assistant', '02')],
+        false,
+      ),
+      true,
+    );
+    expect(targets.get('history-reply')).toBe(human);
+    expect(targets.get('live-reply')).toBe(human);
+    expect(targets.get('human')).toBeNull();
+  });
+
+  it.each(['id', 'appMessageId'] as const)(
+    'uses the rendered identity after %s overlap deduplication',
+    (key) => {
+      const oldCopy = { ...row('old-copy', 'user'), appMessageId: 'logical-prompt' };
+      const liveCopy = { ...oldCopy, id: key === 'id' ? oldCopy.id : 'live-copy' };
+      const earlier = row('earlier', 'user');
+      const composed = composeTranscript(
+        [earlier, oldCopy, row('history-reply', 'assistant')],
+        [liveCopy, row('live-reply', 'assistant')],
+        false,
+      );
+      const targets = indexPreviousUserMessages(composed, true);
+      expect(targets.get('history-reply')).toBe(earlier);
+      expect(targets.get('live-reply')).toBe(liveCopy);
+      expect(targets.get(liveCopy.id)).toBe(earlier);
+    },
+  );
+
+  it('stops at a gap but resumes after a human prompt on each loaded side', () => {
+    const historyHuman = row('history-human', 'user');
+    const liveHuman = row('live-human', 'user');
+    const wake = { ...row('wake', 'user'), metadata: { type: 'hook_wake' } };
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [historyHuman, row('history-reply', 'assistant')],
+        [wake, row('orphan-reply', 'assistant'), liveHuman, row('live-reply', 'assistant')],
+        true,
+      ),
+      true,
+    );
+    expect(targets.get('history-reply')).toBe(historyHuman);
+    for (const id of ['wake', 'orphan-reply', 'live-human']) expect(targets.has(id)).toBe(false);
+    expect(targets.get('live-reply')).toBe(liveHuman);
+  });
+
+  it('withholds top fallback with unloaded older history and keeps question answers human-authored', () => {
+    const answers = { ...row('answers', 'user'), metadata: { type: 'question_answers' } };
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [row('orphan', 'assistant'), answers, row('reply', 'assistant')],
+        [],
+        false,
+      ),
+      false,
+    );
+    expect(targets.has('orphan')).toBe(false);
+    expect(targets.has('answers')).toBe(false);
+    expect(targets.has('missing')).toBe(false);
+    expect(targets.get('reply')).toBe(answers);
+  });
+
+  it('does not mistake date boundaries for unloaded gaps', () => {
+    const human = row('human', 'user');
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [],
+        [human, row('reply', 'assistant', '02'), row('later-human', 'user', '03')],
+        false,
+      ),
+      true,
+    );
+    expect(targets.get('reply')).toBe(human);
+    expect(targets.get('later-human')).toBe(human);
   });
 });

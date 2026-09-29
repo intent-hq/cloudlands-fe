@@ -205,6 +205,7 @@ test('two-message forced history remains anchored after 200-message prepend', as
   try {
     const samples = [await snapshot(page, 'before-prepend')];
     expect(samples[0].mounted).toBeGreaterThan(1);
+    const firstPrependFrame = await page.evaluate(() => window.rowScaleProbe.frames.length);
     await host.update({
       props: {
         liveMessages: [...older, ...tail],
@@ -228,6 +229,14 @@ test('two-message forced history remains anchored after 200-message prepend', as
     samples.push(await snapshot(page, 'after-prepend'));
     await info.attach('history-prepend-anchor', {
       body: JSON.stringify({ messages: 200, rows: 5000, anchor, anchors, samples }),
+      contentType: 'application/json',
+    });
+    const controls = await page.evaluate(
+      (start) => window.rowScaleProbe.frames.slice(start),
+      firstPrependFrame,
+    );
+    await info.attach('history-parent-controls', {
+      body: JSON.stringify(controls),
       contentType: 'application/json',
     });
     expect(anchors.every((offset) => offset !== null && Math.abs(offset) <= 2)).toBe(true);
@@ -254,6 +263,9 @@ test('two-message forced history remains anchored after 200-message prepend', as
     expect(destroyed.unmatchedRegistrations).toBe(0);
     expect(destroyed.rowObserved).toBe(0);
     expect(destroyed.windowObserved).toBe(0);
+    expect(controls.reduce((sum, frame) => sum + frame.actionBars, 0)).toBe(198);
+    expect(Math.max(...controls.map((frame) => frame.actionBars))).toBeLessThanOrEqual(4);
+    expect(Math.max(...controls.map((frame) => frame.tooltips))).toBeLessThanOrEqual(24);
   } finally {
     await finish(info, ['before-prepend', 'after-prepend', 'history-search', 'history-destroyed']);
   }

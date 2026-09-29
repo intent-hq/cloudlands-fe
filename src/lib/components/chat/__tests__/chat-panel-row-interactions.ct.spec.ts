@@ -467,14 +467,29 @@ test('streaming growth and completion follow only while the user follows the tai
       const root = node as HTMLElement & { samples?: number[]; beforeResizeDelivery?: number[] };
       root.samples = [];
       root.beforeResizeDelivery = [];
+      const probe = document.createElement('div');
+      probe.setAttribute('aria-hidden', 'true');
+      probe.style.cssText =
+        'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;contain:strict';
+      document.body.append(probe);
+      let pendingFrame = false;
+      // Created after the mounted follower, this observer samples its post-layout
+      // correction. A timer can instead read the next update before its frame.
+      const observer = new ResizeObserver(() => {
+        if (!pendingFrame) return;
+        pendingFrame = false;
+        root.samples!.push(root.scrollHeight - root.clientHeight - root.scrollTop);
+        if (root.samples!.length < 40) requestAnimationFrame(sample);
+        else {
+          observer.disconnect();
+          probe.remove();
+        }
+      });
+      observer.observe(probe);
       const sample = () => {
         root.beforeResizeDelivery!.push(root.scrollHeight - root.clientHeight - root.scrollTop);
-        // SmartScroll corrects viewport resizes in ResizeObserver, after RAF
-        // callbacks but before paint. Read the completed frame in the next task.
-        setTimeout(() => {
-          root.samples!.push(root.scrollHeight - root.clientHeight - root.scrollTop);
-          if (root.samples!.length < 40) requestAnimationFrame(sample);
-        }, 0);
+        pendingFrame = true;
+        probe.style.width = `${1 + (root.beforeResizeDelivery!.length % 2)}px`;
       };
       requestAnimationFrame(sample);
     });

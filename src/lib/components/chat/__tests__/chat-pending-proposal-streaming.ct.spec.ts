@@ -229,7 +229,8 @@ test('scrolls to the pending proposal and restores the chip when returning to li
   await expect(card).toBeInViewport();
   await expect(chip).toHaveCount(0);
 
-  await host.getByRole('button', { name: 'Scroll to bottom', exact: true }).click();
+  await host.locator('[data-panel-content-header]').getByTestId('panel-actions-trigger').click();
+  await page.getByRole('menuitem', { name: 'Scroll to bottom', exact: true }).click();
   await expect
     .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
     .toBeLessThanOrEqual(2);

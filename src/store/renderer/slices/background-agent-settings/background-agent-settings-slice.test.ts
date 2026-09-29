@@ -18,10 +18,104 @@ import {
   restoreProviderSettings,
   initialState,
   DEFAULT_BACKGROUND_MODEL,
+  backgroundSettingsSaveSettled,
+  backgroundSettingsMigrationRequested,
   type BackgroundAgentSettingsState,
 } from './background-agent-settings-slice';
 
 describe('backgroundAgentSettingsReducer', () => {
+  it('treats migration as local intent and restores the daemon snapshot on rejection', () => {
+    const daemon = {
+      defaultModel: 'haiku4.5',
+      typeOverrides: { commit: 'haiku4.5', pr: 'pr-model', review: '', fast: '' },
+      defaultReasoningEffort: 'high',
+      revision: 7,
+    };
+    const hydrated = backgroundAgentSettingsReducer(initialState, hydrateSettings(daemon));
+    const migrated = backgroundAgentSettingsReducer(
+      hydrated,
+      backgroundSettingsMigrationRequested({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: 'pr-model', review: '', fast: '' },
+      }),
+    );
+    expect(migrated).toMatchObject({
+      defaultModel: '',
+      typeOverrides: { commit: '', pr: 'pr-model', review: '', fast: '' },
+      defaultReasoningEffort: 'high',
+      persistencePending: true,
+    });
+    expect(migrated.authoritativeSettings).toBe(hydrated.authoritativeSettings);
+    const rejected = backgroundAgentSettingsReducer(
+      migrated,
+      backgroundSettingsSaveSettled({ generation: 1 }),
+    );
+    expect(rejected).toMatchObject({
+      defaultModel: 'haiku4.5',
+      typeOverrides: daemon.typeOverrides,
+      defaultReasoningEffort: 'high',
+      persistencePending: false,
+      pendingFields: {},
+      authoritativeSettings: hydrated.authoritativeSettings,
+    });
+  });
+
+  it('does not overwrite a pending local selection with an obsolete migration payload', () => {
+    const selected = backgroundAgentSettingsReducer(initialState, setDefaultModel('newest'));
+    const migrated = backgroundAgentSettingsReducer(
+      selected,
+      backgroundSettingsMigrationRequested({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    expect(migrated.defaultModel).toBe('newest');
+    expect(migrated.typeOverrides).toBe(selected.typeOverrides);
+    expect(migrated.authoritativeSettings).toBe(selected.authoritativeSettings);
+    expect(migrated.persistenceGeneration).toBe(2);
+  });
+
+  it('keeps newer picks over stale hydration and old write failures until their acknowledgement', () => {
+    const older = {
+      defaultModel: 'old',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+    };
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultModel('new'));
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeOverride({ type: 'commit', model: 'new-commit' }),
+    );
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('new');
+    expect(state.typeOverrides.commit).toBe('new-commit');
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 0 }));
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('new');
+    expect(state.typeOverrides.commit).toBe('new-commit');
+    state = backgroundAgentSettingsReducer(
+      state,
+      hydrateSettings({
+        defaultModel: 'new',
+        typeOverrides: { ...older.typeOverrides, commit: 'new-commit' },
+      }),
+    );
+    expect(state.persistencePending).toBe(true);
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 2 }));
+    expect(state.pendingFields).toEqual({});
+    expect(state.persistencePending).toBe(false);
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('old');
+  });
+
+  it('allows later hydration after the current write is rejected', () => {
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultModel('failed'));
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 1 }));
+    state = backgroundAgentSettingsReducer(
+      state,
+      hydrateSettings({ defaultModel: 'daemon', typeOverrides: state.typeOverrides }),
+    );
+    expect(state.defaultModel).toBe('daemon');
+  });
   it('should return initial state', () => {
     const state = backgroundAgentSettingsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);

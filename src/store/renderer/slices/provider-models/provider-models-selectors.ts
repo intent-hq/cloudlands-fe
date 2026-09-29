@@ -8,7 +8,8 @@
  * before reading, mirroring how entries are written.
  */
 import { store } from '../../store';
-import type { ProviderModelsCacheEntry } from './provider-models-types';
+import type { ProviderModelsCacheEntry, ProviderModelsRequest } from './provider-models-types';
+import { providerModelsContextKey } from './provider-models-utils';
 
 /**
  * The full cache map keyed by normalized provider id. `{}` before any fetch
@@ -42,4 +43,28 @@ export const selectProviderModelsCacheEntry = store.createSelector(
  */
 export const selectProviderModelsClearEpoch = store.createSelector(
   (state): number => state.providerModels?.clearEpoch ?? 0,
+);
+
+export const selectProviderModelsRequests = store.createSelector(
+  (state, workspaceId?: string): Record<string, ProviderModelsRequest> =>
+    (workspaceId
+      ? state.providerModels?.requestsByWorkspaceId?.[workspaceId]?.map
+      : state.providerModels?.requests?.map) ?? {},
+);
+
+export const selectObservedModelProviders = store.createSelector(
+  (state): Record<string, { providerId: string; workspaceId?: string }> =>
+    Object.fromEntries(
+      Object.values(state.providerModels?.observers?.map ?? {}).flatMap(
+        ({ providerIds, workspaceId }) =>
+          providerIds.map((providerId) => [
+            providerModelsContextKey(providerId, workspaceId),
+            { providerId, workspaceId },
+          ]),
+      ),
+    ),
+);
+
+export const selectObservedModelProviderKeys = store.createSelector((state): string[] =>
+  Object.keys(selectObservedModelProviders.select(state)).sort(),
 );

@@ -31,9 +31,12 @@ jobs:
     name: Release-please
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == 'intent-hq' }}
+    # Source release creation shares the publication/promotion/cleanup lock.
+    # The tag triggers alpha asynchronously; do not wait for it under this lock.
     concurrency:
-      group: release-please-${{ github.ref }}
+      group: cloudlands-release
       cancel-in-progress: false
+      queue: max
     steps:
       - name: Run release-please
         id: release

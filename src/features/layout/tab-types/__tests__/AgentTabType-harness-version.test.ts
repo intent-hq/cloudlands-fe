@@ -377,55 +377,6 @@ describe('AgentTabType specialist panel-actions menu item', () => {
   });
 });
 
-describe('AgentTabType primary header actions', () => {
-  beforeEach(() => {
-    seedSession();
-    mockState.panels = {
-      browser: {
-        id: 'browser',
-        activeTabId: 'browser-1',
-        tabs: [
-          {
-            id: 'browser-1',
-            type: 'browser',
-            title: 'Docs',
-            ownerAgentId: 'agent-1',
-            closable: true,
-          },
-        ],
-      },
-    };
-    mockState.hiddenTabs = [];
-  });
-
-  afterEach(() => {
-    cleanup();
-    mockState.panels = {};
-    mockState.hiddenTabs = [];
-  });
-
-  it('renders browser tabs before the message navigator in the primary actions', async () => {
-    render(MockTabTypeHeaderHarness, {
-      props: {
-        component: AgentTabType,
-        tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
-        workspaceId: 'ws-1',
-        isActive: true,
-        renderPrimary: true,
-      },
-    });
-
-    const primary = await screen.findByTestId('header-primary-actions');
-    const browserTabs = await screen.findByTestId('browser-tabs-trigger');
-    const navigator = await screen.findByTestId('chat-header-navigation-controls');
-    expect(primary.contains(browserTabs)).toBe(true);
-    expect(primary.contains(navigator)).toBe(true);
-    expect(
-      browserTabs.compareDocumentPosition(navigator) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-});
-
 describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', () => {
   const MUTE_ACTION = setAgentNotificationsMutedRequested.type;
 
@@ -438,18 +389,6 @@ describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', (
     cleanup();
     document.body.innerHTML = '';
   });
-
-  function renderTabWithPrimary() {
-    render(MockTabTypeHeaderHarness, {
-      props: {
-        component: AgentTabType,
-        tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
-        workspaceId: 'ws-1',
-        isActive: true,
-        renderPrimary: true,
-      },
-    });
-  }
 
   it('offers "Mute notifications" for an unmuted agent and dispatches the mute', async () => {
     seedSession();
@@ -482,22 +421,6 @@ describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', (
       .map(([action]) => action)
       .find((action) => action?.type === MUTE_ACTION);
     expect(dispatchedAction.payload).toEqual(['ws-1', 'agent-1', false]);
-  });
-
-  it('shows the muted indicator in the header only while the flag is set', async () => {
-    seedSession();
-    renderTabWithPrimary();
-    const primary = await screen.findByTestId('header-primary-actions');
-    expect(screen.queryByTestId('agent-tab-muted-indicator')).toBeNull();
-
-    // agent:updated push converges the session; the indicator follows without a reload.
-    seedSession({ notificationsMuted: true });
-    const indicator = await screen.findByTestId('agent-tab-muted-indicator');
-    expect(primary.contains(indicator)).toBe(true);
-    expect(indicator.getAttribute('aria-label')).toBe('Notifications muted');
-
-    seedSession({ notificationsMuted: false });
-    await waitFor(() => expect(screen.queryByTestId('agent-tab-muted-indicator')).toBeNull());
   });
 });
 

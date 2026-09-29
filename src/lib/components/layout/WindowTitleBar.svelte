@@ -301,7 +301,7 @@
     align-items: center;
     /* border-bottom: 1px solid hsl(var(--border) / 0.5); */
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     padding-top: 2px;
     --titlebar-control-shift: 0px;
     -webkit-app-region: drag;
