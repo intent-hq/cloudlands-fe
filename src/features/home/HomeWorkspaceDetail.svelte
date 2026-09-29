@@ -64,7 +64,7 @@
       variant="ghost"
       size="icon-sm"
       aria-label={m.home_close_preview()}
-      tooltip={m.home_close_preview()}
+      title={m.home_close_preview()}
       onclick={onclose}><Fa icon={faXmark} /></Button
     >
   </header>

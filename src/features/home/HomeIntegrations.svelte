@@ -318,7 +318,7 @@
             variant="ghost"
             size="icon-sm"
             aria-label={m.home_integrations_close()}
-            tooltip={m.home_integrations_close()}
+            title={m.home_integrations_close()}
             onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
           >
         </header>
