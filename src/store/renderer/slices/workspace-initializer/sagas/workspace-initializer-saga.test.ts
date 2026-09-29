@@ -521,6 +521,75 @@ describe('workspaceInitializerSaga', () => {
     }
   });
 
+  it('serializes dismissals behind the startup save and persists the latest queued state', async () => {
+    const repos = [
+      { path: '/app', type: 'local' as const, name: 'app' },
+      { path: '/other', type: 'local' as const, name: 'other' },
+    ];
+    let finishHydration!: (value: unknown) => void;
+    mocks.get.mockReturnValue(new Promise((resolve) => (finishHydration = resolve)));
+    let saved: WorkspaceInitializerHydrationState = {};
+    const finishWrites: Array<() => void> = [];
+    mocks.update.mockImplementation(
+      (updates) =>
+        new Promise((resolve) => {
+          finishWrites.push(() => {
+            saved = JSON.parse(JSON.stringify(updates[0].value));
+            resolve([]);
+          });
+        }),
+    );
+    const channel = stdChannel();
+    let slice = initialState;
+    const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      workspaceInitializerSaga,
+    );
+    try {
+      dispatch(setWorkspaceInitializerRecentRepos(repos));
+      finishHydration({ value: { recentRepos: repos } });
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+
+      dispatch(dismissWorkspaceInitializerRecentRepo(repos[0]));
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      finishWrites[0]();
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(2);
+      expect(mocks.update.mock.calls[1][0][0].value.dismissedRecentRepoKeys).toEqual({
+        'local:/app': true,
+      });
+
+      dispatch(dismissWorkspaceInitializerRecentRepo(repos[1]));
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(2);
+      finishWrites[1]();
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(3);
+      finishWrites[2]();
+      await settle();
+      expect(saved.dismissedRecentRepoKeys).toEqual({ 'local:/app': true, 'local:/other': true });
+      const reloaded = workspaceInitializerReducer(
+        initialState,
+        hydrateWorkspaceInitializer(saved),
+      );
+      const refreshed = workspaceInitializerReducer(
+        reloaded,
+        setWorkspaceInitializerRecentRepos(repos),
+      );
+      expect(refreshed.recentRepos.ids).toEqual([]);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
   it('ignores malformed dismissal settings', async () => {
     mocks.get.mockResolvedValue({
       value: { dismissedRecentRepoKeys: { 'local:/app': true, 'local:/other': false, bad: 'yes' } },

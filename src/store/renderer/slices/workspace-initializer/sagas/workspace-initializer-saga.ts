@@ -350,9 +350,14 @@ export function* workspaceInitializerSaga() {
   yield* fork(watchOnboardingReset);
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
-  gate.settled = true;
-  if (gate.queued && hydrated) yield* call(persistWorkspaceInitializerWorker);
+  // Keep the watcher gated until startup writes finish. Mutations during a save
+  // request another latest-state snapshot, never a concurrent whole-bag update.
+  while (gate.queued && hydrated) {
+    gate.queued = false;
+    yield* call(persistWorkspaceInitializerWorker);
+  }
   gate.queued = false;
+  gate.settled = true;
 
   yield* join(persistenceTask);
 }
