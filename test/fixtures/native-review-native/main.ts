@@ -87,9 +87,65 @@ export function completionLedger() {
   return { rows, faults, pending, invoke, join, changed };
 }
 
+const sidebarReads = new Set([
+  'git.status',
+  'file.read',
+  'file-tracking.getChanges',
+  'file-tracking.loadCommits',
+  'file-tracking.getAgentLocks',
+  'accept-changes.getStatus',
+]);
+const sidebarEvents = new Set([
+  'git:commit',
+  'git:pull',
+  'changes:git-status',
+  'changes:tracked',
+  'changes:agent-locks',
+]);
+export function isSidebarRead(method: string): boolean {
+  return sidebarReads.has(method);
+}
+export function isSidebarEvent(envelope: Record<string, any>): boolean {
+  return envelope.method === 'events.event' && sidebarEvents.has(envelope.params?.event?.type);
+}
+export function assertUiTasks(receipt: any, sidebar: boolean): void {
+  const expected = [
+    'connectionsSaga',
+    'daemonEventsSaga',
+    'principalSaga',
+    'lifecycleReadSaga',
+    'repositoryContextSaga',
+    ...(sidebar ? ['gitReadSaga', 'acceptChangesStatusSaga'] : []),
+  ];
+  if (
+    !receipt.route?.startupSettled ||
+    !receipt.route?.closed ||
+    !receipt.producersClosed ||
+    !Array.isArray(receipt.tasks) ||
+    receipt.tasks.length !== expected.length ||
+    new Set(receipt.tasks.map((task: any) => task.name)).size !== expected.length ||
+    expected.some(
+      (name) =>
+        !receipt.tasks.some(
+          (task: any) => task.name === name && task.iteratorDone === true && task.joined === true,
+        ),
+    ) ||
+    !Array.isArray(receipt.faults) ||
+    receipt.faults.length
+  )
+    throw new Error('Original renderer tasks did not complete');
+}
 /** Native/context payloads stay complete; bootstrap data is explicitly metadata-only. */
-export function observationValue(method: string, value: any): unknown {
-  if (/^(accept-changes\.|workspace\.repositoryContext)/.test(method)) {
+export function observationValue(method: string, value: any, sidebar = false): unknown {
+  if (
+    /^(accept-changes\.|workspace\.repositoryContext)/.test(method) ||
+    (sidebar && (isSidebarRead(method) || method === 'events.event'))
+  ) {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined || Buffer.byteLength(encoded) > 1_048_576)
+      throw new Error('Qualified observation byte bound');
+    if (sidebar && (value?.truncated === true || value?.nextToken))
+      throw new Error('Incomplete qualified read');
     if (/"(?:token|authorization|password|secret)"\s*:/i.test(JSON.stringify(value) ?? ''))
       throw new Error('Unsafe qualified envelope');
     return value;
@@ -254,6 +310,12 @@ async function run() {
   const faults: string[] = [];
   const allocations = new Map<string, { socket: Duplex; host: number; config: object }>();
   const uiMode = process.env.NATIVE_REVIEW_UI === '1';
+  const sidebarMode = process.env.NATIVE_REVIEW_SIDEBAR_UI === '1';
+  if (
+    (process.env.NATIVE_REVIEW_SIDEBAR_UI !== undefined && !sidebarMode) ||
+    (sidebarMode && !uiMode)
+  )
+    throw new Error('Invalid sidebar UI mode');
   const completions = completionLedger();
   const identities = new WeakMap<object, string>();
   const connectionSockets = new WeakMap<object, string>();
@@ -304,9 +366,16 @@ async function run() {
               connectionId: objectId(connection),
               incarnationId: objectId(connection?.incarnation ?? null),
               socketId: originalSocket,
-              params: observationValue(method, params),
+              params: (() => {
+                try {
+                  return observationValue(method, params, sidebarMode);
+                } catch (error) {
+                  completions.faults.push('Unobserved original parameters: ' + String(error));
+                  return { unobserved: true };
+                }
+              })(),
             },
-            (value) => observationValue(method, value),
+            (value) => observationValue(method, value, sidebarMode),
           );
         } finally {
           activeCall = prior;
@@ -317,6 +386,7 @@ async function run() {
     }
   }
   let observedBytes = 0;
+  const wireBoundaries: Array<() => boolean> = [];
   function observe(socket: Duplex, config: BackendConnectionConfig, probe = false) {
     const host = config.transport === 'uds' ? 1 : 0;
     if (
@@ -328,9 +398,14 @@ async function run() {
     }
     const socketId = randomUUID();
     const nativeIds = new Map<string, string>();
+    const subscriptions = new Set<string>();
     const buffers = { request: '', response: '' };
     const decoders = { request: new StringDecoder('utf8'), response: new StringDecoder('utf8') };
     let invalid = false;
+    if (sidebarMode && !probe)
+      wireBoundaries.push(
+        () => !invalid && buffers.request.length === 0 && buffers.response.length === 0,
+      );
     if (!probe) allocations.set(socketId, { socket, host, config });
     function record(direction: 'request' | 'response', chunk: unknown) {
       if (invalid || probe) return;
@@ -369,15 +444,62 @@ async function run() {
             ].includes(envelope.method);
           const additional =
             uiMode && direction === 'request' && typeof envelope.method === 'string';
-          if (request || additional) nativeIds.set(String(envelope.id), envelope.method);
+          if (request || additional) {
+            if (sidebarMode && nativeIds.has(String(envelope.id)))
+              throw new Error('Duplicate original request ID');
+            if (
+              sidebarMode &&
+              isSidebarRead(envelope.method) &&
+              envelope.params?.workspaceId !== ready.hosts[host].workspaceId
+            )
+              throw new Error('Unmatched sidebar read workspace');
+            if (
+              sidebarMode &&
+              envelope.method === 'file.read' &&
+              envelope.params?.path !== 'unstaged.txt'
+            )
+              throw new Error('Unexpected fixture file read');
+            nativeIds.set(String(envelope.id), envelope.method);
+          }
+          if (
+            sidebarMode &&
+            direction === 'response' &&
+            envelope.id != null &&
+            !nativeIds.has(String(envelope.id))
+          )
+            throw new Error('Unmatched original response');
+          if (
+            direction === 'response' &&
+            nativeIds.get(String(envelope.id)) === 'events.subscribe' &&
+            typeof envelope.result?.subscriptionId === 'string'
+          )
+            subscriptions.add(envelope.result.subscriptionId);
+          const sidebarNotice = sidebarMode && direction === 'response' && isSidebarEvent(envelope);
+          if (
+            sidebarNotice &&
+            (!subscriptions.has(envelope.params?.subscriptionId) ||
+              envelope.params?.event?.workspaceId !== ready.hosts[host].workspaceId)
+          )
+            throw new Error('Unmatched sidebar event subscription/workspace');
           const response = direction === 'response' && nativeIds.has(String(envelope.id));
           const notice =
             direction === 'response' &&
             (envelope.method === 'accept-changes.retired' ||
-              (uiMode && envelope.method === 'workspace.repositoryContext.retired'));
+              (uiMode && envelope.method === 'workspace.repositoryContext.retired') ||
+              sidebarNotice);
           if (!request && !additional && !response && !notice) continue;
           const method = envelope.method ?? nativeIds.get(String(envelope.id)) ?? '';
-          const qualified = /^(accept-changes\.|workspace\.repositoryContext)/.test(method);
+          const qualified =
+            /^(accept-changes\.|workspace\.repositoryContext)/.test(method) ||
+            (sidebarMode && (isSidebarRead(method) || sidebarNotice));
+          if (qualified)
+            observationValue(
+              method,
+              direction === 'request' || notice
+                ? envelope.params
+                : (envelope.error ?? envelope.result),
+              sidebarMode,
+            );
           observedBytes += Buffer.byteLength(raw);
           if (records.length >= 1024 || observedBytes > 16_777_216)
             throw new Error('Native observation bound');
@@ -420,6 +542,13 @@ async function run() {
     const emit = socket.emit;
     socket.emit = function (event: string | symbol, ...args: any[]) {
       if (event === 'data') record('response', args[0]);
+      if (
+        sidebarMode &&
+        !probe &&
+        (event === 'end' || event === 'close') &&
+        (buffers.request.length || buffers.response.length)
+      )
+        faults.push('Incomplete original socket frame');
       return Reflect.apply(emit, this, [event, ...args]);
     };
     return socket;
@@ -704,15 +833,7 @@ async function run() {
       for (const [key, window] of windows) {
         if (window.isDestroyed()) throw new Error('Unobserved renderer disposal');
         const receipt = await window.webContents.executeJavaScript('window.nativeUiRoute.close()');
-        if (
-          !receipt.route?.startupSettled ||
-          !receipt.route?.closed ||
-          !receipt.producersClosed ||
-          receipt.tasks.length !== 5 ||
-          receipt.tasks.some((task: any) => !task.iteratorDone || !task.joined) ||
-          receipt.faults.length
-        )
-          throw new Error('Original renderer tasks did not complete');
+        assertUiTasks(receipt, sidebarMode);
         producers.push({ key, sender: window.webContents.id, receipt });
       }
       const joined = await completions.join(
@@ -720,6 +841,8 @@ async function run() {
         () => pending.size === 0 && disposalComplete(completions.rows),
         seal,
       );
+      if (sidebarMode && (faults.length || wireBoundaries.some((complete) => !complete())))
+        throw new Error('Incomplete original wire evidence');
       return { producers, joined };
     },
     async role(role: 'owner' | 'member' | 'guest') {

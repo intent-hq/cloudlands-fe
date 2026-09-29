@@ -24,7 +24,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, posix } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { build, loadConfigFromFile, type Plugin, type UserConfig } from 'vite';
@@ -61,7 +61,56 @@ const uiGroups = [
   ['07 UI Member reuse closure and Guest denial', ['frontend', 'held-stop']],
   ['08 UI uncertain POST and original Check result', ['frontend']],
 ] as const;
+const sidebarGroups = [
+  ['09 UI sidebar staged commit and child creation', ['frontend']],
+  ['10 UI sidebar held child close and original receipts', ['frontend', 'held-stop']],
+  ['11 UI sidebar Member reuse and Guest refusal', ['frontend', 'held-stop']],
+] as const;
+const sidebarGrep =
+  '(09 UI sidebar staged commit and child creation|10 UI sidebar held child close and original receipts|11 UI sidebar Member reuse and Guest refusal)$';
+export function assertSidebarSelection(env: NodeJS.ProcessEnv, argv: string[]): boolean {
+  const sidebar = env.NATIVE_REVIEW_SIDEBAR_UI === '1';
+  if (env.NATIVE_REVIEW_SIDEBAR_UI !== undefined && !sidebar)
+    throw new Error('Invalid sidebar mode');
+  if (!sidebar) return false;
+  if (env.NATIVE_REVIEW_UI !== '1') throw new Error('Sidebar requires UI mode');
+  const values = (name: string) =>
+    argv.flatMap((arg, i) =>
+      arg === name ? [argv[i + 1]] : arg.startsWith(name + '=') ? [arg.slice(name.length + 1)] : [],
+    );
+  if (
+    values('--grep').length !== 1 ||
+    values('--grep')[0] !== sidebarGrep ||
+    argv.some(
+      (arg) =>
+        arg.startsWith('-g') ||
+        arg.startsWith('--repeat-each') ||
+        arg.startsWith('--shard') ||
+        arg.startsWith('--grep-invert') ||
+        arg === '--debug' ||
+        arg === '--ui',
+    ) ||
+    values('--workers').length !== 1 ||
+    values('--workers')[0] !== '1' ||
+    values('--retries').length !== 1 ||
+    values('--retries')[0] !== '0'
+  )
+    throw new Error('Exactly the three sidebar cases, one worker and no retries required');
+  return true;
+}
 const uiMode = process.env.NATIVE_REVIEW_UI === '1';
+const originalSelection =
+  process.env.NATIVE_REVIEW_SIDEBAR_UI !== '1' || process.env.TEST_WORKER_INDEX === undefined
+    ? process.argv.slice(2)
+    : JSON.parse(process.env.NATIVE_REVIEW_SIDEBAR_SELECTION ?? 'null');
+if (!Array.isArray(originalSelection) || !originalSelection.every((arg) => typeof arg === 'string'))
+  throw new Error('Original CLI selection missing');
+const sidebarMode = assertSidebarSelection(process.env, originalSelection);
+if (sidebarMode && process.env.TEST_WORKER_INDEX === undefined) {
+  if (process.env.NATIVE_REVIEW_SIDEBAR_SELECTION)
+    throw new Error('Inherited CLI must originate in this runner');
+  process.env.NATIVE_REVIEW_SIDEBAR_SELECTION = JSON.stringify(originalSelection);
+}
 let bundle: string;
 const python = '/usr/bin/python3';
 const hash = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -115,6 +164,10 @@ const uiRenderer = `
     selectWorkspaceHostOperationContext,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
+  import { gitReadSaga } from '$store/renderer/slices/git/sagas/git-read-saga';
+  import { acceptChangesStatusSaga } from '$store/renderer/slices/git/sagas/accept-changes-status-saga';
+  import { selectFileTrackingChanges, selectPendingAutoAction } from '$store/renderer/slices/changes/changes-selectors';
+  import { appClient } from '$lib/client';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 
@@ -123,9 +176,24 @@ import '${join(root, 'src/app.css')}';
 export function start() {
 const target = document.getElementById('ui');
 if (!target) throw new Error('Original UI mount target missing');
-const component = mount(App, {target});
-let closing: Promise<unknown> | null = null;
+const sidebarMode = ${JSON.stringify(sidebarMode)};
   const faults: string[] = [];
+  const queueObservations: unknown[] = [];
+  let observing = true;
+  if (sidebarMode) store.addMiddleware(() => next => function (action) {
+    if (!observing || typeof action !== 'object' || action === null || !('type' in action) || typeof action.type !== 'string' || !['changes/setPendingAutoAction','repositoryContext/nativeReviewEditRequested','repositoryContext/nativeReviewCompanionRequested','repositoryContext/nativeReviewConfirmRequested','repositoryContext/nativeReviewEditEnded'].includes(action.type)) return next(action);
+    let input: unknown;
+    try { input = JSON.parse(JSON.stringify(action)); } catch (error) { faults.push('Unobserved queue input: ' + String(error)); }
+    const result = next(action);
+    try {
+      const row = {input, attempts: attemptProjection(), queue: workspaceProjection()};
+      if (queueObservations.length >= 128 || JSON.stringify([...queueObservations, row]).length > 1_048_576) throw new Error('Queue observation bound');
+      queueObservations.push(row);
+    } catch (error) { faults.push('Unobserved queue result: ' + String(error)); }
+    return result;
+  });
+const component = mount(App, {target, props:{sidebar:sidebarMode}});
+let closing: Promise<unknown> | null = null;
   const tasks: Array<{
     name: string;
     task: Task;
@@ -142,6 +210,7 @@ let closing: Promise<unknown> | null = null;
       principalSaga,
       lifecycleReadSaga,
       repositoryContextSaga,
+      ...(sidebarMode ? [gitReadSaga, acceptChangesStatusSaga] : []),
     ]) {
       let finish!: () => void;
       const row = {
@@ -206,6 +275,15 @@ let closing: Promise<unknown> | null = null;
       throw error;
     },
   );
+  function attemptProjection() {
+    return (store.state.repositoryContext.nativeReviewAttempts ? getItems(store.state.repositoryContext.nativeReviewAttempts) : []).map(row => ({
+      owner: row.owner, publicView: selectNativeReviewForOwner.select(store.state, row.owner),
+      ...(sidebarMode ? {attemptId:row.attemptId,status:row.status,closed:row.status === 'closed',retained:row.observation,preview:row.preview} : {}),
+    }));
+  }
+  function workspaceProjection() {
+    return selectWorkspaceItems.select(store.state).map(row => ({id:row.id,baseRef:row.baseRef,changes:selectFileTrackingChanges.select(store.state,String(row.id)),queue:selectPendingAutoAction.select(store.state,String(row.id))}));
+  }
   function snapshot() {
     const state = store.state;
     return {
@@ -221,13 +299,8 @@ let closing: Promise<unknown> | null = null;
         id: row.id,
         hostContext: selectWorkspaceHostOperationContext.select(state, row.id),
       })),
-      attempts: (state.repositoryContext.nativeReviewAttempts
-        ? getItems(state.repositoryContext.nativeReviewAttempts)
-        : []
-      ).map((row) => ({
-        owner: row.owner,
-        publicView: selectNativeReviewForOwner.select(state, row.owner),
-      })),
+      attempts: JSON.parse(JSON.stringify(attemptProjection())),
+      ...(sidebarMode ? {sidebar:JSON.parse(JSON.stringify(workspaceProjection())),queueObservations:JSON.parse(JSON.stringify(queueObservations))} : {}),
     };
   }
   async function close() {
@@ -247,6 +320,7 @@ let closing: Promise<unknown> | null = null;
         }),
       );
       const final = snapshot();
+      observing = false;
       stopRoot();
       await unmount(component);
       return {
@@ -259,7 +333,12 @@ let closing: Promise<unknown> | null = null;
     return closing;
   }
 
-const lifetime = {snapshot,close,async dismiss(){await component.dismiss();return snapshot();}};
+const lifetime = {snapshot,close,async dismiss(){await component.dismiss();return snapshot();},
+  async unstaged() {
+    if (!sidebarMode || !selectPrincipalAdmissionContext.select(store.state) || selectWorkspaceItems.select(store.state).length !== 1) throw new Error('Original admitted sidebar workspace required');
+    return appClient.files.read(String(selectWorkspaceItems.select(store.state)[0].id), 'unstaged.txt');
+  }
+};
 Object.assign(window,{native:{ui:true},nativeUi:lifetime});
 return lifetime;
 }
@@ -367,6 +446,13 @@ const modules = (label: string): Plugin => ({
       }),
     );
     record(evidence!, `${label}-inputs`, inputs);
+    for (const input of inputs) {
+      if (!input.sha256) continue;
+      const bytes = 'source' in input ? Buffer.from(input.source!) : await readFile(input.id);
+      if (hash(bytes) !== input.sha256) throw new Error('Original build input changed');
+      await mkdir(join(evidence!, 'source-inputs'), { recursive: true });
+      await writeFile(join(evidence!, 'source-inputs', input.sha256), bytes);
+    }
     if (uiMode && label === 'renderer') {
       const required = [
         'test/fixtures/native-review-native/ui-renderer.svelte',
@@ -502,6 +588,30 @@ const modules = (label: string): Plugin => ({
       });
     }
   },
+  async writeBundle(options, output) {
+    const base = options.dir;
+    if (!base) throw new Error('Original output directory required');
+    const closure = [];
+    for (const [name, emitted] of Object.entries(output)) {
+      if (name.split('/').includes('..') || name.startsWith('/'))
+        throw new Error('Non-local emitted output');
+      const bytes = await readFile(join(base, name));
+      const imports =
+        emitted.type === 'chunk' ? [...emitted.imports, ...emitted.dynamicImports] : [];
+      for (const dependency of imports) {
+        if (
+          dependency.startsWith('.') &&
+          !output[posix.normalize(posix.join(posix.dirname(name), dependency))]
+        )
+          throw new Error('Missing emitted local import: ' + dependency);
+      }
+      const artifact = join(evidence!, 'emitted', label, name);
+      await mkdir(dirname(artifact), { recursive: true });
+      await writeFile(artifact, bytes);
+      closure.push({ name, type: emitted.type, sha256: hash(bytes), bytes: bytes.length, imports });
+    }
+    record(evidence!, label + '-output-closure', closure);
+  },
 });
 
 /** Source literals for a real, isolated Kit route; no application routes or mock $app modules. */
@@ -559,9 +669,19 @@ const provenance = {name:'actual-kit-fixture-inputs',generateBundle(options,outp
   const side = options.dir.endsWith('/client') ? 'client' : 'server';
   const entries = Object.values(output).filter(item=>item.type==='chunk').flatMap(chunk=>Object.entries(chunk.modules).map(([id,value])=>{
     let sourceSha256=null;try{sourceSha256=hash(fs.readFileSync(id));}catch{}
+    if(sourceSha256){fs.mkdirSync(path.join(${JSON.stringify(evidence)},'source-inputs'),{recursive:true});fs.copyFileSync(id,path.join(${JSON.stringify(evidence)},'source-inputs',sourceSha256));}
     const info=this.getModuleInfo(id);return {id,sourceSha256,importedIds:info.importedIds,importers:info.importers,renderedExports:value.renderedExports,renderedLength:value.renderedLength,renderedSha256:value.code ? hash(value.code) : null,chunk:chunk.fileName,chunkSha256:hash(chunk.code)};
   }));
   fs.writeFileSync(path.join(${JSON.stringify(evidence)},'kit-'+side+'-inputs.json'),JSON.stringify(entries,null,2)+'\\n');
+},writeBundle(options,output){
+  const side=options.dir.endsWith('/client')?'client':'server';const closure=[];
+  for(const [name,item] of Object.entries(output)){
+    if(name.split('/').includes('..')||name.startsWith('/'))throw Error('Non-local Kit output');
+    const bytes=fs.readFileSync(path.join(options.dir,name));const imports=item.type==='chunk'?[...item.imports,...item.dynamicImports]:[];
+    for(const dependency of imports)if(dependency.startsWith('.')&&!output[path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency))])throw Error('Missing Kit local output '+dependency);
+    const target=path.join(${JSON.stringify(evidence)},'kit-emitted',side,name);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,bytes);closure.push({name,type:item.type,sha256:hash(bytes),bytes:bytes.length,imports});
+  }
+  fs.writeFileSync(path.join(${JSON.stringify(evidence)},'kit-'+side+'-output-closure.json'),JSON.stringify(closure,null,2)+'\\n');
 }};
 export default {
   root:${JSON.stringify(scaffold)},
@@ -620,6 +740,36 @@ export default {
     waitedOriginalChild: true,
   });
   if (terminal.code !== 0 || terminal.signal) throw new Error('Original Kit build child failed');
+  // Post-build files may differ from generateBundle graph-stage digests.
+  for (const side of ['client', 'server']) {
+    const folder = join(scaffold, '.kit/output', side);
+    const final: Array<{ name: string; sha256: string; bytes: number }> = [];
+    async function retain(directory: string, relative = '') {
+      for (const name of await readdir(directory)) {
+        const original = join(directory, name),
+          local = join(relative, name);
+        const stat = await lstat(original);
+        if (stat.isDirectory()) await retain(original, local);
+        else {
+          if (!stat.isFile() || stat.isSymbolicLink())
+            throw new Error('Non-regular final Kit output');
+          const bytes = await readFile(original),
+            copy = join(evidence!, 'kit-final', side, local);
+          await mkdir(dirname(copy), { recursive: true });
+          await writeFile(copy, bytes);
+          final.push({ name: local, sha256: hash(bytes), bytes: bytes.length });
+        }
+      }
+    }
+    await retain(folder);
+    const emitted = JSON.parse(
+      await readFile(join(evidence!, 'kit-' + side + '-output-closure.json'), 'utf8'),
+    ) as Array<{ name: string }>;
+    if (emitted.some((item) => !final.some((file) => file.name === item.name)))
+      throw new Error('Final Kit closure lost an emitted file');
+    record(evidence!, 'kit-' + side + '-final-closure', final);
+  }
+
   const compiled: Array<{
     id: string;
     renderedLength: number;
@@ -632,6 +782,19 @@ export default {
   const required = [
     join(root, 'test/fixtures/native-review-native/ui-renderer.svelte'),
     ...[
+      ...(sidebarMode
+        ? [
+            'lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+            'lib/components/workspace/sidebar/PRSection.svelte',
+            'features/accept-changes/background-git-actions.service.ts',
+            'store/renderer/slices/git/sagas/git-read-saga.ts',
+            'store/renderer/slices/git/sagas/accept-changes-status-saga.ts',
+            'lib/client/live/live-git-client.ts',
+            'lib/client/live/live-files-client.ts',
+            'features/accept-changes/accept-changes.client.ts',
+            'features/file-tracking/file-tracking.client.ts',
+          ]
+        : []),
       'lib/components/workspace/PullRequestCreator.svelte',
       'features/accept-changes/components/NativeReviewAttempt.svelte',
       'lib/components/patterns/confirm/ConfirmHost.svelte',
@@ -715,6 +878,34 @@ export default {
       join(root, 'src/lib/client/live/live-workspaces-client.ts'),
     ],
   ];
+  if (sidebarMode)
+    bridgeRelations.push(
+      ...[
+        [
+          'test/fixtures/native-review-native/ui-renderer.svelte',
+          'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+        ],
+        [
+          'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+          'src/lib/components/workspace/sidebar/PRSection.svelte',
+        ],
+        [
+          'src/lib/components/workspace/sidebar/PRSection.svelte',
+          'src/features/accept-changes/background-git-actions.service.ts',
+        ],
+        ['src/store/renderer/slices/git/sagas/git-read-saga.ts', 'src/lib/client/index.ts'],
+        [
+          'src/store/renderer/slices/git/sagas/accept-changes-status-saga.ts',
+          'src/features/accept-changes/accept-changes.client.ts',
+        ],
+        ['src/lib/client/live/live-app-client.ts', 'src/lib/client/live/live-git-client.ts'],
+        ['src/lib/client/live/live-app-client.ts', 'src/lib/client/live/live-files-client.ts'],
+        [
+          'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+          'src/features/file-tracking/file-tracking.client.ts',
+        ],
+      ].map((edge) => edge.map((name) => join(root, name))),
+    );
   for (const [caller, dependency] of bridgeRelations) {
     const from = proof.find((item) => item.id === caller);
     const to = proof.find((item) => item.id === dependency);
@@ -777,6 +968,27 @@ export default {
 
 test.beforeAll(async () => {
   await mkdir(evidence!, { recursive: true, mode: 0o700 });
+  if (sidebarMode) {
+    const info = test.info();
+    if (
+      !sidebarGroups.some(([title]) => title === info.title) ||
+      info.config.workers !== 1 ||
+      info.project.retries !== 0 ||
+      info.project.repeatEach !== 1 ||
+      info.retry !== 0
+    )
+      throw new Error('Actual sidebar title/worker/retry differs from the original CLI selection');
+    record(evidence!, 'actual-runner-selection', {
+      argv: originalSelection,
+      cliGrep: sidebarGrep,
+      configuredGrep: String(info.config.grep),
+      title: info.title,
+      workers: info.config.workers,
+      retries: info.project.retries,
+      retry: info.retry,
+      worker: info.workerIndex,
+    });
+  }
   const artifact = await lstat(executable!);
   expect({
     regular: artifact.isFile(),
@@ -794,7 +1006,7 @@ test.beforeAll(async () => {
       resolved: await realpath(python),
       sha256: hash(await readFile(python)),
     },
-    groups: uiMode ? uiGroups : groups,
+    groups: sidebarMode ? sidebarGroups : uiMode ? uiGroups : groups,
     workers: 1,
     retries: 0,
     driverLifetimeSeconds: 150,
@@ -942,6 +1154,16 @@ test.beforeAll(async () => {
       'asset-manifest.json',
       'kit-assets',
       'kit-generated',
+      'emitted',
+      'source-inputs',
+      'main.mjs-output-closure.json',
+      'preload.cjs-output-closure.json',
+      'kit-emitted',
+      'kit-client-output-closure.json',
+      'kit-server-output-closure.json',
+      'kit-final',
+      'kit-client-final-closure.json',
+      'kit-server-final-closure.json',
     ])
       await cp(join(evidence!, name), join(epoch, name), {
         recursive: true,
@@ -1235,6 +1457,8 @@ async function withDriver(
     packet(name: string, value?: unknown): Promise<any>;
   }) => Promise<void>,
 ) {
+  if (sidebarMode !== index >= 8 || (index >= 5 && !uiMode) || index < 0 || index > 10)
+    throw new Error('Case does not match the selected fixture mode');
   const dir = await mkdtemp(join(tmpdir(), `nrv-${index + 1}-`));
   await chmod(dir, 0o700);
   record(evidence!, `group-${index + 1}-location`, { dir });
@@ -1247,7 +1471,12 @@ async function withDriver(
     runId,
     ...identity,
     lifetimeSeconds: 150,
-    scenarios: index < 5 ? groups[index][1] : uiGroups[index - 5][1],
+    scenarios:
+      index < 5
+        ? groups[index][1]
+        : index < 8
+          ? uiGroups[index - 5][1]
+          : sidebarGroups[index - 8][1],
   });
   const descriptorHash = hash(await readFile(join(dir, 'descriptor.json')));
   const child = spawn(
@@ -1344,7 +1573,11 @@ async function withDriver(
       env: {
         ...environment(home),
         ...(uiMode
-          ? { NATIVE_REVIEW_UI: '1', NATIVE_REVIEW_UI_ROLE: index === 6 ? 'member' : 'owner' }
+          ? {
+              NATIVE_REVIEW_UI: '1',
+              NATIVE_REVIEW_UI_ROLE: index === 6 || index === 10 ? 'member' : 'owner',
+              ...(sidebarMode ? { NATIVE_REVIEW_SIDEBAR_UI: '1' } : {}),
+            }
           : {}),
         DISPLAY: process.env.DISPLAY!,
         XDG_RUNTIME_DIR: join(dir, 'runtime'),
@@ -1933,3 +2166,365 @@ test(uiGroups[2][0], async () =>
     await a.screenshot({ path: join(evidence!, 'ui-uncertain-check.png') });
   }),
 );
+
+async function sidebarReady(page: Page, role: 'owner' | 'member' | 'guest') {
+  if (!sidebarMode) throw new Error('Sidebar case requires its actual renderer');
+  await expect.poll(async () => (await uiSnapshot(page)).role).toBe(role);
+  await expect.poll(async () => (await uiSnapshot(page)).admission).toBeTruthy();
+  await expect
+    .poll(async () => {
+      const state = await uiSnapshot(page);
+      return state.workspaceAdmission === state.admission && state.workspaces.length === 1;
+    })
+    .toBe(true);
+  await expect.poll(async () => (await uiSnapshot(page)).subscriptionGeneration).toBeTruthy();
+  if (role !== 'guest') {
+    await expect
+      .poll(async () =>
+        (await uiSnapshot(page)).sidebar[0].changes.some(
+          (row: any) => row.stage === 'staged' && row.file.endsWith('staged.txt'),
+        ),
+      )
+      .toBe(true);
+    await expect(page.getByTestId('pr-create-button')).toBeVisible();
+  }
+  expect((await uiSnapshot(page)).faults).toEqual([]);
+}
+const sidebarRegion = (page: Page) =>
+  page.getByRole('region', { name: 'Create a merge request', exact: true });
+const sidebarUnstaged = (page: Page) => page.evaluate(() => (window as any).nativeUi.unstaged());
+async function sidebarDrafts(page: Page, title: string) {
+  await page.getByTestId('pr-create-button').click();
+  const branch = page.getByRole('textbox', { name: 'Target branch', exact: true });
+  await expect(branch).toHaveValue('trunk');
+  await page
+    .getByRole('textbox', { name: 'Commit Message', exact: true })
+    .fill('Original staged sidebar commit');
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title);
+  await page
+    .getByRole('textbox', { name: 'Description', exact: true })
+    .fill('Original separately confirmed sidebar review');
+}
+async function sidebarCommitDialog(page: Page) {
+  await sidebarRegion(page).getByRole('button', { name: 'Commit', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Commit', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Original staged sidebar commit');
+  const state = await uiSnapshot(page);
+  const parent = state.attempts.at(-1);
+  expect(parent.publicView.status).toBe('ready');
+  expect(parent.publicView.preview.filesCount).toBe(1);
+  expect(parent.publicView.preview.files).toEqual([
+    expect.objectContaining({ path: 'staged.txt', staged: true }),
+  ]);
+  for (const value of [
+    parent.publicView.preview.reviewPreparation.target.repository.projectPath,
+    parent.publicView.preview.reviewPreparation.target.repository.instanceBaseUrl,
+    'trunk',
+  ])
+    await expect(dialog).toContainText(value);
+  const queued = state.queueObservations.find(
+    (row: any) =>
+      row.input?.type === 'changes/setPendingAutoAction' &&
+      row.input.payload[1]?.action === 'native-review',
+  );
+  expect(queued.input.payload[1].intent.owner).toEqual(parent.owner);
+  expect(queued.input.payload[1].intent.targetBranch).toBe('trunk');
+  return { dialog, parent };
+}
+async function sidebarParent(page: Page, dialog: Awaited<ReturnType<typeof sidebarCommitDialog>>) {
+  await dialog.dialog.getByRole('button', { name: 'Commit', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await uiSnapshot(page)).attempts.find(
+          (row: any) => row.attemptId === dialog.parent.attemptId,
+        )?.retained?.execute?.state,
+    )
+    .toBe('settled');
+  const row = (await uiSnapshot(page)).attempts.find(
+    (row: any) => row.attemptId === dialog.parent.attemptId,
+  );
+  expect(row.retained.execute.success).toBe(true);
+  expect(row.retained.execute.reviewExecution.outcome.status).toBe('not-attempted');
+  expect(row.retained.execute.reviewExecution.gitReceipts).toEqual([
+    expect.objectContaining({ stage: 'commit', commitHash: expect.any(String) }),
+  ]);
+  await expect(
+    page.getByText(
+      'Completed commit: ' + row.retained.execute.reviewExecution.gitReceipts[0].commitHash,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  return row;
+}
+async function sidebarChild(page: Page, parent: any, title: string) {
+  await page.getByRole('button', { name: 'Prepare merge request', exact: true }).click();
+  await expect
+    .poll(async () => (await uiSnapshot(page)).attempts.at(-1)?.publicView?.status)
+    .toBe('ready');
+  const state = await uiSnapshot(page),
+    child = state.attempts.at(-1);
+  expect(child.owner.attemptId).not.toBe(parent.owner.attemptId);
+  expect(child.owner.root).toEqual(parent.owner.root);
+  expect(child.owner.admission).toBe(parent.owner.admission);
+  expect(child.owner.hostContext).toBe(parent.owner.hostContext);
+  const continuation = state.queueObservations.find(
+    (row: any) => row.input?.type === 'repositoryContext/nativeReviewCompanionRequested',
+  );
+  expect(continuation.input.payload).toEqual([parent.owner, child.owner]);
+  const dialog = await uiConfirmation(page, child.publicView.preview, title);
+  return { child, dialog };
+}
+function stagedCommitOnly(before: any, after: any, parent: any) {
+  const receipt = parent.retained.execute.reviewExecution.gitReceipts[0];
+  expect(after.hosts[0].primaryHead).toBe(receipt.commitHash);
+  expect(after.hosts[0].primaryHead).not.toBe(before.hosts[0].primaryHead);
+  expect(
+    after.hosts[0].status.split('\n').some((line: string) => line.slice(3) === 'staged.txt'),
+  ).toBe(false);
+  expect(after.hosts[0].status).toContain('?? unstaged.txt');
+  for (const key of ['registeredHead', 'remoteHead'])
+    expect(after.hosts[0][key]).toEqual(before.hosts[0][key]);
+  expect(after.hosts[0].effects.pushes).toBe(0);
+  expect(after.hosts[1]).toEqual(before.hosts[1]);
+}
+function sidebarOriginals(packet: any, parent: any, child?: any) {
+  const prepares = nativeRequests(packet, 'prepare').map((row: WireRecord) => row.envelope.params);
+  expect(prepares).toHaveLength(child ? 2 : 1);
+  expect(prepares[0]).toMatchObject({
+    workspaceId: parent.owner.root.workspaceId,
+    action: 'commit',
+    review: {
+      root: parent.owner.root,
+      choice: { kind: 'saved' },
+      targetBranch: 'trunk',
+      companion: { kind: 'create-pr' },
+    },
+  });
+  for (const key of ['files', 'options']) expect(Object.hasOwn(prepares[0], key)).toBe(false);
+  expect(Object.hasOwn(prepares[0].review, 'pushRemote')).toBe(false);
+  if (child) {
+    expect(prepares[1].action).toBe('create-pr');
+    expect(prepares[1].review.root).toEqual(parent.owner.root);
+    expect(prepares[1].review.choice).toEqual({
+      kind: 'afterCommit',
+      operationId: parent.preview.reviewPreparation.operationId,
+      captureId: expect.any(String),
+    });
+  }
+}
+async function sidebarChildOutcome(page: Page, child: any, status: 'created' | 'reused') {
+  await expect
+    .poll(
+      async () =>
+        (await uiSnapshot(page)).attempts.find((row: any) => row.attemptId === child.attemptId)
+          ?.retained?.execute?.reviewExecution?.outcome.status,
+    )
+    .toBe(status);
+  const row = (await uiSnapshot(page)).attempts.find(
+    (row: any) => row.attemptId === child.attemptId,
+  );
+  const execution = settled(row.retained, status);
+  expect(execution.gitReceipts).toEqual([]);
+  if (execution.outcome.status !== 'created' && execution.outcome.status !== 'reused')
+    throw new Error('Original review outcome missing');
+  const review = execution.outcome.review;
+  await expect(page.getByRole('link', { name: review.title, exact: true })).toHaveAttribute(
+    'href',
+    review.url,
+  );
+  expect(execution.publication.state).toBe('local-ahead');
+  expect(execution.publication.localHeadSha).toBe(child.preview.reviewPreparation.localHeadSha);
+  return row;
+}
+
+if (sidebarMode) {
+  test(sidebarGroups[0][0], async () =>
+    withDriver(8, async ({ a, b, ready, packet }) => {
+      await sidebarReady(a, 'owner');
+      await sidebarReady(b, 'owner');
+      const unstaged = await sidebarUnstaged(a);
+      expect(unstaged?.localContent).toBe('owned unstaged change\n');
+      expect(unstaged.truncated).toBe(false);
+      const baseline = await packet('sidebar-owner-before', {
+        renderer: await uiSnapshot(a),
+        unstaged,
+      });
+      const title = 'Explicit sidebar created review';
+      await sidebarDrafts(a, title);
+      const first = await sidebarCommitDialog(a);
+      const prepared = await packet('sidebar-owner-first-confirmation', await uiSnapshot(a));
+      sidebarOriginals(prepared, first.parent);
+      expect(nativeRequests(prepared, 'execute')).toEqual([]);
+      noGitChanges(baseline, prepared);
+      await first.dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      const cancelled = await packet('sidebar-owner-cancelled', await uiSnapshot(a));
+      expect(nativeRequests(cancelled, 'execute')).toEqual([]);
+      for (const host of [0, 1])
+        expect(cancelled.hosts[host].effects).toEqual(baseline.hosts[host].effects);
+      noGitChanges(baseline, cancelled);
+      const again = await sidebarCommitDialog(a);
+      expect(again.parent.owner).toEqual(first.parent.owner);
+      const parent = await sidebarParent(a, again);
+      const committed = await packet('sidebar-owner-committed', {
+        parent,
+        renderer: await uiSnapshot(a),
+      });
+      stagedCommitOnly(baseline, committed, parent);
+      await a.locator('[data-changes-refresh]').click();
+      await expect
+        .poll(async () =>
+          (await uiSnapshot(a)).sidebar[0].changes.some((row: any) => row.stage === 'staged'),
+        )
+        .toBe(false);
+      const { child, dialog } = await sidebarChild(a, parent, title);
+      const second = await packet('sidebar-owner-second-confirmation', {
+        parent,
+        child,
+        renderer: await uiSnapshot(a),
+      });
+      sidebarOriginals(second, parent, child);
+      expect(nativeRequests(second, 'execute')).toHaveLength(1);
+      noGitChanges(committed, second);
+      await a.screenshot({ path: join(evidence!, 'sidebar-owner-second-confirmation.png') });
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      const result = await sidebarChildOutcome(a, child, 'created');
+      const after = await packet('sidebar-owner-created', {
+        parent,
+        result,
+        renderer: await uiSnapshot(a),
+        unstaged: await sidebarUnstaged(a),
+      });
+      expect(after.value.unstaged.localContent).toBe(unstaged.localContent);
+      expect(after.value.unstaged.truncated).toBe(false);
+      expect(nativeRequests(after, 'execute')).toHaveLength(2);
+      expect(after.hosts[0].effects.posts).toBe(1);
+      noGitChanges(committed, after);
+      expect(after.hosts[0].remoteHead).toBe(baseline.hosts[0].remoteHead);
+      expect(
+        (await uiSnapshot(a)).attempts.find((row: any) => row.attemptId === parent.attemptId)
+          .retained.execute,
+      ).toEqual(parent.retained.execute);
+      expect(parent.owner.root).toEqual({
+        kind: 'primary',
+        workspaceId: ready.hosts[0].workspaceId,
+      });
+      await a.screenshot({ path: join(evidence!, 'sidebar-owner-created.png') });
+    }),
+  );
+
+  test(sidebarGroups[1][0], async () =>
+    withDriver(9, async ({ app, a, b, ready, packet }) => {
+      await sidebarReady(a, 'owner');
+      await sidebarReady(b, 'owner');
+      const unstaged = await sidebarUnstaged(a);
+      expect(unstaged?.localContent).toBe('owned unstaged change\n');
+      const baseline = await packet('sidebar-held-before');
+      const title = 'Original held sidebar child';
+      await sidebarDrafts(a, title);
+      const parent = await sidebarParent(a, await sidebarCommitDialog(a));
+      const committed = await packet('sidebar-held-parent', parent);
+      stagedCommitOnly(baseline, committed, parent);
+      const { child, dialog } = await sidebarChild(a, parent, title);
+      const barrier = await arm(ready, child.preview.reviewPreparation.operationId, 'GET');
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      await packet('sidebar-child-admitted', await entered(ready, barrier.id));
+      await a.screenshot({ path: join(evidence!, 'sidebar-child-held.png') });
+      const closed = await a.evaluate(() => (window as any).nativeUi.dismiss());
+      expect(closed.attempts.every((row: any) => row.publicView === null)).toBe(true);
+      await control(ready, { command: 'releaseBarrier', host: 0, barrierId: barrier.id });
+      await main(app, (f) => f.join());
+      await expect
+        .poll(
+          async () =>
+            (await uiSnapshot(a)).attempts.find((row: any) => row.attemptId === child.attemptId)
+              ?.retained?.execute?.state,
+        )
+        .toBe('settled');
+      const final = await packet('sidebar-child-original-after-close', {
+        renderer: await uiSnapshot(a),
+        unstaged: await sidebarUnstaged(a),
+      });
+      sidebarOriginals(final, parent, child);
+      const rows = final.value.renderer.attempts;
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row: any) => row.closed && row.publicView === null)).toBe(true);
+      expect(rows.find((row: any) => row.attemptId === parent.attemptId).retained.execute).toEqual(
+        parent.retained.execute,
+      );
+      expect(
+        rows.find((row: any) => row.attemptId === child.attemptId).retained.execute.reviewExecution
+          .outcome.status,
+      ).toBe('reused');
+      expect(stopInventory(final.source).rows.every((row) => row.complete)).toBe(true);
+      expect(nativeRequests(final, 'execute')).toHaveLength(2);
+      expect(final.hosts[0].effects.posts).toBe(0);
+      noGitChanges(committed, final);
+      expect(final.value.unstaged.localContent).toBe(unstaged.localContent);
+    }),
+  );
+
+  test(sidebarGroups[2][0], async () =>
+    withDriver(10, async ({ app, a, b, packet }) => {
+      await sidebarReady(a, 'member');
+      await sidebarReady(b, 'owner');
+      const unstaged = await sidebarUnstaged(a);
+      expect(unstaged?.localContent).toBe('owned unstaged change\n');
+      const baseline = await packet('sidebar-member-before');
+      const title = 'Member sidebar review';
+      await sidebarDrafts(a, title);
+      const first = await sidebarCommitDialog(a);
+      for (const target of ['source', 'target'])
+        expect(first.parent.preview.reviewPreparation[target].connection ?? null).toBeNull();
+      const parent = await sidebarParent(a, first);
+      const committed = await packet('sidebar-member-parent', parent);
+      stagedCommitOnly(baseline, committed, parent);
+      const { child, dialog } = await sidebarChild(a, parent, title);
+      for (const target of ['source', 'target'])
+        expect(child.preview.reviewPreparation[target].connection ?? null).toBeNull();
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      const result = await sidebarChildOutcome(a, child, 'reused');
+      const reused = await packet('sidebar-member-reused', {
+        parent,
+        result,
+        renderer: await uiSnapshot(a),
+        unstaged: await sidebarUnstaged(a),
+      });
+      sidebarOriginals(reused, parent, child);
+      expect(reused.hosts[0].effects.posts).toBe(0);
+      noGitChanges(committed, reused);
+      expect(reused.value.unstaged.localContent).toBe(unstaged.localContent);
+      await a.screenshot({ path: join(evidence!, 'sidebar-member-reused.png') });
+      record(
+        evidence!,
+        'sidebar-member-original-disposal',
+        await main(app, (f) => f.quiesceUi(false)),
+      );
+      await main(app, (f) => f.role('guest'));
+      await main(app, (f) => f.navigate());
+      await a.waitForFunction(() => !!(window as any).nativeUi);
+      await sidebarReady(a, 'guest');
+      const before = await packet('sidebar-guest-before', await uiSnapshot(a));
+      const refusal = a.getByText(
+        'This review cannot be prepared with the current repository and access.',
+        { exact: true },
+      );
+      await expect(refusal).toBeVisible();
+      await expect(
+        sidebarRegion(a).getByRole('button', { name: 'Commit', exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        a.getByRole('button', { name: 'Prepare merge request', exact: true }),
+      ).toHaveCount(0);
+      await expect(a.getByRole('button', { name: 'Create', exact: true })).toHaveCount(0);
+      const denied = await packet('sidebar-guest-denied', await uiSnapshot(a));
+      for (const method of ['prepare', 'execute', 'reconcile'])
+        expect(nativeRequests(denied, method)).toEqual(nativeRequests(before, method));
+      for (const host of [0, 1])
+        expect(denied.hosts[host].effects).toEqual(before.hosts[host].effects);
+      noGitChanges(before, denied);
+      await a.screenshot({ path: join(evidence!, 'sidebar-guest-denied.png') });
+    }),
+  );
+}
