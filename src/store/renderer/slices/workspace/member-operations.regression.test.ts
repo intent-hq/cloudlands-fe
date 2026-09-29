@@ -11,6 +11,7 @@ import { principalReceived, hostMembershipChanged } from '../principal/principal
 import { selectPrincipalActionContext } from '../principal/principal-selectors';
 import { setLabsMultiplayerEnabled } from '../user-preferences/user-preferences-slice';
 import {
+  replaceWorkspaceList,
   setWorkspaceEntity,
   removeWorkspaceEntity,
   bulkUpdateWorkspaceEntities,
@@ -26,7 +27,13 @@ import {
   selectHidesAgentLifecycleActions,
   selectWorkspaceActionContext,
 } from './workspace-selectors';
-import { requestDeleteWorkspace } from '../workspace-operations/workspace-operations-slice';
+import {
+  requestDeleteWorkspace,
+  openBulkDeleteConfirm,
+  confirmBulkDelete,
+  bulkOperationStarted,
+  bulkOperationFinished,
+} from '../workspace-operations/workspace-operations-slice';
 import { workspaceOperationsSaga } from '../workspace-operations/sagas/workspace-operations-saga';
 import {
   backendReconnected,
@@ -36,12 +43,15 @@ import { workspaceClient } from './utils/workspace.client';
 import type { Workspace } from '$shared/types';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 const mock = vi.hoisted(() => ({
+  recentViews: vi.fn(async () => ({})),
   delete: vi.fn(),
   cancelDelete: vi.fn(),
+  archive: vi.fn(),
+  unarchive: vi.fn(),
   update: vi.fn(),
   terminal: vi.fn(),
   script: vi.fn(),
-  notify: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), dismiss: vi.fn() },
+  notify: { info: vi.fn(), error: vi.fn(), warning: vi.fn(), success: vi.fn(), dismiss: vi.fn() },
 }));
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: { start: mock.script } }));
 vi.mock('$lib/client', () => ({
@@ -124,6 +134,8 @@ function start() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mock.delete.mockReset();
+  mock.cancelDelete.mockReset();
   vi.useFakeTimers();
   dispose = store.init();
   admitLegacyPrincipal();
@@ -215,14 +227,14 @@ describe('real store, operation saga and client authority composition', () => {
     expect(r.ok).toBe(true);
     expect(mock.update).toHaveBeenCalledExactlyOnceWith({ id: row.id, title: 'Guest title' });
   });
-  it('guest owner cannot update lifecycle fields', async () => {
+  it('guest owner can use the separately authorized workspace.update archive delegation', async () => {
     admit('guest');
     store.dispatch(setWorkspaceEntity({ ...row, myRole: 'owner' }));
     loaded();
     expect((await workspaceClient.update({ id: row.id, status: 'archived' } as never)).ok).toBe(
-      false,
+      true,
     );
-    expect(mock.update).not.toHaveBeenCalled();
+    expect(mock.update).toHaveBeenCalledExactlyOnceWith({ id: row.id, status: 'archived' });
   });
   it('readmission withholds old capabilities and old denial until its projection arrives', () => {
     store.dispatch(
@@ -403,4 +415,258 @@ it('current capability revocation while optimistically absent prevents rollback'
   await settle();
   expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
   expect(mock.notify.error).not.toHaveBeenCalled();
+});
+
+describe('residual bulk intent ownership through real saga and client', () => {
+  const second = { ...row, id: 'second-workspace', title: 'Second' } as Workspace;
+  async function startBulk() {
+    store.dispatch(setWorkspaceEntity(second));
+    const channel = stdChannel();
+    const dispatch = (a: Parameters<typeof store.dispatch>[0]) => {
+      store.dispatch(a);
+      channel.put(a);
+    };
+    task = runSaga({ channel, dispatch, getState: () => store.state }, workspaceOperationsSaga);
+    dispatch(openBulkDeleteConfirm({ workspaceIds: [row.id, second.id], groupLabel: 'Both' }));
+    await settle();
+    expect(store.state.workspaceOperations.bulkPreflightReady).toBe(true);
+    dispatch(confirmBulkDelete());
+    await settle();
+    return dispatch;
+  }
+  it.each(
+    ['readmission', 'backend', 'store'].flatMap((change) =>
+      [true, false].map((success) => ({ change, success })),
+    ),
+  )('stops the old tail after $change / success=$success', async ({ change, success }) => {
+    let resolve!: (v: unknown) => void;
+    mock.delete.mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    const dispatch = await startBulk();
+    expect(mock.delete).toHaveBeenCalledTimes(1);
+    if (change === 'store') {
+      dispose();
+      dispose = store.init();
+      admitLegacyPrincipal();
+      store.dispatch(setLabsMultiplayerEnabled(true));
+    } else if (change === 'backend') dispatch(backendReconnected());
+    else
+      dispatch(hostMembershipChanged({ principalId: 'principal', action: 'updated', revision: 2 }));
+    admit('member', 2);
+    loaded();
+    for (const w of [row, second]) {
+      store.dispatch(clearWorkspacePendingDeletion(w.id));
+      store.dispatch(setWorkspaceEntity({ ...w, title: 'New ' + w.title }));
+      store.dispatch(markWorkspacePendingDeletion(w.id, 'new-' + w.id));
+    }
+    store.dispatch(bulkOperationFinished());
+    store.dispatch(bulkOperationStarted({ kind: 'delete', workspaceIds: [second.id] }));
+    resolve({ success, ...(success ? {} : { error: 'late failure' }) });
+    await settle();
+    expect(mock.delete).toHaveBeenCalledTimes(1);
+    expect(store.state.workspace.deletionTokens[second.id]).toBe('new-' + second.id);
+    expect(store.state.workspace.deletionTokens[row.id]).toBe('new-' + row.id);
+    expect(store.state.workspaceOperations.bulkOperationInFlight).toBe(true);
+    expect(mock.notify.success).not.toHaveBeenCalled();
+    expect(mock.notify.error).not.toHaveBeenCalled();
+    expect(mock.notify.info).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(store.state.workspace.deletionTokens[row.id]).toBe('new-' + row.id);
+  });
+  it('preserves partial success and settles only the failed target', async () => {
+    mock.delete
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'ordinary failure' });
+    await startBulk();
+    expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+    expect(getItem(store.state.workspace.workspaces, second.id)?.title).toBe('Second');
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    expect(store.state.workspace.pendingDeletions[second.id]).toBeUndefined();
+    expect(mock.notify.success).toHaveBeenCalledTimes(1);
+    expect(mock.notify.error).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(store.state.workspace.pendingDeletions).toEqual({});
+  });
+  it('cancelled bulk retains the completed target grace and releases the unfinished target', async () => {
+    mock.delete
+      .mockResolvedValueOnce({ success: true })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    await startBulk();
+    expect(mock.delete).toHaveBeenCalledTimes(2);
+    task!.cancel();
+    await task!.toPromise();
+    await settle();
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    expect(store.state.workspace.pendingDeletions[second.id]).toBeUndefined();
+    expect(store.state.workspaceOperations.bulkOperationInFlight).toBe(false);
+    expect(mock.notify.success).not.toHaveBeenCalled();
+    expect(mock.notify.error).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+  });
+  it.each([true, false])(
+    'settles ordinary bulk result success=%s and owned expiry',
+    async (success) => {
+      mock.delete.mockResolvedValue({ success, ...(success ? {} : { error: 'ordinary failure' }) });
+      await startBulk();
+      expect(mock.delete.mock.calls).toEqual([
+        [row.id, undefined],
+        [second.id, undefined],
+      ]);
+      expect(store.state.workspaceOperations.bulkOperationInFlight).toBe(false);
+      expect(mock.notify.success).toHaveBeenCalledTimes(success ? 1 : 0);
+      expect(mock.notify.error).toHaveBeenCalledTimes(success ? 0 : 1);
+      expect(getItem(store.state.workspace.workspaces, second.id)?.title).toBe(
+        success ? undefined : 'Second',
+      );
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(store.state.workspace.pendingDeletions).toEqual({});
+    },
+  );
+});
+
+describe('residual authoritative list and pending rollback', () => {
+  it.each(['delete', 'undo'] as const)(
+    'does not restore after same-ID denial during %s',
+    async (phase) => {
+      let resolve!: (v: unknown) => void;
+      (phase === 'delete' ? mock.delete : mock.cancelDelete).mockReturnValue(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+      const dispatch = start();
+      await settle();
+      if (phase === 'undo') {
+        mock.notify.warning.mock.calls[0][1].action.onClick();
+        await settle();
+      }
+      dispatch(replaceWorkspaceList([{ ...row, canManage: false }]));
+      resolve(
+        phase === 'delete' ? { success: false, error: 'late' } : { success: true, cancelled: true },
+      );
+      await settle();
+      expect(getItem(store.state.workspace.workspaces, row.id)).toBeUndefined();
+      expect(mock.notify.error).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(store.state.workspace.pendingDeletions[row.id]).toBeUndefined();
+    },
+  );
+  it.each(['full absence', 'partial absence', 'true capability'] as const)(
+    'honors %s without inventing omission authority',
+    async (kind) => {
+      let resolve!: (v: unknown) => void;
+      mock.delete.mockReturnValue(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+      const dispatch = start();
+      await settle();
+      const tokens = { ...store.state.workspace.deletionTokens };
+      dispatch(
+        Reflect.apply(replaceWorkspaceList, null, [
+          kind === 'true capability' ? [row] : [],
+          { complete: kind === 'full absence', deletionTokens: tokens },
+        ]),
+      );
+      resolve({ success: false, error: 'ordinary failure' });
+      await settle();
+      expect(getItem(store.state.workspace.workspaces, row.id)?.title).toBe(
+        kind === 'full absence' ? undefined : 'Original',
+      );
+      expect(mock.notify.error).toHaveBeenCalledTimes(kind === 'full absence' ? 0 : 1);
+    },
+  );
+});
+
+describe('residual scoped guest-owner protected workspace.update', () => {
+  it.each(['branch', 'baseCommitSha', 'status'])(
+    'permits current scoped owner field %s without direct lifecycle grant',
+    async (field) => {
+      admit('guest');
+      store.dispatch(setWorkspaceEntity({ ...row, myRole: 'owner' }));
+      loaded();
+      const request = { id: row.id, [field]: field === 'status' ? 'archived' : 'value' };
+      expect((await workspaceClient.update(request)).ok).toBe(true);
+      expect(mock.update).toHaveBeenCalledExactlyOnceWith(request);
+      expect((await workspaceClient.delete(row.id)).ok).toBe(false);
+      expect((await workspaceClient.cancelDelete(row.id)).ok).toBe(false);
+      expect((await workspaceClient.archive(row.id)).ok).toBe(false);
+      expect((await workspaceClient.unarchive(row.id)).ok).toBe(false);
+      expect(mock.archive).not.toHaveBeenCalled();
+      expect(mock.unarchive).not.toHaveBeenCalled();
+      expect(mock.delete).not.toHaveBeenCalled();
+      expect(mock.cancelDelete).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('real list client and lifecycle projection completeness', () => {
+  it.each(['complete array', 'partial page', 'explicit denial'] as const)(
+    '%s reconciles held deletion before rollback',
+    async (kind) => {
+      const { registerMockIpcHandler, unregisterMockIpcHandler } =
+        await import('$shared/ipc-mock-router');
+      const { WORKSPACE_CHANNELS } = await import('$shared/ipc/channels');
+      const { lifecycleReadSaga } =
+        await import('../workspace-lifecycle/sagas/lifecycle-read-saga');
+      const { loadWorkspacesRequested } = await import('./workspace-slice');
+      let resolve!: (x: unknown) => void;
+      mock.delete.mockReturnValue(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+      start();
+      await settle();
+      workspaceClient.clearCache();
+      registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => ({
+        success: true,
+        data:
+          kind === 'complete array'
+            ? []
+            : {
+                workspaces: kind === 'explicit denial' ? [{ ...row, canManage: false }] : [],
+                total: 10,
+                hasMore: true,
+              },
+      }));
+      const channel = stdChannel();
+      const dispatch = (a: Parameters<typeof store.dispatch>[0]) => {
+        store.dispatch(a);
+        channel.put(a);
+      };
+      const reader = runSaga({ channel, dispatch, getState: () => store.state }, lifecycleReadSaga);
+      try {
+        dispatch(loadWorkspacesRequested());
+        await settle();
+        resolve({ success: false, error: 'held failure' });
+        await settle();
+        expect(getItem(store.state.workspace.workspaces, row.id)?.title).toBe(
+          kind === 'partial page' ? 'Original' : undefined,
+        );
+        expect(mock.notify.error).toHaveBeenCalledTimes(kind === 'partial page' ? 1 : 0);
+      } finally {
+        reader.cancel();
+        await reader.toPromise();
+        unregisterMockIpcHandler(WORKSPACE_CHANNELS.LIST);
+        workspaceClient.clearCache();
+      }
+    },
+  );
+  it('a full-list read cannot invalidate a replacement deletion token', () => {
+    store.dispatch(markWorkspacePendingDeletion(row.id, 'earlier'));
+    const captured = { ...store.state.workspace.deletionTokens };
+    store.dispatch(clearWorkspacePendingDeletion(row.id, 'earlier'));
+    store.dispatch(markWorkspacePendingDeletion(row.id, 'later'));
+    store.dispatch(replaceWorkspaceList([], { complete: true, deletionTokens: captured }));
+    expect(store.state.workspace.invalidatedDeletions[row.id]).toBeUndefined();
+    expect(store.state.workspace.deletionTokens[row.id]).toBe('later');
+  });
 });

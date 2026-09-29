@@ -700,6 +700,7 @@
 
       if (!isCurrent()) return;
 
+      const deletionTokens = appStore.state.workspace?.deletionTokens ?? {};
       // Load repos from both workspace-derived and persistent registry in parallel
       const [workspaceListResult, registryResult] = await Promise.all([
         workspaceClient.list({ lite: true }),
@@ -713,7 +714,12 @@
 
       const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
       if (workspaceListResult.ok) {
-        mountedDispatch(replaceWorkspaceList(workspaces));
+        mountedDispatch(
+          replaceWorkspaceList(workspaces, {
+            complete: workspaceListResult.complete === true,
+            deletionTokens,
+          }),
+        );
       }
 
       if (!isCurrent()) return;

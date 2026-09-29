@@ -835,7 +835,11 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.navigate.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([
+      ['ws-1', undefined],
+      ['ws-2', undefined],
+      ['ws-3', undefined],
+    ]);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
     expect(mocks.notify.success).toHaveBeenCalledTimes(1);
     expect(mocks.notify.info).toHaveBeenCalledTimes(1);
@@ -866,7 +870,7 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1', undefined]]);
     expect(mocks.notify.success).toHaveBeenCalledWith('Permanently deleted 1 workspace');
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     run.task.cancel();
@@ -921,11 +925,14 @@ describe('workspaceOperationsSaga', () => {
     run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-2'], groupLabel: 'Overlapping group' }));
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1', undefined]]);
 
     resolveFirst({ ok: true, data: undefined });
     await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([
+      ['ws-1', undefined],
+      ['ws-2', undefined],
+    ]);
     resolveSecond({ ok: true, data: undefined });
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);

@@ -1,3 +1,5 @@
+import { store } from '../../../store';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
   captureDeletionExpiry,
   captureWorkspaceDeletion,
@@ -512,30 +514,42 @@ function* computeBulkDeleteActiveWork(
   yield* computeBulkActiveWork('delete', action.payload[0].workspaceIds);
 }
 
-function* performBulkDelete(targets: Workspace[]): SagaGenerator<string[]> {
+function* performBulkDelete(
+  operations: WorkspaceDeletion[],
+  current: () => boolean,
+  deletedIds: string[],
+): SagaGenerator<string[]> {
   const notify = yield* call(getToast);
-  if (targets.length === 0) {
+  if (!current()) return [];
+  if (operations.length === 0) {
     notify.info(m.workspace_ops_noWorkspacesToDelete_message());
     return [];
   }
-  const deletedIds: string[] = [];
   let deleteCount = 0;
   let timeoutCount = 0;
   let failCount = 0;
-  for (const workspace of targets) {
+  for (const operation of operations) {
+    if (!current() || !operation.current()) break;
     try {
-      const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
+      const result = yield* call(
+        [workspaceClient, workspaceClient.delete],
+        operation.workspaceId,
+        undefined,
+        operation,
+      );
+      if (!current() || !operation.current()) break;
       if (result.ok) {
         deleteCount++;
-        deletedIds.push(workspace.id);
-        yield* put(removeWorkspaceEntity(workspace.id));
-        yield* spawn(clearTombstoneAfterGrace, workspace.id);
+        deletedIds.push(operation.workspaceId);
+        yield* put(removeWorkspaceEntity(operation.workspaceId));
+        yield* spawn(clearTombstoneAfterGrace, operation.workspaceId, operation);
       } else if (result.error?.includes('timed out')) timeoutCount++;
       else failCount++;
     } catch {
       failCount++;
     }
   }
+  if (!current()) return deletedIds;
   if (deleteCount > 0) {
     notify.success(
       deleteCount === 1
@@ -567,24 +581,50 @@ function* bulkDelete(): SagaGenerator<void> {
   const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
   const workspaces = yield* selectWorkspaceItems.effect();
   const targets = workspacesForIds(workspaceIds, workspaces);
+  // Capture every target before any navigation/read await. Each token keeps its
+  // original admission even when a later call would find the same ID again.
+  const operations = targets.map(captureWorkspaceDeletion);
+  if (operations.some((operation) => operation === null)) return;
+  const ownedOperations = operations as WorkspaceDeletion[];
+  const dispatch = store.dispatch;
+  const backend = store.state.connections.windowBackendId;
+  const admission = selectPrincipalActionContext.select(store.state);
   const reservedIds = targets.map(({ id }) => id);
+  const ownsBulk = () => {
+    try {
+      return (
+        store.dispatch === dispatch &&
+        store.state.connections.windowBackendId === backend &&
+        store.state.workspaceOperations.bulkReservedWorkspaceIds === reservedIds
+      );
+    } catch {
+      return false;
+    }
+  };
+  const current = () =>
+    ownsBulk() &&
+    admission !== null &&
+    selectPrincipalActionContext.select(store.state) === admission;
   yield* put(bulkOperationStarted({ kind: 'delete', workspaceIds: reservedIds }));
   yield* put(closeBulkDeleteConfirm());
-  let deletedIds: string[] = [];
+  const deletedIds: string[] = [];
   try {
-    for (const workspaceId of reservedIds) {
-      yield* put(markWorkspacePendingDeletion(workspaceId));
+    for (const operation of ownedOperations) {
+      if (!current() || !operation.begin(false)) return;
     }
-    for (const workspace of targets) {
-      yield* call(navigateAwayIfViewing, workspace.id);
+    for (const operation of ownedOperations) {
+      if (!current() || !operation.current()) return;
+      yield* call(navigateAwayIfViewing, operation.workspaceId);
     }
-    deletedIds = yield* performBulkDelete(targets);
+    yield* performBulkDelete(ownedOperations, current, deletedIds);
   } finally {
     const deletedIdSet = new Set(deletedIds);
-    for (const workspaceId of reservedIds) {
-      if (!deletedIdSet.has(workspaceId)) yield* put(clearWorkspacePendingDeletion(workspaceId));
+    for (const operation of ownedOperations) {
+      if (!deletedIdSet.has(operation.workspaceId)) operation.expire();
     }
-    yield* put(bulkOperationFinished());
+    // An obsolete admission may settle its own UI lock; it cannot settle a
+    // replacement store or another operation's lock/tombstones/notifications.
+    if (ownsBulk()) dispatch(bulkOperationFinished());
   }
 }
 

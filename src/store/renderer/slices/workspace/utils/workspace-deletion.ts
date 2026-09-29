@@ -13,7 +13,7 @@ let sequence = 0;
 const issued = new WeakSet<object>();
 export type WorkspaceDeletion = {
   readonly workspaceId: string;
-  begin(): boolean;
+  begin(hide?: boolean): boolean;
   current(): boolean;
   restore(): void;
   expire(): void;
@@ -44,10 +44,10 @@ export function captureWorkspaceDeletion(workspace: Workspace): WorkspaceDeletio
   const operation: WorkspaceDeletion = {
     workspaceId: workspace.id,
     current,
-    begin() {
+    begin(hide = true) {
       if (begun || !current() || store.state.workspace.pendingDeletions[workspace.id]) return false;
       dispatch(markWorkspacePendingDeletion(workspace.id, token));
-      dispatch(removeWorkspaceEntity(workspace.id));
+      if (hide) dispatch(removeWorkspaceEntity(workspace.id));
       begun = true;
       return current();
     },

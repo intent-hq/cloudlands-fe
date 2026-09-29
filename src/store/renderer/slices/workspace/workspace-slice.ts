@@ -113,9 +113,12 @@ export const setWorkspaceCreating = createAction<[isCreating: boolean]>(
   'workspace/setWorkspaceCreating',
 );
 
-export const replaceWorkspaceList = createAction<[workspaces: Workspace[]]>(
-  'workspace/replaceWorkspaceList',
-);
+export const replaceWorkspaceList = createAction<
+  [
+    workspaces: Workspace[],
+    projection?: { complete: boolean; deletionTokens: Record<string, string> },
+  ]
+>('workspace/replaceWorkspaceList');
 
 export const markWorkspacePendingDeletion = createAction<[wsId: string, token?: string]>(
   'workspace/markWorkspacePendingDeletion',
@@ -516,10 +519,24 @@ workspaceReducer.with(setWorkspaceCreating, (state, { payload: [isCreating] }) =
   if (state.isCreating === isCreating) return state;
   return { ...state, isCreating };
 });
-workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) => {
+workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces, projection] }) => {
+  // Reconcile authority before optimistic visibility filtering. Only a complete
+  // authoritative list may disprove presence, and only for tokens it observed
+  // at request time; a partial/filtered omission cannot revoke an operation.
+  const byId = new Map(workspaces.map((row) => [row.id as string, row]));
+  const invalidatedDeletions = { ...state.invalidatedDeletions };
+  for (const [id, token] of Object.entries(state.deletionTokens)) {
+    if (
+      byId.get(id)?.canManage === false ||
+      (projection?.complete === true && projection.deletionTokens[id] === token && !byId.has(id))
+    ) {
+      invalidatedDeletions[id] = token;
+    }
+  }
   const nextVisibleState = buildVisibleWorkspaceState(state, workspaces);
   return {
     ...state,
+    invalidatedDeletions,
     workspaces: nextVisibleState.workspaces,
     pendingCreations: nextVisibleState.pendingCreations,
     detailHydrated: pruneDetailHydrated(state.detailHydrated, (wsId) =>

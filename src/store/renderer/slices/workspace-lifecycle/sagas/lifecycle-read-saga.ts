@@ -245,6 +245,7 @@ function* refreshWorkspaces(): SagaGenerator<void> {
     buffers.expanding<WorkspaceProjectionAction>(),
   );
   try {
+    const deletionTokens = store.state.workspace.deletionTokens;
     const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
     if (
       store.dispatch !== dispatch ||
@@ -270,7 +271,12 @@ function* refreshWorkspaces(): SagaGenerator<void> {
       } else rows.delete(action.payload[0] as string);
     };
     for (const action of yield* flush(changes)) record(action);
-    yield* put(replaceWorkspaceList([...rows.values()]));
+    yield* put(
+      replaceWorkspaceList([...rows.values()], {
+        complete: result.complete === true,
+        deletionTokens,
+      }),
+    );
     yield* put(setWorkspaceHasLoaded(true, backendId, context));
     const recentViews = yield* call([appClient.workspaces, appClient.workspaces.recentViews]);
     if (

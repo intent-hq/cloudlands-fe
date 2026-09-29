@@ -851,11 +851,9 @@ export const selectWorkspaceUpdateContext = store.createSelector<
 >((state, wsId, fields) => {
   const context = selectWorkspaceParticipationContext.select(state, wsId);
   if (!context) return null;
-  if (
-    selectHostRole.select(state) !== 'guest' &&
-    selectWorkspaceManagementVisible.select(state, wsId)
-  )
-    return context;
+  // workspace.update has a scoped owner/manager gate, independently of the
+  // host-execution gate on scripts, terminals and direct lifecycle methods.
+  if (selectWorkspaceManagementVisible.select(state, wsId)) return context;
   return fields.every((field) =>
     ['id', 'title', 'tags', 'statusMessage', 'statusImageAssetId'].includes(field),
   )

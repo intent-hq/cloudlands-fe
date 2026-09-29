@@ -307,7 +307,9 @@ export class WorkspaceClient {
    * @param options.lite When true, skip heavy computations (diffSummary, agentSummary, taskStats, gitSummary)
    *                     to avoid blocking other IPC operations like workspace:create
    */
-  async list(options?: { lite?: boolean }): Promise<Result<Workspace[], string>> {
+  async list(options?: {
+    lite?: boolean;
+  }): Promise<Result<Workspace[], string> & { complete?: boolean }> {
     // For backward compatibility, handle both old and new response formats
     const result = await this.invoke<any>(WORKSPACE_CHANNELS.LIST, { lite: options?.lite });
 
@@ -317,7 +319,14 @@ export class WorkspaceClient {
         return { ok: true, data: result.data.workspaces.map(normalizeWorkspacePaths) };
       }
       // Old format - array of workspaces
-      return { ok: true, data: (result.data as Workspace[]).map(normalizeWorkspacePaths) };
+      // The array form is the unfiltered listAllWorkspaces IPC contract,
+      // including archived rows. Paginated compatibility responses above do
+      // not establish completeness, even when their last page has arrived.
+      return {
+        ok: true,
+        data: (result.data as Workspace[]).map(normalizeWorkspacePaths),
+        complete: true,
+      };
     }
 
     return result as Result<Workspace[], string>;
