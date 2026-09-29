@@ -339,31 +339,130 @@
       .join('\n');
   }
 
+  // Isolated diagnostic only: selected element identity is supplied by the test.
+  function recordSettlementDecision(
+    revision: number,
+    decision: 'stale' | 'continue' | 'tick' | 'settled' | 'tick-resume' | 'tick-stale' | 'begin',
+    active: boolean | null,
+    previousSnapshotPresent: boolean | null,
+    snapshotEqual: boolean | null,
+    snapshot?: string,
+    previousSnapshot?: string,
+    finiteAnimationCount: number | null = null,
+  ) {
+    const capture = (globalThis as typeof globalThis & {
+      __walkthroughSettlement6036?: {
+        target: Element | null;
+        records: (Record<string, unknown> | null)[];
+        count: number;
+        overflow: boolean;
+        incomplete: boolean;
+        segment: string;
+        snapshots: string[];
+        serializedUnits: number;
+      };
+    }).__walkthroughSettlement6036;
+    if (!rendererEl || !capture || capture.target !== rendererEl) return;
+    try {
+      if (capture.count >= 4096) {
+        capture.overflow = true;
+        capture.incomplete = true;
+        return;
+      }
+      const intern = (value: string | undefined): number | null => {
+        if (value === undefined) return null;
+        const existing = capture.snapshots.indexOf(value);
+        if (existing !== -1) return existing;
+        const units = JSON.stringify(value).length;
+        if (units > 32768 || capture.snapshots.length >= 256 ||
+            capture.serializedUnits + units > 2 * 1024 * 1024) {
+          capture.overflow = capture.incomplete = true;
+          return null;
+        }
+        capture.serializedUnits += units;
+        return capture.snapshots.push(value) - 1;
+      };
+      const snapshotIndex = intern(snapshot);
+      const previousSnapshotIndex = intern(previousSnapshot);
+      const movingEdges: string[] = [];
+      for (const edgeId of movingEdgeIds) {
+        if (movingEdges.length === 64) break;
+        movingEdges.push(edgeId);
+      }
+      if (movingEdgeIds.size > 64) capture.overflow = capture.incomplete = true;
+      const record = {
+        sampledAt: performance.now(),
+        segment: capture.segment,
+        snapshotIndex, previousSnapshotIndex, movingEdges, finiteAnimationCount,
+        revision,
+        currentRevision: settlementRevision,
+        state: currentStateId,
+        phase: motionPhase,
+        movingEdgeCount: movingEdgeIds.size,
+        active,
+        previousSnapshotPresent,
+        snapshotEqual,
+        stateJustChanged,
+        decision,
+      };
+      const units = JSON.stringify(record).length;
+      if (capture.serializedUnits + units > 2 * 1024 * 1024) {
+        capture.overflow = capture.incomplete = true;
+        return;
+      }
+      capture.serializedUnits += units;
+      capture.records[capture.count++] = record;
+    } catch {
+      capture.incomplete = true;
+    }
+  }
+
   function monitorDiagramSettlement(revision: number, previousSnapshot?: string) {
     settlementFrame = requestAnimationFrame(() => {
-      if (revision !== settlementRevision) return;
+      if (revision !== settlementRevision) {
+        recordSettlementDecision(revision, 'stale', null, null, null);
+        return;
+      }
       keepStepInView?.();
       const snapshot = motionSnapshot();
+      let finiteAnimationCount: number | null = null;
       const active =
         motionPhase === 'camera' ||
         motionPhase === 'exit' ||
         movingEdgeIds.size > 0 ||
-        activeFiniteAnimations().length > 0;
+        (finiteAnimationCount = activeFiniteAnimations().length) > 0;
       if (!active && previousSnapshot !== undefined && snapshot === previousSnapshot) {
         if (stateJustChanged) {
+          recordSettlementDecision(revision, 'tick', active, true, true, snapshot, previousSnapshot, finiteAnimationCount);
           stateJustChanged = false;
           settlementFrame = undefined;
           void tick().then(() => {
+            recordSettlementDecision(
+              revision,
+              revision === settlementRevision ? 'tick-resume' : 'tick-stale',
+              null,
+              null,
+              null,
+            );
             if (revision === settlementRevision) monitorDiagramSettlement(revision);
           });
           return;
         }
+        recordSettlementDecision(revision, 'settled', active, true, true, snapshot, previousSnapshot, finiteAnimationCount);
         diagramSettled = true;
         motionPhase = 'settled';
         stopStepViewportTracking();
         settlementFrame = undefined;
         return;
       }
+      recordSettlementDecision(
+        revision,
+        'continue',
+        active,
+        previousSnapshot !== undefined,
+        active || previousSnapshot === undefined ? null : false,
+        snapshot, previousSnapshot, finiteAnimationCount,
+      );
       monitorDiagramSettlement(revision, active ? undefined : snapshot);
     });
   }
@@ -377,6 +476,7 @@
       stateJustChanged = false;
     }
     diagramSettled = false;
+    untrack(() => recordSettlementDecision(revision, 'begin', null, null, null));
     queueMicrotask(() => {
       if (revision === settlementRevision) monitorDiagramSettlement(revision);
     });
