@@ -1,0 +1,107 @@
+name: Corrected sidebar cold then warm pair
+'on':
+  workflow_call:
+    inputs:
+      workers:
+        type: number
+        required: true
+      controller_sha:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  pair:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+      github.repository == 'intent-hq/cloudlands-fe' && github.event.number == 2976 &&
+      github.event.pull_request.state == 'open' && github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'panghy' &&
+      github.event.pull_request.head.repo.full_name == 'intent-hq/cloudlands-fe' &&
+      github.event.pull_request.head.ref == 'fix/5740-browser-harness-readiness' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.before == '2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f' &&
+      github.event.after == github.event.pull_request.head.sha &&
+      github.run_attempt == '1' && github.run_number == '1' &&
+      inputs.controller_sha == github.event.pull_request.head.sha &&
+      (inputs.workers == 1 || inputs.workers == 2)
+    runs-on: gh-linux-8x
+    timeout-minutes: 60
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      CI: 'true'
+      MATRIX_CONTROLLER_SHA: ${{ inputs.controller_sha }}
+    steps:
+      - name: Checkout reviewed controller revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.controller_sha }}
+          fetch-depth: 2
+          path: control
+          persist-credentials: false
+      - name: Checkout exact event merge for workflow attribution
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          path: route
+          persist-credentials: false
+      - name: Checkout fixed subject
+        uses: actions/checkout@v7
+        with:
+          ref: 2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f
+          path: subject
+          persist-credentials: false
+      - name: Bind publication and executed workflow before setup
+        env:
+          MATRIX_ROUTE_RECEIPT: ${{ runner.temp }}/sidebar-matrix-${{ github.run_id }}-${{ github.run_attempt }}-w${{ inputs.workers }}-route.json
+        timeout-minutes: 1
+        run: python3 -I -S -B control/scripts/sidebar-matrix-route.py control route subject "$MATRIX_ROUTE_RECEIPT"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+          cache-dependency-path: subject/pnpm-lock.yaml
+      - name: Ordinary root-harness setup
+        working-directory: subject
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run generate:i18n
+          pnpm run generate:ipc-channels
+          pnpm exec playwright install chromium
+      - name: One cold and one warm attempt
+        env:
+          MATRIX_ROUTE_RECEIPT: ${{ runner.temp }}/sidebar-matrix-${{ github.run_id }}-${{ github.run_attempt }}-w${{ inputs.workers }}-route.json
+        id: pair
+        timeout-minutes: 44
+        run: >-
+          python3 -I -S -B control/scripts/sidebar-corrected-pair.py
+          subject "${{ inputs.workers }}" "${{ runner.temp }}/sidebar-matrix-${{ github.run_id }}-${{ github.run_attempt }}-w${{ inputs.workers }}"
+      - name: Upload receipts even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidebar-matrix-w${{ inputs.workers }}-receipts
+          path: |
+            ${{ runner.temp }}/sidebar-matrix-${{ github.run_id }}-${{ github.run_attempt }}-w${{ inputs.workers }}/receipts/
+            ${{ runner.temp }}/sidebar-matrix-${{ github.run_id }}-${{ github.run_attempt }}-w${{ inputs.workers }}-route.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload bounded original reports and traces
+        if: ${{ always() && steps.pair.outputs.upload_payload == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidebar-matrix-w${{ inputs.workers }}-payload
+          path: ${{ runner.temp }}/sidebar-matrix-${{ github.run_id }}-${{ github.run_attempt }}-w${{ inputs.workers }}/payload/
+          retention-days: 7
+          if-no-files-found: error

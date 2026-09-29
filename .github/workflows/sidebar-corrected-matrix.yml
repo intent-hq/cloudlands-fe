@@ -1,0 +1,44 @@
+name: Corrected sidebar cache matrix
+'on':
+  pull_request:
+    types: [synchronize]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: sidebar-corrected-matrix-pr2976
+  cancel-in-progress: false
+jobs:
+  serial:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+      github.repository == 'intent-hq/cloudlands-fe' && github.event.number == 2976 &&
+      github.event.pull_request.state == 'open' && github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'panghy' &&
+      github.event.pull_request.head.repo.full_name == 'intent-hq/cloudlands-fe' &&
+      github.event.pull_request.head.ref == 'fix/5740-browser-harness-readiness' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.before == '2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f' &&
+      github.event.after == github.event.pull_request.head.sha &&
+      github.run_attempt == '1' && github.run_number == '1'
+    uses: ./.github/workflows/sidebar-corrected-pair.yml
+    with:
+      workers: 1
+      controller_sha: ${{ github.event.pull_request.head.sha }}
+  parallel:
+    needs: serial
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+      github.repository == 'intent-hq/cloudlands-fe' && github.event.number == 2976 &&
+      github.event.pull_request.state == 'open' && github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'panghy' &&
+      github.event.pull_request.head.repo.full_name == 'intent-hq/cloudlands-fe' &&
+      github.event.pull_request.head.ref == 'fix/5740-browser-harness-readiness' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.before == '2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f' &&
+      github.event.after == github.event.pull_request.head.sha &&
+      github.run_attempt == '1' && github.run_number == '1'
+    uses: ./.github/workflows/sidebar-corrected-pair.yml
+    with:
+      workers: 2
+      controller_sha: ${{ github.event.pull_request.head.sha }}
