@@ -176,7 +176,11 @@
         title: m.native_review_confirm_title(),
         description: m.native_review_confirm_description({
           title: command.prTitle,
-          project: preparation.target.repository.projectPath,
+          project:
+            preparation.target.repository.projectPath +
+            ' (' +
+            preparation.target.repository.instanceBaseUrl +
+            ')',
           source: preparation.source.branch,
           target: preparation.target.branch,
         }),
@@ -430,6 +434,16 @@
           <DataList
             items={[
               {
+                key: 'project',
+                label: m.repository_details_project_label(),
+                value: view.preview.reviewPreparation.target.repository.projectPath,
+              },
+              {
+                key: 'instance',
+                label: m.repository_details_instance_label(),
+                value: view.preview.reviewPreparation.target.repository.instanceBaseUrl,
+              },
+              {
                 key: 'source',
                 label: m.native_review_source_label(),
                 value: view.preview.reviewPreparation.source.branch,
@@ -465,9 +479,11 @@
               />{/snippet}
           </FormField>
           <FormActions>
-            <Button type="submit" variant="primary" disabled={!canConfirm}
-              >{m.workspace_prCreator_create_label()}</Button
-            >
+            {#snippet primary()}
+              <Button type="submit" variant="primary" disabled={!canConfirm}
+                >{m.workspace_prCreator_create_label()}</Button
+              >
+            {/snippet}
           </FormActions>
         </Form>
         {#if submitted && !observation}<p role="status">

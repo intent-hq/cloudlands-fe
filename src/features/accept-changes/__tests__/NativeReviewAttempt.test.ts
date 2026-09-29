@@ -75,6 +75,39 @@ async function submit(agree = true) {
 const executed = () => fixture.requests.filter((r) => r.kind === 'execute');
 
 describe('native review through rendered Store, root saga, Live client and controlled IPC', () => {
+  it('names the captured preparation destination before confirming, without rereading or changing the command', async () => {
+    await mount({ delayPrepare: true });
+    await start();
+    await fireEvent.click(screen.getByRole('button', { name: 'Prepare merge request' }));
+    await waitFor(() => expect(fixture.captures).toHaveLength(1));
+    const captured = fixture.captures[0];
+    captured.preview.reviewPreparation.target.repository = {
+      provider: 'gitlab',
+      instanceBaseUrl: 'https://other.example/team/forge',
+      projectPath: 'confirmed/group/project',
+    };
+    captured.finish();
+    await screen.findByText('confirmed/group/project');
+    expect(screen.getByText('https://other.example/team/forge')).toBeTruthy();
+    await waitFor(() =>
+      expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe(
+        'Suggested request',
+      ),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('confirmed/group/project');
+    expect(dialog.textContent).toContain('https://other.example/team/forge');
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(executed()).toHaveLength(1));
+    expect(executed()[0].command).toEqual({
+      prTitle: 'Suggested request',
+      prBody: 'Suggested details',
+    });
+    expect(fixture.base.captures).toHaveLength(1);
+    expect(fixture.captures).toHaveLength(1);
+  });
+
   it('keeps the standalone Close action and ends the original attempt before dismissal', async () => {
     const onClose = vi.fn();
     await mount({}, nativeRoot, true, onClose);
