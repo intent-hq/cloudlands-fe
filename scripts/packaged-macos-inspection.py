@@ -24,7 +24,7 @@ import time
 import zipfile
 
 PRODUCT = "13a6cbe92681f7e3f6858ad7d5ce414375935b2c"
-PREVIOUS = "a0b8875cdc98ffe806c15d58746b0fb13983e62e"
+PREVIOUS = "a8ff16beaf49bea4a3f236d771b627cba3285ae9"
 REPO = "intent-hq/cloudlands-fe"
 BRANCH = "diagnostic/b76t-packaged-readiness"
 WORKFLOW = ".github/workflows/packaged-macos-inspection.yml"
@@ -707,6 +707,153 @@ def observe_canvas(ops, evidence, p, app, legacy):
 
 
 
+PTY_TARGET = {'path': 'Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-x64/pty.node', 'mode': 33188, 'bytes': 72080, 'sha256': '0cb7553527ea2d54d6043026fff53850312c36f538def735d8f8ab43b305fc14'}
+PTY_METADATA = ({'path': 'Contents/Resources/app.asar.unpacked/node_modules/node-pty/package.json', 'mode': 33188, 'bytes': 915, 'sha256': '700103d92f8832effb035e2edcf028e6caba422fa6442ce9c06869369c79d644'}, {'path': 'Contents/Resources/app.asar.unpacked/node_modules/node-pty/lib/index.js', 'mode': 33188, 'bytes': 2008, 'sha256': 'c1b82c92c4c63aaa8e8441fc5a291c4727cd3f3550666d2fec7250e0f6d4b173'}, {'path': 'Contents/Resources/app.asar.unpacked/node_modules/node-pty/lib/unixTerminal.js', 'mode': 33188, 'bytes': 13372, 'sha256': 'a62e3a60c3bc1b0e7261f58284856df748dcee6761a2bc7a5a5ba98b22660473'}, {'path': 'Contents/Resources/app.asar.unpacked/node_modules/node-pty/lib/utils.js', 'mode': 33188, 'bytes': 1548, 'sha256': 'f75ad341c13fbf1a9a6605d7ee42dff5bbc5d43b7b381e413fb97eb1b8300beb'})
+PTY_TEXT_CAP = 16384
+PTY_TOTAL_TEXT_CAP = 32768
+PTY_DIAGNOSTIC_CAP = 131072
+
+def pty_stat(s):
+    return dict(dev=s.st_dev, inode=s.st_ino, mode=s.st_mode, uid=s.st_uid,
+                gid=s.st_gid, nlink=s.st_nlink, bytes=s.st_size,
+                mtime_ns=s.st_mtime_ns, ctime_ns=s.st_ctime_ns)
+
+
+def pty_text_record(expected, data, before, after):
+    require(expected in PTY_METADATA, "unbound pty metadata path")
+    require(before == after and stat.S_ISREG(before["mode"])
+            and before["nlink"] == 1 and before["bytes"] == expected["bytes"]
+            and before["mode"] == expected["mode"], "pty metadata identity/type drift")
+    require(isinstance(data, bytes) and len(data) <= PTY_TEXT_CAP, "pty text bound")
+    verify_bytes(len(data), sha(data), expected["bytes"], expected["sha256"])
+    text = data.decode("utf-8", errors="strict")
+    require("\0" not in text, "pty text contains NUL")
+    # Retained verbatim data, never evaluated, imported or interpreted as a selector.
+    return dict(path=expected["path"], bytes=len(data), sha256=sha(data),
+                identity=before, text=text, executed=False, selectionEstablished=False)
+
+
+def read_pty_text(ops, app, expected, io=os):
+    require(expected in PTY_METADATA, "unbound pty metadata path")
+    parts = pathlib.PurePosixPath(expected["path"]).parts
+    require(parts and not pathlib.PurePosixPath(expected["path"]).is_absolute()
+            and all(x not in ("", ".", "..") for x in parts), "pty relative path")
+    descriptors = []
+    directories = []
+    primary = None
+    close_errors = []
+    result = None
+    try:
+        ops.tick()
+        root = io.open(app, io.O_RDONLY | io.O_DIRECTORY | io.O_NOFOLLOW)
+        descriptors.append(root)
+        root_identity = pty_stat(io.fstat(root))
+        require(stat.S_ISDIR(root_identity["mode"])
+                and pty_stat(io.stat(app, follow_symlinks=False)) == root_identity, "pty app root identity")
+        parent = root
+        for name in parts[:-1]:
+            ops.tick()
+            child = io.open(name, io.O_RDONLY | io.O_DIRECTORY | io.O_NOFOLLOW, dir_fd=parent)
+            descriptors.append(child)
+            observed = pty_stat(io.fstat(child))
+            require(stat.S_ISDIR(observed["mode"]) and observed["dev"] == root_identity["dev"], "pty directory boundary")
+            require(pty_stat(io.stat(name, dir_fd=parent, follow_symlinks=False)) == observed, "pty directory identity")
+            directories.append((parent, name, child, observed))
+            parent = child
+        fd = io.open(parts[-1], io.O_RDONLY | io.O_NOFOLLOW, dir_fd=parent)
+        descriptors.append(fd)
+        before = pty_stat(io.fstat(fd))
+        require(stat.S_ISREG(before["mode"]) and before["dev"] == root_identity["dev"]
+                and before["bytes"] == expected["bytes"] <= PTY_TEXT_CAP and before["nlink"] == 1,
+                "pty metadata file admission")
+        require(pty_stat(io.stat(parts[-1], dir_fd=parent, follow_symlinks=False)) == before, "pty file identity")
+        data = b""
+        while True:
+            ops.tick()
+            chunk = io.read(fd, expected["bytes"] + 1 - len(data))
+            if not chunk:
+                break
+            data += chunk
+            require(len(data) <= expected["bytes"], "pty metadata grew")
+        after = pty_stat(io.fstat(fd))
+        require(pty_stat(io.stat(parts[-1], dir_fd=parent, follow_symlinks=False)) == after, "pty file replacement")
+        for parent_fd, name, child, observed in directories:
+            require(pty_stat(io.fstat(child)) == observed
+                    and pty_stat(io.stat(name, dir_fd=parent_fd, follow_symlinks=False)) == observed,
+                    "pty directory changed")
+        require(pty_stat(io.fstat(root)) == root_identity
+                and pty_stat(io.stat(app, follow_symlinks=False)) == root_identity, "pty root changed")
+        result = pty_text_record(expected, data, before, after)
+        ops.tick()
+    except BaseException as exc:
+        primary = exc
+    finally:
+        for fd in reversed(descriptors):
+            try:
+                io.close(fd)
+            except BaseException as exc:
+                close_errors.append(type(exc).__name__ + ": " + str(exc))
+    if primary is not None:
+        primary.pty_close_errors = close_errors
+        raise primary
+    require(not close_errors, "pty descriptor finalization: " + repr(close_errors))
+    return result
+
+
+def latch_pty_receipt_failure(evidence, exc):
+    # One bounded first-failure latch, independent of whether its receipt exists.
+    # Never reset after successful terminal writes; persistent I/O may defeat them.
+    if getattr(evidence, "pty_receipt_failure", None) is None:
+        evidence.pty_receipt_failure = dict(
+            status=74, receipt="pty-selection-metadata.json",
+            state="partial-or-absent; successful final writes do not repair this receipt",
+            stage="diagnostic serialization/write/sync/close (exact substage may be unavailable)",
+            errorClass=type(exc).__name__[:64], error=str(exc)[:512])
+
+
+def observe_pty_metadata(ops, evidence, path, app):
+    require(not ops.unsettled, "unresolved native work before pty metadata")
+    require(path == app / PTY_TARGET["path"], "exact pty diagnostic target")
+    before = identity(path)
+    verify_bytes(*digest_file(path, PTY_TARGET["bytes"], ops.tick), PTY_TARGET["bytes"], PTY_TARGET["sha256"])
+    require(identity(path) == before, "pty target drift")
+    slot = evidence.reserve(PTY_DIAGNOSTIC_CAP, "normal")
+    captured = []
+    primary = None
+    diagnostic = dict(target=PTY_TARGET, targetIdentity=before, metadata=captured,
+                      selectionEstablished=False, executed=False, diagnosticOnly=True)
+    try:
+        for expected in PTY_METADATA:
+            require(not ops.unsettled, "unresolved native work during pty metadata")
+            captured.append(read_pty_text(ops, app, expected))
+            require(sum(v["bytes"] for v in captured) <= PTY_TOTAL_TEXT_CAP, "pty aggregate text bound")
+        verify_bytes(*digest_file(path, PTY_TARGET["bytes"], ops.tick), PTY_TARGET["bytes"], PTY_TARGET["sha256"])
+        require(identity(path) == before, "pty target changed after metadata")
+        ops.tick()
+    except BaseException as exc:
+        primary = exc
+        diagnostic["error"] = type(exc).__name__ + ": " + str(exc)
+        diagnostic["readerCloseErrors"] = getattr(exc, "pty_close_errors", [])
+    try:
+        evidence.write("pty-selection-metadata.json", diagnostic, ticket=slot)
+    except BaseException as exc:
+        latch_pty_receipt_failure(evidence, exc)
+        if primary is None:
+            raise
+    if primary is not None:
+        raise primary
+    require(not ops.unsettled, "unresolved native work after pty metadata")
+
+
+def inspect_architecture(ops, evidence, path, app):
+    architectures = ops.text([TOOLS["lipo"], "-archs", str(path)]).split()
+    if path == app / PTY_TARGET["path"]:
+        require(architectures == ["x86_64"], "fixed pty architecture observation drift")
+        observe_pty_metadata(ops, evidence, path, app)
+    # Diagnostic capture never waives the original architecture rejection.
+    require("arm64" in architectures, "arm64 absent")
+
+
 def inspect(ops, evidence, dmg):
     mount = evidence.root / "mount"
     mount.mkdir(mode=0o700)
@@ -762,7 +909,7 @@ def inspect(ops, evidence, dmg):
             require(sum(p == app / CANVAS_PATH for p in mach) == 1, "unique typed canvas target")
             loads = []
             for p in mach:
-                require("arm64" in ops.text([TOOLS["lipo"], "-archs", str(p)]).split(), "arm64 absent")
+                inspect_architecture(ops, evidence, p, app)
                 output = ops.text([TOOLS["otool"], "-m", "-L", str(p)])
                 if str(p.relative_to(app)) == CANVAS_PATH:
                     parsed = observe_canvas(ops, evidence, p, app, output)
@@ -825,6 +972,7 @@ def inspect(ops, evidence, dmg):
                 attachmentOwnership=owned, detachedObserved=detached_observed,
                 attachmentUnresolved=attach_attempted and not detached_observed,
                 nativeWaitUnresolved=ops.unsettled,
+                diagnosticReceiptFailure=getattr(evidence, "pty_receipt_failure", None),
                 noAppOrDaemonExecution=True, settlementScope="recorded image and direct native children only")
 
 
@@ -894,7 +1042,10 @@ def freeze_upload(evidence, result, finalization, tick):
 
 
 def finalize_evidence(evidence, result, tick=lambda: None):
-    finalization = 0
+    diagnostic = getattr(evidence, "pty_receipt_failure", None) or result.get("diagnosticReceiptFailure")
+    if diagnostic is not None:
+        result = dict(result, diagnosticReceiptFailure=diagnostic)
+    finalization = 74 if diagnostic is not None else 0
     error = None
     try:
         evidence.write("terminal.json", result, ticket=evidence.terminal_slot)
@@ -913,7 +1064,8 @@ def finalize_evidence(evidence, result, tick=lambda: None):
         error = (type(exc).__name__ + ": " + str(exc))[:1024]
     try:
         evidence.write("finalization.json", dict(primary=result["primary"], cleanup=result["cleanup"],
-                       finalization=finalization, error=error), ticket=evidence.final_slot)
+                       finalization=finalization, error=error,
+                       diagnosticReceiptFailure=diagnostic), ticket=evidence.final_slot)
     except BaseException:
         finalization = 74
     try:
