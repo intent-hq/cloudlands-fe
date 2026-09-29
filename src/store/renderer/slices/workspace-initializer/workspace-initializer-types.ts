@@ -94,6 +94,10 @@ export interface WorkspaceInitializerPendingGitHubPrefill {
   number: number;
   kind: 'issue' | 'pr';
   url: string;
+  /** Already-read PR branches; available on both browser and Electron Home. */
+  sourceBranch?: string;
+  targetBranch?: string;
+  title?: string;
 }
 
 export interface WorkspaceInitializerHydrationState {

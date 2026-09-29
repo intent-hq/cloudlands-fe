@@ -1,6 +1,8 @@
 import { all, call, delay, put, select, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { openExternalUrl } from '$lib/utils/open-external';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
+import { mutationErrorMessage } from '$lib/client/live/live-support';
 import {
   captureIntegrationContext,
   integrationReconnectSettled,
@@ -95,7 +97,13 @@ function issueItem(issue: LinearIssueResult): HomeIntegrationItem {
     project: issue.project,
   };
 }
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const message = mutationErrorMessage;
+
+// Installed daemons report absent Linear credentials as an Internal error whose
+// data/detail names the missing configuration, rather than authenticated: false.
+function isLinearNotConfigured(error: unknown): boolean {
+  return /^(?:Internal error: )?linear(?: is)? not configured(?::|\.|$)/i.test(message(error));
+}
 function repositories(state: HomeIntegrationsState) {
   const unique = new Map<string, { owner: string; repo: string }>();
   for (const repo of state.scope?.repositories ?? []) {
@@ -209,6 +217,24 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
       }),
     );
   } catch (error) {
+    if (context.isCurrent() && state.scope.kind === 'linear' && isLinearNotConfigured(error)) {
+      yield* put(
+        patchHomeIntegrations(generation, {
+          status: 'disconnected',
+          error: null,
+          loadingMore: false,
+          items: [],
+          cursors: [],
+          selectedId: null,
+          detail: null,
+          detailLoading: false,
+          comments: [],
+          commentsCursor: null,
+          commentsError: null,
+        }),
+      );
+      return;
+    }
     if (context.isCurrent())
       yield* put(
         patchHomeIntegrations(generation, {
@@ -326,6 +352,14 @@ function* workspaceWorker(): SagaGenerator<void> {
   const item = state.detail;
   if (!item) return;
   if (item.owner && item.repo && item.number) {
+    if (!item.headRef?.trim()) {
+      yield* put(
+        patchHomeIntegrations(state.generation, {
+          detailError: m.workspace_branchSelector_fetchBranchesFailed_error(),
+        }),
+      );
+      return;
+    }
     yield* put(
       setWorkspaceInitializerPendingGitHubPrefill({
         owner: item.owner,
@@ -333,6 +367,9 @@ function* workspaceWorker(): SagaGenerator<void> {
         number: item.number,
         kind: 'pr',
         url: item.url,
+        sourceBranch: item.headRef,
+        targetBranch: item.baseRef,
+        title: item.title,
       }),
     );
   } else {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import './home.css';
-  import { onDestroy, untrack, tick } from 'svelte';
+  import HomeLoading from './HomeLoading.svelte';
+  import HomePreviewPane from './HomePreviewPane.svelte';
+  import { onDestroy, untrack, tick, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -41,11 +43,13 @@
     repositories,
     workspaceId,
     preview,
+    header,
   }: {
     kind: HomeIntegrationKind;
     repositories: IntegrationRepository[];
     workspaceId?: string;
     preview?: HomeIntegrationsState;
+    header?: Snippet;
   } = $props();
   const collaborator$ = selectIsCollaboratorOnlyClient();
   let root: HTMLDivElement;
@@ -148,84 +152,77 @@
 
 <div
   bind:this={root}
-  class="home-integrations flex h-full min-h-0 flex-1 flex-col"
+  class="home-integrations flex h-full min-h-0 flex-1 overflow-hidden"
   data-home-integrations={kind}
 >
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-6 py-4">
-    <div class="min-w-40 max-w-60 flex-1">
-      <Input
-        type="search"
-        class="rounded-xl border-transparent bg-muted/50"
-        value={query}
-        aria-label={m.home_integrations_search()}
-        placeholder={isPr ? m.home_integrations_search_prs() : m.home_integrations_search_issues()}
-        oninput={(event) => search(event.currentTarget.value)}
-      />
-    </div>
-    <div class="home-choice-group flex-wrap">
-      {#each filters as filter (filter.value)}
+  <div class="integration-list flex min-h-0 min-w-0 flex-1 flex-col" data-has-detail={!!selectedId}>
+    {@render header?.()}
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-6 py-4">
+      <div class="min-w-40 max-w-60 flex-1">
+        <Input
+          type="search"
+          class="rounded-xl border-transparent bg-muted/50"
+          value={query}
+          aria-label={m.home_integrations_search()}
+          placeholder={isPr
+            ? m.home_integrations_search_prs()
+            : m.home_integrations_search_issues()}
+          oninput={(event) => search(event.currentTarget.value)}
+        />
+      </div>
+      <div class="home-choice-group flex-wrap">
+        {#each filters as filter (filter.value)}
+          <Button
+            variant="ghost"
+            size="sm"
+            active={view.filter === filter.value && !(kind === 'linear' && query.trim())}
+            aria-pressed={view.filter === filter.value && !(kind === 'linear' && query.trim())}
+            disabled={!!preview || (kind === 'linear' && !!query.trim())}
+            onclick={() => search(query, filter.value)}>{filter.label}</Button
+          >
+        {/each}
+      </div>
+      {#if isPr}
+        <div class="home-choice-group ml-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            active={!view.closed}
+            aria-pressed={!view.closed}
+            disabled={!!preview}
+            onclick={() => search(query, view.filter, false)}>{m.home_integrations_open()}</Button
+          >
+          <Button
+            variant="ghost"
+            size="sm"
+            active={view.closed}
+            aria-pressed={view.closed}
+            disabled={!!preview}
+            onclick={() => search(query, view.filter, true)}>{m.home_integrations_closed()}</Button
+          >
+        </div>
+      {/if}
+      <div class="ml-auto shrink-0">
         <Button
           variant="ghost"
-          size="sm"
-          active={view.filter === filter.value && !(kind === 'linear' && query.trim())}
-          aria-pressed={view.filter === filter.value && !(kind === 'linear' && query.trim())}
-          disabled={!!preview || (kind === 'linear' && !!query.trim())}
-          onclick={() => search(query, filter.value)}>{filter.label}</Button
-        >
-      {/each}
-    </div>
-    {#if isPr}
-      <div class="home-choice-group ml-auto">
-        <Button
-          variant="ghost"
-          size="sm"
-          active={!view.closed}
-          aria-pressed={!view.closed}
-          disabled={!!preview}
-          onclick={() => search(query, view.filter, false)}>{m.home_integrations_open()}</Button
-        >
-        <Button
-          variant="ghost"
-          size="sm"
-          active={view.closed}
-          aria-pressed={view.closed}
-          disabled={!!preview}
-          onclick={() => search(query, view.filter, true)}>{m.home_integrations_closed()}</Button
+          size="icon-sm"
+          aria-label={m.home_integrations_refresh()}
+          tooltip={m.home_integrations_refresh()}
+          loading={view.status === 'loading'}
+          disabled={!!preview || view.status === 'loading' || view.loadingMore}
+          onclick={() => appStore.dispatch(refreshHomeIntegrations())}
+          ><Fa icon={faArrowRotateRight} /></Button
         >
       </div>
-    {/if}
-    <div class="ml-auto shrink-0">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={m.home_integrations_refresh()}
-        tooltip={m.home_integrations_refresh()}
-        loading={view.status === 'loading'}
-        disabled={!!preview || view.status === 'loading' || view.loadingMore}
-        onclick={() => appStore.dispatch(refreshHomeIntegrations())}
-        ><Fa icon={faArrowRotateRight} /></Button
-      >
     </div>
-  </div>
-  {#if !isPr}<p class="border-b border-border px-5 py-2 type-caption text-muted-foreground">
-      {query.trim()
-        ? m.home_integrations_linear_search_scope()
-        : m.home_integrations_linear_scope()}
-    </p>{/if}
-  {#if isPr && scopeMetadata.hasLocalRepositories}<p
-      class="px-5 py-2 type-caption text-muted-foreground"
-    >
-      {m.home_integrations_local_repos()}
-    </p>{/if}
-  <div class="flex min-h-0 flex-1 overflow-hidden">
-    <div
-      class="integration-list min-h-0 min-w-0 flex-1 overflow-y-auto"
-      data-has-detail={!!selectedId}
-    >
+    {#if !isPr}<p class="border-b border-border px-5 py-2 type-caption text-muted-foreground">
+        {query.trim()
+          ? m.home_integrations_linear_search_scope()
+          : m.home_integrations_linear_scope()}
+      </p>{/if}
+    <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
       {#if view.status === 'loading' || view.status === 'idle'}
-        <div class="p-8 text-center text-sm text-muted-foreground" role="status">
-          {m.home_integrations_loading()}
-        </div>
+        <HomeLoading />
       {:else if view.status === 'disconnected'}
         <div class="space-y-3 p-8 text-center">
           <h2 class="text-base font-medium">
@@ -258,6 +255,7 @@
           {m.home_integrations_loaded({ count: formatInteger(items.length) })}
         </div>
         <ListView
+          animateRows
           {items}
           getKey={(item) => item.id}
           getText={(item) => item.title}
@@ -265,7 +263,6 @@
           selectedKeys={selectedId ? [selectedId] : []}
           onSelectedKeysChange={(keys) =>
             selectItem(keys[0] === undefined ? null : String(keys[0]))}
-          onActivate={(item) => selectItem(item.id)}
           ariaLabel={isPr ? m.home_integrations_prs() : m.home_integrations_issues()}
           class="px-5"
         >
@@ -311,34 +308,27 @@
           </div>{/if}
       {/if}
     </div>
-    {#if selectedId}
+  </div>
+  {#if selectedId}
+    <HomePreviewPane>
       <section
-        class="integration-detail flex min-h-0 w-full min-w-0 flex-col border-l border-border"
+        class="flex h-full min-h-0 w-full min-w-0 flex-col"
         aria-label={m.home_integrations_detail()}
       >
-        <header class="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
-          <span class="type-caption text-muted-foreground"
-            >{detail?.identifier ?? m.home_integrations_detail()}</span
-          ><Button
-            data-integration-close
-            variant="ghost"
-            size="icon-sm"
-            aria-label={m.home_integrations_close()}
-            title={m.home_integrations_close()}
-            onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
-          >
-        </header>
-        <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
-          {#if view.detailLoading}<p role="status" class="text-sm text-muted-foreground">
-              {m.home_integrations_loading()}
-            </p>
-          {:else if view.detailError}<div class="space-y-3" role="alert">
-              <p class="break-words text-sm text-muted-foreground">{view.detailError}</p>
-              <Button disabled={!!preview} onclick={() => selectItem(selectedId)}
-                >{m.home_integrations_retry()}</Button
-              >
-            </div>
-          {:else if detail}
+        <header class="shrink-0 space-y-3 border-b border-border p-6">
+          <div class="flex items-center justify-between gap-2">
+            <span class="type-caption text-muted-foreground"
+              >{detail?.identifier ?? m.home_integrations_detail()}</span
+            ><Button
+              data-integration-close
+              variant="ghost"
+              size="icon-sm"
+              aria-label={m.home_integrations_close()}
+              title={m.home_integrations_close()}
+              onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
+            >
+          </div>
+          {#if detail && !view.detailLoading && !view.detailError}
             <div class="space-y-3">
               <p class="type-caption capitalize text-muted-foreground">{detail.state}</p>
               <h2 class="break-words text-2xl font-medium tracking-tight">{detail.title}</h2>
@@ -361,6 +351,17 @@
                   >{/if}
               </div>
             </div>
+          {/if}
+        </header>
+        <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+          {#if view.detailLoading}<HomeLoading detail />
+          {:else if view.detailError}<div class="space-y-3" role="alert">
+              <p class="break-words text-sm text-muted-foreground">{view.detailError}</p>
+              <Button disabled={!!preview} onclick={() => selectItem(selectedId)}
+                >{m.home_integrations_retry()}</Button
+              >
+            </div>
+          {:else if detail}
             <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 type-caption">
               {#if detail.author}<dt class="text-muted-foreground">
                   {m.home_integrations_author()}
@@ -465,9 +466,7 @@
                         >{m.home_integrations_view_comment()}</Button
                       >{/if}
                   </article>{/each}
-                {#if view.commentsLoading}<p role="status" class="text-sm text-muted-foreground">
-                    {m.home_integrations_loading()}
-                  </p>{:else if view.commentsError}<p
+                {#if view.commentsLoading}<HomeLoading count={2} />{:else if view.commentsError}<p
                     role="alert"
                     class="break-words text-sm text-muted-foreground"
                   >
@@ -488,8 +487,8 @@
           {/if}
         </div>
       </section>
-    {/if}
-  </div>
+    </HomePreviewPane>
+  {/if}
 </div>
 
 <style>
@@ -499,12 +498,9 @@
   .integration-list[data-has-detail='true'] {
     display: none;
   }
-  @container (min-width: 52rem) {
+  @container (min-width: 1001px) {
     .integration-list[data-has-detail='true'] {
-      display: block;
-    }
-    .integration-detail {
-      width: 48%;
+      display: flex;
     }
   }
 </style>

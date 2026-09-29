@@ -1,8 +1,11 @@
+import { selectWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+import { resolveGitHubPrefillSelection } from '$lib/components/workspace/initializer/github-prefill';
+import type { WorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import { store as rendererStore } from '$store/renderer/store';
 import {
   installMockElectronBridge,
   type MockBackendMethodHandler,
 } from '../../test/ct-mock-electron-bridge';
-import type { store } from '$store/renderer/store';
 import { homeIntegrationsSaga } from './home-integrations-saga';
 
 interface HomeIntegrationWireCall {
@@ -12,6 +15,8 @@ interface HomeIntegrationWireCall {
 interface HomeIntegrationBrowserControl {
   calls: HomeIntegrationWireCall[];
   releaseSearch: () => void;
+  readPrefill: () => WorkspaceInitializerPendingGitHubPrefill | null;
+  resolvePrefill: () => ReturnType<typeof resolveGitHubPrefillSelection>;
 }
 declare global {
   interface Window {
@@ -20,12 +25,20 @@ declare global {
 }
 
 /** Browser-only protocol fixtures. Runs the production saga against the Electron wire seam. */
-export function setupHomeIntegrationsFixtures(appStore: Pick<typeof store, 'runSaga'>) {
+export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStore, 'runSaga'>) {
   const previous = window.electronAPI;
   const calls: HomeIntegrationWireCall[] = [];
   let releaseSearch = () => {};
   let pageFailed = false;
-  window.__homeIntegrationBrowser = { calls, releaseSearch: () => releaseSearch() };
+  window.__homeIntegrationBrowser = {
+    calls,
+    releaseSearch: () => releaseSearch(),
+    readPrefill: () => selectWorkspaceInitializerPendingGitHubPrefill.select(rendererStore.state),
+    resolvePrefill: () =>
+      resolveGitHubPrefillSelection(
+        selectWorkspaceInitializerPendingGitHubPrefill.select(rendererStore.state)!,
+      ),
+  };
   const pull = {
     number: 142,
     title: 'Keep workspace previews in sync',

@@ -133,3 +133,115 @@ test('All repositories are batched and stale search responses cannot replace new
     contentType: 'application/json',
   });
 });
+
+for (const representation of ['raw', 'ipc'] as const) {
+  test(`Linear missing credentials show Connect for ${representation} daemon errors`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(Harness, { props: { kind: 'linear' } });
+    await expect(component.getByRole('listbox').getByRole('option')).toHaveCount(1);
+    await page.evaluate((shape) => {
+      const original = window.electronAPI.invoke.bind(window.electronAPI);
+      window.electronAPI.invoke = (async (channel: string, payload: unknown) => {
+        if (
+          channel === 'backend:request' &&
+          (payload as { method?: string })?.method === 'linear.authStatus'
+        ) {
+          const detail =
+            'linear not configured: linear: no API key found (set linear.token or LINEAR_API_KEY)';
+          return {
+            ok: false,
+            error: {
+              code: 'INTERNAL_ERROR',
+              rpcCode: -32603,
+              message: 'Internal error',
+              data: shape === 'raw' ? detail : { code: 'INTERNAL_ERROR', detail },
+            },
+          };
+        }
+        return original(channel, payload);
+      }) as typeof window.electronAPI.invoke;
+    }, representation);
+    await component.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(
+      component.getByRole('heading', { name: 'Connect Linear', exact: true }),
+    ).toBeVisible();
+    await expect(component.getByRole('alert')).toHaveCount(0);
+    await expect(component.getByRole('listbox')).toHaveCount(0);
+    await testInfo.attach(`linear-not-configured-${representation}`, {
+      body: await page.screenshot({
+        path: testInfo.outputPath(`linear-not-configured-${representation}.png`),
+      }),
+      contentType: 'image/png',
+    });
+  });
+}
+
+test('Linear service errors retain their daemon detail and remain retryable', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Harness, { props: { kind: 'linear' } });
+  await expect(component.getByRole('listbox').getByRole('option')).toHaveCount(1);
+  await page.evaluate(() => {
+    const original = window.electronAPI.invoke.bind(window.electronAPI);
+    window.electronAPI.invoke = (async (channel: string, payload: unknown) => {
+      if (
+        channel === 'backend:request' &&
+        (payload as { method?: string })?.method === 'linear.authStatus'
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            rpcCode: -32603,
+            message: 'Internal error',
+            data: 'linear API error: service temporarily unavailable',
+          },
+        };
+      }
+      return original(channel, payload);
+    }) as typeof window.electronAPI.invoke;
+  });
+  await component.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(component.getByRole('alert')).toContainText(
+    'linear API error: service temporarily unavailable',
+  );
+  await expect(component.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  await expect(component.getByRole('heading', { name: 'Connect Linear', exact: true })).toHaveCount(
+    0,
+  );
+});
+
+test('Start workspace carries the PR head through the browser initializer prefill', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Harness);
+  await component.getByRole('listbox', { name: 'Pull requests' }).getByRole('option').click();
+  await expect(component.getByText('fix/reconnect → main')).toBeVisible();
+  await component.getByRole('button', { name: 'Start workspace', exact: true }).click();
+  const prefill = await page.evaluate(() => window.__homeIntegrationBrowser!.readPrefill());
+  expect(prefill).toMatchObject({
+    owner: 'acme',
+    repo: 'studio',
+    number: 142,
+    kind: 'pr',
+    sourceBranch: 'fix/reconnect',
+    targetBranch: 'main',
+  });
+  const selection = await page.evaluate(() => window.__homeIntegrationBrowser!.resolvePrefill());
+  expect(selection.metadata).toMatchObject({
+    sourceBranch: 'fix/reconnect',
+    targetBranch: 'main',
+    project: 'acme/studio',
+  });
+  expect(selection.metadata?.sourceBranch).not.toBe(selection.metadata?.targetBranch);
+  const calls = await page.evaluate(() => window.__homeIntegrationBrowser!.calls);
+  expect(calls.some((call) => call.method === 'workspace.create')).toBe(false);
+  await testInfo.attach('home-pr-workspace-prefill', {
+    body: JSON.stringify({ prefill, selection, calls }, null, 2),
+    contentType: 'application/json',
+  });
+});

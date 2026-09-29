@@ -6,44 +6,65 @@
   import Fa from 'svelte-fa';
   import { faHouse } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
-  import {
-    TITLEBAR_NAVIGATION_CONTROL_CLASS,
-    TITLEBAR_NAVIGATION_GLYPH_CLASS,
-  } from '../titlebar-navigation';
+  import WorkspaceTabFlare from '../WorkspaceTabFlare.svelte';
+  import { WORKSPACE_TAB_MOTION_DURATION_MS } from '../titlebar-geometry';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import TitlebarNavigationTooltip from '../TitlebarNavigationTooltip.svelte';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
   const onboardingActive$ = selectOnboardingActive();
+  const tabShortcut$ = effectiveShortcutReadable('navigation.go-to-tab');
+  const homeShortcut = $derived($tabShortcut$.replace(/([1-8])-9$/, '1'));
+  const isHome = $derived(page.url.pathname === '/');
 </script>
 
 {#if !$onboardingActive$}
   <nav
-    class="sidebar-nav flex h-8 shrink-0 items-center gap-0.5"
+    class="sidebar-nav flex shrink-0 items-end"
     aria-label={m.layout_sidebarNav_ariaLabel()}
     data-top-navigation
   >
-    <TitlebarNavigationTooltip label={m.home_navigation_description()} shortcut="mod+o">
-      <Button
-        variant="ghost-light"
-        size="icon"
-        iconOnly
-        class={cn('sidebar-nav-btn relative', TITLEBAR_NAVIGATION_CONTROL_CLASS)}
-        onclick={() => goto('/')}
-        aria-label={m.home_navigation_label()}
-        aria-current={page.url.pathname === '/' ? 'page' : undefined}
-        data-nav-item="home"
-        data-titlebar-spaces-control
-      >
-        <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
+    <div
+      class={cn(
+        'home-tab relative flex h-(--control-height-medium) w-12 shrink-0 items-center border transition-[background-color,border-color] duration-spring-moderate motion-reduce:transition-none',
+        isHome
+          ? 'rounded-t-md border-border border-b-0 bg-transparent text-foreground shadow-none'
+          : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
+      )}
+      data-home-tab
+      data-active={isHome}
+    >
+      <WorkspaceTabFlare
+        side="leading"
+        visible={isHome}
+        durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
+      />
+      <WorkspaceTabFlare
+        side="trailing"
+        visible={isHome}
+        durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
+      />
+      <TitlebarNavigationTooltip label={m.home_navigation_description()} shortcut={homeShortcut}>
+        <Button
+          variant="plain"
+          size="icon"
+          class="sidebar-nav-btn flex h-(--control-height-medium) w-12 cursor-pointer items-center justify-center rounded-[inherit] focus-visible:text-foreground"
+          onclick={() => goto('/')}
+          aria-label={m.home_navigation_label()}
+          aria-current={isHome ? 'page' : undefined}
+          data-nav-item="home"
+          data-titlebar-spaces-control
+        >
           <Fa icon={faHouse} class="pointer-events-none size-4" />
-        </span>
-        {#if page.url.pathname === '/'}
-          <span
-            class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-foreground"
-            aria-hidden="true"
-          ></span>
-        {/if}
-      </Button>
-    </TitlebarNavigationTooltip>
+        </Button>
+      </TitlebarNavigationTooltip>
+    </div>
   </nav>
 {/if}
+
+<style>
+  .home-tab :global(svg[data-workspace-tab-leading-flare] > path:first-child),
+  .home-tab :global(svg[data-workspace-tab-trailing-flare] > path:first-child) {
+    fill: transparent;
+  }
+</style>

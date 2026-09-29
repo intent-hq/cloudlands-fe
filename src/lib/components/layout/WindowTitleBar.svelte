@@ -231,7 +231,7 @@
         aria-hidden="true"
       ></div>
       <div
-        class="titlebar-fixed-controls flex min-w-0 items-center gap-1"
+        class="titlebar-fixed-controls flex min-w-0 self-end items-end gap-1"
         bind:this={fixedControlsEl}
         data-titlebar-fixed-controls
       >

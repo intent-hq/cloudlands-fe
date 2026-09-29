@@ -51,54 +51,58 @@
 </script>
 
 <div
-  class="flex min-h-0 flex-1 gap-4 overflow-x-auto px-6 pb-5 pt-2"
+  class="min-h-0 flex-1 overflow-auto px-6 pb-5"
   data-home-board
   use:scrollFade={{ axis: 'x' }}
   aria-label={m.home_board_view()}
 >
-  {#each columns as group (group.id)}
-    {@const items = workspaces.filter((workspace) => column(workspace) === group.id)}
-    <section class="flex w-64 shrink-0 flex-col" aria-label={group.label}>
-      <h3 class="flex items-center gap-2 px-2 pb-3 pt-1 type-caption font-medium">
-        <span>{group.label}</span><span class="type-caption text-muted-foreground"
-          >{formatInteger(items.length)}</span
+  <div class="flex min-h-full w-max gap-4">
+    {#each columns as group (group.id)}
+      {@const items = workspaces.filter((workspace) => column(workspace) === group.id)}
+      <section class="flex w-64 shrink-0 flex-col self-stretch" aria-label={group.label}>
+        <h3
+          class="sticky top-0 z-20 flex items-center gap-2 bg-background px-2 py-3 type-caption font-medium"
         >
-      </h3>
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-2">
-        {#each items as workspace (workspace.id)}
-          <Button
-            data-home-workspace={workspace.id}
-            variant="outline"
-            active={selectedId === workspace.id}
-            aria-pressed={selectedId === workspace.id}
-            wrapContent={false}
-            class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border/60 bg-muted/30 p-4 text-left"
-            onclick={() => onselect(workspace.id)}
-            aria-label={workspace.title}
+          <span>{group.label}</span><span class="type-caption text-muted-foreground"
+            >{formatInteger(items.length)}</span
           >
-            <span class="flex items-start gap-2"
-              ><WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace)} /><span
-                class="min-w-0 line-clamp-2 break-words font-medium"
-                title={workspace.title}>{workspace.title}</span
-              ></span
+        </h3>
+        <div class="flex flex-col gap-2 pb-2">
+          {#each items as workspace (workspace.id)}
+            <Button
+              data-home-workspace={workspace.id}
+              variant="outline"
+              active={selectedId === workspace.id}
+              aria-pressed={selectedId === workspace.id}
+              wrapContent={false}
+              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border/60 bg-muted/30 p-4 text-left"
+              onclick={() => onselect(workspace.id)}
+              aria-label={workspace.title}
             >
-            {#if workspace.statusMessage}<span
-                class="mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
-                >{workspace.statusMessage}</span
-              >{/if}
-            <span
-              class="mt-3 flex items-center justify-between gap-2 type-caption text-muted-foreground"
-              ><span class="truncate" title={workspace.branch}
-                >{workspace.branch || workspace.repositoryName}</span
-              ><RelativeTime date={getWorkspaceActivityDisplayTime(workspace)} compact /></span
-            >
-          </Button>
-        {:else}
-          <p class="sr-only">
-            {m.home_board_empty_column()}
-          </p>
-        {/each}
-      </div>
-    </section>
-  {/each}
+              <span class="flex items-start gap-2"
+                ><WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace)} /><span
+                  class="min-w-0 line-clamp-2 break-words font-medium"
+                  title={workspace.title}>{workspace.title}</span
+                ></span
+              >
+              {#if workspace.statusMessage}<span
+                  class="mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
+                  >{workspace.statusMessage}</span
+                >{/if}
+              <span
+                class="mt-3 flex items-center justify-between gap-2 type-caption text-muted-foreground"
+                ><span class="truncate" title={workspace.branch}
+                  >{workspace.branch || workspace.repositoryName}</span
+                ><RelativeTime date={getWorkspaceActivityDisplayTime(workspace)} compact /></span
+              >
+            </Button>
+          {:else}
+            <p class="sr-only">
+              {m.home_board_empty_column()}
+            </p>
+          {/each}
+        </div>
+      </section>
+    {/each}
+  </div>
 </div>
