@@ -3246,6 +3246,8 @@
   "layout_diffTab_stageHunkFailed_error": "ハンクをステージできませんでした",
   "layout_diffTab_unstageHunkFailed_error": "ハンクのステージを解除できませんでした",
   "layout_fileTab_goToChanges_tooltip": "変更へ移動",
+  "layout_fileTab_downloadFile_label": "ファイルをダウンロード",
+  "layout_fileTab_downloadFailed_error": "ファイルをダウンロードできませんでした。もう一度お試しください。",
   "layout_fileTab_deleteFile_tooltip": "ファイルを削除",
   "layout_fileTab_errorLoading_label": "ファイルの読み込みエラー",
   "layout_fileTab_didYouMean_label": "もしかして:",

@@ -3246,6 +3246,8 @@
   "layout_diffTab_stageHunkFailed_error": "Failed to stage hunk",
   "layout_diffTab_unstageHunkFailed_error": "Failed to unstage hunk",
   "layout_fileTab_goToChanges_tooltip": "Go to changes",
+  "layout_fileTab_downloadFile_label": "Download file",
+  "layout_fileTab_downloadFailed_error": "Could not download the file. Please try again.",
   "layout_fileTab_deleteFile_tooltip": "Delete file",
   "layout_fileTab_errorLoading_label": "Error loading file",
   "layout_fileTab_didYouMean_label": "Did you mean:",

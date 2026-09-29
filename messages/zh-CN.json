@@ -3246,6 +3246,8 @@
   "layout_diffTab_stageHunkFailed_error": "暂存代码块失败",
   "layout_diffTab_unstageHunkFailed_error": "取消暂存代码块失败",
   "layout_fileTab_goToChanges_tooltip": "转到更改",
+  "layout_fileTab_downloadFile_label": "下载文件",
+  "layout_fileTab_downloadFailed_error": "无法下载文件，请重试。",
   "layout_fileTab_deleteFile_tooltip": "删除文件",
   "layout_fileTab_errorLoading_label": "加载文件出错",
   "layout_fileTab_didYouMean_label": "您是不是要找：",

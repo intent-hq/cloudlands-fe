@@ -3246,6 +3246,8 @@
   "layout_diffTab_stageHunkFailed_error": "Impossible d'indexer le hunk",
   "layout_diffTab_unstageHunkFailed_error": "Impossible de désindexer le hunk",
   "layout_fileTab_goToChanges_tooltip": "Aller aux modifications",
+  "layout_fileTab_downloadFile_label": "Télécharger le fichier",
+  "layout_fileTab_downloadFailed_error": "Impossible de télécharger le fichier. Veuillez réessayer.",
   "layout_fileTab_deleteFile_tooltip": "Supprimer le fichier",
   "layout_fileTab_errorLoading_label": "Erreur lors du chargement du fichier",
   "layout_fileTab_didYouMean_label": "Vouliez-vous dire :",

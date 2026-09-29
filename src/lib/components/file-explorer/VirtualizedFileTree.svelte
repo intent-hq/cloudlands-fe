@@ -30,6 +30,8 @@
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { invoke } from '$lib/electron-bridge';
+  import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
+  import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import {
@@ -766,7 +768,8 @@
             onClick: () => {
               if (contextMenu !== target || !isContextTargetCurrent(target)) return;
               if (
-                (item.id === 'download' || item.id === 'reveal') &&
+                (item.id === 'reveal' ||
+                  (item.id === 'download' && target?.node?.type !== 'file')) &&
                 !selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)
               )
                 return;
@@ -819,16 +822,18 @@
     );
   }
 
-  // Save a copy of a file (or a zip of a folder) via the main process's native
-  // save dialog. Workspace-host-local only — the local main process reads the path.
+  // Files use workspace-aware transfers; folder ZIPs remain host-local.
   async function handleDownload(node: FileNode) {
     try {
-      const result = await invoke<{
-        success: boolean;
-        canceled?: boolean;
-        data?: { filePath: string };
-        error?: { code: string; message: string };
-      }>('file:download', { path: node.path });
+      const result =
+        node.type === 'file'
+          ? await downloadWorkspaceFile(workspaceId, node.path, $fileExplorerWorkspacePath)
+          : await invoke<{
+              success: boolean;
+              canceled?: boolean;
+              data?: { filePath: string };
+              error?: { code: string; message: string };
+            }>('file:download', { path: node.path });
       if (result?.success && result.data?.filePath) {
         notify.success(
           m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
@@ -935,12 +940,13 @@
       });
     }
 
-    // Add download and reveal-in-file-manager options — desktop actions on
-    // workspace file paths, only offered when the daemon runs on this machine
-    // (PROTOCOL §5.14 locality) AND the workspace checkout lives on the daemon
-    // host, i.e. not a remote (SSH) workspace (monorepo#2171).
-    if (selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)) {
-      items.push({ type: 'separator' });
+    const hostLocal = selectIsWorkspaceHostLocal.select(appStore.state, workspaceId);
+    const canDownload =
+      node.type === 'file'
+        ? !!workspaceId && !!workspaceRelativeFilePath(node.path, $fileExplorerWorkspacePath)
+        : hostLocal;
+    if (canDownload || hostLocal) items.push({ type: 'separator' });
+    if (canDownload) {
       items.push({
         id: 'download',
         label:
@@ -953,6 +959,9 @@
           void handleDownload(node);
         },
       });
+    }
+    // Reveal and folder ZIPs read host paths and require a local checkout.
+    if (hostLocal) {
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),

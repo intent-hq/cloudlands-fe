@@ -3246,6 +3246,8 @@
   "layout_diffTab_stageHunkFailed_error": "暫存程式碼區塊失敗",
   "layout_diffTab_unstageHunkFailed_error": "取消暫存程式碼區塊失敗",
   "layout_fileTab_goToChanges_tooltip": "轉到更改",
+  "layout_fileTab_downloadFile_label": "下載檔案",
+  "layout_fileTab_downloadFailed_error": "無法下載檔案，請再試一次。",
   "layout_fileTab_deleteFile_tooltip": "刪除檔案",
   "layout_fileTab_errorLoading_label": "載入檔案出錯",
   "layout_fileTab_didYouMean_label": "您是不是要找：",

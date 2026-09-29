@@ -3246,6 +3246,8 @@
   "layout_diffTab_stageHunkFailed_error": "Error al preparar el fragmento",
   "layout_diffTab_unstageHunkFailed_error": "Error al quitar el fragmento de preparados",
   "layout_fileTab_goToChanges_tooltip": "Ir a los cambios",
+  "layout_fileTab_downloadFile_label": "Descargar archivo",
+  "layout_fileTab_downloadFailed_error": "No se pudo descargar el archivo. Inténtalo de nuevo.",
   "layout_fileTab_deleteFile_tooltip": "Eliminar archivo",
   "layout_fileTab_errorLoading_label": "Error al cargar el archivo",
   "layout_fileTab_didYouMean_label": "Quizás quiso decir:",
