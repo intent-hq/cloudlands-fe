@@ -3,12 +3,12 @@
   import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
   import {
     selectCanAdministerHost,
-    selectPrincipalConnectionContext,
+    selectPrincipalActionContext,
   } from '$store/renderer/slices/principal/principal-selectors';
   import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   const hostMember$ = selectIsHostMember();
   const canAdministerHost$ = selectCanAdministerHost();
-  const connection$ = selectPrincipalConnectionContext();
+  const admission$ = selectPrincipalActionContext();
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
@@ -42,6 +42,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerRemoteSetups,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -107,6 +108,8 @@
     );
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
+  const mountedDispatch = appStore.dispatch;
+  const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
@@ -683,7 +686,7 @@
   // That logic lives in the parent flow to avoid side effects when this component
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
-  async function loadRecentRepos(connection: string | null) {
+  async function loadRecentRepos(isCurrent: () => boolean) {
     performanceMonitor.start('loadRecentRepos');
 
     // Refresh the GitHub auth snapshot so the "Pick a repo" tab knows whether
@@ -695,6 +698,8 @@
         await new Promise((resolve) => setTimeout(resolve, debugConfig.get('networkDelay') || 0));
       }
 
+      if (!isCurrent()) return;
+
       // Load repos from both workspace-derived and persistent registry in parallel
       const [workspaceListResult, registryResult] = await Promise.all([
         workspaceClient.list({ lite: true }),
@@ -703,12 +708,15 @@
           {},
         ).catch(() => null),
       ]);
-      if (connection !== selectPrincipalConnectionContext.select(appStore.state)) return;
+      if (!isCurrent()) return;
+      if (!workspaceListResult.ok && !registryResult?.success) return;
 
       const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
       if (workspaceListResult.ok) {
-        appStore.dispatch(replaceWorkspaceList(workspaces));
+        mountedDispatch(replaceWorkspaceList(workspaces));
       }
+
+      if (!isCurrent()) return;
 
       // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
       const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
@@ -738,7 +746,7 @@
       };
 
       // Persisted recents may predate the daemon-managed exclusions below.
-      for (const repo of $workspaceInitializerRecentRepos$) {
+      for (const repo of selectWorkspaceInitializerRecentRepos.select(appStore.state)) {
         if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
         repoMap.set(entryKey(repo), repo);
       }
@@ -828,12 +836,13 @@
 
       // Redux applies persisted dismissals to the latest source results, including
       // removals made while this request was in flight, before enforcing the limit.
-      appStore.dispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
+      if (isCurrent()) mountedDispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
     } catch (err) {
+      if (!isCurrent()) return;
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
       logger.error('Failed to load recent repositories', appError);
     } finally {
-      if (connection === selectPrincipalConnectionContext.select(appStore.state)) isLoading = false;
+      if (isCurrent()) isLoading = false;
       performanceMonitor.end('loadRecentRepos');
     }
   }
@@ -842,10 +851,21 @@
     if ($canAdministerHost$) appStore.dispatch(initializeGitHubAuth());
   });
   $effect(() => {
-    const connection = $connection$;
-    appStore.dispatch(setWorkspaceInitializerRecentRepos([]));
+    const admission = $admission$;
+    const awaitingHydration = $canAdministerHost$ && !$initializerHydrated$;
     isLoading = true;
-    if (connection) void untrack(() => loadRecentRepos(connection));
+    // Reading history must not clear it, nor race the owner's saved settings.
+    // Members use local preferences and do not wait for owner-only hydration.
+    if (!admission || awaitingHydration || appStore.dispatch !== mountedDispatch) return;
+    let active = true;
+    const isCurrent = () =>
+      active &&
+      appStore.dispatch === mountedDispatch &&
+      admission === selectPrincipalActionContext.select(appStore.state);
+    void untrack(() => loadRecentRepos(isCurrent));
+    return () => {
+      active = false;
+    };
   });
 
   // Parse GitHub URL using the URL API for robust parsing

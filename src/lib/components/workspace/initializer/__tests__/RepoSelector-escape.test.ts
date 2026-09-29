@@ -45,6 +45,7 @@ vi.mock(
   async () => {
     const { store } = await import('$store/renderer/store');
     return {
+      selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),

@@ -95,6 +95,7 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerHydrated: mocks.selector(() => true),
   selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
   selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
   selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
