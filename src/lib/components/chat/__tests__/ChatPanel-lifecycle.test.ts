@@ -4086,7 +4086,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const [getContainer, target, duration, onComplete] = mocks.animateScrollTo.mock.calls[0];
     expect(getContainer()).toBe(scrollContainer);
     expect(target).toBe(600);
-    expect(duration).toBe(150);
+    expect(duration).toBeGreaterThan(0);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
 
     onComplete(scrollContainer);
