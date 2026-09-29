@@ -85,7 +85,16 @@ function showInterruptedAgents(agents: InterruptedAgent[]): void {
  * the agents in this window). Stops the resolved-elsewhere watcher so a later
  * cross-window resolve cannot re-open a dismissed modal.
  */
-export function notifyInterruptedAgentsModalClosed(): void {
+export function notifyInterruptedAgentsModalClosed(
+  reason: 'dismissed' | 'resolved' = 'dismissed',
+): void {
+  if (reason === 'resolved') {
+    // The modal completed its visible rows. A different failed recovery can
+    // still be awaiting discovery; automatic close must not dismiss it.
+    clearReconcileTimer();
+    void reconcileInterruptedAgents();
+    return;
+  }
   for (const id of [...(openAgentIds ?? []), ...discoveryAgentIds.keys()])
     dismissedAgentIds.add(id);
   discoveryAgentIds.clear();
@@ -177,8 +186,15 @@ export function notifyInterruptedAgentUpdated(
   if (!connected || !installedAppClient) return;
   if (startupRecoveryFailed && !dismissedAgentIds.has(agentId))
     discoveryAgentIds.set(agentId, ++failureHintVersion);
-  else if (!openAgentIds?.has(agentId)) return;
+  else if (!openAgentIds?.has(agentId) && !discoveryAgentIds.has(agentId)) return;
   clearReconcileTimer();
+  if (reconcileInFlight) {
+    // Invalidate a snapshot immediately, including when another window
+    // resolved an agent that has not yet been displayed by discovery.
+    requestVersion += 1;
+    reconcileAgain = true;
+    return;
+  }
   reconcileTimer = setTimeout(() => {
     reconcileTimer = null;
     void reconcileInterruptedAgents();

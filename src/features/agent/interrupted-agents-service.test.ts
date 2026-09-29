@@ -522,6 +522,25 @@ describe('interrupted-agents-service', () => {
       expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
     });
 
+    it('honors a cross-window resolution while a failed agent is still being discovered', async () => {
+      await install();
+      let finish!: (agents: InterruptedAgent[]) => void;
+      mockAppClient.agents.listInterrupted.mockImplementationOnce(
+        () =>
+          new Promise<InterruptedAgent[]>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      notifyInterruptedAgentUpdated(candidate.agentId, true);
+      await flush();
+      // The held response predates another window resolving this agent.
+      notifyInterruptedAgentUpdated(candidate.agentId);
+      finish([candidate]);
+      await flush();
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(2);
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
     it('coalesces a burst during an in-flight discovery into one trailing read', async () => {
       await install();
       let finish!: (agents: InterruptedAgent[]) => void;
@@ -560,6 +579,7 @@ describe('interrupted-agents-service', () => {
         [candidate.agentId],
         [],
       );
+      notifyInterruptedAgentsModalClosed('resolved');
       await flush();
       expect(showHandler).toHaveBeenCalledExactlyOnceWith([next]);
     });
