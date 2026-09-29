@@ -29,8 +29,10 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
   for (const name of ['Pull requests', 'Linear issues', 'Workspaces']) {
     await component.getByRole('tab', { name, exact: true }).click();
   }
-  await component.getByRole('button', { name: /^Needs you/ }).click();
-  await component.getByRole('button', { name: /^All workspaces/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^Needs you/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^All workspaces/ }).click();
   const rows = component.getByRole('listbox', { name: 'Workspaces' }).getByRole('option');
   await expect(rows).toHaveCount(6);
   await rows.first().focus();
@@ -68,7 +70,8 @@ test('Home filters and previews workspaces without entering them', async ({
     'true',
   );
   await expect(list.getByRole('option')).toHaveCount(6);
-  await component.getByRole('button', { name: /^Needs you/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^Needs you/ }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
   await list.getByRole('option').first().focus();
   await page.keyboard.press('Enter');
@@ -77,12 +80,15 @@ test('Home filters and previews workspaces without entering them', async ({
   await page.keyboard.press('Escape');
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
   await expect(list.getByRole('option').first()).toBeFocused();
-  await component.getByRole('button', { name: /^Unread/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^Unread/ }).click();
   await expect(list.getByRole('option')).toHaveCount(1);
   await expect(list).toContainText('Document the release process');
-  await component.getByRole('button', { name: /^Archived/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^Archived/ }).click();
   await expect(list).toContainText('Explore alternative layouts');
-  await component.getByRole('button', { name: /^All workspaces/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^All workspaces/ }).click();
   await component.getByRole('button', { name: 'acme/platform', exact: true }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
   await component.getByRole('searchbox').fill('no matching work');
@@ -118,7 +124,8 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('button', { name: 'List view', exact: true }).click();
   await expect(component.getByRole('listbox').getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
-  await component.getByRole('button', { name: /^Running/ }).click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: /^Running/ }).click();
   await expect(board.getByRole('button')).toHaveCount(1);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });

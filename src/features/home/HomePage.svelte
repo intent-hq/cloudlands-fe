@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Select } from '$lib/components/ui/select';
   import './home.css';
   import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -159,7 +160,6 @@
   const selectedWorkspace = $derived(
     filteredWorkspaces.find((workspace) => workspace.id === selectedId),
   );
-  const heading = $derived(selectedRepository?.label);
   const integrationWorkspaceId = $derived($collaborator$ ? scopedWorkspaces[0]?.id : undefined);
 
   let homeElement = $state<HTMLDivElement | null>(null);
@@ -232,7 +232,7 @@
 
 <div
   bind:this={homeElement}
-  class="home-layout h-full min-h-0 min-w-0 text-foreground"
+  class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   data-home-page
 >
   <nav
@@ -254,31 +254,7 @@
         >
       </Button>
     {/if}
-    <div class="space-y-1">
-      {#each filters as item (item.id)}
-        <Button
-          variant="ghost"
-          active={destination === 'workspaces' && filter === item.id && tab === 'workspaces'}
-          class="w-full justify-start"
-          onclick={() => chooseFilter(item.id)}
-          aria-current={destination === 'workspaces' && filter === item.id && tab === 'workspaces'
-            ? 'page'
-            : undefined}
-        >
-          {#snippet leadingIcon()}<Fa icon={item.icon} />{/snippet}
-          <span class="flex min-w-0 flex-1 items-center justify-between gap-2"
-            ><span class="truncate">{item.label}</span><span
-              class="text-muted-foreground tabular-nums"
-              >{formatInteger(
-                scopedWorkspaces.filter((workspace) => matchesHomeFilter(workspace, item.id))
-                  .length,
-              )}</span
-            ></span
-          >
-        </Button>
-      {/each}
-    </div>
-    <div class="mb-2 mt-7 px-2 type-caption text-muted-foreground">{m.home_repositories()}</div>
+    <div class="mb-2 mt-3 px-2 type-caption text-muted-foreground">{m.home_repositories()}</div>
     <Button
       variant="ghost"
       active={repoKey === null && destination === 'workspaces'}
@@ -316,7 +292,7 @@
       </p>{/if}
   </nav>
   <Screen
-    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-background"
+    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-sidebar"
   >
     {#if destination === 'assistant' && !$collaborator$}
       <header class="flex h-12 shrink-0 items-center border-b border-border px-5">
@@ -344,12 +320,6 @@
                 use:restoreTabFocus
                 class="home-header flex shrink-0 flex-wrap items-center gap-x-6 border-b border-border px-5"
               >
-                {#if heading}<h1
-                    class="home-heading min-w-0 truncate text-lg font-medium tracking-tight"
-                    title={selectedRepository?.repoPath ?? heading}
-                  >
-                    {heading}
-                  </h1>{/if}
                 <Tabs.List class="home-tabs shrink-0 gap-5 px-0" aria-label={m.home_views()}>
                   <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
                   <Tabs.Trigger value="prs">{m.home_tab_prs()}</Tabs.Trigger>
@@ -391,6 +361,40 @@
                         aria-label={m.home_search_workspaces()}
                         class="min-w-0 flex-1 max-w-sm rounded-xl border-transparent bg-muted/50"
                       />
+                      <Select.Root
+                        value={filter}
+                        onchange={(value) => {
+                          const choice = filters.find((item) => item.id === value);
+                          if (choice) chooseFilter(choice.id);
+                        }}
+                      >
+                        <Select.Trigger
+                          variant="ghost"
+                          aria-label={m.layout_allCard_status_label()}
+                          class="shrink-0"
+                        >
+                          {filter === 'all'
+                            ? m.layout_allCard_status_label()
+                            : filters.find((item) => item.id === filter)?.label}
+                        </Select.Trigger>
+                        <Select.Content portal>
+                          {#each filters as item (item.id)}
+                            <Select.Item value={item.id} label={item.label}>
+                              <span class="flex items-center gap-2">
+                                <Fa icon={item.icon} />
+                                <span class="flex-1">{item.label}</span>
+                                <span class="text-muted-foreground tabular-nums"
+                                  >{formatInteger(
+                                    scopedWorkspaces.filter((workspace) =>
+                                      matchesHomeFilter(workspace, item.id),
+                                    ).length,
+                                  )}</span
+                                >
+                              </span>
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
                       <div
                         class="home-choice-group ml-auto shrink-0"
                         role="group"
@@ -590,10 +594,6 @@
     .home-header :global(.home-tabs) {
       order: 3;
       flex-basis: 100%;
-    }
-    .home-heading {
-      flex: 1;
-      padding-block: 0.75rem;
     }
     .workspace-row-repo {
       display: none;

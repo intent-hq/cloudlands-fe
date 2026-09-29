@@ -28,7 +28,7 @@
       class={cn(
         'home-tab relative flex h-(--control-height-medium) w-12 shrink-0 items-center border transition-[background-color,border-color] duration-spring-moderate motion-reduce:transition-none',
         isHome
-          ? 'rounded-t-md border-border border-b-0 bg-transparent text-foreground shadow-none'
+          ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
           : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
       )}
       data-home-tab
@@ -61,10 +61,3 @@
     </div>
   </nav>
 {/if}
-
-<style>
-  .home-tab :global(svg[data-workspace-tab-leading-flare] > path:first-child),
-  .home-tab :global(svg[data-workspace-tab-trailing-flare] > path:first-child) {
-    fill: transparent;
-  }
-</style>
