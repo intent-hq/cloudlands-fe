@@ -62,6 +62,7 @@ describe('prerelease cleanup writer coordination', () => {
     expect(source).toMatch(/^permissions: \{\}$/m);
     expect(source).toContain('repository: intent-hq/intent');
     expect(source).toMatch(/^          ref: [a-f0-9]{40}$/m);
+    expect(source).toContain('ref: 3cd2e23e904051f8a0c047717fe7a8e843a5c4ea');
     expect(source).toContain('persist-credentials: false');
     expect(source).toContain('submodules: false');
     expect(source).toContain('token: ${{ secrets.PRERELEASE_CLEANUP_TOKEN }}');
