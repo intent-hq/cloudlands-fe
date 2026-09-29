@@ -1788,6 +1788,8 @@
   "workspace_repoSelector_pickARepo_tab": "选择仓库",
   "workspace_repoSelector_recent_label": "最近",
   "workspace_repoSelector_remoteServer_tab": "远程服务器",
+  "workspace_repoSelector_removeRecent_ariaLabel": "从最近使用的仓库中移除 {repository}",
+  "workspace_repoSelector_removeRecent_tooltip": "从最近使用的仓库中移除",
   "workspace_repoSelector_removeSetup_tooltip": "移除配置",
   "workspace_repoSelector_repoExists_label": "仓库已存在——我们将基于它创建{isolationLabel}",
   "workspace_repoSelector_retrySuggestions_label": "重试",
