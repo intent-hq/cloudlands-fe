@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './home.css';
   import { onDestroy, untrack, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
@@ -150,17 +151,18 @@
   class="home-integrations flex h-full min-h-0 flex-1 flex-col"
   data-home-integrations={kind}
 >
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-2">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-6 py-4">
     <div class="min-w-40 max-w-60 flex-1">
       <Input
         type="search"
+        class="rounded-xl border-transparent bg-muted/50"
         value={query}
         aria-label={m.home_integrations_search()}
         placeholder={isPr ? m.home_integrations_search_prs() : m.home_integrations_search_issues()}
         oninput={(event) => search(event.currentTarget.value)}
       />
     </div>
-    <div class="flex flex-wrap items-center gap-1">
+    <div class="home-choice-group flex-wrap">
       {#each filters as filter (filter.value)}
         <Button
           variant="ghost"
@@ -173,7 +175,7 @@
       {/each}
     </div>
     {#if isPr}
-      <div class="ml-auto flex gap-1">
+      <div class="home-choice-group ml-auto">
         <Button
           variant="ghost"
           size="sm"
@@ -265,6 +267,7 @@
             selectItem(keys[0] === undefined ? null : String(keys[0]))}
           onActivate={(item) => selectItem(item.id)}
           ariaLabel={isPr ? m.home_integrations_prs() : m.home_integrations_issues()}
+          class="px-5"
         >
           {#snippet empty()}<p class="p-8 text-center text-sm text-muted-foreground">
               {isPr && !scopeMetadata.hasGitHubRepositories
@@ -272,11 +275,14 @@
                 : m.home_integrations_empty()}
             </p>{/snippet}
           {#snippet row({ item })}
-            <ListRow class="px-5 py-3">
+            <ListRow class="home-list-row border-b border-border/50 px-2 py-4">
               {#snippet title()}<span class="font-medium" title={item.title}>{item.title}</span
                 >{/snippet}
-              {#snippet description()}<span
-                  >{item.identifier} · {isPr ? `${item.owner}/${item.repo}` : item.team}{item.author
+              {#snippet description()}<span class="mt-1 inline-block"
+                  ><span class="mr-1 inline-flex rounded-full border border-border px-2 py-0.5"
+                    >{item.identifier}</span
+                  >
+                  {isPr ? `${item.owner}/${item.repo}` : item.team}{item.author
                     ? ` · ${item.author}`
                     : ''}</span
                 >{/snippet}
@@ -322,7 +328,7 @@
             onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
           >
         </header>
-        <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+        <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
           {#if view.detailLoading}<p role="status" class="text-sm text-muted-foreground">
               {m.home_integrations_loading()}
             </p>
@@ -335,7 +341,7 @@
           {:else if detail}
             <div class="space-y-3">
               <p class="type-caption capitalize text-muted-foreground">{detail.state}</p>
-              <h2 class="break-words text-xl font-medium tracking-tight">{detail.title}</h2>
+              <h2 class="break-words text-2xl font-medium tracking-tight">{detail.title}</h2>
               <div class="flex flex-wrap gap-2">
                 {#if detail.url}<Button
                     size="sm"

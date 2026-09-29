@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './home.css';
   import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -8,10 +9,7 @@
   import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
-  import {
-    resolveWorkspaceStatusState,
-    getWorkspaceStatusPresentation,
-  } from '$lib/components/workspace/utils/workspace-status-presentation';
+  import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
   import {
     buildRepoPathLookup,
     groupWorkspacesByRepository,
@@ -52,6 +50,7 @@
     faEnvelope,
     faBoxArchive,
     faPlus,
+    faCodePullRequest,
   } from '@fortawesome/free-solid-svg-icons';
   import {
     matchesHomeFilter,
@@ -221,7 +220,7 @@
   data-home-page
 >
   <nav
-    class="home-sidebar min-h-0 overflow-y-auto px-3 py-4"
+    class="home-sidebar min-h-0 overflow-y-auto px-4 py-5"
     aria-label={m.home_navigation_label()}
   >
     {#if !$collaborator$}
@@ -290,7 +289,7 @@
       </p>{/if}
   </nav>
   <Screen
-    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background"
+    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-background"
   >
     {#if destination === 'assistant' && !$collaborator$}
       <header class="border-b border-border px-6 py-5">
@@ -311,7 +310,7 @@
           class="home-header flex shrink-0 flex-wrap items-center gap-x-6 border-b border-border px-5"
         >
           <h1
-            class="home-heading min-w-0 truncate text-sm font-medium"
+            class="home-heading min-w-0 truncate text-lg font-medium tracking-tight"
             title={selectedRepository?.repoPath ?? heading}
           >
             {heading}
@@ -338,17 +337,17 @@
               class="workspace-list flex min-h-0 min-w-0 flex-col"
               aria-label={m.home_tab_workspaces()}
             >
-              <div class="flex items-center gap-2 border-b border-border px-5 py-3">
+              <div class="flex items-center gap-3 px-6 py-4">
                 <Input
                   value={query}
                   oninput={(event) => updateView({ query: event.currentTarget.value })}
                   type="search"
                   placeholder={m.home_search_workspaces()}
                   aria-label={m.home_search_workspaces()}
-                  class="min-w-0 flex-1 max-w-sm"
+                  class="min-w-0 flex-1 max-w-sm rounded-xl border-transparent bg-muted/50"
                 />
                 <div
-                  class="ml-auto flex shrink-0 gap-1"
+                  class="home-choice-group ml-auto shrink-0"
                   role="group"
                   aria-label={m.home_workspace_view()}
                 >
@@ -415,7 +414,7 @@
               {:else}
                 <ListView
                   items={filteredWorkspaces}
-                  rowHeight={64}
+                  rowHeight={80}
                   getKey={(workspace) => workspace.id}
                   getText={(workspace) => workspace.title}
                   selectable="single"
@@ -427,27 +426,31 @@
                     updateView({ selectedId: workspace.id });
                   }}
                   ariaLabel={m.home_tab_workspaces()}
-                  class="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+                  class="min-h-0 flex-1 overflow-y-auto px-5 pb-4"
                 >
                   {#snippet row({ item })}
-                    <ListRow class="h-16 py-3" data-home-workspace={item.id}>
+                    <ListRow
+                      class="home-list-row h-20 border-b border-border/50 px-2 py-4"
+                      data-home-workspace={item.id}
+                    >
                       {#snippet leading()}<WorkspaceStatusIcon
                           status={resolveWorkspaceStatusState(item)}
                         />{/snippet}
                       {#snippet title()}<span title={item.title} class="font-medium"
                           >{item.title}</span
-                        ><span class="ml-2 type-caption font-normal text-muted-foreground"
-                          >{needsAttention(item)
-                            ? m.home_filter_attention()
-                            : getWorkspaceStatusPresentation(resolveWorkspaceStatusState(item))
-                                .label}</span
                         >{/snippet}
-                      {#snippet description()}<p
-                          class="truncate"
-                          title={item.statusMessage || item.branch}
-                        >
-                          {item.statusMessage || item.branch || item.repositoryName}
-                        </p>
+                      {#snippet description()}<div class="mt-1 flex min-w-0 items-center gap-2">
+                          {#if item.pullRequests?.length}<span
+                              class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5"
+                              ><Fa icon={faCodePullRequest} />#{item.pullRequests[0].number}</span
+                            >{#if item.pullRequests.length > 1}<span
+                                class="rounded-full border border-border px-2 py-0.5"
+                                >+{item.pullRequests.length - 1}</span
+                              >{/if}{/if}
+                          <p class="min-w-0 truncate" title={item.statusMessage || item.branch}>
+                            {item.statusMessage || item.branch || item.repositoryName}
+                          </p>
+                        </div>
                       {/snippet}
                       {#snippet trailing()}<span
                           class="workspace-row-meta flex items-center gap-4 text-muted-foreground"
@@ -457,9 +460,6 @@
                               title={[item.repositoryOwner, item.repositoryName, item.branch]
                                 .filter(Boolean)
                                 .join(' / ')}>{item.repositoryName}</span
-                            >{/if}
-                          {#if item.pullRequests?.length}<span class="workspace-row-repo"
-                              >#{item.pullRequests[0].number}</span
                             >{/if}
                           <RelativeTime
                             date={getWorkspaceActivityDisplayTime(item)}
@@ -506,8 +506,15 @@
 <style>
   .home-layout {
     display: grid;
-    grid-template-columns: 13rem minmax(0, 1fr);
+    grid-template-columns: 14rem minmax(0, 1fr);
     container-type: inline-size;
+  }
+  .home-sidebar :global([data-slot='button']) {
+    border-radius: 0.75rem;
+  }
+  .home-sidebar :global([data-state='active'] > [data-slot='button-surface']) {
+    background: hsl(var(--card));
+    box-shadow: none;
   }
   .workspace-content {
     display: grid;

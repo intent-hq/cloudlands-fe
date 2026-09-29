@@ -68,7 +68,7 @@
       onclick={onclose}><Fa icon={faXmark} /></Button
     >
   </header>
-  <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-5">
+  <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
     <div class="space-y-3">
       <div class="flex items-center gap-2 type-caption text-muted-foreground">
         <WorkspaceStatusIcon {status} />
@@ -78,7 +78,7 @@
             : presentation.label}</span
         >
       </div>
-      <h2 class="break-words text-xl font-medium tracking-tight">{workspace.title}</h2>
+      <h2 class="break-words text-2xl font-medium tracking-tight">{workspace.title}</h2>
       {#if workspace.statusMessage}<p
           class="whitespace-pre-wrap break-words text-sm text-muted-foreground"
         >

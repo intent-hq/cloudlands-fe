@@ -51,7 +51,7 @@
 </script>
 
 <div
-  class="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4"
+  class="flex min-h-0 flex-1 gap-4 overflow-x-auto px-6 pb-5 pt-2"
   data-home-board
   use:scrollFade={{ axis: 'x' }}
   aria-label={m.home_board_view()}
@@ -72,7 +72,7 @@
             active={selectedId === workspace.id}
             aria-pressed={selectedId === workspace.id}
             wrapContent={false}
-            class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal bg-background p-3 text-left"
+            class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border/60 bg-muted/30 p-4 text-left"
             onclick={() => onselect(workspace.id)}
             aria-label={workspace.title}
           >
