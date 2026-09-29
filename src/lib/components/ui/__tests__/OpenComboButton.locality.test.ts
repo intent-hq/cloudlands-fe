@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { toNativePath } from '$lib/utils/path-utils';
 import { invoke } from '$lib/electron-bridge';
 import { setOpenAction } from '$store/renderer/slices/external-editors/external-editors-slice';

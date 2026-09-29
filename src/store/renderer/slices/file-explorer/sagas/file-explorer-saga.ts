@@ -9,7 +9,7 @@ import {
   take,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';

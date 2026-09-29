@@ -1,6 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';

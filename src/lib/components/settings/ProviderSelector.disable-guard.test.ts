@@ -56,8 +56,7 @@ async function buildState(fileSpecialists: object[]) {
     await import('$store/renderer/slices/provider-settings/provider-settings-slice');
   const { initialState: availabilityInitialState } =
     await import('$store/renderer/slices/agent-availability/agent-availability-slice');
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   const {
     initialState: providerCatalogInitialState,
     providerCatalogLoaded,

@@ -1,6 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';

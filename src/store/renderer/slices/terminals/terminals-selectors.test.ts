@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { TerminalOverlayState, TerminalPlacement, TerminalTab } from './terminals-slice';
 import {
   selectSelectedScriptId,

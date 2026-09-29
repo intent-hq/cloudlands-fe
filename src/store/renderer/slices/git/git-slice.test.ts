@@ -14,7 +14,7 @@ import {
 import type { CommitInfo, GitStatus } from '$shared/types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const reduce = gitReducer;
 

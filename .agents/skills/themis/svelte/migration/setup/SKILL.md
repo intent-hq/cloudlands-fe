@@ -27,7 +27,7 @@ installation and explicit skill installation. Select the Svelte bundle for this
 existing app; do not repeat greenfield first-slice creation during migration.
 That canonical setup owner links the installation, refresh/collision, cleanup,
 rollback/uninstall ordering, and maintainer workflow in
-`@augmentcode/themis/docs/INSTALLATION.md`.
+`@themislib/themis/docs/INSTALLATION.md`.
 
 ## Step 2 — Import the Package Runtime
 
@@ -46,8 +46,8 @@ constructor map, and register sagas as slices are migrated:
 
 ```typescript
 // src/lib/store/store.ts
-import { Store } from "@augmentcode/themis/svelte-store";
-import type { StoreState } from "@augmentcode/themis/types";
+import { Store } from "@themislib/themis/svelte-store";
+import type { StoreState } from "@themislib/themis/types";
 
 export const store = new Store({
   // counter: counterReducer,
@@ -80,8 +80,8 @@ then add the reducer and explicitly start its saga under the selected lifetime.
 ### Add each migrated slice through the reducer map
 
 ```typescript
-import { Store } from "@augmentcode/themis/svelte-store";
-import type { StoreState } from "@augmentcode/themis/types";
+import { Store } from "@themislib/themis/svelte-store";
+import type { StoreState } from "@themislib/themis/types";
 import { counterReducer } from "$lib/store/slices/counter/counter-slice";
 
 export const store = new Store({ counter: counterReducer });
@@ -98,7 +98,7 @@ checks in that owner rather than duplicating lifecycle examples in the migration
 ### 5. Prove empty bootstrap has no app-owned registrations
 
 ```typescript
-import { Store } from "@augmentcode/themis/svelte-store";
+import { Store } from "@themislib/themis/svelte-store";
 
 const store = new Store({});
 const composedReducers = store.getReducers();

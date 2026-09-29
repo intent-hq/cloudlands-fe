@@ -53,7 +53,7 @@ import {
   takeEveryFromSelector,
   takeLatestFromSelector,
   type SelectorChannelPayload,
-} from '@augmentcode/themis/saga';
+} from '@themislib/themis/saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';

@@ -40,7 +40,7 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { writeTextToClipboard } from '$lib/utils/clipboard';
-import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';

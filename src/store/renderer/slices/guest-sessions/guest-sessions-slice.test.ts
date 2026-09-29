@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';

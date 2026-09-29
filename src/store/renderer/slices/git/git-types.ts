@@ -7,7 +7,7 @@
 import type { CommitFile } from '$features/file-tracking/types';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { CommitInfo, GitStatus, DiffChunk } from '$shared/types';
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 // ── Git Operation Event Types ──
 

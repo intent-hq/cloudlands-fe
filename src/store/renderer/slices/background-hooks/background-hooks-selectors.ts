@@ -3,7 +3,7 @@
  */
 
 import { store } from '../../store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 import type { BackgroundHooksSnapshotStatus } from './background-hooks-slice';
 

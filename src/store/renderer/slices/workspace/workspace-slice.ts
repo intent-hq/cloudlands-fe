@@ -2,8 +2,8 @@ import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/t
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
@@ -13,7 +13,7 @@ import {
   replaceItem,
   updateItem,
   upsertItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 export interface WorkspaceRecencyState {
   lastViewedAt: Record<string, number>;

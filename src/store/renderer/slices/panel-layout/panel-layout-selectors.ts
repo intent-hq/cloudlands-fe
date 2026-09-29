@@ -4,7 +4,7 @@
  * Derived state selectors for the panel layout slice.
  */
 
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { emptyWorkspaceState, isRecentlyClosedPanelColumnRestorable } from './panel-layout-slice';
 import {

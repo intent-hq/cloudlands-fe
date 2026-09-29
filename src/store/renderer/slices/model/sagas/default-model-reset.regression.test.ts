@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 vi.mock('$lib/client/live/backend-transport', () => ({

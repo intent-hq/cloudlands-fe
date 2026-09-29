@@ -12,8 +12,8 @@ sources:
   - ./svelte/SKILL.md
   - ./react/SKILL.md
   - ./streaming/SKILL.md
-  - "@augmentcode/themis/README.md"
-  - "@augmentcode/themis/docs/ARCHITECTURE.md"
+  - "@themislib/themis/README.md"
+  - "@themislib/themis/docs/ARCHITECTURE.md"
 triggers:
   - themis
   - skill router
@@ -62,8 +62,8 @@ Unqualified requests such as `selector lifecycle`, `Store state lifecycle`, or `
 ## Routing decision order
 
 1. **Shared Redux or saga concept only.** → `./core/` Use core for action creators, reducers, state modeling, serializability, typed-redux-saga flows, saga manager behavior, selector channels, `waitFor`, explicit Redux store pruning, testing, debugging, and verifier handoff that apply across Store families.
-2. **Frontend-facing plus Svelte/SvelteKit evidence.** → `./svelte/` Use Svelte only when the target app/code path is UI/frontend-facing and there is concrete Svelte or SvelteKit evidence: a Svelte dependency, `svelte.config.*`, `.svelte` component files, SvelteKit `+layout`/`+page` files, imports from `svelte`, `Store` from `@augmentcode/themis/svelte-store`, or Svelte readable/template integration. Generic browser or web work is not enough. Do not also apply ReactStore/signals or StreamingStore/Kefir selector, setup, or lifecycle guidance to that same app.
-3. **Frontend-facing plus React evidence.** → `./react/` Use React when the target app/code path imports React, uses JSX/TSX React components/hooks, imports `ReactStore` from `@augmentcode/themis/react-store`, or expects Preact React signal selectors/`.useValue(...)` component reads. Do not also apply Svelte readable or StreamingStore/Kefir guidance to that same app.
+2. **Frontend-facing plus Svelte/SvelteKit evidence.** → `./svelte/` Use Svelte only when the target app/code path is UI/frontend-facing and there is concrete Svelte or SvelteKit evidence: a Svelte dependency, `svelte.config.*`, `.svelte` component files, SvelteKit `+layout`/`+page` files, imports from `svelte`, `Store` from `@themislib/themis/svelte-store`, or Svelte readable/template integration. Generic browser or web work is not enough. Do not also apply ReactStore/signals or StreamingStore/Kefir selector, setup, or lifecycle guidance to that same app.
+3. **Frontend-facing plus React evidence.** → `./react/` Use React when the target app/code path imports React, uses JSX/TSX React components/hooks, imports `ReactStore` from `@themislib/themis/react-store`, or expects Preact React signal selectors/`.useValue(...)` component reads. Do not also apply Svelte readable or StreamingStore/Kefir guidance to that same app.
 4. **Node/server/no-UI path.** → `./streaming/` by default. Use Streaming for Node services, server routes, background workers, CLIs, scripts, test harnesses, Kefir/observable selectors, `StreamingStore`, or any app/code path where concrete Svelte or React UI evidence is absent. Absence of UI evidence defaults to Streaming. Do not also apply Store/readable/component/setup, React `.useValue(...)`, or signal-render guidance to that same app.
 5. **Mixed repositories route by the task path.** A repository-level Svelte or React dependency does not make every change UI-specific. Classify the specific files and behavior being changed, then choose Core plus at most one concrete Store family for each app/package/code path.
 
@@ -91,7 +91,7 @@ When a consuming app asks for packaged AI skills, use the same evidence as **Rou
 - Shared Redux/redux-saga guidance only → Core bundle.
 - Choose all families only when every family is intentionally needed across separate apps or paths.
 
-Continue at `./setup/SKILL.md` — **Installation workflow**. The sole operational owner is `@augmentcode/themis/docs/INSTALLATION.md` — **Consumer CLI and bundle selection** and **Verify, refresh, cleanup, and uninstall**; it specifies commands, bundle contents, destinations, compatibility links, collision/refresh behavior, and cleanup ordering.
+Continue at `./setup/SKILL.md` — **Installation workflow**. The sole operational owner is `@themislib/themis/docs/INSTALLATION.md` — **Consumer CLI and bundle selection** and **Verify, refresh, cleanup, and uninstall**; it specifies commands, bundle contents, destinations, compatibility links, collision/refresh behavior, and cleanup ordering.
 
 ## Evidence to record in handoff
 

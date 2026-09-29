@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, QueuedMessage } from '$shared/types';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const reconnectCallbacks = vi.hoisted(() => new Set<() => void>());
 vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({

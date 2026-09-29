@@ -274,6 +274,7 @@
     "clsx": "^2.1.1",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
+    "ct-browser": "npm:playwright-core@1.63.0",
     "d3": "^7.9.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.14",
@@ -294,7 +295,6 @@
     "node-gyp": "^13.0.2",
     "phosphor-svelte": "^3.1.0",
     "playwright": "^1.62.1",
-    "ct-browser": "npm:playwright-core@1.63.0",
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
@@ -319,7 +319,7 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "@augmentcode/themis": "0.3.2",
+    "@themislib/themis": "0.3.2",
     "body-parser": "^2.3.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",

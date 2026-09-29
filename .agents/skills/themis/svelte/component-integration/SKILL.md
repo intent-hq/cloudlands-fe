@@ -11,7 +11,7 @@ requires:
   - svelte/store
   - svelte/selector-lifecycle
 sources:
-  - "@augmentcode/themis/svelte-store"
+  - "@themislib/themis/svelte-store"
   - ../store/SKILL.md
   - ../selector-lifecycle/SKILL.md
 triggers:
@@ -40,8 +40,8 @@ Create a single `Store` instance with app-owned reducers at module scope:
 
 ```typescript
 // src/lib/store/store.ts
-import { Store } from "@augmentcode/themis/svelte-store";
-import type { StoreState } from "@augmentcode/themis/types";
+import { Store } from "@themislib/themis/svelte-store";
+import type { StoreState } from "@themislib/themis/types";
 import { counterReducer } from "./slices/counter/counter-slice";
 
 export const store = new Store({ counter: counterReducer });

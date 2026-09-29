@@ -9,8 +9,8 @@ import type {
 } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';

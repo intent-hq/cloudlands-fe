@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyFilesWorkspaceState } from './files-slice';
 import type { FileContentEntry, FilesWorkspaceState } from './files-types';
 

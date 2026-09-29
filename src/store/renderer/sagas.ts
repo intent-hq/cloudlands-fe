@@ -6,7 +6,7 @@
  * initialization so their lifetime belongs to the renderer root.
  */
 
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 import { all, call } from 'typed-redux-saga';
 
 import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
