@@ -12,10 +12,10 @@ export const entries = [
     reportPath: 'playwright-report/results.json',
     outcomePath: 'browser-outcome.json',
   })),
-  ...[1, 2].map((shard) => ({
+  ...[1, 2, 3, 4].map((shard) => ({
     suite: 'root',
     shard,
-    shardCount: 2,
+    shardCount: 4,
     artifactName: `playwright-root-report-${shard}`,
     advisory: false,
     reportPath: 'playwright-report/results.json',
@@ -153,7 +153,7 @@ export function fixture() {
           entry.suite === 'ct'
             ? `test-ct / Component Tests (shard ${entry.shard}/4)`
             : entry.suite === 'root'
-              ? `test-playwright / Playwright (root ${entry.shard}/2)`
+              ? `test-playwright / Playwright (root ${entry.shard}/4)`
               : 'test-electron / Electron Browser Lifetime',
         run_id: 1234,
         run_attempt: 1,
@@ -195,10 +195,10 @@ export function fixture() {
   // Matrix placeholders keep their expression; the Electron leaf repeats exactly.
   for (const [index, name] of [
     'test-playwright / Electron Browser Lifetime',
-    'test-ct / Playwright (root ${{ matrix.shard }}/2)',
+    'test-ct / Playwright (root ${{ matrix.shard }}/4)',
     'test-playwright / Component Tests (shard ${{ matrix.shard }}/4)',
     'test-ct / Electron Browser Lifetime',
-    'test-electron / Playwright (root ${{ matrix.shard }}/2)',
+    'test-electron / Playwright (root ${{ matrix.shard }}/4)',
     'test-electron / Component Tests (shard ${{ matrix.shard }}/4)',
   ].entries()) {
     jobs.push({

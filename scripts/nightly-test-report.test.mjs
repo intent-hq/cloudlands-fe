@@ -11,7 +11,7 @@ import { entries, fixture, report, testRecord } from './test-fixtures/nightly-br
 
 describe.each([
   ['ct', 'test-ct / Component Tests (shard 2/4)', 'playwright-ct-report-2-of-4'],
-  ['root', 'test-playwright / Playwright (root 2/2)', 'playwright-root-report-2'],
+  ['root', 'test-playwright / Playwright (root 2/4)', 'playwright-root-report-2'],
   ['electron', 'test-electron / Electron Browser Lifetime', 'playwright-electron-lifetime-report'],
 ])('%s owning workflow history', (suite, name, artifact) => {
   it.each(['success', 'skipped'])(
@@ -29,7 +29,7 @@ describe.each([
       });
       const result = analyzeReports(data);
       expect(result.incidents).toEqual([]);
-      expect(result.lanes).toHaveLength(8);
+      expect(result.lanes).toHaveLength(10);
       expect(result.lanes.every((lane) => lane.attempt === 1)).toBe(true);
       expect(result.lanes.find((lane) => lane.artifact === artifact).job).toBe(job.id);
     },
@@ -44,7 +44,7 @@ describe.each([
       const result = analyzeReports(data);
       expect(result.incidents).toHaveLength(1);
       expect(result.incidents[0]).toContain(artifact);
-      expect(result.lanes).toHaveLength(7);
+      expect(result.lanes).toHaveLength(9);
       expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
     },
   );
@@ -58,7 +58,7 @@ describe.each([
       const result = analyzeReports(data);
       expect(result.incidents).toHaveLength(1);
       expect(result.incidents[0]).toContain(`${artifact}: Stale or mismatched artifact context`);
-      expect(result.lanes).toHaveLength(7);
+      expect(result.lanes).toHaveLength(9);
       expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
     },
   );
@@ -77,7 +77,7 @@ describe.each([
       const result = analyzeReports(data);
       expect(result.incidents).toHaveLength(1);
       expect(result.incidents[0]).toContain(`${artifact}: Missing or ambiguous job history`);
-      expect(result.lanes).toHaveLength(7);
+      expect(result.lanes).toHaveLength(9);
     },
   );
   it('keeps ambiguity when the latest owning call has successful and skipped records', () => {
@@ -87,7 +87,7 @@ describe.each([
     const result = analyzeReports(data);
     expect(result.incidents).toHaveLength(1);
     expect(result.incidents[0]).toContain(`${artifact}: Missing or ambiguous job history`);
-    expect(result.lanes).toHaveLength(7);
+    expect(result.lanes).toHaveLength(9);
   });
   it('keeps the owning failed test occurrence despite another call succeeding', () => {
     const data = fixture();
@@ -99,13 +99,49 @@ describe.each([
     data.documents[artifact].outcome.jobStatus = 'failure';
     const result = analyzeReports(data);
     expect(result.incidents).toEqual([]);
-    expect(result.lanes).toHaveLength(8);
+    expect(result.lanes).toHaveLength(10);
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
       suite,
       status: 'unexpected',
       occurrences: [{ job: job.id, attempt: 1, observedAt: job.completed_at }],
     });
+  });
+});
+
+describe.each([3, 4])('root shard %i evidence', (shard) => {
+  const artifact = `playwright-root-report-${shard}`;
+  const name = `test-playwright / Playwright (root ${shard}/4)`;
+  it.each(['unexpected', 'flaky'])('reports %s tests from the new shard', (status) => {
+    const data = fixture();
+    data.documents[artifact].report = report(status);
+    data.documents[artifact].report.config.shard = { current: shard, total: 4 };
+    const result = analyzeReports(data);
+    expect(result.incidents).toEqual([]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ suite: 'root', shard, status, artifacts: [artifact] });
+  });
+  it.each(['archive', 'job', 'outcome', 'report', 'manifest entry'])(
+    'flags a missing %s even when all remaining shards passed',
+    (missing) => {
+      const data = fixture();
+      if (missing === 'archive') data.artifacts = data.artifacts.filter((a) => a.name !== artifact);
+      else if (missing === 'job') data.jobs = data.jobs.filter((job) => job.name !== name);
+      else if (missing === 'manifest entry')
+        data.documents['browser-test-manifest'].manifest.artifacts = entries.filter(
+          (entry) => entry.artifactName !== artifact,
+        );
+      else delete data.documents[artifact][missing];
+      const result = analyzeReports(data);
+      expect(result.incidents).toHaveLength(1);
+      expect(result.incidents[0]).toContain(missing === 'manifest entry' ? 'manifest:' : artifact);
+      expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
+    },
+  );
+  it('rejects a two-shard denominator in a current report', () => {
+    const data = fixture();
+    data.documents[artifact].report.config.shard = { current: shard, total: 2 };
+    expect(analyzeReports(data).incidents).toEqual([`${artifact}: Mismatched report shard`]);
   });
 });
 
@@ -144,7 +180,9 @@ describe('complete browser evidence', () => {
         { artifact: 'playwright-ct-report-4-of-4', attempt: 1, job: 14, tests: 1 },
         { artifact: 'playwright-root-report-1', attempt: 1, job: 15, tests: 1 },
         { artifact: 'playwright-root-report-2', attempt: 1, job: 16, tests: 1 },
-        { artifact: 'playwright-electron-lifetime-report', attempt: 1, job: 17, tests: 1 },
+        { artifact: 'playwright-root-report-3', attempt: 1, job: 17, tests: 1 },
+        { artifact: 'playwright-root-report-4', attempt: 1, job: 18, tests: 1 },
+        { artifact: 'playwright-electron-lifetime-report', attempt: 1, job: 19, tests: 1 },
         { artifact: 'playwright-ct-report-quarantine', attempt: 1, job: 11, tests: 0 },
       ]);
     },
@@ -155,7 +193,9 @@ describe('complete browser evidence', () => {
     data.jobs.push({ ...data.jobs[2], id: 22, run_attempt: 2 });
     data.documents['playwright-ct-report-2-of-4'].outcome.runAttempt = '2';
     expect(analyzeReports(data).incidents).toEqual([]);
-    expect(analyzeReports(data).lanes.map((l) => l.attempt)).toEqual([1, 2, 1, 1, 1, 1, 1, 1]);
+    expect(analyzeReports(data).lanes.map((l) => l.attempt)).toEqual([
+      1, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+    ]);
   });
   it.each([
     'Checkout',
@@ -176,7 +216,7 @@ describe('complete browser evidence', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0].suite).toBe('infrastructure');
     expect(result.incidents.join('\n')).toContain('Stale');
-    expect(result.lanes).toHaveLength(7);
+    expect(result.lanes).toHaveLength(9);
   });
   it.each([
     [
@@ -366,7 +406,7 @@ describe('complete browser evidence', () => {
       data.documents[entry.artifactName].outcome.testCount = 0;
     }
     const result = analyzeReports(data);
-    expect(result.incidents).toHaveLength(7);
+    expect(result.incidents).toHaveLength(9);
     expect(result.lanes[0].artifact).toBe('playwright-ct-report-quarantine');
   });
   it('suppresses per-test floods for global runner errors and interrupted execution', () => {
@@ -528,7 +568,10 @@ describe('Playwright identities and expected outcomes', () => {
     testRecord(raw).annotations = [
       { type: 'issue', description: 'https://github.com/intent-hq/intent/issues/123' },
     ];
-    const item = parseReport(raw, entries[7]).failures[0];
+    const item = parseReport(
+      raw,
+      entries.find((entry) => entry.suite === 'quarantine'),
+    ).failures[0];
     expect(item.tracking).toEqual([123]);
     expect(item.quarantine).toBe(true);
     expect(item.key).toBe(parseReport(raw, entries[0]).failures[0].key);
