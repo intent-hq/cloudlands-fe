@@ -12,6 +12,7 @@ import { createConnection } from 'node:net';
 import { createWriteStream, writeFileSync } from 'node:fs';
 import {
   copyFile,
+  cp,
   chmod,
   mkdir,
   mkdtemp,
@@ -23,7 +24,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { build, loadConfigFromFile, type Plugin, type UserConfig } from 'vite';
@@ -92,6 +93,7 @@ window.native = { results: {}, errors: {}, retirements: [], current: null,
 };
 `;
 const uiRenderer = `
+  import '$store/renderer/seeders/workspaces-seeder';
   import { mount, unmount } from 'svelte';
   import { all, fork, join } from 'typed-redux-saga';
   import type { Task } from 'redux-saga';
@@ -642,6 +644,12 @@ export default {
       'store/renderer/slices/repository-context/sagas/native-review-saga.ts',
       'lib/client/live/live-workspaces-client.ts',
       'lib/client/live/electron-ipc-transport.ts',
+      'store/renderer/seeders/workspaces-seeder.ts',
+      'store/renderer/slices/workspace/utils/workspace.client.ts',
+      'shared/generated/ipc-client.ts',
+      'shared/ipc-mock-router.ts',
+      'lib/client/index.ts',
+      'lib/client/live/live-app-client.ts',
     ].map((p) => join(root, 'src', p)),
     join(scaffold, 'src/bootstrap.ts'),
     join(routes, '[...fixture]/+page.svelte'),
@@ -679,6 +687,51 @@ export default {
     proof.push(item);
   }
   record(evidence!, 'ui-build-preflight', proof);
+  const bridgeRelations = [
+    [
+      join(scaffold, 'src/bootstrap.ts'),
+      join(root, 'src/store/renderer/seeders/workspaces-seeder.ts'),
+    ],
+    [
+      join(root, 'src/store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts'),
+      join(root, 'src/store/renderer/slices/workspace/utils/workspace.client.ts'),
+    ],
+    [
+      join(root, 'src/store/renderer/slices/workspace/utils/workspace.client.ts'),
+      join(root, 'src/shared/generated/ipc-client.ts'),
+    ],
+    [join(root, 'src/shared/generated/ipc-client.ts'), join(root, 'src/shared/ipc-mock-router.ts')],
+    [
+      join(root, 'src/store/renderer/seeders/workspaces-seeder.ts'),
+      join(root, 'src/shared/ipc-mock-router.ts'),
+    ],
+    [
+      join(root, 'src/store/renderer/seeders/workspaces-seeder.ts'),
+      join(root, 'src/lib/client/index.ts'),
+    ],
+    [join(root, 'src/lib/client/index.ts'), join(root, 'src/lib/client/live/live-app-client.ts')],
+    [
+      join(root, 'src/lib/client/live/live-app-client.ts'),
+      join(root, 'src/lib/client/live/live-workspaces-client.ts'),
+    ],
+  ];
+  for (const [caller, dependency] of bridgeRelations) {
+    const from = proof.find((item) => item.id === caller);
+    const to = proof.find((item) => item.id === dependency);
+    if (
+      !from?.importedIds.includes(dependency) ||
+      !to?.importers.includes(caller) ||
+      from.sourceSha256 !== hash(await readFile(caller)) ||
+      to.sourceSha256 !== hash(await readFile(dependency))
+    )
+      throw new Error('Original workspace bridge import relation missing: ' + caller);
+  }
+  record(evidence!, 'workspace-bridge-preflight', {
+    relations: bridgeRelations,
+    modules: proof.filter((item) => bridgeRelations.some((edge) => edge.includes(item.id))),
+    qualification:
+      'Rendered original bridge and Live import path; actual workspace admission still requires runtime proof',
+  });
   const assets: Record<string, { file: string; sha256: string; bytes: number; type: string }> = {};
   let total = 0;
   async function inventory(folder: string) {
@@ -865,6 +918,43 @@ test.beforeAll(async () => {
       })),
     ),
   );
+  if (uiMode) {
+    // Each worker owns a separate build. Keep its actual bytes before a later
+    // failed worker can overwrite the shared diagnostic paths.
+    const epoch = join(evidence!, 'build-epochs', basename(bundle));
+    await mkdir(epoch, { recursive: true });
+    for (const name of [
+      'compiled.json',
+      'frozen-cases.json',
+      'main.mjs',
+      'main.mjs-inputs.json',
+      'preload.cjs',
+      'preload.cjs-inputs.json',
+      'pipe-controller.py',
+      'renderer-config-input.json',
+      'kit-build-process.json',
+      'kit-generated-inputs.json',
+      'kit-client-inputs.json',
+      'kit-server-inputs.json',
+      'ui-build-preflight.json',
+      'workspace-bridge-preflight.json',
+      'observer-build-preflight.json',
+      'asset-manifest.json',
+      'kit-assets',
+      'kit-generated',
+    ])
+      await cp(join(evidence!, name), join(epoch, name), {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
+    record(epoch, 'identity', {
+      bundle,
+      workerPid: process.pid,
+      workerIndex: process.env.TEST_WORKER_INDEX ?? null,
+      specSha256: hash(await readFile(fileURLToPath(import.meta.url))),
+    });
+  }
 });
 test.afterAll(async () => {
   if (bundle) await rm(bundle, { recursive: true, force: true });
