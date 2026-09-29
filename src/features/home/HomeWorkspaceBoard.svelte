@@ -61,7 +61,7 @@
       {@const items = workspaces.filter((workspace) => column(workspace) === group.id)}
       <section class="flex w-64 shrink-0 flex-col self-stretch" aria-label={group.label}>
         <h3
-          class="sticky top-0 z-20 flex items-center gap-2 bg-sidebar px-2 py-3 type-caption font-medium"
+          class="sticky top-0 z-20 flex items-center gap-2 bg-background px-2 py-3 type-caption font-medium"
         >
           <span>{group.label}</span><span class="type-caption text-muted-foreground"
             >{formatInteger(items.length)}</span

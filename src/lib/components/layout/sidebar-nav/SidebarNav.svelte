@@ -7,7 +7,11 @@
   import { faHouse } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import WorkspaceTabFlare from '../WorkspaceTabFlare.svelte';
-  import { WORKSPACE_TAB_MOTION_DURATION_MS } from '../titlebar-geometry';
+  import {
+    WORKSPACE_TAB_CORNER_RADIUS_PX,
+    WORKSPACE_TAB_MOTION_DURATION_MS,
+    WORKSPACE_TAB_MOTION_EASING,
+  } from '../titlebar-geometry';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import TitlebarNavigationTooltip from '../TitlebarNavigationTooltip.svelte';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -33,7 +37,19 @@
       )}
       data-home-tab
       data-active={isHome}
+      style:border-radius={isHome
+        ? `${WORKSPACE_TAB_CORNER_RADIUS_PX}px ${WORKSPACE_TAB_CORNER_RADIUS_PX}px 0 0`
+        : `${WORKSPACE_TAB_CORNER_RADIUS_PX}px`}
+      style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+      style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
     >
+      {#if isHome}
+        <div
+          class="pointer-events-none absolute -bottom-0.5 inset-x-0 z-[60] h-1 bg-sidebar"
+          data-home-tab-border-mask
+          aria-hidden="true"
+        ></div>
+      {/if}
       <WorkspaceTabFlare
         side="leading"
         visible={isHome}

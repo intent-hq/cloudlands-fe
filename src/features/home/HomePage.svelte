@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Select } from '$lib/components/ui/select';
   import './home.css';
   import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -45,7 +44,6 @@
   import {
     faLayerGroup,
     faFolder,
-    faWandMagicSparkles,
     faList,
     faTableColumns,
     faCircleExclamation,
@@ -249,18 +247,15 @@
           store.dispatch(openPanel('chief'));
         }}
       >
-        {#snippet leadingIcon()}<Fa icon={faWandMagicSparkles} />{/snippet}<span
-          class="flex-1 text-left">{m.home_assistant()}</span
-        >
+        <span class="flex-1 text-left">{m.home_assistant()}</span>
       </Button>
     {/if}
-    <div class="mb-2 mt-3 px-2 type-caption text-muted-foreground">{m.home_repositories()}</div>
     <Button
       variant="ghost"
       active={repoKey === null && destination === 'workspaces'}
       class="mb-1 w-full justify-start"
       onclick={() => chooseRepo(null)}
-      ><span class="flex-1 text-left">{m.home_all_repositories()}</span><span
+      ><span class="flex-1 text-left">{m.home_filter_all()}</span><span
         class="tabular-nums text-muted-foreground"
         >{formatInteger(
           workspaces.filter((workspace) => matchesHomeFilter(workspace, filter)).length,
@@ -292,7 +287,7 @@
       </p>{/if}
   </nav>
   <Screen
-    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-sidebar"
+    class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background"
   >
     {#if destination === 'assistant' && !$collaborator$}
       <header class="flex h-12 shrink-0 items-center border-b border-border px-5">
@@ -352,7 +347,7 @@
                     aria-label={m.home_tab_workspaces()}
                   >
                     {@render homeHeader()}
-                    <div class="flex items-center gap-3 px-6 py-4">
+                    <div class="flex flex-wrap items-center gap-3 px-6 py-4">
                       <Input
                         value={query}
                         oninput={(event) => updateView({ query: event.currentTarget.value })}
@@ -361,42 +356,23 @@
                         aria-label={m.home_search_workspaces()}
                         class="min-w-0 flex-1 max-w-sm rounded-xl border-transparent bg-muted/50"
                       />
-                      <Select.Root
-                        value={filter}
-                        onchange={(value) => {
-                          const choice = filters.find((item) => item.id === value);
-                          if (choice) chooseFilter(choice.id);
-                        }}
-                      >
-                        <Select.Trigger
-                          variant="ghost"
-                          aria-label={m.layout_allCard_status_label()}
-                          class="shrink-0"
-                        >
-                          {filter === 'all'
-                            ? m.layout_allCard_status_label()
-                            : filters.find((item) => item.id === filter)?.label}
-                        </Select.Trigger>
-                        <Select.Content portal>
-                          {#each filters as item (item.id)}
-                            <Select.Item value={item.id} label={item.label}>
-                              <span class="flex items-center gap-2">
-                                <Fa icon={item.icon} />
-                                <span class="flex-1">{item.label}</span>
-                                <span class="text-muted-foreground tabular-nums"
-                                  >{formatInteger(
-                                    scopedWorkspaces.filter((workspace) =>
-                                      matchesHomeFilter(workspace, item.id),
-                                    ).length,
-                                  )}</span
-                                >
-                              </span>
-                            </Select.Item>
-                          {/each}
-                        </Select.Content>
-                      </Select.Root>
                       <div
-                        class="home-choice-group ml-auto shrink-0"
+                        class="home-choice-group ml-auto flex-wrap"
+                        role="group"
+                        aria-label={m.layout_allCard_status_label()}
+                      >
+                        {#each filters as item (item.id)}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            active={filter === item.id}
+                            aria-pressed={filter === item.id}
+                            onclick={() => chooseFilter(item.id)}>{item.label}</Button
+                          >
+                        {/each}
+                      </div>
+                      <div
+                        class="home-choice-group shrink-0"
                         role="group"
                         aria-label={m.home_workspace_view()}
                       >

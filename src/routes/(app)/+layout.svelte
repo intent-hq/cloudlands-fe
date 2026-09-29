@@ -996,10 +996,7 @@
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
-            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {routePathname ===
-            '/'
-              ? ''
-              : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
+            class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-sidebar border border-border shadow-sm"
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">
