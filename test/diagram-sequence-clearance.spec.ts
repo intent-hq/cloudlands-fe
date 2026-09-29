@@ -41,11 +41,17 @@ end
 deactivate Worker
 Visitor->>Worker: Finish`;
 
-async function mountNote(page: Page, source: string, width: number, info: TestInfo) {
+async function mountNote(
+  page: Page,
+  source: string,
+  width: number,
+  info: TestInfo,
+  theme = 'light',
+) {
   await page.setViewportSize({ width: 1280, height: 1200 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(`${baseUrl}/sandbox/button?state=default&theme=light&motion=reduced`);
-  await expect(page.locator('[data-preview-ready=true]')).toBeVisible();
+  await page.goto(`${baseUrl}/sandbox/button?state=default&theme=${theme}&motion=reduced`);
+  await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 60_000 });
   const path = 'src/lib/components/markdown/MermaidRenderer.svelte';
   const response = page.waitForResponse((r) => new URL(r.url()).pathname === `/${path}`);
   await page.evaluate(
@@ -435,4 +441,160 @@ test('pixel clearance oracle rejects a note moved into the painted reply', async
   const after = await measure(page);
   expect(after.pairs[0].noteTopScreen - after.pairs[0].markerBottomScreen).toBeLessThan(1);
   expect(() => expectClearance(after)).toThrow();
+});
+
+// Compare real Chromium paint with construct surfaces hidden. Every opaque note
+// interior (including its text) must paint identically with and without surfaces.
+// A second capture with text hidden proves that each authored line paints glyphs.
+async function notePaint(page: Page) {
+  await settled(page);
+  const regions = await page.locator('.sequence-note').evaluateAll((groups) =>
+    groups.flatMap((group) => {
+      const box = group.querySelector('rect.note')!.getBoundingClientRect();
+      const rect = (r: DOMRect, inset = 0) => ({
+        x: Math.ceil(r.x + inset),
+        y: Math.ceil(r.y + inset),
+        width: Math.floor(r.width - inset * 2 - 1),
+        height: Math.floor(r.height - inset * 2 - 1),
+      });
+      return [
+        { name: 'pill', clip: rect(box, 7) },
+        ...[...group.querySelectorAll('text')].map((text) => ({
+          name: text.textContent!,
+          clip: rect(text.getBoundingClientRect()),
+        })),
+      ];
+    }),
+  );
+  const capture = async () => {
+    const images = [];
+    for (const { clip } of regions)
+      images.push((await page.screenshot({ clip })).toString('base64'));
+    return images;
+  };
+  const constructLabels = await page.locator('.sequence-construct text').evaluateAll((labels) =>
+    labels.map((label) => {
+      const box = label.getBoundingClientRect();
+      return {
+        name: `construct: ${label.textContent}`,
+        clip: {
+          x: Math.ceil(box.x),
+          y: Math.ceil(box.y),
+          width: Math.floor(box.width - 1),
+          height: Math.floor(box.height - 1),
+        },
+      };
+    }),
+  );
+  regions.push(...constructLabels);
+  const painted = await capture();
+  const surfaceStyle = await page.addStyleTag({
+    content: '.sequence-branch-surface { visibility: hidden !important; }',
+  });
+  const uncovered = await capture();
+  await surfaceStyle.evaluate((style) => style.remove());
+  const textStyle = await page.addStyleTag({
+    content: '.sequence-note text, .sequence-construct text { visibility: hidden !important; }',
+  });
+  const withoutText = await capture();
+  await textStyle.evaluate((style) => style.remove());
+  return page.evaluate(
+    async ({ regions, painted, uncovered, withoutText }) => {
+      const pixels = async (png: string) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(image, 0, 0);
+        return context.getImageData(0, 0, canvas.width, canvas.height).data;
+      };
+      const difference = (a: Uint8ClampedArray, b: Uint8ClampedArray) => {
+        let count = 0;
+        for (let i = 0; i < a.length; i += 4)
+          if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) count++;
+        return count;
+      };
+      return Promise.all(
+        regions.map(async (region, i) => {
+          const normal = await pixels(painted[i]);
+          return {
+            ...region,
+            occludedPixels: difference(normal, await pixels(uncovered[i])),
+            textPixels: difference(normal, await pixels(withoutText[i])),
+          };
+        }),
+      );
+    },
+    { regions, painted, uncovered, withoutText },
+  );
+}
+
+const paintCases = [
+  { name: 'exact nested alt/loop light', source: constructSource, theme: 'light', frames: 2 },
+  { name: 'exact nested alt/loop dark', source: constructSource, theme: 'dark', frames: 2 },
+  {
+    name: 'alt-only reduction',
+    theme: 'light',
+    frames: 1,
+    source:
+      'sequenceDiagram\nparticipant A\nparticipant B\nalt Ready\nA->>B: Begin\nNote over A: Visible note\nelse Retry\nB-->>A: Pending\nend',
+  },
+  {
+    name: 'loop-only reduction',
+    theme: 'light',
+    frames: 1,
+    source:
+      'sequenceDiagram\nparticipant A\nparticipant B\nloop Until ready\nA->>B: Begin\nNote over A: Visible note\nend',
+  },
+];
+for (const { name, source, theme, frames } of paintCases) {
+  test(`construct surfaces do not occlude notes: ${name}`, async ({ page }, info) => {
+    test.setTimeout(120_000);
+    await mountNote(page, source, 1000, info, theme);
+    await settled(page);
+    await page
+      .locator('#sequence-clearance-host')
+      .screenshot({ path: info.outputPath('note.png') });
+    await writeFile(
+      info.outputPath('rendered.svg'),
+      await page.locator('.mermaid-svg > svg').evaluate((e) => e.outerHTML),
+    );
+    const paint = await notePaint(page);
+    await writeFile(info.outputPath('paint.json'), JSON.stringify(paint, null, 2));
+    await expect(page.locator('.sequence-construct')).toHaveCount(frames);
+    expect(
+      paint
+        .filter((region) => region.name !== 'pill' && !region.name.startsWith('construct:'))
+        .map((region) => region.name),
+    ).toEqual(frames === 2 ? ['First line', 'Second line', 'Try later'] : ['Visible note']);
+    for (const region of paint) {
+      expect
+        .soft(region.occludedPixels, `${region.name} must not be covered by a construct surface`)
+        .toBe(0);
+      expect
+        .soft(region.textPixels, `${region.name} must contain painted note text`)
+        .toBeGreaterThan(20);
+    }
+    const sourceButton = page.getByRole('button', { name: /source/i }).first();
+    await sourceButton.focus();
+    await sourceButton.press('Enter');
+    expect(await page.locator('.mermaid-source pre').textContent()).toBe(source);
+  });
+}
+
+test('note paint oracle detects a surface moved over authored content', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await mountNote(page, constructSource, 1000, info);
+  await settled(page);
+  await page.locator('.mermaid-svg > svg').evaluate((svg) => {
+    svg.append(...svg.querySelectorAll(':scope > .sequence-construct'));
+  });
+  const paint = await notePaint(page);
+  const notes = paint.filter((region) => !region.name.startsWith('construct:'));
+  expect(notes).toHaveLength(5);
+  expect(notes.every((region) => region.occludedPixels > 20 && region.textPixels === 0)).toBe(true);
+  await writeFile(info.outputPath('paint-control.json'), JSON.stringify(paint, null, 2));
 });

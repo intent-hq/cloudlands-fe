@@ -891,6 +891,17 @@ ${source}`;
       });
     }
 
+    // Mermaid emits frames after their enclosed notes and inner frames. Paint
+    // complete constructs behind the sequence content, outermost first, so their
+    // opaque surfaces cannot cover notes or the structure of nested constructs.
+    const constructs = [...svg.querySelectorAll<SVGGElement>(':scope > .sequence-construct')];
+    constructs.sort((a, b) => {
+      const outer = a.getBBox();
+      const inner = b.getBBox();
+      return inner.width * inner.height - outer.width * outer.height;
+    });
+    svg.prepend(...constructs);
+
     const normalizeNoteText = (text: string) =>
       text
         .replace(/<[^>]*>/g, '')
