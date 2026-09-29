@@ -1512,6 +1512,12 @@ describe('panelLayoutSaga', () => {
     it('preserves saved tabs while authority is unresolved and removes them after confirmed denial', async () => {
       mocks.getJSON.mockReturnValue(mixedLayout);
       const state = storeState(WS_1);
+      // A host guest can retain one owned workspace. Confirm this workspace's
+      // denial instead of using the host role as blanket management authority.
+      state.workspace = {
+        ...state.workspace,
+        workspaces: createCollection('id', [{ id: WS_1, myRole: 'collaborator' } as never]),
+      };
       const guest = withLegacyPrincipal(state, 'guest');
       state.principal = principalInitialState;
       const { dispatch, task, channel } = startSaga(state);
