@@ -330,7 +330,7 @@ try:
     assert route_binding['merge'] == os.environ['GITHUB_SHA']
     assert route_binding['workflowSha'] == os.environ['GITHUB_WORKFLOW_SHA']
     assert route_binding['runId'] == os.environ['GITHUB_RUN_ID']
-    assert route_binding['runNumber'] == os.environ['GITHUB_RUN_NUMBER'] == '1'
+    assert route_binding['runNumber'] == os.environ['GITHUB_RUN_NUMBER'] == '2'
     assert route_binding['attempt'] == os.environ['GITHUB_RUN_ATTEMPT'] == '1'
     record('route-binding', {'sha256': hashlib.sha256(route_raw).hexdigest(), 'receipt': route_binding})
     assert git('rev-parse', 'HEAD') == REF and git('rev-parse', 'HEAD^{tree}') == TREE

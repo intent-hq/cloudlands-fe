@@ -20,9 +20,9 @@ jobs:
       github.event.pull_request.head.repo.full_name == 'intent-hq/cloudlands-fe' &&
       github.event.pull_request.head.ref == 'fix/5740-browser-harness-readiness' &&
       github.event.pull_request.base.ref == 'main' &&
-      github.event.before == '2dfb7b8c6a4579a66f1a83753bd8c18bc3ed4c0f' &&
+      github.event.before == '092b348c9a9a5805a6dbe7e32a3f8541ac9e4d03' &&
       github.event.after == github.event.pull_request.head.sha &&
-      github.run_attempt == '1' && github.run_number == '1' &&
+      github.run_attempt == '1' && github.run_number == '2' &&
       inputs.controller_sha == github.event.pull_request.head.sha &&
       (inputs.workers == 1 || inputs.workers == 2)
     runs-on: gh-linux-8x
