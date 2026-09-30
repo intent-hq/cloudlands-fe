@@ -36,6 +36,19 @@ on:
         required: false
         type: boolean
         default: false
+      smoke_macos:
+        description: 'Run fixture-only packaged journeys on a separate disposable macOS runner (requires build_macos and sign)'
+        required: false
+        type: boolean
+        default: false
+      smoke_macos_scope:
+        description: 'Full fixture suite, or the mock-provider/worktree-capture follow-up only'
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - fixture-correction
       build_windows:
         description: 'Build Windows (x64 NSIS installer)'
         required: false
@@ -68,6 +81,61 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  smoke-inputs:
+    if: ${{ inputs.smoke_macos }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require a signed macOS artifact
+        env:
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          SIGN: ${{ inputs.sign }}
+        run: test "$BUILD_MACOS" = true && test "$SIGN" = true
+
+  smoke-macos:
+    if: ${{ inputs.smoke_macos }}
+    needs: [build-macos, smoke-inputs]
+    runs-on: macos-15-xlarge
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+    # 9 minutes setup + 45 tests + 4 upload = 58; 2 reserved for postlude.
+    steps:
+      - uses: actions/checkout@v7
+        timeout-minutes: 1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        timeout-minutes: 1
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v7
+        timeout-minutes: 1
+        with:
+          node-version: '22'
+      - name: Install test dependencies
+        timeout-minutes: 4
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v8
+        timeout-minutes: 2
+        with:
+          name: manual-macos-dmg
+          path: smoke-artifact
+      - name: Test the signed artifact with disposable fixture state
+        timeout-minutes: 45
+        env:
+          BUILD_SMOKE_MACOS_SCOPE: ${{ inputs.smoke_macos_scope }}
+        run: python3 scripts/run-packaged-macos-smoke.py smoke-artifact
+      - name: Upload journey results and process receipts
+        timeout-minutes: 4
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-macos-smoke
+          path: e2e-reports/
+          retention-days: 7
+          if-no-files-found: error
+
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:

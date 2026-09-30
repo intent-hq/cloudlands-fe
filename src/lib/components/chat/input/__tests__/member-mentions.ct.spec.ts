@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../../test/ct-test';
 import { failOnConsoleErrors } from '../../../../../test/ct-console-errors';
 import MemberMentionsHost from './MemberMentionsHost.svelte';
@@ -136,7 +137,13 @@ test('dotted GitLab mention survives draft, submit, chat edit and comment edit w
     'data-id',
     'member-gitlab-alice',
   );
+  // A rendered chip does not establish input readiness: the chat editor opens
+  // inside a moving disclosure. Click through browser actionability before
+  // navigating, rather than sending keys as soon as the chip is mounted.
+  await edit.click();
+  await expect(edit).toBeFocused();
   await edit.press('End');
+  await expectCaretAfterMember(edit);
   await edit.pressSequentially(' thanks');
   await edit.press('Enter');
   await page.getByRole('button', { name: 'Edit & regenerate', exact: true }).click();
@@ -148,7 +155,10 @@ test('dotted GitLab mention survives draft, submit, chat edit and comment edit w
     'data-id',
     'member-gitlab-alice',
   );
+  await commentEdit.click();
+  await expect(commentEdit).toBeFocused();
   await commentEdit.press('End');
+  await expectCaretAfterMember(commentEdit);
   await commentEdit.pressSequentially(' please');
   await comment.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByTestId('stored-comment')).toHaveText(`${stored} please`);
@@ -158,6 +168,24 @@ test('dotted GitLab mention survives draft, submit, chat edit and comment edit w
     [{ method: 'workspace.members.list', params: { workspaceId: 'member-mentions-workspace' } }],
   );
 });
+
+async function expectCaretAfterMember(editor: Locator) {
+  await expect
+    .poll(() =>
+      editor.evaluate((element) => {
+        const selection = window.getSelection();
+        const member = element.querySelector('[data-type="member"]');
+        if (!member || !selection?.isCollapsed || !selection.rangeCount) return false;
+        const caret = selection.getRangeAt(0);
+        if (!element.contains(caret.startContainer)) return false;
+        const afterMember = document.createRange();
+        afterMember.setStartAfter(member);
+        afterMember.collapse(true);
+        return caret.compareBoundaryPoints(Range.START_TO_START, afterMember) >= 0;
+      }),
+    )
+    .toBe(true);
+}
 
 test('a member with no forge metadata stays neutral through selection and submission', async ({
   page,
