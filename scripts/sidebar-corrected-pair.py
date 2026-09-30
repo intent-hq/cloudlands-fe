@@ -80,13 +80,16 @@ def run(cell, manifest=None):
     out.mkdir(mode=0o700)
     args = ['pnpm', 'exec', 'playwright', 'test', *SPECS, '--project=chromium',
             '--workers=' + str(workers), '--retries=0', '--repeat-each=1',
-            '--trace=on', '--reporter=list,json', '--output=' + str(out / 'test-results')]
+            '--trace=on', '--reporter=list,json,' + str(
+                Path(__file__).with_name('sidebar-membership-reporter.mjs').resolve()),
+            '--output=' + str(out / 'test-results')]
     if collecting:
         args.append('--list')
     env = dict(os.environ)
     for forbidden in ('WORKSPACE_TAB_STRIP_REF', 'NODE_V8_COVERAGE'):
         assert not env.get(forbidden), forbidden
     env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / 'results.json')
+    env['SIDEBAR_MEMBERSHIP_OUTPUT_FILE'] = str(out / 'native-membership.json')
     record(cell + '-start', {'argv': args, 'cwd': str(subject), 'time': now(),
                            'workers': workers, 'primarySeconds': primary_seconds,
                            'killAfterSeconds': 10, 'outerStepMinutes': 23,
@@ -291,8 +294,7 @@ def run(cell, manifest=None):
     assert code in (0, 1) and all(eof.values()) and ownership_settled
     observed_test_exit = code
     assert terminal['completedWithinDeadline'] and receipt_within_deadline, 'late cleanup or terminal receipt'
-    assert (out / 'results.json').stat().st_size <= 8 * 1024 * 1024
-    report = json.loads((out / 'results.json').read_text())
+    report = membership.load_report(out)
     if collecting:
         manifest = membership.collect_membership(report, workers, subject, SPECS, code)
         record('membership', manifest)
@@ -334,6 +336,7 @@ def main():
                 'test/sidebar-shell-import.ts', 'test/sidebar-shell-server.ts',
                 'playwright.config.ts', 'playwright/root-spec-pattern.mjs',
                 'scripts/sidebar-corrected-pair.py', 'scripts/sidebar-membership.py',
+                'scripts/sidebar-membership-reporter.mjs',
                 'package.json', 'pnpm-lock.yaml'),
             'run': os.environ.get('GITHUB_RUN_ID'), 'attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
             'eventMerge': os.environ.get('GITHUB_SHA'), 'runner': os.environ.get('RUNNER_NAME'),

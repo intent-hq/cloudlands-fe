@@ -28,6 +28,9 @@ def report_fixture():
             'projectId': 'chromium', 'projectName': 'chromium', 'expectedStatus': 'passed',
             'status': 'skipped', 'results': []}]}
     return {
+        'nativeMembership': {'schema': 1, 'rootDir': '/checkout/test', 'workers': 1, 'cases': [
+            {'id': native_id, 'file': '/checkout/test/nested.spec.ts', 'titlePath': [group, 'same leaf'],
+             'projectName': 'chromium'} for native_id, group in [('one', 'first group'), ('two', 'second group')]]},
         'errors': [], 'config': {
             'rootDir': '/checkout/test', 'workers': 1, 'metadata': {},
             'projects': [{'id': 'chromium', 'name': 'chromium', 'repeatEach': 1, 'retries': 0}]},
@@ -74,6 +77,7 @@ class ReportControls(unittest.TestCase):
     def test_same_count_substitution_has_missing_and_unexpected_diagnostics(self):
         report = copy.deepcopy(self.executed)
         all_specs(report)[0]['id'] = 'replacement'
+        report['nativeMembership']['cases'][0]['id'] = 'replacement'
         with self.assertRaisesRegex(ValueError, 'membership mismatch: missing=.*unexpected='):
             self.validate(report)
 
@@ -83,8 +87,10 @@ class ReportControls(unittest.TestCase):
                 report = copy.deepcopy(self.executed)
                 if field == 'leaf':
                     all_specs(report)[0]['title'] = 'substitute'
+                    report['nativeMembership']['cases'][0]['titlePath'][-1] = 'substitute'
                 else:
                     report['suites'][0]['suites'][0]['title'] = 'substitute'
+                    report['nativeMembership']['cases'][0]['titlePath'][0] = 'substitute'
                 with self.assertRaisesRegex(ValueError, 'membership mismatch'):
                     self.validate(report)
 
@@ -100,6 +106,7 @@ class ReportControls(unittest.TestCase):
                         groups[1]['specs'][0]['id'] = 'one'
                     else:
                         groups[1]['title'] = groups[0]['title']
+                        report['nativeMembership']['cases'][1]['titlePath'][0] = groups[0]['title']
                     with self.assertRaisesRegex(ValueError, 'duplicate'):
                         (self.collect if collecting else self.validate)(report)
 
@@ -109,7 +116,7 @@ class ReportControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing='):
             self.validate(missing)
         wrong_file = copy.deepcopy(self.executed)
-        wrong_file['suites'][0]['title'] = 'other/nested.spec.ts'
+        wrong_file['nativeMembership']['cases'][0]['file'] = '/checkout/test/other/nested.spec.ts'
         with self.assertRaisesRegex(ValueError, 'unexpected selected file'):
             self.validate(wrong_file)
 
@@ -137,7 +144,24 @@ class ReportControls(unittest.TestCase):
         for file in ['', '../nested.spec.ts', '/other/nested.spec.ts']:
             with self.subTest(file=file):
                 report = copy.deepcopy(self.collected)
-                report['suites'][0]['title'] = file
+                report['nativeMembership']['cases'][0]['file'] = file
+                with self.assertRaises(ValueError):
+                    self.collect(report)
+
+    def test_missing_malformed_or_disagreeing_native_sidecar_is_rejected(self):
+        changes = [
+            lambda r: r.pop('nativeMembership'),
+            lambda r: r.update(nativeMembership={}),
+            lambda r: r['nativeMembership'].update(workers=2),
+            lambda r: r['nativeMembership'].update(rootDir='/other'),
+            lambda r: r['nativeMembership']['cases'].append(copy.deepcopy(r['nativeMembership']['cases'][0])),
+            lambda r: r['nativeMembership']['cases'][0].update(id='unreported'),
+            lambda r: r['nativeMembership']['cases'][0].update(titlePath=['false title']),
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                report = copy.deepcopy(self.collected)
+                change(report)
                 with self.assertRaises(ValueError):
                     self.collect(report)
 
@@ -200,17 +224,20 @@ class NativeControls(unittest.TestCase):
 
     def native(self, listing, workers=1):
         self.counter += 1
-        out = self.subject / ('report-' + str(self.counter) + '.json')
+        directory = self.subject / ('report-' + str(self.counter))
+        directory.mkdir()
+        out = directory / 'results.json'
         args = ['pnpm', 'exec', 'playwright', 'test', *self.selected, '--project=chromium',
                 '--workers=' + str(workers), '--retries=0', '--repeat-each=1', '--trace=on',
-                '--reporter=list,json', '--output=' + str(self.subject / ('results-' + str(self.counter)))]
+                '--reporter=list,json,' + str(REPO / 'scripts/sidebar-membership-reporter.mjs'), '--output=' + str(self.subject / ('results-' + str(self.counter)))]
         if listing:
             args.append('--list')
         result = subprocess.run(args, cwd=self.subject,
-                                env={**os.environ, 'PLAYWRIGHT_JSON_OUTPUT_FILE': str(out)},
+                                env={**os.environ, 'PLAYWRIGHT_JSON_OUTPUT_FILE': str(out),
+                                     'SIDEBAR_MEMBERSHIP_OUTPUT_FILE': str(directory / 'native-membership.json')},
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        return json.loads(out.read_text())
+        return membership.load_report(directory)
 
     def test_native_add_remove_rename_and_cold_warm_identity_compatibility(self):
         previous = None
@@ -261,15 +288,21 @@ class NativeControls(unittest.TestCase):
         self.assertEqual({row['file'] for row in rows}, set(self.selected))
         self.assertEqual(len({row['id'] for row in rows}), len(rows))
 
-    def test_native_ambiguous_merged_generator_suites_fail_closed(self):
-        nested = self.subject / 'test/nested'
-        nested.mkdir()
-        (nested / 'cases.spec.ts').write_text(
-            (self.subject / 'test/cases.spec.ts').read_text().replace('./register.cjs', '../register.cjs'))
-        self.selected.append('test/nested/cases.spec.ts')
-        # JSON merges file suites by their location; a shared registration helper
-        # can collapse distinct files into one indistinguishable logical path.
-        with self.assertRaisesRegex(ValueError, 'duplicate/ambiguous logical identity'):
+    def test_native_shared_generator_retains_distinct_selected_files(self):
+        self.write_cases(['selected source'])
+        (self.subject / 'test/second.spec.ts').write_text(
+            (self.subject / 'test/cases.spec.ts').read_text().replace('selected source', 'second source'))
+        self.selected.append('test/second.spec.ts')
+        manifest = membership.collect_membership(self.native(True), 1, self.subject, self.selected, 0)
+        rows = membership.validate_report(self.native(False), manifest, 1, self.subject, self.selected, 0)
+        self.assertEqual({(row['titlePath'][0], row['file']) for row in rows},
+                         {('selected source', 'test/cases.spec.ts'), ('second source', 'test/second.spec.ts')})
+
+    def test_native_unselected_overlapping_file_through_shared_generator_is_rejected(self):
+        self.write_cases(['selected source'])
+        (self.subject / 'test/cases.spec.ts.extra.spec.ts').write_text(
+            (self.subject / 'test/cases.spec.ts').read_text().replace('selected source', 'unselected source'))
+        with self.assertRaisesRegex(ValueError, 'unexpected selected file'):
             membership.collect_membership(self.native(True), 1, self.subject, self.selected, 0)
 
     def test_owned_collection_receipts_and_worker_two_identity(self):

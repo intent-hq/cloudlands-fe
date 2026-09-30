@@ -42,28 +42,60 @@ def configuration(report, workers, subject):
     return root, bound
 
 
-def identities(report, root, subject, specs, collecting):
-    entries = []
+def load_report(directory):
+    report = None
+    for filename in ('results.json', 'native-membership.json'):
+        path = directory / filename
+        require(path.stat().st_size <= 8 * 1024 * 1024, 'report size limit: ' + filename)
+        value = json.loads(path.read_text())
+        require(isinstance(value, dict), 'malformed ' + filename)
+        if report is None:
+            report = value
+        else:
+            report['nativeMembership'] = value
+    return report
 
-    def visit(suites, file=None, titles=()):
+
+def identities(report, root, subject, specs, collecting):
+    # This sidecar comes from the SAME native invocation, before JSON merges file
+    # suites by generator location. Native IDs join the two independent views.
+    native = report.get('nativeMembership')
+    require(isinstance(native, dict) and native.get('schema') == 1,
+            'missing or malformed native membership')
+    require(native.get('rootDir') == str(root) and native.get('workers') == report['config']['workers'],
+            'native membership configuration mismatch')
+    require(isinstance(native.get('cases'), list), 'malformed native membership cases')
+    by_id = {}
+    logical_ids = set()
+    for entry in native['cases']:
+        require(isinstance(entry, dict), 'malformed native identity')
+        native_id = text(entry.get('id'), 'native id')
+        require(native_id not in by_id, 'duplicate native identity: ' + native_id)
+        location = Path(text(entry.get('file'), 'native file path'))
+        require(location.is_absolute() and '..' not in location.parts, 'malformed native file path')
+        location = location.resolve()
+        require(location.is_relative_to(subject), 'native file outside tested source')
+        file = location.relative_to(subject).as_posix()
+        require(file in specs, 'unexpected selected file: ' + file)
+        titles = entry.get('titlePath')
+        require(isinstance(titles, list) and bool(titles), 'malformed native title path')
+        titles = [text(title, 'native title') for title in titles]
+        require(entry.get('projectName') == 'chromium', 'wrong native project')
+        logical = (file, tuple(titles), entry['projectName'])
+        require(logical not in logical_ids, 'duplicate/ambiguous logical identity: ' + str(logical))
+        logical_ids.add(logical)
+        by_id[native_id] = {'id': native_id, 'file': file, 'titlePath': titles,
+                            'projectId': 'chromium', 'projectName': entry['projectName']}
+
+    entries = []
+    seen = set()
+
+    def visit(suites, titles=(), top=True):
         require(isinstance(suites, list), 'malformed suites')
         for suite in suites:
             require(isinstance(suite, dict), 'malformed suite')
             title = text(suite.get('title'), 'suite title')
-            if file is None:
-                # JSON file-suite titles retain the selected file path. With
-                # generated tests, suite.file can point into the registration
-                # helper (just like spec.file), so it is not a selection key.
-                text(suite.get('file'), 'file-suite location')
-                location = Path(title)
-                require('..' not in location.parts, 'malformed file-suite path')
-                location = (root / location).resolve()
-                require(location.is_relative_to(subject), 'file-suite outside tested source')
-                spec_file = location.relative_to(subject).as_posix()
-                require(spec_file in specs, 'unexpected selected file: ' + spec_file)
-                parents = ()
-            else:
-                spec_file, parents = file, (*titles, title)
+            parents = () if top else (*titles, title)
             require(isinstance(suite.get('specs'), list), 'malformed specs')
             for spec in suite['specs']:
                 require(isinstance(spec, dict), 'malformed spec')
@@ -72,30 +104,26 @@ def identities(report, root, subject, specs, collecting):
                 require(isinstance(spec.get('tests'), list) and bool(spec['tests']),
                         'malformed tests')
                 for case in spec['tests']:
+                    require(native_id not in seen, 'duplicate native report identity: ' + native_id)
+                    seen.add(native_id)
                     require(isinstance(case, dict), 'malformed case')
                     require(case.get('projectId') == 'chromium'
                             and case.get('projectName') == 'chromium', 'wrong case project')
                     require(case.get('expectedStatus') == 'passed', 'non-passing expected status')
                     results = case.get('results')
                     require(isinstance(results, list), 'malformed results')
-                    identity = {'id': native_id, 'file': spec_file,
-                                'titlePath': [*parents, name],
-                                'projectId': case['projectId'], 'projectName': case['projectName']}
+                    require(native_id in by_id, 'unexpected native report identity: ' + native_id)
+                    identity = by_id[native_id]
+                    require(identity['titlePath'] == [*parents, name],
+                            'native identity disagrees with JSON title: ' + native_id)
                     if collecting:
                         require(results == [], 'collection unexpectedly executed tests')
                     entries.append((identity, case))
-            visit(suite.get('suites', []), spec_file, parents)
+            visit(suite.get('suites', []), parents, top=False)
 
     visit(report.get('suites'))
     require(bool(entries), 'empty collected membership' if collecting else 'empty execution membership')
-    native_ids, logical_ids = set(), set()
-    for identity, _ in entries:
-        native = (identity['projectId'], identity['id'])
-        logical = (identity['file'], tuple(identity['titlePath']), identity['projectId'])
-        require(native not in native_ids, 'duplicate native identity: ' + json.dumps(identity))
-        require(logical not in logical_ids, 'duplicate/ambiguous logical identity: ' + json.dumps(identity))
-        native_ids.add(native)
-        logical_ids.add(logical)
+    require(seen == by_id.keys(), 'native membership mismatch: missing=' + json.dumps(sorted(by_id.keys() - seen)))
     return entries
 
 
