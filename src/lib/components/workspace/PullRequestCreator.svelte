@@ -1,7 +1,11 @@
 <script lang="ts">
-  import { logger } from '$lib/utils/client-logger';
-
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
+  import {
+    prCreatorRequested,
+    prWorkflowRequested,
+  } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+  import { selectPRWorkflow } from '$store/renderer/slices/pr-workflow/pr-workflow-selectors';
+  import { selectAcceptChangesState } from '$store/renderer/slices/changes/changes-selectors';
+  import { setPRContent } from '$store/renderer/slices/changes/changes-slice';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -10,7 +14,6 @@
   import { Badge } from '$lib/components/ui/badge';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
   import {
     faCodePullRequest,
@@ -22,11 +25,12 @@
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
+  import type { PullRequestInfo } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { toStore } from 'svelte/store';
+  import { onDestroy } from 'svelte';
 
   interface Props {
     workspaceId?: WorkspaceId | null;
@@ -38,121 +42,63 @@
   const workspaceId$ = toStore(() => workspaceId ?? '');
   const workspace$ = selectWorkspaceById(workspaceId$);
 
-  // Form state
-  let generatingContent = $state(false);
-  let creatingPR = $state(false);
-  let error: string | null = $state(null);
-  let success = $state(false);
-
-  // PR Form fields with skeleton states
-  let formData = $state({
-    title: { value: '', loading: false },
-    description: { value: '', loading: false },
+  const workflow$ = selectPRWorkflow(workspaceId$);
+  const draft$ = selectAcceptChangesState(workspaceId$);
+  let activeRequestId = $state('');
+  let activeKind = $state<'prepare-pr' | 'create-pr'>('prepare-pr');
+  let autoCreateRequested = $state(false);
+  const operation = $derived($workflow$.operations[activeKind]);
+  const currentOperation = $derived(
+    operation?.requestId === activeRequestId ? operation : undefined,
+  );
+  const generatingContent = $derived(
+    activeKind === 'prepare-pr' && currentOperation?.status === 'pending',
+  );
+  const autoCreatePending = $derived(autoCreateRequested && generatingContent);
+  const creatingPR = $derived(activeKind === 'create-pr' && currentOperation?.status === 'pending');
+  const error = $derived(currentOperation?.result?.error ?? null);
+  const success = $derived(
+    currentOperation?.result?.success === true && currentOperation.result.prNumber !== undefined,
+  );
+  const formData = $derived({
+    title: { value: $draft$.prTitle, loading: generatingContent },
+    description: { value: $draft$.prDescription, loading: generatingContent },
+  });
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
   });
 
-  // Track if we should auto-create after generation
-  let autoCreatePending = $state(false);
-
-  async function generatePRContent() {
-    const workspace = selectWorkspaceById.select(appStore.state, workspaceId ?? '');
-    if (!workspace) return;
-
-    generatingContent = true;
-    error = null;
-
-    // Set all fields to loading
-    formData = {
-      title: { value: '', loading: true },
-      description: { value: '', loading: true },
-    };
-
-    try {
-      // accept-changes.prepare returns suggested PR title/body (PROTOCOL.md §5.18)
-      const prepared = await AcceptChangesClient.prepare(WorkspaceId(workspace.id), 'create-pr');
-      formData.title.value = prepared.suggestedPRTitle || workspace.title || '';
-      formData.title.loading = false;
-      formData.description.value = prepared.suggestedPRBody || '';
-      formData.description.loading = false;
-    } catch (err: any) {
-      logger.error('Failed to generate PR content:', err);
-      error = err.message || m.workspace_prCreator_generateFailed_error();
-      formData.title.loading = false;
-      formData.description.loading = false;
-      autoCreatePending = false;
-    } finally {
-      generatingContent = false;
-    }
+  function generatePRContent() {
+    if (!workspaceId) return;
+    autoCreateRequested = false;
+    const request = prWorkflowRequested(workspaceId, { kind: 'prepare-pr' });
+    activeKind = 'prepare-pr';
+    activeRequestId = request.payload.requestId;
+    appStore.dispatch(request);
   }
 
-  async function generateAndCreate() {
-    autoCreatePending = true;
-    await generatePRContent();
-    // After generation completes, create the PR if we have a title
-    if (autoCreatePending && formData.title.value) {
-      await createPullRequest();
-    }
-    autoCreatePending = false;
-  }
-
-  async function createPullRequest() {
-    const workspace = selectWorkspaceById.select(appStore.state, workspaceId ?? '');
-    if (!workspace) return;
-    if (!formData.title.value) {
-      error = m.workspace_prCreator_titleRequired_error();
+  async function submitCreator(generate: boolean) {
+    const origin = workspaceId;
+    if (!origin) return;
+    autoCreateRequested = generate;
+    const requestId = crypto.randomUUID();
+    activeRequestId = requestId;
+    activeKind = generate ? 'prepare-pr' : 'create-pr';
+    const result = await appStore.dispatch(prCreatorRequested(origin, generate, requestId));
+    if (!mounted || workspaceId !== origin || activeRequestId !== requestId || !result.success)
       return;
-    }
+    // Only presentation callbacks remain here; transport, reconciliation and delay belong to the saga.
+    const pr = selectWorkspaceById.select(appStore.state, origin)?.activePullRequest;
+    if (pr) onCreated?.(pr);
+    onClose?.();
+  }
 
-    creatingPR = true;
-    error = null;
-
-    try {
-      const result = await AcceptChangesClient.execute(WorkspaceId(workspace.id), 'create-pr', {
-        prTitle: formData.title.value,
-        prBody: formData.description.value,
-        targetBranch: workspace.baseRef || 'main',
-      });
-
-      if (!result.success) {
-        error = result.error || m.workspace_prCreator_createFailed_error();
-        return;
-      }
-
-      success = true;
-      const prNumber = result.result?.prNumber;
-      const prUrl = result.result?.prHtmlUrl || result.result?.prUrl;
-      if (prNumber && prUrl) {
-        const pr: PullRequestInfo = {
-          id: String(prNumber),
-          number: prNumber,
-          url: prUrl,
-          title: formData.title.value,
-          status: PullRequestStatus.Open,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        appStore.dispatch(
-          updateWorkspaceEntity(workspace.id, {
-            activePullRequest: pr,
-            prNumber: pr.number,
-          }),
-        );
-
-        // Notify parent
-        if (onCreated) {
-          onCreated(pr);
-        }
-      }
-
-      // Auto-close after a short delay
-      setTimeout(() => {
-        if (onClose) onClose();
-      }, 2000);
-    } catch (err: any) {
-      logger.error('Failed to create PR:', err);
-      error = err.message || m.workspace_prCreator_createFailed_error();
-    } finally {
-      creatingPR = false;
-    }
+  function generateAndCreate() {
+    return submitCreator(true);
+  }
+  function createPullRequest() {
+    return submitCreator(false);
   }
 </script>
 
@@ -207,7 +153,13 @@
           {:else}
             <Input
               id="pr-title"
-              bind:value={formData.title.value}
+              bind:value={
+                () => formData.title.value,
+                (value) =>
+                  appStore.dispatch(
+                    setPRContent(workspaceId ?? '', String(value), formData.description.value),
+                  )
+              }
               placeholder={m.workspace_prCreator_titleField_placeholder()}
               disabled={creatingPR}
             />
@@ -229,7 +181,11 @@
           {:else}
             <Textarea
               id="pr-description"
-              bind:value={formData.description.value}
+              bind:value={
+                () => formData.description.value,
+                (value) =>
+                  appStore.dispatch(setPRContent(workspaceId ?? '', formData.title.value, value))
+              }
               placeholder={m.workspace_prCreator_descriptionField_placeholder()}
               class="min-h-[200px] font-mono text-sm"
               disabled={creatingPR}
