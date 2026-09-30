@@ -24,7 +24,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue(MODELS);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
+      { dispatch, getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -100,7 +100,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue([]);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
+      { dispatch, getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -112,7 +112,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockRejectedValue(new Error('uds boom'));
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
+      { dispatch, getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -148,7 +148,13 @@ describe('modelBootSaga', () => {
     runSaga(
       {
         dispatch: vi.fn(),
-        getState: () => ({ model: { defaultProviderId: 'codex' } }),
+        context: {
+          reduxStore: {
+            getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }),
+            subscribe: () => () => {},
+          },
+        },
+        getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }),
       },
       modelBootSaga,
     );

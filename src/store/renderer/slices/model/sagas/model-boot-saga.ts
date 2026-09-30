@@ -1,9 +1,8 @@
-import {
-  selectCanAdministerHost,
-  selectPrincipalConnectionContext,
-} from '../../principal/principal-selectors';
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { call, put, take } from 'typed-redux-saga';
+import { selectCanAdministerHost } from '../../principal/principal-selectors';
+import { selectModelBootContext } from '../model-selectors';
+import { createChannelFromSelector } from '@themislib/themis/saga';
+import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { call, flush, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -32,7 +31,8 @@ const logger = createLogger('ModelBootSaga');
  * still help.
  */
 export function* loadModelsOnBootWorker() {
-  const connection = yield* selectPrincipalConnectionContext.effect();
+  const context = yield* selectModelBootContext.effect();
+  if (!context) return false;
   try {
     let providerId = yield* selectActiveProviderId.effect();
     if (!providerId) {
@@ -41,8 +41,7 @@ export function* loadModelsOnBootWorker() {
         yield* call([appClient.settings, appClient.settings.getProviderSettings]);
       providerId = providerSettings?.activeProviderId ?? '';
     }
-    if (!providerId || connection !== (yield* selectPrincipalConnectionContext.effect()))
-      return false;
+    if (!providerId || context !== (yield* selectModelBootContext.effect())) return false;
 
     const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
       [appClient.models, appClient.models.list],
@@ -54,7 +53,7 @@ export function* loadModelsOnBootWorker() {
     const activeProviderId = yield* selectActiveProviderId.effect();
     if (
       (activeProviderId && activeProviderId !== providerId) ||
-      connection !== (yield* selectPrincipalConnectionContext.effect())
+      context !== (yield* selectModelBootContext.effect())
     )
       return true;
     if (models.length === 0) return false;
@@ -63,7 +62,8 @@ export function* loadModelsOnBootWorker() {
     yield* put(setLoadingStateForProvider({ providerId, status: 'success', retryAttempt: 0 }));
     return true;
   } catch (error) {
-    logger.warn('boot model catalog load failed; pickers will retry on demand', { error });
+    if (context === (yield* selectModelBootContext.effect()))
+      logger.warn('boot model catalog load failed; pickers will retry on demand', { error });
     return false;
   }
 }
@@ -88,7 +88,6 @@ interface BackendStatusPayload {
 function createBackendConnectedChannel(): EventChannel<{ reconnected: boolean }> {
   return eventChannel<{ reconnected: boolean }>((emit) => {
     if (typeof window === 'undefined' || !window.electronAPI) {
-      emit(END as never);
       return () => {};
     }
     const api = window.electronAPI;
@@ -105,7 +104,10 @@ function createBackendConnectedChannel(): EventChannel<{ reconnected: boolean }>
 
 /**
  * Boot-time load of the active provider's model catalog, kept converged with
- * the daemon connection (intent-hq/monorepo#1830):
+ * caller/provider readiness and daemon connection (intent-hq/monorepo#1830):
+ *
+ * - Admission and delayed settings/member execution projections wake the same
+ *   sequential loader. An unchanged readiness value never retries on unrelated writes.
  *
  * - On a plain `connected` (first successful connect, backend switch) the
  *   load is re-run only if the previous attempt did not land — a boot-time
@@ -119,17 +121,36 @@ function createBackendConnectedChannel(): EventChannel<{ reconnected: boolean }>
  * fetches — with signals during a fetch coalesced by the sliding buffer.
  */
 export function* modelBootSaga() {
+  const readinessChannel = yield* createChannelFromSelector(selectModelBootContext);
   const connectedChannel = yield* call(createBackendConnectedChannel);
   try {
-    let loaded = yield* call(loadModelsOnBootWorker);
+    let attemptedContext: string | null = null;
+    let loaded = false;
+    let retryConnection = false;
     while (true) {
-      const signal = yield* take(connectedChannel);
-      if (signal === (END as unknown as { reconnected: boolean })) return;
-      if (signal.reconnected || !loaded) {
+      const context = yield* selectModelBootContext.effect();
+      if (!context) {
+        attemptedContext = null;
+        loaded = false;
+      } else if (context !== attemptedContext || retryConnection) {
+        attemptedContext = context;
         loaded = yield* call(loadModelsOnBootWorker);
       }
+      const signal = yield* race({
+        readiness: take(readinessChannel),
+        connected: take(connectedChannel),
+      });
+      // Both channels can accumulate during the same request. Drain together
+      // so admission/provider/connect bursts yield only one current trailing load.
+      const queuedConnections = yield* flush(connectedChannel);
+      yield* flush(readinessChannel);
+      retryConnection =
+        signal.connected?.reconnected === true ||
+        queuedConnections.some((queued) => queued.reconnected) ||
+        (!loaded && (!!signal.connected || queuedConnections.length > 0));
     }
   } finally {
+    readinessChannel.close();
     connectedChannel.close();
   }
 }

@@ -1,8 +1,10 @@
 import {
   selectHostExecutionContext,
+  selectHostExecutionGeneration,
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
 import { store } from '../../store';
+import { selectHostRole, selectPrincipalActionContext } from '../principal/principal-selectors';
 import {
   getItem,
   getItems,
@@ -21,6 +23,21 @@ import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
 } from '../provider-catalog/provider-catalog-selectors';
+
+/** Unscoped catalogs belong to one admitted owner/member and provider projection. */
+export const selectModelBootContext = store.createSelector((state): string | null => {
+  const admission = selectPrincipalActionContext.select(state);
+  const role = selectHostRole.select(state);
+  if (!admission || (role !== 'owner' && role !== 'member')) return null;
+  const provider = selectActiveProviderId.select(state);
+  // Members get defaults from host.executionContext, never owner settings.
+  if (role === 'member' && !provider) return null;
+  return JSON.stringify([
+    admission,
+    provider,
+    role === 'member' ? selectHostExecutionGeneration.select(state) : null,
+  ]);
+});
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
