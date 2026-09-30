@@ -34,7 +34,15 @@
  * admission invalidation cancels every worker and clears ephemeral projections.
  */
 
-import { END, buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
+import {
+  END,
+  buffers,
+  channel,
+  eventChannel,
+  type Channel,
+  type EventChannel,
+  type Task,
+} from 'redux-saga';
 import {
   all,
   call,
@@ -54,6 +62,10 @@ import {
   type SelectorChannelPayload,
 } from '@themislib/themis/saga';
 
+import {
+  takeLatestInContext,
+  takeSingleFlightInContext,
+} from '../../../utils/context-saga-effects';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -354,39 +366,63 @@ function onMembershipKeysChanged(reads: RosterReads) {
   };
 }
 
-/** Workspace guests cannot receive host-global membership events. A roster
- * event can reflect an offline promotion without changing its online rows, so
- * refresh the effective membership too. Coalesce bursts and serialize reads
- * per workspace; a notification during a read requests one trailing refresh. */
+type MembershipNotification =
+  ReturnType<typeof presenceRosterReceived> | ReturnType<typeof presenceWorkspaceRemoved>;
+type MembershipRefresh = { workspaceId: string; cancel: boolean };
+
+function membershipNotificationWorkspace(action: MembershipNotification): string {
+  const value = action.payload[0];
+  return typeof value === 'string' ? value : value.workspaceId;
+}
+
+function* queueMembershipRefresh(
+  notifications: Channel<MembershipRefresh>,
+  action: MembershipNotification,
+): SagaGenerator<void> {
+  const workspaceId = membershipNotificationWorkspace(action);
+  const removed = action.type === presenceWorkspaceRemoved.type;
+  if (!removed) {
+    if (!(yield* select(selectPresenceWorkspaceIds.select)).includes(workspaceId)) return;
+    yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
+  }
+  yield* put(notifications, { workspaceId, cancel: removed });
+}
+
+function* refreshNotifiedMembership(
+  reads: RosterReads,
+  { workspaceId }: MembershipRefresh,
+): SagaGenerator<void> {
+  if (
+    (yield* select(selectPresenceMembershipKeys.select)).some(
+      (key) => membershipKeyWorkspaceId(key) === workspaceId,
+    )
+  )
+    yield* call(hydrateMembership, reads, workspaceId);
+}
+
+/** Refresh on an authorized workspace notification. Offline role changes also
+ * require the daemon to emit that notification; host-global events cannot stand
+ * in for delivery to guests. Debounce bursts, serialize reads per workspace and
+ * discard pending work when that workspace leaves the current admission. */
 function* watchMembershipNotifications(reads: RosterReads): SagaGenerator<void> {
-  const pending = new Map<string, { dirty: boolean; task: Task | null }>();
-  while (true) {
-    const {
-      payload: [roster],
-    } = yield* take(presenceRosterReceived);
-    const workspaceId = roster.workspaceId;
-    if (!(yield* select(selectPresenceWorkspaceIds.select)).includes(workspaceId)) continue;
-    let entry = pending.get(workspaceId);
-    if (!entry) {
-      entry = { dirty: false, task: null };
-      pending.set(workspaceId, entry);
-    }
-    entry.dirty = true;
-    if (entry.task?.isRunning()) continue;
-    const refresh = entry;
-    refresh.task = yield* fork(function* () {
-      while (refresh.dirty) {
-        yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
-        refresh.dirty = false;
-        if (
-          !(yield* select(selectPresenceMembershipKeys.select)).some(
-            (key) => membershipKeyWorkspaceId(key) === workspaceId,
-          )
-        )
-          return;
-        yield* call(hydrateMembership, reads, workspaceId);
-      }
-    });
+  const notifications = channel<MembershipRefresh>(buffers.expanding());
+  const refresh = yield* takeSingleFlightInContext(
+    notifications,
+    ({ workspaceId, cancel }) => (cancel ? { context: workspaceId, cancel: true } : workspaceId),
+    refreshNotifiedMembership,
+    reads,
+  );
+  const debounce = yield* takeLatestInContext(
+    [presenceRosterReceived, presenceWorkspaceRemoved],
+    membershipNotificationWorkspace,
+    queueMembershipRefresh,
+    notifications,
+  );
+  try {
+    yield* join([refresh, debounce]);
+  } finally {
+    yield* cancel([refresh, debounce]);
+    notifications.close();
   }
 }
 

@@ -45,7 +45,7 @@ const roster = (workspaceId = 'ws') => ({
     .map((p) => ({ ...p, focus: [], typing: [] })),
 });
 const settle = () => vi.advanceTimersByTimeAsync(0);
-function admit(revision = 1) {
+function admit(revision = 1, hostRole: HostRole = 'owner') {
   const context = selectPrincipalConnectionContext.select(store.state)!;
   if (store.state.principal.context !== context) store.dispatch(principalContextChanged(context));
   const p = store.state.principal;
@@ -54,10 +54,10 @@ function admit(revision = 1) {
       { context, invalidation: p.invalidation, presentationVersion: p.presentationVersion },
       {
         principal: {
-          id: 'me',
-          hostRole: 'owner',
+          id: hostRole === 'guest' ? 'viewer' : 'me',
+          hostRole,
           hostMembershipRevision: revision,
-          isAdministrator: true,
+          isAdministrator: hostRole === 'owner',
           login: null,
           displayName: null,
           avatarUrl: null,
@@ -111,9 +111,9 @@ describe('presence admission and avatar policy', () => {
     dispose();
     vi.useRealTimers();
   });
-  function start(enabled = true) {
+  function start(enabled = true, hostRole: HostRole = 'owner') {
     store.dispatch(setLabsMultiplayerEnabled(enabled));
-    admit();
+    admit(1, hostRole);
     cancel = store.runSaga(presenceSaga);
   }
   it('does not load or report presence while Multiplayer is off', async () => {
@@ -245,15 +245,36 @@ describe('presence admission and avatar policy', () => {
       selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
     ).toEqual(['host', 'guest']);
   });
-  it('refreshes an offline promotion from a workspace presence notification even without a host-global event', async () => {
-    start();
+  it('a guest consumes an injected workspace notification; daemon delivery remains a separate dependency', async () => {
+    store.dispatch(
+      replaceWorkspaceList([
+        {
+          id: WorkspaceId('ws'),
+          memberCount: 5,
+          ownerPrincipalId: 'me',
+          myRole: 'collaborator',
+          canManage: false,
+        } as Workspace,
+      ]),
+    );
+    wire.request.mockImplementation(async (method: string) =>
+      method === 'workspace.members.list'
+        ? { members: [...accepted(), member('viewer', 'guest')] }
+        : roster(),
+    );
+    start(true, 'guest');
     await settle();
+    expect(store.state.principal.snapshot?.principal.hostRole).toBe('guest');
+    expect(
+      selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
+    ).toEqual(['me', 'host', 'guest']);
     wire.request.mockImplementation(async (method: string) =>
       method === 'workspace.members.list'
         ? {
-            members: accepted().map((p) =>
-              p.principalId === 'guest' ? member('guest', 'member') : p,
-            ),
+            members: [
+              ...accepted().map((p) => (p.principalId === 'guest' ? member('guest', 'member') : p)),
+              member('viewer', 'guest'),
+            ],
           }
         : roster(),
     );
@@ -261,7 +282,36 @@ describe('presence admission and avatar policy', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(
       selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
-    ).toEqual(['host']);
+    ).toEqual(['me', 'host']);
+  });
+  it('drops a debounced notification when the workspace is removed before rejoining', async () => {
+    start();
+    await settle();
+    wire.request.mockClear();
+    store.dispatch(presenceRosterReceived(roster()));
+    store.dispatch(replaceWorkspaceList([]));
+    await settle();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(selectWorkspacePresencePeople.select(store.state, 'ws')).toEqual([]);
+  });
+  it('serializes held notification reads and keeps one trailing refresh', async () => {
+    start();
+    await settle();
+    let release!: (value: unknown) => void;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    wire.request.mockClear().mockImplementationOnce(() => held);
+    store.dispatch(presenceRosterReceived(roster()));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wire.request).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 4; i++) store.dispatch(presenceRosterReceived(roster()));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wire.request).toHaveBeenCalledTimes(1);
+    release({ members: accepted() });
+    await settle();
+    expect(wire.request).toHaveBeenCalledTimes(2);
   });
   it('rejects pushed presence for a removed workspace and does not revive it on rejoin', async () => {
     start();
