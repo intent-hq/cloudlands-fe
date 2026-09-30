@@ -41,6 +41,14 @@ on:
         required: false
         type: boolean
         default: false
+      smoke_macos_scope:
+        description: 'Full fixture suite, or the mock-provider/worktree-capture follow-up only'
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - fixture-correction
       build_windows:
         description: 'Build Windows (x64 NSIS installer)'
         required: false
@@ -115,6 +123,8 @@ jobs:
           path: smoke-artifact
       - name: Test the signed artifact with disposable fixture state
         timeout-minutes: 45
+        env:
+          BUILD_SMOKE_MACOS_SCOPE: ${{ inputs.smoke_macos_scope }}
         run: python3 scripts/run-packaged-macos-smoke.py smoke-artifact
       - name: Upload journey results and process receipts
         timeout-minutes: 4

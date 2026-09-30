@@ -159,7 +159,31 @@ class Admission(unittest.TestCase):
                     smoke.main()
                 cmd.assert_not_called()
 
-    def exercise(self, failure):
+    def test_unknown_scope_refuses_before_fixture_or_commands(self):
+        with patch.dict(os.environ, {'BUILD_SMOKE_MACOS_SCOPE': 'arbitrary'}, clear=True), \
+             patch.object(smoke.tempfile, 'mkdtemp') as create, patch.object(smoke, 'command') as command:
+            with self.assertRaisesRegex(RuntimeError, 'Unknown packaged smoke scope'): smoke.main()
+        create.assert_not_called()
+        command.assert_not_called()
+
+    def test_correction_scope_selects_only_missing_provider_and_worktree_journey(self):
+        self.exercise(None, 'fixture-correction')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            child = Mock(pid=12345, returncode=0)
+            child.poll.return_value = 0
+            child.wait.return_value = 0
+            with patch.object(smoke, 'REPORT_TREE', root), patch.object(smoke, 'REPORT', root), \
+                 patch.object(smoke.subprocess, 'Popen', return_value=child) as spawn:
+                smoke.run_tests('fixture-correction', ['build-smoke-multi-agent.e2e.ts', 'build-smoke-providers.e2e.ts'], {})
+            args = spawn.call_args.args[0]
+            self.assertEqual(args[args.index('--grep') + 1],
+                'child agent creation updates sidebar and chat isolation|mock provider completes the hello-world task')
+            self.assertNotIn('--grep-invert', args)
+            self.assertIn('--retries=0', args)
+            self.assertEqual(json.loads((root / 'fixture-correction.json').read_text())['argv'], args)
+
+    def exercise(self, failure, scope='full'):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / 'only.dmg').write_bytes(b'fixture-only')
@@ -176,7 +200,8 @@ class Admission(unittest.TestCase):
                 return b''
             with patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS',
                 'RUNNER_ARCH': 'ARM64', 'RUNNER_TEMP': temp, 'RUNNER_NAME': 'fixture',
-                'GITHUB_SHA': 'source', 'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1'}, clear=True), \
+                'GITHUB_SHA': 'source', 'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1',
+                'BUILD_SMOKE_MACOS_SCOPE': scope}, clear=True), \
                 patch.object(smoke.platform, 'system', return_value='Darwin'), \
                 patch.object(smoke.platform, 'machine', return_value='arm64'), \
                 patch.object(smoke, 'REPORT_TREE', root / 'report'), patch.object(smoke, 'REPORT', root / 'report'), patch.object(smoke.sys, 'argv', ['runner', temp]), \
@@ -186,7 +211,13 @@ class Admission(unittest.TestCase):
                     run.assert_not_called()
                 else:
                     smoke.main()
-                    self.assertEqual(run.call_count, 2)
+                    self.assertEqual(json.loads((root / 'report/admission.json').read_text())['scope'], scope)
+                    if scope == 'fixture-correction':
+                        run.assert_called_once()
+                        self.assertEqual(run.call_args.args[:2], ('fixture-correction',
+                            ['build-smoke-multi-agent.e2e.ts', 'build-smoke-providers.e2e.ts']))
+                    else:
+                        self.assertEqual([call.args[0] for call in run.call_args_list], ['journeys', 'fixture-suite'])
                 return commands
 
     def test_detach_signature_and_architecture_failures_block_launch(self):

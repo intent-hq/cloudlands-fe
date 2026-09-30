@@ -143,6 +143,8 @@ def run_tests(label, files, env):
     env = {**env, 'BUILD_SMOKE_REPORT_DIR': str(REPORT / label)}
     if label == 'fixture-suite':
         args += ['--grep-invert', '(auggie|claude-code|codex|opencode) provider']
+    elif label == 'fixture-correction':
+        args += ['--grep', 'child agent creation updates sidebar and chat isolation|mock provider completes the hello-world task']
     started = time.monotonic()
     # Playwright owns each app handle. A timeout is a failed, unsettled run;
     # the job ends and its disposable VM is retired, never reused for a retry.
@@ -171,6 +173,9 @@ def run_tests(label, files, env):
 
 def main():
     global FIXTURE_ROOT
+    scope = os.environ.get('BUILD_SMOKE_MACOS_SCOPE', 'full')
+    if scope not in ('full', 'fixture-correction'):
+        raise RuntimeError('Unknown packaged smoke scope')
     if (os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted' or
         os.environ.get('RUNNER_OS') != 'macOS' or os.environ.get('RUNNER_ARCH') != 'ARM64' or
         platform.system() != 'Darwin' or platform.machine() != 'arm64'):
@@ -189,7 +194,7 @@ def main():
     with dmg.open('rb') as source:
         digest = hashlib.file_digest(source, 'sha256').hexdigest()
     record('admission', {'source': os.environ['GITHUB_SHA'], 'run': os.environ['GITHUB_RUN_ID'],
-                         'attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'dmgSha256': digest,
+                         'attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'scope': scope, 'dmgSha256': digest,
                          'dmgBytes': dmg.stat().st_size, 'fixtureRoot': str(root),
                          'platform': platform.platform(), 'arch': platform.machine(),
                          'runner': os.environ['RUNNER_NAME']})
@@ -232,9 +237,12 @@ def main():
         architectures[str(target.relative_to(app))] = arches
     record('executables', architectures)
     env = test_environment(root, executable)
-    run_tests('journeys', ['build-smoke-commit.e2e.ts', 'build-smoke-editorial-workspace.e2e.ts',
+    if scope == 'fixture-correction':
+        run_tests('fixture-correction', ['build-smoke-multi-agent.e2e.ts', 'build-smoke-providers.e2e.ts'], env)
+    else:
+        run_tests('journeys', ['build-smoke-commit.e2e.ts', 'build-smoke-editorial-workspace.e2e.ts',
                            'build-smoke-multi-agent.e2e.ts'], env)
-    run_tests('fixture-suite', ['build-smoke-agent-chat.e2e.ts', 'build-smoke-followup.e2e.ts',
+        run_tests('fixture-suite', ['build-smoke-agent-chat.e2e.ts', 'build-smoke-followup.e2e.ts',
                                 'build-smoke-navigation.e2e.ts', 'build-smoke-providers.e2e.ts'], env)
     # Credentials are deliberately absent; live-provider/remote PR cases are not
     # part of this fixture-only suite and cannot be counted as passing.
