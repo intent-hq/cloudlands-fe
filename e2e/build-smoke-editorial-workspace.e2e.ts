@@ -307,10 +307,10 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     // A renderer reload must retain the title/status we changed through the UI.
     await page.reload();
     await expect(page.getByTitle('Click to edit workspace title')).toContainText(
-      'Extremely Long Workspace Title',
+      'Editorial navigation and sidebar hierarchy verification workspace',
     );
     await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
-      'Navigating the entire workspace UI',
+      'Refining the rail, workspace identity, and selected sections while preserving every interaction.',
     );
     test.setTimeout(360_000);
     for (const [label, width, height] of [

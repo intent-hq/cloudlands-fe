@@ -31,7 +31,10 @@ import {
   resolveUserDataBasePath,
   shouldIsolateDevIntentdDataDir,
 } from './utils/resolve-dev-instance.js';
-app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
+app.setPath(
+  'userData',
+  resolveUserDataBasePath(app.getPath('appData'), app.commandLine.getSwitchValue('user-data-dir')),
+);
 
 // EARLY: Support multiple dev instances by using unique userData paths.
 // Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron

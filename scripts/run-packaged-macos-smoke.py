@@ -7,12 +7,67 @@ from pathlib import Path
 import platform
 import plistlib
 import shutil
+import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 
 REPORT = Path('e2e-reports/packaged-run')
+FIXTURE_ROOT = None
+SUITE_SECONDS = 780
+# 780 admission + 2*780 suites + 40 termination + 120 evidence + 60 recording
+# = 2560s, leaving 140s inside the unchanged 45-minute step.
+
+def stop_test_child(child):
+    """Only the session/group created by this runner; never discover/adopt one."""
+    receipt = {'pid': child.pid, 'requested': [], 'directChildWait': None,
+               'descendants': 'not proven absent; disposable job must not be reused'}
+    try:
+        if child.poll() is None:
+            os.killpg(child.pid, signal.SIGTERM)
+            receipt['requested'].append('SIGTERM')
+            try:
+                child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                # The unreaped direct child still anchors this created group.
+                os.killpg(child.pid, signal.SIGKILL)
+                receipt['requested'].append('SIGKILL')
+                child.wait(timeout=10)
+        receipt['directChildWait'] = child.wait(timeout=1)
+    except BaseException as error:
+        receipt['error'] = str(error)
+        receipt['settlement'] = 'unknown'
+    return receipt
+
+def retain_fixtures(root):
+    """Preserve fixture DBs/repos/profiles, never the copied app or external links."""
+    started = time.monotonic()
+    total = 0
+    files = 0
+    entries = 0
+    omitted = []
+    with tarfile.open(REPORT / 'fixture-state.tar.gz', 'w:gz', dereference=False) as archive:
+        for name in ('tmp', 'config', 'data', 'cache', 'gitconfig'):
+            base = root / name
+            paths = [base] if base.is_file() else base.rglob('*')
+            for path in paths:
+                entries += 1
+                if entries > 20000 or time.monotonic() - started > 120:
+                    raise RuntimeError('Fixture evidence entry/time bound exceeded; archive incomplete')
+                relative = path.relative_to(root).as_posix()
+                if path.is_symlink() or not path.is_file():
+                    if not path.is_dir(): omitted.append(relative)
+                    continue
+                size = path.stat().st_size
+                total += size
+                files += 1
+                if size > 64 * 1024**2 or total > 256 * 1024**2 or files > 20000 or time.monotonic() - started > 120:
+                    raise RuntimeError('Fixture evidence bound exceeded; partial archive is not complete')
+                archive.add(path, arcname=relative, recursive=False)
+    record('fixture-state', {'files': files, 'bytes': total, 'omittedNonregular': omitted,
+                            'consistency': 'post-test copy; see shutdown receipts for settlement'})
 
 def record(name, value):
     REPORT.mkdir(parents=True, exist_ok=True)
@@ -33,6 +88,7 @@ def test_environment(root, executable):
                TMPDIR=str(root / 'tmp'), XDG_CONFIG_HOME=str(root / 'config'),
                XDG_DATA_HOME=str(root / 'data'), XDG_CACHE_HOME=str(root / 'cache'),
                PACKAGED_APP_PATH=str(executable), BUILD_SMOKE_VALIDATE_JOURNEYS='1',
+               BUILD_SMOKE_RETAIN_FIXTURES='1',
                DEFAULT_PROVIDER_OVERRIDE='mock', PLAYWRIGHT_HTML_OPEN='never')
     return env
 
@@ -47,13 +103,15 @@ def run_tests(label, files, env):
     # Playwright owns each app handle. A timeout is a failed, unsettled run;
     # the job ends and its disposable VM is retired, never reused for a retry.
     with log.open('wb') as output:
-        child = subprocess.Popen(args, env=env, stdout=output, stderr=subprocess.STDOUT)
+        child = subprocess.Popen(args, env=env, stdout=output, stderr=subprocess.STDOUT,
+                                 start_new_session=True)
         try:
             while child.poll() is None:
                 size = sum(p.stat().st_size for p in Path('e2e-reports').rglob('*') if p.is_file())
                 fixture_size = sum(p.stat().st_size for p in Path(env['TMPDIR']).parent.rglob('*') if p.is_file())
                 free = shutil.disk_usage(env['TMPDIR']).free
-                if time.monotonic() - started > 1200 or size > 2 * 1024**3 or fixture_size > 20 * 1024**3 or free < 4 * 1024**3:
+                # Reserve 256 MiB for fixture collection and 1 MiB for receipts.
+                if time.monotonic() - started > SUITE_SECONDS or size > 2 * 1024**3 - 257 * 1024**2 or fixture_size > 20 * 1024**3 or free < 4 * 1024**3:
                     raise RuntimeError('Smoke time/report/free-disk limit reached; process settlement unknown')
                 time.sleep(1)
             record(label, {'argv': args, 'pid': child.pid, 'exitCode': child.returncode,
@@ -61,17 +119,21 @@ def run_tests(label, files, env):
             if child.returncode:
                 raise RuntimeError(f'{label} failed; see {log}')
         except BaseException as error:
+            cleanup = stop_test_child(child)
             record(label + '-failure', {'pid': child.pid, 'exitCode': child.poll(), 'error': str(error),
+                                       'cleanup': cleanup,
                                        'settlement': 'unknown' if child.poll() is None else 'direct child returned'})
             raise
 
 def main():
+    global FIXTURE_ROOT
     if (os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted' or
         os.environ.get('RUNNER_OS') != 'macOS' or os.environ.get('RUNNER_ARCH') != 'ARM64' or
         platform.system() != 'Darwin' or platform.machine() != 'arm64'):
         raise RuntimeError('Requires a fresh GitHub-hosted macOS arm64 job')
     REPORT.mkdir(parents=True, exist_ok=True)
-    root = Path(tempfile.mkdtemp(prefix='packaged-smoke-', dir=os.environ['RUNNER_TEMP']))
+    root = Path(tempfile.mkdtemp(prefix='smoke-', dir=os.environ['RUNNER_TEMP']))
+    FIXTURE_ROOT = root
     for name in ('tmp', 'config', 'data', 'cache', 'mount'):
         (root / name).mkdir(mode=0o700)
     (root / 'gitconfig').write_text('[user]\nname = Packaged Smoke\nemail = smoke@test.invalid\n[commit]\ngpgsign = false\n')
@@ -133,8 +195,19 @@ def main():
     # part of this fixture-only suite and cannot be counted as passing.
 
 if __name__ == '__main__':
+    primary = None
     try:
         main()
     except BaseException as error:
+        primary = error
         record('failure', {'error': str(error), 'historicalEnvironmentReused': False})
         raise
+    finally:
+        if FIXTURE_ROOT is not None:
+            try:
+                retain_fixtures(FIXTURE_ROOT)
+            except BaseException as recording:
+                record('fixture-state-failure', {'primary': str(primary) if primary else None,
+                                                'recording': str(recording), 'complete': False})
+                if primary is None:
+                    raise

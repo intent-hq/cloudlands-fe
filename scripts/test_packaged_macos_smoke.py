@@ -1,17 +1,77 @@
 """Pure runner admission/failure tests. No macOS commands or app processes run."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import plistlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import tarfile
 
 spec = importlib.util.spec_from_file_location('smoke', Path(__file__).with_name('run-packaged-macos-smoke.py'))
 smoke = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(smoke)
 
 class Admission(unittest.TestCase):
+    def test_suite_deadline_records_primary_and_stops_owned_child(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            child = Mock(pid=12345, returncode=None)
+            child.poll.side_effect = lambda: child.returncode
+            def wait(timeout=None):
+                child.returncode = -15
+                return -15
+            child.wait.side_effect = wait
+            with patch.object(smoke, 'REPORT', root), \
+                 patch.object(smoke.subprocess, 'Popen', return_value=child) as spawn, \
+                 patch.object(smoke.time, 'monotonic', side_effect=[0, 781]), \
+                 patch.object(smoke.shutil, 'disk_usage', return_value=Mock(free=10 * 1024**3)), \
+                 patch.object(smoke.os, 'killpg') as kill:
+                with self.assertRaisesRegex(RuntimeError, 'limit reached'):
+                    smoke.run_tests('journeys', ['fixture-only'], {'TMPDIR': str(root / 'tmp')})
+            self.assertTrue(spawn.call_args.kwargs['start_new_session'])
+            kill.assert_called_once_with(12345, smoke.signal.SIGTERM)
+            receipt = json.loads((root / 'journeys-failure.json').read_text())
+            self.assertIn('limit reached', receipt['error'])
+            self.assertEqual(receipt['cleanup']['directChildWait'], -15)
+
+    def test_fixture_evidence_keeps_git_and_database_but_not_app_or_links(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'tmp/repo/.git').mkdir(parents=True)
+            (root / 'tmp/repo/.git/HEAD').write_text('fixture-head')
+            (root / 'tmp/profile').mkdir()
+            (root / 'tmp/profile/store.sqlite').write_bytes(b'fixture-db')
+            (root / 'tmp/link').symlink_to('/etc/passwd')
+            (root / 'Intent.app').mkdir()
+            (root / 'Intent.app/binary').write_bytes(b'not evidence')
+            report = root / 'report'
+            report.mkdir()
+            with patch.object(smoke, 'REPORT', report): smoke.retain_fixtures(root)
+            with tarfile.open(report / 'fixture-state.tar.gz') as archive:
+                self.assertEqual(set(archive.getnames()), {'tmp/repo/.git/HEAD', 'tmp/profile/store.sqlite'})
+
+    def test_timeout_terminates_only_created_group_and_waits(self):
+        child = Mock(pid=12345)
+        child.poll.return_value = None
+        child.wait.side_effect = [smoke.subprocess.TimeoutExpired('fixture', 10), -9, -9]
+        with patch.object(smoke.os, 'killpg') as kill:
+            receipt = smoke.stop_test_child(child)
+        self.assertEqual([call.args for call in kill.call_args_list],
+                         [(12345, smoke.signal.SIGTERM), (12345, smoke.signal.SIGKILL)])
+        self.assertEqual(receipt['directChildWait'], -9)
+        self.assertIn('not proven', receipt['descendants'])
+
+    def test_failed_termination_remains_unknown(self):
+        child = Mock(pid=12345)
+        child.poll.return_value = None
+        with patch.object(smoke.os, 'killpg', side_effect=OSError('refused')):
+            receipt = smoke.stop_test_child(child)
+        self.assertEqual(receipt['settlement'], 'unknown')
+        self.assertIsNone(receipt['directChildWait'])
+        child.wait.assert_not_called()
+
     def test_environment_drops_credentials_and_external_daemon(self):
         with patch.dict(os.environ, {'PATH': '/bin', 'HOME': '/fresh-runner', 'GH_TOKEN': 'secret',
                 'ANTHROPIC_API_KEY': 'secret', 'SSH_AUTH_SOCK': '/user/agent',

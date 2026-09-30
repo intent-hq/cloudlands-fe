@@ -118,7 +118,7 @@ export async function exitPackagedApp(app: ElectronApplication | null | undefine
   const profile = launchedProfiles.get(app);
   if (!profile) throw new Error('Cannot stop an app not owned by launchPackagedApp');
   const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
-  const descendants = process.platform === 'win32' || !proc.pid ? [] : ownedDescendants(proc.pid);
+  let descendants: number[] = [];
   const receipt = {
     observedDescendants: descendants,
     descendantSettlement: 'unknown',
@@ -131,7 +131,15 @@ export async function exitPackagedApp(app: ElectronApplication | null | undefine
     error: null as string | null,
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let primary: unknown;
+  let observationError: unknown;
   try {
+    try {
+      descendants = process.platform === 'win32' || !proc.pid ? [] : ownedDescendants(proc.pid);
+      receipt.observedDescendants = descendants;
+    } catch (error) {
+      observationError = error;
+    }
     const closed = new Promise<void>((resolve, reject) => {
       if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
       proc.once('close', () => resolve());
@@ -153,6 +161,7 @@ export async function exitPackagedApp(app: ElectronApplication | null | undefine
     ]);
     receipt.exitCode = proc.exitCode;
     receipt.signalCode = proc.signalCode;
+    if (observationError) throw observationError;
     const deadline = Date.now() + 5_000;
     while (descendants.some(processExists) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -163,12 +172,23 @@ export async function exitPackagedApp(app: ElectronApplication | null | undefine
       process.platform === 'win32' ? 'not observed' : 'observed descendants absent';
     receipt.settled = true;
   } catch (error) {
-    receipt.error = String(error);
-    throw error;
+    primary =
+      observationError && observationError !== error
+        ? new AggregateError([observationError, error], 'Observation and shutdown failed')
+        : error;
+    receipt.error = String(primary);
+    throw primary;
   } finally {
     if (timer) clearTimeout(timer);
-    mkdirSync(logDir, { recursive: true });
-    writeFileSync(join(logDir, `shutdown-${proc.pid}.json`), JSON.stringify(receipt, null, 2));
+    try {
+      mkdirSync(logDir, { recursive: true });
+      writeFileSync(join(logDir, `shutdown-${proc.pid}.json`), JSON.stringify(receipt, null, 2));
+    } catch (recording) {
+      throw new AggregateError(
+        [primary, recording].filter(Boolean),
+        'App shutdown/receipt failure',
+      );
+    }
     // Retain the fixture state for diagnosis; the disposable runner owns its
     // lifetime. Direct-child close is not a claim about every descendant.
   }
@@ -204,7 +224,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
 
   const executablePath = findPackagedApp();
 
-  const profile = mkdtempSync(join(tmpdir(), 'intent-packaged-profile-'));
+  const profile = mkdtempSync(join(tmpdir(), 'ip-'));
   const app = await electron.launch({
     timeout: 60_000,
     executablePath,
@@ -223,76 +243,89 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     },
   });
   launchedProfiles.set(app, profile);
-
-  // --- Capture Electron main-process stdout/stderr ---
-  const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
-  mkdirSync(logDir, { recursive: true });
-
-  const mainProcessLogPath = join(logDir, 'electron-main-process.log');
-  const rendererLogPath = join(logDir, 'electron-renderer.log');
-
-  const proc = app.process();
-  // Append (like the renderer log) so every instance a run launches is kept,
-  // not just the last one.
-  const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
-  if (proc.stdout) {
-    proc.stdout.pipe(logStream, { end: false });
-  }
-  if (proc.stderr) {
-    proc.stderr.pipe(logStream, { end: false });
-  }
-
-  proc.once('close', () => logStream.end());
-  const runtime = await app.evaluate(({ app: electronApp }) => ({
-    arch: process.arch,
-    platform: process.platform,
-    versions: process.versions,
-    packaged: electronApp.isPackaged,
-    executable: process.execPath,
-    appPath: electronApp.getAppPath(),
-    userData: electronApp.getPath('userData'),
-    dataDir: process.env.INTENTD_DATA_DIR,
-  }));
-  writeFileSync(join(logDir, `runtime-${proc.pid}.json`), JSON.stringify(runtime, null, 2));
-  if (!runtime.packaged || runtime.arch !== process.arch || runtime.platform !== process.platform) {
-    await exitPackagedApp(app);
-    throw new Error(`Packaged runtime identity mismatch: ${JSON.stringify(runtime)}`);
-  }
-  const page = await app.firstWindow();
-
-  // --- Capture renderer console output ---
-  page.on('console', (msg) => {
-    const line = `[${msg.type()}] ${msg.text()}\n`;
-    try {
-      appendFileSync(rendererLogPath, line);
-    } catch {
-      // best-effort — don't let logging failures break the test
-    }
-  });
-  // The app has no data-testid="app-ready" attribute.
-  // Instead, wait for the splash screen to be removed (signals Svelte layout mounted)
-  // and then for the home page content to render.
-  await page.waitForFunction(() => document.getElementById('splash') === null, undefined, {
-    timeout: 30_000,
-  });
-  // Give the home page components time to initialize
-  await page.waitForTimeout(2_000);
-
-  // --- Dismiss "Update check failed" toast if visible ---
-  // The auto-updater may show an error toast that can interfere with UI interactions.
   try {
-    const toastClose = page.locator('[data-sonner-toast] button[data-close-button]').first();
-    const toastVisible = await toastClose.isVisible().catch(() => false);
-    if (toastVisible) {
-      console.log('🔕 Dismissing update-check toast');
-      await toastClose.click();
-      await page.waitForTimeout(500);
-    }
-  } catch {
-    // No toast or already gone — fine
-  }
+    // --- Capture Electron main-process stdout/stderr ---
+    const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
+    mkdirSync(logDir, { recursive: true });
 
-  return { app, page, logPaths: { mainProcess: mainProcessLogPath, renderer: rendererLogPath } };
+    const mainProcessLogPath = join(logDir, 'electron-main-process.log');
+    const rendererLogPath = join(logDir, 'electron-renderer.log');
+
+    const proc = app.process();
+    // Append (like the renderer log) so every instance a run launches is kept,
+    // not just the last one.
+    const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
+    if (proc.stdout) {
+      proc.stdout.pipe(logStream, { end: false });
+    }
+    if (proc.stderr) {
+      proc.stderr.pipe(logStream, { end: false });
+    }
+
+    proc.once('close', () => logStream.end());
+    const runtime = await app.evaluate(({ app: electronApp }) => ({
+      arch: process.arch,
+      platform: process.platform,
+      versions: process.versions,
+      packaged: electronApp.isPackaged,
+      executable: process.execPath,
+      appPath: electronApp.getAppPath(),
+      userData: electronApp.getPath('userData'),
+      dataDir: process.env.INTENTD_DATA_DIR,
+    }));
+    writeFileSync(join(logDir, `runtime-${proc.pid}.json`), JSON.stringify(runtime, null, 2));
+    if (
+      !runtime.packaged ||
+      runtime.arch !== process.arch ||
+      runtime.platform !== process.platform ||
+      resolve(runtime.userData) !== resolve(profile, 'electron') ||
+      runtime.dataDir !== join(profile, 'intentd')
+    ) {
+      throw new Error(`Packaged runtime identity mismatch: ${JSON.stringify(runtime)}`);
+    }
+    const page = await app.firstWindow();
+
+    // --- Capture renderer console output ---
+    page.on('console', (msg) => {
+      const line = `[${msg.type()}] ${msg.text()}\n`;
+      try {
+        appendFileSync(rendererLogPath, line);
+      } catch {
+        // best-effort — don't let logging failures break the test
+      }
+    });
+    // The app has no data-testid="app-ready" attribute.
+    // Instead, wait for the splash screen to be removed (signals Svelte layout mounted)
+    // and then for the home page content to render.
+    await page.waitForFunction(() => document.getElementById('splash') === null, undefined, {
+      timeout: 30_000,
+    });
+    // Give the home page components time to initialize
+    await page.waitForTimeout(2_000);
+
+    // --- Dismiss "Update check failed" toast if visible ---
+    // The auto-updater may show an error toast that can interfere with UI interactions.
+    try {
+      const toastClose = page.locator('[data-sonner-toast] button[data-close-button]').first();
+      const toastVisible = await toastClose.isVisible().catch(() => false);
+      if (toastVisible) {
+        console.log('🔕 Dismissing update-check toast');
+        await toastClose.click();
+        await page.waitForTimeout(500);
+      }
+    } catch {
+      // No toast or already gone — fine
+    }
+
+    return { app, page, logPaths: { mainProcess: mainProcessLogPath, renderer: rendererLogPath } };
+  } catch (primary) {
+    try {
+      await exitPackagedApp(app);
+    } catch (cleanup) {
+      throw new AggregateError([primary, cleanup], 'Packaged launch failed; cleanup also failed');
+    }
+    throw primary;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +354,7 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
   execSync('git commit -m "initial commit"', { cwd: repoPath, stdio: 'ignore' });
 
   const cleanup = () => {
+    if (process.env.BUILD_SMOKE_RETAIN_FIXTURES === '1') return;
     try {
       rmSync(repoPath, { recursive: true, force: true });
     } catch {
@@ -1970,10 +2004,13 @@ export async function archiveAndGoHome(page: Page, workspaceId: string): Promise
     // Page may be in a bad state — proceed
   }
 
-  // Archive the workspace via IPC
-  await page.evaluate((id) => {
-    return (window as any).electronAPI.invoke('workspace:archive', { id });
-  }, workspaceId);
+  // Hosted fixture validation retains the real worktree/database until the
+  // runner collects its bounded diagnostic bundle, including on test failure.
+  if (process.env.BUILD_SMOKE_RETAIN_FIXTURES !== '1') {
+    await page.evaluate((id) => {
+      return (window as any).electronAPI.invoke('workspace:archive', { id });
+    }, workspaceId);
+  }
 
   // Brief settle time for background processes to wind down
   await new Promise((r) => setTimeout(r, 2_000));
