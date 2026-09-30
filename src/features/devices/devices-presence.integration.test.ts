@@ -130,7 +130,7 @@ const people = () => selectWorkspacePresencePeople.select(store.state, workspace
 const personIds = () => people().map((p) => p.principalId);
 const mentions = () => new MemberProvider().search('same', { workspaceId });
 const calls = (method: string) => wire.request.mock.calls.filter(([name]) => name === method);
-const avatar = (id: string) => document.querySelector(`[data-presence-person-button="${id}"]`);
+const avatar = (id: string) => document.querySelector(`[data-presence-avatar="${id}"]`);
 const settle = async () => {
   await tick();
   for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -209,8 +209,10 @@ async function loaded() {
   await waitFor(() =>
     expect(selectPersonalDevices.select(store.state)).toHaveLength(role === 'guest' ? 1 : 2),
   );
+  await waitFor(() => {
+    for (const id of ['owner', 'host', 'offline-guest']) expect(avatar(id)).not.toBeNull();
+  });
   expect(avatar('offline-host')).toBeNull();
-  expect(avatar('offline-guest')).not.toBeNull();
 }
 async function openPairing() {
   await fireEvent.click(
@@ -531,7 +533,7 @@ describe('Devices and workspace presence share one admission', () => {
     };
     emit('presence:changed', roster());
     await waitFor(() => expect(personIds()).toEqual(['owner', 'host']));
-    expect(avatar('offline-guest')).toBeNull();
+    await waitFor(() => expect(avatar('offline-guest')).toBeNull());
     expect(store.state.principal.minimumRevision).toBe(revision);
     expect(store.state.principal.snapshot?.principal.hostRole).toBe('guest');
     expect(
