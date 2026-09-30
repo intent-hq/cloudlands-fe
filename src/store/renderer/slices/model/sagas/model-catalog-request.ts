@@ -14,7 +14,7 @@ type CatalogRequest = {
   explicit: boolean;
   loadingStarted: boolean;
   published: boolean;
-  finished: boolean;
+  settled: boolean;
   successful: boolean;
   result?: Promise<Outcome>;
 };
@@ -27,12 +27,21 @@ const reloadLogger = createLogger('ModelReloadSaga');
 
 function begin(request: CatalogRequest) {
   if (request.result) return;
+  // Track transport settlement even when every waiting saga was cancelled or
+  // its admission became obsolete before publication.
   try {
     request.result = Promise.resolve(appClient.models.list(request.providerId)).then(
-      (models): Outcome => ({ models }),
-      (error): Outcome => ({ error }),
+      (models): Outcome => {
+        request.settled = true;
+        return { models };
+      },
+      (error): Outcome => {
+        request.settled = true;
+        return { error };
+      },
     );
   } catch (error) {
+    request.settled = true;
     request.result = Promise.resolve({ error });
   }
 }
@@ -59,7 +68,7 @@ export function* loadModelCatalog(
   const previous = requests.get(owner);
   const pending =
     previous &&
-    !previous.finished &&
+    !previous.settled &&
     previous.context === context &&
     previous.providerId === providerId;
   // A switch's readiness and explicit actions share one read. A subsequent
@@ -73,7 +82,7 @@ export function* loadModelCatalog(
           explicit: explicit || !!(force && pending && previous.explicit),
           loadingStarted: false,
           published: false,
-          finished: false,
+          settled: false,
           successful: false,
           result: undefined,
         };
@@ -93,39 +102,35 @@ export function* loadModelCatalog(
   if (!(yield* call(isCurrent, owner, request))) return true;
   if (request.published) return request.successful;
   request.published = true;
-  try {
-    if ('error' in outcome) {
-      if (request.explicit) {
-        const error = outcome.error;
-        const message =
-          error instanceof Error && error.message ? error.message : m.settings_models_loadError();
-        reloadLogger.error('reloadModelsForProvider failed', { providerId, error });
-        yield* put(setLoadingStateForProvider({ providerId, status: 'error', error: message }));
-      } else {
-        bootLogger.warn('boot model catalog load failed; pickers will retry on demand', {
-          error: outcome.error,
-        });
-      }
-      return false;
+  if ('error' in outcome) {
+    if (request.explicit) {
+      const error = outcome.error;
+      const message =
+        error instanceof Error && error.message ? error.message : m.settings_models_loadError();
+      reloadLogger.error('reloadModelsForProvider failed', { providerId, error });
+      yield* put(setLoadingStateForProvider({ providerId, status: 'error', error: message }));
+    } else {
+      bootLogger.warn('boot model catalog load failed; pickers will retry on demand', {
+        error: outcome.error,
+      });
     }
-    if (outcome.models.length === 0) {
-      if (request.explicit) {
-        yield* put(
-          setLoadingStateForProvider({
-            providerId,
-            status: 'error',
-            error: m.settings_models_noneAvailable({ providerId }),
-          }),
-        );
-      }
-      return false;
-    }
-    yield* put(setAvailableModels(outcome.models, providerId));
-    if (!(yield* call(isCurrent, owner, request))) return true;
-    yield* put(setLoadingStateForProvider({ providerId, status: 'success', retryAttempt: 0 }));
-    request.successful = true;
-    return true;
-  } finally {
-    request.finished = true;
+    return false;
   }
+  if (outcome.models.length === 0) {
+    if (request.explicit) {
+      yield* put(
+        setLoadingStateForProvider({
+          providerId,
+          status: 'error',
+          error: m.settings_models_noneAvailable({ providerId }),
+        }),
+      );
+    }
+    return false;
+  }
+  yield* put(setAvailableModels(outcome.models, providerId));
+  if (!(yield* call(isCurrent, owner, request))) return true;
+  yield* put(setLoadingStateForProvider({ providerId, status: 'success', retryAttempt: 0 }));
+  request.successful = true;
+  return true;
 }

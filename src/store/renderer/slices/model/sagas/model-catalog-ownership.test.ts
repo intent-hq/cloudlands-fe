@@ -130,6 +130,21 @@ describe('catalog ownership across the real selection, provider, boot and reload
     expect(settings.update).toHaveBeenCalledWith([
       { path: 'model.defaultProvider', value: 'claude-code' },
       { path: 'model.providerDefaults', value: { codex: 'initial', 'claude-code': 'picked' } },
+      { path: 'quickActions.defaultModel', value: '' },
+      { path: 'quickActions.typeOverrides', value: { commit: '', fast: '', pr: '', review: '' } },
+      { path: 'quickActions.defaultReasoningEffort', value: '' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      {
+        path: 'quickActions.providerSettings',
+        value: {
+          codex: {
+            defaultModel: '',
+            defaultReasoningEffort: '',
+            typeOverrides: { commit: '', fast: '', pr: '', review: '' },
+            typeReasoningEffortOverrides: {},
+          },
+        },
+      },
     ]);
     expect(store.state.userPreferences.labsMultiplayerEnabled).toBe(false);
   });

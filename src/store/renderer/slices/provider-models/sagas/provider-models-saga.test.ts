@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('$lib/electron-bridge');
@@ -706,7 +707,21 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(request).toHaveBeenCalledTimes(3);
   });
 
+  it.each(['unknown', 'guest'] as const)(
+    'does not send an active-catalog reload for an %s principal',
+    async (principal) => {
+      if (principal === 'guest') admitLegacyPrincipal('guest');
+      store.dispatch(hydrateDefaultProvider('codex'));
+      const model = store.state.model;
+      store.dispatch(reloadModelsForProvider());
+      await settle();
+      expect(request).not.toHaveBeenCalled();
+      expect(store.state.model).toBe(model);
+    },
+  );
+
   it('preserves the unchanged reload action and standalone model utility caller', async () => {
+    admitLegacyPrincipal();
     request.mockResolvedValue(reply('codex', 'selected'));
     store.dispatch(hydrateDefaultProvider('codex'));
     store.dispatch(reloadModelsForProvider());

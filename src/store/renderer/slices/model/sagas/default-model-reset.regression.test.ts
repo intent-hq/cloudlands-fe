@@ -36,6 +36,11 @@ import { loadModelsOnBootWorker } from './model-boot-saga';
 import type { AppSettingChange } from '$lib/client/app-client';
 
 const request = vi.mocked(backendRequest);
+const bootWorkerContext = () => ({
+  dispatch: store.dispatch,
+  getState: () => store.state,
+  context: { reduxStore: { getState: () => store.state, subscribe: () => () => {} } },
+});
 const matchMediaImplementation = vi.mocked(window.matchMedia).getMockImplementation()!;
 beforeEach(() => {
   vi.mocked(window.matchMedia).mockImplementation(matchMediaImplementation);
@@ -223,10 +228,7 @@ for (const legacyEmptyKey of [true, false]) {
         },
       ]);
       request.mockImplementation(async (_method, params) => catalogReply(params));
-      await runSaga(
-        { dispatch: store.dispatch, getState: () => store.state },
-        loadModelsOnBootWorker,
-      ).toPromise();
+      await runSaga(bootWorkerContext(), loadModelsOnBootWorker).toPromise();
       expect(store.state.model.providerModels.codex).toBe('gpt-6-astra');
       expect(selectSelectedModel.select(store.state)).toBe('gpt-6-astra');
       render(DefaultAgentModelSettings, { context: new Map([['redux-store-context', { store }]]) });
@@ -375,10 +377,7 @@ it('rehydrates a fresh renderer from the saved Grok pair before boot catalog loa
   ).toPromise();
   expect(store.state.model.pendingProviderModels).toEqual({});
   expect(selectSelectedModel.select(store.state)).toBe('grok4.5');
-  await runSaga(
-    { dispatch: store.dispatch, getState: () => store.state },
-    loadModelsOnBootWorker,
-  ).toPromise();
+  await runSaga(bootWorkerContext(), loadModelsOnBootWorker).toPromise();
   store.dispatch(
     providerCatalogLoaded({
       providers: [
@@ -420,10 +419,7 @@ it.each([
     { path: 'model.providerDefaults', value: { grok: 'grok4.5', auggie: 'gpt6-astra' } },
   ]);
   request.mockResolvedValue(reply);
-  await runSaga(
-    { dispatch: store.dispatch, getState: () => store.state },
-    loadModelsOnBootWorker,
-  ).toPromise();
+  await runSaga(bootWorkerContext(), loadModelsOnBootWorker).toPromise();
   expect(selectSelectedModel.select(store.state)).toBe('grok4.5');
   expect(store.state.model.defaultProviderId).toBe('grok');
   expect(
