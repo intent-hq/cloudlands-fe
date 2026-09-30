@@ -27,7 +27,6 @@
   import PresenceAvatarStack from '../PresenceAvatarStack.svelte';
   import { presencePersonLabel, type PresenceCircle } from '../presence-person';
 
-  let { dark = false }: { dark?: boolean } = $props();
   let selected = $state('');
   store.dispatch(setLabsMultiplayerEnabled(true));
   admitLegacyPrincipal();
@@ -91,7 +90,7 @@
   onDestroy(() => store.dispatch(presenceReset()));
 </script>
 
-<section class:dark class="min-h-screen">
+<section class="min-h-screen">
   <div class="min-h-screen bg-background p-6 text-foreground" data-testid="avatar-harness">
     <h1 class="mb-6 text-lg font-semibold">Workspace participants</h1>
     <PresenceAvatarStack people={$people$} maxVisible={4} size={18} {action} />

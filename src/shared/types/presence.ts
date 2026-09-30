@@ -179,7 +179,7 @@ function isPresenceMember(value: unknown): value is PresenceMember {
   if (!value || typeof value !== 'object') return false;
   const member = value as Record<string, unknown>;
   return (
-    isPresenceIdentity(member) &&
+    isPresenceIdentity(value) &&
     isNullableString(member.login) &&
     isNullableString(member.displayName) &&
     isNullableString(member.avatarUrl) &&

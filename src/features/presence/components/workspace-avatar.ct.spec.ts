@@ -9,7 +9,23 @@ for (const dark of [false, true]) {
       page,
     }) => {
       await page.setViewportSize({ width, height: 500 });
-      await mount(Harness, { props: { dark } });
+      await page.evaluate(
+        (enabled) => document.documentElement.classList.toggle('dark', enabled),
+        dark,
+      );
+      await mount(Harness);
+      const surface = page.getByTestId('avatar-harness');
+      const brightness = await surface.evaluate((element) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d')!;
+        context.fillStyle = getComputedStyle(element).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+        return (r + g + b) / 3;
+      });
+      if (dark) expect(brightness).toBeLessThan(128);
+      else expect(brightness).toBeGreaterThan(128);
       await expect(
         page.getByRole('button', { name: 'owner · Host owner · Online', exact: true }),
       ).toBeVisible();
