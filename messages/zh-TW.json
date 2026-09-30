@@ -6832,7 +6832,7 @@
   "agent_hub_checkpointRequired": "合併前需要成功的檢查點。",
   "agent_hub_merged": "已合併檢查點。",
   "agent_hub_blocked": "合併需要處理：{detail}",
-  "agent_placement_chooseLocal": "Choose where to run this agent",
-  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
-  "agent_placement_cancelled": "Agent launch cancelled."
+  "agent_placement_chooseLocal": "選擇此代理的執行位置",
+  "agent_placement_chooseLocalDescription": "Labs 中的遠端代理已關閉。請選擇本次啟動使用的本機簽出副本，或取消以變更 Labs 設定。現有遠端代理仍可使用。",
+  "agent_placement_cancelled": "已取消啟動代理。"
 }

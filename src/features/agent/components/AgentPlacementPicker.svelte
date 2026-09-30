@@ -10,6 +10,7 @@
     remoteEnabled: boolean;
     disabled?: boolean;
     insideDialog?: boolean;
+    placeholder?: string;
     onchange: (placement: AgentPlacement) => void;
   }
   let {
@@ -18,6 +19,7 @@
     remoteEnabled,
     disabled = false,
     insideDialog = false,
+    placeholder = m.agent_placement_default(),
     onchange,
   }: Props = $props();
   const options = $derived([
@@ -54,7 +56,7 @@
   const label = $derived(
     value?.target === 'remote'
       ? m.agent_placement_remote()
-      : (options.find((option) => option.id === selected)?.label ?? m.agent_placement_default()),
+      : (options.find((option) => option.id === selected)?.label ?? placeholder),
   );
   function select(id: string) {
     const option = options.find((entry) => entry.id === id);

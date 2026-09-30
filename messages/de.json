@@ -6832,7 +6832,7 @@
   "agent_hub_checkpointRequired": "Vor dem Zusammenführen ist ein erfolgreicher Prüfpunkt erforderlich.",
   "agent_hub_merged": "Prüfpunkt zusammengeführt.",
   "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
-  "agent_placement_chooseLocal": "Choose where to run this agent",
-  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
-  "agent_placement_cancelled": "Agent launch cancelled."
+  "agent_placement_chooseLocal": "Ausführungsort für diesen Agenten wählen",
+  "agent_placement_chooseLocalDescription": "Remote-Agenten sind in Labs deaktiviert. Wähle einen lokalen Checkout für diesen Start oder brich ab, um die Labs-Einstellungen zu ändern. Bestehende Remote-Agenten bleiben verfügbar.",
+  "agent_placement_cancelled": "Agentenstart abgebrochen."
 }

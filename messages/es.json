@@ -6832,7 +6832,7 @@
   "agent_hub_checkpointRequired": "Se necesita un punto de control correcto antes de fusionar.",
   "agent_hub_merged": "Punto de control fusionado.",
   "agent_hub_blocked": "La fusión requiere atención: {detail}",
-  "agent_placement_chooseLocal": "Choose where to run this agent",
-  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
-  "agent_placement_cancelled": "Agent launch cancelled."
+  "agent_placement_chooseLocal": "Elige dónde ejecutar este agente",
+  "agent_placement_chooseLocalDescription": "Los agentes remotos están desactivados en Labs. Elige una copia de trabajo local para este inicio o cancela para cambiar los ajustes de Labs. Los agentes remotos existentes siguen disponibles.",
+  "agent_placement_cancelled": "Inicio del agente cancelado."
 }

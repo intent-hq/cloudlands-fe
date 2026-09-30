@@ -34,6 +34,7 @@
     value={placement}
     {capabilities}
     remoteEnabled={false}
+    placeholder={m.agent_placement_chooseLocal()}
     insideDialog
     onchange={(value) => {
       placement = value;
