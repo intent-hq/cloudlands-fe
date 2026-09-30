@@ -372,6 +372,62 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     },
   );
 
+  it.each([
+    'HTTPS://example.com/docs',
+    'Https://example.com/docs',
+    'MAILTO:user@example.com',
+    'custom.scheme:resource',
+    'CUSTOM.SCHEME:resource',
+    'custom.scheme:resource.txt:17',
+    'x://example.com/docs',
+    'X://example.com/docs',
+    '//example.com/docs',
+    '#heading',
+  ])('keeps non-file targets external with or without a workspace: %s', async (target) => {
+    expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+    expect(await handleLink(target, {})).toBe(true);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledTimes(2);
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(1, 'shell:openExternal', { url: target });
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(2, 'shell:openExternal', { url: target });
+  });
+
+  it.each(['c:/repo/root', 'C:/repo/root', 'c:\\repo\\root', 'C:\\repo\\root'])(
+    'recognizes drive-letter paths without confusing them with URL schemes: %s',
+    async (root) => {
+      workspaceRoots.worktreePath = root;
+      const separator = root.includes('\\') ? '\\' : '/';
+      const target = `${root}${separator}docs${separator}design.md`;
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID, rawHref: target })).toBe(
+        true,
+      );
+      expect(reduxDispatchMock).toHaveBeenCalledTimes(2);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['readme.md:17', 'readme.md:17:4', 'readme.md#L17'])(
+    'recognizes a bare filename with a supported line suffix: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'readme.md', {
+          line: 17,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['raw href', 'direct target', 'resolved URL'])(
     'preserves encoded filenames and line locations from %s',
     async (source) => {

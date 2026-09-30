@@ -237,8 +237,9 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
 }
 
 /** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/;
-const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\//i;
+const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+// A drive uses one separator; `x://` is a URL scheme, not a drive path.
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\/(?!\/)/i;
 
 function normalizeSlashes(path: string): string {
   return path.replace(/\\/g, '/');
@@ -296,7 +297,12 @@ function extractFilePathTarget(
   if (target) {
     // In-page fragment links keep their current behavior
     if (target.startsWith('#')) return null;
-    if (!target.startsWith('//') && !SCHEME_PATTERN.test(target)) {
+    // A drive letter or a filename's line suffix is not a URL scheme.
+    const path = parseFilePathLineSuffix(target).path;
+    if (
+      !target.startsWith('//') &&
+      (WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalizeSlashes(path)) || !SCHEME_PATTERN.test(path))
+    ) {
       return { path: target, fromResolvedUrl: false };
     }
   }
