@@ -1,3 +1,4 @@
+import { store } from '../../../store';
 import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
@@ -88,12 +89,14 @@ function* runArchiveOperation(
   action: ReturnType<typeof scriptArchiveRequested>,
 ): SagaGenerator<void> {
   const [workspaceId, scriptIds, operation] = action.payload;
+  const operationDispatch = store.dispatch;
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   if (!authority) {
     yield* put(scriptArchiveFinished(workspaceId, { error: m.error_handling_permission_error() }));
     return;
   }
   let reconcile = false;
+  let workspaceCleanedUp = false;
   try {
     const method = appClient.scripts[operation];
     if (!method || !appClient.scripts.supportsLifecycle) {
@@ -103,11 +106,11 @@ function* runArchiveOperation(
       supported: call([appClient.scripts, appClient.scripts.supportsLifecycle]),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
-    if (
-      negotiation.cleanup ||
-      authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))
-    )
+    if (negotiation.cleanup) {
+      workspaceCleanedUp = true;
       return;
+    }
+    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     if (!negotiation.supported) throw new Error(m.scripts_history_unsupported_error());
     reconcile = true;
     const outcome = yield* race({
@@ -117,6 +120,7 @@ function* runArchiveOperation(
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
     if (outcome.cleanup) {
+      workspaceCleanedUp = true;
       reconcile = false;
       return;
     }
@@ -136,8 +140,14 @@ function* runArchiveOperation(
   } finally {
     // A persistence failure can follow earlier per-ID commits. Re-read while this
     // workspace authority is still current; cleanup must not revive its requests.
-    if (reconcile && authority === (yield* selectWorkspaceActionContext.effect(workspaceId))) {
-      yield* put(refreshScripts(workspaceId, true));
+    if (!workspaceCleanedUp && operationDispatch === store.dispatch) {
+      if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) {
+        // Drop the result, but release this operation's local busy state. A
+        // replacement store owns its own state and must not receive this cleanup.
+        yield* put(scriptArchiveFinished(workspaceId, {}));
+      } else if (reconcile) {
+        yield* put(refreshScripts(workspaceId, true));
+      }
     }
   }
 }

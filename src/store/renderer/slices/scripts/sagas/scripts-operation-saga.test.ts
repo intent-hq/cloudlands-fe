@@ -1,7 +1,7 @@
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
@@ -20,6 +20,7 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  scriptsReducer,
   clearScriptOperations,
   scriptArchiveRequested,
   scriptArchiveFinished,
@@ -31,6 +32,14 @@ import {
   stopScriptRequested,
 } from '../scripts-slice';
 import { scriptsOperationSaga } from './scripts-operation-saga';
+
+import { store as appStore } from '../../../store';
+
+beforeEach(() => {
+  appStore.dispose();
+  appStore.init();
+});
+afterEach(() => appStore.dispose());
 
 const WS = 'ws-1';
 const settle = async () => {
@@ -49,6 +58,7 @@ function start() {
   const channel = stdChannel();
   const actions: any[] = [];
   const state = withLegacyPrincipal({
+    scripts: scriptsReducer(undefined, { type: '@@init' }),
     workspace: {
       workspaces: createCollection('id', [
         { id: WS, myRole: 'owner' },
@@ -56,15 +66,21 @@ function start() {
       ]),
     },
   });
+  const dispatch = (action: { type: string }) => {
+    state.scripts = scriptsReducer(state.scripts, action);
+    actions.push(action);
+    channel.put(action);
+    return action;
+  };
   const task = runSaga(
     {
       channel,
       getState: () => state,
-      dispatch: (action) => (actions.push(action), channel.put(action), action),
+      dispatch,
     },
     scriptsOperationSaga,
   );
-  return { actions, channel, task, state };
+  return { actions, channel, task, state, dispatch };
 }
 
 async function stop(task: Task) {
@@ -286,6 +302,35 @@ describe('live script mutation admission', () => {
     },
   );
   it.each(['archive', 'restore'] as const)(
+    'settles pending %s without publishing stale results after authority changes in flight',
+    async (operation) => {
+      const response = deferred<unknown>();
+      vi.mocked(lifecycleRequest).mockImplementation(async (method) => {
+        if (method === 'client.hello')
+          return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
+        return response.promise as never;
+      });
+      const run = start();
+      try {
+        run.dispatch(scriptArchiveRequested(WS, ['one'], operation));
+        await vi.waitFor(() =>
+          expect(lifecycleRequest).toHaveBeenCalledWith('script.' + operation, {
+            workspaceId: WS,
+            scriptIds: ['one'],
+          }),
+        );
+        expect(run.state.scripts.byWorkspaceId[WS].archiveOperation?.pending).toBe(true);
+        run.state.principal.status = 'loading';
+        response.resolve({ archived: ['one'], restored: ['one'], skipped: [] });
+        for (let i = 0; i < 10; i++) await settle();
+        expect(run.state.scripts.byWorkspaceId[WS].archiveOperation).toEqual({ pending: false });
+        expect(run.actions.some((action) => action.type === refreshScripts.type)).toBe(false);
+      } finally {
+        await stop(run.task);
+      }
+    },
+  );
+  it.each(['archive', 'restore'] as const)(
     'does not dispatch %s after cleanup or changed authority during negotiation',
     async (operation) => {
       for (const change of ['cleanup', 'authority', 'connection'] as const) {
@@ -298,7 +343,8 @@ describe('live script mutation admission', () => {
           });
         const run = start();
         try {
-          run.channel.put(scriptArchiveRequested(WS, ['one'], operation));
+          run.dispatch(scriptArchiveRequested(WS, ['one'], operation));
+          expect(run.state.scripts.byWorkspaceId[WS].archiveOperation?.pending).toBe(true);
           await vi.waitFor(() => expect(lifecycleRequest).toHaveBeenCalledWith('client.hello', {}));
           if (change === 'cleanup') run.channel.put(workspaceUnmounted(WS));
           else if (change === 'authority') run.state.principal.status = 'loading';
@@ -310,6 +356,7 @@ describe('live script mutation admission', () => {
               .mocked(lifecycleRequest)
               .mock.calls.filter(([method]) => method.startsWith('script.')),
           ).toEqual([]);
+          expect(run.state.scripts.byWorkspaceId[WS].archiveOperation?.pending).not.toBe(true);
         } finally {
           await stop(run.task);
         }
