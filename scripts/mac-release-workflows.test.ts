@@ -405,3 +405,66 @@ it('keeps unsigned manual packaging functional with signing inputs removed', () 
   );
   expect(shell(dir, code, { CSC_LINK: 'secret', CSC_KEY_PASSWORD: 'secret' }).status).toBe(0);
 });
+
+describe.each(['x64', 'arm64'])('%s differential update artifacts', (arch) => {
+  it.each(['mac.zip', 'dmg'])('requires the %s blockmap', (kind) => {
+    const dir = temp();
+    const downloads = fixtures(dir);
+    const archive = kind === 'dmg' ? `Intent-1.2.3-${arch}.dmg` : `Intent-1.2.3-${arch}-mac.zip`;
+    rmSync(join(downloads, `release-macos-${arch}`, `${archive}.blockmap`));
+    const result = assemble(dir);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`${archive}.blockmap`);
+    expect(existsSync(join(dir, 'dist-electron'))).toBe(false);
+  });
+});
+
+it.each(['empty', 'symlink'])('rejects an %s blockmap beside the native archive', (kind) => {
+  const dir = temp();
+  const downloads = fixtures(dir);
+  const map = join(downloads, 'release-macos-x64/Intent-1.2.3-x64-mac.zip.blockmap');
+  if (kind === 'empty') writeFileSync(map, '');
+  else {
+    rmSync(map);
+    symlinkSync('Intent-1.2.3-x64-mac.zip', map);
+  }
+  expect(assemble(dir).status).not.toBe(0);
+});
+
+describe('manual Mac summary reports verified and uploaded results', () => {
+  it.each([
+    ['failure', 'skipped', false],
+    ['success', 'failure', false],
+    ['success', 'success', true],
+  ])(
+    'verification=%s and upload=%s yields download availability=%s',
+    (verification, upload, available) => {
+      const dir = temp();
+      mkdirSync(join(dir, 'dist-electron'));
+      writeFileSync(join(dir, 'dist-electron/Intent-1.2.3-x64.dmg'), 'installer');
+      writeFileSync(join(dir, 'intentd.version'), '0.9.124');
+      const code = render(step('manual-signed-build', 'build-macos', 'Post summary').run!, {
+        'matrix.label': 'Intel',
+        'matrix.arch': 'x64',
+        'inputs.sign': 'true',
+        'steps.build.outcome': 'success',
+        'steps.verify.outcome': String(verification),
+        'steps.upload.outcome': String(upload),
+        'steps.upload.outputs.artifact-url': 'https://example.test/artifact',
+      });
+      expect(
+        shell(dir, code, { INTENTD_REF: '', GITHUB_STEP_SUMMARY: join(dir, 'summary') }).status,
+      ).toBe(0);
+      const summary = readFileSync(join(dir, 'summary'), 'utf8');
+      if (available) {
+        expect(summary).toContain('Signed build completed');
+        expect(summary).toContain('https://example.test/artifact');
+        expect(summary).toContain('Intent-1.2.3-x64.dmg');
+      } else {
+        expect(summary).not.toContain('Signed build completed');
+        expect(summary).not.toContain('Intent-1.2.3-x64.dmg');
+        expect(summary).not.toContain('https://example.test/artifact');
+      }
+    },
+  );
+});

@@ -378,6 +378,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify packaged Mac build
+        id: verify
         run: bash scripts/verify-macos-build.sh "${{ matrix.arch }}" "${{ inputs.sign }}"
 
       - name: List built artifacts
@@ -386,6 +387,7 @@ jobs:
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" \) -exec ls -lh {} \;
 
       - name: Upload macOS DMG artifact
+        id: upload
         uses: actions/upload-artifact@v7
         with:
           name: manual-macos-dmg-${{ matrix.arch }}
@@ -406,6 +408,10 @@ jobs:
             echo ""
             if [ "${{ steps.build.outcome }}" != "success" ]; then
               echo "❌ Build failed."
+            elif [ "${{ steps.verify.outcome }}" != "success" ]; then
+              echo "❌ Packaged app verification failed; no installer uploaded."
+            elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+              echo "❌ Installer upload failed; no download is available."
             elif [ "${{ inputs.sign }}" != "true" ]; then
               echo "⚠️ Unsigned build completed (sign=false)."
             else
@@ -424,8 +430,10 @@ jobs:
               echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
             fi
             echo ""
-            echo "Artifacts (manual-macos-dmg-${{ matrix.arch }}):"
-            find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            if [ "${{ steps.upload.outcome }}" = "success" ]; then
+              echo "[Download manual-macos-dmg-${{ matrix.arch }}](${{ steps.upload.outputs.artifact-url }})"
+              find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           INTENTD_REF: ${{ inputs.intentd_ref }}

@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +17,14 @@ export async function assembleReleaseAssets(downloads, output, version) {
   for (const arch of ['x64', 'arm64']) {
     if (!info.files.some((file) => file.url.endsWith(`-${arch}.dmg`))) {
       throw new Error(`Missing ${arch} DMG in release feed`);
+    }
+  }
+  for (const file of info.files) {
+    const arch = file.url.includes('arm64') ? 'arm64' : 'x64';
+    const blockmap = join(downloads, `release-macos-${arch}`, `${file.url}.blockmap`);
+    const stat = await lstat(blockmap);
+    if (!stat.isFile() || stat.size === 0) {
+      throw new Error(`Expected a non-empty regular blockmap: ${blockmap}`);
     }
   }
   // Refuse existing output instead of overwriting stale assets. Remove only the
