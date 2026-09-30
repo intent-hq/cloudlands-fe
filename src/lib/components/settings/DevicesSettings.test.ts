@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import {
   cleanup,
   fireEvent,
@@ -105,6 +106,7 @@ function render(component: typeof DevicesSettings, props?: ComponentProps<typeof
   stopConnections ??= store.runSaga(connectionsSaga);
   stopSettings ??= store.runSaga(settingsHydrationSaga);
   if (mocks.loaded) store.dispatch(connectionsListReceived(connectionsSnapshot()));
+  if (mocks.loaded) admitLegacyPrincipal();
   if (mocks.keychainSync) store.dispatch(keychainSyncStateReceived(mocks.keychainSync));
   return renderComponent(component, props);
 }

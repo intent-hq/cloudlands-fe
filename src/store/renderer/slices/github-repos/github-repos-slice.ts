@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * github-repos slice — caches the authenticated user's GitHub repositories
  * for reuse across the app (onboarding repo picker, future repo search, etc.).
@@ -70,3 +71,5 @@ githubReposReducer.with(setGithubReposError, (state, { payload: [error] }) => ({
   loading: false,
   error,
 }));
+
+githubReposReducer.with(hostExecutionConnectionChanged, () => initialState);

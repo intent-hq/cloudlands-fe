@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { backgroundSettingsSaveSettled } from '../background-agent-settings/background-agent-settings-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -337,3 +338,5 @@ modelReducer.with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
   delete fallbackInfoByAgentId[agentId];
   return { ...state, fallbackInfoByAgentId };
 });
+
+modelReducer.with(hostExecutionConnectionChanged, () => initialState);

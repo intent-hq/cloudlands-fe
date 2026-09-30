@@ -17,6 +17,8 @@ import {
   selectPermissionOption,
   type PermissionRequest,
 } from '../permission-slice';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { permissionResponseSaga } from './permission-response-saga';
 
 const settle = async () => {
@@ -45,15 +47,34 @@ function request(
 
 function harness(requests: PermissionRequest[] = [request('request-1')]) {
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
   let permission = requests.reduce(
     (state, item) => permissionReducer(state, permissionRequestReceived(item)),
     initialState,
   );
   const dispatch = vi.fn((action) => {
     permission = permissionReducer(permission, action);
+    for (const listener of listeners) listener();
   });
+  const reduxStore = {
+    getState: () =>
+      withLegacyPrincipal({
+        permission,
+        agentSessions: { byAgentId: {} },
+        workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'owner' }]) },
+      }),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ permission }) },
+    {
+      channel,
+      dispatch,
+      getState: reduxStore.getState,
+      context: { reduxStore },
+    },
     permissionResponseSaga,
   );
   return {

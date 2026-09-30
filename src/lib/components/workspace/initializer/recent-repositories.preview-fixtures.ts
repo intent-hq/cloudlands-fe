@@ -16,9 +16,16 @@ import {
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import { invalidateCowIsolationSetting } from './cow-isolation-setting';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 
 /** Isolated sources; optional real initializer saga backed by a fixture-only settings adapter. */
 export function setupRecentRepositoriesPreview(persist = false, hydrationReady?: Promise<void>) {
+  const previousPrincipal = appStore.state.principal;
+  admitLegacyPrincipal();
   const names = [
     'app',
     'tools',
@@ -107,5 +114,13 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
         dismissedRecentRepoKeys: previousDismissals,
       }),
     );
+    appStore.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      appStore.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
   };
 }

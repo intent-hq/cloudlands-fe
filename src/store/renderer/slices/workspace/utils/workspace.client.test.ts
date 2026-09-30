@@ -10,8 +10,8 @@
  * (surfacing the daemon-assigned initial agent id), and normalize workspace
  * paths on success.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CreateWorkspaceRequest } from '$shared/types';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
@@ -28,6 +28,15 @@ vi.mock('$lib/client', () => ({
 import { appClient } from '$lib/client';
 import { WorkspaceClient } from './workspace.client';
 
+import { store } from '../../../store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { setWorkspaceEntity } from '../workspace-slice';
+let dispose: (() => void) | undefined;
+beforeEach(() => {
+  dispose = store.init();
+  admitLegacyPrincipal();
+});
+afterEach(() => dispose?.());
 const workspaces = vi.mocked(appClient.workspaces);
 
 describe('WorkspaceClient.open wire contract', () => {
@@ -216,6 +225,9 @@ describe('WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)', () => {
 });
 
 describe('WorkspaceClient.delete / cancelDelete (AppClient seam, PROTOCOL §5.1 delete grace window)', () => {
+  beforeEach(() => {
+    store.dispatch(setWorkspaceEntity({ id: 'ws-1', myRole: 'owner' } as Workspace));
+  });
   afterEach(() => vi.clearAllMocks());
 
   it("forwards undoDelayMs and surfaces the daemon's { scheduled, deleteAt } on the Result data", async () => {

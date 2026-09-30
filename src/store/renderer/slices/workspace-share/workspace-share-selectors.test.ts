@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * Hover-card roster selectors: the owner gate (`workspace.myRole === 'owner'`
  * in a settled owner window and not withheld by the daemon) and the keyed
@@ -60,7 +61,7 @@ function stateWith(
   const workspaces = Object.entries(roles).map(
     ([id, myRole]) => ({ id, title: id, myRole }) as unknown as Workspace,
   );
-  return {
+  return withLegacyPrincipal({
     workspaceShare: actions.reduce(workspaceShareReducer, initialState),
     workspace: { workspaces: createCollection('id', workspaces) },
     connections: connectionsInitialState,
@@ -68,7 +69,7 @@ function stateWith(
       guestSessionsInitialState,
       guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
     ),
-  } as unknown as StoreState;
+  } as unknown as StoreState);
 }
 
 const GUEST_SESSION: GuestSessionRecord = {

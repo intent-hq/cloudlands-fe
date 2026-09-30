@@ -71,9 +71,10 @@ export const workspaceOpenFailed = createAction<[wsId: string]>(
  * the deleted workspace at dispatch time — passed in the payload so slices
  * keyed by agentId (chat-state) can purge without cross-slice reads.
  */
-export const workspaceDeleted = createAction<[wsId: string, agentIds: string[]]>(
-  'workspace-lifecycle/workspaceDeleted',
-);
+// Permission/recycled-ID purges share cleanup, but are not a deletion receipt.
+export const workspaceDeleted = createAction<
+  [wsId: string, agentIds: string[], cause?: 'deleted' | 'unshared' | 'replaced']
+>('workspace-lifecycle/workspaceDeleted');
 /**
  * The backend transport reconnected (daemon restart or connection recovery).
  * Warm session phases describe sessions opened against the previous daemon

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { store } from '$store/renderer/store';
 import { settingsHydrationSaga } from './settings-hydration-saga';
 import {
@@ -34,6 +35,7 @@ beforeEach(() => {
   mocks.probe.mockResolvedValue({ data: { available: true } });
   mocks.update.mockImplementation(async (changes) => changes);
   store.init();
+  admitLegacyPrincipal();
   stop = store.runSaga(settingsHydrationSaga);
 });
 afterEach(() => {

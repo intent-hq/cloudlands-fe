@@ -6967,6 +6967,23 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
     };
   }
 
+  it('records the real deleted event as the original pending token’s terminal receipt', async () => {
+    const { markWorkspacePendingDeletion, clearWorkspacePendingDeletion } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(clearWorkspacePendingDeletion(WS));
+    appStore.dispatch(markWorkspacePendingDeletion(WS, 'original-bulk'));
+    try {
+      await primeBridge();
+      capturedHandlers[0]!(deletedNotification(WS));
+      await flush();
+      expect(appStore.state.workspace.terminalDeletions[WS]).toBe('original-bulk');
+      expect(appStore.state.workspace.invalidatedDeletions[WS]).toBeUndefined();
+      expect(appStore.state.workspace.pendingDeletions[WS]).toBe(true);
+    } finally {
+      appStore.dispatch(clearWorkspacePendingDeletion(WS, 'original-bulk'));
+    }
+  });
+
   it('closes the deleted workspace tab while it is the current tab (#766 live-mode navigation path)', async () => {
     // Unlike the workspace-list snapshot diff (legacy-mode only — the
     // delta-subscription layer suppresses legacy refetches under live-state,
@@ -11399,6 +11416,31 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
   });
 
   describe('agent:failed → chatSendFailed', () => {
+    it.each(['missing', 'rejected', 'insufficient-scope'])(
+      'shows host-owner recovery for a classified %s AI failure without raw provider text',
+      async (reason) => {
+        const agentId = 'agent-host-auth';
+        appStore.dispatch(upsertSession({ id: agentId, name: 'Host Agent', workspaceId: WS }));
+        await primeBridge();
+        capturedHandlers[0]!(
+          notification('agent:failed', {
+            agentId,
+            error: 'raw provider body secret=hidden',
+            status: 'error',
+            executionAuthorization: {
+              resource: 'ai',
+              reason,
+              providerId: 'claude-code',
+              host: null,
+              recovery: { actor: 'host-owner', action: 'check-ai-authorization' },
+            },
+          }),
+        );
+        expect(appStore.state.chatState.byAgentId[agentId].error).toContain('owner');
+        expect(appStore.state.chatState.byAgentId[agentId].error).not.toContain('secret=hidden');
+      },
+    );
+
     it('dispatches chatSendFailed when agent:failed carries an error message', async () => {
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';

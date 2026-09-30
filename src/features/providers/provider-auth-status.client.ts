@@ -1,3 +1,5 @@
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { store } from '$store/renderer/store';
 import {
   backendRequest,
   onBackendNotification,
@@ -25,7 +27,12 @@ let generation = 0;
 let connectionGeneration = 0;
 
 const keyFor = (options: ProviderAuthStatusParams): string =>
-  JSON.stringify([connectionGeneration, options.workspaceId ?? null, options.providerId ?? '*']);
+  JSON.stringify([
+    selectPrincipalConnectionContext.select(store.state),
+    connectionGeneration,
+    options.workspaceId ?? null,
+    options.providerId ?? '*',
+  ]);
 
 function eventType(notification: { method: string; params?: unknown }): string | undefined {
   if (notification.method !== 'events.event' || !notification.params) return undefined;
@@ -39,7 +46,12 @@ export function invalidateProviderAuthStatus(providerId?: string): void {
   generation += 1;
   if (providerId) {
     for (const key of cache.keys()) {
-      const [, , cachedProvider] = JSON.parse(key) as [number, string | null, string];
+      const [, , , cachedProvider] = JSON.parse(key) as [
+        string | null,
+        number,
+        string | null,
+        string,
+      ];
       if (cachedProvider === providerId || cachedProvider === '*') cache.delete(key);
     }
   } else cache.clear();
@@ -47,7 +59,12 @@ export function invalidateProviderAuthStatus(providerId?: string): void {
 
 if (typeof onBackendNotification === 'function') {
   onBackendNotification((notification) => {
-    if (eventType(notification) === 'provider:auth-changed') invalidateProviderAuthStatus();
+    if (
+      ['provider:auth-changed', 'host:execution-context-changed'].includes(
+        eventType(notification) ?? '',
+      )
+    )
+      invalidateProviderAuthStatus();
   });
 }
 if (typeof onBackendReconnected === 'function') {

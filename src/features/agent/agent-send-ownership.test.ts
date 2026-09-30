@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { request, reconnect } = vi.hoisted(() => ({
@@ -45,7 +46,14 @@ import {
 let agentId = 'shared-agent';
 let sequence = 0;
 const workspace = (id: string) =>
-  ({ id, title: id, path: '/repo', repositoryPath: '/repo', status: 'active' }) as Workspace;
+  ({
+    id,
+    myRole: 'owner',
+    title: id,
+    path: '/repo',
+    repositoryPath: '/repo',
+    status: 'active',
+  }) as Workspace;
 const row = (id: string): QueuedMessage => ({
   id,
   turnId: id,
@@ -92,9 +100,11 @@ describe.each(['agent.sendMessage', 'agent.queueMessage'] as const)(
     afterAll(() => {
       stopSend();
       stopMutation();
+      store.dispose();
     });
     beforeEach(() => {
       reconnect.forEach((cb) => cb());
+      admitLegacyPrincipal();
       agentId = `shared-agent-${++sequence}`;
       store.dispatch(clearAllSessions());
       store.dispatch(chatReset(agentId));

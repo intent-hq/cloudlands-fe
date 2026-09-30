@@ -1,4 +1,5 @@
 import { flushSync } from 'svelte';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -33,6 +34,7 @@ import { settingsHydrationSaga } from '$store/renderer/slices/settings-events/sa
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
 import { providerFastModeSaga } from '$store/renderer/slices/provider-settings/sagas/provider-fast-mode-saga';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { checkSingleProviderSuccess } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 import { selectProviderFastModeValues } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -79,11 +81,23 @@ async function settle() {
 }
 async function start() {
   stops.push(appStore.runSaga(daemonEventsSaga));
+  await settle();
+  admitLegacyPrincipal();
   stops.push(appStore.runSaga(providerFastModeSaga));
   stopHydration = appStore.runSaga(settingsHydrationSaga);
   stops.push(() => stopHydration());
   await settle();
   expect(appStore.state.providerSettings.fastMode.supported).toBe(supported);
+}
+async function readmitAfterReconnect() {
+  const reads = () => mocks.request.mock.calls.filter(([method]) => method === 'settings.list');
+  const previousReads = reads().length;
+  appStore.dispatch(backendReconnected());
+  await settle();
+  expect(selectCanAdministerHost.select(appStore.state)).toBe(false);
+  expect(reads()).toHaveLength(previousReads);
+  admitLegacyPrincipal();
+  await settle();
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -179,8 +193,7 @@ describe('Provider Fast mode through live settings client and hydration', () => 
     expect(values()).toEqual({});
     saved = { codex: true };
     revision = 1;
-    appStore.dispatch(backendReconnected());
-    await settle();
+    await readmitAfterReconnect();
     expect(values()).toEqual({ codex: true });
     expect(writes()).toHaveLength(0);
   });
@@ -214,8 +227,7 @@ describe('Provider Fast mode through live settings client and hydration', () => 
       'codex',
     ]);
     supported = false;
-    appStore.dispatch(backendReconnected());
-    await settle();
+    await readmitAfterReconnect();
     expect(selectFastModeSupportedProviders.select(appStore.state)).toEqual([]);
     appStore.dispatch(setProviderFastMode('codex', true));
     await settle();

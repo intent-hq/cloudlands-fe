@@ -65,11 +65,16 @@ export const checkHostRequirementsComplete = createAction(
   'hostRequirements/checkHostRequirementsComplete',
 );
 
+/** A different connection or principal must obtain its own diagnostic results. */
+export const hostRequirementsReset = createAction('hostRequirements/reset');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const hostRequirementsReducer = createReducer<HostRequirementsState>(initialState);
+
+hostRequirementsReducer.with(hostRequirementsReset, () => initialState);
 
 hostRequirementsReducer.with(checkHostRequirementsStarted, (state) => ({
   ...state,

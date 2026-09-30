@@ -1,3 +1,7 @@
+import {
+  hostExecutionConnectionChanged,
+  hostExecutionInvalidated,
+} from '../host-execution/host-execution-slice';
 /**
  * Provider Models Cache Slice
  *
@@ -120,6 +124,22 @@ providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
   clearEpoch: state.clearEpoch + 1,
 }));
 
+providerModelsReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...state,
+  byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  clearEpoch: state.clearEpoch + 1,
+}));
+providerModelsReducer.with(hostExecutionInvalidated, (state) => ({
+  ...state,
+  byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  clearEpoch: state.clearEpoch + 1,
+}));
 providerModelsReducer.with(
   providerModelsObserved,
   (state, { payload: [id, providerIds, workspaceId] }) => {

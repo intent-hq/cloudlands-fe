@@ -1251,7 +1251,7 @@ export const InviteProgressAckSchema = z.object({
 
 export const InviteProgressResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
-  action: z.literal('cancel' satisfies InviteProgressAction),
+  action: z.enum(['cancel', 'retry'] as const satisfies readonly InviteProgressAction[]),
 });
 
 // ============================================================================

@@ -1248,9 +1248,14 @@ describe('guestSessionsSaga', () => {
       // into the (now failing) list read.
       run.dispatch(openWorkspaceTab('ws-stale'));
 
+      const { markWorkspacePendingDeletion } = await import('../../workspace/workspace-slice');
+      run.dispatch(markWorkspacePendingDeletion('ws-1', 'original-delete'));
+
       run.dispatch(rejection(GUEST.id));
       await settle();
 
+      expect(run.getState().workspace.invalidatedDeletions['ws-1']).toBe('original-delete');
+      expect(run.getState().workspace.terminalDeletions['ws-1']).toBeUndefined();
       expect(getItems(run.getState().workspace.workspaces)).toEqual([]);
       expect(mocks.closeAndNavigate.mock.calls.map(([id]) => id).sort()).toEqual([
         'ws-1',

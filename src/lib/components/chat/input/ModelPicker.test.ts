@@ -1,3 +1,6 @@
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -163,7 +166,7 @@ const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
-    if (action.type?.startsWith('providerModels/')) {
+    if (action.type?.startsWith('providerModels/') || action.type === 'hostExecution/invalidated') {
       Object.assign(
         mockProviderModelsState,
         providerModelsReducer(
@@ -325,6 +328,7 @@ import {
   initialState as providerModelsInitialState,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -336,6 +340,14 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 let catalogChannel: ReturnType<typeof stdChannel> | undefined;
 let catalogTask: Task;
 beforeEach(() => {
+  mockRoleState.current = withLegacyPrincipal(
+    mockRoleState.reset(),
+  ) as unknown as typeof mockRoleState.current;
+  mockRoleState.current.workspace.workspaces = {
+    idField: 'id',
+    ids: ['ws-1'],
+    map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } },
+  };
   catalogChannel = stdChannel();
   catalogTask = runSaga(
     {
@@ -648,11 +660,52 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   it('unsettled window identity: locks (fails closed)', () => {
     mockRoleState.current.guestSessions.hasReceivedList = false;
+    Object.assign(mockRoleState.current, { principal: principalInitialState });
     withWorkspaceRole('owner');
 
     renderAgentPicker();
 
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('member with canManage can pick its specialist provider while host administration remains unavailable', async () => {
+    withWorkspaceRole('collaborator');
+    const state = withLegacyPrincipal(mockRoleState.current);
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    state.workspace.workspaces.map['ws-1'].canManage = true;
+    state.workspace.loadedBackendId = state.connections.windowBackendId;
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+    Object.assign(mockRoleState.current, state);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    activeProviderId$.set('claude-code');
+    enabledProviderIds$.set(['claude-code', 'codex']);
+    availableProviderOverride$.set(['claude-code', 'codex']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: [
+        {
+          value: providerId === 'codex' ? 'review-model' : 'host-default-model',
+          label: providerId === 'codex' ? 'Host reviewer' : 'Host default',
+        },
+      ],
+    }));
+    const { agentClient } = await import('$features/agent/agent.client');
+    renderAgentPicker('review-model');
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(button);
+    await fireEvent.click(await screen.findByRole('option', { name: /Host reviewer/ }));
+    await waitFor(() =>
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'review-model',
+        'ws-1',
+        'codex',
+      ),
+    );
+    expect(dispatchedTypes()).not.toContain('model/selectModel');
+    expect(screen.queryByText('Open provider settings')).toBeNull();
   });
 
   it('owner window: the picker stays interactive', async () => {
@@ -5012,6 +5065,66 @@ describe('ModelPicker cache hydration and explicit revalidation', () => {
     await waitFor(() => {
       expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie');
     });
+  });
+
+  it('refreshes a mounted workspace picker after host-context invalidation with unchanged providers', async () => {
+    vi.useFakeTimers();
+    try {
+      seedCache('ws-1');
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+        models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }],
+      });
+      render(ModelPicker, {
+        props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+      });
+      const trigger = screen.getByRole('button');
+      expect(trigger.textContent).toContain('Claude Sonnet 4.6');
+      await tick();
+      // Complete the real membership debounce before invalidation, so an
+      // initial observation cannot accidentally rescue the missing reload.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
+      const observers = mockProviderModelsState.observers;
+      mockAppStore.dispatch(hostExecutionInvalidated());
+      await vi.advanceTimersByTimeAsync(0);
+      await tick();
+      expect(trigger.textContent).toContain('Current host Sonnet');
+      expect(mockProviderModelsState.observers).toBe(observers);
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
+        workspaceId: 'ws-1',
+      });
+      expect(trigger.querySelector('.animate-pulse')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('replaces a held mounted workspace catalog after host-context invalidation without stale rows', async () => {
+    const releases: Array<(value: { models: { value: string; label: string }[] }) => void> = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    render(ModelPicker, {
+      props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => expect(releases).toHaveLength(1));
+    const observers = mockProviderModelsState.observers;
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    expect(releases).toHaveLength(1);
+    releases[0]({ models: [{ value: 'sonnet4.6', label: 'Obsolete host Sonnet' }] });
+    await waitFor(() => expect(releases).toHaveLength(2));
+    expect(trigger.textContent).not.toContain('Obsolete host Sonnet');
+    expect(mockProviderModelsState.byWorkspaceId?.['ws-1']?.auggie).toBeUndefined();
+    releases[1]({ models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }] });
+    await waitFor(() => expect(trigger.textContent).toContain('Current host Sonnet'));
+    expect(mockProviderModelsState.observers).toBe(observers);
+    expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(2);
+    expect(trigger.querySelector('.animate-pulse')).toBeNull();
   });
 
   it('discards a pre-clear response entirely (no local state, no write-through)', async () => {

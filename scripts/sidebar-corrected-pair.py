@@ -299,7 +299,7 @@ def run(cell):
                     cases.append((spec, test))
             visit(suite.get('suites', []))
     visit(report['suites'])
-    assert len(cases) == 15 and not report.get('errors'), 'expected 8 strip + 3 sidebar + 4 controls'
+    assert len(cases) == 18 and not report.get('errors'), 'expected 8 strip + 6 sidebar + 4 controls'
     assert report['config']['workers'] == workers
     rows = []
     for spec, case in cases:

@@ -9,6 +9,7 @@ import type { GitLabAuthChangedStatus, GitLabAuthState } from './gitlab-auth-typ
 // ============================================================================
 
 export const initialState: GitLabAuthState = {
+  statusReady: false,
   host: DEFAULT_GITLAB_HOST,
   isConfigured: false,
   isAuthenticating: false,
@@ -24,7 +25,10 @@ export const initialState: GitLabAuthState = {
 // ============================================================================
 
 /** Trigger: read `sourceControl.authStatus { provider: "gitlab", host? }` and hydrate */
-export const initializeGitLabAuth = createAction<[host?: string]>('gitlabAuth/initialize');
+export const initializeGitLabAuth =
+  createAction<[host?: string, mode?: 'resume' | 'status-only']>('gitlabAuth/initialize');
+
+export const resetGitLabAdmission = createAction('gitlabAuth/resetAdmission');
 
 /** Trigger: start (or resume) the device grant against `host` */
 export const startGitLabDeviceAuth = createAction<[host: string]>('gitlabAuth/startDeviceAuth');
@@ -126,6 +130,8 @@ export const gitlabLogoutCompleted = createAction('gitlabAuth/logoutCompleted');
 
 export const gitlabAuthReducer = createReducer<GitLabAuthState>(initialState);
 
+gitlabAuthReducer.with(resetGitLabAdmission, () => ({ ...initialState }));
+gitlabAuthReducer.with(initializeGitLabAuth, (state) => ({ ...state, statusReady: false }));
 gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
   if (host.toLowerCase() === state.host.toLowerCase()) return { ...state, host };
   // The configured identity, grant support and any pending grant belong to the
@@ -133,6 +139,7 @@ gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
   return {
     ...state,
     host,
+    statusReady: false,
     isConfigured: false,
     deviceGrantSupported: null,
     user: null,
@@ -143,6 +150,7 @@ gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
 gitlabAuthReducer.with(setGitLabAuthStatus, (state, { payload }) => ({
   ...state,
   host: payload.host,
+  statusReady: true,
   isConfigured: payload.isConfigured,
   deviceGrantSupported: payload.deviceGrantSupported,
   user: payload.user,

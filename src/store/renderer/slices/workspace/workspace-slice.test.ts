@@ -1099,11 +1099,28 @@ describe('workspace selectors', () => {
       expect(state.pendingDeletions['ws-1']).toBe(true);
     });
 
-    it('is a no-op when only the deletion tombstone remains', () => {
+    it('records terminal removal for the original token without expiring its tombstone', () => {
       const state = workspaceReducer(initialState, markWorkspacePendingDeletion('ws-1'));
       const next = workspaceReducer(state, workspaceDeleted('ws-1', []));
-      expect(next).toBe(state);
+      expect(next.workspaces).toBe(state.workspaces);
+      expect(next.pendingDeletions).toBe(state.pendingDeletions);
+      expect(next.deletionTokens).toBe(state.deletionTokens);
+      expect(next.terminalDeletions['ws-1']).toBe(state.deletionTokens['ws-1']);
+      expect(next.invalidatedDeletions['ws-1']).toBeUndefined();
     });
+
+    it.each(['unshared', 'replaced'] as const)(
+      '%s invalidates rollback without becoming a terminal deletion receipt',
+      (cause) => {
+        const state = workspaceReducer(initialState, markWorkspacePendingDeletion('ws-1'));
+        const next = workspaceReducer(state, workspaceDeleted('ws-1', [], cause));
+        expect(next.pendingDeletions).toBe(state.pendingDeletions);
+        expect(next.deletionTokens).toBe(state.deletionTokens);
+        expect(next.invalidatedDeletions['ws-1']).toBe(state.deletionTokens['ws-1']);
+        expect(next.terminalDeletions['ws-1']).toBeUndefined();
+        expect(getItem(next.workspaces, 'ws-1')).toBeUndefined();
+      },
+    );
 
     it('clears the workspace from recency.lastViewedAt map', () => {
       const ws = makeWorkspace({ id: 'ws-1' as WorkspaceId });

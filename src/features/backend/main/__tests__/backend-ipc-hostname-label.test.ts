@@ -61,6 +61,14 @@ vi.mock('../json-rpc-client', () => {
     start(): void {}
     dispose(): void {}
     request = vi.fn(async (method: string) => {
+      if (method === 'principal.me')
+        return {
+          id: 'prn_7',
+          login: 'octocat',
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: false,
+        };
       if (method !== 'host.status') return {};
       const host = (this.config as { host?: string } | null)?.host;
       const deferred = host !== undefined ? hostStatus.byHost.get(host) : undefined;
@@ -152,8 +160,8 @@ vi.mock('../guest-sessions-store', () => ({
   setHostname: guestStore.setHostname,
   setTcAddress: vi.fn(async () => false),
   setHosts: vi.fn(async () => false),
-  listSyncRecords: vi.fn(async () => []),
-  applyRemoteSyncRecord: vi.fn(async () => false),
+  setPrincipal: vi.fn(async () => true),
+  createInvitedSyncAdapter: vi.fn(() => ({})),
   onGuestSessionsMutated: () => () => {},
   onGuestCredentialReplaced: () => () => {},
   onGuestSessionRemovedBySync: () => () => {},
@@ -342,9 +350,14 @@ describe('openBackendWindow hostname labeling', () => {
     const mod = await loadModule();
 
     await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)?.opts.onHelloResult?.({ server: {} });
 
     await vi.waitFor(() =>
-      expect(guestStore.setHostname).toHaveBeenCalledWith(GUEST.id, 'Clement’s Mac Studio'),
+      expect(guestStore.setHostname).toHaveBeenCalledWith(
+        GUEST.id,
+        'Clement’s Mac Studio',
+        expect.any(Function),
+      ),
     );
     // The guest record — not the paired-connection registry — is the write target.
     expect(store.setHostname).not.toHaveBeenCalled();

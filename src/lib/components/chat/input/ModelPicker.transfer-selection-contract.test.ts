@@ -1,5 +1,9 @@
 // @verify-changed-triggers: scripts/transfer-selection-fixtures.mjs, .github/workflows/intent-pr.yml
 // The shared contract/golden live outside this package; the connected gate owns their changes.
+
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -68,7 +72,10 @@ import {
   checkSingleProviderSuccess,
 } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import { setWorkspaceHasLoaded } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
@@ -81,6 +88,9 @@ const { contract, artifact } = await loadTransferSelectionFixtures();
 console.info('Transfer-selection renderer input:', JSON.stringify(artifact.provenance));
 
 function hydrateFixtureState(codexEnabled: boolean, workspaceId: string) {
+  store.dispatch(
+    setWorkspaceEntity(createMockWorkspace({ id: WorkspaceId(workspaceId), myRole: 'owner' })),
+  );
   store.dispatch(providerCatalogLoaded(contract.providersCatalog));
   store.dispatch(
     workspaceCatalogReceived(
@@ -128,6 +138,7 @@ function hydrateFixtureState(codexEnabled: boolean, workspaceId: string) {
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
   store.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  admitLegacyPrincipal();
 }
 
 let disposeStore: () => void;

@@ -1207,6 +1207,22 @@ describe('multi-backend window sessions', () => {
       expect(loadedPaths()).toEqual(['/workspace/new']);
     });
 
+    it('keeps empty invited people in separate backend buckets across a full session reload', async () => {
+      // Backend ids are the distinct persistent person rows, even on the same pinned host.
+      const people = ['invited-person-B', 'invited-person-C'];
+      for (const id of people) await restoreWindowsForBackend(id);
+      expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/new']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(people);
+      await saveAllWindowSessions();
+      FakeBrowserWindow.instances = [];
+      _resetWindowSessionsCacheForTests();
+      const connect = vi.fn().mockResolvedValue({});
+      await restoreAllBackendWindowSessions('local', connect);
+      expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/new']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(people);
+      expect(connect.mock.calls.map(([id]) => id)).toEqual(people);
+    });
+
     it('restores a legacy root session onto the bootstrap route and keeps other routes', async () => {
       fs.writeFileSync(
         getWindowSessionsPath(),
