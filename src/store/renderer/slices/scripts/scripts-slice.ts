@@ -60,7 +60,7 @@ function trimOutputBuffer(buffer: ScriptOutputBuffer): ScriptOutputBuffer {
     start += 1;
   }
   if (start === 0) return buffer;
-  return { chunks: chunks.slice(start), dropped: buffer.dropped + start };
+  return { ...buffer, chunks: chunks.slice(start), dropped: buffer.dropped + start };
 }
 
 const initialState: ScriptsState = {
@@ -151,6 +151,22 @@ export const updateRuntimeState = createAction(
     partial,
   }),
 );
+
+/** Viewer-owned historical read; releasing it cancels late snapshot publication. */
+export const scriptOutputRequested =
+  createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputRequested');
+export const scriptOutputReleased =
+  createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputReleased');
+export const scriptOutputSnapshotReceived = createAction<
+  [
+    wsId: string,
+    scriptId: string,
+    text: string,
+    revision: number,
+    position: number,
+    timestamp: string,
+  ]
+>('scripts/outputSnapshotReceived');
 
 /** Append one raw output chunk for a script */
 export const appendScriptOutput =
@@ -261,10 +277,38 @@ scriptsReducer.with(updateRuntimeState, (state, { payload: { wsId, scriptId, par
     },
   });
 });
+scriptsReducer.with(
+  scriptOutputSnapshotReceived,
+  (state, { payload: [wsId, scriptId, text, revision, position, timestamp] }) => {
+    const ws = state.byWorkspaceId[wsId];
+    if (!ws?.scripts[scriptId] || !text) return state;
+    const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
+    // A stream event or another viewer's snapshot can land between the read and
+    // publication. Never replace newer bytes with an older snapshot.
+    if (
+      (current.revision ?? 0) !== revision ||
+      current.dropped + current.chunks.length !== position
+    )
+      return state;
+    if (current.chunks.map((chunk) => chunk.text).join('') === text) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      outputBuffers: {
+        ...ws.outputBuffers,
+        [scriptId]: {
+          chunks: [{ text: text.slice(-MAX_OUTPUT_CHARS), timestamp }],
+          dropped: 0,
+          revision: revision + 1,
+        },
+      },
+    });
+  },
+);
 scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chunk] }) => {
   const ws = getWorkspaceState(state, wsId);
   const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
   const combined = trimOutputBuffer({
+    ...current,
     chunks: [...current.chunks, chunk],
     dropped: current.dropped,
   });

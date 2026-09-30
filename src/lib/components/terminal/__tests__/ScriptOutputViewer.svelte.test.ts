@@ -33,6 +33,8 @@ const {
   scriptSelectorArgs,
   mockScriptStart,
   lifecycleGate,
+  outputReadableRef,
+  authorityReadableRef,
 } = vi.hoisted(() => ({
   xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
   fontReadableRef: { value: null as any },
@@ -40,9 +42,12 @@ const {
   scriptSelectorArgs: [] as unknown[][],
   mockScriptStart: vi.fn(),
   lifecycleGate: { hidesAgentLifecycleActions: false },
+  outputReadableRef: { value: null as any },
+  authorityReadableRef: { value: null as any },
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: () => authorityReadableRef.value,
   selectHidesAgentLifecycleActions: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(lifecycleGate.hidesAgentLifecycleActions);
@@ -82,6 +87,7 @@ vi.mock('@xterm/xterm', () => {
     attachCustomKeyEventHandler = vi.fn();
     focus = vi.fn();
     write = vi.fn();
+    reset = vi.fn();
     dispose = vi.fn();
     constructor(options: any) {
       this.options = { ...options };
@@ -119,6 +125,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
     Object.assign(
       (workspaceArg: any, scriptArg: any) => {
         scriptSelectorArgs.push([workspaceArg, scriptArg]);
+        if (getter.name === 'getOutput' && outputReadableRef.value) return outputReadableRef.value;
         return {
           subscribe: (fn: (v: T) => void) => {
             let workspaceId: string | undefined;
@@ -150,6 +157,12 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
     );
   const getScript = (workspaceId: string, scriptId: string) =>
     scriptState.byWorkspaceId[workspaceId]?.[scriptId] ?? null;
+  function getOutput(workspaceId: string, scriptId: string) {
+    return (
+      outputReadableRef.value?.value ??
+      getScript(workspaceId, scriptId)?.output ?? { chunks: [], dropped: 0 }
+    );
+  }
   return {
     selectScriptById: makeSel(getScript),
     selectScriptRuntime: makeSel(
@@ -161,10 +174,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
           restartCount: 0,
         },
     ),
-    selectScriptOutput: makeSel(
-      (workspaceId, scriptId) =>
-        getScript(workspaceId, scriptId)?.output ?? { chunks: [], dropped: 0 },
-    ),
+    selectScriptOutput: makeSel(getOutput),
   };
 });
 
@@ -176,6 +186,8 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 
 vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
   removeScript: vi.fn(),
+  scriptOutputRequested: (...payload: unknown[]) => ({ type: 'scripts/outputRequested', payload }),
+  scriptOutputReleased: (...payload: unknown[]) => ({ type: 'scripts/outputReleased', payload }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
@@ -215,6 +227,8 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     xtermMock.constructorOptions.length = 0;
     scriptSelectorArgs.length = 0;
     lifecycleGate.hidesAgentLifecycleActions = false;
+    outputReadableRef.value = null;
+    authorityReadableRef.value = createControllableReadable<string | null>('authority');
     scriptState.byWorkspaceId = {
       'ws-failed': {
         's-1': {
@@ -341,5 +355,102 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
 
     await waitFor(() => expect(screen.getByText(/exit code 1/)).toBeTruthy());
     expect(screen.queryByText('Ask AI to Fix')).toBeNull();
+  });
+});
+
+describe('retained output viewer lifecycle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    xtermMock.instances.length = 0;
+    xtermMock.constructorOptions.length = 0;
+    scriptSelectorArgs.length = 0;
+    outputReadableRef.value = null;
+    authorityReadableRef.value = createControllableReadable<string | null>('authority');
+    fontReadableRef.value = createControllableReadable(SYSTEM_DEFAULT);
+    scriptState.byWorkspaceId = {
+      'ws-failed': {
+        's-1': {
+          id: 's-1',
+          name: 'Failed',
+          command: 'false',
+          runtime: { status: 'exited', exitCode: 1 },
+          output: { chunks: [], dropped: 0 },
+        },
+      },
+    };
+    (globalThis as any).ResizeObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    };
+    (globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) => {
+      setTimeout(() => cb(0), 0);
+      return 1;
+    };
+    (globalThis as any).cancelAnimationFrame = vi.fn();
+  });
+  it('requests retained output only when admitted, retries after reconnect, and releases on unmount', async () => {
+    const { store } = await import('$store/renderer/store');
+    authorityReadableRef.value = createControllableReadable<string | null>(null);
+    const view = render(ScriptOutputViewer, {
+      props: { workspaceId: 'ws-failed', scriptId: 's-1' },
+    });
+    await tick();
+    expect(store.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/outputRequested' }),
+    );
+    authorityReadableRef.value.set('admitted-1');
+    await tick();
+    const first = (vi.mocked(store.dispatch).mock.calls as any[]).find(
+      ([a]) => a.type === 'scripts/outputRequested',
+    )[0];
+    expect(first.payload.slice(0, 2)).toEqual(['ws-failed', 's-1']);
+    authorityReadableRef.value.set(null);
+    await tick();
+    expect(store.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/outputReleased',
+      payload: first.payload,
+    });
+    authorityReadableRef.value.set('admitted-2');
+    await tick();
+    const requests = (vi.mocked(store.dispatch).mock.calls as any[]).filter(
+      ([a]) => a.type === 'scripts/outputRequested',
+    );
+    expect(requests).toHaveLength(2);
+    await view.unmount();
+    expect(store.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/outputReleased',
+      payload: requests[1][0].payload,
+    });
+  });
+  it('replays a replacement snapshot on the mounted terminal, then streams only new chunks', async () => {
+    outputReadableRef.value = createControllableReadable({
+      chunks: [{ text: 'streamed', timestamp: 'now' }],
+      dropped: 0,
+      revision: 0,
+    });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    terminal.write.mockClear();
+    outputReadableRef.value.set({
+      chunks: [{ text: 'old\nstreamed', timestamp: 'now' }],
+      dropped: 0,
+      revision: 1,
+    });
+    await tick();
+    expect(terminal.reset).toHaveBeenCalledTimes(1);
+    expect(terminal.write.mock.calls).toEqual([['old\nstreamed']]);
+    outputReadableRef.value.set({
+      chunks: [
+        { text: 'old\nstreamed', timestamp: 'now' },
+        { text: ' later', timestamp: 'later' },
+      ],
+      dropped: 0,
+      revision: 1,
+    });
+    await tick();
+    expect(terminal.write.mock.calls).toEqual([['old\nstreamed'], [' later']]);
+    expect(xtermMock.instances).toHaveLength(1);
+    expect(terminal.dispose).not.toHaveBeenCalled();
   });
 });

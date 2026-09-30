@@ -1,3 +1,4 @@
+import { scriptsOutputSaga } from './scripts-output-saga';
 import { store } from '../../../store';
 import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
@@ -187,6 +188,7 @@ function* runArchiveOperation(
 
 export function* scriptsOperationSaga(): SagaGenerator<void> {
   yield* all([
+    call(scriptsOutputSaga),
     takeLatestInContext(
       [scriptArchiveRequested],
       (action) => action.payload[0],

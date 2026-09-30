@@ -27,6 +27,8 @@ export type ScriptOutputChunk = {
 export type ScriptOutputBuffer = {
   chunks: ScriptOutputChunk[];
   dropped: number;
+  /** Changes when a retained snapshot replaces the stream, so mounted viewers can replay. */
+  revision?: number;
 };
 
 export type ScriptQuickAction = 'start' | 'stop' | 'restart';

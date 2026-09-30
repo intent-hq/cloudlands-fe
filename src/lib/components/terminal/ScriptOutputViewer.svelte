@@ -26,8 +26,15 @@
     selectScriptOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import {
+    selectWorkspaceActionContext,
+    selectHidesAgentLifecycleActions,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    removeScript,
+    scriptOutputRequested,
+    scriptOutputReleased,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
@@ -70,9 +77,25 @@
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const outputAuthority = selectWorkspaceActionContext(workspaceIdStore);
+  // The request follows admitted connection, runtime and viewer lifetimes. It
+  // never starts/restores the script, and cleanup fences late snapshots.
+  $effect(() => {
+    const wsId = workspaceId;
+    const id = scriptId;
+    const authority = $outputAuthority;
+    const runtime = $runtime$;
+    if (!authority || !wsId || !id) return;
+    void runtime.status;
+    void runtime.startedAt;
+    const viewerId = crypto.randomUUID();
+    appStore.dispatch(scriptOutputRequested(wsId, id, viewerId));
+    return () => appStore.dispatch(scriptOutputReleased(wsId, id, viewerId));
+  });
 
   // Stream position already written to xterm: buffer.dropped + chunk index.
   let writtenChunkCount = $state(0);
+  let writtenRevision = 0;
 
   const isFailing = $derived(
     $runtime$.status === 'exited' &&
@@ -178,6 +201,7 @@
       xterm.write(buffer.chunks.map((c) => c.text).join(''));
     }
     writtenChunkCount = buffer.dropped + buffer.chunks.length;
+    writtenRevision = buffer.revision ?? 0;
   }
 
   function disposeXterm(): void {
@@ -208,7 +232,17 @@
     const buffer = $output$; // tracked — triggers effect on new output
     const written = untrack(() => writtenChunkCount); // NOT tracked — avoids cycle
     const total = buffer.dropped + buffer.chunks.length;
-    if (!xterm || total <= written) return;
+    if (!xterm) return;
+    if ((buffer.revision ?? 0) !== writtenRevision) {
+      // Replace content on the same terminal: a snapshot includes historical
+      // bytes that predate this viewer's first streamed chunk.
+      xterm.reset();
+      xterm.write(buffer.chunks.map((chunk) => chunk.text).join(''));
+      writtenRevision = buffer.revision ?? 0;
+      writtenChunkCount = total;
+      return;
+    }
+    if (total <= written) return;
 
     // Write only chunks not yet rendered, verbatim — no injected newlines.
     const startIndex = Math.max(written - buffer.dropped, 0);
