@@ -8,6 +8,7 @@ function pageBoundary() {
     goto: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(undefined),
     waitForLoadState: vi.fn().mockResolvedValue(undefined),
+    waitForFunction: vi.fn(),
   };
   return { operations, page: operations as unknown as Page };
 }
@@ -89,5 +90,51 @@ describe('sidebar fixture import and document setup', () => {
     await expect(prepareSidebarShell(page, 'http://sidebar.test/')).rejects.toBe(setupError);
     expect(operations.evaluate).toHaveBeenCalledOnce();
     expect(operations.waitForLoadState).not.toHaveBeenCalled();
+  });
+  it('does not evaluate again until a replacement document is initialized', async () => {
+    const { page, operations } = pageBoundary();
+    const original = new Error(
+      'page.evaluate: Execution context was destroyed, most likely because of a navigation.',
+    );
+    operations.evaluate.mockResolvedValueOnce(100).mockRejectedValueOnce(original);
+    const handle = {
+      jsonValue: vi.fn().mockResolvedValue(200),
+      dispose: vi.fn().mockResolvedValue(undefined),
+    };
+    let release!: () => void;
+    let observed!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    operations.waitForFunction.mockImplementation(() => {
+      observed();
+      return new Promise((resolve) => {
+        release = () => resolve(handle);
+      });
+    });
+    const preparing = prepareSidebarShell(page, 'http://sidebar.test/');
+    await waiting;
+    expect(operations.evaluate).toHaveBeenCalledTimes(2);
+    expect(operations.waitForFunction).toHaveBeenCalledWith(expect.any(Function), 100, {
+      timeout: 10_000,
+    });
+    expect(operations.waitForLoadState).not.toHaveBeenCalled();
+    release();
+    await preparing;
+    expect(operations.evaluate).toHaveBeenCalledTimes(3);
+    expect(handle.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('retains the initiating context error if replacement readiness times out', async () => {
+    const { page, operations } = pageBoundary();
+    const original = new Error('Execution context was destroyed');
+    const deadline = new Error('replacement deadline');
+    operations.evaluate.mockResolvedValueOnce(100).mockRejectedValueOnce(original);
+    operations.waitForFunction.mockRejectedValueOnce(deadline);
+    const failure = await prepareSidebarShell(page, 'http://sidebar.test/').catch((error) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure.cause).toBe(original);
+    expect(failure.errors).toEqual([original, deadline]);
+    expect(operations.evaluate).toHaveBeenCalledTimes(2);
   });
 });

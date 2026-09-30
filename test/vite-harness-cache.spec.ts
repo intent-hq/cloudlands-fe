@@ -111,7 +111,7 @@ for (const isolated of [false, true]) {
         const freshPage = await context.newPage();
         await freshPage.goto(firstBase);
         const lateImport = await freshPage
-          .evaluate(async () => (await import('/alpha.js')).value)
+          .evaluate(async (url) => (await import(url)).value, '/alpha.js')
           .then(
             (value) => ({ value, error: null }),
             (error) => ({ value: null, error: String(error) }),
