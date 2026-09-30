@@ -111,4 +111,39 @@ describe('renderer final wire boundary', () => {
       'hub.discard',
     ]);
   });
+  it('preserves project-specialist isolation at the actual create wire boundary', async () => {
+    fixture.request.mockImplementation(
+      async (method: string, params?: { workspacePath?: string }) => {
+        if (method === 'client.hello')
+          return { server: { capabilities: { agentNodes: 1, localNodeIsolation: 1 } } };
+        if (method === 'specialist.get')
+          return {
+            specialist: {
+              runsOn: {
+                target: 'local',
+                checkout: params?.workspacePath === '/project/checkout' ? 'isolated' : 'shared',
+              },
+            },
+          };
+        return { ok: true };
+      },
+    );
+    const input = {
+      workspaceId: 'ws',
+      workspacePath: '/project/checkout',
+      specialistId: 'builder',
+    };
+    await backendRequest('agent.create', input);
+    expect(fixture.request).toHaveBeenCalledWith('specialist.get', {
+      id: 'builder',
+      workspaceId: 'ws',
+      workspacePath: '/project/checkout',
+    });
+    expect(fixture.request).toHaveBeenLastCalledWith(
+      'agent.create',
+      { ...input, placement: { target: 'local', checkout: 'isolated' } },
+      undefined,
+    );
+    expect(fixture.choose).not.toHaveBeenCalled();
+  });
 });

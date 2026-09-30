@@ -26,13 +26,14 @@ describe('creation boundary policy', () => {
     expect(
       await prepareNodeRequest(
         'agent.create',
-        { workspaceId: 'ws', specialistId: 'builder' },
+        { workspaceId: 'ws', workspacePath: '/project/checkout', specialistId: 'builder' },
         request,
         () => false,
       ),
     ).toEqual({
       workspaceId: 'ws',
       specialistId: 'builder',
+      workspacePath: '/project/checkout',
       placement: { target: 'local', checkout: 'isolated' },
     });
     expect(request.mock.calls.some(([method]) => method === 'workspace.get')).toBe(false);
@@ -245,5 +246,122 @@ describe('creation boundary policy', () => {
       create: { placement: { target: 'local', checkout: 'worktree' } },
     });
     expect(choose).toHaveBeenCalledOnce();
+  });
+  it('resolves a supplied project path instead of the conflicting user specialist', async () => {
+    const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === 'client.hello') return { server: { capabilities } };
+      if (method === 'specialist.get')
+        return {
+          specialist: {
+            runsOn:
+              (params as { workspacePath?: string }).workspacePath === '/project/checkout'
+                ? { target: 'local', checkout: 'isolated' }
+                : { target: 'local', checkout: 'shared' },
+          },
+        };
+      throw new Error(`Unexpected ${method}`);
+    });
+    const input = {
+      workspaceId: 'ws',
+      workspacePath: '/project/checkout',
+      specialistId: 'builder',
+    };
+    expect(await prepareNodeRequest('agent.create', input, request, () => false)).toEqual({
+      ...input,
+      placement: { target: 'local', checkout: 'isolated' },
+    });
+    expect(request).toHaveBeenCalledWith('specialist.get', {
+      id: 'builder',
+      workspaceId: 'ws',
+      workspacePath: '/project/checkout',
+    });
+  });
+  it.each([
+    {
+      worktreePath: '/workspace/checkout',
+      repositoryPath: '/repo',
+      expected: '/workspace/checkout',
+    },
+    { repositoryPath: '/repo', expected: '/repo' },
+  ])(
+    'resolves ID-only delegation using the workspace checkout: $expected',
+    async ({ expected, ...workspace }) => {
+      const request = vi.fn(async (method: string, params?: unknown) => {
+        if (method === 'client.hello') return { server: { capabilities } };
+        if (method === 'workspace.get')
+          return {
+            workspace: {
+              ...workspace,
+              nodePath: '/remote/never-use',
+              defaultAgentPlacement: { target: 'local', checkout: 'worktree' },
+            },
+          };
+        if (method === 'specialist.get')
+          return {
+            specialist: {
+              runsOn:
+                (params as { workspacePath?: string }).workspacePath === expected
+                  ? { target: 'local', checkout: 'isolated' }
+                  : { target: 'local', checkout: 'shared' },
+            },
+          };
+        throw new Error(`Unexpected ${method}`);
+      });
+      const input = { workspaceId: 'ws', taskNoteId: 'task', specialist: 'builder' };
+      expect(await prepareNodeRequest('agent.delegate', input, request, () => false)).toEqual({
+        ...input,
+        placement: { target: 'local', checkout: 'isolated' },
+      });
+      expect(request).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws' });
+      expect(request).toHaveBeenCalledWith('specialist.get', {
+        id: 'builder',
+        workspaceId: 'ws',
+        workspacePath: expected,
+      });
+    },
+  );
+  it('task and call overrides avoid all specialist-tier reads', async () => {
+    const request = fixture();
+    const input = {
+      workspaceId: 'ws',
+      specialist: 'builder',
+      placement: { target: 'local', checkout: 'worktree' },
+      tasks: [
+        { taskNoteId: 'one', placement: { target: 'local', checkout: 'isolated' } },
+        { taskNoteId: 'two' },
+      ],
+    };
+    expect(await prepareNodeRequest('agent.delegate', input, request, () => false)).toEqual({
+      workspaceId: 'ws',
+      specialist: 'builder',
+      tasks: [
+        { taskNoteId: 'one', placement: { target: 'local', checkout: 'isolated' } },
+        { taskNoteId: 'two', placement: { target: 'local', checkout: 'worktree' } },
+      ],
+    });
+    expect(request.mock.calls.every(([method]) => method === 'client.hello')).toBe(true);
+  });
+  it('reuses the workspace read if the project specialist has no placement', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'client.hello') return { server: { capabilities } };
+      if (method === 'workspace.get')
+        return {
+          workspace: {
+            worktreePath: '/project/checkout',
+            defaultAgentPlacement: { target: 'local', checkout: 'isolated' },
+          },
+        };
+      if (method === 'specialist.get') return { specialist: {} };
+      throw new Error(`Unexpected ${method}`);
+    });
+    expect(
+      await prepareNodeRequest(
+        'agent.create',
+        { workspaceId: 'ws', specialistId: 'builder' },
+        request,
+        () => false,
+      ),
+    ).toMatchObject({ placement: { target: 'local', checkout: 'isolated' } });
+    expect(request.mock.calls.filter(([method]) => method === 'workspace.get')).toHaveLength(1);
   });
 });

@@ -87,13 +87,32 @@ export async function prepareNodeRequest(
   let readDefaults = false;
   if (placement === undefined) {
     const workspaceId = params.workspaceId;
+    let workspace: Params | undefined;
+    const getWorkspace = async () => {
+      if (!workspace) {
+        readDefaults = true;
+        const result = object(await request('workspace.get', { workspaceId }));
+        workspace = object(result.workspace ?? result);
+      }
+      return workspace;
+    };
     const specialistId = creation.specialistId ?? creation.specialist;
     if (typeof specialistId === 'string' && specialistId) {
       readDefaults = true;
+      const suppliedPath = creation.workspacePath ?? params.workspacePath;
+      let workspacePath =
+        typeof suppliedPath === 'string' && suppliedPath ? suppliedPath : undefined;
+      if (!workspacePath && typeof workspaceId === 'string') {
+        const current = await getWorkspace();
+        // Public workspace checkout paths only; a nodePath is never a project root.
+        const checkoutPath = current.worktreePath ?? current.repositoryPath;
+        if (typeof checkoutPath === 'string' && checkoutPath) workspacePath = checkoutPath;
+      }
       const result = object(
         await request('specialist.get', {
           id: specialistId,
           ...(workspaceId ? { workspaceId } : {}),
+          ...(workspacePath ? { workspacePath } : {}),
         }),
       );
       if (!result.specialist)
@@ -101,9 +120,7 @@ export async function prepareNodeRequest(
       placement = object(result.specialist).runsOn;
     }
     if (placement == null && typeof workspaceId === 'string') {
-      readDefaults = true;
-      const result = object(await request('workspace.get', { workspaceId }));
-      placement = object(result.workspace ?? result).defaultAgentPlacement;
+      placement = (await getWorkspace()).defaultAgentPlacement;
     }
   }
   // Even old daemons must not silently discard a known new placement configuration.
