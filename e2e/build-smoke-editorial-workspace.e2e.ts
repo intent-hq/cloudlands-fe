@@ -512,17 +512,26 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
         ),
       })),
     );
-    // Grab the non-interactive header spacer: the real dragstart handler binds
-    // the active pane. Dropping at the right edge reorders this single-pane
-    // column without merging stacks or changing any pane identity.
-    const grip = header.locator(':scope > div[aria-hidden="true"]');
-    await expect(grip).toBeVisible();
-    const gripBox = await grip.boundingBox();
+    // The empty flex spacer has no height. Grab the real header's top padding
+    // instead, and verify that hit-testing reaches this draggable header rather
+    // than a selector/button. No drag event or application state is injected.
+    await expect(header).toBeVisible();
+    await header.scrollIntoViewIfNeeded();
+    const headerBox = await header.boundingBox();
+    if (!headerBox) throw new Error('Pane header bounds are unavailable');
+    await header.hover({ position: { x: headerBox.width / 2, y: 2 } });
+    const { x: startX, y: startY } = await header.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      if (box.width <= 20 || box.height <= 4) throw new Error('Pane header is too small to drag');
+      const x = box.left + box.width / 2;
+      const y = box.top + 2;
+      if (document.elementFromPoint(x, y) !== element) {
+        throw new Error('Pane header drag origin is covered or interactive');
+      }
+      return { x, y };
+    });
     const destinationBox = await panels.last().boundingBox();
-    if (!gripBox || !destinationBox) throw new Error('Pane drag bounds are unavailable');
-    expect(gripBox.width).toBeGreaterThan(0);
-    const startX = gripBox.x + gripBox.width / 2;
-    const startY = gripBox.y + gripBox.height / 2;
+    if (!destinationBox) throw new Error('Pane drop bounds are unavailable');
     const dropX = destinationBox.x + destinationBox.width - 3;
     const dropY = destinationBox.y + 80;
     const viewportWidth = await page.evaluate(() => window.innerWidth);
