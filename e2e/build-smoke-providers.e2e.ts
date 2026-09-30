@@ -100,7 +100,9 @@ test.describe('Build Smoke — Provider Verification', () => {
     repoCleanup = repo.cleanup;
 
     // Launch the packaged app
-    const launched = await launchPackagedApp({});
+    const launched = await launchPackagedApp({
+      extraEnv: { MOCK_AGENT_SCRIPT_PATH: path.resolve(process.cwd(), 'e2e/mock-acp-agent.js') },
+    });
     app = launched.app;
     page = launched.page;
     console.log(
@@ -137,6 +139,12 @@ test.describe('Build Smoke — Provider Verification', () => {
 
   for (const providerId of KNOWN_PROVIDERS) {
     test(`${providerId} provider completes the hello-world task`, async () => {
+      if (providerId === 'mock') {
+        expect(
+          availableProviders.has('mock'),
+          'The configured mock fixture must be available',
+        ).toBe(true);
+      }
       // Skip unavailable providers — shows as "skipped" in Playwright reporter.
       if (!availableProviders.has(providerId)) {
         test.skip(true, `${providerId} is not installed`);
@@ -162,7 +170,7 @@ test.describe('Build Smoke — Provider Verification', () => {
       try {
         // Always explicitly switch provider via localStorage — don't assume any
         // default.  A previous test run may have left a different provider active.
-        await switchProviderViaLocalStorage(page, providerId);
+        if (providerId !== 'mock') await switchProviderViaLocalStorage(page, providerId);
 
         // OpenCode models are dynamic (fetched from the CLI at runtime) so
         // they aren't in PROVIDER_MODEL_TIERS.  Without an explicit model
@@ -192,7 +200,11 @@ test.describe('Build Smoke — Provider Verification', () => {
         }
 
         // Create a workspace through the UI (like a real user would)
-        workspaceId = await createWorkspaceWithPrompt(page, { repoPath, prompt: PROMPT });
+        workspaceId = await createWorkspaceWithPrompt(page, {
+          repoPath,
+          prompt: PROMPT,
+          ...(providerId === 'mock' ? { providerName: 'Mock (E2E)' } : {}),
+        });
         await takeScreenshot(page, `${providerId}-workspace-created`);
 
         // Get the actual worktree path via IPC — the worktree directory is

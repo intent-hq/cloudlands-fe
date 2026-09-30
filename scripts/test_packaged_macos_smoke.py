@@ -75,6 +75,8 @@ class Admission(unittest.TestCase):
             (root / 'tmp/repo/.git/HEAD').write_text('fixture-head')
             (root / 'tmp/profile').mkdir()
             (root / 'tmp/profile/store.sqlite').write_bytes(b'fixture-db')
+            (root / 'home/intent/workspaces/child/repo').mkdir(parents=True)
+            (root / 'home/intent/workspaces/child/repo/child-output.txt').write_text('child result')
             (root / 'tmp/link').symlink_to('/etc/passwd')
             (root / 'Intent.app').mkdir()
             (root / 'Intent.app/binary').write_bytes(b'not evidence')
@@ -82,7 +84,38 @@ class Admission(unittest.TestCase):
             report.mkdir()
             with patch.object(smoke, 'REPORT_TREE', report), patch.object(smoke, 'REPORT', report): smoke.retain_fixtures(root)
             with tarfile.open(report / 'fixture-state.tar.gz') as archive:
-                self.assertEqual(set(archive.getnames()), {'tmp/repo/.git/HEAD', 'tmp/profile/store.sqlite'})
+                self.assertEqual(set(archive.getnames()), {'tmp/repo/.git/HEAD', 'tmp/profile/store.sqlite',
+                    'home/intent/workspaces/child/repo/child-output.txt'})
+                self.assertEqual(archive.extractfile('home/intent/workspaces/child/repo/child-output.txt').read(), b'child result')
+
+    def test_owned_worktree_growth_triggers_existing_fixture_limit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'tmp').mkdir()
+            report = root / 'report'
+            report.mkdir()
+            worktree_file = root / 'home/intent/workspaces/child/output'
+            worktree_file.parent.mkdir(parents=True)
+            worktree_file.write_bytes(b'fixture')
+            original_stat = Path.stat
+            def measured_stat(path, *args, **kwargs):
+                value = original_stat(path, *args, **kwargs)
+                if path == worktree_file:
+                    fields = list(value)
+                    fields[6] = 21 * 1024**3
+                    return os.stat_result(fields)
+                return value
+            child = Mock(pid=12345, returncode=None)
+            child.poll.return_value = None
+            child.wait.return_value = -15
+            with patch.object(Path, 'stat', measured_stat), patch.object(smoke, 'REPORT_TREE', report), \
+                 patch.object(smoke, 'REPORT', report), patch.object(smoke.subprocess, 'Popen', return_value=child), \
+                 patch.object(smoke.time, 'monotonic', return_value=0), patch.object(smoke.os, 'killpg') as kill, \
+                 patch.object(smoke.shutil, 'disk_usage', return_value=Mock(free=30 * 1024**3)):
+                with self.assertRaisesRegex(RuntimeError, 'limit reached'):
+                    smoke.run_tests('fixture', [], {'TMPDIR': str(root / 'tmp')})
+            kill.assert_called_once_with(12345, smoke.signal.SIGTERM)
+            self.assertEqual(json.loads((report / 'fixture-failure.json').read_text())['cleanup']['directChildWait'], -15)
 
     def test_timeout_terminates_only_created_group_and_waits(self):
         child = Mock(pid=12345)
@@ -109,7 +142,9 @@ class Admission(unittest.TestCase):
                 'ANTHROPIC_API_KEY': 'secret', 'SSH_AUTH_SOCK': '/user/agent',
                 'INTENTD_SOCKET': '/user/daemon', 'NODE_OPTIONS': '--require user-code'}, clear=True):
             env = smoke.test_environment(Path('/fixture'), Path('/package/Intent'))
-        self.assertEqual(env['HOME'], '/fresh-runner')
+        self.assertEqual(env['HOME'], '/fixture/home')
+        self.assertEqual(env['INTENTD_WORKSPACES_DIR'], '/fixture/home/intent/workspaces')
+        self.assertEqual(env['BUILD_SMOKE_WORKSPACES_ROOT'], env['INTENTD_WORKSPACES_DIR'])
         self.assertEqual(env['PACKAGED_APP_PATH'], '/package/Intent')
         for key in ('GH_TOKEN', 'ANTHROPIC_API_KEY', 'SSH_AUTH_SOCK', 'INTENTD_SOCKET', 'NODE_OPTIONS'):
             self.assertNotIn(key, env)

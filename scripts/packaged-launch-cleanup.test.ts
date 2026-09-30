@@ -40,6 +40,7 @@ afterEach(() => {
 it.each([
   'evaluate',
   'profile',
+  'worktree-boundary',
   'firstWindow',
   'splash',
   'observation',
@@ -59,6 +60,9 @@ it.each([
     const binary = join(root, 'inert-file');
     writeFileSync(binary, 'not executable');
     vi.stubEnv('PACKAGED_APP_PATH', binary);
+    if (stage === 'worktree-boundary') {
+      vi.stubEnv('BUILD_SMOKE_WORKSPACES_ROOT', join(root, 'home/intent/workspaces'));
+    }
     const primary = new Error('setup failed');
     const secondary = new Error('cleanup failed');
     const recording = new Error('receipt failed');
@@ -147,6 +151,8 @@ it.each([
           platform: process.platform,
           userData: stage === 'profile' ? '/wrong/account/profile' : join(profile, 'electron'),
           dataDir: options.env.INTENTD_DATA_DIR,
+          home: '/wrong/account',
+          workspacesRoot: process.env.BUILD_SMOKE_WORKSPACES_ROOT,
         };
       });
       return app;
@@ -176,6 +182,8 @@ it.each([
       expect(error.errors).toEqual([primary, secondary]);
     } else if (stage === 'profile') {
       expect(error.message).toContain('runtime identity mismatch');
+    } else if (stage === 'worktree-boundary') {
+      expect(error.message).toContain('worktree boundary mismatch');
     } else expect(error).toBe(primary);
   },
 );

@@ -17,6 +17,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   mkdirSync,
   writeFileSync,
   rmSync,
@@ -24,7 +25,7 @@ import {
   appendFileSync,
 } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { basename, join, resolve } from 'path';
+import { basename, join, resolve, relative, isAbsolute } from 'path';
 
 // ---------------------------------------------------------------------------
 // findPackagedApp
@@ -341,6 +342,8 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
           executable: process.execPath,
           appPath: electronApp.getAppPath(),
           userData: electronApp.getPath('userData'),
+          home: electronApp.getPath('home'),
+          workspacesRoot: process.env.INTENTD_WORKSPACES_DIR,
           dataDir: process.env.INTENTD_DATA_DIR,
         };
       }),
@@ -354,6 +357,14 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
       runtime.dataDir !== join(profile, 'intentd')
     ) {
       throw new Error(`Packaged runtime identity mismatch: ${JSON.stringify(runtime)}`);
+    }
+    const fixtureWorkspaces = process.env.BUILD_SMOKE_WORKSPACES_ROOT;
+    if (
+      fixtureWorkspaces &&
+      (runtime.workspacesRoot !== fixtureWorkspaces ||
+        resolve(runtime.home, 'intent/workspaces') !== resolve(fixtureWorkspaces))
+    ) {
+      throw new Error(`Packaged worktree boundary mismatch: ${JSON.stringify(runtime)}`);
     }
     const page = await withLogging(app.firstWindow());
 
@@ -753,6 +764,7 @@ export async function createWorkspaceWithPrompt(
     throw new Error(`Failed to extract workspace ID from URL: ${url}`);
   }
   console.log(`✅ Workspace created: ${workspaceId} (URL: ${url})`);
+  if (process.env.BUILD_SMOKE_WORKSPACES_ROOT) await getSmokeWorkspace(page, workspaceId);
   return workspaceId;
 }
 
@@ -2071,7 +2083,7 @@ export async function getSmokeWorkspace(
   page: Page,
   id: string,
 ): Promise<{ id: string; worktreePath: string; title?: string; name?: string }> {
-  return page.evaluate(async (workspaceId) => {
+  const workspace = await page.evaluate(async (workspaceId) => {
     const result = await (window as any).electronAPI.invoke('workspace:get', { id: workspaceId });
     if (result?.success === false) throw new Error(JSON.stringify(result));
     const workspace = result?.data ?? result?.workspace ?? result;
@@ -2084,4 +2096,23 @@ export async function getSmokeWorkspace(
     }
     return workspace;
   }, id);
+  const expectedRoot = process.env.BUILD_SMOKE_WORKSPACES_ROOT;
+  if (expectedRoot) {
+    const actual = realpathSync(workspace.worktreePath);
+    const root = realpathSync(expectedRoot);
+    const owned = relative(root, actual);
+    if (
+      !owned ||
+      owned === '..' ||
+      owned.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+      isAbsolute(owned)
+    ) {
+      throw new Error(`Workspace escaped fixture root: ${JSON.stringify({ id, root, actual })}`);
+    }
+    appendFileSync(
+      join(process.cwd(), 'e2e-reports/build-smoke/worktree-identities.jsonl'),
+      JSON.stringify({ id, root, actual }) + '\n',
+    );
+  }
+  return workspace;
 }

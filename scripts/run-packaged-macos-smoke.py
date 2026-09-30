@@ -79,7 +79,7 @@ def retain_fixtures(root):
     archive_path = REPORT / 'fixture-state.tar.gz'
     # Unbuffered output makes each writer debit visible to the directory check.
     with archive_path.open('xb', buffering=0) as raw, tarfile.open(fileobj=BoundedArchiveWriter(raw), mode='w:gz', dereference=False) as archive:
-        for name in ('tmp', 'config', 'data', 'cache', 'gitconfig'):
+        for name in ('tmp', 'config', 'data', 'cache', 'home', 'gitconfig'):
             base = root / name
             paths = [base] if base.is_file() else base.rglob('*')
             for path in paths:
@@ -125,6 +125,9 @@ def test_environment(root, executable):
     # socket overrides, SSH agent, inherited cloud profiles, or real API keys.
     env = {key: os.environ[key] for key in ('PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'DISPLAY', '__CF_USER_TEXT_ENCODING') if key in os.environ}
     env.update(CI='true', TESTING='true', GIT_TERMINAL_PROMPT='0',
+               HOME=str(root / 'home'),
+               INTENTD_WORKSPACES_DIR=str(root / 'home/intent/workspaces'),
+               BUILD_SMOKE_WORKSPACES_ROOT=str(root / 'home/intent/workspaces'),
                GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=str(root / 'gitconfig'),
                TMPDIR=str(root / 'tmp'), XDG_CONFIG_HOME=str(root / 'config'),
                XDG_DATA_HOME=str(root / 'data'), XDG_CACHE_HOME=str(root / 'cache'),
@@ -175,8 +178,9 @@ def main():
     REPORT.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix='smoke-', dir=os.environ['RUNNER_TEMP']))
     FIXTURE_ROOT = root
-    for name in ('tmp', 'config', 'data', 'cache', 'mount'):
+    for name in ('tmp', 'config', 'data', 'cache', 'home', 'mount'):
         (root / name).mkdir(mode=0o700)
+    (root / 'home/intent/workspaces').mkdir(parents=True, mode=0o700)
     (root / 'gitconfig').write_text('[user]\nname = Packaged Smoke\nemail = smoke@test.invalid\n[commit]\ngpgsign = false\n')
     dmgs = list(Path(sys.argv[1]).glob('*.dmg'))
     if len(dmgs) != 1 or dmgs[0].is_symlink() or dmgs[0].stat().st_size > 1024**3:
