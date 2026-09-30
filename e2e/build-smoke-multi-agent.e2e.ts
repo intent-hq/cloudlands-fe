@@ -51,7 +51,9 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
 
     const mockScriptPath = path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js');
     const launched = await launchPackagedApp({
-      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath },
+      // The daemon's mock spawn adapter defaults to --mcp-config delivery.
+      // This fixture consumes the real parent bridge via ACP session/new instead.
+      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath, MOCK_AGENT_SESSION_MCP: '1' },
     });
     app = launched.app;
     page = launched.page;
