@@ -15,24 +15,24 @@ triggers:
 ---
 # Import Boundaries
 
-> Source: [Setup — the package export surface](#setup--the-package-export-surface); `package.json` exports map; public `@augmentcode/themis/svelte-store`; hidden root-entry implementation context; `@augmentcode/themis/docs/ARCHITECTURE.md` maintainer validation.
+> Source: [Setup — the package export surface](#setup--the-package-export-surface); `package.json` exports map; public `@themislib/themis/svelte-store`; hidden root-entry implementation context; `@themislib/themis/docs/ARCHITECTURE.md` maintainer validation.
 
 ## Setup — the package export surface
 
 The documented public surface is the approved subpackage interface plus explicit utility leaf subpaths. Do not teach consumers to import from the package root, from removed broad utility barrels, or from source-shaped deep paths.
 
-The utility exports are explicit leaf entries, not wildcard domains. The package still does not export the root `themis`, `@augmentcode/themis/utils`, `@augmentcode/themis/utils/runtime/*`, selector implementation internals (`utils/svelte-selectors/*`, `utils/streaming-selectors/*`, or `utils/selector-core/*`), old `themis/components/*` paths, `themis/src/*`, or directory `index` barrels.
+The utility exports are explicit leaf entries, not wildcard domains. The package still does not export the root `themis`, `@themislib/themis/utils`, `@themislib/themis/utils/runtime/*`, selector implementation internals (`utils/svelte-selectors/*`, `utils/streaming-selectors/*`, or `utils/selector-core/*`), old `themis/components/*` paths, `themis/src/*`, or directory `index` barrels.
 
 The public subpackages relevant to Store-family import boundaries include:
 
-- `@augmentcode/themis/svelte-store` — canonical Svelte-readable `Store` class. Per-store operations go through the configured Store instance (`store.init`, `store.dispatch`, `store.state`, `store.createSelector`, `store.runSaga`, `store.dispose`). Utility helpers are not exported here; use the explicit utility leaf subpaths below.
-- `@augmentcode/themis/streaming-store` — direct `StreamingStore` leaf for Kefir/observable selectors. Do not import streaming selector internals directly.
-- `@augmentcode/themis/saga` — saga authoring helpers: `waitFor`, selector-channel helpers, and debounce/retry/streaming helpers.
-- `@augmentcode/themis/types` — public TypeScript-only types such as `StoreState`, `PreloadedStoreState`, action, middleware, selector, reducer, and saga map types.
-- `@augmentcode/themis/components-svelte/use-init-store`, `/use-run-saga` — optional Svelte lifecycle helper leaves. Do not import from old `components/*` paths or from a `components-svelte` directory barrel.
-- `@augmentcode/themis/utils/collections/collection-utils` — approved direct collection utility leaf.
-- `@augmentcode/themis/utils/store/create-action`, `/create-reducer`, `/boolean-preference`, `/domain-scoped` — the only package-level store utility leaf imports.
-- `@augmentcode/themis/utils/sagas/debounce-saga`, `/retry-with-timeout`, `/wrap-async-generator`, `/selector-channel-effects` — approved direct saga utility leaves. Safe localStorage helpers are example/app-local utilities, not package exports.
+- `@themislib/themis/svelte-store` — canonical Svelte-readable `Store` class. Per-store operations go through the configured Store instance (`store.init`, `store.dispatch`, `store.state`, `store.createSelector`, `store.runSaga`, `store.dispose`). Utility helpers are not exported here; use the explicit utility leaf subpaths below.
+- `@themislib/themis/streaming-store` — direct `StreamingStore` leaf for Kefir/observable selectors. Do not import streaming selector internals directly.
+- `@themislib/themis/saga` — saga authoring helpers: `waitFor`, selector-channel helpers, and debounce/retry/streaming helpers.
+- `@themislib/themis/types` — public TypeScript-only types such as `StoreState`, `PreloadedStoreState`, action, middleware, selector, reducer, and saga map types.
+- `@themislib/themis/components-svelte/use-init-store`, `/use-run-saga` — optional Svelte lifecycle helper leaves. Do not import from old `components/*` paths or from a `components-svelte` directory barrel.
+- `@themislib/themis/utils/collections/collection-utils` — approved direct collection utility leaf.
+- `@themislib/themis/utils/store/create-action`, `/create-reducer`, `/boolean-preference`, `/domain-scoped` — the only package-level store utility leaf imports.
+- `@themislib/themis/utils/sagas/debounce-saga`, `/retry-with-timeout`, `/wrap-async-generator`, `/selector-channel-effects` — approved direct saga utility leaves. Safe localStorage helpers are example/app-local utilities, not package exports.
 
 Migration note: replace flat package-root examples, removed utilities-subpackage imports, and source-shaped deep imports with one of the public subpackages or approved utility leaf subpaths above.
 
@@ -88,9 +88,9 @@ Sagas may import anything within the store directory (actions, selectors, other 
 ### 1. Public package subpaths and utility leaf imports
 
 Use the export list above, not a package-root or implementation import:
-`createAction` comes from `@augmentcode/themis/utils/store/create-action`,
-`retryWithTimeout` from `@augmentcode/themis/saga`, and `StoreState` from
-`@augmentcode/themis/types` via `import type`. Import the concrete Store class
+`createAction` comes from `@themislib/themis/utils/store/create-action`,
+`retryWithTimeout` from `@themislib/themis/saga`, and `StoreState` from
+`@themislib/themis/types` via `import type`. Import the concrete Store class
 from the selected family's public subpackage.
 
 ### 2. Component imports actions, selectors, types, and the initialized Store instance

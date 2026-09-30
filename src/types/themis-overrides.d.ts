@@ -1,6 +1,6 @@
-declare module '@augmentcode/themis/utils/store/create-reducer' {
+declare module '@themislib/themis/utils/store/create-reducer' {
   import type { UnknownAction } from 'redux';
-  import type { StoreAction, StoreActionCreator } from '@augmentcode/themis/types';
+  import type { StoreAction, StoreActionCreator } from '@themislib/themis/types';
 
   export type StoreReducer<S, A> = (state: S, action: A) => S;
 
@@ -16,9 +16,9 @@ declare module '@augmentcode/themis/utils/store/create-reducer' {
   export function createReducer<S>(initialState: S): CreatedReducer<S>;
 }
 
-declare module '@augmentcode/themis/utils/sagas/selector-channel-effects' {
+declare module '@themislib/themis/utils/sagas/selector-channel-effects' {
   import type { EventChannel, Task } from 'redux-saga';
-  import type { StoreSelectorCallback, StoreSelectorEffect } from '@augmentcode/themis/types';
+  import type { StoreSelectorCallback, StoreSelectorEffect } from '@themislib/themis/types';
 
   export type SelectorChannelSelector<R, ARGS extends any[] = [], TState = any> = {
     select: StoreSelectorCallback<R, ARGS, TState>;

@@ -333,6 +333,14 @@ export const IPC_CHANNELS = {
 
   // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
   // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  COLLABORATION_AUTH: {
+    POLICY: 'collaboration-auth:policy',
+    OPEN: 'collaboration-auth:open',
+    SHOW: 'collaboration-auth:show',
+    ACTION: 'collaboration-auth:action',
+    DISMISS: 'collaboration-auth:dismiss',
+  },
+
   INVITE_CONSENT: {
     /** Main → renderer: show the invite-consent modal for a request. */
     SHOW: 'invite-consent:show',

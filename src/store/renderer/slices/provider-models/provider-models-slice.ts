@@ -1,3 +1,7 @@
+import {
+  hostExecutionConnectionChanged,
+  hostExecutionInvalidated,
+} from '../host-execution/host-execution-slice';
 /**
  * Provider Models Cache Slice
  *
@@ -9,14 +13,14 @@
  * backend reconnect by the provider-models seeder (RESUB-1 idiom — a daemon
  * restart may have changed adapters/catalogs).
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   upsertItem,
   createCollection,
   getItem,
   removeItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ProviderModelsCacheEntry,
   ProviderModelsFetchResult,
@@ -120,6 +124,22 @@ providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
   clearEpoch: state.clearEpoch + 1,
 }));
 
+providerModelsReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...state,
+  byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  clearEpoch: state.clearEpoch + 1,
+}));
+providerModelsReducer.with(hostExecutionInvalidated, (state) => ({
+  ...state,
+  byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  clearEpoch: state.clearEpoch + 1,
+}));
 providerModelsReducer.with(
   providerModelsObserved,
   (state, { payload: [id, providerIds, workspaceId] }) => {

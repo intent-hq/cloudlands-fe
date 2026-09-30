@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   updateSpecialist: vi.fn(),
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
+  setBackground: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock('$lib/client', () => ({
       updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
+      setBackground: mocks.setBackground,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
@@ -50,7 +53,8 @@ import { agentAttentionToastId } from '$features/agent/agent-attention-toast-ser
 import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { store as appStore } from '$store/renderer/store';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { AgentStatus } from '$shared/types';
 import {
   refreshWorkspaceSubscriptionEntriesRequested,
@@ -82,6 +86,7 @@ import {
   retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  setAgentBackgroundRequested,
   undoAgentDeletionRequested,
   initialState as workspaceAgentsInitialState,
   workspaceAgentsReducer,
@@ -158,28 +163,37 @@ const GUEST_SESSION: GuestSessionRecord = {
  * backend id is a joined host).
  */
 function windowIdentity(guest = false) {
-  return {
-    workspace: { ...workspaceInitialState, hasLoaded: true },
-    daemonHealth: { ...daemonHealthInitialState },
-    connections: guest
-      ? connectionsReducer(
-          connectionsInitialState,
-          connectionsListReceived({
-            connections: [],
-            activeId: GUEST_SESSION.id,
-            windowBackendId: GUEST_SESSION.id,
-          }),
-        )
-      : connectionsInitialState,
-    guestSessions: guestSessionsReducer(
-      guestSessionsInitialState,
-      guestSessionsListReceived({
-        sessions: guest ? [GUEST_SESSION] : [],
-        openIds: [],
-        connectedIds: [],
-      }),
-    ),
-  };
+  return withLegacyPrincipal(
+    {
+      workspace: {
+        ...workspaceInitialState,
+        hasLoaded: true,
+        workspaces: createCollection('id', [
+          { id: WS, myRole: guest ? 'collaborator' : 'owner' } as Workspace,
+        ]),
+      },
+      daemonHealth: { ...daemonHealthInitialState },
+      connections: guest
+        ? connectionsReducer(
+            connectionsInitialState,
+            connectionsListReceived({
+              connections: [],
+              activeId: GUEST_SESSION.id,
+              windowBackendId: GUEST_SESSION.id,
+            }),
+          )
+        : connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({
+          sessions: guest ? [GUEST_SESSION] : [],
+          openIds: [],
+          connectedIds: [],
+        }),
+      ),
+    },
+    guest ? 'guest' : 'owner',
+  );
 }
 
 function start(
@@ -223,6 +237,41 @@ describe('agentMutationSaga', () => {
     clearPendingAgentDeletions();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('settles a cancelled mode request and releases its pending state', async () => {
+    mocks.setBackground.mockReturnValue(new Promise(() => {}));
+    const run = start({ [A1]: session() }, { live: true });
+    const action = setAgentBackgroundRequested(WS, A1, true);
+    const rejected = expect(action.promise).rejects.toThrow('Failed to change agent mode');
+    run.dispatch(action);
+    await settle();
+    expect(run.getState().agentSessions.backgroundModePending?.[A1]).toBe(true);
+    await stop(run.task);
+    await rejected;
+    expect(run.getState().agentSessions.backgroundModePending?.[A1]).toBeUndefined();
+    expect(run.getState().agentSessions.byAgentId[A1].isBackground).toBeUndefined();
+  });
+
+  it('does not publish a mode response into an agent now owned by another workspace', async () => {
+    let resolve!: (result: { success: boolean }) => void;
+    mocks.setBackground.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = start({ [A1]: session() }, { live: true });
+    const action = setAgentBackgroundRequested(WS, A1, true);
+    run.dispatch(action);
+    await settle();
+    run.dispatch(
+      updateSession(A1, { workspaceId: 'other-workspace' as AgentSession['workspaceId'] }),
+    );
+    resolve({ success: true });
+    await action.promise;
+    expect(run.getState().agentSessions.byAgentId[A1].isBackground).toBeUndefined();
+    expect(run.getState().agentSessions.backgroundModePending?.[A1]).toBeUndefined();
+    await stop(run.task);
   });
 
   it('restores through agents.get, preserves hydrated messages, and settles success', async () => {

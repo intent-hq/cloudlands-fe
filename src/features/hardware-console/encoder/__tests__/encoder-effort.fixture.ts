@@ -1,9 +1,10 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 // Shared boundary mocks and real Redux/saga runtime for encoder effort suites.
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import type { HardwareDeviceModel } from '../../input/types';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
@@ -87,7 +88,7 @@ function session(id: string, workspaceId = 'ws-1'): StoredAgentSession {
   };
 }
 function makeState() {
-  return {
+  return withLegacyPrincipal({
     hardwareConsole: { ...hardwareInitial },
     tabState: { currentTabId: 'ws-1' as string | null },
     agentSessions: {
@@ -172,7 +173,7 @@ function makeState() {
     connections: { windowBackendId: 'local', hasReceivedList: true },
     sidebarNav: sidebarNavReducer(undefined, { type: 'init' }),
     daemonHealth: { stats: { protocolVersion: '6.1' } },
-  };
+  });
 }
 function setting() {
   return {

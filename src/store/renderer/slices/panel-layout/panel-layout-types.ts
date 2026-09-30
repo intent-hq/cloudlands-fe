@@ -5,7 +5,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
 
 export type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';

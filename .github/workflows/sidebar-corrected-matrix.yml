@@ -1,0 +1,77 @@
+name: Sidebar harness cold and warm controls
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - 'test/vite-harness-cache.*'
+      - 'test/workspace-tab-strip-status-geometry.spec.ts'
+      - 'test/sidebar-shell-*'
+      - 'scripts/sidebar-shell-import.test.ts'
+      - 'scripts/vite-harness-cache.test.mjs'
+      - 'scripts/sidebar-request-boundary.test.mjs'
+      - 'test/sidebar-request-boundary.*'
+      - 'scripts/sidebar-corrected-pair.py'
+      - 'scripts/sidebar-membership.py'
+      - 'scripts/sidebar-membership.test.py'
+      - 'scripts/sidebar-membership-reporter.mjs'
+      - '.github/workflows/sidebar-corrected-matrix.yml'
+permissions:
+  contents: read
+concurrency:
+  group: sidebar-harness-${{ github.event.number }}
+  cancel-in-progress: false
+jobs:
+  controls:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: gh-linux-8x
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        workers: [1, 2]
+    env:
+      CI: 'true'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v7
+        timeout-minutes: 1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        timeout-minutes: 1
+        with:
+          version: 10.30.3
+          run_install: false
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - uses: actions/setup-node@v7
+        timeout-minutes: 1
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - name: Install and generate ordinary harness inputs
+        timeout-minutes: 8
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run generate:i18n
+          pnpm run generate:ipc-channels
+          pnpm exec playwright install chromium
+      - name: Focused pure controls
+        timeout-minutes: 2
+        run: |
+          pnpm exec vitest run scripts/vite-harness-cache.test.mjs scripts/sidebar-request-boundary.test.mjs scripts/sidebar-shell-import.test.ts
+          python3 -B scripts/sidebar-membership.test.py
+      - name: Cold then unchanged warm cache, retries zero
+        timeout-minutes: 23
+        run: python3 scripts/sidebar-corrected-pair.py ${{ matrix.workers }} "$RUNNER_TEMP/harness-results"
+      - name: Preserve first-attempt evidence
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidebar-harness-workers-${{ matrix.workers }}
+          path: ${{ runner.temp }}/harness-results
+          retention-days: 7
+          if-no-files-found: warn

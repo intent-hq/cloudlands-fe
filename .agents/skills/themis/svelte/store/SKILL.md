@@ -9,11 +9,11 @@ requires:
   - svelte
   - core/import-boundaries
 sources:
-  - "@augmentcode/themis/svelte-store"
-  - "@augmentcode/themis/components-svelte/use-init-store"
-  - "@augmentcode/themis/components-svelte/use-run-saga"
-  - "@augmentcode/themis/docs/ARCHITECTURE.md"
-  - "@augmentcode/themis/README.md"
+  - "@themislib/themis/svelte-store"
+  - "@themislib/themis/components-svelte/use-init-store"
+  - "@themislib/themis/components-svelte/use-run-saga"
+  - "@themislib/themis/docs/ARCHITECTURE.md"
+  - "@themislib/themis/README.md"
 triggers:
   - Svelte Store class
   - svelte-store import
@@ -30,11 +30,11 @@ This is Svelte Store family guidance for Svelte component and application code.
 
 ## Correct import and class choice
 
-- Use `Store` from `@augmentcode/themis/svelte-store`.
+- Use `Store` from `@themislib/themis/svelte-store`.
 - Do not import `Store` from the package root, `src/*`, or selector internals such as `utils/svelte-selectors/*`.
 
 ```ts
-import { Store } from "@augmentcode/themis/svelte-store";
+import { Store } from "@themislib/themis/svelte-store";
 
 export const store = new Store({ todos: todosReducer });
 // Initialize this instance inside the owning Svelte component, not this module.
@@ -43,7 +43,7 @@ export const store = new Store({ todos: todosReducer });
 ## Lifecycle rules
 
 - Construct `Store` with app-owned reducers and optional middleware, then call `store.init(initialState?)` during the owning Svelte component's initialization, before invoking direct selector calls. The current Svelte adapter reads component context in `init()`; fresh standalone service/test initialization throws `lifecycle_outside_component` (wrapped with guidance). Use real component initialization for adapter tests, or `.select(mockState)` for pure selector tests.
-- Infer state with `StoreState<typeof store>` from `@augmentcode/themis/types`; avoid an explicit `: Store` annotation that loses constructor reducer-map inference. `getReducers()` returns a copy of the composed reducer map, including package-owned `@internal_` keys; filter those keys when reporting app registrations. `addMiddleware(...)` adds middleware before initialization. Custom middleware is prepended before the base chain.
+- Infer state with `StoreState<typeof store>` from `@themislib/themis/types`; avoid an explicit `: Store` annotation that loses constructor reducer-map inference. `getReducers()` returns a copy of the composed reducer map, including package-owned `@internal_` keys; filter those keys when reporting app registrations. `addMiddleware(...)` adds middleware before initialization. Custom middleware is prepended before the base chain.
 - Direct selector calls return Svelte `Readable` outputs backed by the Store-owned state stream after initialization and throw before `init()` or after `dispose()`.
 - If a Store runtime or context already exists in the Svelte component tree, `init()` skips setup and returns a noop disposer. Do not try to add child-layout reducers, middleware, or sagas by repeating `init()`; configure the owning Store instead.
 - `init()` creates Redux/readable state and starts the package-owned saga manager, but does **not** start app sagas. Start each app saga explicitly after initialization; see **App saga lifetime** below.
@@ -68,8 +68,8 @@ cancel(); // end this saga's operation
 
 ## Svelte component lifecycle helpers
 
-- `useInitStore(store, initialState?)` from `@augmentcode/themis/components-svelte/use-init-store` calls `store.init(initialState)` and disposes via `onDestroy`. Call it at component init time. Neither it nor `store.init()` installs Svelte component context.
-- `useRunSaga(saga)` from `@augmentcode/themis/components-svelte/use-run-saga` reads Svelte component context and silently returns when it is absent. Ordinary `init()`/`useInitStore()` setup therefore does not enable this helper. No public provider/setup recipe currently fills that gap; do not invent one or rely on this helper for normal startup.
+- `useInitStore(store, initialState?)` from `@themislib/themis/components-svelte/use-init-store` calls `store.init(initialState)` and disposes via `onDestroy`. Call it at component init time. Neither it nor `store.init()` installs Svelte component context.
+- `useRunSaga(saga)` from `@themislib/themis/components-svelte/use-run-saga` reads Svelte component context and silently returns when it is absent. Ordinary `init()`/`useInitStore()` setup therefore does not enable this helper. No public provider/setup recipe currently fills that gap; do not invent one or rely on this helper for normal startup.
 - Use the supported explicit component-owner path: `const dispose = store.init(); onDestroy(dispose); onMount(() => store.runSaga(sagaFn));`. See `../component-integration/SKILL.md` → **Root layout wiring**. The mount callback returns cancellation; it does not run during SSR. The bootstrap/lifetime owner may import its saga; ordinary handlers still dispatch actions, not invoke business sagas.
 - Import these helpers from their leaf subpaths only, not from old `components/*` paths or a `components-svelte` directory barrel.
 
@@ -81,7 +81,7 @@ cancel(); // end this saga's operation
 
 ## Verification cues
 
-- Imports use `@augmentcode/themis/svelte-store` for `Store` and `@augmentcode/themis/components-svelte/*` leaf subpaths for lifecycle helpers.
+- Imports use `@themislib/themis/svelte-store` for `Store` and `@themislib/themis/components-svelte/*` leaf subpaths for lifecycle helpers.
 - Svelte examples initialize the Store in a real component before readable selector reads; tests distinguish real SSR context from browser mount behavior and assert unsupported standalone init where relevant.
 - The app path initializes the Store before direct readable selector calls.
 

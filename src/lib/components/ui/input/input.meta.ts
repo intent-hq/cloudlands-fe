@@ -12,6 +12,7 @@ export const inputMetadata = parseUiComponentMetadata({
   callers: [
     'src/features/home/HomeIntegrations.svelte',
     'src/features/home/HomePage.svelte',
+    'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/layout/components/content-header/ContentHeader.svelte',
     'src/features/onboarding/messages/DirectoryPickerView.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',

@@ -287,7 +287,18 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
+const mockHostRole = vi.hoisted(() => ({ guest: false }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceUpdateContext: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (id) => {
+        const row = mockWorkspaceStore.findById(id);
+        return row?.myRole === 'collaborator' || row?.canManage === false
+          ? null
+          : 'current-update-context';
+      }),
+    { select: () => null },
+  ),
   selectWorkspaceById: Object.assign(
     (workspaceId: string) =>
       createSelectorReadable(workspaceId, (resolvedWorkspaceId) =>
@@ -306,6 +317,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       createSelectorReadable(
         workspaceId,
         (resolvedWorkspaceId) =>
+          mockHostRole.guest ||
           mockWorkspaceStore.findById(resolvedWorkspaceId)?.myRole === 'collaborator',
       ),
     {
@@ -1066,6 +1078,49 @@ describe('SidebarChangesPanel', () => {
         const text = container.textContent;
         expect(text).toContain('feature/my-branch');
       });
+    });
+
+    it('scoped guest-owner field controls do not expose host execution', async () => {
+      mockHostRole.guest = true;
+      try {
+        mockWorkspaceStore.findById.mockReturnValue(
+          makeWorkspace({ myRole: 'owner', canManage: true }),
+        );
+        const branch = await renderPanel();
+        await waitFor(() =>
+          expect(branch.container.querySelector('[data-testid="branch-selector"]')).not.toBeNull(),
+        );
+        await fireEvent.click(
+          branch.container.querySelector('[data-testid="branch-name-button"]')!,
+        );
+        expect(
+          branch.container.querySelector('[data-branch-field="working"] input'),
+        ).not.toBeNull();
+        branch.unmount();
+        mockFileTrackingStore.commits = [
+          makeCommit({ hash: 'guest-owned', message: 'Scoped commit', isPushed: false }),
+        ];
+        const timeline = await renderPanel();
+        const label = await waitFor(() => {
+          const element = Array.from(timeline.container.querySelectorAll('span')).find(
+            (x) => x.textContent?.trim() === 'Scoped commit',
+          );
+          expect(element).toBeDefined();
+          return element!;
+        });
+        await fireEvent.contextMenu(label);
+        await waitFor(() =>
+          expect(timeline.container.querySelector('[data-testid="mock-component"]')).not.toBeNull(),
+        );
+        expect(timeline.container.querySelector('[data-testid="commit-undo-button"]')).toBeNull();
+        expect(
+          timeline.container.querySelector('[data-testid="commit-undo-push-button"]'),
+        ).toBeNull();
+        await fireEvent.dblClick(label);
+        expect(timeline.container.querySelector('input.inline-edit-input')).toBeNull();
+      } finally {
+        mockHostRole.guest = false;
+      }
     });
 
     it('offers the trunk selector to the owner before the first push', async () => {
@@ -2314,7 +2369,7 @@ describe('SidebarChangesPanel', () => {
   describe('Git root dropdown', () => {
     async function seedGitRoots(roots: Array<Record<string, any>>) {
       const { createCollection } =
-        await import('@augmentcode/themis/utils/collections/collection-utils');
+        await import('@themislib/themis/utils/collections/collection-utils');
       mockStoreState.value = {
         gitRoots: {
           byWorkspaceId: {

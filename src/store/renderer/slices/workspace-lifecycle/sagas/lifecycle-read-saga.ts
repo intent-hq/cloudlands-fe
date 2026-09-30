@@ -1,7 +1,21 @@
+import { buffers } from 'redux-saga';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { store } from '../../../store';
 import { refreshIntegrationAuthAfterReconnect } from '../../workspace-share/sagas/workspace-share-saga';
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
+import {
+  actionChannel,
+  all,
+  call,
+  delay,
+  flush,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+} from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
@@ -141,6 +155,8 @@ import {
   loadWorkspacesRequested,
   refreshWorkspaceMembershipRequested,
   replaceWorkspaceList,
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
   setWorkspaceHasLoaded,
   updateWorkspaceEntity,
 } from '../../workspace/workspace-slice';
@@ -206,20 +222,73 @@ function scriptsReadContext(action: { type: string; payload: [string, ...unknown
     : context;
 }
 
+type WorkspaceProjectionAction = ReturnType<
+  | typeof setWorkspaceEntity
+  | typeof updateWorkspaceEntity
+  | typeof bulkUpdateWorkspaceEntities
+  | typeof removeWorkspaceEntity
+  | typeof workspaceDeleted
+>;
+
 function* refreshWorkspaces(): SagaGenerator<void> {
-  const result: Awaited<ReturnType<typeof workspaceClient.list>> = yield* call(
-    [workspaceClient, workspaceClient.list],
-    { lite: true },
-  );
-  if (!result.ok) throw new Error(result.error);
+  const dispatch = store.dispatch;
   const backendId = yield* selectActiveBackendId();
-  yield* put(replaceWorkspaceList(result.data));
-  yield* put(setWorkspaceHasLoaded(true, backendId));
-  const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
-    appClient.workspaces,
-    appClient.workspaces.recentViews,
-  ]);
-  yield* put(loadRecencyData({ lastViewedAt: recentViews }));
+  const context = yield* selectPrincipalActionContext.effect();
+  const changes = yield* actionChannel(
+    [
+      setWorkspaceEntity,
+      updateWorkspaceEntity,
+      bulkUpdateWorkspaceEntities,
+      removeWorkspaceEntity,
+      workspaceDeleted,
+    ],
+    buffers.expanding<WorkspaceProjectionAction>(),
+  );
+  try {
+    const deletionTokens = store.state.workspace.deletionTokens;
+    const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
+    if (
+      store.dispatch !== dispatch ||
+      backendId !== (yield* selectActiveBackendId()) ||
+      context !== (yield* selectPrincipalActionContext.effect())
+    )
+      return;
+    if (!result.ok) throw new Error(result.error);
+    // Replay only fields carried by current events. A title-only event must not
+    // copy a prior admission's capability fields over the fresh list projection.
+    const rows = new Map(result.data.map((row) => [row.id as string, row]));
+    const record = (action: WorkspaceProjectionAction) => {
+      if (action.type === bulkUpdateWorkspaceEntities.type) {
+        for (const nested of action.payload[0] as ReturnType<typeof updateWorkspaceEntity>[])
+          record(nested);
+      } else if (action.type === setWorkspaceEntity.type) {
+        const row = action.payload[0] as Workspace;
+        rows.set(row.id, row);
+      } else if (action.type === updateWorkspaceEntity.type) {
+        const [id, patch] = action.payload as [string, Partial<Workspace>];
+        const row = rows.get(id);
+        if (row) rows.set(id, { ...row, ...patch });
+      } else rows.delete(action.payload[0] as string);
+    };
+    for (const action of yield* flush(changes)) record(action);
+    yield* put(
+      replaceWorkspaceList([...rows.values()], {
+        complete: result.complete === true,
+        deletionTokens,
+      }),
+    );
+    yield* put(setWorkspaceHasLoaded(true, backendId, context));
+    const recentViews = yield* call([appClient.workspaces, appClient.workspaces.recentViews]);
+    if (
+      store.dispatch !== dispatch ||
+      backendId !== (yield* selectActiveBackendId()) ||
+      context !== (yield* selectPrincipalActionContext.effect())
+    )
+      return;
+    yield* put(loadRecencyData({ lastViewedAt: recentViews }));
+  } finally {
+    changes.close();
+  }
 }
 
 function* refreshTasks(workspaceId: string, guarded: boolean): SagaGenerator<void> {

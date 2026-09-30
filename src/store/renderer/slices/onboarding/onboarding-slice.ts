@@ -5,8 +5,8 @@
  * No saga needed — this is pure synchronous UI state.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { OnboardingState, OnboardingStep, ProjectConfig } from './onboarding-types';
 import { STEP_ORDER } from './onboarding-types';
 

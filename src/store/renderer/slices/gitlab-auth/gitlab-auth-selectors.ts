@@ -23,3 +23,7 @@ export const selectGitLabAuthUser = store.createSelector((state) => state.gitlab
 export const selectGitLabAuthError = store.createSelector((state) => state.gitlabAuth.error);
 
 export const selectGitLabAuthMethod = store.createSelector((state) => state.gitlabAuth.method);
+
+export const selectGitLabStatusReady = store.createSelector(
+  (state) => state.gitlabAuth.statusReady === true,
+);

@@ -2,8 +2,8 @@ import type { ReviewStatus } from '$lib/components/code-review/types';
 import type { WorkspaceEvent } from '$features/events/types';
 import type { TrackedChange } from '$features/file-tracking/types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -346,7 +346,13 @@ export const openWorkspaceFile = createAction<
   [
     wsId: string,
     filePath: string,
-    options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
+    options?: {
+      line?: number;
+      /** Preserve a parsed path verbatim; omitted/false retains legacy line-suffix parsing. */
+      filePathIsLiteral?: boolean;
+      openInAdjacentPanel?: boolean;
+      sourcePanelId?: string;
+    },
   ]
 >('workspaceNavigation/openWorkspaceFile');
 

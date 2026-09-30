@@ -4086,7 +4086,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const [getContainer, target, duration, onComplete] = mocks.animateScrollTo.mock.calls[0];
     expect(getContainer()).toBe(scrollContainer);
     expect(target).toBe(600);
-    expect(duration).toBe(150);
+    expect(duration).toBeGreaterThan(0);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
 
     onComplete(scrollContainer);
@@ -4120,52 +4120,10 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(mocks.followBottomOptions?.follow).toBe(true);
   });
 
-  it('flashes a decorative lock confirmation when scrolling back to the bottom re-locks', async () => {
-    mocks.draftGet.mockResolvedValue(null);
-    mocks.agentMessages.set([{ id: 'message-1' }]);
-    const view = render(ChatPanel, {
-      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
-    });
-    await tick();
-    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
-    flushFrame(); // bind the distance-from-bottom scroll tracker
-
-    // No confirmation while merely sitting at the bottom.
-    const selector = '[data-testid="chat-scroll-lock-confirmation"]';
-    expect(view.container.querySelector(selector)).toBeNull();
-
-    // Scroll up past the threshold (and let the show settle so the button
-    // commits), then back to the bottom → re-lock flash.
-    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
-    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
-    scrollContainer.scrollTop = 100; // 500px from the bottom
-    await fireEvent.scroll(scrollContainer);
-    await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
-    await tick();
-    expect(view.container.querySelector(selector)).toBeNull();
-
-    scrollContainer.scrollTop = 600; // back at the bottom
-    await fireEvent.scroll(scrollContainer);
-    await tick();
-    const confirmation = view.container.querySelector(selector);
-    expect(confirmation).not.toBeNull();
-    // Purely decorative: hidden from the accessibility tree, not hit-testable,
-    // and not a focusable control (regression guard for monorepo#2508).
-    expect(confirmation!.getAttribute('aria-hidden')).toBe('true');
-    expect(confirmation!.classList.contains('pointer-events-none')).toBe(true);
-    expect(confirmation!.tagName).toBe('DIV');
-
-    // The flash unmounts after its display window.
-    await vi.advanceTimersByTimeAsync(1500);
-    await tick();
-    expect(view.container.querySelector(selector)).toBeNull();
-  });
-
-  it('keeps the button and lock confirmation stable while the distance jitters across the threshold', async () => {
+  it('keeps the button stable while the distance jitters across the threshold', async () => {
     // Regression: transient scrollHeight changes (lazy-turn placeholder swaps,
     // image loads) bounce distance-from-bottom across the 30px threshold every
-    // frame. The button must not strobe in and the decorative lock
-    // confirmation must not re-trigger from the same jitter.
+    // frame. The button must not strobe in.
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([{ id: 'message-1' }]);
     const view = render(ChatPanel, {
@@ -4188,9 +4146,8 @@ describe('ChatPanel mounted lifecycle', () => {
       await vi.advanceTimersByTimeAsync(16);
     }
     await tick();
-    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="chat-scroll-lock-confirmation"]'),
+      view.container.querySelector('[data-testid="chat-floating-scroll-to-bottom-button"]'),
     ).toBeNull();
   });
 

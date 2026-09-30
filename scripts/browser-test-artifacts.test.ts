@@ -47,12 +47,22 @@ function testRecord(overrides = {}) {
 }
 
 describe('browser artifact producer contract', () => {
-  it('enumerates all four CT shards, both root shards, Electron and advisory quarantine', () => {
+  it('enumerates all four CT and root shards, Electron and advisory quarantine', () => {
     const dir = directory();
     const result = run(dir, ['manifest']);
     expect(result.status, result.stderr).toBe(0);
     const manifest = JSON.parse(readFileSync(join(dir, 'browser-test-manifest.json'), 'utf8'));
     expect(manifest.schemaVersion).toBe(1);
+    expect(
+      manifest.artifacts
+        .filter((entry: { suite: string }) => entry.suite === 'root')
+        .map((entry: { shard: number; shardCount: number }) => [entry.shard, entry.shardCount]),
+    ).toEqual([
+      [1, 4],
+      [2, 4],
+      [3, 4],
+      [4, 4],
+    ]);
     expect(
       manifest.artifacts.map((artifact: { artifactName: string }) => artifact.artifactName),
     ).toEqual([
@@ -62,6 +72,8 @@ describe('browser artifact producer contract', () => {
       'playwright-ct-report-4-of-4',
       'playwright-root-report-1',
       'playwright-root-report-2',
+      'playwright-root-report-3',
+      'playwright-root-report-4',
       'playwright-electron-lifetime-report',
       'playwright-ct-report-quarantine',
     ]);

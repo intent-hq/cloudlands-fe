@@ -4,18 +4,20 @@
  * VirtualizedFileTree — Download / Download-as-Zip / Reveal context-menu
  * locality gating (monorepo#2171).
  *
- * These are desktop actions on workspace file paths: they require BOTH the
- * daemon to be local (PROTOCOL §5.14) AND the workspace checkout to live on
- * the daemon host (`selectIsWorkspaceHostLocal`). Renders the REAL component
- * against the REAL configured store: seeds daemon locality
- * (`systemStatusSuccess` → `host.locality`) plus an optional workspace
- * entity, opens a file row's context menu, and asserts the items' visibility.
+ * File downloads use workspace-aware transfers on any daemon. Folder ZIPs
+ * and Reveal remain host-local. Tests render the real tree and configured store.
  */
 import { beforeAll, beforeEach, afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 import VirtualizedFileTree from '../VirtualizedFileTree.svelte';
+import { invoke } from '$lib/electron-bridge';
+import { notify } from '$lib/components/patterns/notify';
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn() },
+}));
 import { store as appStore } from '$store/renderer/store';
+import { deleteFileWithUndoRequested } from '$store/renderer/slices/files/files-slice';
 import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import {
@@ -64,7 +66,7 @@ function seedWorkspace(remote: boolean) {
     setWorkspaceEntity({
       id: WorkspaceId(WS_ID),
       title: 'Tree WS',
-      path: '/project',
+      path: '/home/dev/project',
       branch: 'main',
       changesets: [],
       timeline: [],
@@ -101,10 +103,30 @@ describe('VirtualizedFileTree download/reveal locality gating (monorepo#2171)', 
 
   beforeEach(() => {
     appStore.init();
+    vi.clearAllMocks();
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      data: { filePath: '/Downloads/index.ts' },
+    });
   });
 
   afterEach(() => {
     appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    vi.restoreAllMocks();
+  });
+
+  it('dispatches a workspace-relative delete intent from the file context menu', async () => {
+    appStore.dispatch(
+      setWorkspaceEntity({ id: WorkspaceId(WS_ID), path: '/home/dev/project' } as Workspace),
+    );
+    const dispatch = vi.fn(appStore.dispatch);
+    vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatch);
+    const { container } = render(VirtualizedFileTree, { flattenedNodes, workspaceId: WS_ID });
+    await openFileContextMenu(container);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    expect(dispatch).toHaveBeenCalledWith(
+      deleteFileWithUndoRequested(WS_ID, 'src/index.ts', { absolutePath: FILE_PATH }),
+    );
   });
 
   it('shows Download and Reveal for a local workspace on a local daemon', async () => {
@@ -118,9 +140,15 @@ describe('VirtualizedFileTree download/reveal locality gating (monorepo#2171)', 
 
     expect(await screen.findByText(/^Download/)).toBeTruthy();
     expect(screen.queryByText(/^Reveal in /)).toBeTruthy();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /^Download/ }));
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: WS_ID,
+      path: 'src/index.ts',
+      fileName: 'index.ts',
+    });
   });
 
-  it('hides Download and Reveal for a remote (SSH) workspace even when the daemon is local', async () => {
+  it('downloads remote workspace files while keeping Reveal hidden', async () => {
     seedLocality('local');
     seedWorkspace(true);
 
@@ -129,13 +157,19 @@ describe('VirtualizedFileTree download/reveal locality gating (monorepo#2171)', 
     });
     await openFileContextMenu(container);
 
-    // Menu is open (Open present) but no download/reveal entries.
+    // Remote files can be saved without exposing a host-local Reveal action.
     expect(await screen.findByText('Open')).toBeTruthy();
-    expect(screen.queryByText(/^Download/)).toBeNull();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /^Download/ }));
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: WS_ID,
+      path: 'src/index.ts',
+      fileName: 'index.ts',
+    });
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
   });
 
-  it('hides Download and Reveal when the daemon is remote', async () => {
+  it('downloads files when the daemon is remote while keeping Reveal hidden', async () => {
     seedLocality('remote');
     seedWorkspace(false);
 
@@ -145,8 +179,81 @@ describe('VirtualizedFileTree download/reveal locality gating (monorepo#2171)', 
     await openFileContextMenu(container);
 
     expect(await screen.findByText('Open')).toBeTruthy();
-    expect(screen.queryByText(/^Download/)).toBeNull();
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /^Download/ }));
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: WS_ID,
+      path: 'src/index.ts',
+      fileName: 'index.ts',
+    });
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+  });
+
+  it.each(['canceled', 'failed', 'rejected'])(
+    'handles a %s remote file download',
+    async (outcome) => {
+      seedLocality('remote');
+      seedWorkspace(false);
+      if (outcome === 'rejected') vi.mocked(invoke).mockRejectedValue(new Error('disconnected'));
+      else
+        vi.mocked(invoke).mockResolvedValue(
+          outcome === 'canceled'
+            ? { success: false, canceled: true }
+            : { success: false, error: { code: 'DOWNLOAD_FAILED', message: 'Download failed' } },
+        );
+      const { container } = render(VirtualizedFileTree, { flattenedNodes, workspaceId: WS_ID });
+      await openFileContextMenu(container);
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Download/ }));
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+        workspaceId: WS_ID,
+        path: 'src/index.ts',
+        fileName: 'index.ts',
+      });
+      if (outcome === 'canceled') expect(notify.error).not.toHaveBeenCalled();
+      else await waitFor(() => expect(notify.error).toHaveBeenCalledTimes(1));
+      expect(notify.success).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['local', 'remote'] as const)(
+    'keeps folder ZIP downloads gated on %s daemon locality',
+    async (locality) => {
+      seedLocality(locality);
+      seedWorkspace(false);
+      const folder = {
+        ...flattenedNodes[0],
+        node: {
+          name: 'src',
+          path: '/home/dev/project/src',
+          type: 'directory' as const,
+          children: [],
+        },
+      };
+      render(VirtualizedFileTree, {
+        flattenedNodes: [folder],
+        workspaceId: WS_ID,
+        selectedFile: folder.node.path,
+      });
+      await fireEvent.keyDown(screen.getByRole('tree'), { key: 'ContextMenu' });
+      if (locality === 'remote') {
+        expect(screen.queryByRole('menuitem', { name: /^Download/ })).toBeNull();
+        expect(invoke).not.toHaveBeenCalled();
+      } else {
+        await fireEvent.click(screen.getByRole('menuitem', { name: /^Download/ }));
+        expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download', { path: folder.node.path });
+      }
+    },
+  );
+
+  it('closes a stale download menu when the workspace root changes', async () => {
+    seedLocality('remote');
+    seedWorkspace(false);
+    const { container } = render(VirtualizedFileTree, { flattenedNodes, workspaceId: WS_ID });
+    await openFileContextMenu(container);
+    expect(screen.getByRole('menuitem', { name: /^Download/ })).toBeTruthy();
+    appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('keyboard context uses the focused file and retains its exact path', async () => {

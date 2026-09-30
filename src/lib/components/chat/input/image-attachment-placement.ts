@@ -19,6 +19,7 @@ import {
   type PlaceAttachmentResult,
 } from './context-api';
 import {
+  assertPlacementCurrent,
   extractPlacementErrorDetail,
   isAlreadyCommittedError,
   MAX_REMOTE_ATTACHMENT_BYTES,
@@ -255,11 +256,28 @@ export async function toImageReferenceBlocks(
   workspaceId: string,
   blocks: WireImageBlock[],
   api: ImagePlacementApi = defaultApi,
+  current: () => boolean = () => true,
 ): Promise<ImageReferenceBlock[]> {
+  const guard =
+    <A extends unknown[], R>(fn: (...args: A) => R) =>
+    (...args: A): R => {
+      assertPlacementCurrent(current);
+      return fn(...args);
+    };
+  api = {
+    placeAttachment: guard(api.placeAttachment),
+    beginAttachmentUpload: guard(api.beginAttachmentUpload),
+    sendAttachmentUploadChunk: guard(api.sendAttachmentUploadChunk),
+    commitAttachmentUpload: guard(api.commitAttachmentUpload),
+    abortAttachmentUpload: guard(api.abortAttachmentUpload),
+    getAttachmentInfo: guard(api.getAttachmentInfo),
+    mintIdempotencyKey: guard(api.mintIdempotencyKey),
+  };
   const out: ImageReferenceBlock[] = [];
   const retryBlocks: WireImageBlock[] = [];
   const failures: string[] = [];
   for (let i = 0; i < blocks.length; i++) {
+    assertPlacementCurrent(current);
     const block = blocks[i];
     if ('attachmentId' in block && block.attachmentId) {
       const reference: ImageReferenceBlock = {
@@ -310,5 +328,6 @@ export async function toImageReferenceBlocks(
       retryBlocks,
     );
   }
+  assertPlacementCurrent(current);
   return out;
 }

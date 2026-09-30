@@ -15,6 +15,7 @@ import {
 } from '../agent-queue/agent-queue-slice';
 import {
   agentSessionReducer,
+  setAgentBackgroundPending,
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
@@ -701,6 +702,38 @@ describe('agent-session-slice reducer', () => {
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].metadata?.completionReport).toBe('Done — tests pass, PR ready.');
     });
+
+    it.each([false, true])(
+      'refreshes chief prompt identity with listProjection=%s without losing no-op reuse',
+      (listProjection) => {
+        const snapshot = (chiefPromptVersion?: number) =>
+          makeSession('a1', '__chief__', {
+            metadata: {
+              specialist: 'chief-of-staff',
+              ...(chiefPromptVersion !== undefined ? { chiefPromptVersion } : {}),
+            },
+          });
+        let state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([snapshot()], { listProjection }),
+        );
+        for (const version of [3, 2, 3, undefined]) {
+          const refreshed = agentSessionReducer(
+            state,
+            bulkUpsertSessions([snapshot(version)], { listProjection }),
+          );
+          expect(refreshed).not.toBe(state);
+          expect(refreshed.byAgentId.a1.metadata?.chiefPromptVersion).toBe(version);
+          expect(
+            agentSessionReducer(
+              refreshed,
+              bulkUpsertSessions([snapshot(version)], { listProjection }),
+            ),
+          ).toBe(refreshed);
+          state = refreshed;
+        }
+      },
+    );
 
     it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
       const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
@@ -7346,4 +7379,15 @@ it('does not carry frontend fields or old workspace indexes across an opaque age
   expect(state.byAgentId['shared-origin'].liveTurnOpen).not.toBe(true);
   expect(state.byAgentId['shared-origin'].metadata?.pendingQuestionsMessageId).toBeUndefined();
   expect(state.agentIdsByWorkspace['workspace-a'] ?? []).not.toContain('shared-origin');
+});
+
+describe('background mode request state', () => {
+  it('tracks independent agents and clears only the settled request', () => {
+    let state = agentSessionReducer(initialState, setAgentBackgroundPending('a', true));
+    state = agentSessionReducer(state, setAgentBackgroundPending('b', true));
+    expect(state.backgroundModePending).toEqual({ a: true, b: true });
+    state = agentSessionReducer(state, setAgentBackgroundPending('a', false));
+    expect(state.backgroundModePending).toEqual({ b: true });
+    expect(state.byAgentId).toEqual({});
+  });
 });

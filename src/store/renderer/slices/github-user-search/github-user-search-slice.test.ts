@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   clearGithubUserSearch,
   githubUserSearchReducer,

@@ -1,10 +1,11 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   listTabs: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
-import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, type StoreAction } from '@themislib/themis/utils/store/create-action';
 import {
   browserClientsReducer,
   browserTabClosed,
@@ -155,7 +156,7 @@ function start(
   } = {},
 ) {
   const channel = stdChannel();
-  let state: any = {
+  let state: any = withLegacyPrincipal({
     panelLayout: { byWorkspaceId: opts.layouts ?? {} },
     browserTabRegistry: opts.applied
       ? appliedRegistry(Object.keys(opts.layouts ?? {}))
@@ -176,7 +177,8 @@ function start(
       hasLoaded: true,
       loadedBackendId: LOCAL_CONNECTION_ID,
     },
-  };
+  });
+  state.daemonHealth.health = opts.health ?? 'healthy';
   const dispatched: StoreAction<unknown>[] = [];
   let afterDispatch: ((action: StoreAction<unknown>) => void) | null = null;
   const dispatch = (action: StoreAction<unknown>) => {
@@ -211,6 +213,7 @@ function start(
     closing: () => state.browserTabRegistry.closing as Record<string, string>,
     setHealth: (health: 'healthy' | 'down', connectionGeneration: number) => {
       state = { ...state, daemonHealth: { health, connectionGeneration } };
+      if (health === 'healthy') state = withLegacyPrincipal(state);
     },
     /** Run `fn` right after each dispatch reached the reducers and the sagas. */
     onDispatched: (fn: ((action: StoreAction<unknown>) => void) | null) => {

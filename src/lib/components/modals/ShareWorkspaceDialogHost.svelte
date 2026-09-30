@@ -14,6 +14,7 @@
    */
 
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
   import { readInviteLink } from '$features/workspace-sharing/invite-link-vault';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -47,6 +48,7 @@
   } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import {
+    selectGitLabStatusReady,
     selectGitLabAuthHost,
     selectGitLabAuthIsConfigured,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
@@ -67,6 +69,8 @@
   } from '$store/renderer/slices/github-user-search/github-user-search-selectors';
   import { openGitHubAuthModal } from '$store/renderer/slices/global-modals/global-modals-slice';
 
+  const canAdministerHost$ = selectCanAdministerHost();
+  const gitlabStatusReady$ = selectGitLabStatusReady();
   const open$ = selectShareDialogOpen();
   const workspaceId$ = selectShareWorkspaceId();
   const workspaceTitle$ = selectShareWorkspaceTitle();
@@ -109,6 +113,8 @@
     const open = $open$;
     $githubConnected$;
     $gitlabConnected$;
+    $gitlabStatusReady$;
+    $canManage$;
     const refresh = () => {
       if (workspaceId && open) appStore.dispatch(shareIntegrationAuthRequested(workspaceId, host));
     };
@@ -134,6 +140,8 @@
   gitlabConnected={$integrationAuth$.gitlab}
   gitlabEnabled={$gitlabEnabled$}
   gitlabHost={$gitlabHost$}
+  gitlabStatusReady={$gitlabStatusReady$}
+  canAdministerHost={$canAdministerHost$}
   identitySeamSupported={$identitySeamSupported$}
   identityProvider={$identityProvider$}
   canManage={$canManage$}
@@ -157,8 +165,12 @@
   userSearchError={matchingUserSearch ? $userSearchError$ : null}
   userSearchQuery={matchingUserSearch ? $userSearchQuery$ : ''}
   onClose={() => appStore.dispatch(closeShareDialog())}
-  onConnectGitHub={() => appStore.dispatch(openGitHubAuthModal(null))}
+  onConnectGitHub={() => {
+    if (selectCanAdministerHost.select(appStore.state))
+      appStore.dispatch(openGitHubAuthModal(null));
+  }}
   onOpenConnections={() => {
+    if (!selectCanAdministerHost.select(appStore.state)) return;
     appStore.dispatch(closeShareDialog());
     void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }}

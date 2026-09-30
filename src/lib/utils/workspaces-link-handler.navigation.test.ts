@@ -76,6 +76,7 @@ describe('handleIntentLink panel navigation', () => {
     });
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openWorkspaceFile('owning-workspace', 'docs/résumé #1%.pdf', {
+        filePathIsLiteral: true,
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-chat',
       }),
@@ -91,6 +92,7 @@ describe('handleIntentLink panel navigation', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openWorkspaceFile('owning-workspace', 'src/lib/utils/foo.ts', {
+        filePathIsLiteral: true,
         line: 10,
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-chat',
@@ -109,6 +111,7 @@ describe('handleIntentLink panel navigation', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openWorkspaceFile('owning-workspace', 'README.md', {
+        filePathIsLiteral: true,
         line: 10,
         openInAdjacentPanel: true,
         sourcePanelId: 'panel-chat',
@@ -127,6 +130,7 @@ describe('handleIntentLink panel navigation', () => {
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/other-workspace');
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openWorkspaceFile('other-workspace', 'docs/guide.md', {
+        filePathIsLiteral: true,
         openInAdjacentPanel: false,
         sourcePanelId: undefined,
       }),

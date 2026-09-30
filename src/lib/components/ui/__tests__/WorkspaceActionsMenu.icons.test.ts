@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { faArrowRightArrowLeft } from '$lib/icons/phosphor-icons';
 import { warmImport } from '../../../../test/warm-import';

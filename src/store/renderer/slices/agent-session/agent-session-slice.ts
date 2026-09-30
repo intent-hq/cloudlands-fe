@@ -3,8 +3,8 @@ import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   AgentHistorySegment,
   AgentSessionForkOptions,
@@ -1045,6 +1045,7 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
   specialist: string | undefined;
+  chiefPromptVersion: number | undefined;
   completionReport: string | undefined;
   taskNoteId: string | undefined;
   dismissedQuestionsMessageId: string | undefined;
@@ -1102,6 +1103,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
     specialist: typeof metadata?.specialist === 'string' ? metadata.specialist : undefined,
+    chiefPromptVersion: metadata?.chiefPromptVersion,
     completionReport:
       typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
     taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
@@ -1388,6 +1390,10 @@ export const initialState: AgentSessionState = {
 // ============================================================================
 // Actions
 // ============================================================================
+
+export const setAgentBackgroundPending = createAction<[agentId: string, pending: boolean]>(
+  'agentSessions/setAgentBackgroundPending',
+);
 
 /**
  * Upsert a wire session — normalize dates, order/prune messages to
@@ -1721,6 +1727,12 @@ export const clearHistorySegment = createAction<[agentId: string]>(
 // ============================================================================
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState);
+agentSessionReducer.with(setAgentBackgroundPending, (state, { payload: [agentId, pending] }) => {
+  if (pending)
+    return { ...state, backgroundModePending: { ...state.backgroundModePending, [agentId]: true } };
+  const { [agentId]: _removed, ...rest } = state.backgroundModePending ?? {};
+  return { ...state, backgroundModePending: rest };
+});
 agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId]) return state;
 

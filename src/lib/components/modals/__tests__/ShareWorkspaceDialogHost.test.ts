@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { initialState as principalDefaults } from '$store/renderer/slices/principal/principal-slice';
 import {
   initialState as shareDefaults,
   closeShareDialog,
@@ -22,6 +24,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceOwner: { select: () => true },
+  selectCanShareWorkspace: { select: () => true },
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: mocks.navigate }));
 vi.mock('svelte-fa', async () => ({
@@ -32,7 +35,7 @@ import ShareWorkspaceDialogHost from '../ShareWorkspaceDialogHost.svelte';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.state = {
+  mocks.state = withLegacyPrincipal({
     workspaceShare: {
       ...shareDefaults,
       open: true,
@@ -45,7 +48,7 @@ beforeEach(() => {
     gitlabAuth: gitlabDefaults,
     githubUserSearch: searchDefaults,
     daemonHealth: { stats: { protocolVersion: '10.8' } }, // protocol-version-ok: identity-seam fixture.
-  };
+  });
 });
 
 it.each([true, false])(
@@ -61,5 +64,19 @@ it.each([true, false])(
       hash: 'integrations',
     });
     expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(closeShareDialog());
+  },
+);
+
+it.each(['guest', 'unresolved'] as const)(
+  'withholds a stale Connections action after authority becomes %s',
+  async (role) => {
+    render(ShareWorkspaceDialogHost);
+    const link = screen.getByRole('button', { name: 'Open Connections' });
+    mocks.state = withLegacyPrincipal(mocks.state, 'guest');
+    if (role === 'unresolved') mocks.state.principal = principalDefaults;
+    mocks.dispatch.mockClear();
+    await fireEvent.click(link);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(closeShareDialog());
   },
 );

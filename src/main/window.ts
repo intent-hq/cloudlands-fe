@@ -31,7 +31,13 @@ const logger = new Logger('Main');
 // Backend stamping lives in the dependency-light window-backend.ts (so
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
-import { HUD_ROUTE_PREFIX, registerHudWindow } from './hud-window';
+import {
+  findExistingHudWindow,
+  HUD_ROUTE_PREFIX,
+  isHudWindow,
+  isTrackedHudWindow,
+  registerHudWindow,
+} from './hud-window';
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
@@ -704,8 +710,21 @@ export async function restoreWindowsForBackend(toBackendId: string): Promise<voi
       backendId: toBackendId,
       count: savedSessions.length,
     });
+    const firstAppSession = savedSessions.findIndex(
+      (session) => !session.route.startsWith(HUD_ROUTE_PREFIX),
+    );
     for (let i = 0; i < savedSessions.length; i++) {
-      await createWindowForSession(savedSessions[i], i === 0, toBackendId);
+      // Switching backends can restore app sessions while its HUD is already open.
+      if (
+        savedSessions[i].route.startsWith(HUD_ROUTE_PREFIX) &&
+        findExistingHudWindow(toBackendId)
+      ) {
+        continue;
+      }
+      await createWindowForSession(savedSessions[i], i === firstAppSession, toBackendId);
+    }
+    if (firstAppSession === -1) {
+      await createWindow(toBackendId);
     }
   } else {
     logger.info('No saved sessions for backend; opening a fresh window', {
@@ -776,20 +795,27 @@ export async function restoreAllBackendWindowSessions(
   return restoredAny;
 }
 
-/** Focus a live window for a backend, or add that backend's saved/fresh windows. */
+/** Focus the first app window for a backend, restoring saved/fresh windows if needed. */
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
-  const existing = BrowserWindow.getAllWindows().find(
-    (window) =>
-      !window.isDestroyed() && getBackendIdForWebContents(window.webContents) === backendId,
-  );
+  const findAppWindow = () =>
+    BrowserWindow.getAllWindows().find(
+      (window) =>
+        !window.isDestroyed() &&
+        getBackendIdForWebContents(window.webContents) === backendId &&
+        !isTrackedHudWindow(window) &&
+        !isHudWindow(window),
+    );
+  let existing = findAppWindow();
+  if (!existing) {
+    await restoreWindowsForBackend(backendId);
+    existing = findAppWindow();
+  }
   if (existing) {
     if (existing.isMinimized()) existing.restore();
     existing.show();
     existing.focus();
     setMainWindow(existing);
-    return;
   }
-  await restoreWindowsForBackend(backendId);
 }
 
 /** Ensure closing one backend cannot destroy the app's final live window. */

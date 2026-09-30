@@ -4,9 +4,9 @@
  * Actions and reducer for the sidebar navigation state.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean-preference';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
 import type { SidebarNavState, SidebarNavItem, AllSpacesViewMode } from './sidebar-nav-types';
 import { isCombinedWorkspacePanelItem } from './sidebar-nav-types';
 

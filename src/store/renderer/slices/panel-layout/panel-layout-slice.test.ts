@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 import {
   panelLayoutReducer as rawPanelLayoutReducer,
   emptyWorkspaceState,

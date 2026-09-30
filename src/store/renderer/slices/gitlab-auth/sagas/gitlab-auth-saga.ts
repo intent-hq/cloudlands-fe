@@ -257,6 +257,7 @@ function* initialize(
   host: string | undefined,
   fence: IntentFence,
   generation: number,
+  mode: 'resume' | 'status-only' = 'resume',
 ): SagaGenerator<void> {
   try {
     if (host !== undefined) yield* put(setGitLabHost(host));
@@ -266,6 +267,8 @@ function* initialize(
     const payload = statusPayload(status, target);
     if (!sameHost(payload.host, target)) bumpIntent(fence);
     yield* put(setGitLabAuthStatus(payload));
+    // Admission hydration must never resume, cancel, or poll an existing grant.
+    if (mode === 'status-only') return;
     // A pending grant is resumed so a settings remount or client refresh does
     // not drop the in-flight code.
     if (validPendingFlow(status.deviceFlow)) {
@@ -508,8 +511,8 @@ function* initializeGitLabAuthWorker(
   fence: IntentFence,
   action: ReturnType<typeof initializeGitLabAuth>,
 ): SagaGenerator<void> {
-  const [host] = action.payload ?? [];
-  yield* call(initialize, host, fence, bumpIntent(fence));
+  const [host, mode] = action.payload ?? [];
+  yield* call(initialize, host, fence, bumpIntent(fence), mode);
 }
 
 function* startGitLabDeviceAuthWorker(

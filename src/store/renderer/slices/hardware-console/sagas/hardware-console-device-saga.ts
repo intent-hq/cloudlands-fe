@@ -1,5 +1,5 @@
 import { readHardwareConsoleSettingsBag } from '$features/hardware-console/settings-bag';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, cancelled, delay, fork, join, put, take, takeLatest } from 'typed-redux-saga';
 

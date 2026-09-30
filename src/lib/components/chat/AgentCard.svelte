@@ -9,6 +9,7 @@
   import { Input } from '$lib/components/ui/input';
   import {
     selectAgentIsResponding,
+    selectAgentBackgroundPending,
     selectAgentDetailHydrated,
     selectAgentSession,
     selectAgentPreview,
@@ -80,6 +81,7 @@
     selectIsWorkspaceHostLocal,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { backgroundModeMenuItems } from './agent-background-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import TaskProgressControl from './TaskProgressControl.svelte';
   import type { TaskProgressItem } from './workspace-task-fallback';
@@ -370,6 +372,8 @@
       },
     ];
 
+    items.push(...backgroundModeMenuItems($agent$, $backgroundPending$, closeContextMenu));
+
     // Per-agent notification mute (daemon-owned `notificationsMuted`, §5.5):
     // one toggle whose label reflects the current flag. Only offered once the
     // session is in the store — the workspace id is needed for agent.update.
@@ -550,6 +554,7 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
+  const backgroundPending$ = selectAgentBackgroundPending(agentIdStore);
   const agentDetailHydrated$ = selectAgentDetailHydrated(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 

@@ -1,9 +1,9 @@
-import { takeLatestFromSelector } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
 import { channel } from 'redux-saga';
 import { call, cancelled, delay, join, put, takeEvery } from 'typed-redux-saga';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
-import { getModelsForProvider, getModelsForProviderForLoadingState } from '../../model/model-utils';
+import { getModelsForProviderForLoadingState } from '../../model/model-utils';
 import { setLoadingStateForProvider } from '../../model/model-slice';
 import {
   selectNormalizedProviderId,
@@ -26,6 +26,7 @@ import {
 import type { ProviderModelsRequest, ProviderModelsRequestMode } from '../provider-models-types';
 import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import { providerModelsContextKey } from '../provider-models-utils';
+import { hostExecutionInvalidated } from '../../host-execution/host-execution-slice';
 
 type CatalogRead = {
   providerId: string;
@@ -72,24 +73,16 @@ export function* providerModelsSaga() {
         yield* put(providerModelsRequestStarted(request));
         try {
           const result =
-            request.mode === 'silentRetry'
-              ? {
-                  models: yield* call(
-                    getModelsForProvider,
-                    providerId,
-                    ...(workspaceId ? [workspaceId] : []),
-                  ),
-                }
-              : request.mode === 'refresh'
-                ? yield* call(getModelsForProviderForLoadingState, providerId, {
-                    forceRefresh: true,
-                    ...(workspaceId ? { workspaceId } : {}),
-                  })
-                : yield* call(
-                    getModelsForProviderForLoadingState,
-                    providerId,
-                    ...(workspaceId ? [{ workspaceId }] : []),
-                  );
+            request.mode === 'refresh' || request.mode === 'retry'
+              ? yield* call(getModelsForProviderForLoadingState, providerId, {
+                  forceRefresh: true,
+                  ...(workspaceId ? { workspaceId } : {}),
+                })
+              : yield* call(
+                  getModelsForProviderForLoadingState,
+                  providerId,
+                  ...(workspaceId ? [{ workspaceId }] : []),
+                );
           if ((yield* selectProviderModelsClearEpoch.effect()) !== request.epoch) continue;
           if (request.mode !== 'silentRetry' || result.models.length > 0) {
             yield* put(providerModelsLoaded(providerId, result, request.epoch, workspaceId));
@@ -140,8 +133,8 @@ export function* providerModelsSaga() {
     const previous = flights.get(providerModelsContextKey(providerId, workspaceId));
     if (previous) {
       // Background membership changes join a forced probe; they cannot replace
-      // it with stale cached data. Repeated refresh clicks also join that probe.
-      if (mode === 'background' || previous.mode === 'refresh') return;
+      // it with stale cached data. Repeated refresh/retry clicks join that probe.
+      if (mode === 'background' || previous.mode === 'refresh' || previous.mode === 'retry') return;
     }
     yield* put(reads, { providerId, workspaceId, mode });
   }
@@ -198,7 +191,7 @@ export function* providerModelsSaga() {
         }
       }
     });
-    yield* takeEvery(providerModelsCacheCleared, function* () {
+    yield* takeEvery([providerModelsCacheCleared, hostExecutionInvalidated], function* () {
       for (const [key, { providerId, workspaceId }] of Object.entries(
         yield* selectObservedModelProviders.effect(),
       )) {

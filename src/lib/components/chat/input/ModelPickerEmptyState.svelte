@@ -12,6 +12,7 @@
     isLoadingModels: boolean;
     blockingLoadError: ProviderLoadError | null;
     hasNoAvailableProvider?: boolean;
+    hostManaged?: boolean;
     onOpenProviderSettings: () => void;
     onRetry: () => void;
   }
@@ -20,6 +21,7 @@
     isLoadingModels,
     blockingLoadError,
     hasNoAvailableProvider = false,
+    hostManaged = false,
     onOpenProviderSettings,
     onRetry,
   }: Props = $props();
@@ -38,18 +40,22 @@
           {m.chat_modelPicker_noProviderAvailable_title()}
         </div>
         <div class="type-caption mt-0.5 leading-snug text-subtle">
-          {m.chat_modelPicker_noProviderAvailable_description()}
+          {hostManaged
+            ? m.hostExecution_providerSetup_description()
+            : m.chat_modelPicker_noProviderAvailable_description()}
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          class="mt-2"
-          onclick={onOpenProviderSettings}
-        >
-          <Fa icon={faSettings} class="h-3 w-3" />
-          {m.chat_modelPicker_noProviderAvailable_openSettings_label()}
-        </Button>
+        {#if !hostManaged}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            class="mt-2"
+            onclick={onOpenProviderSettings}
+          >
+            <Fa icon={faSettings} class="h-3 w-3" />
+            {m.chat_modelPicker_noProviderAvailable_openSettings_label()}
+          </Button>
+        {/if}
       </div>
       <Fa icon={faExclamationTriangle} class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-ink" />
     </div>

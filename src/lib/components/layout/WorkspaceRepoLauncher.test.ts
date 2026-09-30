@@ -7,8 +7,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), isCollaboratorOnlyClient: { value: false } }));
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectIsCollaboratorOnlyClient: () => readable(mocks.isCollaboratorOnlyClient.value),
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectWorkspaceCreationVisible: Object.assign(
+    () => readable(!mocks.isCollaboratorOnlyClient.value),
+    { select: () => !mocks.isCollaboratorOnlyClient.value },
+  ),
 }));
 import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
 

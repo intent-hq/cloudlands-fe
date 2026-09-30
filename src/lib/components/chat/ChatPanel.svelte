@@ -64,6 +64,8 @@
     agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
+    seedHistoryAround,
+    setHistoryOldestReached,
     updateSession as updateAgentSessionFields,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -125,6 +127,8 @@
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
+    scrollbackFetchStarted,
+    scrollbackSeekSettled,
     pendingProposalRecoveryPruned,
     pendingProposalRecoveryRequested,
     pendingQuestionRecoveryRequested,
@@ -133,6 +137,7 @@
   import {
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
+    selectChatAgentState,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
@@ -180,6 +185,7 @@
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
+  import ScrollToBottomButton from './ScrollToBottomButton.svelte';
   import NewMessagesDivider from './NewMessagesDivider.svelte';
   import {
     resolveNewMessagesDividerAnchor,
@@ -222,6 +228,7 @@
     classifyScrollbackGesture,
     classifyScrollBurst,
     composeTranscript,
+    indexPreviousUserMessages,
     isConversationStartLoaded,
     mapScrollTopToOrdinal,
     OLDER_HISTORY_INDICATOR_QUIET_MS,
@@ -249,10 +256,11 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
+  import { loadPreviousUserMessage } from '$lib/utils/previous-user-message-page';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
@@ -406,10 +414,7 @@
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
   import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
-  import {
-    findPreviousUserMessage,
-    isAutomatedChatMessage,
-  } from '$lib/utils/previous-user-message';
+  import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
@@ -730,6 +735,7 @@
   const cachedScrollRestoreTop =
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
+  let showScrollToBottom = $state(false);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
   // Full-history user-message index (agent.listUserMessages), fetched when the
   // navigator popover opens and cached for this agent (the panel is keyed per
@@ -773,12 +779,6 @@
     }
   }
   let scrollButtonVisibility: ReturnType<typeof createScrollBottomButtonVisibility> | null = null;
-  // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
-  // scrolling crosses back to the bottom and auto-follow re-engages. Purely
-  // decorative (aria-hidden, pointer-events-none) so it can never intercept
-  // hover hit-tests or land in the tab order (monorepo#2508).
-  let showLockConfirmation = $state(false);
-  let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
   const highlightRemovalTimers = new Set<ReturnType<typeof setTimeout>>();
   const activeAnimationFrames = new Map<number, (active: boolean) => void>();
 
@@ -815,25 +815,6 @@
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
     cancelActiveFrames();
-  });
-  const LOCK_CONFIRMATION_DURATION_MS = 1500;
-
-  function flashLockConfirmation(): void {
-    if (!isActive) return;
-    if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
-    showLockConfirmation = true;
-    lockConfirmationTimer = setTimeout(() => {
-      if (!isActive) return;
-      showLockConfirmation = false;
-      lockConfirmationTimer = null;
-    }, LOCK_CONFIRMATION_DURATION_MS);
-  }
-
-  $effect(() => {
-    if (isActive || lockConfirmationTimer === null) return;
-    clearTimeout(lockConfirmationTimer);
-    lockConfirmationTimer = null;
-    showLockConfirmation = false;
   });
 
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
@@ -2456,7 +2437,7 @@
   // Grouped messages for display: scrollback history segment + live tail.
   // With no history hydrated this is exactly the old tail-only grouping.
   // NOTE: transcript search, sticky headers, pinned prompts, message
-  // navigation, and the unread divider intentionally keep operating on the
+  // navigator, and the unread divider intentionally keep operating on the
   // tail ($agentMessages$) only for this iteration — history rows render but
   // are not indexed by those features.
   const composedTranscript = $derived(
@@ -2478,6 +2459,9 @@
       tailTruncated: $transcriptSnapshotMeta$?.truncated === true || $agentTailCapPruned$,
       totalMessages: $transcriptSnapshotMeta$?.totalMessages ?? 0,
     }),
+  );
+  const previousUserMessageTargets = $derived(
+    indexPreviousUserMessages(composedTranscript, conversationStartLoaded),
   );
 
   // ── Infinite scrollback triggers + no-jump prepend anchoring ──────────
@@ -2810,6 +2794,7 @@
       const isNewDiscard = meta?.resumed === false;
       discardBaselineMeta = meta;
       if (!isNewDiscard) return;
+      cancelPreviousMessageLoad?.();
       cancelSeekDebounce();
       seekLandingPending = false;
       pendingSeekTargetOrdinal = null;
@@ -2951,12 +2936,27 @@
         container.scrollTop;
       if (previousScrollTop > spacerTopDoc) compensation += belowResult.scrollTopDelta;
     }
+    const anchor = captureScrollAnchor(container);
+    const navigationId = scrollNavigationId;
     if (result.applied) virtualSpacerHeight = result.spacerHeight;
     if (belowResult.applied) virtualSpacerBelowHeight = belowResult.spacerHeight;
     if (compensation === 0) return;
     tick().then(() => {
-      if (!isActive || isComponentDestroyed || !scrollContainer) return;
-      scrollContainer.scrollTop = Math.max(0, previousScrollTop + compensation);
+      requestAnimationFrame(() => {
+        if (
+          !isActive ||
+          isComponentDestroyed ||
+          scrollContainer !== container ||
+          navigationId !== scrollNavigationId
+        )
+          return;
+        // Wait for the resized spacer to reach layout before compensating.
+        // A tick-only write can clamp against the old extent, land in the
+        // tail, and discard the very history page navigation just opened.
+        // Restore the visible row so native anchoring isn't counted twice.
+        if (anchor.element?.isConnected) restoreScrollAnchor(container, anchor);
+        else container.scrollTop = Math.max(0, previousScrollTop + compensation);
+      });
     });
   }
 
@@ -4098,7 +4098,10 @@
   // A single owner spans lazy rendering and animation. Returning null cancels
   // animateScrollTo before either its next write or its completion callback.
   let scrollNavigationId = 0;
+  let previousMessageLoadingId = $state<string | null>(null);
+  let cancelPreviousMessageLoad: (() => void) | null = null;
   function beginScrollNavigation(): () => HTMLElement | null {
+    cancelPreviousMessageLoad?.();
     searchHighlightRequest++;
     const navigationId = ++scrollNavigationId;
     const container = scrollContainer ?? null;
@@ -4449,6 +4452,7 @@
   $effect(() => {
     if (isActive) return;
     scrollNavigationId++;
+    cancelPreviousMessageLoad?.();
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
     deepOpenReleaseTimer = null;
     deepOpenTurnKey = null;
@@ -4697,8 +4701,9 @@
   onMount(() => {
     scrollButtonVisibility = createScrollBottomButtonVisibility({
       atBottomThreshold: SCROLL_BOTTOM_THRESHOLD,
-      onVisibilityChange: () => {},
-      onRelock: flashLockConfirmation,
+      onVisibilityChange: (visible) => {
+        showScrollToBottom = visible;
+      },
     });
     scrollButtonVisibility.update(distanceFromBottom);
 
@@ -4761,28 +4766,187 @@
     };
   });
 
-  // Scroll to previous user-authored message from the current sticky one.
-  // Automated rows (wakes, system, agent-origin) are skipped; when the
-  // current message is itself automated, the walk starts from its position
-  // in the full message order. No preceding user message → scroll to top.
+  // Resident predecessors use the canonical gap-aware index. Unknown ones
+  // require an anchored backward walk; a loaded prompt across a hole is unsafe.
   async function scrollToPreviousUserMessage(currentMessageId: string) {
-    if (!isActive || !scrollContainer) return;
+    if (!isActive || !scrollContainer || previousMessageLoadingId === currentMessageId) return;
+    let previousMessage = previousUserMessageTargets.get(currentMessageId);
     const getContainer = beginScrollNavigation();
-
-    const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
-
-    if (!previousMessage) {
-      // No preceding user-authored message - scroll to top
-      smoothScrollToPosition(0, undefined, getContainer);
-      return;
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace.id;
+    const epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+    let cancelled = false;
+    let ownsSeek = false;
+    let tokens = { nextToken: null as string | null, prevToken: null as string | null };
+    const current = () =>
+      !cancelled &&
+      !!getContainer() &&
+      agentId === originAgentId &&
+      workspace.id === originWorkspaceId &&
+      !!selectAgentSession.select(appStore.state, originAgentId) &&
+      selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch;
+    const finish = () => {
+      cancelled = true;
+      if (cancelPreviousMessageLoad !== finish) return;
+      cancelPreviousMessageLoad = null;
+      previousMessageLoadingId = null;
+      if (
+        ownsSeek &&
+        !!selectAgentSession.select(appStore.state, originAgentId) &&
+        selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch === epoch
+      ) {
+        // This seek lands on a message, not an estimated ordinal. Its caller
+        // owns positioning; don't run the far-flick seek's settle positioning.
+        wasFetchingHistorySeek = false;
+        seekLandingPending = false;
+        appStore.dispatch(scrollbackSeekSettled(originAgentId, tokens));
+      }
+    };
+    cancelPreviousMessageLoad = finish;
+    try {
+      if (previousMessage === undefined) {
+        previousMessageLoadingId = currentMessageId;
+        // Let any already-running page settle before reserving the shared
+        // seek slot, which excludes serial/gap/ordinal paging in every panel.
+        while (current()) {
+          const chat = selectChatAgentState.select(appStore.state, originAgentId);
+          if (
+            !chat.fetchingOlderHistory &&
+            !chat.fetchingGapFill &&
+            !chat.fetchingHistorySeek &&
+            !seekLandingPending
+          )
+            break;
+          if (!(await waitForActiveFrame())) return;
+        }
+        if (!current()) return;
+        cancelSeekDebounce();
+        ownsSeek = true;
+        seekLandingPending = true;
+        appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
+        const historyIndex = $agentHistoryMessages$.findIndex(
+          (message) => message.id === currentMessageId,
+        );
+        const sourceOrdinal =
+          historyIndex >= 0
+            ? ($historySegmentMeta$.startOrdinalEstimate ?? 0) + historyIndex
+            : Math.max(
+                0,
+                ($transcriptSnapshotMeta$?.totalMessages ?? $agentMessages$.length) -
+                  $agentMessages$.length,
+              ) +
+              Math.max(
+                0,
+                $agentMessages$.findIndex((message) => message.id === currentMessageId),
+              );
+        const result = await loadPreviousUserMessage(
+          currentMessageId,
+          (token, anchor) =>
+            appClient.agents.getConversation(
+              originAgentId,
+              200,
+              token,
+              anchor,
+              undefined,
+              originWorkspaceId,
+            ),
+          current,
+        );
+        if (!result || !current()) return;
+        previousMessage = result.target;
+        appStore.dispatch(
+          seedHistoryAround(
+            originAgentId,
+            result.page.messages,
+            result.page.nextToken === null
+              ? 0
+              : Math.max(0, sourceOrdinal - result.rowsBeforeAnchor),
+          ),
+        );
+        appStore.dispatch(setHistoryOldestReached(originAgentId, result.page.nextToken === null));
+        tokens = { nextToken: result.page.nextToken, prevToken: result.page.prevToken };
+        await tick();
+        if (!current()) return;
+        const split = currentUnloadedSplit();
+        const rowHeight = spacerRowHeightEma ?? VIRTUAL_ROW_HEIGHT_MIN_PX;
+        virtualSpacerHeight = Math.round(split.above * rowHeight);
+        virtualSpacerBelowHeight = Math.round(split.below * rowHeight);
+        await tick();
+      }
+      if (!current()) return;
+      if (!previousMessage) {
+        smoothScrollToPosition(0, undefined, getContainer);
+        return;
+      }
+      const targetElement = await forceRenderAndFindMessage(previousMessage.id, getContainer);
+      if (!current()) return;
+      if (!targetElement) throw new Error('Previous user message could not be rendered');
+      smoothScrollTo(targetElement, 'start', undefined, getContainer);
+      scheduleDeepOpenRelease();
+    } catch (error) {
+      if (current()) {
+        logger.warn('Previous user message navigation failed', { error, currentMessageId });
+        notify.error(m.chat_chatPanel_previousMessageLoad_error());
+      }
+    } finally {
+      finish();
     }
-    // Measure the rendered row, not its lazy placeholder, just as the header
-    // navigator does. Reuse the same follow release and force-visible lifetime.
-    const targetElement = await forceRenderAndFindMessage(previousMessage.id, getContainer);
-    if (!getContainer() || !targetElement) return;
-    smoothScrollTo(targetElement, 'start', undefined, getContainer);
-    scheduleDeepOpenRelease();
   }
+
+  $effect(() => {
+    const container = scrollContainer;
+    if (!isActive || !container) return;
+    const cancel = () => {
+      if (!cancelPreviousMessageLoad) return;
+      scrollNavigationId++;
+      cancelPreviousMessageLoad();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        cancel();
+        return;
+      }
+      // Match followBottom's scroll keys, while leaving editing and control
+      // navigation to the focused element. Scroll events alone may be our own.
+      if (
+        event.defaultPrevented ||
+        !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)
+      )
+        return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        isFocusInEditableElement(target) ||
+        target?.closest(
+          'button, a[href], [role="button"], [role="link"], [role="slider"], [role="spinbutton"]',
+        )
+      )
+        return;
+      cancel();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      // Use followBottom's gutter geometry, including RTL and scaled panels.
+      if (event.button !== 0 || event.target !== container) return;
+      const gutterWidth = Math.max(0, container.offsetWidth - container.clientWidth);
+      if (gutterWidth === 0) return;
+      const rect = container.getBoundingClientRect();
+      const visualGutterWidth = gutterWidth * (rect.width / container.offsetWidth);
+      const inGutter =
+        getComputedStyle(container).direction === 'rtl'
+          ? event.clientX <= rect.left + visualGutterWidth
+          : event.clientX >= rect.right - visualGutterWidth;
+      if (inGutter) cancel();
+    };
+    container.addEventListener('wheel', cancel, { passive: true });
+    container.addEventListener('touchstart', cancel, { passive: true });
+    container.addEventListener('keydown', onKeyDown);
+    container.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      container.removeEventListener('wheel', cancel);
+      container.removeEventListener('touchstart', cancel);
+      container.removeEventListener('keydown', onKeyDown);
+      container.removeEventListener('pointerdown', onPointerDown);
+    };
+  });
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
   let draftPromptApplied = $state(false);
@@ -4879,10 +5043,6 @@
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
     cancelAllSendTransitions();
-    if (lockConfirmationTimer !== null) {
-      clearTimeout(lockConfirmationTimer);
-      lockConfirmationTimer = null;
-    }
     if (cachedScrollRestoreRetryFrame !== null) {
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
@@ -4915,6 +5075,7 @@
       appStore.dispatch(clearCurrentlyViewedAgent(agentId));
     }
 
+    cancelPreviousMessageLoad?.();
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
     searchHighlightRequest += 1;
@@ -5616,7 +5777,7 @@
     animateScrollTo(
       getContainer,
       Math.max(0, container.scrollHeight - container.clientHeight),
-      150,
+      spring.moderate.settleMs,
       () => {
         if (!getContainer()) return;
         shouldFollowBottom = true;
@@ -5931,6 +6092,7 @@
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
       data-testid="chat-transcript-scroll-viewport"
+      data-message-controls-root
     >
       <div
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
@@ -6342,9 +6504,13 @@
                    rows above the resident window, so the scrollbar represents
                    the full conversation (see estimateVirtualSpacerHeight).
                    Shrinks as real rows land; absent when everything is
-                   resident or totalMessages is unknown. -->
+                   resident or totalMessages is unknown. These geometry-only
+                   spacers must not transition: the global reduced-motion
+                   duration otherwise animates their default transition-property
+                   of all, briefly exposing an old extent to scroll compensation. -->
               {#if virtualSpacerHeight > 0}
                 <div
+                  class="transition-none"
                   style="height: {virtualSpacerHeight}px;"
                   data-testid="chat-virtual-scrollback-spacer"
                   aria-hidden="true"
@@ -6452,6 +6618,7 @@
                   {#if virtualSpacerBelowHeight > 0}
                     <div
                       bind:this={belowSpacerEl}
+                      class="transition-none"
                       style="height: {virtualSpacerBelowHeight}px;"
                       data-testid="chat-virtual-scrollback-spacer-below"
                       aria-hidden="true"
@@ -6659,6 +6826,7 @@
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                                previousMessageLoading={previousMessageLoadingId === message.id}
                                 backendSessionId={auggieSessionId}
                                 suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
                                   cardSpacingOwnedBefore}
@@ -6787,6 +6955,8 @@
                                 ? undefined
                                 : (newText, model, blocks) =>
                                     handleEditMessage(message.id, newText, model, blocks)}
+                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              previousMessageLoading={previousMessageLoadingId === message.id}
                               onRegenerate={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}
@@ -6980,17 +7150,14 @@
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
       </div>
     </div>
-    {#if showLockConfirmation}
-      <!-- Transient re-lock confirmation: purely decorative feedback that
-           auto-follow re-engaged on reaching the bottom. Never interactive:
-           aria-hidden keeps it out of the accessibility tree and
-           pointer-events-none out of hover hit-tests (monorepo#2508). -->
+    {#if isActive && showScrollToBottom && !deferTranscriptReveal}
       <div
-        aria-hidden="true"
-        data-testid="chat-scroll-lock-confirmation"
-        class="lock-confirmation pointer-events-none absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-sm border border-border bg-sidebar text-muted-foreground"
+        class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
+        style:padding-inline-end="{scrollbarGutterWidth}px"
       >
-        <Fa icon={faLock} class="w-3! h-3!" />
+        <div class="pointer-events-auto">
+          <ScrollToBottomButton floating onclick={scrollToBottom} />
+        </div>
       </div>
     {/if}
   </div>
@@ -7237,29 +7404,12 @@
     animation: highlight-flash calc(var(--spring-slow) * 6) var(--spring-exit-ease);
   }
 
-  /* Transient scroll re-lock confirmation: hold briefly, then fade out.
-     Forwards fill keeps it invisible until the element unmounts. */
-  .lock-confirmation {
-    animation: lock-confirmation-fade calc(var(--spring-slow) * 6) var(--spring-exit-ease) forwards;
-  }
-
   @container style(--motion-reduced: 1) {
-    .lock-confirmation,
     :global(.message-highlight-flash),
     :global(.highlight-flash),
     .input-flash :global(.rich-input-container) {
       animation: none;
       opacity: 0.9;
-    }
-  }
-
-  @keyframes lock-confirmation-fade {
-    0%,
-    40% {
-      opacity: 0.9;
-    }
-    100% {
-      opacity: 0;
     }
   }
 

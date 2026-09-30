@@ -2,6 +2,7 @@ import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalo
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession, Note } from '$shared/types';
+import { selectWorkspaceTokenUsageCrossFilterRows } from '$store/renderer/slices/token-usage/token-usage-selectors';
 
 const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
 
@@ -99,6 +100,7 @@ const { notifyInterruptedAgentUpdatedSpy } = vi.hoisted(() => ({
 }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
   notifyInterruptedAgentUpdated: notifyInterruptedAgentUpdatedSpy,
+  notifyInterruptedAgentsSubscriptionReady: vi.fn(),
 }));
 
 // Fake the navigate-away helper so the bridge's `workspace:deleted` navigation
@@ -4131,6 +4133,20 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
           cacheCreationTokens: 1200,
         },
       },
+      byAgentModel: [
+        {
+          agentId: 'agent-123',
+          model: 'opus-4.8',
+          totals: {
+            inputTokens: 12000,
+            outputTokens: 3400,
+            cacheReadTokens: 8000,
+            cacheCreationTokens: 1200,
+          },
+          humanMessages: 3,
+          agentMessages: 4,
+        },
+      ],
       totals: {
         inputTokens: 12000,
         outputTokens: 3400,
@@ -4144,10 +4160,41 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
     const state = appStore.state as {
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
-    expect(state.tokenUsage.byWorkspaceId[WS]).toEqual({
-      ...tokenUsage,
-      isStale: false,
-    });
+    const { byAgentModel, ...rollup } = tokenUsage;
+    expect(state.tokenUsage.byWorkspaceId[WS]).toMatchObject({ ...rollup, isStale: false });
+    expect(selectWorkspaceTokenUsageCrossFilterRows.select(appStore.state, WS)).toEqual(
+      byAgentModel,
+    );
+  });
+
+  it('preserves presence and UTF-8 producer order through pushes, rejecting invalid replacements', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const workspaceId = 'ws-token-matrix-boundary';
+    const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+    const base = { byAgentId: {}, totals, byModel: {}, lastScanAt: null };
+    const rows = ['\uE000', '\u{10000}'].map((model) => ({
+      agentId: 'agent-a',
+      model,
+      totals,
+      humanMessages: 0,
+      agentMessages: 1,
+    }));
+    const push = (tokenUsage: unknown) =>
+      handler(notification('workspace:tokenUsage-changed', { workspaceId, tokenUsage }));
+    const read = () => selectWorkspaceTokenUsageCrossFilterRows.select(appStore.state, workspaceId);
+    push({ ...base, byAgentModel: rows });
+    expect(read()).toEqual(rows);
+    const accepted = appStore.state.tokenUsage.byWorkspaceId[workspaceId];
+    push({ ...base, byAgentModel: [...rows].reverse() });
+    expect(appStore.state.tokenUsage.byWorkspaceId[workspaceId]).toBe(accepted);
+    push({ ...base, byAgentModel: [rows[0], rows[0]] });
+    expect(appStore.state.tokenUsage.byWorkspaceId[workspaceId]).toBe(accepted);
+    push({ ...base, byAgentModel: [] });
+    expect(read()).toEqual([]);
+    push(base);
+    expect(read()).toBeUndefined();
+    expect(appStore.state.tokenUsage.byWorkspaceId[workspaceId]).not.toHaveProperty('byAgentModel');
   });
 
   it('ignores a push without a tokenUsage object', async () => {
@@ -4160,6 +4207,23 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
     expect(state.tokenUsage.byWorkspaceId['ws-token-empty']).toBeUndefined();
+  });
+
+  it('ignores a pushed tokenUsage object that fails the wire schema', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('workspace:tokenUsage-changed', {
+        workspaceId: 'ws-token-invalid',
+        tokenUsage: { byAgentId: {}, totals: {}, byModel: {}, lastScanAt: null },
+      }),
+    );
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId['ws-token-invalid']).toBeUndefined();
   });
 });
 
@@ -5835,8 +5899,22 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT);
+    expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(AGENT, false);
   });
+
+  it.each([true, false, 'true', undefined])(
+    'only forwards a boolean startup failure hint (%s)',
+    async (startupRecoveryFailed) => {
+      capturedHandlers[0]!(
+        notification('agent:updated', { agentId: AGENT, startupRecoveryFailed }),
+      );
+      await flush();
+      expect(notifyInterruptedAgentUpdatedSpy).toHaveBeenCalledWith(
+        AGENT,
+        startupRecoveryFailed === true,
+      );
+    },
+  );
 
   it('ignores agent:created/renamed/updated payloads missing agentId (schema guard)', async () => {
     const handler = capturedHandlers[0]!;
@@ -6951,6 +7029,23 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
       },
     };
   }
+
+  it('records the real deleted event as the original pending token’s terminal receipt', async () => {
+    const { markWorkspacePendingDeletion, clearWorkspacePendingDeletion } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(clearWorkspacePendingDeletion(WS));
+    appStore.dispatch(markWorkspacePendingDeletion(WS, 'original-bulk'));
+    try {
+      await primeBridge();
+      capturedHandlers[0]!(deletedNotification(WS));
+      await flush();
+      expect(appStore.state.workspace.terminalDeletions[WS]).toBe('original-bulk');
+      expect(appStore.state.workspace.invalidatedDeletions[WS]).toBeUndefined();
+      expect(appStore.state.workspace.pendingDeletions[WS]).toBe(true);
+    } finally {
+      appStore.dispatch(clearWorkspacePendingDeletion(WS, 'original-bulk'));
+    }
+  });
 
   it('closes the deleted workspace tab while it is the current tab (#766 live-mode navigation path)', async () => {
     // Unlike the workspace-list snapshot diff (legacy-mode only — the
@@ -8139,7 +8234,7 @@ describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', 
       },
     });
 
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as {
       workspaceTasks: {
         byWorkspaceId: Record<string, { tasks: unknown }>;
@@ -8409,7 +8504,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     activePullRequest?: unknown;
     pullRequests?: Array<{ number: number; status?: string }>;
   }> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, PR_WS) ?? {}) as never;
   }
@@ -8659,7 +8754,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
   }
 
   async function readWorkspace(): Promise<Record<string, unknown>> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_UPD) ?? {}) as never;
   }
@@ -9420,7 +9515,7 @@ describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', 
   async function readWorkspace(): Promise<{
     activity?: 'idle' | 'agent_running';
   }> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_ACT) ?? {}) as never;
   }
@@ -9569,7 +9664,7 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
   async function readWorkspace(): Promise<{
     displayStatus?: string;
   }> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_DS) ?? {}) as never;
   }
@@ -9738,7 +9833,7 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
   async function readWorkspace(): Promise<{
     attention?: 'none' | 'unread' | 'review_required';
   }> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_ATT) ?? {}) as never;
   }
@@ -9956,7 +10051,7 @@ describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', (
   }
 
   async function readWorkspace(): Promise<{ waiting?: boolean }> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_WAIT) ?? {}) as never;
   }
@@ -10158,7 +10253,7 @@ describe('daemonEventsBridge (dropped deltas for unhydrated workspaces → targe
   }
 
   async function readWorkspace(id: string): Promise<Record<string, unknown> | undefined> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return getItem(state.workspace.workspaces as never, id as never) as never;
   }
@@ -11384,6 +11479,31 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
   });
 
   describe('agent:failed → chatSendFailed', () => {
+    it.each(['missing', 'rejected', 'insufficient-scope'])(
+      'shows host-owner recovery for a classified %s AI failure without raw provider text',
+      async (reason) => {
+        const agentId = 'agent-host-auth';
+        appStore.dispatch(upsertSession({ id: agentId, name: 'Host Agent', workspaceId: WS }));
+        await primeBridge();
+        capturedHandlers[0]!(
+          notification('agent:failed', {
+            agentId,
+            error: 'raw provider body secret=hidden',
+            status: 'error',
+            executionAuthorization: {
+              resource: 'ai',
+              reason,
+              providerId: 'claude-code',
+              host: null,
+              recovery: { actor: 'host-owner', action: 'check-ai-authorization' },
+            },
+          }),
+        );
+        expect(appStore.state.chatState.byAgentId[agentId].error).toContain('owner');
+        expect(appStore.state.chatState.byAgentId[agentId].error).not.toContain('secret=hidden');
+      },
+    );
+
     it('dispatches chatSendFailed when agent:failed carries an error message', async () => {
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';
@@ -12196,7 +12316,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
   async function readWorkspace(): Promise<{
     activity?: 'idle' | 'agent_running';
   }> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_RECON) ?? {}) as never;
   }
@@ -12693,7 +12813,7 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
   }
 
   async function readAgentSummary(): Promise<{ agentIds: string[] } | undefined> {
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const ws = getItem(state.workspace.workspaces as never, WS_SUMMARY) as
       { agentSummary?: { agentIds: string[] } } | undefined;
@@ -13571,7 +13691,7 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
   it('workspace:updated browserClientId delta merges the pin and re-reads workspace.getBrowserClient', async () => {
     const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
     const { WorkspaceStatus } = await import('$shared/types');
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const { selectWorkspaceBrowserClient } =
       await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
     appStore.dispatch(

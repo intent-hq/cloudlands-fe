@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { IdentityProvider, IdentityState, PrincipalIdentity } from './identity-types';
 
 /** Dotted path of the daemon setting the slice mirrors (§5.12 `settings.*`). */

@@ -1,0 +1,53 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "github-consent": {
+    "390": {
+      "probes": {
+        "data-dialog-content": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 666,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 308,
+          "x": 41,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 716,
+        "width": 390
+      }
+    }
+  },
+  "gitlab-pat": {
+    "390": {
+      "probes": {
+        "data-dialog-content": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 728,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 308,
+          "x": 41,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 778,
+        "width": 390
+      }
+    }
+  }
+}

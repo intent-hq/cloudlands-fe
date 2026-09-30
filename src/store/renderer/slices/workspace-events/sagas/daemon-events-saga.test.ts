@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({
+  api: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() },
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   offNotification: vi.fn(),
   offReconnect: vi.fn(),
+  reconnectHandlers: new Set<() => void>(),
   notificationHandler: undefined as
     ((notification: { method: string; params?: unknown }) => void) | undefined,
   reconnectHandler: undefined as (() => void) | undefined,
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
+  electronAPI: () => mocks.api,
   backendSubscribe: mocks.subscribe,
   backendUnsubscribe: mocks.unsubscribe,
   onBackendNotification: (handler: typeof mocks.notificationHandler) => {
@@ -22,8 +25,14 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     return mocks.offNotification;
   },
   onBackendReconnected: (handler: typeof mocks.reconnectHandler) => {
-    mocks.reconnectHandler = handler;
-    return mocks.offReconnect;
+    mocks.reconnectHandlers.add(handler!);
+    mocks.reconnectHandler = () => {
+      for (const listener of mocks.reconnectHandlers) listener();
+    };
+    return () => {
+      mocks.reconnectHandlers.delete(handler!);
+      mocks.offReconnect();
+    };
   },
 }));
 
@@ -41,6 +50,7 @@ import {
 } from './daemon-events-saga';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
+import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
 import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   loadWorkspaceTabsState,
@@ -118,6 +128,7 @@ describe('daemonEventsSaga', () => {
     vi.clearAllMocks();
     mocks.notificationHandler = undefined;
     mocks.reconnectHandler = undefined;
+    mocks.reconnectHandlers.clear();
     mocks.subscribe.mockResolvedValue({ subscriptionId: 'sub-1' });
     mocks.unsubscribe.mockResolvedValue(undefined);
     mocks.refresh.mockResolvedValue(undefined);
@@ -126,6 +137,7 @@ describe('daemonEventsSaga', () => {
   afterEach(() => {
     mocks.notificationHandler = undefined;
     mocks.reconnectHandler = undefined;
+    mocks.reconnectHandlers.clear();
   });
 
   it('listens before subscribing and forwards buffered events in arrival order with its id', async () => {
@@ -285,6 +297,9 @@ describe('daemonEventsSaga', () => {
       'app:ui-highlight',
       'app:workspace-open',
       'presence:changed',
+      'host:members-changed',
+      'host:execution-context-changed',
+      'principal:identity-changed',
     ]);
   });
 
@@ -307,6 +322,85 @@ describe('daemonEventsSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-new', undefined);
+  });
+
+  it('discovers recovery that failed between the initial list and firehose subscription', async () => {
+    let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+    mocks.subscribe.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubscribe = resolve;
+      }),
+    );
+    mocks.api.invoke.mockResolvedValue({ status: 'connected' });
+    mocks.api.on.mockReturnValue('status-listener');
+    const listInterrupted = vi.fn().mockResolvedValue([]);
+    const show = vi.fn();
+    const dispose = installInterruptedAgentsService({ agents: { listInterrupted } }, show);
+    const { task } = startSaga();
+    try {
+      await settle();
+      expect(listInterrupted).toHaveBeenCalledTimes(1);
+      expect(show).not.toHaveBeenCalled();
+      const candidate = {
+        agentId: 'failed-startup',
+        workspaceId: 'ws-1',
+        workspaceName: 'Workspace',
+        agentName: 'Agent',
+        prevStatus: 'active',
+        interruptedAt: '2026-09-29T00:00:00Z',
+      };
+      // Failure was published before events.subscribe reached the daemon, so
+      // no notification is delivered to this client. Subscribe readiness must
+      // trigger an authoritative catch-up read.
+      listInterrupted.mockResolvedValue([candidate]);
+      resolveSubscribe({ subscriptionId: 'sub-ready' });
+      await settle();
+      expect(show).toHaveBeenCalledExactlyOnceWith([candidate]);
+    } finally {
+      dispose();
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('discovers recovery that failed while reconnect subscription restoration was delayed', async () => {
+    mocks.api.invoke.mockResolvedValue({ status: 'connected' });
+    mocks.api.on.mockReturnValue('status-listener');
+    const listInterrupted = vi.fn().mockResolvedValue([]);
+    const show = vi.fn();
+    const dispose = installInterruptedAgentsService({ agents: { listInterrupted } }, show);
+    const { task } = startSaga();
+    try {
+      await settle();
+      let finishUnsubscribe!: () => void;
+      mocks.unsubscribe.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishUnsubscribe = resolve;
+          }),
+      );
+      mocks.reconnectHandler!();
+      await settle();
+      expect(mocks.subscribe).toHaveBeenCalledTimes(1);
+      expect(show).not.toHaveBeenCalled();
+      const candidate = {
+        agentId: 'failed-startup',
+        workspaceId: 'ws-1',
+        workspaceName: 'Workspace',
+        agentName: 'Agent',
+        prevStatus: 'active',
+        interruptedAt: '2026-09-29T00:00:00Z',
+      };
+      listInterrupted.mockResolvedValue([candidate]);
+      finishUnsubscribe();
+      await settle();
+      expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+      expect(show).toHaveBeenCalledExactlyOnceWith([candidate]);
+    } finally {
+      dispose();
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('announces firehose readiness only once a subscription id is held, on boot and reconnect', async () => {

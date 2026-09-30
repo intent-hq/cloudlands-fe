@@ -1,5 +1,6 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
@@ -8,7 +9,7 @@ import {
   getItem,
   removeItem,
   updateItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ProviderFastModeState,
   ProviderPaths,
@@ -333,6 +334,7 @@ providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload:
   };
 });
 
+providerSettingsReducer.with(hostExecutionConnectionChanged, () => initialState);
 // Keep confirmed daemon state separate from queued local intent. An older echo or
 // rejected write must never retire a newer click for the same provider.
 providerSettingsReducer.with(fastModeHydrationStarted, (state) => ({

@@ -1,4 +1,4 @@
-import { Store } from '@augmentcode/themis/svelte-store';
+import { Store } from '@themislib/themis/svelte-store';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ForgeConnectResult } from '$features/forge-auth/types';
@@ -102,6 +102,56 @@ function harness(seed = initialState, labsGitLabEnabled = false) {
 
 describe('gitlabAuthSaga', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('hydrates the cold canonical host with labs off without resuming a pending grant', async () => {
+    mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
+    const run = harness();
+    try {
+      run.dispatch(initializeGitLabAuth(undefined, 'status-only') as never);
+      await settle();
+      expect(mocks.getStatus.mock.calls).toEqual([['gitlab', undefined]]);
+      expect(run.state()).toMatchObject({
+        host: HOST,
+        statusReady: true,
+        isConfigured: true,
+        isAuthenticating: false,
+        deviceFlow: null,
+      });
+      expect(mocks.connect).not.toHaveBeenCalled();
+      expect(mocks.cancelAuth).not.toHaveBeenCalled();
+      expect(mocks.revoke).not.toHaveBeenCalled();
+      run.dispatch(setLabsGitLabEnabled(true) as never);
+      run.dispatch(setLabsGitLabEnabled(false) as never);
+      await settle();
+      expect(mocks.getStatus).toHaveBeenCalledTimes(1);
+      expect(mocks.cancelAuth).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('does not publish a held status after its owner lifetime ends', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.getStatus.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const run = harness();
+    run.dispatch(initializeGitLabAuth(undefined, 'status-only') as never);
+    expect(run.state().statusReady).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+    finish(CONFIGURED_STATUS);
+    await settle();
+    expect(run.state()).toMatchObject({
+      statusReady: false,
+      host: OTHER_HOST,
+      isConfigured: false,
+    });
+    expect(mocks.cancelAuth).not.toHaveBeenCalled();
+  });
 
   it('refuses new GitLab device/PAT setup while off and consumes the staged token', async () => {
     const run = harness();

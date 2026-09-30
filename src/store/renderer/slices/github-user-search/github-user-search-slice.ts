@@ -7,12 +7,12 @@
  * Mirrors github-repo-search: `lastQuery` records the query that produced the
  * current results so the UI can drop stale rows the moment the input diverges.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 export type GithubUserSearchItem = {
   login: string;

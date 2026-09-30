@@ -247,6 +247,7 @@ export const mockUserPreferences: UserPreferencesState = {
   reduceMotionOnBattery: false,
   labsMultiplayerEnabled: false,
   labsGitLabEnabled: false,
+  labsRemoteAgentsEnabled: false,
   labsSettingsVisible: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',

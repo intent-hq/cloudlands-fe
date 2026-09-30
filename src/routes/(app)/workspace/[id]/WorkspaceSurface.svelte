@@ -1,4 +1,11 @@
 <script lang="ts">
+  import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
+  import {
+    selectHostRole,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  const hostRole$ = selectHostRole();
+  const canCreate$ = selectWorkspaceCreationVisible();
   /**
    * Workspace Detail Page - Unified State Version
    *
@@ -803,9 +810,11 @@
     class="h-full w-full relative"
     data-workspace-id={workspaceId === 'new' ? undefined : workspaceId}
   >
-    {#if showOnboarding && $windowGuestSession$}
+    {#if showOnboarding && $hostRole$ === 'member' && $canCreate$}
+      <CompactWorkspaceInitializer isExpanded={true} />
+    {:else if showOnboarding && $hostRole$ === 'guest' && $windowGuestSession$}
       <GuestEmptyState session={$windowGuestSession$} />
-    {:else if showOnboarding}
+    {:else if showOnboarding && $hostRole$ === 'owner'}
       <OnboardingPage
         {isOnboarding}
         fadingOut={onboardingFadingOut}

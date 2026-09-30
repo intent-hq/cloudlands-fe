@@ -3,11 +3,23 @@
  */
 
 import { store } from '../../store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 /** All comments as an ordered array. */
 export const selectComments = store.createSelector((state) =>
   getItems(state.comments.commentsById),
+);
+
+/** Comments owned by this exact workspace/note. Unknown ownership is not displayable. */
+export const selectCommentsForNote = store.createSelector(
+  (state, workspaceId: string, noteId: string) =>
+    getItems(state.comments.commentsById).filter(
+      (comment) =>
+        !!workspaceId &&
+        !!noteId &&
+        comment.workspaceId === workspaceId &&
+        comment.noteId === noteId,
+    ),
 );
 
 /** Look up a single comment by id. */

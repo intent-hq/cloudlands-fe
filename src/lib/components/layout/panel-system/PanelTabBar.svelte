@@ -1850,7 +1850,7 @@
     box-shadow: var(--surface-shadow-3);
     font-size: 14px;
     line-height: 1.2;
-    font-weight: 400;
+    font-weight: 500;
   }
   :global(
     :is(.panel-header-action-button, .panel-selector-button):not(
@@ -1937,7 +1937,7 @@
   }
   .panel-selector-title {
     font-size: 12px;
-    font-weight: 400;
+    font-weight: 500;
     line-height: 1.2;
   }
   :global(.panel-selector-menu) {
@@ -1951,7 +1951,7 @@
     padding: 6px;
     border-radius: 5px;
     font-size: 12px;
-    font-weight: 400;
+    font-weight: 500;
   }
   :global(.panel-selector-menu [data-slot='menu-command-item'] span.truncate) {
     white-space: normal;
@@ -1987,7 +1987,7 @@
   :global(.panel-header-menu :is([data-slot='menu-label'], [data-panel-menu-label])) {
     font-size: 13px;
     line-height: 1.3;
-    font-weight: 400;
+    font-weight: 500;
     padding: 6px 8px;
     color: hsl(var(--muted-foreground));
   }

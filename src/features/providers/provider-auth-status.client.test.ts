@@ -1,4 +1,6 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   reconnect: undefined as undefined | (() => void),
@@ -16,8 +18,13 @@ import {
   invalidateProviderAuthStatus,
   __resetProviderAuthStatusForTests,
 } from './provider-auth-status.client';
+beforeEach(() => {
+  store.init();
+  admitLegacyPrincipal();
+});
 afterEach(() => {
   __resetProviderAuthStatusForTests();
+  store.dispose();
   vi.clearAllMocks();
 });
 it('separates workspace inflight auth and drops every context on global invalidation or reconnect', async () => {

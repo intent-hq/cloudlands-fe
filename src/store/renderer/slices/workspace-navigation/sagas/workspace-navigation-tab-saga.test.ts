@@ -1,6 +1,7 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -14,11 +15,11 @@ import { initialState as guestSessionsInitialState } from '../../guest-sessions/
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 /** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
-const ownerWindowSlices = {
+const ownerWindowSlices = withLegacyPrincipal({
   connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
   // Settled owner window: guest list received, no host joined.
   guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
-};
+});
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -396,6 +397,31 @@ describe('workspaceNavigationTabSaga', () => {
       vi.restoreAllMocks();
     },
   );
+
+  it.each([
+    ['docs/design.md#L42', undefined],
+    ['docs/design.md:17', undefined],
+    ['docs/design.md#L42', 9],
+    ['docs/design.md:17', 9],
+  ])('preserves an already parsed literal file path %s with line %s', async (filePath, line) => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      const options = { filePathIsLiteral: true, line };
+      channel.put(openWorkspaceFile('ws-1', filePath, options));
+      await settle();
+      const tab = dispatch.mock.calls[0]?.[0]?.payload?.tab;
+      expect(tab).toMatchObject({ filePath, title: filePath.split('/').pop() });
+      expect(tab.data?.line).toBe(line);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
 
   // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
   // (openInNewAdjacentPanel) permits a duplicate instead of activating an

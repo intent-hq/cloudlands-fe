@@ -1,12 +1,13 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * Agent Availability Slice
  *
  * Actions and reducer for tracking ACP provider availability status.
  */
 
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { antigravitySetupVerified } from '../antigravity-setup/antigravity-setup-slice';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { AgentAvailabilityState, ProviderStatus } from './agent-availability-types';
 import type { NpxStatus } from '$shared/types/provider-availability';
 
@@ -304,4 +305,11 @@ agentAvailabilityReducer.with(removeWatchedTerminal, (state, { payload: [termina
 agentAvailabilityReducer.with(setNpxStatus, (state, { payload: [npxStatus] }) => ({
   ...state,
   npxStatus,
+}));
+
+agentAvailabilityReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...initialState,
+  providerCheckEpochMap: Object.fromEntries(
+    Object.entries(state.providerCheckEpochMap).map(([id, epoch]) => [id, epoch + 1]),
+  ),
 }));

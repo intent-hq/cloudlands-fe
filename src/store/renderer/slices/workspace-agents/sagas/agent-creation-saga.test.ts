@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,7 +25,7 @@ vi.mock('$features/agent/services/agent-factory', async (importOriginal) => {
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import type { AgentSession, Note, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -96,13 +97,13 @@ const GUEST_SESSION: GuestSessionRecord = {
 
 // A settled owner window: the guest session list hydrated with no joined host.
 function ownerWindowIdentity() {
-  return {
+  return withLegacyPrincipal({
     connections: connectionsInitialState,
     guestSessions: guestSessionsReducer(
       guestSessionsInitialState,
       guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
     ),
-  };
+  });
 }
 
 // A settled guest window: the window's backend id is a joined host.

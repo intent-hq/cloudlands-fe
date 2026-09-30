@@ -1,3 +1,6 @@
+import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
+import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
+import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import {
   claimAgentReadOwnership,
@@ -141,6 +144,11 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  * daemon-events-saga owns two subscriptions on the socket: the global
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
+import { isHostMembershipChange } from '$shared/types/principal';
+import {
+  hostMembershipChanged,
+  principalIdentityChanged,
+} from '$store/renderer/slices/principal/principal-slice';
 import { m } from '$shared/paraglide/messages.js';
 import type {
   AgentSession,
@@ -261,7 +269,7 @@ import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
-import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import { safeParseTokenUsage } from '$features/token-usage/token-usage-schema';
 import { hydrateContextItems } from '$store/renderer/slices/context/context-slice';
 import type { ContextItem } from '$features/context/types';
 import {
@@ -1260,7 +1268,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
-  const error = data?.error;
+  const error = hostExecutionAuthorizationMessage(data?.executionAuthorization) ?? data?.error;
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
@@ -1521,8 +1529,12 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
   // open modal listing this agent re-checks agent.listInterrupted (debounced;
-  // no-op when the modal is closed or the agent is not listed).
-  notifyInterruptedAgentUpdated(agentId);
+  // no-op when the modal is closed or the agent is not listed). Startup
+  // recovery failures additionally discover retryable rows after reservation release.
+  notifyInterruptedAgentUpdated(
+    agentId,
+    (event.type as string) === 'agent:updated' && data.startupRecoveryFailed === true,
+  );
 }
 
 /**
@@ -1740,9 +1752,10 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
     typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
       ? dataWorkspaceId
       : workspaceIdOf(event);
-  const tokenUsage = data.tokenUsage;
-  if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
-  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+  if (!workspaceId) return;
+  const tokenUsage = safeParseTokenUsage(data.tokenUsage);
+  if (!tokenUsage) return;
+  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage));
 }
 
 /**
@@ -2348,7 +2361,7 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
 }
 
 async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
-  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as {
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
   };
@@ -2411,7 +2424,7 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     // setWorkspaceEntity so future events can merge into it. Re-read the
     // store here (not at trigger time) so the trailing fetch sees the
     // current entity state.
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const current = getItem(state.workspace.workspaces as never, workspaceId as never);
     if (current) {
@@ -2444,7 +2457,7 @@ async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
 ): Promise<void> {
-  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
     { activity?: 'idle' | 'agent_running' } | undefined;
@@ -2728,7 +2741,7 @@ function handleWorkspaceMembershipRemoved(
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
   for (const agentId of ownerAgentIds) {
     void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
       logger.warn('Failed to clear main-process registrations for unshared workspace tabs', {
@@ -2791,7 +2804,7 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
   // whole panel-layout entry (destroying the pinned webviews), so main's
   // CDP/ownership registrations must be collected first (monorepo#2857).
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'deleted'));
   for (const agentId of ownerAgentIds) {
     void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
       logger.warn('Failed to clear main-process registrations for deleted workspace tabs', {
@@ -2888,7 +2901,7 @@ function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const hasLocalState =
     agentIds.length > 0 || state.workspaceAgents?.byWorkspaceId[workspaceId] !== undefined;
   if (!hasLocalState) return;
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'replaced'));
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
 }
 
@@ -2947,9 +2960,11 @@ function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId:
   });
   const existing = workspaceDeleteTombstoneTimers.get(workspaceId);
   if (existing) clearTimeout(existing);
+  const expire = captureDeletionExpiry(workspaceId);
   const timer = setTimeout(() => {
-    workspaceDeleteTombstoneTimers.delete(workspaceId);
-    appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
+    if (workspaceDeleteTombstoneTimers.get(workspaceId) === timer)
+      workspaceDeleteTombstoneTimers.delete(workspaceId);
+    expire();
   }, tombstoneClearDelayMs(data?.deleteAt));
   workspaceDeleteTombstoneTimers.set(workspaceId, timer);
 }
@@ -3690,6 +3705,22 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'host:execution-context-changed') {
+    appStore.dispatch(hostExecutionInvalidated());
+    return;
+  }
+  if (type === 'host:members-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
+    return;
+  }
+  if (type === 'principal:identity-changed') {
+    const data = (event as { data?: { principalId?: unknown } }).data;
+    if (typeof data?.principalId === 'string')
+      appStore.dispatch(principalIdentityChanged(data.principalId));
+    return;
+  }
+
   // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
   // and is transient by contract, so it is folded into the presence slice
   // and never recorded on the activity timeline.
@@ -4339,6 +4370,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // presence slice. Workspace-scoped on the daemon side, so the membership
   // gate narrows it like any other row.
   'presence:changed',
+  'host:members-changed',
+  'host:execution-context-changed',
+  'principal:identity-changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(

@@ -6,6 +6,13 @@ function expectNoRowOutline(style: { outlineStyle: string }) {
   expect(style.outlineStyle, 'Task rows must not paint an outline').toBe('none');
 }
 
+test('withholds task assignment until the fixture caller is admitted', async ({ mount }) => {
+  const component = await mount(OneRowTaskSurfaceHarness, { props: { admittedOwner: false } });
+  await expect(component.locator('[data-task-item-row]')).toHaveCount(10);
+  await expect(component.locator('[data-task-row-assign]')).toHaveCount(0);
+  await expect(component.getByRole('button', { name: 'Waiting unassigned task' })).toBeVisible();
+});
+
 for (const zoom of [1, 2]) {
   for (const theme of ['light', 'dark'] as const) {
     test(`keeps every linked and delegated task on one row at ${zoom * 100}% ${theme}`, async ({

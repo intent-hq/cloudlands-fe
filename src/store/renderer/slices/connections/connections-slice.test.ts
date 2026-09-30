@@ -43,7 +43,7 @@ import type {
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
 } from './connections-types';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,

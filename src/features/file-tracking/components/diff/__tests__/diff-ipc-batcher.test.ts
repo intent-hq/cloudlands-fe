@@ -23,8 +23,7 @@ const storeState = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   return {
     store: {
       get state() {

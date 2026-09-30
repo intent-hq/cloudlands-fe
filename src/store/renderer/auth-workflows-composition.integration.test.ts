@@ -14,6 +14,7 @@ import {
 } from '$shared/types/guest-sessions';
 import { startAppStoreLifecycle, type AppStoreHmrData } from './app-store-lifecycle';
 import { startRootStoreLifecycle } from './root-store-lifecycle';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { store as appStore } from './store';
 import {
   connectionWorkflowCleared,
@@ -113,6 +114,7 @@ beforeEach(() => {
   vi.spyOn(githubAuthClient, 'getUser').mockResolvedValue(null);
   stopRoot = startRootStoreLifecycle(appStore, { startSagas: () => [] });
   stopApp = startAppStoreLifecycle(appStore, hmr);
+  admitLegacyPrincipal();
 });
 
 afterEach(() => {

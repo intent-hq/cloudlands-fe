@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 const mocks = vi.hoisted(() => ({ update: vi.fn(), error: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { updateSnapshot: mocks.update } } }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.error } }));
