@@ -8,24 +8,20 @@
  * INTENTD_BIN retains copy-sidecar's local/pre-fetched sidecar contract.
  */
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import native from './macos-native.cjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
 
 export function resolveMacArguments(argv, platform = process.platform, hostArch = process.arch) {
   const architectures = argv.filter((arg) => ['--x64', '--arm64'].includes(arg));
   if (architectures.length > 1) throw new Error('Select exactly one native Mac architecture.');
-  // A second target/config architecture selector must not bypass native staging.
-  if (
-    argv.some(
-      (arg) =>
-        /^(--(?:universal|ia32|armv7l|arch|mac|win|linux|platform)(?:=|$)|-[mwl]$)/.test(arg) ||
-        /^(?:--config\.|-c\.).*(?:arch|target)/i.test(arg.split('=')[0]) ||
-        /^(?:dmg|zip|mas|dir):/.test(arg),
-    )
-  ) {
+  // Target overrides in config are applied after the CLI target map. Keep those
+  // out of this entry point; native --mac targets are validated below instead.
+  if (argv.some((arg) => /^(?:--config\.|-c\.).*(?:arch|target)/i.test(arg.split('=')[0]))) {
     throw new Error('Use only --x64 or --arm64 to select a native Mac target.');
   }
   const arch = native.assertNativeMacArch(
@@ -33,7 +29,33 @@ export function resolveMacArguments(argv, platform = process.platform, hostArch 
     platform,
     hostArch,
   );
-  return { arch, builderArgs: argv.filter((arg) => arg !== '--' && !architectures.includes(arg)) };
+  const builderArgs = argv.filter((arg) => arg !== '--' && !architectures.includes(arg));
+  // Use exactly the installed builder's parsing and alias expansion. Validate the
+  // full command we will execute, so boolean values, aliases and short-option
+  // clusters cannot add another CPU/platform after native staging has started.
+  const { createYargs, configureBuildCommand, normalizeOptions } = builderRequire('./builder.js');
+  const parsed = configureBuildCommand(createYargs())
+    .exitProcess(false)
+    .strict()
+    .fail((message, error) => {
+      throw error || new Error(message);
+    })
+    .parseSync(['--mac', `--${arch}`, ...builderArgs]);
+  if (parsed._.length) throw new Error('Only native Mac build options are supported.');
+  const { targets } = normalizeOptions(parsed);
+  const expectedArch = arch === 'x64' ? 1 : 3;
+  if (
+    targets.size !== 1 ||
+    [...targets].some(
+      ([targetPlatform, targetArches]) =>
+        targetPlatform.buildConfigurationKey !== 'mac' ||
+        targetArches.size !== 1 ||
+        !targetArches.has(expectedArch),
+    )
+  ) {
+    throw new Error(`Mac packaging supports only the native ${arch} Mac target.`);
+  }
+  return { arch, builderArgs };
 }
 
 export function packageMac(
