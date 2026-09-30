@@ -194,7 +194,7 @@ describe('presence admission and avatar policy', () => {
   it('withholds modern rows missing authoritative hostRole without guessing from profile or workspace role', async () => {
     wire.request.mockImplementation(async (method: string) =>
       method === 'workspace.members.list'
-        ? { members: accepted().map(({ hostRole, ...p }) => p) }
+        ? { members: accepted().map(({ hostRole: _hostRole, ...p }) => p) }
         : roster(),
     );
     start();
