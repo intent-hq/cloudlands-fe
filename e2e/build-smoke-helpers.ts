@@ -5,7 +5,12 @@
  * Independent from the main e2e test-helpers — these target the packaged binary.
  */
 
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  _electron as electron,
+  expect,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
 import { execFileSync, execSync } from 'child_process';
 
 import {
@@ -322,16 +327,23 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     proc.once('close', () => logStream.end());
     await withLogging(new Promise<void>((resolve) => logStream.once('open', () => resolve())));
     const runtime = await withLogging(
-      app.evaluate(({ app: electronApp }) => ({
-        arch: process.arch,
-        platform: process.platform,
-        versions: process.versions,
-        packaged: electronApp.isPackaged,
-        executable: process.execPath,
-        appPath: electronApp.getAppPath(),
-        userData: electronApp.getPath('userData'),
-        dataDir: process.env.INTENTD_DATA_DIR,
-      })),
+      app.evaluate(({ app: electronApp }) => {
+        // Playwright close() calls app.quit() to disconnect its inspector. Keep
+        // that second quit from bypassing the SIGTERM cleanup already in flight.
+        // The app's graceful handler ends with app.exit(), which bypasses this
+        // event; only the test-owned instance receives this listener.
+        electronApp.on('before-quit', (event) => event.preventDefault());
+        return {
+          arch: process.arch,
+          platform: process.platform,
+          versions: process.versions,
+          packaged: electronApp.isPackaged,
+          executable: process.execPath,
+          appPath: electronApp.getAppPath(),
+          userData: electronApp.getPath('userData'),
+          dataDir: process.env.INTENTD_DATA_DIR,
+        };
+      }),
     );
     writeFileSync(join(logDir, `runtime-${proc.pid}.json`), JSON.stringify(runtime, null, 2));
     if (
@@ -622,50 +634,16 @@ export async function createWorkspaceWithPrompt(
     const letsGo = page.getByRole('button', { name: "Let's go" }).first();
     await letsGo.waitFor({ state: 'visible', timeout: 20_000 });
 
-    // Wait for the "Let's go" button to become enabled.  The button requires
-    // at least one provider to be available + authenticated, which involves
-    // async IPC calls + CLI checks that can be slow on cold CI runners.
-    const isEnabled = await letsGo.isEnabled().catch(() => false);
-    if (!isEnabled) {
-      console.log('⏳ "Let\'s go" button is disabled — waiting for provider availability...');
-      try {
-        await page.waitForFunction(
-          () => {
-            const btn = [...document.querySelectorAll('button')].find((b) =>
-              b.textContent?.includes("Let's go"),
-            );
-            return btn && !btn.disabled;
-          },
-          { timeout: 45_000 },
-        );
-        console.log('✅ "Let\'s go" button is now enabled');
-      } catch {
-        // Provider check didn't complete in time — bypass the welcome step
-        // by dispatching goToStep('project') through the Redux store.
-        console.warn(
-          '⚠️ "Let\'s go" button still disabled after 45s — bypassing welcome step via Redux',
-        );
-        await page.evaluate(() => {
-          const ctx = (window as any).intent?.reduxContext;
-          const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
-          if (store) {
-            store.dispatch({ type: 'onboarding/goToStep', payload: ['project'] });
-          }
-        });
-        await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
-        onboardingStep = 'project';
-      }
-    }
-
-    if (onboardingStep === 'welcome') {
-      await letsGo.click();
-      await page.locator('[data-onboarding-step="github"]').waitFor({ timeout: 10_000 });
-      onboardingStep = 'github';
-    }
+    // A real provider readiness failure must fail the journey, not bypass
+    // onboarding by mutating its store.
+    await expect(letsGo).toBeEnabled({ timeout: 45_000 });
+    await letsGo.click();
+    await page.locator('[data-onboarding-step="forge"]').waitFor({ timeout: 10_000 });
+    onboardingStep = 'forge';
   }
 
-  if (onboardingStep === 'github') {
-    // The GitHub connect step is optional — advance to project selection.
+  if (onboardingStep === 'forge') {
+    // The forge connect step is optional — advance to project selection.
     // Already-authenticated environments render "Continue" instead of
     // "Skip for now", so accept either button.
     const advanceGitHub = page.getByRole('button', { name: /Skip for now|Continue/ }).first();

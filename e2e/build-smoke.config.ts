@@ -7,10 +7,12 @@
  * Usage: pnpm test:build-smoke
  */
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
-const reportRoot = process.env.BUILD_SMOKE_REPORT_DIR ?? 'e2e-reports';
+// Playwright resolves relative outputDir against this config's e2e directory.
+// Use one absolute root so traces, JSON and HTML are included in the upload.
+const reportRoot = resolve(process.env.BUILD_SMOKE_REPORT_DIR ?? 'e2e-reports');
 
 export default defineConfig({
   testDir: '.',

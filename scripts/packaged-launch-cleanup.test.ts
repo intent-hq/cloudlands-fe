@@ -50,6 +50,7 @@ it.each([
   'log-after-handoff-close',
   'log-after-handoff-receipt',
   'log-after-handoff-close-receipt',
+  'quit-race',
 ])(
   'settles its owned handle when post-launch %s fails, preserving primary and cleanup',
   async (stage) => {
@@ -79,6 +80,12 @@ it.each([
       if (stage === 'observation') throw secondary;
       throw Object.assign(new Error('no children'), { status: 1 });
     });
+    const electronApp = Object.assign(new EventEmitter(), {
+      isPackaged: true,
+      getPath: vi.fn(),
+      getAppPath: () => '/synthetic/app.asar',
+    });
+    let gracefulCleanupCompleted = false;
     const proc = Object.assign(new EventEmitter(), {
       pid: 987654,
       exitCode: null as number | null,
@@ -86,8 +93,13 @@ it.each([
       stdout: null,
       stderr: null,
       kill: vi.fn(() => {
-        proc.exitCode = 0;
-        proc.emit('close', 0);
+        const finish = () => {
+          gracefulCleanupCompleted = true;
+          proc.exitCode = 0;
+          proc.emit('close', 0);
+        };
+        if (stage === 'quit-race') setImmediate(finish);
+        else finish();
         return true;
       }),
     });
@@ -95,6 +107,12 @@ it.each([
       process: () => proc,
       close: vi.fn(async () => {
         if (stage.includes('close')) throw secondary;
+        if (stage === 'quit-race') {
+          const event = { preventDefault: vi.fn() };
+          electronApp.emit('before-quit', event);
+          expect(gracefulCleanupCompleted).toBe(false);
+          expect(event.preventDefault).toHaveBeenCalledOnce();
+        }
       }),
       evaluate: vi.fn(),
       firstWindow: vi.fn(async () => {
@@ -113,7 +131,11 @@ it.each([
     mocks.launch.mockImplementation(async (options) => {
       const profile = options.env.INTENTD_DATA_DIR.slice(0, -'/intentd'.length);
       roots.push(profile);
-      app.evaluate.mockImplementation(async () => {
+      app.evaluate.mockImplementation(async (callback) => {
+        if (stage === 'quit-race') {
+          electronApp.getPath.mockReturnValue(join(profile, 'electron'));
+          return { ...callback({ app: electronApp }), dataDir: options.env.INTENTD_DATA_DIR };
+        }
         if (stage === 'log-write') {
           queueMicrotask(() => logStream.emit('error', primary));
           return await new Promise(() => {});
@@ -137,6 +159,7 @@ it.each([
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
     expect(app.close).toHaveBeenCalledOnce();
     expect(proc.exitCode).toBe(0);
+    expect(gracefulCleanupCompleted).toBe(true);
     if (stage.startsWith('log-after-handoff') && stage !== 'log-after-handoff') {
       const flatten = (value: any): any[] =>
         value instanceof AggregateError ? value.errors.flatMap(flatten) : [value];
