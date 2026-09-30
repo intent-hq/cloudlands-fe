@@ -266,6 +266,7 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
     await loaded();
     const before = await fixture.snapshot();
     const offset = fixture.renderer.received.length;
+    const broadBegin = fixture.observer.frames.length;
     await fixture.promote();
     await waitFor(() => expect(target()).toBeNull(), { timeout: 10_000 });
     const frames = fixture.renderer.received.slice(offset).filter(isSharedPresence);
@@ -283,6 +284,17 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
         ),
       'existing note observer sees changed target',
     );
+    // Promotion itself emits the note profile update above. Observe that on the
+    // already-authorized different-principal lease, then prove it stayed out of
+    // the broader firehose. No new target hello/note action repairs its cache.
+    const broadEvents = await fixture.observerEventsThroughMarker(broadBegin);
+    expect(broadEvents.some((event) => event.type === 'presence:changed')).toBe(true);
+    for (const event of broadEvents) {
+      expect(event.workspaceId).toBe(fixture.workspaceId);
+      expect(['host:members-changed', 'host:invites-changed', 'note:presence']).not.toContain(
+        event.type,
+      );
+    }
     expect(fixture.targetLease!.wire.readyState).toBe(1);
     expect(people().find((p) => p.principalId === fixture.stable.principalId)).toMatchObject({
       hostRole: 'guest',
@@ -362,6 +374,7 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
     await mount();
     await loaded();
     const begin = fixture.renderer.received.length;
+    const broadBegin = fixture.observer.frames.length;
     await fixture.owner.request('workspace.update', {
       workspaceId: fixture.privateWorkspaceId,
       title: 'Private change',
@@ -374,6 +387,17 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
       .map((f) => f.params!.event);
     expect(events.some((e) => e.type === 'presence:changed')).toBe(true);
     for (const event of events) {
+      expect(event.workspaceId).toBe(fixture.workspaceId);
+      expect(['host:members-changed', 'host:invites-changed', 'note:presence']).not.toContain(
+        event.type,
+      );
+    }
+    // The real renderer does not subscribe to every sensitive event type. The
+    // existing raw observer explicitly requests host invites and note presence;
+    // its own FIFO marker bounds these additional egress-negative assertions.
+    const broadEvents = await fixture.observerEventsThroughMarker(broadBegin);
+    expect(broadEvents.some((event) => event.type === 'presence:changed')).toBe(true);
+    for (const event of broadEvents) {
       expect(event.workspaceId).toBe(fixture.workspaceId);
       expect(['host:members-changed', 'host:invites-changed', 'note:presence']).not.toContain(
         event.type,

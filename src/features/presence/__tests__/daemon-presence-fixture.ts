@@ -244,6 +244,7 @@ export class DaemonPresenceFixture {
   private fingerprint = '';
   owner!: RpcSocket;
   observer!: RpcSocket;
+  private observerSubscription = '';
   target!: Guest;
   remaining!: Guest;
   stable!: Guest;
@@ -321,44 +322,64 @@ export class DaemonPresenceFixture {
     const token = randomBytes(32).toString('hex');
     // Whitelist, rather than inherit credentials, socket targets or node injection.
     const daemonLog = await open(join(this.root, 'daemon.log'), 'wx', 0o600);
-    this.child = spawn(input.daemonPath, ['serve'], {
-      detached: true,
-      stdio: ['ignore', 'ignore', daemonLog.fd],
-      env: {
-        PATH: process.env.PATH,
-        LANG: 'C.UTF-8',
-        TMPDIR: this.root,
-        INTENTD_DATA_DIR: this.root,
-        INTENTD_WORKSPACES_DIR: workspaces,
-        INTENTD_ASSERT_HERMETIC_ROOT: '1',
-        INTENTD_AUTH_TOKEN: token,
-        INTENTD_TCP_PORT: '0',
-        INTENTD_SECRETS_FILE: join(this.root, 'secrets.json'),
-        GH_CONFIG_DIR: gh,
-        INTENTD_TAILCAT_BIN: tailcat,
-        INTENTD_GITHUB_API_BASE_URI: base,
-        INTENTD_GITHUB_LOGIN_BASE_URI: base,
-        INTENTD_GITLAB_API_BASE_URI: base,
-      },
-    });
-    await daemonLog.close();
-    this.child.on('error', () => undefined);
-    if (!this.child.pid) throw new Error('Fixture daemon did not spawn');
-    this.childStart = await processIdentity(this.child.pid);
-    this.ownedIdentities.set(this.child.pid, this.childStart);
-    await writeFile(
-      join(this.evidence, 'owned-child.json'),
-      JSON.stringify(
-        {
-          pid: this.child.pid,
-          startIdentity: this.childStart,
-          root: this.root,
+    const startupFailures: unknown[] = [];
+    try {
+      this.child = spawn(input.daemonPath, ['serve'], {
+        detached: true,
+        stdio: ['ignore', 'ignore', daemonLog.fd],
+        env: {
+          PATH: process.env.PATH,
+          LANG: 'C.UTF-8',
+          TMPDIR: this.root,
+          INTENTD_DATA_DIR: this.root,
+          INTENTD_WORKSPACES_DIR: workspaces,
+          INTENTD_ASSERT_HERMETIC_ROOT: '1',
+          INTENTD_AUTH_TOKEN: token,
+          INTENTD_TCP_PORT: '0',
+          INTENTD_SECRETS_FILE: join(this.root, 'secrets.json'),
+          GH_CONFIG_DIR: gh,
+          INTENTD_TAILCAT_BIN: tailcat,
+          INTENTD_GITHUB_API_BASE_URI: base,
+          INTENTD_GITHUB_LOGIN_BASE_URI: base,
+          INTENTD_GITLAB_API_BASE_URI: base,
         },
-        null,
-        2,
-      ),
-      { mode: 0o600 },
-    );
+      });
+      // Establish both handlers synchronously before the first await. A hash-
+      // valid but non-executable/disappearing archive rejects through start().
+      const spawned = new Promise<void>((resolve, reject) => {
+        this.child!.once('spawn', resolve);
+        this.child!.on('error', reject);
+      });
+      await spawned;
+      if (!this.child.pid) throw new Error('Fixture daemon did not spawn');
+      this.childStart = await processIdentity(this.child.pid);
+      this.ownedIdentities.set(this.child.pid, this.childStart);
+      await writeFile(
+        join(this.evidence, 'owned-child.json'),
+        JSON.stringify(
+          {
+            pid: this.child.pid,
+            startIdentity: this.childStart,
+            root: this.root,
+          },
+          null,
+          2,
+        ),
+        { mode: 0o600 },
+      );
+    } catch (error) {
+      startupFailures.push(error);
+    } finally {
+      try {
+        await daemonLog.close();
+      } catch (error) {
+        startupFailures.push(error);
+      }
+    }
+    if (startupFailures.length)
+      throw new AggregateError(startupFailures, 'Fixture daemon startup failed');
+    if (!this.child?.pid || !this.childStart)
+      throw new Error('Fixture daemon ownership was not established');
     let status: Row | undefined;
     await eventually(async () => {
       if (this.child?.exitCode !== null) throw new Error('Fixture daemon exited before readiness');
@@ -410,7 +431,7 @@ export class DaemonPresenceFixture {
     this.remaining = await this.join('remaining-guest');
     this.stable = await this.join('stable-guest');
     this.observer = this.connect(this.remaining.token);
-    await this.observer.request('events.subscribe', {
+    const observerSubscription = await this.observer.request('events.subscribe', {
       eventTypes: [
         'presence:changed',
         'workspace:updated',
@@ -419,6 +440,12 @@ export class DaemonPresenceFixture {
         'note:presence',
       ],
     });
+    if (
+      typeof observerSubscription.subscriptionId !== 'string' ||
+      !observerSubscription.subscriptionId
+    )
+      throw new Error('Broad observer subscription missing');
+    this.observerSubscription = observerSubscription.subscriptionId;
     this.renderer = new RendererWire(this.port, this.fingerprint, this.remaining.token);
   }
   private udsStatus(): Promise<Row> {
@@ -562,6 +589,29 @@ export class DaemonPresenceFixture {
     return (await this.observer.request('workspace.get', { workspaceId: this.workspaceId }))
       .workspace;
   }
+  async observerEventsThroughMarker(start: number) {
+    const title = `raw-marker-${randomBytes(8).toString('hex')}`;
+    await this.owner.request('workspace.update', { workspaceId: this.workspaceId, title });
+    const isMarker = (frame: Frame) =>
+      frame.method === 'events.event' &&
+      frame.params?.subscriptionId === this.observerSubscription &&
+      frame.params.event?.type === 'workspace:updated' &&
+      frame.params.event.data?.changes?.title === title;
+    await eventually(
+      () => this.observer.frames.slice(start).some(isMarker),
+      'broad observer own-subscription FIFO marker',
+    );
+    const frames = this.observer.frames.slice(start);
+    const marker = frames.findIndex(isMarker);
+    return frames
+      .slice(0, marker + 1)
+      .filter(
+        (frame) =>
+          frame.method === 'events.event' &&
+          frame.params?.subscriptionId === this.observerSubscription,
+      )
+      .map((frame) => frame.params!.event);
+  }
   async close() {
     const failures: unknown[] = [];
     try {
@@ -577,6 +627,10 @@ export class DaemonPresenceFixture {
       }
     }
     if (this.child?.pid) {
+      if (!this.childStart)
+        failures.push(
+          new Error('Spawned child identity was not recorded; cleanup cannot claim absence'),
+        );
       try {
         // Walk only the process tree rooted at this recorded child; never scan
         // unrelated processes. Retain identities before sending any signal.
