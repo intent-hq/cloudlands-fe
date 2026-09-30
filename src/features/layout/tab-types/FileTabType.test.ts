@@ -140,6 +140,7 @@ const {
     loadFileContentRequested: makeAction('files/loadFileContentRequested'),
     saveFileContentRequested: makeAction('files/saveFileContentRequested'),
     updateFileContent: makeAction('files/updateFileContent'),
+    deleteFileWithUndoRequested: makeAction('files/deleteFileWithUndoRequested'),
     removeFileContentEntry: makeAction('files/removeFileContentEntry'),
     updateFileTabPath: makeAction('panelLayout/updateFileTabPath'),
   };
@@ -318,6 +319,41 @@ describe('FileTabType Redux integration', () => {
   }
 
   const fileNode = (name: string): FileNode => ({ name, path: name, type: 'file' });
+
+  it('dispatches delete intent with the current draft and immutable workspace/tab identity', async () => {
+    renderFileTab();
+    const editor = await screen.findByTestId('code-editor');
+    await fireEvent.input(editor, { target: { value: 'unsaved draft' } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+    );
+    expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith('ws-1', 'src/main.ts', {
+      absolutePath: '/repo/src/main.ts',
+      tabId: 'tab-1',
+      content: 'unsaved draft',
+    });
+  });
+
+  it('flushes the old workspace and root when switching an edited tab to another workspace', async () => {
+    const view = renderFileTab();
+    await fireEvent.input(await screen.findByTestId('code-editor'), {
+      target: { value: 'old workspace draft' },
+    });
+    mockReduxState.workspace = { id: 'ws-2', worktreePath: '/other', repositoryPath: '/other' };
+    await view.rerender({
+      tab: fileTab,
+      workspaceId: 'ws-2',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    expect(actionMocks.saveFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      'src/main.ts',
+      '/repo/src/main.ts',
+      'old workspace draft',
+    );
+  });
   const directoryNode = (name: string): FileNode => ({ name, path: name, type: 'directory' });
 
   function mockIgnoredArtifacts() {

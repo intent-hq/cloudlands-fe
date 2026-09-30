@@ -5,8 +5,8 @@ import { getMcpServerKey } from '$lib/components/settings/mcp/types';
  * Actions and reducer for MCP server management.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';

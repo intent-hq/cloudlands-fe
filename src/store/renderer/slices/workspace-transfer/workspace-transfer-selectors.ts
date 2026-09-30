@@ -2,7 +2,7 @@
  * Workspace Transfer Selectors
  */
 
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import type { ConnectionRecord } from '../connections/connections-types';
 

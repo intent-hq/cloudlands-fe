@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { HostMembershipChange, PrincipalSnapshot } from '$shared/types/principal';
 import { backendReconnected } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {

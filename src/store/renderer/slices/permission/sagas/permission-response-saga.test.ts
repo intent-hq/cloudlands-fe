@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ respondPermission: vi.fn() }));
 vi.mock('$lib/client', () => ({
@@ -18,7 +18,7 @@ import {
   type PermissionRequest,
 } from '../permission-slice';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { permissionResponseSaga } from './permission-response-saga';
 
 const settle = async () => {

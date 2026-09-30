@@ -7,7 +7,7 @@ import {
   createCollection,
   getItem,
   getItems,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import {
   beginWorkspaceTitleMutation,
   bulkUpdateWorkspaceEntities,

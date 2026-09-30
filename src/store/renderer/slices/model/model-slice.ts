@@ -1,8 +1,8 @@
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { backgroundSettingsSaveSettled } from '../background-agent-settings/background-agent-settings-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {

@@ -7,12 +7,12 @@ import { hostExecutionConnectionChanged } from '../host-execution/host-execution
  * populate the collection. The slice is automatically re-loaded on GitHub
  * auth changes and cleared on sign-out. Components never call IPC directly.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 /**
  * Normalized repo shape stored in the Collection. `id` is derived at the

@@ -1,12 +1,12 @@
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   getItems,
   removeItem,
   upsertItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,

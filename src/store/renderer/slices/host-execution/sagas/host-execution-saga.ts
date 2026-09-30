@@ -1,6 +1,6 @@
 import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, put, race, take } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { hostExecutionContextSchema } from '$shared/types/host-execution';

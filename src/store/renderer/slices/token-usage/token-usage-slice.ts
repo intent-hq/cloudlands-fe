@@ -8,8 +8,8 @@
  * `workspace:tokenUsage-changed` push.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import type { TokenUsage } from '../../../../features/token-usage/token-usage-types';
 import type { TokenUsageState } from './token-usage-types';

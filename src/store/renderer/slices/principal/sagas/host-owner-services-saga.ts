@@ -1,5 +1,5 @@
 import { all, call, fork, put } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { selectHostAdministrationContext } from '../principal-selectors';
 import { initializeGitHubAuth, logoutCompleted } from '../../github-auth/github-auth-slice';
 import { initializeGitLabAuth, resetGitLabAdmission } from '../../gitlab-auth/gitlab-auth-slice';

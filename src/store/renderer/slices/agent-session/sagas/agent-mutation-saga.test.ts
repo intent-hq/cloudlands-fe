@@ -52,7 +52,7 @@ import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { store as appStore } from '$store/renderer/store';
 import type { AgentSession, Workspace } from '$shared/types';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { AgentStatus } from '$shared/types';
 import {
   refreshWorkspaceSubscriptionEntriesRequested,

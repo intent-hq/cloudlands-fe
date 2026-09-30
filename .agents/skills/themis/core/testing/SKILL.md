@@ -11,7 +11,7 @@ requires:
   - core/sagas
   - core/state-integrity
 sources:
-  - "@augmentcode/themis/docs/TESTING.md"
+  - "@themislib/themis/docs/TESTING.md"
   - ../SKILL.md
 triggers:
   - vi mock typed-redux-saga
@@ -21,7 +21,7 @@ triggers:
 ---
 # Testing — reducer, selector, and saga checks
 
-> Operational testing checklist. Human-facing examples: `@augmentcode/themis/docs/TESTING.md`. Saga effect details: `../sagas/SKILL.md`. Canonical checklist: [Layer rules](#layer-rules) and [Saga test setup cues](#saga-test-setup-cues).
+> Operational testing checklist. Human-facing examples: `@themislib/themis/docs/TESTING.md`. Saga effect details: `../sagas/SKILL.md`. Canonical checklist: [Layer rules](#layer-rules) and [Saga test setup cues](#saga-test-setup-cues).
 
 ## Use when
 
@@ -91,8 +91,8 @@ vi.doMock("typed-redux-saga", async () => {
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { createAction, createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction, createAsyncAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type TodosState = { items: string[]; filter: "all" | "open"; loading: boolean; error: string };
 const setFilter = createAction<[filter: TodosState["filter"]]>("todos/setFilter");
@@ -181,13 +181,13 @@ describe("todosRootSaga", () => {
 ## Verification cues
 
 - Run the smallest relevant test scope first, then broader validation if needed.
-- Run architecture validation for state/actions/selectors/sagas changes when in scope: `npm run validate:architecture` in this repository, or run ESLint with the app's composed domain root config imported from `@augmentcode/themis/eslint-plugins` in a consuming app.
+- Run architecture validation for state/actions/selectors/sagas changes when in scope: `npm run validate:architecture` in this repository, or run ESLint with the app's composed domain root config imported from `@themislib/themis/eslint-plugins` in a consuming app.
 - Review docs/skills examples after changing them and run the smallest relevant test scope first.
-- Manual review should confirm detailed background stays in `@augmentcode/themis/docs/TESTING.md` while this skill keeps only concise, gate-focused examples.
+- Manual review should confirm detailed background stays in `@themislib/themis/docs/TESTING.md` while this skill keeps only concise, gate-focused examples.
 
 ## See also
 
-- `@augmentcode/themis/docs/TESTING.md` — human reference with reducer, selector, saga, and integration examples.
+- `@themislib/themis/docs/TESTING.md` — human reference with reducer, selector, saga, and integration examples.
 - `core/reducers/SKILL.md` — reducer purity and reference equality.
 - Selected Store family selector skill — `.select(state)` selector testing.
 - `core/sagas/SKILL.md` — saga effect and watcher conventions.

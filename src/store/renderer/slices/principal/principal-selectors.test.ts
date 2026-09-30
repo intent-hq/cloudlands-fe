@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';

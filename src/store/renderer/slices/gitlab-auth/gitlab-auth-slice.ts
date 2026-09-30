@@ -1,7 +1,7 @@
 import { DEFAULT_GITLAB_HOST } from '$features/forge-auth/constants';
 import type { ForgeAuthMethod, ForgeDeviceFlowInfo, ForgeUser } from '$features/forge-auth/types';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { GitLabAuthChangedStatus, GitLabAuthState } from './gitlab-auth-types';
 
 // ============================================================================

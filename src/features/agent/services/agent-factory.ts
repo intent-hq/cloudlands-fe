@@ -462,6 +462,12 @@ export class UnifiedAgentFactory {
         // pair together so later picker mutations address the actual session.
         agent.provider = backendResult.provider ?? agent.provider;
         agent.model = backendResult.model ?? agent.model;
+        // Only the daemon can confirm the durable prompt identity. An omitted
+        // marker must not leave the requested version in the reusable-chat cache.
+        agent.metadata = {
+          ...agent.metadata,
+          chiefPromptVersion: backendResult.chiefPromptVersion,
+        };
       }
 
       logger.debug('Backend agent created', {
@@ -731,6 +737,7 @@ export class UnifiedAgentFactory {
     agentId?: string;
     provider?: string | null;
     model?: string | null;
+    chiefPromptVersion?: number;
     error?: string;
     cause?: unknown;
   }> {
@@ -776,6 +783,7 @@ export class UnifiedAgentFactory {
         agentId: created.id ? String(created.id) : undefined,
         provider: created.provider,
         model: created.model,
+        chiefPromptVersion: created.metadata?.chiefPromptVersion,
       };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);

@@ -3241,7 +3241,7 @@ describe('ModelPicker selected-model loading state', () => {
     mockModelState.availableModelsProviderId = 'auggie';
   });
 
-  it('shows a loader instead of the warning while availability has not hydrated yet, then clears once the model arrives', async () => {
+  it('keeps the trigger quiet while availability hydrates, then shows the resolved model', async () => {
     // Regression (transient warning on refresh): with the availability list not
     // hydrated, fetchAllProviderModels([]) marks the catalog "loaded" while
     // empty — the selected model must read as still-loading, not unavailable.
@@ -3259,17 +3259,17 @@ describe('ModelPicker selected-model loading state', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
 
     // Availability hydrates and the provider's catalog resolves with the model.
     hasCheckedOnce$.set(true);
     availableProviderOverride$.set(['auggie']);
 
     await waitFor(() => {
-      expect(screen.queryByRole('status')).toBeNull();
+      expect(trigger.textContent).toContain('Sonnet 4.6');
     });
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-    expect(trigger.textContent).toContain('Sonnet 4.6');
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('treats a bare selected model as available when its provider catalog uses a compound id', async () => {
@@ -3307,7 +3307,7 @@ describe('ModelPicker selected-model loading state', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
 
     hasCheckedOnce$.set(true);
     availableProviderOverride$.set(['auggie']);

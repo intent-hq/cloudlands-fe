@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
   initialState,
   permissionRequestReceived,

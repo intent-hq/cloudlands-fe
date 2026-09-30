@@ -1,6 +1,6 @@
 import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, put, take } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { settingsFormSaga } from './settings-form-saga';
 import { settingsMigrationsSaga } from './settings-migrations-saga';
 import { websocketApiSaga } from '../../websocket-api/sagas/websocket-api-saga';

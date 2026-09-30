@@ -1,5 +1,5 @@
 import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
-import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

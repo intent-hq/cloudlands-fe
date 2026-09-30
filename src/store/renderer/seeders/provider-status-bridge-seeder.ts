@@ -65,7 +65,7 @@ import {
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from '$shared/ipc/channels';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
   selectHostRole,

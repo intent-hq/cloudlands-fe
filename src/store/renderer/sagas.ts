@@ -8,7 +8,7 @@ import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-
  * initialization so their lifetime belongs to the renderer root.
  */
 
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 
 import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';

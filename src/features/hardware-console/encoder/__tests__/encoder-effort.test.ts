@@ -21,7 +21,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { getItem, updateItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, updateItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareDeviceModel } from '../../input/types';
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';

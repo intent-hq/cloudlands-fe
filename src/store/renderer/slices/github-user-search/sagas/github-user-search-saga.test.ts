@@ -16,7 +16,7 @@ import {
   clearGithubUserSearch,
   searchGithubUsers,
 } from '$store/renderer/slices/github-user-search/github-user-search-slice';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { githubUserSearchSaga, USER_SEARCH_DEBOUNCE_MS } from './github-user-search-saga';
 
 type Fn = ReturnType<typeof vi.fn>;

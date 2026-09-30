@@ -8,7 +8,7 @@
  * window's HardwareConsoleManager sees the same raw channel-2 stream.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../device/device-manager';
 import { normalizeActionMappingsByModel } from '../actions/action-mapping';
 import { normalizeCycleScopeByFamily } from '../actions/cycle-scope';

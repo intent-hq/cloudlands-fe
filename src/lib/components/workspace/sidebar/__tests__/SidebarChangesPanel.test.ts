@@ -2369,7 +2369,7 @@ describe('SidebarChangesPanel', () => {
   describe('Git root dropdown', () => {
     async function seedGitRoots(roots: Array<Record<string, any>>) {
       const { createCollection } =
-        await import('@augmentcode/themis/utils/collections/collection-utils');
+        await import('@themislib/themis/utils/collections/collection-utils');
       mockStoreState.value = {
         gitRoots: {
           byWorkspaceId: {

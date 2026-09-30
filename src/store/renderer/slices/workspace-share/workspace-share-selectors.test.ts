@@ -6,7 +6,7 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 import { describe, expect, it } from 'vitest';
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HostPrincipal, WorkspaceMember } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import type { StoreState } from '../../types';

@@ -4,6 +4,57 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.190.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.2...v2.190.3) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.121 ([#3020](https://github.com/intent-hq/cloudlands-fe/issues/3020)) ([5163dae](https://github.com/intent-hq/cloudlands-fe/commit/5163dae35ccd0c42489242929fd201ab86537e55))
+
+## [2.190.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.1...v2.190.2) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.120 ([#3017](https://github.com/intent-hq/cloudlands-fe/issues/3017)) ([23a0bca](https://github.com/intent-hq/cloudlands-fe/commit/23a0bcaa077e1bb02063ebea53c06e65f333a35e))
+* load dependency CSS in harnesses and serialize native builds ([#3014](https://github.com/intent-hq/cloudlands-fe/issues/3014)) ([9bcd7bd](https://github.com/intent-hq/cloudlands-fe/commit/9bcd7bd88f9d195b518bec57fecb41e96c7a99d1))
+* remove wrapping quotes from file tool titles ([#3016](https://github.com/intent-hq/cloudlands-fe/issues/3016)) ([1fb4409](https://github.com/intent-hq/cloudlands-fe/commit/1fb44094e81a5500a47123d4cbc9256527b0c505))
+
+## [2.190.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.0...v2.190.1) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* load previous user messages from unloaded history ([#3001](https://github.com/intent-hq/cloudlands-fe/issues/3001)) ([9b0fc87](https://github.com/intent-hq/cloudlands-fe/commit/9b0fc8750afe538b3be8b5c8f4b5adbb228a4058))
+* verify locale completeness for affected changes ([#6293](https://github.com/intent-hq/cloudlands-fe/issues/6293)) ([#2999](https://github.com/intent-hq/cloudlands-fe/issues/2999)) ([eac3ef4](https://github.com/intent-hq/cloudlands-fe/commit/eac3ef42ab8ef9df40ef2571f277f1cde9d54a0e))
+
+## [2.190.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.2...v2.190.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* add floating animated chat scroll button ([#3004](https://github.com/intent-hq/cloudlands-fe/issues/3004)) ([eaa5948](https://github.com/intent-hq/cloudlands-fe/commit/eaa5948022de10f237702a9c96ca7cdd722cdff0))
+
+## [2.189.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.1...v2.189.2) (2026-09-29)
+
+
+### 🐛 Bug Fixes
+
+* raise panel header and dropdown font weight ([#3007](https://github.com/intent-hq/cloudlands-fe/issues/3007)) ([f6ea294](https://github.com/intent-hq/cloudlands-fe/commit/f6ea29434a48ec2f8829c839d1c9fd94b76475d8))
+* simplify browser tab menu actions ([#3005](https://github.com/intent-hq/cloudlands-fe/issues/3005)) ([7507cca](https://github.com/intent-hq/cloudlands-fe/commit/7507ccaf695696129e472dd4b819a8edfb53ad77))
+
+## [2.189.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.0...v2.189.1) (2026-09-29)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.119 ([#3006](https://github.com/intent-hq/cloudlands-fe/issues/3006)) ([3d9b5d6](https://github.com/intent-hq/cloudlands-fe/commit/3d9b5d61142e778165fadb579351d75864a15aa4))
+* change usage card label to Build with Intent ([#2998](https://github.com/intent-hq/cloudlands-fe/issues/2998)) ([4a455e7](https://github.com/intent-hq/cloudlands-fe/commit/4a455e72ff0c46504c13145fa52e29ce166d7655))
+* discover failed startup recovery without reconnecting ([#2994](https://github.com/intent-hq/cloudlands-fe/issues/2994)) ([a841080](https://github.com/intent-hq/cloudlands-fe/commit/a841080163dcd70f2a3d98b10f3a37c16e0a9359))
+* explain all specialist provider pins ([#2968](https://github.com/intent-hq/cloudlands-fe/issues/2968)) ([abadf5d](https://github.com/intent-hq/cloudlands-fe/commit/abadf5db902d39771814d9559f20d12a8c0bfe96))
+* **files:** Consolidate filesystem effects in existing saga owners ([#2983](https://github.com/intent-hq/cloudlands-fe/issues/2983)) ([ba8ac2e](https://github.com/intent-hq/cloudlands-fe/commit/ba8ac2eb0437c2d9011a3afdbf193477a2699d10))
+* preserve sequence notes and mirrored actors ([#3000](https://github.com/intent-hq/cloudlands-fe/issues/3000)) ([b68def4](https://github.com/intent-hq/cloudlands-fe/commit/b68def4eb67bef2bbcbb7ec89d7b39fa619eac82))
+
 ## [2.189.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.188.1...v2.189.0) (2026-09-29)
 
 

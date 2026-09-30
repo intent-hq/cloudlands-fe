@@ -1,4 +1,4 @@
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, put, take } from 'typed-redux-saga';
 

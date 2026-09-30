@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { appClient } from '$lib/client';
+  import { Toast } from '$lib/components/ui/toast';
   import { onDestroy } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import type { AgentMessage, AgentSession } from '$shared/types';
@@ -21,7 +23,11 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { scrollbackFetchStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import {
+    chatTranscriptSnapshotApplied,
+    scrollbackFetchStarted,
+    scrollbackGapPageSettled,
+  } from '$store/renderer/slices/chat-state/chat-state-slice';
 
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
@@ -33,12 +39,22 @@
     historyMessages = [],
     historyGap = false,
     historyStartLoaded = true,
+    totalMessages = 1000,
+    conversationPages = [],
+    deferPages = false,
+    retired = false,
   }: {
     theme?: 'light' | 'dark';
     messages?: AgentMessage[];
     historyMessages?: AgentMessage[];
     historyGap?: boolean;
     historyStartLoaded?: boolean;
+    totalMessages?: number;
+    conversationPages?: (
+      Awaited<ReturnType<typeof appClient.agents.getConversation>> | { error: string }
+    )[];
+    deferPages?: boolean;
+    retired?: boolean;
   } = $props();
 
   $effect(() => {
@@ -113,6 +129,7 @@
     workspaceId,
     name: 'Navigation agent',
     status: 'idle',
+    retiredAt: retired ? timestamp : undefined,
     isActive: false,
     isStreaming: false,
     isProcessing: false,
@@ -155,6 +172,9 @@
     // real panel otherwise drops a detached segment on return to the live tail.
     if (historyGap) store.dispatch(scrollbackFetchStarted(agentId, 'gap'));
   }
+  if (!historyStartLoaded) {
+    store.dispatch(chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages }));
+  }
   store.dispatch(setAgents(workspaceId, [session]));
   store.dispatch(
     initializeLayout(workspaceId, {
@@ -195,7 +215,56 @@
     );
   }
 
-  onDestroy(disposeStore);
+  const navigationState$ = store.createSelector((state) => ({
+    historyIds:
+      state.agentSessions?.historySegmentsByAgentId?.[agentId]?.messages.map((m) => m.id) ?? [],
+    busy: state.chatState?.byAgentId[agentId]?.fetchingHistorySeek ?? false,
+  }))();
+  let pageResponses = $state(0);
+  let panelMounted = $state(true);
+  let pageRequests = $state<string[]>([]);
+  const pendingPages: (() => void)[] = [];
+  const originalGetConversation = appClient.agents.getConversation;
+  if (conversationPages.length > 0) {
+    appClient.agents.getConversation = async (
+      requestedAgentId,
+      limit,
+      token,
+      anchor,
+      ordinal,
+      requestedWorkspaceId,
+    ) => {
+      if (
+        requestedAgentId !== agentId ||
+        requestedWorkspaceId !== workspaceId ||
+        limit !== 200 ||
+        ordinal !== undefined
+      )
+        throw new Error('Unexpected conversation request');
+      const pageIndex = pageRequests.length;
+      pageRequests = [...pageRequests, token ?? anchor ?? 'unanchored'];
+      if (deferPages) await new Promise<void>((resolve) => pendingPages.push(resolve));
+      pageResponses++;
+      const page = conversationPages[pageIndex];
+      if (!page) throw new Error('Unexpected extra page');
+      if ('error' in page) throw new Error(page.error);
+      return structuredClone(page);
+    };
+  }
+  function discardTranscript() {
+    store.dispatch(
+      chatTranscriptSnapshotApplied(agentId, {
+        truncated: true,
+        totalMessages: 1000,
+        resumed: false,
+      }),
+    );
+  }
+  onDestroy(() => {
+    appClient.agents.getConversation = originalGetConversation;
+    for (const release of pendingPages) release();
+    disposeStore();
+  });
 </script>
 
 <div
@@ -203,7 +272,25 @@
   data-testid="message-navigator-integration-host"
   data-theme={theme}
 >
-  <PanelLayout {workspaceId} layoutId={workspaceId} contained />
+  <Toast />
+  <span class="sr-only" data-testid="navigation-state">{JSON.stringify($navigationState$)}</span>
+  <span class="sr-only" data-testid="page-responses">{pageResponses}</span>
+  <span class="sr-only" data-testid="page-requests">{JSON.stringify(pageRequests)}</span>
+  <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
+    >Release page</button
+  >
+  <button class="sr-only" data-testid="discard-transcript" onclick={discardTranscript}
+    >Discard transcript</button
+  >
+  <button
+    class="sr-only"
+    data-testid="settle-gap"
+    onclick={() => store.dispatch(scrollbackGapPageSettled(agentId, null))}>Settle gap</button
+  >
+  <button class="sr-only" data-testid="toggle-panel" onclick={() => (panelMounted = !panelMounted)}
+    >Toggle panel</button
+  >
+  {#if panelMounted}<PanelLayout {workspaceId} layoutId={workspaceId} contained />{/if}
   <button
     type="button"
     class="sr-only"

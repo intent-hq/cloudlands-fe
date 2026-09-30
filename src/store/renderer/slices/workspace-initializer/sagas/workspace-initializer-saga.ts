@@ -2,7 +2,7 @@ import {
   selectCanAdministerHost,
   selectHostAdministrationContext,
 } from '../../principal/principal-selectors';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { buffers } from 'redux-saga';
 import {
   actionChannel,

@@ -4,7 +4,7 @@ import { scriptsOperationSaga } from '../scripts/sagas/scripts-operation-saga';
 import { startScriptRequested } from '../scripts/scripts-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { principalReceived, hostMembershipChanged } from '../principal/principal-slice';

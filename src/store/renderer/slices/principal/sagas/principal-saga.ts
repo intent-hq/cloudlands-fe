@@ -1,6 +1,6 @@
 import { buffers } from 'redux-saga';
 import { actionChannel, call, delay, put, race, take } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import {
   IncompatiblePrincipalResponse,
   isRetryablePrincipalError,

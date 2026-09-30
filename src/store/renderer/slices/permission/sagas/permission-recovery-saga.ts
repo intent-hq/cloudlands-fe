@@ -1,6 +1,6 @@
 import { actionChannel, call, flush, put, type SagaGenerator } from 'typed-redux-saga';
 import { buffers } from 'redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { selectWorkspacePermissionContext } from '../../workspace/workspace-selectors';
 import { selectPermissionRecoveryScope } from '../permission-selectors';

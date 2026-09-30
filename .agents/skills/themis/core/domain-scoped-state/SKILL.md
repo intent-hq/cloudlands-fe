@@ -9,7 +9,7 @@ requires:
   - core
   - core/reducers
 sources:
-  - "@augmentcode/themis/utils/store/domain-scoped"
+  - "@themislib/themis/utils/store/domain-scoped"
   - ../SKILL.md
 triggers:
   - domain-scoped state
@@ -26,7 +26,7 @@ cleanup automatically. Call `clearDomainState` when a domain is removed.
 ## Shape
 
 Import `createDomainScopedHelpers` from
-`@augmentcode/themis/utils/store/domain-scoped`. Its state constraint is:
+`@themislib/themis/utils/store/domain-scoped`. Its state constraint is:
 
 ```typescript
 type DomainScopedState<T> = {
@@ -56,7 +56,7 @@ Implementation evidence: `src/utils/store/domain-scoped.ts`; executable contract
 
 ```typescript
 // workspace-items-types.ts
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+import type { Collection } from "@themislib/themis/utils/collections/collection-utils";
 
 export type WorkspaceItemsState = {
   items: Collection<Item, "id">;
@@ -70,10 +70,10 @@ export type State = {
 
 ```typescript
 // workspace-items-slice.ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import { createDomainScopedHelpers } from "@augmentcode/themis/utils/store/domain-scoped";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
+import { createCollection } from "@themislib/themis/utils/collections/collection-utils";
+import { createDomainScopedHelpers } from "@themislib/themis/utils/store/domain-scoped";
 import type { State, WorkspaceItemsState, Item } from "./workspace-items-types";
 
 const emptyState: WorkspaceItemsState = {
@@ -113,7 +113,7 @@ Notes:
 ```typescript
 // workspace-items-selectors.ts
 import { store } from "$lib/store/store";
-import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
+import { getItems } from "@themislib/themis/utils/collections/collection-utils";
 import { selectCurrentWorkspaceId } from "../workspaces/workspaces-selectors";
 
 export const selectWorkspaceItems = store.createSelector((state) => {

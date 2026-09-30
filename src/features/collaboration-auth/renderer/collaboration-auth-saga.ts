@@ -1,5 +1,5 @@
 import { call, type SagaGenerator } from 'typed-redux-saga';
-import { takeLatestFromSelector } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
 import {
   selectLabsGitLabEnabled,
   selectLabsMultiplayerEnabled,

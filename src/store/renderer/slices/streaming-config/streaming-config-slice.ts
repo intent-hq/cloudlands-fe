@@ -1,4 +1,4 @@
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { DEFAULT_PROFILE, type StreamingConfigState } from './streaming-config-types';
 
 // ============================================================================

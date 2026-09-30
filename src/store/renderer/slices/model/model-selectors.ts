@@ -7,7 +7,7 @@ import {
   getItem,
   getItems,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';

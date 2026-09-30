@@ -5,7 +5,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   listTabs: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
-import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, type StoreAction } from '@themislib/themis/utils/store/create-action';
 import {
   browserClientsReducer,
   browserTabClosed,

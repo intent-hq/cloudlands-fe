@@ -1,4 +1,4 @@
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '$store/renderer/store';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';

@@ -2360,7 +2360,7 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
 }
 
 async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
-  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as {
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
   };
@@ -2423,7 +2423,7 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     // setWorkspaceEntity so future events can merge into it. Re-read the
     // store here (not at trigger time) so the trailing fetch sees the
     // current entity state.
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const current = getItem(state.workspace.workspaces as never, workspaceId as never);
     if (current) {
@@ -2456,7 +2456,7 @@ async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
 ): Promise<void> {
-  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
     { activity?: 'idle' | 'agent_running' } | undefined;

@@ -9,7 +9,7 @@ requires:
   - core
   - core/reducers
 sources:
-  - "@augmentcode/themis/utils/store/boolean-preference"
+  - "@themislib/themis/utils/store/boolean-preference"
   - ../SKILL.md
 triggers:
   - boolean preference
@@ -24,7 +24,7 @@ namespaced actions and registers both reducer cases together.
 
 ## API
 
-Public import: `@augmentcode/themis/utils/store/boolean-preference`.
+Public import: `@themislib/themis/utils/store/boolean-preference`.
 `createBooleanPreference<S, Field>(options)` takes `sliceName`, `field`,
 `setActionName`, and `toggleActionName`; `Field` defaults to the boolean keys of `S`.
 
@@ -41,8 +41,8 @@ Public import: `@augmentcode/themis/utils/store/boolean-preference`.
 ## 2. Setup — minimum working slice
 
 ```typescript
-import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean-preference";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createBooleanPreference } from "@themislib/themis/utils/store/boolean-preference";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type SettingsState = { enabled: boolean; label: string };
 const initialState: SettingsState = { enabled: false, label: "beta" };
@@ -74,8 +74,8 @@ store.dispatch(toggleEnabled());
 Each `.register(builder)` returns the same builder with two cases added, so you can compose any number of preferences:
 
 ```typescript
-import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean-preference";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createBooleanPreference } from "@themislib/themis/utils/store/boolean-preference";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type SettingsState = { darkMode: boolean; compactMode: boolean };
 const initialState: SettingsState = { darkMode: false, compactMode: false };

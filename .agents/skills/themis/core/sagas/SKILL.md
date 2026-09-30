@@ -20,12 +20,12 @@ triggers:
 ---
 # Sagas — agent implementation rules
 
-Use this skill when editing saga code or writing instructions for saga changes. Keep this file short and operational; `@augmentcode/themis/docs/SAGAS.md` is the canonical human-facing guide for concepts, API shape, tradeoffs, and examples.
+Use this skill when editing saga code or writing instructions for saga changes. Keep this file short and operational; `@themislib/themis/docs/SAGAS.md` is the canonical human-facing guide for concepts, API shape, tradeoffs, and examples.
 
 ## Canonical references
 
-- Human guide: `@augmentcode/themis/docs/SAGAS.md`
-- Public API: `@augmentcode/themis/saga`; utility leaf exports include `@augmentcode/themis/utils/sagas/debounce-saga`, `@augmentcode/themis/utils/sagas/retry-with-timeout`, and `@augmentcode/themis/utils/sagas/wrap-async-generator`. Store-utility saga internals are implementation context only.
+- Human guide: `@themislib/themis/docs/SAGAS.md`
+- Public API: `@themislib/themis/saga`; utility leaf exports include `@themislib/themis/utils/sagas/debounce-saga`, `@themislib/themis/utils/sagas/retry-with-timeout`, and `@themislib/themis/utils/sagas/wrap-async-generator`. Store-utility saga internals are implementation context only.
 - Related skills: `core/actions`, `core/state-integrity`, `core/saga-manager`, `core/selector-channels`, `core/wait-for`, `core/testing`
 
 ## When to use sagas
@@ -145,7 +145,7 @@ function* watchRefreshRequests() {
 
 ```ts
 import { call, put } from "typed-redux-saga";
-import { retryWithTimeout } from "@augmentcode/themis/saga";
+import { retryWithTimeout } from "@themislib/themis/saga";
 
 function* syncRemoteState() {
   const outcome = yield* retryWithTimeout(
@@ -162,7 +162,7 @@ function* syncRemoteState() {
 
 ```ts
 import { call, put } from "typed-redux-saga";
-import { wrapStreamingGenerator } from "@augmentcode/themis/saga";
+import { wrapStreamingGenerator } from "@themislib/themis/saga";
 
 function* streamMessages(
   openStream: (signal: AbortSignal) => AsyncGenerator<MessageChunk, MessageChunk | null | undefined, unknown>
@@ -197,7 +197,7 @@ function* streamMessages(
 
 ## See also
 
-- `@augmentcode/themis/docs/SAGAS.md` — full saga concepts, APIs, and examples.
+- `@themislib/themis/docs/SAGAS.md` — full saga concepts, APIs, and examples.
 - [Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle) and [Core Patterns](../saga-manager/SKILL.md#core-patterns) — canonical lifecycle, crash storage/cleanup, restart, and backoff mechanics.
 - `core/selector-channels` — selector change watchers and selector-backed channels.
 - `core/wait-for` — one-shot selector predicate waits.

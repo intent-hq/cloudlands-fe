@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { GithubUserSearchItem } from './github-user-search-slice';
 
 const selectGithubUserSearchCollection = store.createSelector(

@@ -1,6 +1,6 @@
 import { selectWorkspacePermissionContext } from '../workspace/workspace-selectors';
 import { store } from '../../store';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PermissionRequest } from './permission-slice';
 
 export const selectPermissionRequestsCollection = store.createSelector(

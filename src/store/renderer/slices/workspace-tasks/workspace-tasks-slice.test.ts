@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceId, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   removeWorkspaceEntity,
