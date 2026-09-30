@@ -2,8 +2,9 @@
 // @verify-changed-triggers: package.json, electron-builder.yml
 
 import { createRequire } from 'node:module';
-import { readFileSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { packageMac, resolveMacArguments } from './package-mac.mjs';
 
@@ -15,11 +16,86 @@ const { FileMatcher } = builderRequire('app-builder-lib/out/fileMatcher');
 vi.stubEnv('JITI_FS_CACHE', 'false');
 const { normalizeOptions, createYargs, configureBuildCommand } = builderRequire('./builder.js');
 const { Platform } = builderRequire('app-builder-lib');
+const { getConfig } = builderRequire('app-builder-lib/out/util/config/config');
+const { computeArchToTargetNamesMap } = builderRequire('app-builder-lib/out/targets/targetFactory');
 vi.unstubAllEnvs();
 
 describe('native Mac packaging entry point', () => {
   const parseBuilder = (args: string[]) =>
     configureBuildCommand(createYargs()).exitProcess(false).strict().parseSync(args);
+
+  it.each(['--config', '-c', '--config=', '--c='])(
+    'rejects an ARM preset loaded via %s before staging',
+    async (flag) => {
+      const directory = mkdtempSync(join(tmpdir(), 'mac-packaging-config-'));
+      const file = join(directory, 'arm-preset.json');
+      try {
+        writeFileSync(
+          file,
+          JSON.stringify({
+            extends: resolve('electron-builder.yml'),
+            mac: { target: [{ target: 'zip', arch: ['arm64'] }] },
+          }),
+        );
+        const args = flag.endsWith('=') ? [`${flag}${file}`] : [flag, file];
+        const parsed = parseBuilder(['--mac', '--x64', ...args]);
+        expect(parsed.config).toBe(file);
+        const config = await getConfig(process.cwd(), parsed.config, undefined);
+        const raw = normalizeOptions(parsed).targets.get(Platform.MAC);
+        const targets = computeArchToTargetNamesMap(
+          raw,
+          { platformSpecificBuildOptions: config.mac, defaultTarget: ['dmg', 'zip'] },
+          Platform.MAC,
+        );
+        expect([...targets.keys()]).toEqual([1, 3]);
+        const execute = vi.fn();
+        expect(() =>
+          packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+        ).toThrow(/config/i);
+        expect(execute).not.toHaveBeenCalled();
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each(['--config.extends=preset.json', '-c.extends=preset.json', '--c.extends=preset.json'])(
+    'rejects config inheritance through %s before staging',
+    (arg) => {
+      expect(parseBuilder(['--mac', '--x64', arg]).config.extends).toBe('preset.json');
+      const execute = vi.fn();
+      expect(() =>
+        packageMac([arg], { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+      ).toThrow(/config/i);
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['--projectDir', '--project', '--projectDir=', '--project='])(
+    'rejects alternate project roots through %s before staging',
+    (flag) => {
+      const args = flag.endsWith('=') ? [`${flag}/fixture/project`] : [flag, '/fixture/project'];
+      expect(parseBuilder(['--mac', '--x64', ...args]).projectDir).toBe('/fixture/project');
+      const execute = vi.fn();
+      expect(() =>
+        packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+      ).toThrow(/project/i);
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects inline architecture overrides through the long c alias', () => {
+    const execute = vi.fn();
+    expect(() =>
+      packageMac(['--c.mac.target=zip:arm64'], {
+        platform: 'darwin',
+        hostArch: 'x64',
+        env: {},
+        execute,
+      }),
+    ).toThrow();
+    expect(execute).not.toHaveBeenCalled();
+  });
 
   it.each([
     ['--prepackaged', '/fixture/Intent-arm64.app'],
