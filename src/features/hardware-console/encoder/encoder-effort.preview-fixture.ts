@@ -50,15 +50,22 @@ export function setupEncoderEffortPreview() {
     },
   };
   admitLegacyPrincipal();
-  appStore.dispatch(
-    setWorkspaceEntity({
-      id: workspaceId,
-      title: 'Preview workspace',
-      status: WorkspaceStatusEnum.Active,
-      myRole: 'owner',
-      lastActivity: '2026-09-25T00:00:00Z',
-    }),
-  );
+  if (!previous.workspace)
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: workspaceId,
+        title: 'Preview workspace',
+        branch: 'preview',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        status: WorkspaceStatusEnum.Active,
+        myRole: 'owner',
+        createdAt: '2026-09-25T00:00:00Z',
+        updatedAt: '2026-09-25T00:00:00Z',
+        lastActivity: '2026-09-25T00:00:00Z',
+      }),
+    );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   appStore.dispatch(hydrateHardwareConsoleEncoderBehavior('agent-effort'));
   appStore.dispatch(openWorkspaceTab(workspaceId));
@@ -115,8 +122,7 @@ export function setupEncoderEffortPreview() {
         ),
       );
     appStore.dispatch(removeSession(agentId));
-    if (previous.workspace) appStore.dispatch(setWorkspaceEntity(previous.workspace));
-    else appStore.dispatch(removeWorkspaceEntity(workspaceId));
+    if (!previous.workspace) appStore.dispatch(removeWorkspaceEntity(workspaceId));
     appStore.dispatch(clearPanelLayout(workspaceId));
     appStore.dispatch(loadWorkspaceTabsState(previous.tabs));
     appStore.dispatch(guestSessionsListReceived(previous.guests));

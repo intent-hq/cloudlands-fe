@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { store } from '$store/renderer/store';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { WorkspaceStatusEnum } from '$shared/types';
+import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
@@ -29,10 +29,16 @@ const workspaceId = WorkspaceId('encoder-preview-workspace');
 const previousWorkspace = {
   id: workspaceId,
   title: 'Existing preview workspace',
+  branch: 'existing',
+  changesets: [],
+  timeline: [],
+  conversationInfo: [],
   status: WorkspaceStatusEnum.Active,
   myRole: 'owner' as const,
+  createdAt: '2026-09-25T00:00:00Z',
+  updatedAt: '2026-09-25T00:00:00Z',
   lastActivity: '2026-09-25T00:00:00Z',
-};
+} satisfies Workspace;
 let disposeStore: () => void;
 let disposePreview: (() => void) | undefined;
 
@@ -83,6 +89,19 @@ describe('encoder effort preview admission and lifetime', () => {
     disposePreview = undefined;
     expect(selectWorkspaceById.select(store.state, workspaceId)).toEqual(previousWorkspace);
     expect(selectWorkspaceById.select(store.state, unrelated.id)).toEqual(unrelated);
+  });
+
+  it('preserves an existing workspace denial during setup and teardown', async () => {
+    const denied = { ...previousWorkspace, myRole: 'collaborator' as const };
+    store.dispatch(setWorkspaceEntity(denied));
+    await mountPreview();
+    expect(selectWorkspaceById.select(store.state, workspaceId)).toEqual(denied);
+    expect(selectEncoderEffortFeedback.select(store.state)).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    cleanup();
+    disposePreview?.();
+    disposePreview = undefined;
+    expect(selectWorkspaceById.select(store.state, workspaceId)).toEqual(denied);
   });
 
   it.each(['missing row', 'collaborator', 'unknown principal', 'guest principal'] as const)(
