@@ -232,6 +232,33 @@ describe.each(['png', 'svg'])('FileViewer %s panning', (extension) => {
     expect(viewport.releasePointerCapture).toHaveBeenCalledWith(1);
   });
 
+  it('updates the zoom readout in 25-point steps and keeps panning in screen coordinates', async () => {
+    const { image, viewport } = setup();
+    expect(screen.getByText('100%')).toBeTruthy();
+    await fireEvent.click(screen.getByTitle('Zoom in'));
+    expect(screen.getByText('125%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(1.25)');
+    await pointer(viewport, 'pointerdown');
+    await pointer(viewport, 'pointermove', { clientX: 40, clientY: 20 });
+    await pointer(viewport, 'pointerup');
+    expect(image.style.translate).toBe('40px 20px');
+    await fireEvent.click(screen.getByTitle('Zoom out'));
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(1)');
+    expect(image.style.translate).toBe('40px 20px');
+    expect(screen.getByTitle('Download')).toBeTruthy();
+  });
+
+  it('keeps zoom between 25% and 500%', async () => {
+    const { image } = setup();
+    for (let i = 0; i < 5; i++) await fireEvent.click(screen.getByTitle('Zoom out'));
+    expect(screen.getByText('25%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(0.25)');
+    for (let i = 0; i < 21; i++) await fireEvent.click(screen.getByTitle('Zoom in'));
+    expect(screen.getByText('500%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(5)');
+  });
+
   if (extension === 'png')
     it('keeps translation independent of zoom and rotation and leaves wheel events alone', async () => {
       const { image, viewport } = setup();

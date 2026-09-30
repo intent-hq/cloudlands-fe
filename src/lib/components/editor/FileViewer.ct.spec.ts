@@ -92,7 +92,7 @@ test('pans zoomed and rotated images with native capture, releases outside, and 
     .toContain('image/png');
 });
 
-test('pans SVG images and checkerboard with native capture and resets when switching viewer types', async ({
+test('zooms and pans SVG images and checkerboard with native capture and resets when switching viewer types', async ({
   mount,
   page,
 }, testInfo) => {
@@ -111,7 +111,13 @@ test('pans SVG images and checkerboard with native capture and resets when switc
   const image = page.getByRole('img', { name: 'drawing.svg' });
   const viewport = image.locator('..');
   await expect(viewport).toHaveCSS('cursor', 'grab');
+  const original = (await image.boundingBox())!;
+  await page.getByTitle('Zoom in').click();
+  await page.getByTitle('Zoom in').click();
+  await expect(page.getByText('150%', { exact: true })).toBeVisible();
+  await expect(image).toHaveCSS('transform', 'matrix(1.5, 0, 0, 1.5, 0, 0)');
   const before = (await image.boundingBox())!;
+  expect(before.width).toBeCloseTo(original.width * 1.5);
   await image.hover();
   await page.mouse.down();
   await page.mouse.move(before.x + before.width / 2 + 40, before.y + before.height / 2 + 25);
@@ -122,7 +128,7 @@ test('pans SVG images and checkerboard with native capture and resets when switc
       return [Math.round(box.x - before.x), Math.round(box.y - before.y)];
     })
     .toEqual([40, 25]);
-  await page.screenshot({ path: testInfo.outputPath('svg-panned.png') });
+  await page.screenshot({ path: testInfo.outputPath('svg-zoomed-panned.png') });
   const bounds = (await viewport.boundingBox())!;
   await page.mouse.move(bounds.x + 8, bounds.y + 8);
   await page.mouse.down();

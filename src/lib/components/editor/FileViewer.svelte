@@ -12,6 +12,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('FileViewer');
@@ -90,6 +91,9 @@
   // Image viewer state
   let imageZoom = $state(100);
   let imageRotation = $state(0);
+  const zoomPercent = $derived(
+    formatNumber(imageZoom / 100, { style: 'percent', maximumFractionDigits: 0 }),
+  );
   let copied = $state(false);
   let imageOffsetX = $state(0);
   let imageOffsetY = $state(0);
@@ -296,6 +300,29 @@
   };
 </script>
 
+{#snippet zoomControls()}
+  <Button
+    size="icon"
+    variant="ghost"
+    class="h-7 w-7"
+    onclick={handleZoomOut}
+    title={m.editor_fileViewer_zoomOut_tooltip()}
+  >
+    <Fa icon={faSearchMinus} size="sm" />
+  </Button>
+  <span class="text-xs text-subtle min-w-[50px] text-center">{zoomPercent}</span>
+  <Button
+    size="icon"
+    variant="ghost"
+    class="h-7 w-7"
+    onclick={handleZoomIn}
+    title={m.editor_fileViewer_zoomIn_tooltip()}
+  >
+    <Fa icon={faSearchPlus} size="sm" />
+  </Button>
+  <div class="w-px h-5 bg-border mx-1"></div>
+{/snippet}
+
 <svelte:window onblur={endImageDrag} />
 
 <div class="h-full flex flex-col">
@@ -304,26 +331,7 @@
     <div class="min-h-0 flex-1 flex flex-col">
       <!-- Image Controls -->
       <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
-        <Button
-          size="icon"
-          variant="ghost"
-          class="h-7 w-7"
-          onclick={handleZoomOut}
-          title={m.editor_fileViewer_zoomOut_tooltip()}
-        >
-          <Fa icon={faSearchMinus} size="sm" />
-        </Button>
-        <span class="text-xs text-subtle min-w-[50px] text-center">{imageZoom}%</span>
-        <Button
-          size="icon"
-          variant="ghost"
-          class="h-7 w-7"
-          onclick={handleZoomIn}
-          title={m.editor_fileViewer_zoomIn_tooltip()}
-        >
-          <Fa icon={faSearchPlus} size="sm" />
-        </Button>
-        <div class="w-px h-5 bg-border mx-1"></div>
+        {@render zoomControls()}
         <Button
           size="icon"
           variant="ghost"
@@ -384,9 +392,10 @@
       </div>
     </div>
   {:else if fileType === 'svg'}
-    <!-- SVG Viewer with code toggle -->
+    <!-- SVG Viewer -->
     <div class="min-h-0 flex-1 flex flex-col">
       <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
+        {@render zoomControls()}
         <Button
           size="icon"
           variant="ghost"
@@ -415,7 +424,7 @@
           src={getSvgSrc()}
           alt={fileName}
           draggable="false"
-          style="translate: {imageOffsetX}px {imageOffsetY}px;"
+          style="translate: {imageOffsetX}px {imageOffsetY}px; transform: scale({imageZoom / 100});"
           class="max-w-full max-h-full object-contain"
         />
       </div>
