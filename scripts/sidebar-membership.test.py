@@ -28,7 +28,8 @@ def report_fixture():
             'projectId': 'chromium', 'projectName': 'chromium', 'expectedStatus': 'passed',
             'status': 'skipped', 'results': []}]}
     return {
-        'nativeMembership': {'schema': 1, 'rootDir': '/checkout/test', 'workers': 1, 'cases': [
+        'nativeMembership': {'schema': 1, 'rootDir': '/checkout/test', 'workers': 1,
+            'configuredMetadata': {'root': {}, 'projects': [{'name': 'chromium', 'metadata': {}}]}, 'cases': [
             {'id': native_id, 'file': '/checkout/test/nested.spec.ts', 'titlePath': [group, 'same leaf'],
              'projectName': 'chromium'} for native_id, group in [('one', 'first group'), ('two', 'second group')]]},
         'errors': [], 'config': {
@@ -190,12 +191,60 @@ class ReportControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'native execution failed'):
             self.validate(self.executed, 1)
 
+    def test_execution_ci_annotations_do_not_change_configured_metadata(self):
+        report = copy.deepcopy(self.executed)
+        annotations = {'ci': {'buildHref': 'https://example.test/run'},
+                       'gitCommit': {'hash': 'native commit'}, 'gitDiff': 'native diff', 'actualWorkers': 1}
+        report['config']['metadata'].update(annotations)
+        report['config']['projects'][0]['metadata'] = copy.deepcopy(annotations)
+        self.assertEqual(len(self.validate(report)), 2)
+
+    def test_configured_metadata_and_unrecognized_report_changes_remain_bound(self):
+        for scope in ['root', 'project']:
+            for key in ['ci', 'gitCommit', 'gitDiff', 'actualWorkers', 'custom']:
+                with self.subTest(scope=scope, key=key):
+                    report = copy.deepcopy(self.executed)
+                    inputs = report['nativeMembership']['configuredMetadata']
+                    metadata = inputs['root'] if scope == 'root' else inputs['projects'][0]['metadata']
+                    metadata[key] = 'changed input'
+                    with self.assertRaises(ValueError):
+                        self.validate(report)
+            report = copy.deepcopy(self.executed)
+            target = report['config'] if scope == 'root' else report['config']['projects'][0]
+            target.setdefault('metadata', {})['custom'] = 'unexpected mutation'
+            with self.assertRaises(ValueError):
+                self.validate(report)
+
+    def test_anonymous_parent_titles_still_require_valid_strings_and_exact_join(self):
+        for value in [None, 12, [], '\x00']:
+            for native in [True, False]:
+                with self.subTest(value=value, native=native):
+                    report = copy.deepcopy(self.collected)
+                    if native:
+                        report['nativeMembership']['cases'][0]['titlePath'][0] = value
+                    else:
+                        report['suites'][0]['suites'][0]['title'] = value
+                    with self.assertRaisesRegex(ValueError, 'malformed'):
+                        self.collect(report)
+        report = copy.deepcopy(self.executed)
+        report['nativeMembership']['cases'][0]['titlePath'][0] = ''
+        with self.assertRaisesRegex(ValueError, 'disagrees with JSON title'):
+            self.validate(report)
+
 
 class NativeControls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='sidebar-membership-')
         self.addCleanup(self.temp.cleanup)
         self.subject = Path(self.temp.name)
+        # Playwright adds GitHub run metadata during execution but not --list.
+        # Exercise that ordinary CI path even when controls are run locally.
+        ci = patch.dict(os.environ, {'CI': 'true', 'GITHUB_ACTIONS': 'true',
+            'GITHUB_SERVER_URL': 'https://github.com', 'GITHUB_REPOSITORY': 'intent-hq/cloudlands-fe',
+            'GITHUB_SHA': 'fixture-sha', 'GITHUB_RUN_ID': 'fixture-run',
+            'GITHUB_EVENT_PATH': str(self.subject / 'no-event.json')})
+        ci.start()
+        self.addCleanup(ci.stop)
         (self.subject / 'node_modules').symlink_to(REPO / 'node_modules', target_is_directory=True)
         (self.subject / 'test').mkdir()
         (self.subject / 'package.json').write_text(json.dumps({'name': 'sidebar-membership-control', 'private': True}))
@@ -288,6 +337,29 @@ class NativeControls(unittest.TestCase):
         self.assertEqual({row['file'] for row in rows}, set(self.selected))
         self.assertEqual(len({row['id'] for row in rows}), len(rows))
 
+    def test_native_anonymous_describe_preserves_empty_parent_titles(self):
+        (self.subject / 'playwright.config.cjs').write_text(
+            "module.exports = { testDir: './test', fullyParallel: true, "
+            "metadata: { custom: 'root input', actualWorkers: 7 }, "
+            "projects: [{name: 'chromium', metadata: {custom: 'project input'}}] };\n")
+        (self.subject / 'test/cases.spec.ts').write_text(
+            "const { test, expect } = require('@playwright/test');\n"
+            "test.describe(() => { test.describe('named', () => { test.describe(() => {\n"
+            "test('ordinary case', () => expect(2 + 2).toBe(4));\n"
+            "}); }); });\n")
+        collected = self.native(True)
+        executed = self.native(False)
+        self.assertNotIn('ci', collected['config']['metadata'])
+        self.assertIn('ci', executed['config']['metadata'])
+        self.assertEqual(executed['nativeMembership']['configuredMetadata'],
+                         collected['nativeMembership']['configuredMetadata'])
+        self.assertEqual(collected['nativeMembership']['cases'], executed['nativeMembership']['cases'])
+        manifest = membership.collect_membership(collected, 1, self.subject, self.selected, 0)
+        rows = membership.validate_report(executed, manifest, 1, self.subject, self.selected, 0)
+        self.assertEqual([row['titlePath'] for row in rows], [['', 'named', '', 'ordinary case']])
+        self.assertEqual(manifest['config']['metadata'], {'custom': 'root input', 'actualWorkers': 7})
+        self.assertEqual(manifest['config']['projects'][0]['metadata'], {'custom': 'project input'})
+
     def test_native_shared_generator_retains_distinct_selected_files(self):
         self.write_cases(['selected source'])
         (self.subject / 'test/second.spec.ts').write_text(
@@ -315,7 +387,7 @@ class NativeControls(unittest.TestCase):
         self.assertTrue(terminal['ownershipSettled'])
         self.assertTrue(terminal['completedWithinDeadline'])
         self.assertEqual(terminal['signals'], [])
-        self.assertEqual(terminal['primaryDeadline'] - terminal['startMonotonic'], 60)
+        self.assertEqual(terminal['primaryDeadline'], terminal['startMonotonic'] + 60)
         self.assertEqual(json.loads((root / 'receipts/membership.json').read_text()), manifest)
         membership.validate_report(self.native(False, workers=2), manifest, 2, self.subject, self.selected, 0)
 

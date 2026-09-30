@@ -5,7 +5,24 @@ import path from 'node:path';
 // a shared registration helper. Capture the unmerged file-suite title instead;
 // it is assigned by native discovery relative to config.rootDir. Never derive IDs.
 export default class SidebarMembershipReporter {
-  onBegin(config, suite) {
+  version() {
+    return 'v2';
+  }
+
+  onConfigure(config) {
+    this.config = config;
+    // Snapshot before execution-only plugins mutate metadata. --list skips them.
+    this.configuredMetadata = structuredClone({
+      root: config.metadata,
+      projects: config.projects.map((project) => ({
+        name: project.name,
+        metadata: project.metadata,
+      })),
+    });
+  }
+
+  onBegin(suite) {
+    const config = this.config;
     const cases = suite.allTests().map((test) => {
       const titlePath = [test.title];
       let parent = test.parent;
@@ -23,7 +40,13 @@ export default class SidebarMembershipReporter {
     });
     writeFileSync(
       process.env.SIDEBAR_MEMBERSHIP_OUTPUT_FILE,
-      JSON.stringify({ schema: 1, rootDir: config.rootDir, workers: config.workers, cases }),
+      JSON.stringify({
+        schema: 1,
+        rootDir: config.rootDir,
+        workers: config.workers,
+        configuredMetadata: this.configuredMetadata,
+        cases,
+      }),
       { flag: 'wx', mode: 0o600 },
     );
   }

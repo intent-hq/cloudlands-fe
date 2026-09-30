@@ -9,8 +9,8 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def text(value, label):
-    require(isinstance(value, str) and bool(value.strip()) and '\x00' not in value,
+def text(value, label, allow_empty=False):
+    require(isinstance(value, str) and (allow_empty or bool(value.strip())) and '\x00' not in value,
             'malformed ' + label)
     return value
 
@@ -35,10 +35,34 @@ def configuration(report, workers, subject):
     # (including rootDir, configFile, project filters and runner version) stay bound.
     bound = copy.deepcopy(config)
     bound.pop('argv', None)  # --list and each cell's artifact output are different.
-    bound.get('metadata', {}).pop('actualWorkers', None)
-    for project in bound['projects']:
+    native = report.get('nativeMembership')
+    require(isinstance(native, dict), 'missing or malformed native membership')
+    configured = native.get('configuredMetadata')
+    require(isinstance(configured, dict) and isinstance(configured.get('root'), dict)
+            and isinstance(configured.get('projects'), list) and len(configured['projects']) == 1,
+            'malformed configured metadata')
+
+    def bind_metadata(owner, inputs):
+        require(isinstance(inputs, dict) and isinstance(owner.get('metadata', {}), dict),
+                'malformed metadata')
+        metadata = copy.deepcopy(owner.get('metadata', {}))
+        # Playwright's execution-only git-info plugin adds these report annotations.
+        # Bind the pre-plugin values captured by onConfigure instead of discarding
+        # configured metadata, including configured values with these same names.
+        for key in ('actualWorkers', 'ci', 'gitCommit', 'gitDiff'):
+            if key in inputs:
+                metadata[key] = copy.deepcopy(inputs[key])
+            else:
+                metadata.pop(key, None)
+        require(metadata == inputs, 'unexpected report metadata mutation')
+        owner['metadata'] = metadata
+
+    bind_metadata(bound, configured['root'])
+    for project, inputs in zip(bound['projects'], configured['projects']):
+        require(isinstance(inputs, dict) and inputs.get('name') == project['name'],
+                'malformed configured project metadata')
         project.pop('outputDir', None)
-        project.get('metadata', {}).pop('actualWorkers', None)
+        bind_metadata(project, inputs.get('metadata'))
     return root, bound
 
 
@@ -79,7 +103,8 @@ def identities(report, root, subject, specs, collecting):
         require(file in specs, 'unexpected selected file: ' + file)
         titles = entry.get('titlePath')
         require(isinstance(titles, list) and bool(titles), 'malformed native title path')
-        titles = [text(title, 'native title') for title in titles]
+        titles = [text(title, 'native title', allow_empty=index < len(titles) - 1)
+                  for index, title in enumerate(titles)]
         require(entry.get('projectName') == 'chromium', 'wrong native project')
         logical = (file, tuple(titles), entry['projectName'])
         require(logical not in logical_ids, 'duplicate/ambiguous logical identity: ' + str(logical))
@@ -94,7 +119,7 @@ def identities(report, root, subject, specs, collecting):
         require(isinstance(suites, list), 'malformed suites')
         for suite in suites:
             require(isinstance(suite, dict), 'malformed suite')
-            title = text(suite.get('title'), 'suite title')
+            title = text(suite.get('title'), 'suite title', allow_empty=not top)
             parents = () if top else (*titles, title)
             require(isinstance(suite.get('specs'), list), 'malformed specs')
             for spec in suite['specs']:
