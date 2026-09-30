@@ -111,7 +111,9 @@ function* runArchiveOperation(
     if (!negotiation.supported) throw new Error(m.scripts_history_unsupported_error());
     reconcile = true;
     const outcome = yield* race({
-      result: call([appClient.scripts, method], workspaceId, scriptIds),
+      result: call([appClient.scripts, method], workspaceId, scriptIds, {
+        capabilityVerified: true as const,
+      }),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
     if (outcome.cleanup) {

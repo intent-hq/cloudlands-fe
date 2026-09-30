@@ -1858,8 +1858,17 @@ export interface ScriptRunResult {
 
 export interface ScriptsClient {
   supportsLifecycle?(): Promise<boolean>;
-  archive?(workspaceId: string, scriptIds: string[]): Promise<ScriptArchiveResult>;
-  restore?(workspaceId: string, scriptIds: string[]): Promise<ScriptRestoreResult>;
+  /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
+  archive?(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptArchiveResult>;
+  restore?(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptRestoreResult>;
   /** `script.list` — definitions with merged runtime state. */
   list(
     workspaceId: string,

@@ -35,14 +35,10 @@ import { runMutation } from './live-support';
 
 export class LiveScriptsClient implements ScriptsClient {
   async supportsLifecycle(): Promise<boolean> {
-    try {
-      const result = await backendRequest<{
-        server?: { capabilities?: { scriptLifecycle?: number } };
-      }>('client.hello', {});
-      return result?.server?.capabilities?.scriptLifecycle === 1;
-    } catch {
-      return false;
-    }
+    const result = await backendRequest<{
+      server?: { capabilities?: { scriptLifecycle?: number } };
+    }>('client.hello', {});
+    return result?.server?.capabilities?.scriptLifecycle === 1;
   }
 
   async list(
@@ -50,6 +46,12 @@ export class LiveScriptsClient implements ScriptsClient {
     options?: { archive?: ScriptArchiveFilter },
   ): Promise<ScriptWithState[]> {
     const supported = await this.supportsLifecycle();
+    // An explicit partition must never become a successful unfiltered snapshot.
+    // Missing capability is legacy fallback only for default/all-list callers;
+    // failed negotiation remains a retryable error rather than cached history.
+    if (!supported && options?.archive && options.archive !== 'all') {
+      throw new Error(m.scripts_history_unsupported_error());
+    }
     const result = await backendRequest<{ scripts: ScriptWithState[] }>('script.list', {
       workspaceId,
       ...(supported ? { archive: options?.archive ?? 'active' } : {}),
@@ -58,13 +60,27 @@ export class LiveScriptsClient implements ScriptsClient {
     return result.scripts;
   }
 
-  async archive(workspaceId: string, scriptIds: string[]): Promise<ScriptArchiveResult> {
-    if (!(await this.supportsLifecycle())) throw new Error(m.scripts_history_unsupported_error());
+  async archive(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptArchiveResult> {
+    // The saga checks current workspace/connection authority after its one
+    // negotiation. No further await may separate that check from wire dispatch.
+    if (!options?.capabilityVerified && !(await this.supportsLifecycle()))
+      throw new Error(m.scripts_history_unsupported_error());
     return backendRequest('script.archive', { workspaceId, scriptIds });
   }
 
-  async restore(workspaceId: string, scriptIds: string[]): Promise<ScriptRestoreResult> {
-    if (!(await this.supportsLifecycle())) throw new Error(m.scripts_history_unsupported_error());
+  async restore(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptRestoreResult> {
+    // The saga checks current workspace/connection authority after its one
+    // negotiation. No further await may separate that check from wire dispatch.
+    if (!options?.capabilityVerified && !(await this.supportsLifecycle()))
+      throw new Error(m.scripts_history_unsupported_error());
     return backendRequest('script.restore', { workspaceId, scriptIds });
   }
 

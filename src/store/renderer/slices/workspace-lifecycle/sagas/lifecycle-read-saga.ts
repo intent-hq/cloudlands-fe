@@ -1,6 +1,9 @@
 import { selectScriptHistoryState } from '../../scripts/scripts-selectors';
 import { buffers } from 'redux-saga';
-import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
 import { store } from '../../../store';
 import { refreshIntegrationAuthAfterReconnect } from '../../workspace-share/sagas/workspace-share-saga';
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -1129,16 +1132,32 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
  * instead of logging an error on every refresh.
  */
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
+  const connection = yield* selectPrincipalConnectionContext.effect();
+  const backendId = yield* selectActiveBackendId();
+  const dispatch = store.dispatch;
+  function* isCurrent(): SagaGenerator<boolean> {
+    return (
+      dispatch === store.dispatch &&
+      connection === (yield* selectPrincipalConnectionContext.effect()) &&
+      backendId === (yield* selectActiveBackendId())
+    );
+  }
   let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
   yield* put(setScriptListState(workspaceId, true));
   try {
     const supported = appClient.scripts.supportsLifecycle
       ? yield* call([appClient.scripts, appClient.scripts.supportsLifecycle])
       : false;
+    if (!(yield* isCurrent())) return;
     if (appClient.scripts.supportsLifecycle) {
       yield* put(setScriptListState(workspaceId, true, undefined, supported));
     }
-    scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
+    scripts = supported
+      ? yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
+          archive: 'active' as const,
+        })
+      : yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
+    if (!(yield* isCurrent())) return;
     yield* put(setScriptListState(workspaceId, false, undefined, supported));
     if (supported) {
       yield* put(setActiveScriptsData(workspaceId, scripts));
@@ -1150,9 +1169,11 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
           const archived = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
             archive: 'archived' as const,
           });
+          if (!(yield* isCurrent())) return;
           yield* put(setArchivedScriptsData(workspaceId, archived, version));
           yield* put(setScriptHistoryLoadState(workspaceId, false));
         } catch (error) {
+          if (!(yield* isCurrent())) return;
           yield* put(
             setScriptHistoryLoadState(
               workspaceId,
@@ -1166,6 +1187,7 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
       yield* put(setScriptsData(workspaceId, scripts));
     }
   } catch (error) {
+    if (!(yield* isCurrent())) return;
     yield* put(
       setScriptListState(
         workspaceId,

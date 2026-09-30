@@ -70,6 +70,22 @@ describe('lifecycle wire negotiation', () => {
       ),
     ).toBe(false);
   });
+  it.each(['active', 'archived'] as const)(
+    'never downgrades an explicit %s partition after capability loss',
+    async (archive) => {
+      supported = false;
+      await expect(new LiveScriptsClient().list('legacy', { archive })).rejects.toThrow();
+      expect(request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([]);
+    },
+  );
+  it('surfaces a failed capability probe instead of claiming legacy support', async () => {
+    request.mockRejectedValue(new Error('hello unavailable'));
+    await expect(new LiveScriptsClient().supportsLifecycle()).rejects.toThrow('hello unavailable');
+    await expect(new LiveScriptsClient().list('ws', { archive: 'archived' })).rejects.toThrow(
+      'hello unavailable',
+    );
+    expect(request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([]);
+  });
   it('forwards reviewed IDs without deleting and surfaces partial-write failures', async () => {
     const client = new LiveScriptsClient();
     await client.archive('ws', ['a', 'b']);

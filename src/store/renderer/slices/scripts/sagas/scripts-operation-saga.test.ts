@@ -182,7 +182,7 @@ describe('script archive operations', () => {
     run.channel.put(scriptArchiveRequested(WS, ['one', 'two'], 'archive'));
     await settle();
     await settle();
-    expect(mocks.archive).toHaveBeenCalledWith(WS, ['one', 'two']);
+    expect(mocks.archive).toHaveBeenCalledWith(WS, ['one', 'two'], { capabilityVerified: true });
     expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 1 }));
     expect(run.actions).toContainEqual(refreshScripts(WS, true));
     run.actions.length = 0;
@@ -246,4 +246,74 @@ describe('script archive operations', () => {
     expect(run.actions.some((a) => a.type === refreshScripts.type)).toBe(false);
     await stop(run.task);
   });
+});
+
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
+import { backendRequest as lifecycleRequest } from '$lib/client/live/backend-transport';
+import { LiveScriptsClient } from '$lib/client/live/live-scripts-client';
+
+describe('live script mutation admission', () => {
+  beforeEach(() => {
+    const client = new LiveScriptsClient();
+    mocks.supportsLifecycle.mockImplementation(client.supportsLifecycle.bind(client));
+    mocks.archive.mockImplementation(client.archive.bind(client));
+    mocks.restore.mockImplementation(client.restore.bind(client));
+    vi.mocked(lifecycleRequest).mockReset();
+  });
+  it.each(['archive', 'restore'] as const)(
+    'negotiates once before dispatching %s',
+    async (operation) => {
+      vi.mocked(lifecycleRequest).mockImplementation(async (method) => {
+        if (method === 'client.hello')
+          return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
+        return { archived: ['one'], restored: ['one'], skipped: [] } as never;
+      });
+      const run = start();
+      try {
+        run.channel.put(scriptArchiveRequested(WS, ['one'], operation));
+        await vi.waitFor(() =>
+          expect(lifecycleRequest).toHaveBeenCalledWith('script.' + operation, {
+            workspaceId: WS,
+            scriptIds: ['one'],
+          }),
+        );
+        expect(
+          vi.mocked(lifecycleRequest).mock.calls.filter(([method]) => method === 'client.hello'),
+        ).toHaveLength(1);
+      } finally {
+        await stop(run.task);
+      }
+    },
+  );
+  it.each(['archive', 'restore'] as const)(
+    'does not dispatch %s after cleanup or changed authority during negotiation',
+    async (operation) => {
+      for (const change of ['cleanup', 'authority', 'connection'] as const) {
+        const hello = deferred<unknown>();
+        vi.mocked(lifecycleRequest)
+          .mockReset()
+          .mockImplementation(async (method) => {
+            if (method === 'client.hello') return hello.promise as never;
+            return { archived: ['one'], restored: ['one'], skipped: [] } as never;
+          });
+        const run = start();
+        try {
+          run.channel.put(scriptArchiveRequested(WS, ['one'], operation));
+          await vi.waitFor(() => expect(lifecycleRequest).toHaveBeenCalledWith('client.hello', {}));
+          if (change === 'cleanup') run.channel.put(workspaceUnmounted(WS));
+          else if (change === 'authority') run.state.principal.status = 'loading';
+          else run.state.connections.windowBackendId = 'changed-backend';
+          hello.resolve({ server: { capabilities: { scriptLifecycle: 1 } } });
+          for (let i = 0; i < 10; i++) await settle();
+          expect(
+            vi
+              .mocked(lifecycleRequest)
+              .mock.calls.filter(([method]) => method.startsWith('script.')),
+          ).toEqual([]);
+        } finally {
+          await stop(run.task);
+        }
+      }
+    },
+  );
 });
