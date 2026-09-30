@@ -124,6 +124,7 @@ class Admission(unittest.TestCase):
                 'home/intent/workspaces/child/repo/child-output.txt': b'child result',
                 'home/intent/workspaces/mock/repo/README.md': b'hello world',
                 'home/.local/state/fixture': b'other home state',
+                'home/.npm/_logs/diagnostic.log': b'unique npm diagnostic',
             }
             for name, data in {**retained, 'home/.npm/_cacache/download': b'reproducible cache'}.items():
                 path = root / name
@@ -137,8 +138,32 @@ class Admission(unittest.TestCase):
                 self.assertEqual(set(archive.getnames()), set(retained))
                 for name, data in retained.items(): self.assertEqual(archive.extractfile(name).read(), data)
             receipt = json.loads((report / 'fixture-state.json').read_text())
-            self.assertEqual(receipt['excludedReproducibleCaches'], ['home/.npm'])
+            self.assertEqual(receipt['excludedReproducibleCaches'], ['home/.npm/_cacache'])
             self.assertEqual(receipt['inputBytes'], sum(map(len, retained.values())))
+
+    def test_required_evidence_size_refusal_names_path_and_threshold_without_success_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / 'home/intent/workspaces/child/repo/child-output.txt'
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b'fixture')
+            report = root / 'report'
+            report.mkdir()
+            original_stat = Path.stat
+            def oversized(candidate, *args, **kwargs):
+                value = original_stat(candidate, *args, **kwargs)
+                if candidate == path:
+                    fields = list(value)
+                    fields[6] = 64 * 1024**2 + 1
+                    return os.stat_result(fields)
+                return value
+            with patch.object(Path, 'stat', oversized), patch.object(smoke, 'REPORT_TREE', report), \
+                 patch.object(smoke, 'REPORT', report):
+                with self.assertRaisesRegex(RuntimeError,
+                        r'home/intent/workspaces/child/repo/child-output.txt: fileBytes=67108865/67108864'):
+                    smoke.retain_fixtures(root)
+            self.assertFalse((report / 'fixture-state.json').exists())
+            self.assertTrue((report / 'fixture-state.tar.gz').exists())
 
     def test_timeout_terminates_only_created_group_and_waits(self):
         child = Mock(pid=12345)
