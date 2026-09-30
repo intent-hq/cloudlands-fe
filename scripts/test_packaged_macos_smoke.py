@@ -125,8 +125,18 @@ class Admission(unittest.TestCase):
                 'home/intent/workspaces/mock/repo/README.md': b'hello world',
                 'home/.local/state/fixture': b'other home state',
                 'home/.npm/_logs/diagnostic.log': b'unique npm diagnostic',
+                'home/.npm/_npx/5794dd75a801d955/package.json': b'{"dependencies":{}}',
+                'home/.npm/_npx/5794dd75a801d955/package-lock.json': b'{"lockfileVersion":3}',
+                'home/.npm/_npx/5794dd75a801d955/diagnostic.log': b'npx diagnostic',
+                'home/.npm/_npx/unrecognized/node_modules/fixture': b'not admitted cache',
+                'home/.npm/_npx/0000000000000000/node_modules/fixture': b'manifests missing',
+                'home/intent/workspaces/child/repo/node_modules/fixture': b'workspace dependency',
             }
-            for name, data in {**retained, 'home/.npm/_cacache/download': b'reproducible cache'}.items():
+            omitted = {
+                'home/.npm/_cacache/download': b'reproducible cache',
+                'home/.npm/_npx/5794dd75a801d955/node_modules/@anthropic-ai/sdk/claude': b'cached executable',
+            }
+            for name, data in {**retained, **omitted}.items():
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(data)
@@ -138,7 +148,8 @@ class Admission(unittest.TestCase):
                 self.assertEqual(set(archive.getnames()), set(retained))
                 for name, data in retained.items(): self.assertEqual(archive.extractfile(name).read(), data)
             receipt = json.loads((report / 'fixture-state.json').read_text())
-            self.assertEqual(receipt['excludedReproducibleCaches'], ['home/.npm/_cacache'])
+            self.assertEqual(set(receipt['excludedReproducibleCaches']), {
+                'home/.npm/_cacache', 'home/.npm/_npx/5794dd75a801d955/node_modules'})
             self.assertEqual(receipt['inputBytes'], sum(map(len, retained.values())))
 
     def test_required_evidence_size_refusal_names_path_and_threshold_without_success_receipt(self):

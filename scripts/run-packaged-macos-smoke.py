@@ -78,10 +78,11 @@ def retain_fixtures(root):
     files = 0
     entries = 0
     omitted = []
+    excluded_caches = []
     archive_path = REPORT / 'fixture-state.tar.gz'
     # Unbuffered output makes each writer debit visible to the directory check.
     with archive_path.open('xb', buffering=0) as raw, tarfile.open(fileobj=BoundedArchiveWriter(raw), mode='w:gz', dereference=False) as archive:
-        # Capture home first. Only npm's reproducible content cache is
+        # Capture home first. Only npm's reproducible content/dependency caches are
         # excluded from the archive, but remains charged by the whole-root
         # 20 GiB growth guard. No other home subtree is excluded.
         for name in ('home', 'tmp', 'config', 'data', 'cache', 'gitconfig'):
@@ -91,6 +92,18 @@ def retain_fixtures(root):
                     for directory, dirs, names in os.walk(base, followlinks=False):
                         if Path(directory) == base / '.npm' and '_cacache' in dirs:
                             dirs.remove('_cacache')
+                            excluded_caches.append('home/.npm/_cacache')
+                        parts = Path(directory).relative_to(base).parts
+                        if (len(parts) == 3 and parts[:2] == ('.npm', '_npx') and
+                            len(parts[2]) == 16 and all(c in '0123456789abcdef' for c in parts[2]) and
+                            'node_modules' in dirs and all(
+                                (Path(directory) / manifest).is_file() and
+                                not (Path(directory) / manifest).is_symlink()
+                                for manifest in ('package.json', 'package-lock.json'))):
+                            # Preserve the cache's manifests and npm diagnostic logs.
+                            # Never omit node_modules in an actual worktree.
+                            dirs.remove('node_modules')
+                            excluded_caches.append((Path(directory) / 'node_modules').relative_to(root).as_posix())
                         for child in dirs + names:
                             yield Path(directory) / child
                 paths = home_paths()
@@ -118,7 +131,7 @@ def retain_fixtures(root):
         raise RuntimeError(f'Final archive/report byte limit exceeded at {archive_path}: archiveBytes={archive_bytes}/{ARCHIVE_LIMIT}, reportBytes={output_bytes}/{REPORT_LIMIT}; capture incomplete')
     record('fixture-state', {'files': files, 'inputBytes': total, 'archiveBytes': archive_path.stat().st_size,
                             'omittedNonregular': omitted,
-                            'excludedReproducibleCaches': ['home/.npm/_cacache'],
+                            'excludedReproducibleCaches': excluded_caches,
                             'consistency': 'post-test copy; see shutdown receipts for settlement'})
     if report_bytes() > REPORT_LIMIT:
         raise RuntimeError('Final report byte limit exceeded after capture receipt')
