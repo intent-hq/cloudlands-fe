@@ -206,6 +206,11 @@ async function stopPackagedApp(app: ElectronApplication): Promise<void> {
     receipt.descendantSettlement =
       process.platform === 'win32' ? 'not observed' : 'observed descendants absent';
     receipt.settled = true;
+    if (proc.exitCode !== 0 || proc.signalCode !== null) {
+      throw new Error(
+        `Owned app unsuccessful exit: code=${proc.exitCode}, signal=${proc.signalCode}`,
+      );
+    }
     const loggingFailure = logFailures.get(app);
     if (loggingFailure) throw loggingFailure;
   } catch (error) {

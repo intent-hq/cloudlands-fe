@@ -55,6 +55,12 @@ it.each([
   'log-after-handoff-receipt',
   'log-after-handoff-close-receipt',
   'quit-race',
+  'exit-zero',
+  'exit-nonzero',
+  'exit-signal',
+  'exit-unknown',
+  'exit-nonzero-receipt',
+  'log-after-handoff-exit-nonzero',
 ])(
   'settles its owned handle when post-launch %s fails, preserving primary and cleanup',
   async (stage) => {
@@ -98,14 +104,19 @@ it.each([
     const proc = Object.assign(new EventEmitter(), {
       pid: 987654,
       exitCode: null as number | null,
-      signalCode: null,
+      signalCode: null as NodeJS.Signals | null,
       stdout: null,
       stderr: null,
       kill: vi.fn(() => {
         const finish = () => {
           gracefulCleanupCompleted = true;
-          proc.exitCode = 0;
-          proc.emit('close', 0);
+          proc.exitCode = stage.includes('exit-nonzero')
+            ? 1
+            : stage === 'exit-signal' || stage === 'exit-unknown'
+              ? null
+              : 0;
+          proc.signalCode = stage === 'exit-signal' ? 'SIGTERM' : null;
+          proc.emit('close', proc.exitCode, proc.signalCode);
         };
         if (stage === 'quit-race') setImmediate(finish);
         else finish();
@@ -129,7 +140,7 @@ it.each([
         return {
           on: vi.fn(),
           waitForFunction: vi.fn(async () => {
-            if (stage.startsWith('log-after-handoff')) return;
+            if (stage.startsWith('log-after-handoff') || stage.startsWith('exit-')) return;
             throw primary;
           }),
           waitForTimeout: vi.fn(async () => undefined),
@@ -186,11 +197,43 @@ it.each([
       logStream.emit('error', primary);
       error = await exitPackagedApp(error.app).catch((error) => error);
     }
+    if (stage.startsWith('exit-')) {
+      const ownedApp = error.app;
+      error = await exitPackagedApp(ownedApp).catch((error) => error);
+      // Repeated teardown preserves the original success or rejection.
+      expect(await exitPackagedApp(ownedApp).catch((error) => error)).toBe(error);
+    }
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
     expect(app.close).toHaveBeenCalledOnce();
-    expect(proc.exitCode).toBe(0);
+    expect(proc.exitCode).toBe(
+      stage.includes('exit-nonzero')
+        ? 1
+        : stage === 'exit-signal' || stage === 'exit-unknown'
+          ? null
+          : 0,
+    );
     expect(gracefulCleanupCompleted).toBe(true);
-    if (stage.startsWith('log-after-handoff') && stage !== 'log-after-handoff') {
+    if (stage.startsWith('exit-') || stage === 'log-after-handoff-exit-nonzero') {
+      expect(receipt.exitCode).toBe(proc.exitCode);
+      expect(receipt.signalCode).toBe(proc.signalCode);
+      expect(receipt.settled).toBe(true);
+      if (stage === 'exit-zero') {
+        expect(error).toBeUndefined();
+        expect(receipt.error).toBeNull();
+      } else {
+        const flatten = (value: any): any[] =>
+          value instanceof AggregateError ? value.errors.flatMap(flatten) : [value];
+        const errors = flatten(error);
+        const exitError = errors.find((value) => String(value).includes('unsuccessful exit'));
+        expect(exitError).toBeInstanceOf(Error);
+        expect(receipt.cleanupError).toBe(String(exitError));
+        expect(errors).toEqual([
+          ...(stage.startsWith('log-after-handoff') ? [primary] : []),
+          exitError,
+          ...(stage.includes('receipt') ? [recording] : []),
+        ]);
+      }
+    } else if (stage.startsWith('log-after-handoff') && stage !== 'log-after-handoff') {
       const flatten = (value: any): any[] =>
         value instanceof AggregateError ? value.errors.flatMap(flatten) : [value];
       expect(flatten(error)).toEqual([
