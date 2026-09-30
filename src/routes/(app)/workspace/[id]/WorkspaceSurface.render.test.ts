@@ -120,9 +120,6 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: action('notes/createNoteRequested'),
 }));
-vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice', () => ({
-  workspaceLoadRequested: action('workspace-lifecycle/workspaceLoadRequested'),
-}));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   setOnboardingActive: action('sidebarNav/setOnboardingActive'),
 }));
@@ -147,6 +144,7 @@ vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));
+vi.mock('$lib/components/workspace/CompactWorkspaceInitializer.svelte', mockPart('initializer'));
 vi.mock('$features/guest-sessions/GuestEmptyState.svelte', mockPart('guest-empty-state'));
 vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
   selectWindowGuestSession: () => readable(mocks.guestSession),

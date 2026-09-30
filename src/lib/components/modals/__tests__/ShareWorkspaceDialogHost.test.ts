@@ -2,6 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { initialState as principalDefaults } from '$store/renderer/slices/principal/principal-slice';
 import {
   initialState as shareDefaults,
   closeShareDialog,
@@ -72,7 +73,7 @@ it.each(['guest', 'unresolved'] as const)(
     render(ShareWorkspaceDialogHost);
     const link = screen.getByRole('button', { name: 'Open Connections' });
     mocks.state = withLegacyPrincipal(mocks.state, 'guest');
-    if (role === 'unresolved') mocks.state.principal = undefined;
+    if (role === 'unresolved') mocks.state.principal = principalDefaults;
     mocks.dispatch.mockClear();
     await fireEvent.click(link);
     expect(mocks.navigate).not.toHaveBeenCalled();
