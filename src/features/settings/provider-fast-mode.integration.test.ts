@@ -1,4 +1,5 @@
 import { flushSync } from 'svelte';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -79,6 +80,8 @@ async function settle() {
 }
 async function start() {
   stops.push(appStore.runSaga(daemonEventsSaga));
+  await settle();
+  admitLegacyPrincipal();
   stops.push(appStore.runSaga(providerFastModeSaga));
   stopHydration = appStore.runSaga(settingsHydrationSaga);
   stops.push(() => stopHydration());

@@ -293,6 +293,9 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
     expect(panelTitle(container)).toBe(m.layout_sidebarNav_allWorkspaces_title());
 
     bindWindowToGuest();
+    // A saved guest connection alone is not a current principal response.
+    expect(panelTitle(container)).toBe(m.layout_sidebarNav_allWorkspaces_title());
+    admitLegacyPrincipal('guest');
     await waitFor(() =>
       expect(panelTitle(container)).toBe(m.layout_sidebarNav_allSharedWorkspaces_title()),
     );

@@ -16,6 +16,8 @@ import {
   selectHidesOwnerWorkspaceActions,
   selectIsWorkspaceCollaborator,
   selectIsWorkspaceOwner,
+  selectWorkspaceActionContext,
+  selectWorkspaceUpdateContext,
 } from '../workspace/workspace-selectors';
 import { initialState as workspace } from '../workspace/workspace-slice';
 
@@ -59,11 +61,44 @@ describe('legacy authority and capability selectors', () => {
         role,
       );
       expect(selectCanManageWorkspace.select(state, 'workspace')).toBe(manage);
-      expect(selectHidesAgentLifecycleActions.select(state, 'workspace')).toBe(!manage);
-      expect(selectHidesOwnerWorkspaceActions.select(state, 'workspace')).toBe(!manage);
-      expect(selectIsWorkspaceCollaborator.select(state, 'workspace')).toBe(!manage);
+      // Scoped workspace ownership does not grant guest execution/lifecycle methods.
+      const execution = role !== 'guest' && manage;
+      expect(selectHidesAgentLifecycleActions.select(state, 'workspace')).toBe(!execution);
+      expect(selectHidesOwnerWorkspaceActions.select(state, 'workspace')).toBe(!execution);
+      expect(selectIsWorkspaceCollaborator.select(state, 'workspace')).toBe(!execution);
       expect(selectCanShareWorkspace.select(state, 'workspace')).toBe(share);
       expect(selectIsWorkspaceOwner.select(state, 'workspace')).toBe(owner);
+    },
+  );
+
+  it.each(['owner', 'collaborator'] as const)(
+    'keeps guest %s workspace.update rights separate from execution methods',
+    (myRole) => {
+      const state = withLegacyPrincipal(
+        {
+          workspace: {
+            ...workspace,
+            workspaces: createCollection('id', [
+              { id: WorkspaceId('workspace'), myRole } as Workspace,
+            ]),
+          },
+        },
+        'guest',
+      );
+      expect(selectWorkspaceActionContext.select(state, 'workspace')).toBeNull();
+      expect(
+        selectWorkspaceUpdateContext.select(state, 'workspace', ['title', 'tags']),
+      ).not.toBeNull();
+      expect(
+        selectWorkspaceUpdateContext.select(state, 'workspace', ['branch', 'baseCommitSha']) !==
+          null,
+      ).toBe(myRole === 'owner');
+      const replacement = {
+        ...state,
+        connections: { ...state.connections, windowBackendId: 'replacement' },
+      };
+      expect(selectWorkspaceUpdateContext.select(replacement, 'workspace', ['title'])).toBeNull();
+      expect(selectWorkspaceUpdateContext.select(replacement, 'workspace', ['branch'])).toBeNull();
     },
   );
 

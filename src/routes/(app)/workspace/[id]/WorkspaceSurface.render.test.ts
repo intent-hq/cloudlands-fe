@@ -1,8 +1,10 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
   loadState: { status: 'idle', error: null } as {
     status: 'idle' | 'loading' | 'cached-ready' | 'optimistic' | 'ready' | 'not-found' | 'error';
     error: null | { kind: 'not_found' | 'error'; message: string };
@@ -26,7 +28,11 @@ const mockPart = vi.hoisted(() => (marker: string) => async () => {
   };
 });
 
-vi.mock('$store/renderer/store', () => ({ store: { state: {}, dispatch: mocks.dispatch } }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
+});
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
@@ -169,6 +175,7 @@ function renderHost(workspaceId = 'workspace-1') {
 
 afterEach(cleanup);
 beforeEach(() => {
+  mocks.state = withLegacyPrincipal({});
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
   mocks.guestSession = null;
@@ -227,6 +234,7 @@ describe('WorkspaceSurface zero-workspace route (/workspace/new)', () => {
 
   it('shows the guest empty state instead of onboarding in a guest window and keeps the nav (multiplayer w4)', () => {
     mocks.guestSession = { id: 'guest-1', label: 'studio.local' };
+    mocks.state = withLegacyPrincipal({}, 'guest');
     const { container } = renderHost('new');
     expect(
       container.querySelector('[data-workspace-surface-part="guest-empty-state"]'),
