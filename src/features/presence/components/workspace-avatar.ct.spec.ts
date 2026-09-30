@@ -55,11 +55,6 @@ for (const dark of [false, true]) {
       await page.getByRole('button', { name: 'owner · Host owner · Online', exact: true }).focus();
       await page.keyboard.press('Tab');
       await expect(page.getByRole('button', { name: /^member · Host member/ })).toBeFocused();
-      await page.keyboard.press('Enter');
-      await expect(page.getByRole('status')).toHaveText('member');
-      expect(
-        await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
-      ).toBeLessThanOrEqual(1);
       if (process.env.AVATAR_CAPTURE_DIR) {
         const tooltips = page.locator('[data-tooltip-content]');
         await expect(tooltips.filter({ hasText: 'owner · Host owner · Online' })).toHaveCount(0);
@@ -89,6 +84,11 @@ for (const dark of [false, true]) {
           ),
         });
       }
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('status')).toHaveText('member');
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+      ).toBeLessThanOrEqual(1);
       await page.getByRole('button', { name: 'Disable Multiplayer', exact: true }).click();
       await expect(page.locator('[data-presence-avatar-stack]')).toHaveCount(0);
     });
