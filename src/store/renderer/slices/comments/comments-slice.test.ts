@@ -7,6 +7,7 @@ import {
   updateCommentAction,
   removeCommentAction,
   loadCommentsAction,
+  replaceNoteCommentsAction,
   clearCommentsAction,
   selectCommentAction,
 } from './comments-slice';
@@ -33,6 +34,69 @@ describe('commentsReducer', () => {
   it('should return initial state', () => {
     const state = reduce(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  describe('replaceNoteCommentsAction', () => {
+    it('replaces only the exact workspace/note and rebuilds threads', () => {
+      const own = makeComment({
+        id: 'own',
+        workspaceId: 'a',
+        noteId: 'spec',
+        threadId: 'own-thread',
+      });
+      const otherWorkspace = makeComment({
+        id: 'other',
+        workspaceId: 'b',
+        noteId: 'spec',
+        threadId: 'other-thread',
+      });
+      const otherNote = makeComment({
+        id: 'task',
+        workspaceId: 'a',
+        noteId: 'task',
+        threadId: 'task-thread',
+      });
+      let state = reduce(initialState, loadCommentsAction([own, otherWorkspace, otherNote]));
+      state = reduce(state, selectCommentAction('other'));
+      const fresh = makeComment({
+        id: 'fresh',
+        workspaceId: 'a',
+        noteId: 'spec',
+        threadId: 'fresh-thread',
+      });
+      const reply = makeComment({
+        id: 'reply',
+        workspaceId: 'a',
+        noteId: 'spec',
+        threadId: 'fresh-thread',
+        parentId: 'fresh',
+      });
+      state = reduce(state, replaceNoteCommentsAction('a', 'spec', [fresh, reply]));
+      expect(getItems(state.commentsById).map((c) => c.id)).toEqual([
+        'other',
+        'task',
+        'fresh',
+        'reply',
+      ]);
+      expect(getItem(state.threadsById, 'own-thread')).toBeUndefined();
+      expect(getItem(state.threadsById, 'fresh-thread')?.commentIds).toEqual(['fresh', 'reply']);
+      expect(state.selectedCommentId).toBe('other');
+      state = reduce(state, replaceNoteCommentsAction('a', 'spec', []));
+      expect(getItems(state.commentsById).map((c) => c.id)).toEqual(['other', 'task']);
+      expect(getItem(state.threadsById, 'fresh-thread')).toBeUndefined();
+    });
+
+    it('rejects foreign or unowned rows in a scoped snapshot', () => {
+      const state = reduce(
+        initialState,
+        replaceNoteCommentsAction('a', 'spec', [
+          makeComment({ id: 'unknown', noteId: 'spec' }),
+          makeComment({ id: 'foreign', workspaceId: 'b', noteId: 'spec' }),
+          makeComment({ id: 'task', workspaceId: 'a', noteId: 'task' }),
+        ]),
+      );
+      expect(getItems(state.commentsById)).toEqual([]);
+    });
   });
 
   describe('addCommentAction', () => {

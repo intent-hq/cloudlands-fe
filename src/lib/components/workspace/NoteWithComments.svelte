@@ -61,11 +61,10 @@
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
 
-  import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
+  import { selectCommentsForNote } from '$store/renderer/slices/comments/comments-selectors';
   import {
     selectCommentAction,
     updateCommentAction,
-    clearCommentsAction,
   } from '$store/renderer/slices/comments/comments-slice';
 
   import { createEditorConfig } from '$lib/utils/editor-config';
@@ -114,7 +113,6 @@
   const logger = createLogger('NoteWithComments');
   const noteFontStyle = selectNoteFontStyle();
   const spellcheckEnabled = selectSpellcheckEnabled();
-  const allComments$ = selectComments();
 
   // --- Markdown paste detection helpers ---
 
@@ -571,6 +569,7 @@
 
   // Get the current note for task metadata (reactive via Redux selector)
   const currentNote$ = selectNoteById(workspaceIdStore, noteIdStore);
+  const noteComments$ = selectCommentsForNote(workspaceIdStore, noteIdStore);
   const currentNote = $derived($currentNote$ ?? null);
   const rawNoteViewEnabled$ = selectIsRawNoteViewEnabled(workspaceIdStore, noteIdStore);
   // Both task-menu actions launch an agent; the popovers are withheld
@@ -667,7 +666,7 @@
     // 2. There are actual comments to display (not resolved and not replies)
     if (!showComments) return false;
 
-    const activeComments = $allComments$.filter((c) => c.status !== 'resolved' && !c.parentId);
+    const activeComments = $noteComments$.filter((c) => c.status !== 'resolved' && !c.parentId);
     return activeComments.length > 0;
   });
 
@@ -1471,8 +1470,7 @@
       isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
 
-      // Clear comments from previous note and reset decorations immediately
-      appStore.dispatch(clearCommentsAction());
+      // The scoped selector changes owners; retain cached comments for concurrent views.
       if (editor) {
         try {
           updateCommentDecorations(editor.view);
@@ -2256,7 +2254,7 @@
             {editor}
             {workspace}
             editorWrapper={element}
-            comments={$allComments$}
+            comments={$noteComments$}
             onResolve={handleResolveComment}
             onAccept={(id) => appStore.dispatch(updateCommentAction(id, { status: 'accepted' }))}
             onReject={(id) => appStore.dispatch(updateCommentAction(id, { status: 'rejected' }))}
