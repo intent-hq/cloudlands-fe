@@ -23,6 +23,7 @@
  */
 import readline from 'node:readline';
 import { createMockChild } from './mock-workspace-mcp.js';
+import { respondToMockRequest } from './mock-acp-request.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -204,14 +205,12 @@ rl.on('line', async (line) => {
 
   pendingHandlers++;
   try {
-    const msg = JSON.parse(trimmed);
-    const response = await handleMessage(msg);
+    const response = await respondToMockRequest(trimmed, handleMessage, (error) =>
+      process.stderr.write(error),
+    );
     if (response) {
       process.stdout.write(response + '\n');
     }
-  } catch (err) {
-    // Invalid JSON — send parse error
-    process.stdout.write(jsonrpcError(null, -32700, 'Parse error: ' + err.message) + '\n');
   } finally {
     pendingHandlers--;
     exitIfDone();
