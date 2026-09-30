@@ -30,7 +30,7 @@ export type ScriptOutputBuffer = {
 };
 
 /** A viewer-owned formatted poll result, never part of the raw PTY stream. */
-export type ScriptRetainedOutput = {
+type ScriptRetainedOutput = {
   scriptId: string;
   status: 'loading' | 'available' | 'unavailable';
   text?: string;
