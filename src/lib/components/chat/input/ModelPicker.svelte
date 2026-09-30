@@ -1449,6 +1449,9 @@
     if (!isSelectedModelMissingAfterLoad) return false;
     if (isSelectedModelProviderDisabled) return true;
     const provider = selectedModelGateProviderId;
+    // A hydrated registry can establish that a historical provider no longer
+    // resolves, even though that provider can never return a model catalog.
+    if ($providerCatalogEntries$.length > 0 && !hasResolvedProvider(provider)) return true;
     const catalog = $providerCatalogs$[provider];
     const request = $providerRequests$[provider];
     // A failed probe or a degraded/last-good list cannot establish removal.
