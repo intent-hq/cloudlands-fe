@@ -194,7 +194,7 @@ guestSessionsReducer.with(guestSessionsListReceived, (state, { payload: [result]
   );
   const workspaceKeys = new Set(
     retained.flatMap((session) =>
-      session.workspaces.map((workspace) => guestWorkspaceKey(session.id, workspace.id)),
+      (session.workspaces ?? []).map((workspace) => guestWorkspaceKey(session.id, workspace.id)),
     ),
   );
   return {
@@ -212,7 +212,9 @@ guestSessionsReducer.with(guestSessionsListReceived, (state, { payload: [result]
             session.id === confirmation.id &&
             guestSessionLifetime(session) === confirmation.lifetime &&
             (confirmation.workspaceId === null ||
-              session.workspaces.some((workspace) => workspace.id === confirmation.workspaceId)),
+              (session.workspaces ?? []).some(
+                (workspace) => workspace.id === confirmation.workspaceId,
+              )),
         ),
       ),
     ),
