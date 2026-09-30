@@ -311,10 +311,6 @@ async function expectConversationGeometry() {
 }
 
 test.describe('Build Smoke — Editorial Workspace Shell', () => {
-  test.fixme(
-    process.env.BUILD_SMOKE_VALIDATE_JOURNEYS !== '1',
-    'Pending real packaged validation: intent-hq/intent#5608',
-  );
   test.beforeAll(async () => {
     const repo = createTempRepo();
     cleanupRepo = repo.cleanup;

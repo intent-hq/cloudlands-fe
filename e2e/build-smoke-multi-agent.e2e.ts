@@ -40,10 +40,6 @@ async function takeScreenshot(page: Page, name: string): Promise<void> {
 }
 
 test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
-  test.fixme(
-    process.env.BUILD_SMOKE_VALIDATE_JOURNEYS !== '1',
-    'Pending real packaged validation: intent-hq/intent#5608',
-  );
   test.beforeAll(async () => {
     const repo = createTempRepo();
     repoPath = repo.repoPath;
