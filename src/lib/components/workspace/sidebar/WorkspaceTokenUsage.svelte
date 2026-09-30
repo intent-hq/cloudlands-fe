@@ -1,12 +1,8 @@
 <script lang="ts">
   /**
-   * WorkspaceTokenUsage
-   *
-   * Compact token usage disclosure for the collapsed Agents launcher. Shows
-   * only the processed total, with composition and ranked agent/model details
-   * on demand. Reasoning tokens remain a display-only addition to the
-   * daemon-owned accounting. Renders nothing until token data is available (no
-   * layout shift).
+   * Compact token disclosure with on-demand composition and agent/model details.
+   * Reasoning tokens are display-only; accounting remains daemon-owned.
+   * Renders nothing until token data is available (no layout shift).
    */
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
@@ -17,6 +13,7 @@
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Button } from '$lib/components/ui/button';
+  import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { portal } from '$lib/actions/portal';
   import {
@@ -347,6 +344,11 @@
   );
   const previewTotals = $derived(
     crossFilterAvailable ? crossFilterSummary.totals : (legacyPreviewRow?.totals ?? totals),
+  );
+  const hasReportedCost = $derived(
+    crossFilterAvailable
+      ? crossFilterRows.some((row) => row.totals.cost !== undefined)
+      : totals.cost !== undefined || [...agentRows, ...modelRows].some((row) => row.totals.cost),
   );
   const previewProcessedTokens = $derived(tokenCount(previewTotals));
   const previewHumanMessages = $derived(
@@ -743,11 +745,7 @@
                   />
                 </dd>
                 {#if row.id === 'cached'}
-                  <dd
-                    class="composition-value-suffix text-sm font-normal {row.tokens === 0
-                      ? 'text-muted-foreground'
-                      : 'text-foreground'}"
-                  >
+                  <dd class="composition-value-suffix hidden">
                     {m.workspace_tokenUsage_tokenSuffix_label()}
                   </dd>
                 {/if}
@@ -784,24 +782,26 @@
               </div>
             {/if}
           </dl>
-          {#if previewTotals.cost}
-            <dl
-              class="token-usage-cost mt-2 flex items-baseline justify-between gap-3 pl-3.5 text-xs font-normal text-muted-foreground"
-              data-testid="token-usage-total-cost"
-            >
-              <dt>{m.workspace_tokenUsage_cost_label()}</dt>
-              <dd class="shrink-0 tabular-nums">
-                {formatCurrency(previewTotals.cost.amount, previewTotals.cost.currency)}
-              </dd>
-            </dl>
-          {/if}
+          <div class={hasReportedCost ? 'mt-2 min-h-[1lh] text-xs' : ''}>
+            {#if previewTotals.cost}
+              <dl
+                class="token-usage-cost flex items-baseline justify-between gap-3 pl-3.5 text-xs font-normal text-muted-foreground"
+                data-testid="token-usage-total-cost"
+              >
+                <dt>{m.workspace_tokenUsage_cost_label()}</dt>
+                <dd class="shrink-0 tabular-nums">
+                  {formatCurrency(previewTotals.cost.amount, previewTotals.cost.currency)}
+                </dd>
+              </dl>
+            {/if}
+          </div>
         </section>
 
         {#if agentRows.length > 0 || modelRows.length > 0}
           <div class="breakdown-grid grid grid-cols-2 border-t border-border">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 pb-4 pt-3"
+                class="breakdown-section min-w-0 px-4 py-3"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -810,7 +810,7 @@
                 </h4>
                 {#if selectedAgentRow && previewAgentRow}
                   <div
-                    class="navigator-row flex min-w-0 flex-col gap-3"
+                    class={`navigator-row grid min-w-0 ${messageOnlyAgentRows.length ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
                     role="radiogroup"
                     aria-labelledby={`${detailsId}-agents`}
                   >
@@ -832,7 +832,7 @@
                     </div>
                     {#if agentSegmentRows.length > 0}
                       <ol
-                        class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                        class="breakdown-stack col-span-full row-start-2 flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
                       >
                         {#each agentSegmentRows as row (row.id)}
                           <li
@@ -877,14 +877,17 @@
                       </ol>
                     {/if}
                     {#if messageOnlyAgentRows.length > 0}
-                      <ul class="message-only-options flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                      <ul
+                        class="message-only-options col-start-2 row-start-1 flex max-w-16 flex-wrap justify-end gap-1"
+                      >
                         {#each messageOnlyAgentRows as row, index (row.id)}
                           <li class="min-w-0 max-w-full">
                             <Button
                               variant="plain"
+                              size="icon-compact"
+                              iconOnly
                               role="radio"
-                              class="message-only-control block h-auto min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent !px-1 !py-0.5 text-left text-xs font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
-                              labelClass="invisible"
+                              class="message-only-control text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground aria-checked:bg-active"
                               data-preview-active={rowKey(rowTarget(row)) ===
                               rowKey(rowTarget(previewAgentRow))
                                 ? 'true'
@@ -904,15 +907,22 @@
                                 share: shareLabel(0),
                               })}
                               aria-describedby={`${detailsId}-agent-message-only-${index}`}
-                              title={row.title}
+                              tooltip={row.label}
                               onpointerenter={(event) => handleRowPointerEnter(row, event)}
                               onpointerleave={() => handleRowPointerLeave(row)}
                               onpointerdown={(event) => handleRowPointerDown(row, event)}
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
-                              onclick={(event) => handleRowClick(row, event)}>{row.label}</Button
+                              onclick={(event) => handleRowClick(row, event)}
                             >
+                              <ChatTextIcon
+                                size={14}
+                                weight="regular"
+                                mirrored={false}
+                                aria-hidden="true"
+                              />
+                            </Button>
                             <span id={`${detailsId}-agent-message-only-${index}`} class="sr-only">
                               {messageCountsLabel(row.humanMessages, row.agentMessages)}
                             </span>
@@ -927,7 +937,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 pb-4 pt-3"
+                class="breakdown-section min-w-0 px-4 py-3"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
@@ -936,7 +946,7 @@
                 </h4>
                 {#if selectedModelRow && previewModelRow}
                   <div
-                    class="navigator-row flex min-w-0 flex-col gap-3"
+                    class={`navigator-row grid min-w-0 ${messageOnlyModelRows.length ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
                     role="radiogroup"
                     aria-labelledby={`${detailsId}-models`}
                   >
@@ -958,7 +968,7 @@
                     </div>
                     {#if modelSegmentRows.length > 0}
                       <ol
-                        class="breakdown-stack flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
+                        class="breakdown-stack col-span-full row-start-2 flex h-1.5 w-full min-w-0 overflow-hidden bg-muted/60"
                       >
                         {#each modelSegmentRows as row (row.id)}
                           <li
@@ -1003,14 +1013,17 @@
                       </ol>
                     {/if}
                     {#if messageOnlyModelRows.length > 0}
-                      <ul class="message-only-options flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                      <ul
+                        class="message-only-options col-start-2 row-start-1 flex max-w-16 flex-wrap justify-end gap-1"
+                      >
                         {#each messageOnlyModelRows as row, index (row.id)}
                           <li class="min-w-0 max-w-full">
                             <Button
                               variant="plain"
+                              size="icon-compact"
+                              iconOnly
                               role="radio"
-                              class="message-only-control block h-auto min-w-0 max-w-full truncate rounded-sm border-0 bg-transparent !px-1 !py-0.5 text-left text-xs font-normal text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground motion-reduce:transition-none"
-                              labelClass="invisible"
+                              class="message-only-control text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-foreground aria-checked:bg-active"
                               data-preview-active={rowKey(rowTarget(row)) ===
                               rowKey(rowTarget(previewModelRow))
                                 ? 'true'
@@ -1030,15 +1043,22 @@
                                 share: shareLabel(0),
                               })}
                               aria-describedby={`${detailsId}-model-message-only-${index}`}
-                              title={row.title}
+                              tooltip={row.label}
                               onpointerenter={(event) => handleRowPointerEnter(row, event)}
                               onpointerleave={() => handleRowPointerLeave(row)}
                               onpointerdown={(event) => handleRowPointerDown(row, event)}
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
-                              onclick={(event) => handleRowClick(row, event)}>{row.label}</Button
+                              onclick={(event) => handleRowClick(row, event)}
                             >
+                              <ChatTextIcon
+                                size={14}
+                                weight="regular"
+                                mirrored={false}
+                                aria-hidden="true"
+                              />
+                            </Button>
                             <span id={`${detailsId}-model-message-only-${index}`} class="sr-only">
                               {messageCountsLabel(row.humanMessages, row.agentMessages)}
                             </span>
@@ -1087,40 +1107,32 @@
   .composition-value {
     grid-column: 2;
   }
-
   .composition-value-suffix {
     grid-column: 3;
   }
-
   .composition-context {
     grid-column: 4;
   }
-
   .composition-context-suffix {
     grid-column: 5;
   }
-
   .message-composition-metric {
     grid-column: 1 / -1;
     padding-inline-start: 0.875rem;
   }
-
   .breakdown-stack-item {
     min-width: 0;
   }
-
   .breakdown-stack {
     border-radius: 2px;
     gap: 1px;
     background: hsl(var(--border));
   }
-
   .composition-strip {
     border-radius: 2px;
     gap: 1px;
     background: hsl(var(--border));
   }
-
   .composition-strip-segment {
     flex: 0 0 auto;
   }
@@ -1132,62 +1144,49 @@
   .composition-key[data-metric='input'] {
     background: hsl(var(--token-usage-input) / 84%);
   }
-
   .composition-strip-segment[data-metric='output'],
   .composition-key[data-metric='output'] {
     background: hsl(var(--info) / 82%);
   }
-
   .composition-strip-segment[data-metric='reasoning'],
   .composition-key[data-metric='reasoning'] {
     background: hsl(var(--warning) / 88%);
   }
-
   .composition-key[data-zero='true'] {
     background: hsl(var(--muted-foreground));
   }
-
   .breakdown-stack-item:first-child {
     border-radius: 2px 0 0 2px;
     overflow: hidden;
   }
-
   .breakdown-stack-item:last-child {
     border-radius: 0 2px 2px 0;
     overflow: hidden;
   }
-
   .breakdown-stack-item:only-child {
     border-radius: 2px;
   }
-
   :global(.breakdown-item-control) {
     background: hsl(var(--muted-foreground) / 14%);
   }
-
   :global(.dark) :global(.breakdown-item-control) {
     background: hsl(var(--muted-foreground) / 20%);
   }
-
   :global(.breakdown-item-control[data-preview-active='true']) {
     background: hsl(var(--foreground));
   }
-
   :global(.message-only-control[data-preview-active='true']) {
     color: hsl(var(--foreground));
   }
-
   .breakdown-stack:focus-within {
     outline: 2px solid hsl(var(--foreground));
     outline-offset: 2px;
   }
-
   @media (hover: hover) {
     :global(.breakdown-item-control:not([data-preview-active='true']):hover) {
       background: hsl(var(--muted-foreground) / 28%);
     }
   }
-
   @container token-details (max-width: 319px) {
     .breakdown-section {
       padding-inline: 0.5rem;

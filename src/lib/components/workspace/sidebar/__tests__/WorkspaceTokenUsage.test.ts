@@ -514,7 +514,6 @@ describe('WorkspaceTokenUsage', () => {
       expect(stack.previousElementSibling).toBe(selection);
       expect(stack.classList).toContain('h-1.5');
       expect(stack.classList).not.toContain('h-2');
-      expect(navigatorRow.classList).toContain('flex-col');
       expect(controls.every((control) => control.tagName === 'BUTTON')).toBe(true);
       expect(controls.every((control) => control.classList.contains('appearance-none'))).toBe(true);
       expect(activeControls).toHaveLength(1);
@@ -542,8 +541,6 @@ describe('WorkspaceTokenUsage', () => {
       expect(label.classList).toContain('font-medium');
       expect(label.classList).toContain('flex-1');
       expect(label.classList).toContain('min-w-0');
-      expect(section.classList).toContain('pb-4');
-      expect(section.classList).toContain('pt-3');
     }
     expect(details.querySelectorAll('.font-medium')).toHaveLength(2);
     expect(details.querySelectorAll('.breakdown-section + .breakdown-section')).toHaveLength(1);

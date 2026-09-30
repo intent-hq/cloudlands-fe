@@ -792,24 +792,94 @@ test('retains each selected dimension and reaches message-only scopes', async ({
 
   const messageAgent = agentGroup.getByRole('radio', { name: /Agent messages/ });
   const messageModel = modelGroup.getByRole('radio', { name: /Model Message Only/ });
+  const expectIconsReachableWithoutBottomRow = async () => {
+    for (const group of [agentGroup, modelGroup]) {
+      const layout = await group.evaluate((element) => {
+        const options = element.querySelector('.message-only-options')!;
+        const control = options.querySelector('[role="radio"]')!;
+        const box = control.getBoundingClientRect();
+        const bar = element.querySelector('.breakdown-stack')!.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return {
+          extraHeight: element.getBoundingClientRect().bottom - bar.bottom,
+          aboveBar: box.bottom <= bar.top,
+          pointerHit: hit !== null && control.contains(hit),
+          clipped: getComputedStyle(options).clipPath !== 'none',
+        };
+      });
+      expect(layout.extraHeight).toBeCloseTo(0, 2);
+      expect(layout.aboveBar).toBe(true);
+      expect(layout.pointerHit).toBe(true);
+      expect(layout.clipped).toBe(false);
+    }
+  };
   for (const control of [messageAgent, messageModel]) {
-    await expect(control).toBeVisible();
-    await expect(control.locator('[data-slot="button-label"]')).not.toBeVisible();
     await expect(control).toHaveAccessibleDescription('9 human messages and 1 agent message');
+    await expect(control.locator('svg')).toBeVisible();
   }
+  await expectIconsReachableWithoutBottomRow();
+  await finalModel.focus();
+  const initialIconBoxes = await Promise.all([
+    messageAgent.boundingBox(),
+    messageModel.boundingBox(),
+  ]);
+  const cost = details.getByTestId('token-usage-total-cost');
+  await expect(cost).toHaveText('Cost $0.56');
+  await messageAgent.hover();
+  await expect(cost).toHaveCount(0);
+  expect(await Promise.all([messageAgent.boundingBox(), messageModel.boundingBox()])).toEqual(
+    initialIconBoxes,
+  );
+  await expect(page.getByRole('tooltip')).toContainText('Agent messages');
+  await expect(messageAgent).toHaveAttribute('data-preview-active', 'true');
+  await expect(messageAgent).not.toBeChecked();
+  await messageAgent.click();
+  await messageModel.click();
+  await page.mouse.move(0, 0);
+  await messageModel.blur();
+  await expect(messageAgent).toBeChecked();
+  await expect(messageModel).toBeChecked();
+  await expect(cost).toHaveText('Cost $0.00');
+  expect(await Promise.all([messageAgent.boundingBox(), messageModel.boundingBox()])).toEqual(
+    initialIconBoxes,
+  );
+  await expect(messages).toHaveText('9 human messages and 1 agent message');
   await agentBeta.focus();
   await agentBeta.press('End');
   await expect(messageAgent).toBeFocused();
+  await expect(messageAgent.locator('svg')).toBeVisible();
+  await expect(messageAgent).not.toHaveCSS('box-shadow', 'none');
+  expect(await messageAgent.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
   await messageAgent.press('Space');
   await finalModel.focus();
   await finalModel.press('End');
   await expect(messageModel).toBeFocused();
+  await expect(messageModel.locator('svg')).toBeVisible();
+  await expect(messageModel).not.toHaveCSS('box-shadow', 'none');
+  expect(await messageModel.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
   await messageModel.press('Enter');
   await expect(messageAgent).toBeChecked();
   await expect(messageModel).toBeChecked();
   await expect(messages).toHaveText('9 human messages and 1 agent message');
   await messageAgent.press('Home');
+  await expect(agentGroup.getByRole('radio').first()).toBeFocused();
+  await agentGroup.getByRole('radio').first().press('ArrowLeft');
+  await expect(messageAgent).toBeFocused();
+  await messageAgent.press('ArrowRight');
+  await expect(agentGroup.getByRole('radio').first()).toBeFocused();
   await messageModel.press('Home');
+  await expect(modelGroup.getByRole('radio').first()).toBeFocused();
+  await expectIconsReachableWithoutBottomRow();
+  // Return by pointer through an empty intersection, then restore both reported-cost scopes.
+  await agentBeta.click();
+  const modelBeta = modelGroup.getByRole('radio', { name: /Model Beta:/ });
+  await modelBeta.click();
+  await page.mouse.move(0, 0);
+  await modelBeta.blur();
+  await expect(agentBeta).toBeChecked();
+  await expect(modelBeta).toBeChecked();
+  await expect(cost).toHaveText('Cost $0.34');
+  await expect(messages).toHaveText('2 human and 4 agent messages');
   await messageAgent.dispatchEvent('pointerdown', { pointerType: 'touch' });
   await messageModel.dispatchEvent('pointerdown', { pointerType: 'touch' });
   await expect(messageAgent).toHaveAttribute('aria-checked', 'true');
@@ -825,7 +895,7 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
-    props: { theme: 'light', width: 304, locale: 'de' },
+    props: { theme: 'light', width: 304, locale: 'de', messageOnly: true },
   });
   await component.getByTestId('token-usage-disclosure').click();
 
@@ -833,7 +903,7 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   const modelGroup = page.getByRole('radiogroup', { name: 'Nach Modell' });
   await expect(agentGroup).toBeVisible();
   await expect(modelGroup).toBeVisible();
-  await expect(agentGroup.getByRole('radio')).toHaveCount(4);
+  await expect(agentGroup.getByRole('radio')).toHaveCount(5);
   await expect(agentGroup.getByRole('radio').first()).toHaveAccessibleName(
     /Nach Agent, Agent alpha-01: 750 Token/,
   );
@@ -846,6 +916,14 @@ test('uses localized radio group and segment semantics', async ({ mount, page })
   expect(localizedStatus?.match(/Nach Agent/g)).toHaveLength(1);
   await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('aria-checked', 'false');
   await expect(agentGroup.getByRole('radio').nth(1)).toHaveAttribute('data-preview-active', 'true');
+  const messages = agentGroup.getByRole('radio', { name: /Nach Agent, Agent messages: 0 Token/ });
+  await expect(messages).toHaveAccessibleDescription(
+    '9 menschliche Nachrichten und 1 Agentennachricht',
+  );
+  await messages.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Agent messages');
+  await messages.click();
+  await expect(messages).toBeChecked();
 });
 
 for (const localeCase of [
@@ -930,6 +1008,7 @@ for (const localeCase of [
     await expect(messageRows.locator('.animated-number-value')).toHaveText(localeCase.plural);
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.plural);
     await expect(details.locator('.composition-value-suffix')).toHaveText(localeCase.suffixes[0]);
+    await expect(details.locator('.composition-value-suffix')).not.toBeVisible();
     await expect(details.locator('.composition-context-suffix')).toHaveText(localeCase.suffixes[1]);
 
     const agentControls = page
@@ -1204,6 +1283,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     compositionRows.nth(0).locator('.composition-value .animated-number-value'),
   ).toHaveText('400');
   await expect(compositionRows.nth(0).locator('.composition-value-suffix')).toHaveText('tokens');
+  await expect(compositionRows.nth(0).locator('.composition-value-suffix')).not.toBeVisible();
   await expect(
     compositionRows.nth(0).locator('.composition-context .animated-number-value'),
   ).toHaveText('67%');
@@ -1553,7 +1633,7 @@ test('renders the full reference table as a wide overlay from the real workspace
       }) =>
         Math.abs(bar.left - selection.left) <= 1 &&
         Math.abs(bar.top - (selection.top + selection.height) - 12) <= 0.01 &&
-        Math.abs(section.bottom - bar.bottom - 16) <= 0.01 &&
+        Math.abs(section.bottom - bar.bottom - (selection.top - section.top)) <= 0.01 &&
         bar.right <= section.right + 1 &&
         Math.abs(percentage.left - title.right - 6) <= 0.01 &&
         Math.abs(percentage.right - bar.right) <= 1 &&
@@ -1732,7 +1812,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   const contextRightEdges = desktopRows.map(({ context }) => context.x + context.width);
   expect(Math.max(...valueRightEdges) - Math.min(...valueRightEdges)).toBeLessThanOrEqual(1);
   expect(Math.max(...contextRightEdges) - Math.min(...contextRightEdges)).toBeLessThanOrEqual(1);
-  expect(desktopRows[0].valueSuffix!.x).toBeGreaterThanOrEqual(valueRightEdges[0]);
+  expect(desktopRows[0].valueSuffix!.width).toBe(0);
   expect(desktopRows[0].contextSuffix!.x).toBeGreaterThanOrEqual(contextRightEdges[0]);
   expect(desktopRows.slice(1).every(({ valueSuffix }) => valueSuffix === undefined)).toBe(true);
   expect(desktopRows.slice(1).every(({ contextSuffix }) => contextSuffix === undefined)).toBe(true);
