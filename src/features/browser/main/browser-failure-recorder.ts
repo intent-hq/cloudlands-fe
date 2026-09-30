@@ -7,12 +7,31 @@ const TEXT_LIMIT = 16_384;
 const MAX_REQUESTS = 512;
 const MAX_EVENTS = 4096;
 const MAX_BYTES = 4 * 1024 * 1024;
+const SETUP_TIMEOUT_MS = 5000;
+const CLEANUP_TIMEOUT_MS = 1000;
+// A timeout does not cancel CDP. Retain capacity until the actual command settles,
+// including when a new capture interval starts on the same guest.
+const outstandingBodies = new Map<number, number>();
+
+function bounded<T>(operation: Promise<T>, milliseconds: number, stage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    operation,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Capture ${stage} timeout`)), milliseconds);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 /** Do not retain request headers, cookies, POST data, URL credentials or query values. */
 export function captureText(value: unknown, limit = TEXT_LIMIT): string {
   if (typeof value !== 'string') return '';
   const text = value
     .slice(0, limit * 2)
+    .replace(
+      /((?:["']?)\b(?:authorization|cookie|set-cookie)(?:["']?)\s*[:=]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\r\n]*)/gi,
+      '$1[redacted]',
+    )
     .replace(/(?:https?|wss?):\/\/[^\s<>"']+/gi, (raw) => {
       try {
         const url = new URL(raw);
@@ -70,7 +89,10 @@ export async function recordBrowserFailures(
 ): Promise<{ cleanup: () => Promise<void> }> {
   const send = (method: string, params?: Record<string, unknown>) =>
     embeddedBrowserCdp.sendCdpCommand(webContentsId, method, params);
-  await embeddedBrowserCdp.ensureAttached(webContentsId);
+  const setupDeadline = Date.now() + SETUP_TIMEOUT_MS;
+  const setup = <T>(operation: Promise<T>) =>
+    bounded(operation, Math.max(0, setupDeadline - Date.now()), 'setup');
+  await setup(embeddedBrowserCdp.ensureAttached(webContentsId));
   const binding = `__intentCapture_${randomUUID().replaceAll('-', '')}`;
   const contexts = new Set<number>();
   const pending = new Map<string, NetworkRequest & { started: number }>();
@@ -84,7 +106,7 @@ export async function recordBrowserFailures(
   };
   const source = `(() => {
     const key = ${JSON.stringify(binding)};
-    if (globalThis[key + '_cleanup']) return;
+    if (globalThis[key + '_cleanup'] || typeof globalThis[key] !== 'function') return;
     const string = value => { try { return String(value).slice(0, 16384); } catch { return '[unserializable]'; } };
     const emit = (kind, value, event) => {
       try { globalThis[key](JSON.stringify({kind, message: string(value?.message ?? value), stack: string(value?.stack ?? ''), url: string(event?.filename ?? location.href), lineNumber: event?.lineno})); } catch {}
@@ -207,7 +229,7 @@ export async function recordBrowserFailures(
         request.failed = true;
         if (
           bodyCount >= 32 ||
-          bodies.size >= 4 ||
+          (outstandingBodies.get(webContentsId) ?? 0) >= 4 ||
           (request.size ?? 0) > 65536 ||
           !/^(text\/|application\/(json|javascript|problem\+json))/.test(request.mimeType ?? '')
         ) {
@@ -217,13 +239,15 @@ export async function recordBrowserFailures(
         }
         bodyCount++;
         pending.delete(p.requestId);
-        let timer: ReturnType<typeof setTimeout>;
-        const job = Promise.race([
-          send('Network.getResponseBody', { requestId: p.requestId }),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('body timeout')), 1000);
-          }),
-        ])
+        outstandingBodies.set(webContentsId, (outstandingBodies.get(webContentsId) ?? 0) + 1);
+        const command = Promise.resolve()
+          .then(() => send('Network.getResponseBody', { requestId: p.requestId }))
+          .finally(() => {
+            const remaining = (outstandingBodies.get(webContentsId) ?? 1) - 1;
+            if (remaining) outstandingBodies.set(webContentsId, remaining);
+            else outstandingBodies.delete(webContentsId);
+          });
+        const job = bounded(command, 1000, 'response body')
           .then((result: any) => {
             request.body = captureText(
               result.base64Encoded
@@ -236,7 +260,6 @@ export async function recordBrowserFailures(
             request.bodyUnavailable = 'body unavailable';
           })
           .finally(() => {
-            clearTimeout(timer);
             emitRequest(request);
             bodies.delete(job);
           });
@@ -255,13 +278,15 @@ export async function recordBrowserFailures(
     if (reason) request.bodyUnavailable = reason;
     emitRequest(request);
   }
-  let cleaned = false;
-  async function cleanup() {
-    if (cleaned) return;
-    cleaned = true;
+  let cleanupPromise: Promise<void> | undefined;
+  function cleanup(): Promise<void> {
+    cleanupPromise ??= performCleanup();
+    return cleanupPromise;
+  }
+  async function performCleanup() {
     stopped = true;
     unsubscribe();
-    await Promise.allSettled([
+    const commands = [
       ...(scriptId
         ? [send('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptId })]
         : []),
@@ -272,21 +297,55 @@ export async function recordBrowserFailures(
         }),
       ),
       send('Runtime.removeBinding', { name: binding }),
+    ];
+    await Promise.allSettled([
+      ...commands.map((command) => bounded(command, CLEANUP_TIMEOUT_MS, 'cleanup')),
+      ...bodies,
     ]);
-    await Promise.allSettled([...bodies]);
     for (const id of pending.keys()) finish(id, 'capture stopped');
   }
   try {
-    await send('Runtime.enable');
-    await send('Console.enable');
-    await send('Network.enable', { maxTotalBufferSize: 1048576, maxResourceBufferSize: 65536 });
-    await send('Page.enable');
-    await send('Runtime.addBinding', { name: binding });
-    const result = (await send('Page.addScriptToEvaluateOnNewDocument', { source })) as
-      { identifier?: string } | undefined;
-    scriptId = result?.identifier;
+    await setup(send('Runtime.enable'));
+    await setup(send('Console.enable'));
+    await setup(
+      send('Network.enable', { maxTotalBufferSize: 1048576, maxResourceBufferSize: 65536 }),
+    );
+    await setup(send('Page.enable'));
+    await setup(
+      send('Runtime.addBinding', { name: binding }).then((result) => {
+        if (stopped)
+          void bounded(
+            send('Runtime.removeBinding', { name: binding }),
+            CLEANUP_TIMEOUT_MS,
+            'late binding cleanup',
+          ).catch(() => {});
+        return result;
+      }),
+    );
+    await setup(
+      send('Page.addScriptToEvaluateOnNewDocument', { source }).then((result) => {
+        scriptId = (result as { identifier?: string } | undefined)?.identifier;
+        if (stopped && scriptId)
+          void bounded(
+            send('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptId }),
+            CLEANUP_TIMEOUT_MS,
+            'late script cleanup',
+          ).catch(() => {});
+      }),
+    );
     if (!scriptId) throw new Error('Early document capture script was not installed');
-    await send('Runtime.evaluate', { expression: source });
+    await setup(
+      send('Runtime.evaluate', { expression: source }).then(() => {
+        if (stopped)
+          void bounded(
+            send('Runtime.evaluate', {
+              expression: `globalThis[${JSON.stringify(binding + '_cleanup')}]?.()`,
+            }),
+            CLEANUP_TIMEOUT_MS,
+            'late listener cleanup',
+          ).catch(() => {});
+      }),
+    );
     return { cleanup };
   } catch (error) {
     await cleanup();

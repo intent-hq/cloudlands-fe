@@ -293,7 +293,7 @@ describe('BrowserCaptureService path boundaries', () => {
         text: 'Uncaught',
         exception: {
           description:
-            'Error: fixture throw\\n    at boot (https://example.test/app.js?token=secret:1:2)',
+            'Error: fixture throw\nAuthorization: Bearer fixture-sensitive-bearer\nAuthorization: Basic fixture-sensitive-basic\n    at boot (https://example.test/app.js?token=secret:1:2)',
         },
         stackTrace: {
           callFrames: [
@@ -330,7 +330,7 @@ describe('BrowserCaptureService path boundaries', () => {
       response: { status: 500, statusText: 'Server Error', mimeType: 'text/plain' },
     });
     vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockResolvedValueOnce({
-      body: 'module failed token=secret',
+      body: 'module failed token=secret\nCookie: first=fixture-sensitive-one; second=fixture-sensitive-two\nSet-Cookie: first=fixture-sensitive-three; other=fixture-sensitive-four',
       base64Encoded: false,
     });
     cdpMessageHandler?.('Network.loadingFinished', { requestId: 'failure', encodedDataLength: 30 });
@@ -343,7 +343,7 @@ describe('BrowserCaptureService path boundaries', () => {
     expect(networkLog).toContain('module failed');
     expect(networkLog).toContain('entry.js');
     expect(networkLog).toContain('2023-11-14T22:13:20.000Z');
-    expect(consoleLog + networkLog).not.toMatch(/password|secret/);
+    expect(consoleLog + networkLog).not.toMatch(/password|secret|fixture-sensitive/);
     expect(embeddedBrowserCdp.sendCdpCommand).toHaveBeenCalledWith(
       1,
       'Page.addScriptToEvaluateOnNewDocument',
@@ -656,6 +656,29 @@ describe('BrowserCaptureService path boundaries', () => {
     expect((await read()).success).toBe(true);
     await fs.unlink(path.join(session.outputDir, 'capture-owner.json'));
     expect((await read('agent-2')).success).toBe(true);
+  });
+
+  it('finalizes session artifacts even when guest cleanup commands never return', async () => {
+    vi.useFakeTimers();
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    cdpMessageHandler?.('Runtime.exceptionThrown', {
+      exceptionDetails: { text: 'retained before stuck cleanup' },
+    });
+    const original = vi.mocked(embeddedBrowserCdp.sendCdpCommand).getMockImplementation();
+    vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(
+      async () => new Promise(() => {}),
+    );
+    try {
+      const ending = browserCapture.endSession(session.id, 'workspace-a');
+      await vi.advanceTimersByTimeAsync(1500);
+      const result = await ending;
+      expect(await fs.readFile(result.console, 'utf8')).toContain('retained before stuck cleanup');
+      expect(cdpMessageHandler).toBeUndefined();
+      expect(browserCapture.getSession(session.id, 'workspace-a')).toBeUndefined();
+    } finally {
+      vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(original!);
+    }
   });
 
   it('reports unavailable and oversized response bodies without fetching them again', async () => {
