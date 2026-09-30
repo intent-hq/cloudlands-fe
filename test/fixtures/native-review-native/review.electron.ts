@@ -7,7 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { createHash, randomUUID } from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { createWriteStream, writeFileSync } from 'node:fs';
 import {
@@ -36,16 +36,889 @@ import type {
   NativeReviewTextCommand,
 } from '../../../src/shared/types/native-review-operation';
 
+// Private companion diagnostics are evidence, never continuation authority.
+const companionDiagnosticGrep =
+  '^ review\\.electron\\.ts 10 UI sidebar held child close and original receipts$';
+const companionDiagnosticRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-companion-clock-6328';
+const companionDiagnosticIdentity = {
+  sourceCommit: '581a3c62a784e6803301b316a2bf7f8c018efb35',
+  parent: '3feca80dbdada0d334f67010a2d971c3e58cc343',
+  sourceTree: '78a10bf7e11a8b0a9da4a2e07ddb580e7e234e41',
+  driverBlob: '33c807f1a255ffa40a1d9fc53ec41edc249d01b7',
+  sourceSha256: 'e35f1d6004d7107f35db10f246e64995aacb69bfc3d3407dbcbecde640684146',
+  executableSha256: '4568a45c687cd734234d021254efe33247871f3336f06570d09c621b20afba94',
+  bytes: 267856512,
+  basename: 'e2e-native-review-wire-581a3c62-x86_64-unknown-linux-gnu',
+};
+export function companionDiagnosticMode(env: NodeJS.ProcessEnv): boolean {
+  const value = env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328;
+  if (value === undefined) return false;
+  if (value !== '1' || env.NATIVE_REVIEW_UI !== '1' || env.NATIVE_REVIEW_SIDEBAR_UI !== '1')
+    throw new Error('Companion diagnostic requires explicit UI and sidebar modes');
+  return true;
+}
+export async function assertCompanionDiagnosticIdentity(
+  driverSource: string,
+  artifactPath: string,
+) {
+  if (
+    driverSource !== join(companionDiagnosticRoot, 'packages/intentd') ||
+    artifactPath !== join(companionDiagnosticRoot, 'artifact', companionDiagnosticIdentity.basename)
+  )
+    throw new Error('Unreleased diagnostic source or executable locator');
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-C', driverSource, ...args], { encoding: 'utf8' }).trim();
+  const pin = companionDiagnosticIdentity;
+  if (
+    git('rev-parse', 'HEAD') !== pin.sourceCommit ||
+    git('rev-parse', 'HEAD^') !== pin.parent ||
+    git('rev-parse', 'HEAD^{tree}') !== pin.sourceTree ||
+    git('status', '--porcelain', '--untracked-files=all') !== ''
+  )
+    throw new Error('Diagnostic source is not the accepted clean sole-parent input');
+  const fixture = 'crates/intentd/tests/e2e_native_review_wire.rs';
+  if (
+    git('rev-parse', 'HEAD:' + fixture) !== pin.driverBlob ||
+    hash(await readFile(join(driverSource, fixture))) !== pin.sourceSha256
+  )
+    throw new Error('Diagnostic driver source mismatch');
+  const observer = 'crates/intent-services/src/repository_admission/native_review.rs';
+  if (
+    git('rev-parse', 'HEAD:' + observer) !== '4f581c72785f3bf983f9bf7eb409e61ac94b58d4' ||
+    git('hash-object', observer) !== '4f581c72785f3bf983f9bf7eb409e61ac94b58d4'
+  )
+    throw new Error('Diagnostic observer source mismatch');
+  const artifact = await lstat(artifactPath);
+  if (
+    !artifact.isFile() ||
+    artifact.isSymbolicLink() ||
+    artifact.mode % 512 !== 0o555 ||
+    artifact.size !== pin.bytes ||
+    hash(await readFile(artifactPath)) !== pin.executableSha256
+  )
+    throw new Error('Diagnostic artifact mismatch');
+  const contracts = [
+    [
+      join(companionDiagnosticRoot, 'HANDOFF.json'),
+      'c30945dc3f5ca341728aceec8044c0d3023957d978f59870e29ed9b0684c2798',
+    ],
+    [
+      join(companionDiagnosticRoot, 'CONTRACT-v1.json'),
+      '5e1d773d4f5cdd98ac8a2afbe49359315b0d18798bde3353362bc64344ab7577',
+    ],
+    [
+      join(companionDiagnosticRoot, 'qualification-contract-v3.json'),
+      'd7eab6b8e449272b42a2ca68ff72034c579fe33bff925ef06a32b1a21f05e3b3',
+    ],
+    [
+      join(companionDiagnosticRoot, 'finite-plan-v3.json'),
+      'f5df33601298a00f7e043f6fb84d51e80540b1387964be9f8d8ac88b9ee921a9',
+    ],
+    [
+      join(companionDiagnosticRoot, '../native-review-owned-cleanup/CONTROL-CONTRACT.md'),
+      'cdddfbff85798cc3b071e0fa8da8f1ba16b6e57d155a9a08433d16972b176f9b',
+    ],
+    [
+      join(companionDiagnosticRoot, '../repository-native-review-companion/COMPILED-CONTRACT.md'),
+      '79412b9ae89ecb16886b186715072778f40a8a29f3bcac638d6f124ab46e3612',
+    ],
+  ];
+  for (const [path, expected] of contracts)
+    if (hash(await readFile(path)) !== expected)
+      throw new Error('Diagnostic contract identity mismatch');
+  const handoff = JSON.parse(await readFile(contracts[0][0], 'utf8'));
+  if (
+    handoff.source.head !== pin.sourceCommit ||
+    handoff.source.soleParent !== pin.parent ||
+    handoff.source.tree !== pin.sourceTree ||
+    handoff.artifact.artifact.path !== artifactPath ||
+    handoff.artifact.artifact.sha256 !== pin.executableSha256 ||
+    handoff.artifact.artifact.bytes !== pin.bytes ||
+    handoff.artifact.artifact.mode !== '0o555' ||
+    handoff.manifest.sha256 !== '106a6a2bf4e039a523512d2b1afbac55e94b7bb10964a52bab0d7b2e82d2acf7'
+  )
+    throw new Error('Diagnostic handoff binding mismatch');
+  return {
+    pin,
+    contracts,
+    qualification:
+      'four b908 + A-prime 3feca + B 581a; post-project comparator untested; historical pending wording unchanged',
+  };
+}
+
+// Detect duplicate keys and unsafe integers before JSON.parse can discard precision or evidence.
+export function companionJson(bytes: Buffer, maximum: number): any {
+  if (bytes.length > maximum) throw new Error('Diagnostic JSON byte bound');
+  const input = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  let i = 0,
+    nodes = 0;
+  const ws = () => {
+    while (/[ \t\r\n]/.test(input[i] ?? '') && i < input.length) i++;
+  };
+  const string = () => {
+    const start = i++;
+    while (i < input.length) {
+      if (input[i++] === '"') return JSON.parse(input.slice(start, i)) as string;
+      if (input[i - 1] === '\\') i++;
+    }
+    throw new Error('Partial diagnostic string');
+  };
+  const value = (depth: number): any => {
+    ws();
+    if (++nodes > 8192 || depth > 12) throw new Error('Diagnostic JSON structure bound');
+    if (input[i] === '"') return string();
+    if (input[i] === '{') {
+      i++;
+      ws();
+      const result: Record<string, unknown> = Object.create(null);
+      if (input[i] === '}') {
+        i++;
+        return result;
+      }
+      while (i < input.length) {
+        ws();
+        if (input[i] !== '"') throw new Error('Diagnostic object key');
+        const key = string();
+        ws();
+        if (Object.hasOwn(result, key) || input[i++] !== ':')
+          throw new Error('Duplicate diagnostic key');
+        result[key] = value(depth + 1);
+        ws();
+        const end = input[i++];
+        if (end === '}') return result;
+        if (end !== ',') throw new Error('Diagnostic object boundary');
+      }
+    } else if (input[i] === '[') {
+      i++;
+      ws();
+      const result: unknown[] = [];
+      if (input[i] === ']') {
+        i++;
+        return result;
+      }
+      while (i < input.length) {
+        result.push(value(depth + 1));
+        ws();
+        const end = input[i++];
+        if (end === ']') return result;
+        if (end !== ',') throw new Error('Diagnostic array boundary');
+      }
+    } else {
+      for (const [literal, result] of [
+        ['true', true],
+        ['false', false],
+        ['null', null],
+      ] as const)
+        if (input.startsWith(literal, i)) {
+          i += literal.length;
+          return result;
+        }
+      const numeric = /^(0|[1-9][0-9]*)/.exec(input.slice(i));
+      if (numeric) {
+        i += numeric[0].length;
+        const result = Number(numeric[0]);
+        if (!Number.isSafeInteger(result)) throw new Error('Unsafe diagnostic u64');
+        return result;
+      }
+    }
+    throw new Error('Malformed or partial diagnostic JSON');
+  };
+  const result = value(0);
+  ws();
+  if (i !== input.length) throw new Error('Trailing diagnostic JSON');
+  return result;
+}
+export function companionKeys(value: any, keys: string[]) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(',') !== [...keys].sort().join(',')
+  )
+    throw new Error('Unknown or missing diagnostic fields');
+}
+const companionPhases = [
+  'process',
+  'request',
+  'operation',
+  'capture',
+  'claim',
+  'witness',
+  'capacity',
+  'record-capacity',
+  'global-record-capacity',
+  'acquire',
+  'acquire-wait',
+  'authority',
+  'metadata',
+  'source',
+  'source-entered',
+  'source-cancelled',
+  'source-deadline',
+  'git-continuity',
+  'project',
+  'branch',
+  'read-authority',
+  'read-fence',
+  'read-fence-abandoned',
+  'facts',
+  'final-facts',
+  'install',
+  'body',
+  'delivery',
+  'public-error',
+  'protected-result',
+  'worker',
+  'frame-deadline',
+  'request-finish',
+  'complete',
+  'complete-normal',
+  'complete-abandoned',
+  'write-retire',
+  'full-retire',
+  'commit-witness',
+  'resource-release',
+];
+export function readCompanionDiagnostics(raw: Buffer, final: Buffer, workerPid: number) {
+  const errors: string[] = [],
+    incomplete: string[] = [],
+    frames: Record<string, any>[] = [];
+  const streams = new Map<
+    number,
+    {
+      first: Record<string, any>;
+      last: Record<string, any>;
+      active: Map<number, string>;
+      seen: Set<number>;
+      invalid: boolean;
+      finalized: boolean;
+    }
+  >();
+  const unsigned = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+  const positive = (v: unknown) => unsigned(v) && (v as number) > 0;
+  const uuid = (v: unknown) =>
+    v === null ||
+    (typeof v === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v));
+  if (!positive(workerPid) || workerPid > 0xffffffff) errors.push('worker-pid');
+  if (!Buffer.from(raw.toString('utf8')).equals(raw)) errors.push('invalid-utf8');
+  if (raw.length > 2048 * 1025) errors.push('fixture-byte-cap');
+  const lines = raw.length <= 2048 * 1025 ? raw.toString('utf8').split('\n') : [];
+  if (lines.pop() !== '') errors.push('partial-final-line');
+  if (!lines.length || lines.length > 2048) errors.push('fixture-record-cap');
+  for (const line of lines.slice(0, 2048)) {
+    let f: Record<string, any>;
+    try {
+      f = companionJson(Buffer.from(line), 1024);
+      companionKeys(f, [
+        'version',
+        'pid',
+        'stream',
+        'domain',
+        'anchor_ms',
+        'elapsed_ns',
+        'sequence',
+        'observed',
+        'dropped',
+        'span',
+        'phase',
+        'outcome',
+        'finalized',
+        'origin_stream',
+        'method',
+        'daemon',
+        'operation',
+        'capture',
+      ]);
+      if (
+        f.version !== 1 ||
+        f.pid !== workerPid ||
+        !positive(f.stream) ||
+        !positive(f.anchor_ms) ||
+        !unsigned(f.elapsed_ns) ||
+        !positive(f.sequence) ||
+        !unsigned(f.observed) ||
+        !unsigned(f.dropped) ||
+        !(f.span === null || positive(f.span)) ||
+        !(f.origin_stream === null || positive(f.origin_stream)) ||
+        typeof f.finalized !== 'boolean' ||
+        !companionPhases.includes(f.phase) ||
+        !['enter', 'ok', 'error', 'exit', 'unwind', 'link'].includes(f.outcome) ||
+        ![null, 'prepare', 'execute', 'reconcile', 'release'].includes(f.method) ||
+        ![f.daemon, f.operation, f.capture].every(uuid) ||
+        f.domain !== `tokio-instant:${f.pid}:${f.stream}`
+      )
+        throw new Error('Diagnostic frame types or identity');
+    } catch {
+      errors.push('malformed-frame');
+      continue;
+    }
+    frames.push(f);
+    let s = streams.get(f.stream);
+    if (!s) {
+      s = {
+        first: f,
+        last: { sequence: 0, elapsed_ns: 0 },
+        active: new Map(),
+        seen: new Set(),
+        invalid: false,
+        finalized: false,
+      };
+      streams.set(f.stream, s);
+    }
+    const immutable = [
+      'domain',
+      'anchor_ms',
+      'origin_stream',
+      'method',
+      'daemon',
+      'operation',
+      'capture',
+    ];
+    let valid =
+      f.sequence === s.last.sequence + 1 &&
+      f.sequence <= 256 &&
+      f.observed === f.sequence &&
+      f.dropped === 0 &&
+      !s.finalized &&
+      f.elapsed_ns >= s.last.elapsed_ns &&
+      immutable.every((key) => f[key] === s.first[key]);
+    if (f.outcome === 'enter') {
+      valid &&= f.span !== null && !f.finalized && !s.seen.has(f.span);
+      if (f.sequence === 1) {
+        valid &&= f.span === 1 && ['process', 'request', 'operation'].includes(f.phase);
+        if (f.phase === 'process')
+          valid &&= [f.method, f.origin_stream, f.daemon, f.operation, f.capture].every(
+            (v) => v === null,
+          );
+        if (f.phase === 'request') valid &&= f.method !== null && f.origin_stream === null;
+        if (f.phase === 'operation')
+          valid &&= f.method === null && f.origin_stream !== null && f.operation !== null;
+      } else
+        valid &&=
+          s.active.has(1) && f.span !== 1 && !['process', 'request', 'operation'].includes(f.phase);
+      if (valid) {
+        s.active.set(f.span, f.phase);
+        s.seen.add(f.span);
+      }
+    } else if (f.outcome === 'link') valid &&= f.span === null && !f.finalized && s.active.has(1);
+    else {
+      valid &&= f.span !== null && s.active.get(f.span) === f.phase;
+      if (f.finalized)
+        valid &&=
+          f.span === 1 &&
+          f.phase === s.first.phase &&
+          s.active.size === 1 &&
+          ['exit', 'unwind'].includes(f.outcome);
+      else valid &&= f.span !== 1;
+      if (valid) {
+        s.active.delete(f.span);
+        if (f.finalized && !s.invalid) s.finalized = true;
+      }
+    }
+    if (!valid) {
+      s.invalid = true;
+      errors.push(`invalid:${f.stream}:${f.sequence}`);
+    }
+    if (f.outcome === 'unwind') incomplete.push(`unwind:${f.stream}:${f.sequence}`);
+    // Resultless non-root scopes describe only observed exit, not successful business work.
+    if (f.outcome === 'exit' && !['process', 'request', 'operation', 'worker'].includes(f.phase))
+      incomplete.push(`unknown-scope:${f.stream}:${f.span}`);
+    s.last = f;
+  }
+  if (![...streams.values()].some((s) => s.first.phase === 'process' && !s.invalid))
+    incomplete.push('process-unobserved');
+  for (const [id, s] of streams) {
+    if (s.invalid || !s.finalized || s.active.size) incomplete.push(`unfinalized:${id}`);
+    if (s.first.phase === 'operation') {
+      const origin = streams.get(s.first.origin_stream)?.first;
+      if (
+        !origin ||
+        origin.phase !== 'request' ||
+        origin.method !== 'prepare' ||
+        origin.daemon !== s.first.daemon ||
+        origin.capture !== s.first.capture
+      )
+        errors.push(`foreign-origin:${id}`);
+    }
+  }
+  let summary: any = null;
+  try {
+    summary = companionJson(final, 65536);
+    companionKeys(summary, ['collectorInstalled', 'observation']);
+    companionKeys(summary.observation, ['version', 'accounting', 'report', 'complete']);
+    const { accounting: a, report: r } = summary.observation;
+    companionKeys(a, [
+      'observed',
+      'written',
+      'dropped',
+      'overflow',
+      'io',
+      'malformed',
+      'unmatched',
+      'finalized',
+    ]);
+    companionKeys(r, ['records', 'errors', 'incomplete', 'producer_observed', 'producer_dropped']);
+    if (
+      summary.collectorInstalled !== true ||
+      summary.observation.version !== 1 ||
+      typeof summary.observation.complete !== 'boolean' ||
+      typeof a.finalized !== 'boolean' ||
+      Object.entries(a).some(([k, v]) => k !== 'finalized' && !unsigned(v)) ||
+      ![r.records, r.producer_observed, r.producer_dropped].every(unsigned) ||
+      !Array.isArray(r.errors) ||
+      !Array.isArray(r.incomplete) ||
+      [...r.errors, ...r.incomplete].some(
+        (v) =>
+          typeof v !== 'string' ||
+          !/^(?:fixture-cap|frame-cap|malformed|no-records|process-unobserved|invalid:[0-9]+:[0-9]+:[0-9]+|[0-9]+:[0-9]+)$/.test(
+            v,
+          ),
+      )
+    )
+      throw new Error('Diagnostic summary shape');
+    const observed = [...streams.values()].reduce((n, s) => n + s.last.observed, 0);
+    const dropped = [...streams.values()].reduce((n, s) => n + s.last.dropped, 0);
+    if (
+      !Number.isSafeInteger(observed) ||
+      !Number.isSafeInteger(dropped) ||
+      a.observed !== lines.length ||
+      a.written !== lines.length ||
+      r.records !== frames.length ||
+      r.producer_observed !== observed ||
+      r.producer_dropped !== dropped ||
+      ['dropped', 'overflow', 'io', 'malformed', 'unmatched'].some((k) => a[k] !== 0) ||
+      dropped !== 0 ||
+      r.errors.length ||
+      r.incomplete.length
+    )
+      errors.push('final-accounting');
+    if (!a.finalized || !summary.observation.complete) incomplete.push('collector-unfinalized');
+  } catch {
+    errors.push('missing-or-invalid-summary');
+  }
+  return {
+    version: 1,
+    valid: errors.length === 0,
+    complete: errors.length === 0 && incomplete.length === 0,
+    errors,
+    incomplete,
+    frames,
+    summary,
+    qualification:
+      'same-domain elapsed only; finalization is not ready, admission, delivery observation, native settlement or owned cleanup',
+  };
+}
+
+/** Run each original phase once and retain the first original rejection, including undefined. */
+export async function companionPhasesOnce(
+  phases: Array<{ name: string; run: () => unknown }>,
+  report: (rows: Array<{ name: string; ok: boolean; error?: string }>) => unknown,
+) {
+  let failed = false,
+    first: unknown;
+  const rows: Array<{ name: string; ok: boolean; error?: string }> = [];
+  for (const phase of phases) {
+    try {
+      await phase.run();
+      rows.push({ name: phase.name, ok: true });
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        first = error;
+      }
+      let description = 'Unprintable original rejection';
+      try {
+        description = String(error);
+      } catch {
+        /* Observation must not prevent the original cleanup phases. */
+      }
+      rows.push({ name: phase.name, ok: false, error: description });
+    }
+  }
+  try {
+    await report(rows);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  }
+  if (failed) throw first;
+}
+
+/** Reads only enumerated safe evidence; never traverses home, profile, TLS or credentials. */
+export async function archiveCompanionFiles(
+  directory: string,
+  destination: string,
+  stage: 'partial' | 'final',
+) {
+  await mkdir(destination, { recursive: true, mode: 0o700 });
+  await chmod(destination, 0o700);
+  const rows: Array<Record<string, unknown>> = [];
+  const names = ['companion-preparation-v1.jsonl', 'companion-preparation-v1-final.json'];
+  const allowed =
+    /^(?:descriptor|ready|worker|supervisor|ownership|worker-stopped|stopped|failed|allocation|driver|electron|failure|failure-packet|failure-packet-error|controller-[a-z-]+|original-supervisor-wait-observed|final-stop-observed|ui-quiescence|before-stop|after-stop|stop-inventory-before|stop-inventory-after|stop-begin|stop-finish|original-completions|sidebar-[a-z-]+)\.(?:json|jsonl|log)$/;
+  const sourceStat = await lstat(directory);
+  if (!sourceStat.isDirectory() || sourceStat.mode % 512 !== 0o700)
+    throw new Error('Private evidence directory required');
+  const entries = await readdir(directory, { withFileTypes: true });
+  const selected = [
+    ...new Set([...names, ...entries.map((e) => e.name).filter((n) => allowed.test(n))]),
+  ];
+  if (selected.length > 128) throw new Error('Diagnostic archive file bound');
+  for (const name of selected) {
+    try {
+      const path = join(directory, name),
+        stat = await lstat(path);
+      if (
+        !stat.isFile() ||
+        stat.isSymbolicLink() ||
+        stat.size > (names.includes(name) ? 2048 * 1025 : 32 * 1024 * 1024) ||
+        (names.includes(name) && stat.mode % 512 !== 0o600)
+      )
+        throw new Error('Unsafe or oversized evidence file');
+      const bytes = await readFile(path),
+        target = join(destination, stage + '-' + name);
+      await writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
+      rows.push({
+        name,
+        stage,
+        bytes: bytes.length,
+        sha256: hash(bytes),
+        sourceMode: stat.mode % 512,
+        mode: 0o600,
+        regular: true,
+      });
+    } catch (error) {
+      rows.push({ name, stage, incomplete: true, error: String(error) });
+    }
+  }
+  record(destination, stage + '-manifest', rows);
+  if (rows.some((row) => row.incomplete))
+    throw new Error('Diagnostic originals missing or archive incomplete');
+  return rows;
+}
+
+export function correlateCompanionDiagnostics(
+  frames: Record<string, any>[],
+  sourceEvidence: ReturnType<Fixture['evidence']>,
+  parent: any,
+) {
+  const same = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const ak = Object.keys(a),
+      bk = Object.keys(b);
+    return (
+      ak.length === bk.length &&
+      ak.every((k) => Object.hasOwn(b, k) && same((a as any)[k], (b as any)[k]))
+    );
+  };
+  const one = <T>(rows: T[], name: string): T => {
+    if (rows.length !== 1) throw new Error('Missing or ambiguous original ' + name);
+    return rows[0];
+  };
+  const { completions, completionFaults } = sourceEvidence;
+  if (!completions || !completionFaults) throw new Error('Original completion ledger unavailable');
+  if (
+    sourceEvidence.records.length > 1024 ||
+    completions.length > 1024 ||
+    sourceEvidence.faults.length ||
+    completionFaults.length
+  )
+    throw new Error('Original evidence incomplete');
+  const requests = sourceEvidence.records.filter(
+    (r) =>
+      r.direction === 'request' &&
+      /^accept-changes\.(prepare|execute|reconcile|release)$/.test(r.envelope.method ?? ''),
+  );
+  const joined = requests.map((request) => {
+    const e = request.envelope;
+    const call = one(
+      completions.filter(
+        (c: any) =>
+          c.layer === 'client' &&
+          c.captured === true &&
+          c.method === e.method &&
+          c.socketId === request.socketId &&
+          same(c.params, e.params) &&
+          c.wireRequests?.length === 1 &&
+          c.wireRequests[0].socketId === request.socketId &&
+          c.wireRequests[0].requestId === e.id &&
+          c.wireRequests[0].method === e.method,
+      ),
+      'captured request',
+    );
+    if (
+      !call.clientId ||
+      !call.connectionId ||
+      !call.incarnationId ||
+      !['fulfilled', 'rejected'].includes(call.state)
+    )
+      throw new Error('Original captured future not joined');
+    one(
+      sourceEvidence.allocations.filter(
+        (a) => a.socketId === request.socketId && a.host === request.host,
+      ),
+      'physical allocation',
+    );
+    const response = one(
+      sourceEvidence.records.filter(
+        (r) =>
+          r.direction === 'response' &&
+          r.socketId === request.socketId &&
+          r.host === request.host &&
+          r.envelope.id === e.id,
+      ),
+      'wire response',
+    ).envelope;
+    if (
+      call.state === 'fulfilled'
+        ? Object.hasOwn(response, 'error') || !same(call.value, response.result)
+        : !Object.hasOwn(response, 'error')
+    )
+      throw new Error('Original future/response mismatch');
+    return { request, call, response };
+  });
+  const originalParent = parent?.retained?.execute;
+  const p = originalParent?.reviewExecution?.preparation;
+  if (
+    !p ||
+    originalParent.state !== 'settled' ||
+    originalParent.success !== true ||
+    originalParent.operationId !== p.operationId ||
+    originalParent.reviewExecution.requestId !== p.operationId ||
+    originalParent.reviewExecution.outcome.status !== 'not-attempted' ||
+    originalParent.reviewExecution.gitReceipts.length !== 1 ||
+    originalParent.reviewExecution.gitReceipts[0].stage !== 'commit' ||
+    !same(parent.owner?.root, p.root)
+  )
+    throw new Error('Original retained parent commit prerequisite missing');
+  const prepare = one(
+    joined.filter(
+      (j) =>
+        j.request.envelope.method === 'accept-changes.prepare' &&
+        j.response.result?.reviewPreparation?.operationId === p.operationId,
+    ),
+    'parent preparation',
+  );
+  const execute = one(
+    joined.filter(
+      (j) =>
+        j.request.envelope.method === 'accept-changes.execute' &&
+        j.request.envelope.params?.review?.operationId === p.operationId,
+    ),
+    'parent execution',
+  );
+  if (
+    !same(execute.response.result, originalParent) ||
+    !same(prepare.response.result.reviewPreparation, p) ||
+    !same(prepare.request.envelope.params.review.root, p.root)
+  )
+    throw new Error('Parent receipt provenance mismatch');
+  const parentIpc = one(
+    (sourceEvidence.ipcRecords as any[]).filter(
+      (c) =>
+        c.channel === 'backend:native-review:prepare' &&
+        c.main === true &&
+        c.result?.ok === true &&
+        c.result.result?.preview?.reviewPreparation?.operationId === p.operationId,
+    ),
+    'parent IPC owner',
+  );
+  if (!same(parentIpc.result.result.preview.reviewPreparation, p) || !parentIpc.result.result.id)
+    throw new Error('Parent IPC preview mismatch');
+  const child = one(
+    joined.filter(
+      (j) =>
+        j.request.envelope.method === 'accept-changes.prepare' &&
+        j.request.envelope.params?.review?.choice?.kind === 'afterCommit',
+    ),
+    'child capture',
+  );
+  const choice = child.request.envelope.params.review.choice;
+  if (
+    choice.operationId !== p.operationId ||
+    !same(child.request.envelope.params.review.root, p.root) ||
+    child.request.socketId !== prepare.request.socketId ||
+    child.request.host !== prepare.request.host ||
+    ['clientId', 'connectionId', 'incarnationId'].some((k) => child.call[k] !== prepare.call[k]) ||
+    execute.request.socketId !== prepare.request.socketId
+  )
+    throw new Error('Child original owner mismatch');
+  const childIpc = one(
+    (sourceEvidence.ipcRecords as any[]).filter(
+      (c) =>
+        c.channel === 'backend:native-review:prepare' &&
+        c.main === true &&
+        c.sender === parentIpc.sender &&
+        c.frame === parentIpc.frame &&
+        c.args?.[0]?.companionOf === parentIpc.result.result.id &&
+        same(c.args[0].root, p.root),
+    ),
+    'child IPC capture',
+  );
+  if (!Object.hasOwn(childIpc, 'result') && !Object.hasOwn(childIpc, 'rejected'))
+    throw new Error('Child original IPC not joined');
+  const roots = frames.filter((f) => f.sequence === 1 && f.outcome === 'enter');
+  const childStream = one(
+    roots.filter(
+      (f) =>
+        f.phase === 'request' &&
+        f.method === 'prepare' &&
+        f.daemon === p.scope.daemonId &&
+        f.operation === p.operationId &&
+        f.capture === choice.captureId,
+    ),
+    'child request stream',
+  );
+  const allocated = roots.filter(
+    (f) => f.phase === 'operation' && f.origin_stream === childStream.stream,
+  );
+  if (
+    allocated.length > 1 ||
+    allocated.some((f) => f.daemon !== p.scope.daemonId || f.capture !== choice.captureId)
+  )
+    throw new Error('Ambiguous child allocation');
+  const returned = child.response.result?.reviewPreparation;
+  if (
+    returned &&
+    (allocated.length !== 1 ||
+      returned.operationId !== allocated[0].operation ||
+      !same(returned.root, p.root) ||
+      returned.scope.daemonId !== p.scope.daemonId ||
+      !same(childIpc.result?.result?.preview?.reviewPreparation, returned))
+  )
+    throw new Error('Allocated child and original returned preview differ');
+  const operations = new Map<string, { daemon: string; socket: string; host: number }>();
+  for (const j of joined) {
+    const view = j.response.result?.reviewPreparation;
+    if (view)
+      operations.set(view.operationId, {
+        daemon: view.scope.daemonId,
+        socket: j.request.socketId,
+        host: j.request.host,
+      });
+  }
+  const used = new Set<number>();
+  const links = joined.map((j) => {
+    const e = j.request.envelope,
+      method = e.method.slice('accept-changes.'.length),
+      c = e.params?.review?.choice;
+    const op =
+      method === 'prepare'
+        ? c?.kind === 'afterCommit'
+          ? c.operationId
+          : null
+        : (e.params?.review?.operationId ?? e.params?.operationId);
+    const actual = operations.get(op ?? j.response.result?.reviewPreparation?.operationId);
+    if (!actual || actual.socket !== j.request.socketId || actual.host !== j.request.host)
+      throw new Error('Foreign or unavailable daemon correlation');
+    const root = one(
+      roots.filter(
+        (f) =>
+          f.phase === 'request' &&
+          f.method === method &&
+          f.daemon === actual.daemon &&
+          f.operation === op &&
+          f.capture === (c?.kind === 'afterCommit' ? c.captureId : null),
+      ),
+      'request diagnostic correlation',
+    );
+    if (used.has(root.stream)) throw new Error('Diagnostic stream ambiguously reused');
+    used.add(root.stream);
+    return {
+      stream: root.stream,
+      daemon: root.daemon,
+      operation: root.operation,
+      capture: root.capture,
+      socketId: j.request.socketId,
+      host: j.request.host,
+      requestId: e.id,
+      callId: j.call.callId,
+      state: j.call.state,
+      publicError: Object.hasOwn(j.response, 'error'),
+    };
+  });
+  if (roots.some((f) => f.phase === 'request' && !used.has(f.stream)))
+    throw new Error('Unmatched diagnostic request');
+  for (const f of roots.filter((f) => f.phase === 'operation')) {
+    const request = links.find((l) => l.stream === f.origin_stream);
+    if (
+      !request ||
+      request.daemon !== f.daemon ||
+      request.capture !== f.capture ||
+      (!operations.has(f.operation) && !(allocated.length === 1 && allocated[0] === f))
+    )
+      throw new Error('Foreign operation stream');
+  }
+  return {
+    version: 1,
+    parent: {
+      operationId: p.operationId,
+      daemonId: p.scope.daemonId,
+      root: p.root,
+      handle: parentIpc.result.result.id,
+      sender: parentIpc.sender,
+      frame: parentIpc.frame,
+      owner: parent.owner,
+    },
+    child: {
+      captureId: choice.captureId,
+      stream: childStream.stream,
+      allocatedOperationId: allocated[0]?.operation ?? null,
+      returnedOperationId: returned?.operationId ?? null,
+      handle: childIpc.result?.result?.id ?? null,
+    },
+    links,
+    qualification:
+      'Original wire/future/IPC joins; diagnostic ordinals are not wire IDs; public-error delivery is not protected disclosure or renderer observation',
+  };
+}
+
+export async function retainCompanionBundle(directory: string, destination: string) {
+  await mkdir(destination, { recursive: true, mode: 0o700 });
+  const files: Array<{ path: string; bytes: number; sha256: string }> = [];
+  const visit = async (relative: string) => {
+    for (const entry of await readdir(join(directory, relative), { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue;
+      const name = posix.join(relative, entry.name),
+        path = join(directory, name);
+      if (entry.isSymbolicLink()) throw new Error('Unexpected emitted output symlink');
+      if (entry.isDirectory()) await visit(name);
+      else if (entry.isFile()) {
+        const bytes = await readFile(path);
+        const target = join(destination, name);
+        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+        await writeFile(target, bytes, { flag: 'wx', mode: 0o600 });
+        files.push({ path: name, bytes: bytes.length, sha256: hash(bytes) });
+      }
+      if (files.length > 4096) throw new Error('Emitted output inventory bound');
+    }
+  };
+  await visit('');
+  record(destination, 'retained-files', files);
+  return files;
+}
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const evidence = process.env.NATIVE_REVIEW_EVIDENCE_DIR;
 const executable = process.env.NATIVE_REVIEW_DRIVER;
 const source = process.env.NATIVE_REVIEW_DRIVER_SOURCE;
 if (!evidence || !executable || !source)
   throw new Error('Explicit evidence, pinned executable and frozen source required');
-const executableHash = 'caa06ad0c82bdde2899eae3d2fc9476003f9256c5a29e5315212fcfd28ba6f5a';
+const diagnosticMode = companionDiagnosticMode(process.env);
+const executableHash = diagnosticMode
+  ? companionDiagnosticIdentity.executableSha256
+  : 'caa06ad0c82bdde2899eae3d2fc9476003f9256c5a29e5315212fcfd28ba6f5a';
 const identity = {
-  sourceCommit: '28a28e058d39533f74e46e1ce7ea15968fc6229b',
-  sourceTree: 'ace95266ff66ad82020fa7014f531f8266df020d',
+  sourceCommit: diagnosticMode
+    ? companionDiagnosticIdentity.sourceCommit
+    : '28a28e058d39533f74e46e1ce7ea15968fc6229b',
+  sourceTree: diagnosticMode
+    ? companionDiagnosticIdentity.sourceTree
+    : 'ace95266ff66ad82020fa7014f531f8266df020d',
   executableSha256: executableHash,
   sourceSha256: '',
 };
@@ -69,6 +942,7 @@ const sidebarGroups = [
 const sidebarGrep =
   '(09 UI sidebar staged commit and child creation|10 UI sidebar held child close and original receipts|11 UI sidebar Member reuse and Guest refusal)$';
 export function assertSidebarSelection(env: NodeJS.ProcessEnv, argv: string[]): boolean {
+  const diagnostic = companionDiagnosticMode(env);
   const sidebar = env.NATIVE_REVIEW_SIDEBAR_UI === '1';
   if (env.NATIVE_REVIEW_SIDEBAR_UI !== undefined && !sidebar)
     throw new Error('Invalid sidebar mode');
@@ -80,10 +954,15 @@ export function assertSidebarSelection(env: NodeJS.ProcessEnv, argv: string[]): 
     );
   if (
     values('--grep').length !== 1 ||
-    values('--grep')[0] !== sidebarGrep ||
+    values('--grep')[0] !== (diagnostic ? companionDiagnosticGrep : sidebarGrep) ||
     argv.some(
       (arg) =>
         arg.startsWith('-g') ||
+        (diagnostic &&
+          (/^-[^-]/.test(arg) ||
+            arg.startsWith('--project') ||
+            arg.startsWith('--headed') ||
+            arg.startsWith('--max-failures'))) ||
         arg.startsWith('--repeat-each') ||
         arg.startsWith('--shard') ||
         arg.startsWith('--grep-invert') ||
@@ -971,7 +1850,16 @@ test.beforeAll(async () => {
   if (sidebarMode) {
     const info = test.info();
     if (
-      !sidebarGroups.some(([title]) => title === info.title) ||
+      !(diagnosticMode
+        ? info.title === sidebarGroups[1][0]
+        : sidebarGroups.some(([title]) => title === info.title)) ||
+      (diagnosticMode &&
+        (info.workerIndex !== 0 ||
+          info.parallelIndex !== 0 ||
+          info.repeatEachIndex !== 0 ||
+          !info.config.argv ||
+          JSON.stringify(info.config.argv.slice(2)) !== JSON.stringify(originalSelection) ||
+          !assertSidebarSelection(process.env, info.config.argv.slice(2)))) ||
       info.config.workers !== 1 ||
       info.project.retries !== 0 ||
       info.project.repeatEach !== 1 ||
@@ -980,7 +1868,7 @@ test.beforeAll(async () => {
       throw new Error('Actual sidebar title/worker/retry differs from the original CLI selection');
     record(evidence!, 'actual-runner-selection', {
       argv: originalSelection,
-      cliGrep: sidebarGrep,
+      cliGrep: diagnosticMode ? companionDiagnosticGrep : sidebarGrep,
       configuredGrep: String(info.config.grep),
       title: info.title,
       workers: info.config.workers,
@@ -989,13 +1877,24 @@ test.beforeAll(async () => {
       worker: info.workerIndex,
     });
   }
+  if (diagnosticMode)
+    record(
+      evidence!,
+      'companion-identity',
+      await assertCompanionDiagnosticIdentity(source!, executable!),
+    );
   const artifact = await lstat(executable!);
   expect({
     regular: artifact.isFile(),
     bytes: artifact.size,
     mode: artifact.mode & 0o777,
     sha: hash(await readFile(executable!)),
-  }).toEqual({ regular: true, bytes: 267481480, mode: 0o555, sha: executableHash });
+  }).toEqual({
+    regular: true,
+    bytes: diagnosticMode ? companionDiagnosticIdentity.bytes : 267481480,
+    mode: 0o555,
+    sha: executableHash,
+  });
   identity.sourceSha256 = hash(
     await readFile(join(source!, 'crates/intentd/tests/e2e_native_review_wire.rs')),
   );
@@ -1017,165 +1916,180 @@ test.beforeAll(async () => {
     socketShimHash: hash(socketShim),
     rendererHash: hash(activeRenderer),
   });
-  bundle = await mkdtemp(join(tmpdir(), 'native-review-electron-code-'));
-  await symlink(await realpath(join(root, 'node_modules')), join(bundle, 'node_modules'));
-  await writeFile(join(bundle, 'pipe-controller.py'), pipeController, { mode: 0o600 });
-  await writeFile(join(evidence!, 'pipe-controller.py'), pipeController, { mode: 0o600 });
-  const shim: Plugin = {
-    name: 'observe-real-factory',
-    enforce: 'pre',
-    resolveId(id, importer) {
-      if (id === actualFactory + '?original') return actualFactory;
-      if (importer?.endsWith('/json-rpc-client.ts') && id === './backend-connection')
-        return '\0native-socket-observer';
-    },
-    load(id) {
-      if (id === '\0native-socket-observer') return socketShim;
-    },
-  };
-  for (const [entry, name] of [
-    ['test/fixtures/native-review-native/main.ts', 'main.mjs'],
-    ['src/preload/index.ts', 'preload.cjs'],
-  ]) {
-    await build({
-      configFile: false,
-      logLevel: 'error',
-      resolve: { alias },
-      plugins: [shim, modules(name)],
-      build: {
-        target: 'es2022',
-        ssr: join(root, entry),
-        outDir: bundle,
-        emptyOutDir: false,
-        minify: false,
-        rollupOptions: {
-          external: ['electron'],
-          output: { format: name.endsWith('.cjs') ? 'cjs' : 'es', entryFileNames: name },
-        },
+  try {
+    bundle = await mkdtemp(join(tmpdir(), 'native-review-electron-code-'));
+    await symlink(await realpath(join(root, 'node_modules')), join(bundle, 'node_modules'));
+    await writeFile(join(bundle, 'pipe-controller.py'), pipeController, { mode: 0o600 });
+    await writeFile(join(evidence!, 'pipe-controller.py'), pipeController, { mode: 0o600 });
+    const shim: Plugin = {
+      name: 'observe-real-factory',
+      enforce: 'pre',
+      resolveId(id, importer) {
+        if (id === actualFactory + '?original') return actualFactory;
+        if (importer?.endsWith('/json-rpc-client.ts') && id === './backend-connection')
+          return '\0native-socket-observer';
       },
-    });
-    await copyFile(join(bundle, name), join(evidence!, name));
-  }
-  // Reuse the application's exact renderer resolution, including its existing
-  // icon compatibility mappings; do not replace components or install packages.
-  const appConfig = uiMode
-    ? await loadConfigFromFile(
-        { command: 'build', mode: 'production' },
-        join(root, 'vite.config.mjs'),
-        root,
-        'silent',
-      )
-    : null;
-  if (uiMode && !appConfig?.config.resolve?.alias)
-    throw new Error('Original renderer aliases missing');
-  if (uiMode)
-    record(evidence!, 'renderer-config-input', {
-      path: join(root, 'vite.config.mjs'),
-      sha256: hash(await readFile(join(root, 'vite.config.mjs'))),
-      aliases: appConfig!.config.resolve!.alias,
-      qualification:
-        'Unchanged application resolution and defines only; fixture owns its build plugins and entry',
-    });
-  if (uiMode) {
-    await buildKitFixture(appConfig!.config);
-  } else {
-    await build({
-      configFile: false,
-      logLevel: 'error',
-      resolve: { alias, conditions: ['browser', 'svelte'] },
-      plugins: [
-        modules('renderer'),
-        {
-          name: 'inline-native-facade',
-          resolveId(id) {
-            if (id === 'native-renderer') return '\0native-renderer';
-          },
-          load(id) {
-            if (id === '\0native-renderer') return renderer;
-          },
-        },
-      ],
-      build: {
-        target: 'es2022',
-        outDir: bundle,
-        emptyOutDir: false,
-        minify: false,
-        rollupOptions: {
-          input: 'native-renderer',
-          output: {
-            format: 'es',
-            entryFileNames: 'renderer.js',
-            inlineDynamicImports: true,
-            assetFileNames: (asset) =>
-              asset.names.some((name) => name.endsWith('.css'))
-                ? 'renderer.js.css'
-                : 'assets/[name]-[hash][extname]',
-          },
-        },
+      load(id) {
+        if (id === '\0native-socket-observer') return socketShim;
       },
-    });
-    await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
-  }
-  record(
-    evidence!,
-    'compiled',
-    await Promise.all(
-      [
-        'main.mjs',
-        'preload.cjs',
-        ...(uiMode ? ['ui-assets/asset-manifest.json'] : ['renderer.js']),
-      ].map(async (name) => ({
-        name,
-        sha256: hash(await readFile(join(bundle, name))),
-      })),
-    ),
-  );
-  if (uiMode) {
-    // Each worker owns a separate build. Keep its actual bytes before a later
-    // failed worker can overwrite the shared diagnostic paths.
-    const epoch = join(evidence!, 'build-epochs', basename(bundle));
-    await mkdir(epoch, { recursive: true });
-    for (const name of [
-      'compiled.json',
-      'frozen-cases.json',
-      'main.mjs',
-      'main.mjs-inputs.json',
-      'preload.cjs',
-      'preload.cjs-inputs.json',
-      'pipe-controller.py',
-      'renderer-config-input.json',
-      'kit-build-process.json',
-      'kit-generated-inputs.json',
-      'kit-client-inputs.json',
-      'kit-server-inputs.json',
-      'ui-build-preflight.json',
-      'workspace-bridge-preflight.json',
-      'observer-build-preflight.json',
-      'asset-manifest.json',
-      'kit-assets',
-      'kit-generated',
-      'emitted',
-      'source-inputs',
-      'main.mjs-output-closure.json',
-      'preload.cjs-output-closure.json',
-      'kit-emitted',
-      'kit-client-output-closure.json',
-      'kit-server-output-closure.json',
-      'kit-final',
-      'kit-client-final-closure.json',
-      'kit-server-final-closure.json',
-    ])
-      await cp(join(evidence!, name), join(epoch, name), {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
+    };
+    for (const [entry, name] of [
+      ['test/fixtures/native-review-native/main.ts', 'main.mjs'],
+      ['src/preload/index.ts', 'preload.cjs'],
+    ]) {
+      await build({
+        configFile: false,
+        logLevel: 'error',
+        resolve: { alias },
+        plugins: [shim, modules(name)],
+        build: {
+          target: 'es2022',
+          ssr: join(root, entry),
+          outDir: bundle,
+          emptyOutDir: false,
+          minify: false,
+          rollupOptions: {
+            external: ['electron'],
+            output: { format: name.endsWith('.cjs') ? 'cjs' : 'es', entryFileNames: name },
+          },
+        },
       });
-    record(epoch, 'identity', {
-      bundle,
-      workerPid: process.pid,
-      workerIndex: process.env.TEST_WORKER_INDEX ?? null,
-      specSha256: hash(await readFile(fileURLToPath(import.meta.url))),
-    });
+      await copyFile(join(bundle, name), join(evidence!, name));
+    }
+    // Reuse the application's exact renderer resolution, including its existing
+    // icon compatibility mappings; do not replace components or install packages.
+    const appConfig = uiMode
+      ? await loadConfigFromFile(
+          { command: 'build', mode: 'production' },
+          join(root, 'vite.config.mjs'),
+          root,
+          'silent',
+        )
+      : null;
+    if (uiMode && !appConfig?.config.resolve?.alias)
+      throw new Error('Original renderer aliases missing');
+    if (uiMode)
+      record(evidence!, 'renderer-config-input', {
+        path: join(root, 'vite.config.mjs'),
+        sha256: hash(await readFile(join(root, 'vite.config.mjs'))),
+        aliases: appConfig!.config.resolve!.alias,
+        qualification:
+          'Unchanged application resolution and defines only; fixture owns its build plugins and entry',
+      });
+    if (uiMode) {
+      await buildKitFixture(appConfig!.config);
+    } else {
+      await build({
+        configFile: false,
+        logLevel: 'error',
+        resolve: { alias, conditions: ['browser', 'svelte'] },
+        plugins: [
+          modules('renderer'),
+          {
+            name: 'inline-native-facade',
+            resolveId(id) {
+              if (id === 'native-renderer') return '\0native-renderer';
+            },
+            load(id) {
+              if (id === '\0native-renderer') return renderer;
+            },
+          },
+        ],
+        build: {
+          target: 'es2022',
+          outDir: bundle,
+          emptyOutDir: false,
+          minify: false,
+          rollupOptions: {
+            input: 'native-renderer',
+            output: {
+              format: 'es',
+              entryFileNames: 'renderer.js',
+              inlineDynamicImports: true,
+              assetFileNames: (asset) =>
+                asset.names.some((name) => name.endsWith('.css'))
+                  ? 'renderer.js.css'
+                  : 'assets/[name]-[hash][extname]',
+            },
+          },
+        },
+      });
+      await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
+    }
+    record(
+      evidence!,
+      'compiled',
+      await Promise.all(
+        [
+          'main.mjs',
+          'preload.cjs',
+          ...(uiMode ? ['ui-assets/asset-manifest.json'] : ['renderer.js']),
+        ].map(async (name) => ({
+          name,
+          sha256: hash(await readFile(join(bundle, name))),
+        })),
+      ),
+    );
+    if (uiMode) {
+      // Each worker owns a separate build. Keep its actual bytes before a later
+      // failed worker can overwrite the shared diagnostic paths.
+      const epoch = join(evidence!, 'build-epochs', basename(bundle));
+      await mkdir(epoch, { recursive: true });
+      for (const name of [
+        'compiled.json',
+        'frozen-cases.json',
+        'main.mjs',
+        'main.mjs-inputs.json',
+        'preload.cjs',
+        'preload.cjs-inputs.json',
+        'pipe-controller.py',
+        'renderer-config-input.json',
+        'kit-build-process.json',
+        'kit-generated-inputs.json',
+        'kit-client-inputs.json',
+        'kit-server-inputs.json',
+        'ui-build-preflight.json',
+        'workspace-bridge-preflight.json',
+        'observer-build-preflight.json',
+        'asset-manifest.json',
+        'kit-assets',
+        'kit-generated',
+        'emitted',
+        'source-inputs',
+        'main.mjs-output-closure.json',
+        'preload.cjs-output-closure.json',
+        'kit-emitted',
+        'kit-client-output-closure.json',
+        'kit-server-output-closure.json',
+        'kit-final',
+        'kit-client-final-closure.json',
+        'kit-server-final-closure.json',
+      ])
+        await cp(join(evidence!, name), join(epoch, name), {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
+      record(epoch, 'identity', {
+        bundle,
+        workerPid: process.pid,
+        workerIndex: process.env.TEST_WORKER_INDEX ?? null,
+        specSha256: hash(await readFile(fileURLToPath(import.meta.url))),
+      });
+    }
+  } catch (error) {
+    if (diagnosticMode && bundle) {
+      try {
+        await retainCompanionBundle(bundle, join(evidence!, 'failed-build', basename(bundle)));
+      } catch (archiveError) {
+        try {
+          record(evidence!, 'failed-build-archive-error', String(archiveError));
+        } catch {
+          /* Preserve the original build exception when evidence storage itself fails. */
+        }
+      }
+    }
+    throw error;
   }
 });
 test.afterAll(async () => {
@@ -1457,6 +2371,7 @@ async function withDriver(
     packet(name: string, value?: unknown): Promise<any>;
   }) => Promise<void>,
 ) {
+  if (diagnosticMode && index !== 9) throw new Error('Diagnostic mode requires only case10');
   if (sidebarMode !== index >= 8 || (index >= 5 && !uiMode) || index < 0 || index > 10)
     throw new Error('Case does not match the selected fixture mode');
   const dir = await mkdtemp(join(tmpdir(), `nrv-${index + 1}-`));
@@ -1556,166 +2471,457 @@ async function withDriver(
     record(dir, name, result);
     return result;
   };
-  try {
-    ready = await waitFile(join(dir, 'ready.json'), child);
-    expect(ready!.identity).toEqual(identity);
-    expect(ready!.runId).toBe(runId);
-    expect(ready!.hosts[0].workspaceId).toBe(ready!.hosts[1].workspaceId);
-    expect(ready!.hosts[0].registeredRootId).toBe(ready!.hosts[1].registeredRootId);
-    app = await electron.launch({
-      args: [
-        join(bundle, 'main.mjs'),
-        join(dir, 'profile'),
-        join(bundle, 'preload.cjs'),
-        join(dir, 'ready.json'),
-        join(bundle, uiMode ? 'ui-assets/asset-manifest.json' : 'renderer.js'),
-      ],
-      env: {
-        ...environment(home),
-        ...(uiMode
-          ? {
-              NATIVE_REVIEW_UI: '1',
-              NATIVE_REVIEW_UI_ROLE: index === 6 || index === 10 ? 'member' : 'owner',
-              ...(sidebarMode ? { NATIVE_REVIEW_SIDEBAR_UI: '1' } : {}),
+  if (diagnosticMode) {
+    const observationErrors: string[] = [];
+    let bodyError: unknown;
+    let bodyFailed = false;
+    let finalSource: ReturnType<Fixture['evidence']> | undefined;
+    await companionPhasesOnce(
+      [
+        {
+          name: 'body',
+          run: async () => {
+            try {
+              ready = await waitFile(join(dir, 'ready.json'), child);
+              expect(ready!.identity).toEqual(identity);
+              expect(ready!.runId).toBe(runId);
+              expect(ready!.hosts[0].workspaceId).toBe(ready!.hosts[1].workspaceId);
+              expect(ready!.hosts[0].registeredRootId).toBe(ready!.hosts[1].registeredRootId);
+              app = await electron.launch({
+                args: [
+                  join(bundle, 'main.mjs'),
+                  join(dir, 'profile'),
+                  join(bundle, 'preload.cjs'),
+                  join(dir, 'ready.json'),
+                  join(bundle, uiMode ? 'ui-assets/asset-manifest.json' : 'renderer.js'),
+                ],
+                env: {
+                  ...environment(home),
+                  ...(uiMode
+                    ? {
+                        NATIVE_REVIEW_UI: '1',
+                        NATIVE_REVIEW_UI_ROLE: index === 6 || index === 10 ? 'member' : 'owner',
+                        ...(sidebarMode ? { NATIVE_REVIEW_SIDEBAR_UI: '1' } : {}),
+                      }
+                    : {}),
+                  DISPLAY: process.env.DISPLAY!,
+                  XDG_RUNTIME_DIR: join(dir, 'runtime'),
+                },
+                timeout: 20000,
+              });
+              const logs = createWriteStream(join(dir, 'electron.log'), { mode: 0o600 });
+              app.process().stdout?.pipe(logs, { end: false });
+              app.process().stderr?.pipe(logs, { end: false });
+              await expect
+                .poll(() => app!.evaluate(() => !!(globalThis as any).nativeReviewFixture?.ready))
+                .toBe(true);
+              await body({
+                dir,
+                ready: ready!,
+                app,
+                a: await pageFor(app, 'host-A'),
+                b: await pageFor(app, 'local-B'),
+                packet,
+              });
+            } catch (error) {
+              bodyFailed = true;
+              bodyError = error;
+              try {
+                record(dir, 'failure', {
+                  error: String(error),
+                  stack: error instanceof Error ? error.stack : null,
+                });
+              } catch (recordError) {
+                observationErrors.push('body-record: ' + String(recordError));
+              }
+              try {
+                await packet('failure-packet');
+              } catch (packetError) {
+                try {
+                  record(dir, 'failure-packet-error', String(packetError));
+                } catch (recordError) {
+                  observationErrors.push('packet-record: ' + String(recordError));
+                }
+              }
+              throw error;
             }
-          : {}),
-        DISPLAY: process.env.DISPLAY!,
-        XDG_RUNTIME_DIR: join(dir, 'runtime'),
-      },
-      timeout: 20000,
-    });
-    const logs = createWriteStream(join(dir, 'electron.log'), { mode: 0o600 });
-    app.process().stdout?.pipe(logs, { end: false });
-    app.process().stderr?.pipe(logs, { end: false });
-    await expect
-      .poll(() => app!.evaluate(() => !!(globalThis as any).nativeReviewFixture?.ready))
-      .toBe(true);
-    await body({
-      dir,
-      ready: ready!,
-      app,
-      a: await pageFor(app, 'host-A'),
-      b: await pageFor(app, 'local-B'),
-      packet,
-    });
-    if (uiMode) record(dir, 'ui-quiescence', await main(app, (f) => f.quiesceUi()));
-    await main(app, (f) => f.join());
-    const before = await packet('before-stop');
-    if (!before.source) throw new Error('Original main observations missing');
-    const inventory = stopInventory(before.source);
-    record(dir, 'stop-inventory-before', inventory);
-    const { pending } = inventory;
-    record(
-      dir,
-      'stop-begin',
-      await control(ready!, { command: 'stop', phase: 'begin', pending, envelopes: [] }),
+          },
+        },
+        {
+          name: 'original-quiesce-and-stop',
+          run: async () => {
+            if (!app || !ready) throw new Error('Original UI allocation unavailable for stop');
+            if (uiMode) record(dir, 'ui-quiescence', await main(app, (f) => f.quiesceUi()));
+            await main(app, (f) => f.join());
+            const before = await packet('before-stop');
+            if (!before.source) throw new Error('Original main observations missing');
+            const inventory = stopInventory(before.source);
+            record(dir, 'stop-inventory-before', inventory);
+            const { pending } = inventory;
+            record(
+              dir,
+              'stop-begin',
+              await control(ready!, { command: 'stop', phase: 'begin', pending, envelopes: [] }),
+            );
+            await main(app, (f) => f.join());
+            const after = await main(app, (f) => f.evidence());
+            record(dir, 'after-stop', after);
+            const finalInventory = stopInventory(after);
+            record(dir, 'stop-inventory-after', finalInventory);
+            expect(after.records.slice(0, before.source.records.length)).toEqual(
+              before.source.records,
+            );
+            expect(finalInventory.rows.map((row) => row.request)).toEqual(
+              inventory.rows.map((row) => row.request),
+            );
+            expect(after.pending).toBe(0);
+            if (uiMode) {
+              expect(after.completionFaults).toEqual([]);
+              expect(after.outstandingOriginals).toBe(0);
+              expect(after.completions).toEqual(before.source.completions);
+            }
+            const originals = finalInventory.rows.map(({ request, originalResponse, history }) => ({
+              request,
+              originalResponse,
+              history,
+            }));
+            record(dir, 'original-completions', originals);
+            const envelopes = pending.map((request) => {
+              const row = finalInventory.rows.find(
+                (candidate) => JSON.stringify(candidate.request) === JSON.stringify(request),
+              );
+              if (!row?.complete)
+                throw new Error('Original completion remains unobserved or unjoined');
+              return { request, originalResponse: row.originalResponse, history: row.history };
+            });
+            record(
+              dir,
+              'stop-finish',
+              await control(ready!, { command: 'stop', phase: 'finish', pending: [], envelopes }),
+            );
+            const result = await exited;
+            record(dir, 'controller-helper-exit', result);
+            const supervisorWait = JSON.parse(
+              await readFile(join(dir, 'controller-supervisor-wait.json'), 'utf8'),
+            );
+            record(dir, 'original-supervisor-wait-observed', supervisorWait);
+            expect(lifecycleFault).toBeNull();
+            expect(metadata).toBe('');
+            expect(lifecycle).toHaveLength(3);
+            expect(supervisorWait).toEqual(lifecycle[1]);
+            const allocation = lifecycle[0].details;
+            expect(allocation).toEqual({
+              supervisorPid: expect.any(Number),
+              controllerPid: child.pid,
+              writerIsFifo: true,
+              writerInheritable: false,
+            });
+            expect(
+              Number.isSafeInteger(allocation.supervisorPid) && allocation.supervisorPid > 0,
+            ).toBe(true);
+            expect(supervisorWait.details).toEqual({
+              supervisorPid: allocation.supervisorPid,
+              returnCode: 0,
+              code: 0,
+              signal: null,
+              waitedOriginalChild: true,
+              failure: null,
+            });
+            expect(lifecycle[2].details).toEqual({
+              success: true,
+              failure: null,
+              nativeCompletion: 'not asserted',
+            });
+            const stopped = JSON.parse(await readFile(join(dir, 'stopped.json'), 'utf8'));
+            record(dir, 'final-stop-observed', stopped);
+            expect(result).toEqual({ code: 0, signal: null });
+            expect(stopped.success).toBe(true);
+            expect(stopped.ownership.complete).toBe(true);
+            expect(stopped.ownership.failed).toBe(false);
+            expect(
+              stopped.worker.cleanup.every(
+                (row: any) => row.udsClosed && row.tcpClosed && row.reaped,
+              ),
+            ).toBe(true);
+            success = true;
+            finalSource = after;
+          },
+        },
+        {
+          name: 'partial-before-failure-cleanup',
+          run: async () => {
+            if (!success)
+              await archiveCompanionFiles(
+                dir,
+                join(evidence!, 'group-10', 'diagnostics'),
+                'partial',
+              );
+          },
+        },
+        {
+          name: 'original-controller-wait',
+          run: async () => {
+            if (!success) child.stdin!.end();
+            const result = await exited;
+            record(dir, 'controller-final-wait', { ...result, success });
+            record(dir, 'controller-protocol-observed', {
+              lifecycle,
+              lifecycleFault,
+              metadata,
+              stderr,
+            });
+            child.stdin!.end();
+            if (!success || result.code !== 0 || result.signal !== null)
+              throw new Error('Original owned cleanup failed');
+          },
+        },
+        {
+          name: 'original-app-shutdown',
+          run: async () => {
+            if (app) await main(app, (f) => f.shutdown());
+          },
+        },
+        {
+          name: 'original-app-close',
+          run: async () => {
+            if (app) await app.close();
+          },
+        },
+        {
+          name: 'final-original-archive',
+          run: async () => {
+            await archiveCompanionFiles(dir, join(evidence!, 'group-10', 'diagnostics'), 'final');
+          },
+        },
+        {
+          name: 'diagnostic-validation',
+          run: async () => {
+            const destination = join(evidence!, 'group-10', 'diagnostics');
+            const worker = JSON.parse(await readFile(join(dir, 'worker.json'), 'utf8'));
+            const supervisor = JSON.parse(await readFile(join(dir, 'supervisor.json'), 'utf8'));
+            const owned = (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
+              .trim()
+              .split('\n')
+              .map((line) => JSON.parse(line));
+            if (
+              supervisor.runId !== runId ||
+              supervisor.pid !== lifecycle[0]?.details.supervisorPid ||
+              worker.owner !== 'supervisor' ||
+              worker.allocation !== 'pidfd' ||
+              owned.filter(
+                (row) => row.kind === 'enrolled' && row.role === 'worker' && row.pid === worker.pid,
+              ).length !== 1
+            )
+              throw new Error('Original worker enrollment missing');
+            const parsed = readCompanionDiagnostics(
+              await readFile(join(destination, 'final-companion-preparation-v1.jsonl')),
+              await readFile(join(destination, 'final-companion-preparation-v1-final.json')),
+              worker.pid,
+            );
+            record(destination, 'reader', parsed);
+            let correlation: unknown = null;
+            try {
+              const observed =
+                finalSource ??
+                JSON.parse(await readFile(join(dir, 'failure-packet.json'), 'utf8')).source;
+              const parentPacket = JSON.parse(
+                await readFile(join(dir, 'sidebar-held-parent.json'), 'utf8'),
+              );
+              correlation = correlateCompanionDiagnostics(
+                parsed.frames,
+                observed,
+                parentPacket.value,
+              );
+              record(destination, 'correlation', correlation);
+            } catch (error) {
+              record(destination, 'correlation-failure', String(error));
+              throw error;
+            }
+            record(destination, 'disposition', {
+              bodyFailed,
+              ownedCleanup: success,
+              readerValid: parsed.valid,
+              readerComplete: parsed.complete,
+              correlated: !!correlation,
+              nativeCompletion: 'original stop inventory only',
+              historicalCause: false,
+            });
+            if (!parsed.complete || !success)
+              throw new Error('Diagnostic trace or original lifecycle incomplete');
+          },
+        },
+      ],
+      (rows) =>
+        record(evidence!, 'group-10-diagnostic-outcomes', {
+          rows,
+          bodyFailed,
+          primaryError: bodyFailed ? String(bodyError) : null,
+          observationErrors,
+        }),
     );
-    await main(app, (f) => f.join());
-    const after = await main(app, (f) => f.evidence());
-    record(dir, 'after-stop', after);
-    const finalInventory = stopInventory(after);
-    record(dir, 'stop-inventory-after', finalInventory);
-    expect(after.records.slice(0, before.source.records.length)).toEqual(before.source.records);
-    expect(finalInventory.rows.map((row) => row.request)).toEqual(
-      inventory.rows.map((row) => row.request),
-    );
-    expect(after.pending).toBe(0);
-    if (uiMode) {
-      expect(after.completionFaults).toEqual([]);
-      expect(after.outstandingOriginals).toBe(0);
-      expect(after.completions).toEqual(before.source.completions);
-    }
-    const originals = finalInventory.rows.map(({ request, originalResponse, history }) => ({
-      request,
-      originalResponse,
-      history,
-    }));
-    record(dir, 'original-completions', originals);
-    const envelopes = pending.map((request) => {
-      const row = finalInventory.rows.find(
-        (candidate) => JSON.stringify(candidate.request) === JSON.stringify(request),
-      );
-      if (!row?.complete) throw new Error('Original completion remains unobserved or unjoined');
-      return { request, originalResponse: row.originalResponse, history: row.history };
-    });
-    record(
-      dir,
-      'stop-finish',
-      await control(ready!, { command: 'stop', phase: 'finish', pending: [], envelopes }),
-    );
-    const result = await exited;
-    record(dir, 'controller-helper-exit', result);
-    const supervisorWait = JSON.parse(
-      await readFile(join(dir, 'controller-supervisor-wait.json'), 'utf8'),
-    );
-    record(dir, 'original-supervisor-wait-observed', supervisorWait);
-    expect(lifecycleFault).toBeNull();
-    expect(metadata).toBe('');
-    expect(lifecycle).toHaveLength(3);
-    expect(supervisorWait).toEqual(lifecycle[1]);
-    const allocation = lifecycle[0].details;
-    expect(allocation).toEqual({
-      supervisorPid: expect.any(Number),
-      controllerPid: child.pid,
-      writerIsFifo: true,
-      writerInheritable: false,
-    });
-    expect(Number.isSafeInteger(allocation.supervisorPid) && allocation.supervisorPid > 0).toBe(
-      true,
-    );
-    expect(supervisorWait.details).toEqual({
-      supervisorPid: allocation.supervisorPid,
-      returnCode: 0,
-      code: 0,
-      signal: null,
-      waitedOriginalChild: true,
-      failure: null,
-    });
-    expect(lifecycle[2].details).toEqual({
-      success: true,
-      failure: null,
-      nativeCompletion: 'not asserted',
-    });
-    const stopped = JSON.parse(await readFile(join(dir, 'stopped.json'), 'utf8'));
-    record(dir, 'final-stop-observed', stopped);
-    expect(result).toEqual({ code: 0, signal: null });
-    expect(stopped.success).toBe(true);
-    expect(stopped.ownership.complete).toBe(true);
-    expect(stopped.ownership.failed).toBe(false);
-    expect(
-      stopped.worker.cleanup.every((row: any) => row.udsClosed && row.tcpClosed && row.reaped),
-    ).toBe(true);
-    success = true;
-  } catch (error) {
-    record(dir, 'failure', {
-      error: String(error),
-      stack: error instanceof Error ? error.stack : null,
-    });
+    return;
+  } else {
     try {
-      await packet('failure-packet');
-    } catch (packetError) {
-      record(dir, 'failure-packet-error', String(packetError));
-    }
-    throw error;
-  } finally {
-    // EOF is failure cleanup, never success or a native receipt. Await this original allocation.
-    if (!success) child.stdin!.end();
-    const result = await exited;
-    record(dir, 'controller-final-wait', { ...result, success });
-    record(dir, 'controller-protocol-observed', { lifecycle, lifecycleFault, metadata, stderr });
-    child.stdin!.end();
-    if (app) {
-      try {
-        await main(app, (f) => f.shutdown());
-      } finally {
-        await app.close();
+      ready = await waitFile(join(dir, 'ready.json'), child);
+      expect(ready!.identity).toEqual(identity);
+      expect(ready!.runId).toBe(runId);
+      expect(ready!.hosts[0].workspaceId).toBe(ready!.hosts[1].workspaceId);
+      expect(ready!.hosts[0].registeredRootId).toBe(ready!.hosts[1].registeredRootId);
+      app = await electron.launch({
+        args: [
+          join(bundle, 'main.mjs'),
+          join(dir, 'profile'),
+          join(bundle, 'preload.cjs'),
+          join(dir, 'ready.json'),
+          join(bundle, uiMode ? 'ui-assets/asset-manifest.json' : 'renderer.js'),
+        ],
+        env: {
+          ...environment(home),
+          ...(uiMode
+            ? {
+                NATIVE_REVIEW_UI: '1',
+                NATIVE_REVIEW_UI_ROLE: index === 6 || index === 10 ? 'member' : 'owner',
+                ...(sidebarMode ? { NATIVE_REVIEW_SIDEBAR_UI: '1' } : {}),
+              }
+            : {}),
+          DISPLAY: process.env.DISPLAY!,
+          XDG_RUNTIME_DIR: join(dir, 'runtime'),
+        },
+        timeout: 20000,
+      });
+      const logs = createWriteStream(join(dir, 'electron.log'), { mode: 0o600 });
+      app.process().stdout?.pipe(logs, { end: false });
+      app.process().stderr?.pipe(logs, { end: false });
+      await expect
+        .poll(() => app!.evaluate(() => !!(globalThis as any).nativeReviewFixture?.ready))
+        .toBe(true);
+      await body({
+        dir,
+        ready: ready!,
+        app,
+        a: await pageFor(app, 'host-A'),
+        b: await pageFor(app, 'local-B'),
+        packet,
+      });
+      if (uiMode) record(dir, 'ui-quiescence', await main(app, (f) => f.quiesceUi()));
+      await main(app, (f) => f.join());
+      const before = await packet('before-stop');
+      if (!before.source) throw new Error('Original main observations missing');
+      const inventory = stopInventory(before.source);
+      record(dir, 'stop-inventory-before', inventory);
+      const { pending } = inventory;
+      record(
+        dir,
+        'stop-begin',
+        await control(ready!, { command: 'stop', phase: 'begin', pending, envelopes: [] }),
+      );
+      await main(app, (f) => f.join());
+      const after = await main(app, (f) => f.evidence());
+      record(dir, 'after-stop', after);
+      const finalInventory = stopInventory(after);
+      record(dir, 'stop-inventory-after', finalInventory);
+      expect(after.records.slice(0, before.source.records.length)).toEqual(before.source.records);
+      expect(finalInventory.rows.map((row) => row.request)).toEqual(
+        inventory.rows.map((row) => row.request),
+      );
+      expect(after.pending).toBe(0);
+      if (uiMode) {
+        expect(after.completionFaults).toEqual([]);
+        expect(after.outstandingOriginals).toBe(0);
+        expect(after.completions).toEqual(before.source.completions);
       }
+      const originals = finalInventory.rows.map(({ request, originalResponse, history }) => ({
+        request,
+        originalResponse,
+        history,
+      }));
+      record(dir, 'original-completions', originals);
+      const envelopes = pending.map((request) => {
+        const row = finalInventory.rows.find(
+          (candidate) => JSON.stringify(candidate.request) === JSON.stringify(request),
+        );
+        if (!row?.complete) throw new Error('Original completion remains unobserved or unjoined');
+        return { request, originalResponse: row.originalResponse, history: row.history };
+      });
+      record(
+        dir,
+        'stop-finish',
+        await control(ready!, { command: 'stop', phase: 'finish', pending: [], envelopes }),
+      );
+      const result = await exited;
+      record(dir, 'controller-helper-exit', result);
+      const supervisorWait = JSON.parse(
+        await readFile(join(dir, 'controller-supervisor-wait.json'), 'utf8'),
+      );
+      record(dir, 'original-supervisor-wait-observed', supervisorWait);
+      expect(lifecycleFault).toBeNull();
+      expect(metadata).toBe('');
+      expect(lifecycle).toHaveLength(3);
+      expect(supervisorWait).toEqual(lifecycle[1]);
+      const allocation = lifecycle[0].details;
+      expect(allocation).toEqual({
+        supervisorPid: expect.any(Number),
+        controllerPid: child.pid,
+        writerIsFifo: true,
+        writerInheritable: false,
+      });
+      expect(Number.isSafeInteger(allocation.supervisorPid) && allocation.supervisorPid > 0).toBe(
+        true,
+      );
+      expect(supervisorWait.details).toEqual({
+        supervisorPid: allocation.supervisorPid,
+        returnCode: 0,
+        code: 0,
+        signal: null,
+        waitedOriginalChild: true,
+        failure: null,
+      });
+      expect(lifecycle[2].details).toEqual({
+        success: true,
+        failure: null,
+        nativeCompletion: 'not asserted',
+      });
+      const stopped = JSON.parse(await readFile(join(dir, 'stopped.json'), 'utf8'));
+      record(dir, 'final-stop-observed', stopped);
+      expect(result).toEqual({ code: 0, signal: null });
+      expect(stopped.success).toBe(true);
+      expect(stopped.ownership.complete).toBe(true);
+      expect(stopped.ownership.failed).toBe(false);
+      expect(
+        stopped.worker.cleanup.every((row: any) => row.udsClosed && row.tcpClosed && row.reaped),
+      ).toBe(true);
+      success = true;
+    } catch (error) {
+      record(dir, 'failure', {
+        error: String(error),
+        stack: error instanceof Error ? error.stack : null,
+      });
+      try {
+        await packet('failure-packet');
+      } catch (packetError) {
+        record(dir, 'failure-packet-error', String(packetError));
+      }
+      throw error;
+    } finally {
+      // EOF is failure cleanup, never success or a native receipt. Await this original allocation.
+      if (!success) child.stdin!.end();
+      const result = await exited;
+      record(dir, 'controller-final-wait', { ...result, success });
+      record(dir, 'controller-protocol-observed', { lifecycle, lifecycleFault, metadata, stderr });
+      child.stdin!.end();
+      if (app) {
+        try {
+          await main(app, (f) => f.shutdown());
+        } finally {
+          await app.close();
+        }
+      }
+      const destination = join(evidence!, `group-${index + 1}`);
+      await mkdir(destination, { recursive: true, mode: 0o700 });
+      for (const entry of await readdir(dir, { withFileTypes: true }))
+        if (entry.isFile() && /\.(json|jsonl|log)$/.test(entry.name))
+          await copyFile(join(dir, entry.name), join(destination, entry.name));
     }
-    const destination = join(evidence!, `group-${index + 1}`);
-    await mkdir(destination, { recursive: true, mode: 0o700 });
-    for (const entry of await readdir(dir, { withFileTypes: true }))
-      if (entry.isFile() && /\.(json|jsonl|log)$/.test(entry.name))
-        await copyFile(join(dir, entry.name), join(destination, entry.name));
   }
 }
 
