@@ -132,6 +132,10 @@ def retain_fixtures(root):
     record('fixture-state', {'files': files, 'inputBytes': total, 'archiveBytes': archive_path.stat().st_size,
                             'omittedNonregular': omitted,
                             'excludedReproducibleCaches': excluded_caches,
+                            'cacheExclusionReasons': {
+                                path: ('Reproducible npm content cache' if path.endswith('/_cacache') else
+                                       'Reproducible npx dependencies; sibling package manifests retained')
+                                for path in excluded_caches},
                             'consistency': 'post-test copy; see shutdown receipts for settlement'})
     if report_bytes() > REPORT_LIMIT:
         raise RuntimeError('Final report byte limit exceeded after capture receipt')

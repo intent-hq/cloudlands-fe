@@ -150,6 +150,10 @@ class Admission(unittest.TestCase):
             receipt = json.loads((report / 'fixture-state.json').read_text())
             self.assertEqual(set(receipt['excludedReproducibleCaches']), {
                 'home/.npm/_cacache', 'home/.npm/_npx/5794dd75a801d955/node_modules'})
+            self.assertEqual(receipt['cacheExclusionReasons'], {
+                'home/.npm/_cacache': 'Reproducible npm content cache',
+                'home/.npm/_npx/5794dd75a801d955/node_modules':
+                    'Reproducible npx dependencies; sibling package manifests retained'})
             self.assertEqual(receipt['inputBytes'], sum(map(len, retained.values())))
 
     def test_required_evidence_size_refusal_names_path_and_threshold_without_success_receipt(self):
