@@ -197,7 +197,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
+    // Flex shrinking bounds narrow layouts without a percentage cap feeding
+    // the overflow-dependent margin back into the intrinsic parent width.
+    // Both launcher states are exercised in workspace-tab-layout-stability.ct.spec.ts.
     expect(tabs).toContain('w-fit min-w-0');
+    expect(tabs).not.toContain('max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(nav).not.toContain('faBell');
