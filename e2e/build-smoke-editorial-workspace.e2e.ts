@@ -441,28 +441,73 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     await expect(panels.nth(2)).toHaveAttribute('data-focused', 'true');
     await capture('desktop-light-focused-panel');
 
-    const target = panels.first();
-    const tabId = await target.locator('[data-tab-id]').first().getAttribute('data-tab-id');
-    await target.evaluate((element, id) => {
-      const transfer = new DataTransfer();
-      transfer.setData(
-        'application/x-panel-tab',
-        JSON.stringify({ tabId: id, panelId: 'fixture' }),
-      );
-      const rect = element.getBoundingClientRect();
-      element.dispatchEvent(
-        new DragEvent('dragover', {
-          bubbles: true,
-          cancelable: true,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-          dataTransfer: transfer,
-        }),
-      );
-    }, tabId);
-    await expect(target.locator('[data-panel-drop-destination]')).toBeVisible();
-    await capture('desktop-light-drag-over');
-    await target.dispatchEvent('dragleave');
+    // Keep the complete three-column canvas visible for a pointer-driven edge drop.
+    await emulateViewport(3200, 1000);
+    const target = page.locator(`[data-panel-id="${firstPanelId}"]`);
+    const header = target.locator('[data-panel-content-header][draggable="true"]');
+    await expect(header).toHaveAttribute('data-pane-stack-size', '1');
+    const activePane = target.locator('.tab-content-wrapper[aria-hidden="false"]');
+    await expect(activePane).toHaveCount(1);
+    const paneId = await activePane.getAttribute('data-tab-id');
+    expect(paneId).toBeTruthy();
+    const beforePanes = await panels.evaluateAll((elements) =>
+      elements.map((element) => ({
+        panelId: element.getAttribute('data-panel-id'),
+        panes: Array.from(element.querySelectorAll('.tab-content-wrapper')).map((pane) =>
+          pane.getAttribute('data-tab-id'),
+        ),
+      })),
+    );
+    // Grab the non-interactive header spacer: the real dragstart handler binds
+    // the active pane. Dropping at the right edge reorders this single-pane
+    // column without merging stacks or changing any pane identity.
+    const grip = header.locator(':scope > div[aria-hidden="true"]');
+    await expect(grip).toBeVisible();
+    const gripBox = await grip.boundingBox();
+    const destinationBox = await panels.last().boundingBox();
+    if (!gripBox || !destinationBox) throw new Error('Pane drag bounds are unavailable');
+    expect(gripBox.width).toBeGreaterThan(0);
+    const startX = gripBox.x + gripBox.width / 2;
+    const startY = gripBox.y + gripBox.height / 2;
+    const dropX = destinationBox.x + destinationBox.width - 3;
+    const dropY = destinationBox.y + 80;
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+    expect(startX).toBeGreaterThan(0);
+    expect(dropX).toBeLessThan(viewportWidth);
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    try {
+      await page.mouse.move(startX + 10, startY, { steps: 3 });
+      await page.mouse.move(dropX, dropY, { steps: 20 });
+      await page.mouse.move(dropX, dropY);
+      await expect(page.locator('[data-panel-layout-edge-preview="after"]')).toBeVisible();
+      await capture('wide-light-drag-over');
+    } finally {
+      await page.mouse.up();
+    }
+    await expect
+      .poll(() =>
+        panels.evaluateAll((elements) =>
+          elements.map((element) => ({
+            panelId: element.getAttribute('data-panel-id'),
+            panes: Array.from(element.querySelectorAll('.tab-content-wrapper')).map((pane) =>
+              pane.getAttribute('data-tab-id'),
+            ),
+          })),
+        ),
+      )
+      .toEqual([beforePanes[1], beforePanes[2], beforePanes[0]]);
+    await expect(panels).toHaveCount(3);
+    await expect(panels.last()).toHaveAttribute('data-panel-id', firstPanelId!);
+    await expect(activePane).toHaveAttribute('data-tab-id', paneId!);
+    await expect(activePane).toBeVisible();
+    await expect(target).toHaveAttribute('data-focused', 'true');
+    await expect(page.locator('[data-panel-layout-edge-preview]')).toHaveCount(0);
+    await expect(page.locator('[data-split-gutter="horizontal"]')).toHaveCount(2);
+    await expect(page.locator('[data-split-gutter="vertical"]')).toHaveCount(0);
+    await expectEightPixelGutters();
+    await capture('wide-light-reordered-columns');
+    await emulateViewport(1440, 1000);
 
     await target.click({ position: { x: 24, y: 96 } });
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+m' : 'Control+Shift+m');
