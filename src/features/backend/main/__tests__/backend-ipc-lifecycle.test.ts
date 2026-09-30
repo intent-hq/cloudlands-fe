@@ -1069,3 +1069,753 @@ describe('pool auxiliary admission at retirement', () => {
     }
   });
 });
+
+// Direct evidence controls execute real pool/client bodies and exact extracted passive consumers.
+import { randomUUID } from 'node:crypto';
+type DirectJournal = ReturnType<
+  typeof import('../../../../../test/fixtures/native-review-native/main').statusProducerJournal
+>;
+type DirectEvent = Parameters<NonNullable<Parameters<Pool['enrollBackendClientLifecycle']>[0]>>[0];
+function directFunctions(file: string, names: string[]): Record<string, (...args: any[]) => any> {
+  const text = readFileSync(path.resolve(file), 'utf8');
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const nodes = source.statements.filter(
+    (n): n is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(n) && names.includes(n.name?.text ?? ''),
+  );
+  expect(nodes).toHaveLength(names.length);
+  const code = ts.transpileModule(nodes.map((n) => n.getText(source)).join('\n'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  return new Function('exports', 'randomUUID', code + '\nreturn {' + names.join(',') + '};')(
+    {},
+    randomUUID,
+  );
+}
+function directConsumers() {
+  return directFunctions('test/fixtures/native-review-native/review.electron.ts', [
+    'companionMainObject',
+    'companionMainRequire',
+    'companionMainJournal',
+    'assertDirectStatusOwners',
+    'assertCompanionMainOwnership',
+    'companionPhasesOnce',
+  ]);
+}
+async function loadDirect(observer?: (event: DirectEvent) => void) {
+  const journal = directFunctions('test/fixtures/native-review-native/main.ts', [
+    'statusProducerJournal',
+  ]).statusProducerJournal!() as DirectJournal;
+  pool = await import('../backend.ipc');
+  const lifecycle = pool.enrollBackendClientLifecycle(observer ?? journal.observe);
+  pool.__setBackendWindowHooksForTesting({
+    openOrFocus: async (id) => {
+      edge.opens.push(id);
+    },
+  });
+  pool.registerBackendHandlers();
+  const { JsonRpcClient: ActualClient } = await import('../json-rpc-client');
+  const original = ActualClient.prototype.request;
+  const calls: Array<{
+    client: JsonRpcClient;
+    callId: string;
+    promise: Promise<unknown>;
+    entry: unknown;
+  }> = [];
+  const spy = vi.spyOn(ActualClient.prototype, 'request').mockImplementation(function (
+    this: JsonRpcClient,
+    ...args: Parameters<JsonRpcClient['request']>
+  ) {
+    if (args[0] !== 'host.status') return Reflect.apply(original, this, args);
+    const callId = randomUUID(),
+      clientId = journal.memberId(this),
+      entry = this.getRepositoryConnection();
+    const fields = { callId, clientId, connectionId: null, incarnationId: null, socketId: null };
+    journal.record('request-enter', { ...fields, entryStatus: this.getStatus(), owner: 'unknown' });
+    const promise = Reflect.apply(original, this, args) as Promise<unknown>;
+    journal.request(this, promise, callId);
+    calls.push({ client: this, callId, promise, entry });
+    void promise.then(
+      () => {
+        journal.release(promise);
+        journal.record('request-settled', { ...fields, state: 'fulfilled' });
+      },
+      () => {
+        journal.release(promise);
+        journal.record('request-settled', { ...fields, state: 'rejected' });
+      },
+    );
+    return promise;
+  });
+  const retirementFence = fence();
+  const retire = () => lifecycle.retire(retirementFence);
+  return {
+    pool,
+    lifecycle,
+    journal,
+    calls,
+    retire,
+    async cleanup() {
+      try {
+        await Promise.allSettled(calls.map((call) => call.promise));
+        await retire();
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  };
+}
+function directCoverage(
+  journal: DirectJournal,
+  result: Awaited<ReturnType<ReturnType<Pool['enrollBackendClientLifecycle']>['retire']>>,
+) {
+  const rows = journal.snapshot().rows as Array<Record<string, any>>;
+  const calls = new Map(
+    rows.filter((row) => row.phase === 'request-enter').map((row) => [row.callId, row]),
+  );
+  rows.push({
+    phase: 'pool-retirement',
+    clients: result.clients.map((client) => ({
+      generation: client.identity.generation,
+      ownersJoined: client.ownersJoined,
+      outcome: client.outcome,
+      failureKinds: client.failures.map((f) => f.kind),
+      closes: client.closes.map((c) => ({
+        destroyRequested: c.destroyRequested,
+        closeObserved: c.closeObserved,
+      })),
+    })),
+  });
+  return { rows, calls };
+}
+
+describe('direct status owner evidence', () => {
+  it('D1 holds original hello and binds nullable entry to the identical member and request Promise', async () => {
+    const hello = deferred<unknown>(),
+      reached = nextFrame('client.hello');
+    edge.respond = (_socket, frame) =>
+      frame.method === 'client.hello' ? hello.promise : defaultReply(frame);
+    const f = await loadDirect();
+    const client = f.pool.getLocalBackendClient();
+    try {
+      const { frame } = await reached;
+      expect(client.getRepositoryConnection()).toBeNull();
+      hello.resolve(defaultReply(frame));
+      await connection(client);
+      await settledTurn();
+      expect(f.calls.length).toBeGreaterThan(0);
+      expect(f.calls.some((call) => call.entry === null)).toBe(true);
+      expect(f.calls.every((call) => call.client === client)).toBe(true);
+      await Promise.all(f.calls.map((call) => call.promise));
+      const result = await f.retire();
+      expect(result.outcome).toBe('clean');
+      const coverage = directCoverage(f.journal, result);
+      expect(() =>
+        directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls),
+      ).not.toThrow();
+      expect(f.journal.snapshot().failed).toBe(0);
+    } finally {
+      hello.resolve({});
+      await Promise.allSettled(f.calls.map((call) => call.promise));
+      await f.cleanup();
+    }
+  });
+  it('D1 retains remote store continuation on its original owner and member', async () => {
+    const hold = deferred<unknown>(),
+      entered = deferred();
+    edge.findGuest = (id) => {
+      if (id === 'remote-A') {
+        entered.resolve();
+        return hold.promise;
+      }
+      return Promise.resolve(null);
+    };
+    const f = await loadDirect();
+    try {
+      const client = await f.pool.connectBackendClient('remote-A');
+      await entered.promise;
+      await connection(client);
+      const retired = f.retire();
+      let done = false;
+      void retired.then(() => {
+        done = true;
+      });
+      await settledTurn();
+      expect(done).toBe(false);
+      hold.resolve(null);
+      const result = await retired;
+      expect(result.outcome).toBe('clean');
+      const coverage = directCoverage(f.journal, result);
+      expect(() =>
+        directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls),
+      ).not.toThrow();
+      expect(
+        coverage.rows.some(
+          (r) => r.phase === 'direct-request' && r.site === 'captureRemoteHostname',
+        ),
+      ).toBe(true);
+    } finally {
+      hold.resolve(null);
+      await Promise.allSettled(f.calls.map((call) => call.promise));
+      await f.cleanup();
+    }
+  });
+  it('D1 binds the original local window probe and its queue parent', async () => {
+    const f = await loadDirect();
+    try {
+      await expect(f.pool.openBackendWindow('local')).resolves.toEqual({ id: 'local' });
+      const result = await f.retire();
+      expect(result.outcome).toBe('clean');
+      const coverage = directCoverage(f.journal, result);
+      expect(
+        coverage.rows.some(
+          (row) => row.phase === 'direct-request' && row.site === 'performOpenBackendWindow',
+        ),
+      ).toBe(true);
+      directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls);
+    } finally {
+      await f.cleanup();
+    }
+  });
+  it('D5 preserves original rejected metadata and its handled outer failure', async () => {
+    edge.respond = (_socket, frame) =>
+      frame.method === 'host.status'
+        ? Promise.reject(new Error('private-controlled-failure'))
+        : defaultReply(frame);
+    const f = await loadDirect();
+    try {
+      const client = f.pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const call = f.calls[0]!;
+      let original: unknown;
+      try {
+        await call.promise;
+      } catch (error) {
+        original = error;
+      }
+      expect(original).toBeInstanceOf(Error);
+      const result = await f.retire();
+      expect(result.outcome).toBe('original-failure');
+      expect(result.failures.some((failure) => failure.error === original)).toBe(true);
+      expect(JSON.stringify(f.journal.snapshot())).not.toContain('private-controlled-failure');
+      const coverage = directCoverage(f.journal, result);
+      expect(() =>
+        directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls),
+      ).toThrow();
+    } finally {
+      await f.cleanup();
+    }
+  });
+  it('D2 separates original heartbeat inner settlement, callback completion and full client drain', async () => {
+    vi.useFakeTimers();
+    const f = await loadDirect();
+    const client = f.pool.getLocalBackendClient();
+    const hold = deferred<unknown>();
+    try {
+      await connection(client);
+      await vi.advanceTimersByTimeAsync(0);
+      edge.respond = (_socket, frame) =>
+        frame.method === 'host.status' ? hold.promise : defaultReply(frame);
+      const reached = nextFrame('host.status');
+      vi.advanceTimersByTime(30_000);
+      await reached;
+      const raw = f.calls.at(-1)!.promise;
+      const ticket = client.beginRetirement();
+      const retired = f.retire();
+      const witness = raw.then((value) => {
+        const rows = f.journal.snapshot().rows as Array<Record<string, any>>;
+        const edge = rows.findLast(
+          (row) => row.phase === 'direct-request' && row.site === 'healthCheck',
+        )!;
+        return {
+          value,
+          drained: ticket.isDrained(),
+          callbackDone: rows.some(
+            (row) => row.phase === 'direct-owner-end' && row.ownerId === edge.ownerId,
+          ),
+        };
+      });
+      hold.resolve({ hostname: 'original-heartbeat' });
+      expect(await witness).toEqual({
+        value: { hostname: 'original-heartbeat' },
+        drained: false,
+        callbackDone: false,
+      });
+      const result = await retired;
+      expect(result.outcome).toBe('clean');
+      const coverage = directCoverage(f.journal, result);
+      directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls);
+    } finally {
+      hold.resolve({});
+      await Promise.allSettled(f.calls.map((call) => call.promise));
+      await f.cleanup();
+    }
+  });
+  it('D3 keeps simultaneous and replacement member identities distinct without promoting forced retirement', async () => {
+    const f = await loadDirect();
+    try {
+      const first = await f.pool.connectBackendClient('remote-A');
+      const sibling = f.pool.getLocalBackendClient();
+      await Promise.all([connection(first), connection(sibling)]);
+      await settledTurn();
+      f.pool.disconnectBackendClient('remote-A');
+      const replacement = await f.pool.connectBackendClient('remote-A');
+      await connection(replacement);
+      await settledTurn();
+      expect(new Set([first, sibling, replacement]).size).toBe(3);
+      expect(new Set([first, sibling, replacement].map((c) => f.journal.memberId(c))).size).toBe(3);
+      const result = await f.retire();
+      expect(result.outcome).toBe('forced');
+      const coverage = directCoverage(f.journal, result);
+      expect(() =>
+        directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls),
+      ).toThrow();
+    } finally {
+      await Promise.allSettled(f.calls.map((call) => call.promise));
+      await f.cleanup();
+    }
+  });
+  it('D4 refuses a fulfilled external status without an original admitted outer edge', async () => {
+    const f = await loadDirect();
+    try {
+      const client = f.pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const original = client.request('host.status');
+      await original;
+      const call = f.calls.find((call) => call.promise === original)!;
+      const result = await f.retire();
+      expect(result.outcome).toBe('clean');
+      const coverage = directCoverage(f.journal, result);
+      expect(
+        coverage.rows.some((row) => row.phase === 'direct-request' && row.callId === call.callId),
+      ).toBe(false);
+      expect(() =>
+        directConsumers().assertDirectStatusOwners!(coverage.rows, coverage.calls),
+      ).toThrow('coverage');
+    } finally {
+      await Promise.allSettled(f.calls.map((call) => call.promise));
+      await f.cleanup();
+    }
+  });
+  it('D5 observer failure stays incomplete without changing the original lifecycle outcome', async () => {
+    const f = await loadDirect(() => {
+      throw new Error('observer-only');
+    });
+    try {
+      const client = f.pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const result = await f.retire();
+      expect(result.outcome).toBe('clean');
+      expect(f.lifecycle.observationFailures()).toBeGreaterThan(0);
+      expect(() =>
+        directConsumers().companionMainJournal!(
+          f.journal.snapshot(f.lifecycle.observationFailures()),
+        ),
+      ).toThrow();
+    } finally {
+      await Promise.allSettled(f.calls.map((call) => call.promise));
+      await f.cleanup();
+    }
+  });
+  it('D5 preserves off-path original Promise value rejection and synchronous throw identity', async () => {
+    const file = 'src/features/backend/main/backend.ipc.ts';
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const n = source.statements.find(
+      (n): n is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(n) && n.name?.text === 'observeStatus',
+    )!;
+    const code = ts.transpileModule(n.getText(source), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const fn = new Function('poolLifecycle', 'observePool', code + '\nreturn observeStatus;')(
+      undefined,
+      () => {
+        throw new Error('off observer');
+      },
+    ) as (c: object, s: string, o: undefined, f: () => Promise<unknown>) => Promise<unknown>;
+    const value = {},
+      result = Promise.resolve(value),
+      error = {};
+    expect(fn({}, 'healthCheck', undefined, () => result)).toBe(result);
+    expect(await result).toBe(value);
+    const rejected = Promise.reject(error);
+    expect(fn({}, 'healthCheck', undefined, () => rejected)).toBe(rejected);
+    await expect(rejected).rejects.toBe(error);
+    try {
+      fn({}, 'healthCheck', undefined, () => {
+        throw error;
+      });
+      throw new Error('not thrown');
+    } catch (caught) {
+      expect(caught).toBe(error);
+    }
+  });
+  it('D5 retains original row and byte caps and omits raw values', () => {
+    const make = directFunctions('test/fixtures/native-review-native/main.ts', [
+      'statusProducerJournal',
+    ]).statusProducerJournal!;
+    const j = make() as DirectJournal;
+    for (let i = 0; i < 129; i++) j.record('bounded-control', { index: i });
+    expect(j.snapshot()).toMatchObject({
+      retained: 128,
+      dropped: 1,
+      recordingComplete: false,
+      ownerCompletionObserved: false,
+    });
+    const large = make() as DirectJournal;
+    large.record('bounded-control', { value: 'x'.repeat(1_048_577) });
+    expect(large.snapshot()).toMatchObject({ retained: 0, dropped: 1, recordingComplete: false });
+  });
+});
+
+/** Consumer inputs are controlled records, never claims of native enrollment or disposal. */
+function directConsumerInput() {
+  const scopeId = randomUUID(),
+    clientId = randomUUID(),
+    otherClient = randomUUID(),
+    ownerId = randomUUID(),
+    callId = randomUUID();
+  const sockets = [randomUUID(), randomUUID()];
+  const fields = { callId, clientId, connectionId: null, incarnationId: null, socketId: null };
+  const close = { destroyRequested: true, closeObserved: true };
+  const clients = [1, 2].map((generation) => ({
+    generation,
+    ownersJoined: true,
+    outcome: 'clean',
+    failureKinds: [],
+    closes: [{ ...close }],
+  }));
+  const rows: Array<Record<string, any>> = [
+    { phase: 'direct-enrolled', scopeId },
+    { phase: 'direct-member', scopeId, clientId, generation: 1 },
+    { phase: 'direct-member', scopeId, clientId: otherClient, generation: 2 },
+    { phase: 'request-enter', ...fields, entryStatus: 'connecting', owner: 'unknown' },
+    {
+      phase: 'direct-owner-enter',
+      scopeId,
+      ownerId,
+      parentId: null,
+      kind: 'healthCheck',
+      callback: true,
+      admittedAt: 4,
+    },
+    {
+      phase: 'direct-request',
+      scopeId,
+      clientId,
+      generation: 1,
+      ownerId,
+      callId,
+      site: 'healthCheck',
+      observedAt: 5,
+    },
+    { phase: 'request-settled', ...fields, state: 'fulfilled' },
+    { phase: 'direct-owner-end', scopeId, ownerId, completedAt: 6, state: 'fulfilled' },
+    { phase: 'renderer-roots-joined', producers: 2, seal: true },
+    ...sockets.map((socketId, host) => ({ phase: 'socket-event', socketId, host, event: 'close' })),
+    ...clients.map((c, i) => ({
+      phase: 'direct-member-retired',
+      scopeId,
+      clientId: i ? otherClient : clientId,
+      ...c,
+      instanceId: randomUUID(),
+      admissionSealed: true,
+    })),
+    {
+      phase: 'pool-retirement',
+      ownersJoined: true,
+      admissionSealed: true,
+      outcome: 'clean',
+      exclusions: [],
+      failureKinds: [],
+      clients,
+    },
+    { phase: 'ledger-join-return', producersClosed: true, pending: 0, sealed: true, rows: 1 },
+  ];
+  const journal = {
+    version: 1,
+    observed: rows.length,
+    retained: rows.length,
+    dropped: 0,
+    failed: 0,
+    directObservationFailures: 0,
+    recordingComplete: true,
+    ownerCompletionObserved: false,
+    ownerCompletionLimit: 'The public client API exposes no original outer healthCheck join',
+    rows,
+  };
+  const source = {
+    statusProducers: journal,
+    faults: [],
+    completionFaults: [],
+    pending: 0,
+    outstandingOriginals: 0,
+    completions: [{ layer: 'client', method: 'host.status', ...fields, state: 'fulfilled' }],
+    records: [],
+    allocations: sockets.map((socketId, host) => ({ socketId, host, destroyed: true })),
+  };
+  const tasks = [
+    'connectionsSaga',
+    'daemonEventsSaga',
+    'principalSaga',
+    'lifecycleReadSaga',
+    'repositoryContextSaga',
+    'gitReadSaga',
+    'acceptChangesStatusSaga',
+  ];
+  const quiescence = {
+    producers: ['host-A', 'local-B'].map((key, i) => ({
+      key,
+      sender: i + 1,
+      receipt: {
+        route: { startupSettled: true, closed: true },
+        producersClosed: true,
+        faults: [],
+        tasks: tasks.map((name) => ({ name, joined: true, iteratorDone: true })),
+      },
+    })),
+    joined: { producersClosed: true, pending: 0, sealed: true, rows: 1 },
+  };
+  const recount = () => {
+    rows.forEach((row, i) => {
+      row.sequence = i + 1;
+    });
+    journal.observed = journal.retained = rows.length;
+  };
+  recount();
+  return {
+    source,
+    quiescence,
+    recount,
+    rows,
+    initial: { ...journal, rows: [], observed: 0, retained: 0 },
+  };
+}
+describe('direct status owner consumer', () => {
+  it('D6 keeps passive unknown and null truthful alongside complete direct coverage', () => {
+    const input = directConsumerInput();
+    const result = directConsumers().assertCompanionMainOwnership!(
+      input.source,
+      input.quiescence,
+      input.initial,
+    );
+    expect(result).toMatchObject({
+      complete: true,
+      nativeStop: 'not asserted',
+      privateTicketIdentity: 'not exposed',
+    });
+    expect(input.rows.find((row) => row.phase === 'request-enter')).toMatchObject({
+      owner: 'unknown',
+      connectionId: null,
+      incarnationId: null,
+      socketId: null,
+    });
+    expect(input.source.completions[0]).not.toHaveProperty('wireRequests');
+    expect(input.source.statusProducers.ownerCompletionObserved).toBe(false);
+  });
+  const failures: Array<[string, (input: ReturnType<typeof directConsumerInput>) => void]> = [
+    [
+      'missing request edge',
+      (x) => {
+        x.rows.splice(
+          x.rows.findIndex((r) => r.phase === 'direct-request'),
+          1,
+        );
+      },
+    ],
+    [
+      'duplicate request edge',
+      (x) => {
+        x.rows.splice(6, 0, { ...x.rows[5]! });
+      },
+    ],
+    [
+      'foreign client',
+      (x) => {
+        x.rows[5]!.clientId = randomUUID();
+      },
+    ],
+    [
+      'foreign generation',
+      (x) => {
+        x.rows[5]!.generation = 2;
+      },
+    ],
+    [
+      'foreign owner',
+      (x) => {
+        x.rows[5]!.ownerId = randomUUID();
+      },
+    ],
+    [
+      'foreign scope',
+      (x) => {
+        x.rows[5]!.scopeId = randomUUID();
+      },
+    ],
+    [
+      'callback before original request settlement',
+      (x) => {
+        [x.rows[6], x.rows[7]] = [x.rows[7]!, x.rows[6]!];
+      },
+    ],
+    [
+      'unsettled callback',
+      (x) => {
+        x.rows.splice(7, 1);
+      },
+    ],
+    [
+      'late callback',
+      (x) => {
+        x.rows[7]!.completedAt = 3;
+      },
+    ],
+    [
+      'invalid parent',
+      (x) => {
+        x.rows[4]!.parentId = randomUUID();
+      },
+    ],
+    [
+      'failed callback',
+      (x) => {
+        x.rows[7]!.state = 'rejected';
+      },
+    ],
+    [
+      'lost evidence',
+      (x) => {
+        x.source.statusProducers.dropped = 1;
+      },
+    ],
+    [
+      'observer error',
+      (x) => {
+        x.source.statusProducers.directObservationFailures = 1;
+      },
+    ],
+    [
+      'missing member retirement',
+      (x) => {
+        x.rows.splice(11, 1);
+      },
+    ],
+    [
+      'foreign member retirement',
+      (x) => {
+        x.rows[11]!.clientId = randomUUID();
+      },
+    ],
+    [
+      'duplicate member generation',
+      (x) => {
+        x.rows[2]!.generation = 1;
+      },
+    ],
+    [
+      'aggregate exclusion',
+      (x) => {
+        x.rows[13]!.exclusions = ['unknown'];
+      },
+    ],
+    [
+      'aggregate late fault',
+      (x) => {
+        x.rows[13]!.failureKinds = ['late'];
+      },
+    ],
+    [
+      'false facade completion',
+      (x) => {
+        x.rows[11]!.closes = [{ destroyRequested: true, closeObserved: false }];
+      },
+    ],
+    [
+      'lost root',
+      (x) => {
+        x.quiescence.producers[0]!.receipt.tasks[0]!.joined = false;
+      },
+    ],
+    [
+      'privacy field',
+      (x) => {
+        x.rows[5]!.rawStack = 'forbidden';
+      },
+    ],
+    [
+      'claiming private health completion',
+      (x) => {
+        x.source.statusProducers.ownerCompletionObserved = true;
+      },
+    ],
+  ];
+  for (const [name, change] of failures)
+    it('D6 refuses ' + name, () => {
+      const input = directConsumerInput();
+      change(input);
+      input.recount();
+      expect(() =>
+        directConsumers().assertCompanionMainOwnership!(
+          input.source,
+          input.quiescence,
+          input.initial,
+        ),
+      ).toThrow();
+    });
+  for (const original of [new Error('primary'), { primary: true }, undefined])
+    it('D6 preserves original first error ' + typeof original, async () => {
+      const input = directConsumerInput();
+      input.rows.splice(5, 1);
+      input.recount();
+      const consumer = directConsumers();
+      const reached: string[] = [];
+      let caught: unknown = 'not reached';
+      try {
+        await consumer.companionPhasesOnce!(
+          [
+            {
+              name: 'body',
+              run: () => {
+                throw original;
+              },
+            },
+            {
+              name: 'ownership',
+              run: () =>
+                consumer.assertCompanionMainOwnership!(
+                  input.source,
+                  input.quiescence,
+                  input.initial,
+                ),
+            },
+            {
+              name: 'close',
+              run: () => {
+                reached.push('close');
+              },
+            },
+            {
+              name: 'archive',
+              run: () => {
+                reached.push('archive');
+              },
+            },
+          ],
+          () => {},
+        );
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBe(original);
+      expect(reached).toEqual(['close', 'archive']);
+    });
+});

@@ -404,6 +404,34 @@ const nativeReviewFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createNat
 let nativeReviewRoutes: ReturnType<typeof registerNativeReviewHandlers> | undefined;
 let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
 
+type PoolObservation =
+  | { phase: 'enrolled'; scope: symbol }
+  | { phase: 'member'; scope: symbol; client: JsonRpcClient; generation: number }
+  | {
+      phase: 'owner-enter';
+      scope: symbol;
+      owner: object;
+      parent?: object;
+      kind: string;
+      callback: boolean;
+    }
+  | { phase: 'owner-end'; scope: symbol; owner: object; state: 'fulfilled' | 'rejected' | 'thrown' }
+  | {
+      phase: 'status';
+      scope: symbol;
+      client: JsonRpcClient;
+      owner?: object;
+      site: string;
+      promise: Promise<unknown>;
+    }
+  | {
+      phase: 'member-retired';
+      scope: symbol;
+      client: JsonRpcClient;
+      identity: JsonRpcRetirement['identity'];
+      result: JsonRpcRetirementResult;
+    };
+
 interface PoolOwner {
   scope: PoolLifecycle;
   kind: string;
@@ -432,6 +460,8 @@ interface PoolLifecycle {
   failures: Array<{ kind: string; error: unknown }>;
   exclusions: Set<string>;
   generation: number;
+  observer?: (event: PoolObservation) => void;
+  observationFailures: number;
   fence?: OriginalWorkFence;
   retirement?: Promise<PoolRetirementResult>;
 }
@@ -447,6 +477,83 @@ function poolChanged(scope = poolLifecycle): void {
       scope.failures.push({ kind: 'observer', error });
     }
   }
+}
+
+/** Passive main-private evidence; observer failure never changes lifecycle decisions. */
+function observePool(scope: PoolLifecycle | undefined, event: PoolObservation): void {
+  if (!scope?.observer) return;
+  try {
+    scope.observer(event);
+  } catch {
+    scope.observationFailures++;
+  }
+}
+
+function observeStatus<T>(
+  client: JsonRpcClient,
+  site: string,
+  owner: object | undefined,
+  invoke: () => Promise<T>,
+): Promise<T> {
+  const original = invoke();
+  const scope = poolLifecycle;
+  if (scope?.observer)
+    observePool(scope, {
+      phase: 'status',
+      scope: scope.scope,
+      client,
+      owner,
+      site,
+      promise: original,
+    });
+  return original;
+}
+
+function observeHealth(invoke: (owner?: object) => Promise<void>): Promise<void> {
+  const scope = poolLifecycle;
+  if (!scope?.observer) return invoke();
+  const owner = {};
+  observePool(scope, {
+    phase: 'owner-enter',
+    scope: scope.scope,
+    owner,
+    kind: 'healthCheck',
+    callback: true,
+  });
+  let original: Promise<void>;
+  try {
+    original = invoke(owner);
+  } catch (error) {
+    observePool(scope, { phase: 'owner-end', scope: scope.scope, owner, state: 'thrown' });
+    throw error;
+  }
+  void original.then(
+    () => observePool(scope, { phase: 'owner-end', scope: scope.scope, owner, state: 'fulfilled' }),
+    () => observePool(scope, { phase: 'owner-end', scope: scope.scope, owner, state: 'rejected' }),
+  );
+  return original;
+}
+
+function observeMemberRetirement(
+  scope: PoolLifecycle,
+  client: JsonRpcClient,
+  ticket: JsonRpcRetirement,
+  sealed: ReturnType<JsonRpcRetirement['seal']>,
+): Promise<JsonRpcRetirementResult> {
+  const original = sealed.finish();
+  if (scope.observer)
+    void original.then(
+      (result) =>
+        observePool(scope, {
+          phase: 'member-retired',
+          scope: scope.scope,
+          client,
+          identity: ticket.identity,
+          result,
+        }),
+      () => {},
+    );
+  return original;
 }
 
 /** Explicit original parents, never an ambient owner spanning an await. */
@@ -474,7 +581,21 @@ function poolWork<T>(
   }
   const owner: PoolOwner = { scope, kind, parent, client: originalCallback };
   scope.owners.add(owner);
-  const done = (failure?: { error: unknown }) => {
+  observePool(scope, {
+    phase: 'owner-enter',
+    scope: scope.scope,
+    owner,
+    parent,
+    kind,
+    callback: false,
+  });
+  const done = (failure?: { error: unknown }, thrown = false) => {
+    observePool(scope, {
+      phase: 'owner-end',
+      scope: scope.scope,
+      owner,
+      state: failure ? (thrown ? 'thrown' : 'rejected') : 'fulfilled',
+    });
     if (failure) scope.failures.push({ kind: 'original', error: failure.error });
     scope.owners.delete(owner);
     poolChanged(scope);
@@ -483,7 +604,7 @@ function poolWork<T>(
   try {
     value = invoke(owner);
   } catch (error) {
-    done({ error });
+    done({ error }, true);
     throw error;
   }
   if (value instanceof Promise)
@@ -527,7 +648,7 @@ function poolClient(owner: PoolOwner | undefined, client: JsonRpcClient): JsonRp
 }
 
 /** Enroll before handlers or allocation. This joins only the declared main pool owners. */
-export function enrollBackendClientLifecycle() {
+export function enrollBackendClientLifecycle(observer?: (event: PoolObservation) => void) {
   if (
     poolLifecycle ||
     poolOwnershipStarted ||
@@ -545,10 +666,14 @@ export function enrollBackendClientLifecycle() {
     failures: [],
     exclusions: new Set(),
     generation: 0,
+    observer,
+    observationFailures: 0,
   };
   poolLifecycle = scope;
+  observePool(scope, { phase: 'enrolled', scope: scope.scope });
   return Object.freeze({
     scope: scope.scope,
+    observationFailures: () => scope.observationFailures,
     retire(fence: OriginalWorkFence): Promise<PoolRetirementResult> {
       if (scope.retirement) {
         if (scope.fence !== fence) throw new Error('Original retirement fence changed');
@@ -587,13 +712,21 @@ export function enrollBackendClientLifecycle() {
             throw new Error('Unjoined auxiliary pool owners: ' + [...scope.exclusions].join(','));
           // No await, dispatch or teardown between the final fence and ALL admission seals.
           scope.phase = 'sealed';
-          const sealed = [...scope.members.values()].map((m) => m.ticket!.seal());
+          const sealed = [...scope.members].map(([client, m]) => ({
+            client,
+            ticket: m.ticket!,
+            sealed: m.ticket!.seal(),
+          }));
           for (const [client, member] of scope.members) {
             if (backendClients.get(member.id) === client) backendClients.delete(member.id);
             connectedProtocolVersions.delete(member.id);
             clearBackendFailureState(member.id);
           }
-          void Promise.all(sealed.map((ticket) => ticket.finish())).then((clients) => {
+          void Promise.all(
+            sealed.map(({ client, ticket, sealed }) =>
+              observeMemberRetirement(scope, client, ticket, sealed),
+            ),
+          ).then((clients) => {
             scope.phase = 'finished';
             for (const unsubscribe of unsubscribers) unsubscribe();
             scope.listeners.delete(wake);
@@ -1511,9 +1644,15 @@ function createAdditionalBackendClient(
         refreshPending = false;
       }
     });
+  let observedGeneration: number | undefined;
   const instance = new JsonRpcClient({
     ...(poolLifecycle
-      ? { lifecycle: { scope: poolLifecycle.scope, generation: ++poolLifecycle.generation } }
+      ? {
+          lifecycle: {
+            scope: poolLifecycle.scope,
+            generation: (observedGeneration = ++poolLifecycle.generation),
+          },
+        }
       : {}),
     config,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
@@ -1521,9 +1660,10 @@ function createAdditionalBackendClient(
     // probe (PROTOCOL.md §5.14) — answered on BOTH UDS and WSS.
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     healthCheckFailureThreshold: 2,
-    healthCheck: async () => {
-      await instance.request('host.status');
-    },
+    healthCheck: () =>
+      observeHealth(async (owner) => {
+        await observeStatus(instance, 'healthCheck', owner, () => instance.request('host.status'));
+      }),
     // §5.17 stable identity: present the persisted clientId on every
     // (re)connect so daemon-side client-scoped state (`drafts.*`, §5.16)
     // survives app restarts and renderer reloads. REV-2: this pooled client
@@ -1808,6 +1948,13 @@ function createAdditionalBackendClient(
   });
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
   poolLifecycle?.members.set(instance, { id });
+  if (poolLifecycle)
+    observePool(poolLifecycle, {
+      phase: 'member',
+      scope: poolLifecycle.scope,
+      client: instance,
+      generation: observedGeneration!,
+    });
   instance.start();
   if (poolLifecycle?.phase === 'stopping') {
     instance.beginRetirement();
@@ -2102,7 +2249,9 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
     const guard = invitedConnectionGuards.get(id);
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
-    const result = await client.request('host.status');
+    const result = await observeStatus(client, 'captureRemoteHostname', owner, () =>
+      client.request('host.status'),
+    );
     const hostname = extractHostname(result);
     const deviceKind = extractDeviceKind(result);
     // Drop the result when this backend's client changed mid-flight — the
@@ -2373,7 +2522,9 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
   try {
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
-    const result = await client.request('host.status');
+    const result = await observeStatus(client, 'captureLocalDeviceKind', owner, () =>
+      client.request('host.status'),
+    );
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
     const identityChanged = setLocalHostIdentity(result);
     if (
@@ -3488,7 +3639,9 @@ async function performOpenBackendWindowOriginal(
       // connection-lost overlay. A failure rejects: openLocalAndSpawn's
       // deadline loop retries on it, and a local window without a daemon has
       // no client reconnect posture worth showing.
-      await target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs });
+      await observeStatus(target, 'performOpenBackendWindow', owner, () =>
+        target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
+      );
     } else {
       // Label the remote by its hostname once it connects (T14). Reuses the
       // live client's `host.status`; fire-and-forget so a slow remote never

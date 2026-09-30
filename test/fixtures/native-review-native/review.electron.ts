@@ -995,6 +995,7 @@ function companionMainJournal(value: unknown) {
     'recordingComplete',
     'ownerCompletionObserved',
     'ownerCompletionLimit',
+    'directObservationFailures',
     'rows',
   ]);
   companionMainRequire(
@@ -1005,6 +1006,7 @@ function companionMainJournal(value: unknown) {
       journal.recordingComplete === true &&
       journal.dropped === 0 &&
       journal.failed === 0 &&
+      journal.directObservationFailures === 0 &&
       Array.isArray(journal.rows) &&
       journal.rows.length <= 128 &&
       journal.observed === journal.rows.length &&
@@ -1014,6 +1016,12 @@ function companionMainJournal(value: unknown) {
   );
   const rows = journal.rows as Array<Record<string, any>>;
   const phases = new Set([
+    'direct-enrolled',
+    'direct-member',
+    'direct-owner-enter',
+    'direct-owner-end',
+    'direct-request',
+    'direct-member-retired',
     'request-enter',
     'request-settled',
     'request-owner-unobserved',
@@ -1032,8 +1040,33 @@ function companionMainJournal(value: unknown) {
     );
     const callFields = ['callId', 'clientId', 'connectionId', 'incarnationId', 'socketId'];
     const fields: Record<string, string[]> = {
+      'direct-enrolled': ['scopeId'],
+      'direct-member': ['scopeId', 'clientId', 'generation'],
+      'direct-owner-enter': ['scopeId', 'ownerId', 'parentId', 'kind', 'callback', 'admittedAt'],
+      'direct-owner-end': ['scopeId', 'ownerId', 'completedAt', 'state'],
+      'direct-request': [
+        'scopeId',
+        'clientId',
+        'generation',
+        'callId',
+        'ownerId',
+        'site',
+        'observedAt',
+      ],
+      'direct-member-retired': [
+        'scopeId',
+        'clientId',
+        'generation',
+        'instanceId',
+        'ownersJoined',
+        'admissionSealed',
+        'outcome',
+        'failureKinds',
+        'closes',
+      ],
       'request-enter': [
         ...callFields,
+        'entryStatus',
         'owner',
         ...(row.owner === 'unknown' ? [] : ['module', 'line', 'column']),
       ],
@@ -1107,6 +1140,194 @@ export function assertCompanionMainActivation(value: unknown, mainPid: number, w
     profile: 'linux-ui-sidebar-companion',
     completion: 'not asserted',
   } as const;
+}
+
+/** Direct original identities supplement, never replace, the aggregate retirement fences. */
+function assertDirectStatusOwners(
+  rows: Array<Record<string, any>>,
+  calls: Map<string, Record<string, any>>,
+) {
+  const id = (value: unknown) =>
+    typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+  const positive = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
+  const members = new Map<string, Record<string, any>>();
+  const owners = new Map<string, Record<string, any>>();
+  const terminals = new Map<string, Record<string, any>>();
+  const requests = new Map<string, Record<string, any>>();
+  const retired = new Map<string, Record<string, any>>();
+  const generations = new Set<number>(),
+    instances = new Set<string>(),
+    points = new Set<number>();
+  let scope: string | undefined;
+  let aggregate: Record<string, any> | undefined;
+  for (const row of rows) {
+    if (row.phase === 'pool-retirement') {
+      aggregate = row;
+      continue;
+    }
+    if (!row.phase.startsWith('direct-')) continue;
+    companionMainRequire(
+      !aggregate && id(row.scopeId),
+      'direct evidence after aggregate or invalid scope',
+    );
+    if (row.phase === 'direct-enrolled') {
+      companionMainRequire(!scope, 'duplicate enrollment');
+      scope = row.scopeId;
+      continue;
+    }
+    companionMainRequire(scope === row.scopeId, 'foreign or missing enrollment');
+    if (row.phase === 'direct-member') {
+      companionMainRequire(
+        id(row.clientId) &&
+          positive(row.generation) &&
+          !members.has(row.clientId) &&
+          !generations.has(row.generation),
+        'ambiguous original member',
+      );
+      members.set(row.clientId, row);
+      generations.add(row.generation);
+    } else if (row.phase === 'direct-owner-enter') {
+      companionMainRequire(
+        id(row.ownerId) &&
+          !owners.has(row.ownerId) &&
+          positive(row.admittedAt) &&
+          !points.has(row.admittedAt) &&
+          typeof row.kind === 'string' &&
+          row.kind.length > 0 &&
+          row.kind.length <= 64 &&
+          typeof row.callback === 'boolean' &&
+          (row.parentId === null || (id(row.parentId) && owners.has(row.parentId))),
+        'original owner admission',
+      );
+      companionMainRequire(
+        !row.callback || (row.kind === 'healthCheck' && row.parentId === null),
+        'original health callback admission',
+      );
+      owners.set(row.ownerId, row);
+      points.add(row.admittedAt);
+    } else if (row.phase === 'direct-owner-end') {
+      const owner = owners.get(row.ownerId);
+      companionMainRequire(
+        owner &&
+          !terminals.has(row.ownerId) &&
+          positive(row.completedAt) &&
+          !points.has(row.completedAt) &&
+          row.completedAt > owner.admittedAt &&
+          row.state === 'fulfilled',
+        'original owner terminal',
+      );
+      terminals.set(row.ownerId, row);
+      points.add(row.completedAt);
+    } else if (row.phase === 'direct-request') {
+      const call = calls.get(row.callId),
+        owner = owners.get(row.ownerId),
+        member = members.get(row.clientId);
+      companionMainRequire(
+        call &&
+          member &&
+          owner &&
+          row.clientId === call.clientId &&
+          row.generation === member.generation &&
+          call.sequence < row.sequence &&
+          !retired.has(row.clientId) &&
+          !requests.has(row.callId) &&
+          positive(row.observedAt) &&
+          !points.has(row.observedAt) &&
+          row.observedAt > owner.admittedAt &&
+          row.site === owner.kind &&
+          [
+            'healthCheck',
+            'captureLocalDeviceKind',
+            'captureRemoteHostname',
+            'performOpenBackendWindow',
+          ].includes(row.site) &&
+          owner.callback === (row.site === 'healthCheck'),
+        'exact original request owner/member edge',
+      );
+      requests.set(row.callId, row);
+      points.add(row.observedAt);
+    } else if (row.phase === 'direct-member-retired') {
+      const member = members.get(row.clientId);
+      companionMainRequire(
+        member &&
+          row.generation === member.generation &&
+          !retired.has(row.clientId) &&
+          id(row.instanceId) &&
+          !instances.has(row.instanceId) &&
+          row.ownersJoined === true &&
+          row.admissionSealed === true &&
+          row.outcome === 'clean' &&
+          Array.isArray(row.failureKinds) &&
+          row.failureKinds.length === 0,
+        'same original member clean retirement',
+      );
+      retired.set(row.clientId, row);
+      instances.add(row.instanceId);
+    }
+  }
+  companionMainRequire(
+    scope &&
+      aggregate &&
+      members.size > 0 &&
+      members.size === retired.size &&
+      requests.size === calls.size,
+    'complete direct original coverage',
+  );
+  for (const [ownerId, owner] of owners) {
+    const end = terminals.get(ownerId);
+    companionMainRequire(end, 'unsettled original owner');
+    if (owner.parentId !== null) {
+      const parent = owners.get(owner.parentId),
+        parentEnd = terminals.get(owner.parentId);
+      companionMainRequire(
+        parent &&
+          parentEnd &&
+          parent.admittedAt < owner.admittedAt &&
+          parentEnd.completedAt > owner.admittedAt,
+        'original parent admission lifetime',
+      );
+    }
+  }
+  const ownerMembers = new Map<string, string>();
+  for (const request of requests.values()) {
+    const settlements = rows.filter(
+      (row) => row.phase === 'request-settled' && row.callId === request.callId,
+    );
+    const end = terminals.get(request.ownerId),
+      memberEnd = retired.get(request.clientId);
+    companionMainRequire(
+      end &&
+        settlements.length === 1 &&
+        settlements[0]!.state === 'fulfilled' &&
+        request.sequence < settlements[0]!.sequence &&
+        settlements[0]!.sequence < end.sequence &&
+        end.completedAt > request.observedAt &&
+        memberEnd &&
+        end.sequence < memberEnd.sequence,
+      'original callback completion before client retirement',
+    );
+    companionMainRequire(
+      !ownerMembers.has(request.ownerId) || ownerMembers.get(request.ownerId) === request.clientId,
+      'replacement client on original owner',
+    );
+    ownerMembers.set(request.ownerId, request.clientId);
+  }
+  companionMainRequire(
+    aggregate.clients.length === retired.size,
+    'direct member/aggregate cardinality',
+  );
+  for (const member of retired.values()) {
+    const results = aggregate.clients.filter(
+      (client: any) => client.generation === member.generation,
+    );
+    companionMainRequire(
+      results.length === 1 &&
+        ['ownersJoined', 'outcome', 'closes', 'failureKinds'].every(
+          (key) => JSON.stringify(results[0][key]) === JSON.stringify(member[key]),
+        ),
+      'original direct retirement/aggregate correspondence',
+    );
+  }
 }
 
 /** Validates the original aggregate API result; no generation-to-socket identity is invented. */
@@ -1211,22 +1432,35 @@ export function assertCompanionMainOwnership(
   for (const row of rows) {
     const base = ['sequence', 'phase'];
     const callFields = ['callId', 'clientId', 'connectionId', 'incarnationId', 'socketId'];
+    if (row.phase.startsWith('direct-')) continue;
     if (row.phase === 'request-enter') {
-      companionMainObject(row, [...base, ...callFields, 'owner', 'module', 'line', 'column']);
+      companionMainObject(row, [
+        ...base,
+        ...callFields,
+        'entryStatus',
+        'owner',
+        ...(row.owner === 'unknown' ? [] : ['module', 'line', 'column']),
+      ]);
       companionMainRequire(
         !retirement &&
-          callFields.every((key) => id(row[key])) &&
-          allocations.has(row.socketId) &&
+          id(row.callId) &&
+          id(row.clientId) &&
+          ['connectionId', 'incarnationId', 'socketId'].every(
+            (key) => row[key] === null || id(row[key]),
+          ) &&
+          (row.socketId === null || allocations.has(row.socketId)) &&
           !calls.has(row.callId) &&
-          [
-            'healthCheck',
-            'captureLocalDeviceKind',
-            'captureRemoteHostname',
-            'performOpenBackendWindow',
-          ].includes(row.owner) &&
-          /^backend\.ipc(?:-[A-Za-z0-9_-]+\.js|\.ts)$/.test(row.module) &&
-          /^\d+$/.test(row.line) &&
-          /^\d+$/.test(row.column),
+          ['connecting', 'connected', 'disconnected'].includes(row.entryStatus) &&
+          (row.owner === 'unknown' ||
+            ([
+              'healthCheck',
+              'captureLocalDeviceKind',
+              'captureRemoteHostname',
+              'performOpenBackendWindow',
+            ].includes(row.owner) &&
+              /^backend\.ipc(?:-[A-Za-z0-9_-]+\.js|\.ts)$/.test(row.module) &&
+              /^\d+$/.test(row.line) &&
+              /^\d+$/.test(row.column))),
         'original status owner',
       );
       calls.set(row.callId, row);
@@ -1359,6 +1593,7 @@ export function assertCompanionMainOwnership(
     roots > 0 && retirement > roots && ledger > retirement && ledger === rows.length,
     'complete ordered final ownership evidence',
   );
+  assertDirectStatusOwners(rows, calls);
   return {
     complete: true,
     scope: 'original main pool aggregate',

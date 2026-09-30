@@ -40,17 +40,153 @@ export function statusProducerJournal() {
     const [, owner, module, line, column] = matches[0]!;
     return { owner, module, line, column };
   }
+  type Event = Parameters<
+    NonNullable<
+      Parameters<
+        typeof import('../../../src/features/backend/main/backend.ipc').enrollBackendClientLifecycle
+      >[0]
+    >
+  >[0];
+  type Owner = {
+    id: string;
+    parent?: object;
+    kind: string;
+    callback: boolean;
+    admittedAt: number;
+    terminal?: { completedAt: number; state: string };
+    published: boolean;
+  };
+  const owners = new WeakMap<object, Owner>();
+  const members = new WeakMap<object, { clientId: string; generation: number; retired: boolean }>();
+  const requests = new WeakMap<object, { client: object; callId: string }>();
+  let scope: symbol | undefined;
+  const scopeId = randomUUID();
+  let observedAt = 0;
+  const publish = (token: object, depth = 0): Owner => {
+    const owner = owners.get(token);
+    if (!owner || depth >= 128) throw new Error('Missing bounded original owner');
+    if (!owner.published) {
+      const parent = owner.parent ? publish(owner.parent, depth + 1) : undefined;
+      record('direct-owner-enter', {
+        scopeId,
+        ownerId: owner.id,
+        parentId: parent?.id ?? null,
+        kind: owner.kind,
+        callback: owner.callback,
+        admittedAt: owner.admittedAt,
+      });
+      owner.published = true;
+      if (owner.terminal)
+        record('direct-owner-end', { scopeId, ownerId: owner.id, ...owner.terminal });
+    }
+    return owner;
+  };
+  const observe = (event: Event) => {
+    const at = ++observedAt;
+    try {
+      if (event.phase === 'enrolled') {
+        if (scope) throw new Error('Duplicate original scope');
+        scope = event.scope;
+        record('direct-enrolled', { scopeId });
+        return;
+      }
+      if (event.scope !== scope) throw new Error('Foreign original scope');
+      if (event.phase === 'member') {
+        if (members.has(event.client)) throw new Error('Duplicate original member');
+        const member = { clientId: randomUUID(), generation: event.generation, retired: false };
+        members.set(event.client, member);
+        record('direct-member', {
+          scopeId,
+          clientId: member.clientId,
+          generation: member.generation,
+        });
+      } else if (event.phase === 'owner-enter') {
+        if (owners.has(event.owner) || (event.parent && !owners.has(event.parent)))
+          throw new Error('Foreign or duplicate original owner');
+        owners.set(event.owner, {
+          id: randomUUID(),
+          parent: event.parent,
+          kind: event.kind,
+          callback: event.callback,
+          admittedAt: at,
+          published: false,
+        });
+      } else if (event.phase === 'owner-end') {
+        const owner = owners.get(event.owner);
+        if (!owner || owner.terminal) throw new Error('Missing or duplicate owner terminal');
+        owner.terminal = { completedAt: at, state: event.state };
+        if (owner.published)
+          record('direct-owner-end', { scopeId, ownerId: owner.id, ...owner.terminal });
+      } else if (event.phase === 'status') {
+        const member = members.get(event.client);
+        const call = requests.get(event.promise);
+        if (!member || member.retired || !call || call.client !== event.client || !event.owner)
+          throw new Error('Unmatched original request owner');
+        const owner = publish(event.owner);
+        if (owner.terminal) throw new Error('Original request after owner terminal');
+        requests.delete(event.promise);
+        record('direct-request', {
+          scopeId,
+          clientId: member.clientId,
+          generation: member.generation,
+          callId: call.callId,
+          ownerId: owner.id,
+          site: event.site,
+          observedAt: at,
+        });
+      } else {
+        const member = members.get(event.client);
+        if (
+          !member ||
+          member.retired ||
+          event.identity !== event.result.identity ||
+          event.identity.scope !== scope ||
+          event.identity.generation !== member.generation
+        )
+          throw new Error('Foreign original member retirement');
+        member.retired = true;
+        record('direct-member-retired', {
+          scopeId,
+          clientId: member.clientId,
+          generation: member.generation,
+          instanceId: randomUUID(),
+          ownersJoined: event.result.ownersJoined,
+          admissionSealed: event.result.admissionSealed,
+          outcome: event.result.outcome,
+          failureKinds: event.result.failures.map((failure) => failure.kind),
+          closes: event.result.closes.map((close) => ({
+            destroyRequested: close.destroyRequested,
+            closeObserved: close.closeObserved,
+          })),
+        });
+      }
+    } catch {
+      failed++;
+    }
+  };
   return {
     record,
     callsite,
-    snapshot() {
+    observe,
+    request(client: object, original: unknown, callId: string) {
+      if (original instanceof Promise) requests.set(original, { client, callId });
+      else failed++;
+    },
+    release(original: unknown) {
+      if (original instanceof Promise) requests.delete(original);
+    },
+    memberId(client: object) {
+      return members.get(client)?.clientId ?? null;
+    },
+    snapshot(observerFailures = 0) {
       return {
         version: 1,
         observed,
         retained: rows.length,
         dropped,
         failed,
-        recordingComplete: dropped === 0 && failed === 0,
+        directObservationFailures: observerFailures,
+        recordingComplete: dropped === 0 && failed === 0 && observerFailures === 0,
         ownerCompletionObserved: false,
         ownerCompletionLimit: 'The public client API exposes no original outer healthCheck join',
         rows: JSON.parse(JSON.stringify(rows)) as Array<Record<string, unknown>>,
@@ -401,6 +537,8 @@ async function run() {
   const connectionSockets = new WeakMap<object, string>();
   const objectId = (object: object | null) => {
     if (!object) return null;
+    const memberId = diagnosticOwnership ? statusProducers.memberId(object) : null;
+    if (memberId) return memberId;
     if (!identities.has(object)) identities.set(object, randomUUID());
     return identities.get(object)!;
   };
@@ -446,14 +584,16 @@ async function run() {
           try {
             statusProducers.record('request-enter', {
               ...producer,
+              entryStatus: this.getStatus(),
               ...statusProducers.callsite(new Error().stack),
             });
           } catch {
             statusProducers.record('request-owner-unobserved', producer);
           }
         }
+        let result: unknown;
         try {
-          return completions.invoke(
+          result = completions.invoke(
             original,
             this,
             args,
@@ -477,9 +617,14 @@ async function run() {
             },
             (value) => observationValue(method, value, sidebarMode),
             producer
-              ? (state) => statusProducers.record('request-settled', { ...producer, state })
+              ? (state) => {
+                  statusProducers.release(result);
+                  statusProducers.record('request-settled', { ...producer, state });
+                }
               : undefined,
           );
+          if (producer) statusProducers.request(this, result, callId);
+          return result;
         } finally {
           activeCall = prior;
         }
@@ -825,7 +970,9 @@ async function run() {
   });
   await app.whenReady();
   const backend = await import('../../../src/features/backend/main/backend.ipc');
-  const lifecycle = diagnosticOwnership ? backend.enrollBackendClientLifecycle() : undefined;
+  const lifecycle = diagnosticOwnership
+    ? backend.enrollBackendClientLifecycle(statusProducers.observe)
+    : undefined;
   let poolRetirement: ReturnType<typeof finalClientPoolJoin> | undefined;
   let finalRootsJoined = false;
   const connections = await import('../../../src/features/backend/main/connections-store');
@@ -991,7 +1138,9 @@ async function run() {
               completions: completions.rows,
               completionFaults: completions.faults,
               outstandingOriginals: completions.pending.size,
-              ...(diagnosticOwnership ? { statusProducers: statusProducers.snapshot() } : {}),
+              ...(diagnosticOwnership
+                ? { statusProducers: statusProducers.snapshot(lifecycle?.observationFailures()) }
+                : {}),
             }
           : {}),
         allocations: [...allocations].map(([socketId, a]) => ({
