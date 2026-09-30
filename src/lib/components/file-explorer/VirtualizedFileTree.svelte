@@ -32,13 +32,8 @@
   import { invoke } from '$lib/electron-bridge';
   import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
   import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
-  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
-  import { deleteWithUndo } from '$lib/utils/reversible-actions';
-  import {
-    getPanelLayoutManager,
-    hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-adapter';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { pathsMatch as filePathsMatch, stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { deleteFileWithUndoRequested } from '$store/renderer/slices/files/files-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -780,45 +775,13 @@
     );
   }
 
-  // TODO(redux-remove): explorer file-tree CRUD (delete/read/write-for-undo here, plus
-  // create/rename) stays on the legacy absolute-path `file:*` IPC. The files AppClient
-  // seam is workspace-scoped + relative-path, so migrating these absolute-path,
-  // undo-aware operations is deferred to a dedicated explorer migration; out of scope.
-  async function handleDeleteFile(filePath: string) {
-    const fileName = filePath.split('/').pop() || m.fileExplorer_tree_file_fallback();
-    // Read file content before deleting so we can undo
-    let savedContent = '';
-    try {
-      const result = await invoke<{ content: string }>('file:read', { path: filePath });
-      savedContent = result?.content ?? '';
-    } catch {
-      // If we can't read the file, proceed with delete but undo won't restore content
-    }
-
-    await deleteWithUndo(
-      `"${fileName}"`,
-      async () => {
-        const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-          path: filePath,
-        });
-        if (!result?.success) {
-          throw new Error(result?.error || m.fileExplorer_tree_deleteFailed_error());
-        }
-        // Close related panel tabs after successful deletion
-        if (workspaceId && hasPanelLayoutManager(workspaceId)) {
-          const layoutManager = getPanelLayoutManager(workspaceId);
-          layoutManager.closeTabsByType('file', 'filePath', filePath);
-        }
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-      },
-      async () => {
-        await invoke('file:write', {
-          path: filePath,
-          content: savedContent,
-          workspaceId,
-        });
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
-      },
+  function handleDeleteFile(filePath: string) {
+    const rootPath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
+    if (!workspaceId || !rootPath) return;
+    appStore.dispatch(
+      deleteFileWithUndoRequested(workspaceId, stripWorkspacePrefix(filePath, rootPath), {
+        absolutePath: filePath,
+      }),
     );
   }
 

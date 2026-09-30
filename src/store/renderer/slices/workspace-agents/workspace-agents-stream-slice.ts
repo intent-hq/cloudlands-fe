@@ -1,5 +1,5 @@
 import type { ContentBlock, MessageMetadata } from '$shared/types';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 
 export interface AgentStreamUpdatePayload {
   workspaceId?: string;

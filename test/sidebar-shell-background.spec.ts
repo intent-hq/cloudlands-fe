@@ -226,13 +226,13 @@ test('keeps outer shells transparent in both themes without flattening contained
     }
 
     const workspaceTab = page.getByRole('tab', { name: 'Workspaces', exact: true });
-    const intentTab = page.getByRole('tab', { name: 'Intent', exact: true });
+    const assistantTab = page.getByRole('tab', { name: 'Assistant', exact: true });
     expect(
       await page.getByRole('tablist').evaluate((node) => getComputedStyle(node).backgroundColor),
     ).not.toBe(expected);
-    await intentTab.click();
-    await expect(intentTab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('tabpanel', { name: 'Intent', exact: true })).toBeVisible();
+    await assistantTab.click();
+    await expect(assistantTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: 'Assistant', exact: true })).toBeVisible();
     await expect(page.locator('[data-combined-panel-spaces]')).toBeHidden();
     expect(await background(page, '[data-chief-card-surface]')).toBe(probe);
     expect(await background(page, '.sidebar-panel')).toBe(expected);

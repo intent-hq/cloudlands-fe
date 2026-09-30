@@ -129,10 +129,10 @@ export function findRendererSideEffectBoundaryViolations(files) {
     return moduleCandidates(fromPath, specifier).find((candidate) => sources.has(candidate));
   };
   const directOrigin = (fromPath, specifier, exportedName) => {
-    if (specifier === '@augmentcode/themis/types' && exportedName === 'StoreMiddleware') {
+    if (specifier === '@themislib/themis/types' && exportedName === 'StoreMiddleware') {
       return 'StoreMiddleware';
     }
-    if (specifier === '@augmentcode/themis/svelte-store' && exportedName === 'Store') {
+    if (specifier === '@themislib/themis/svelte-store' && exportedName === 'Store') {
       return 'Store';
     }
     const isRouter =
@@ -361,10 +361,10 @@ export function findRendererSideEffectBoundaryViolations(files) {
         }
       } else if (bindings && ts.isNamespaceImport(bindings)) {
         namespaceImports.set(bindings.name.text, specifier);
-        if (specifier === '@augmentcode/themis/types') {
+        if (specifier === '@themislib/themis/types') {
           storeMiddlewareNamespaces.add(bindings.name.text);
         }
-        if (specifier === '@augmentcode/themis/svelte-store') {
+        if (specifier === '@themislib/themis/svelte-store') {
           storeConstructorNamespaces.add(bindings.name.text);
         }
       }

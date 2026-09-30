@@ -20,7 +20,7 @@ import {
 } from '$store/renderer/slices/presence/presence-slice';
 import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
 import type { StoreState } from '$store/renderer/types';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));

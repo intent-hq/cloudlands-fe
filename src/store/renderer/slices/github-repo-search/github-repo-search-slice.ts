@@ -12,12 +12,12 @@
  * UI can show stale/mismatched data defensively (e.g. clear results the
  * moment the input diverges from `lastQuery`).
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { GithubRepoItem } from '../github-repos/github-repos-slice';
 
 export type GithubRepoSearchState = {

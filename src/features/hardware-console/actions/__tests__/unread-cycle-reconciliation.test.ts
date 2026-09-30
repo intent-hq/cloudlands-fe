@@ -65,7 +65,7 @@ vi.mock('$features/layout/preset-executor', () => ({
   applyContentPreset: vi.fn(async () => true),
 }));
 
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import {
