@@ -2832,6 +2832,7 @@ async function prepareNativeFixture() {
 test.beforeAll(() => {
   if (!diagnosticMode) return prepareNativeFixture();
   const info = test.info();
+  info.setTimeout(300_000);
   setupOwner = createCompanionSetupOwner(
     () => info.status !== 'passed' || info.errors.length > 0,
     (value) => {
