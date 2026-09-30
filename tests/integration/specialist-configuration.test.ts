@@ -8,6 +8,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
+import { createSpecialistTestRoot } from './helpers/specialist-test-root';
 import {
   SPECIALISTS,
   getSpecialistById,
@@ -18,6 +19,8 @@ import { MOCK_PROVIDER_CATALOG } from '../../src/test/fixtures/provider-catalog.
 import {
   writeSpecialistFile,
   ensureSpecialistsDirectory,
+  getSpecialistsDirectory,
+  loadSpecialistFiles,
 } from '../../src/features/specialists/main/specialist-file-loader';
 import {
   initSpecialistsService,
@@ -25,12 +28,22 @@ import {
   getEffectiveSpecialist,
 } from '../../src/features/agent/main/specialists.service';
 
-const { mockSettingsData } = vi.hoisted(() => ({
-  mockSettingsData: {} as Record<string, unknown>,
-}));
+// The IPC debug tracker resolves userData during imports, before beforeAll.
+const { mockSettingsData, specialistRoot, resolveSpecialistRoot } = await vi.hoisted(async () => {
+  const { createSpecialistTestRoot } = await import('./helpers/specialist-test-root');
+  const specialistRoot = await createSpecialistTestRoot();
+  return {
+    mockSettingsData: {} as Record<string, unknown>,
+    specialistRoot,
+    resolveSpecialistRoot: vi.fn(() => specialistRoot.path),
+  };
+});
 
-const TEST_HOME = '/tmp/augment-specialist-config-test';
-let originalHome: string | undefined;
+// Install before loader/service imports; never resolve the actual user's directory.
+vi.mock('../../src/shared/main/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/shared/main/utils')>()),
+  getSafeHomeDir: resolveSpecialistRoot,
+}));
 
 // Mock electron-store for getEffectiveSpecialist
 vi.mock('electron-store', () => ({
@@ -49,7 +62,7 @@ vi.mock('electron-store', () => ({
 
 vi.mock('electron', () => ({
   app: {
-    getPath: () => '/tmp/test-augment',
+    getPath: () => specialistRoot.path,
     isPackaged: false,
   },
 }));
@@ -62,9 +75,7 @@ vi.mock('../../src/main/utils/github-auth-status', () => ({
 }));
 describe('Specialist Configuration', () => {
   beforeAll(async () => {
-    originalHome = process.env.HOME;
-    process.env.HOME = TEST_HOME;
-    await fs.rm(TEST_HOME, { recursive: true, force: true });
+    expect(resolveSpecialistRoot).not.toHaveBeenCalled();
     // specialists.service resolves tiers via the main-process catalog cache;
     // seed it directly (no live daemon in unit tests).
     const accessor = await import('../../src/main/utils/provider-catalog-accessor');
@@ -103,16 +114,46 @@ describe('Specialist Configuration', () => {
 
   beforeEach(async () => {
     Object.keys(mockSettingsData).forEach((key) => delete mockSettingsData[key]);
-    await fs.rm(path.join(TEST_HOME, '.augment'), { recursive: true, force: true });
+    await specialistRoot.reset();
     await refreshSpecialistsFromFiles();
   });
 
   afterAll(async () => {
-    await fs.rm(TEST_HOME, { recursive: true, force: true });
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
+    // All init/refresh/write calls are awaited before teardown; never reopen the real path seam.
+    await specialistRoot?.dispose();
+    resolveSpecialistRoot.mockImplementation(() => {
+      throw new Error('Specialist fixture root is released');
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('loads and resets only the selected owned root, preserving a sibling fixture', async () => {
+    const sibling = await createSpecialistTestRoot();
+    const siblingDirectory = path.join(sibling.path, '.intent', 'specialists');
+    const siblingFile = path.join(siblingDirectory, 'sibling-only.md');
+    const siblingContent = '---\nname: "Sibling Only"\n---\nDo not load or delete me.';
+    try {
+      await fs.mkdir(siblingDirectory, { recursive: true });
+      await fs.writeFile(siblingFile, siblingContent, { flag: 'wx' });
+      expect(getSpecialistsDirectory()).toBe(
+        path.join(specialistRoot.path, '.intent', 'specialists'),
+      );
+      const written = await writeSpecialistFile({
+        id: 'owned-only',
+        name: 'Owned Only',
+        description: 'Owned fixture file',
+        behaviorPrompt: 'Read only this fixture.',
+      });
+      expect(written.success).toBe(true);
+      expect(written.filePath).toBe(path.join(getSpecialistsDirectory(), 'owned-only.md'));
+      expect((await loadSpecialistFiles()).specialists.map(({ id }) => id)).toEqual(['owned-only']);
+      await specialistRoot.reset();
+      await refreshSpecialistsFromFiles();
+      expect((await loadSpecialistFiles()).specialists).toEqual([]);
+      expect(getEffectiveSpecialist('owned-only', 'auggie')).toBeNull();
+      expect(await fs.readFile(siblingFile, 'utf-8')).toBe(siblingContent);
+    } finally {
+      await sibling.dispose();
     }
   });
 
