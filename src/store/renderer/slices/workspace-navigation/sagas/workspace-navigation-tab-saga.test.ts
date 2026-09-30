@@ -397,6 +397,31 @@ describe('workspaceNavigationTabSaga', () => {
     },
   );
 
+  it.each([
+    ['docs/design.md#L42', undefined],
+    ['docs/design.md:17', undefined],
+    ['docs/design.md#L42', 9],
+    ['docs/design.md:17', 9],
+  ])('preserves an already parsed literal file path %s with line %s', async (filePath, line) => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      const options = { filePathIsLiteral: true, line };
+      channel.put(openWorkspaceFile('ws-1', filePath, options));
+      await settle();
+      const tab = dispatch.mock.calls[0]?.[0]?.payload?.tab;
+      expect(tab).toMatchObject({ filePath, title: filePath.split('/').pop() });
+      expect(tab.data?.line).toBe(line);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
   // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
   // (openInNewAdjacentPanel) permits a duplicate instead of activating an
   // equivalent note tab that is already open elsewhere.

@@ -346,7 +346,13 @@ export const openWorkspaceFile = createAction<
   [
     wsId: string,
     filePath: string,
-    options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
+    options?: {
+      line?: number;
+      /** Preserve a parsed path verbatim; omitted/false retains legacy line-suffix parsing. */
+      filePathIsLiteral?: boolean;
+      openInAdjacentPanel?: boolean;
+      sourcePanelId?: string;
+    },
   ]
 >('workspaceNavigation/openWorkspaceFile');
 

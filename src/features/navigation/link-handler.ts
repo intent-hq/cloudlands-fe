@@ -5,7 +5,7 @@
  * Provides consistent behavior across terminal, editor, markdown viewer, etc.
  *
  * Default behavior:
- * - Path-like targets (schemeless raw href or self-origin URL) → Workspace file viewer
+ * - Path-like targets (schemeless href/target or self-origin URL) → Workspace file viewer
  * - HTTP/HTTPS links → Open in external default browser
  * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in embedded browser panel
  * - Auth/OAuth URLs → Always open in external browser
@@ -52,7 +52,7 @@ const logger = new Logger('LinkHandler');
  * 1. Custom handler (if provided and returns true)
  * 2. `intent://` → internal navigation
  * 3. `devspace://` → internal resources (terminals)
- * 4. Path-like targets (schemeless raw href, or resolved URL on the app's own
+ * 4. Path-like targets (schemeless href/target, or resolved URL on the app's own
  *    origin) → workspace file viewer
  * 5. Auth/OAuth URLs → external browser (always)
  * 6. `http(s)://` + forceExternal → external browser
@@ -87,7 +87,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       return await handleDevspaceLink(url, { ...options, sourcePanelId });
     }
 
-    // Route path-like targets (schemeless raw hrefs, or resolved URLs on the
+    // Route path-like targets (schemeless hrefs/targets, or resolved URLs on the
     // app's own origin) to the workspace file viewer — never the browser panel
     const fileTarget = extractFilePathTarget(url, options.rawHref);
     if (fileTarget) {
@@ -237,8 +237,9 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
 }
 
 /** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/;
-const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\//i;
+const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+// A drive uses one separator; `x://` is a URL scheme, not a drive path.
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\/(?!\/)/i;
 
 function normalizeSlashes(path: string): string {
   return path.replace(/\\/g, '/');
@@ -279,8 +280,9 @@ function focusSourcePanel(
 /**
  * Detect a path-like link target.
  *
- * - If the raw href is present and schemeless (no scheme prefix, not
- *   protocol-relative `//`, not an in-page fragment `#...`), it IS the path.
+ * - Prefer the raw href; otherwise use the target itself. If it is schemeless
+ *   (no scheme prefix, not protocol-relative `//`, not an in-page fragment
+ *   `#...`), it IS the path.
  * - Safety net: if the resolved http(s) URL sits on the app's own origin, the
  *   URL's pathname (+ hash) is treated as the path — self-origin URLs must
  *   never reach the embedded browser panel.
@@ -291,11 +293,17 @@ function extractFilePathTarget(
   url: string,
   rawHref?: string,
 ): { path: string; fromResolvedUrl: boolean } | null {
-  if (rawHref) {
+  const target = rawHref ?? url;
+  if (target) {
     // In-page fragment links keep their current behavior
-    if (rawHref.startsWith('#')) return null;
-    if (!rawHref.startsWith('//') && !SCHEME_PATTERN.test(rawHref)) {
-      return { path: rawHref, fromResolvedUrl: false };
+    if (target.startsWith('#')) return null;
+    // A drive letter or a filename's line suffix is not a URL scheme.
+    const path = parseFilePathLineSuffix(target).path;
+    if (
+      !target.startsWith('//') &&
+      (WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalizeSlashes(path)) || !SCHEME_PATTERN.test(path))
+    ) {
+      return { path: target, fromResolvedUrl: false };
     }
   }
 
@@ -303,7 +311,7 @@ function extractFilePathTarget(
     try {
       const parsed = new URL(url);
       if (parsed.origin === window.location.origin) {
-        return { path: decodeURIComponent(parsed.pathname) + parsed.hash, fromResolvedUrl: true };
+        return { path: parsed.pathname + parsed.hash, fromResolvedUrl: true };
       }
     } catch {
       // Not a parseable URL — fall through to the regular handlers
@@ -330,11 +338,11 @@ async function openFilePathLink(
 ): Promise<boolean> {
   try {
     if (options.canOpenFile?.() === false) return false;
-    const decodedTarget = decodePathTarget(target);
-    if (!decodedTarget || decodedTarget.includes('\0')) return false;
-
-    const parsedTarget = parseFilePathLineSuffix(decodedTarget);
-    let path = parsedTarget.path;
+    // Parse location syntax before decoding so encoded # or : remain filename characters.
+    const parsedTarget = parseFilePathLineSuffix(target);
+    const decodedPath = decodePathTarget(parsedTarget.path);
+    if (!decodedPath || decodedPath.includes('\0')) return false;
+    let path = decodedPath;
     const { line, column } = parsedTarget;
 
     const { workspaceId } = options;
@@ -379,6 +387,7 @@ async function openFilePathLink(
     focusSourcePanel(options);
     appStore.dispatch(
       openWorkspaceFile(workspaceId, path, {
+        filePathIsLiteral: true,
         line,
         openInAdjacentPanel,
         ...(options.sourcePanelId ? { sourcePanelId: options.sourcePanelId } : {}),
