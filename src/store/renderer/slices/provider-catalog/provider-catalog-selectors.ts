@@ -186,9 +186,9 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     errorMessage: string | null | undefined,
   ): ProviderAuthFailureGuidance | null => {
     if (!errorMessage || selectIsHostMember.select(state)) return null;
-    // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
-    // treat it as unset so resolution falls through to the model prefix.
-    let rawId = provider && provider !== 'acp' ? provider : '';
+    // Explicit identities, including historical aliases, resolve only through
+    // the catalog. They must not borrow a different provider's login guidance.
+    let rawId = provider || '';
     if (!rawId && model?.includes(':')) {
       rawId = splitLegacyCompoundId(model).providerId || '';
     }
