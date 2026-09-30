@@ -6,6 +6,12 @@ import {
 } from '$store/renderer/slices/principal/principal-slice';
 import { AgentStatus } from '$shared/types/agent.types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { WorkspaceStatusEnum } from '$shared/types';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   bulkUpsertSessions,
   removeSession,
@@ -33,6 +39,7 @@ export function setupEncoderEffortPreview() {
   const workspaceId = WorkspaceId('encoder-preview-workspace');
   const agentId = AgentId('encoder-preview-agent');
   const previous = {
+    workspace: selectWorkspaceById.select(appStore.state, workspaceId),
     principal: appStore.state.principal,
     tabs: serializeWorkspaceTabsState(appStore.state.tabState),
     behavior: appStore.state.hardwareConsole.encoderBehavior,
@@ -43,6 +50,15 @@ export function setupEncoderEffortPreview() {
     },
   };
   admitLegacyPrincipal();
+  appStore.dispatch(
+    setWorkspaceEntity({
+      id: workspaceId,
+      title: 'Preview workspace',
+      status: WorkspaceStatusEnum.Active,
+      myRole: 'owner',
+      lastActivity: '2026-09-25T00:00:00Z',
+    }),
+  );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   appStore.dispatch(hydrateHardwareConsoleEncoderBehavior('agent-effort'));
   appStore.dispatch(openWorkspaceTab(workspaceId));
@@ -99,6 +115,8 @@ export function setupEncoderEffortPreview() {
         ),
       );
     appStore.dispatch(removeSession(agentId));
+    if (previous.workspace) appStore.dispatch(setWorkspaceEntity(previous.workspace));
+    else appStore.dispatch(removeWorkspaceEntity(workspaceId));
     appStore.dispatch(clearPanelLayout(workspaceId));
     appStore.dispatch(loadWorkspaceTabsState(previous.tabs));
     appStore.dispatch(guestSessionsListReceived(previous.guests));
