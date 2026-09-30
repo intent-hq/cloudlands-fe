@@ -1,3 +1,6 @@
+import type { StoreState } from '../../../types';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { guestSessionLifetime } from '../guest-sessions-types';
 /**
  * Guest Sessions Saga (multiplayer w4)
  *
@@ -235,6 +238,10 @@ function* leaveWorkspace(
     yield* put(action.failure(new GuestSessionOperationError('cancelled')));
     return;
   }
+  const lifetime = yield* select((state: StoreState) =>
+    guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
+  );
+  const context = yield* selectPrincipalActionContext.effect();
   const key = JSON.stringify([id, workspaceId]);
   const joiners = flights.get(key);
   if (joiners) {
@@ -247,9 +254,23 @@ function* leaveWorkspace(
   yield* put(leaveWorkspaceOperationStarted(id, workspaceId));
   try {
     const result = yield* call(invokeLeaveWorkspace, { id, workspaceId });
-    outcome = { result };
+    const currentLifetime = yield* select((state: StoreState) =>
+      guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
+    );
+    outcome =
+      currentLifetime !== lifetime || context !== (yield* selectPrincipalActionContext.effect())
+        ? { failure: new GuestSessionOperationError('cancelled') }
+        : { result };
   } catch (error) {
-    outcome = { failure: toGuestSessionFailure(error) };
+    const currentLifetime = yield* select((state: StoreState) =>
+      guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
+    );
+    outcome = {
+      failure:
+        currentLifetime !== lifetime || context !== (yield* selectPrincipalActionContext.effect())
+          ? new GuestSessionOperationError('cancelled')
+          : toGuestSessionFailure(error),
+    };
   } finally {
     outcome ??= { failure: new GuestSessionOperationError('cancelled') };
     const joined = [action, ...(flights.get(key) ?? [])];

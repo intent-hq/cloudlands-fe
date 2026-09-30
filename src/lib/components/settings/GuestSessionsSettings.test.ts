@@ -480,6 +480,175 @@ describe('GuestSessionsSettings', () => {
     await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
   });
 
+  it.each(['host', 'workspace'] as const)(
+    'C1 retries a confirmed %s leave after a same-admission Settings remount',
+    async (kind) => {
+      mocks.sessions = [guest];
+      const call = kind === 'host' ? mocks.leave : mocks.leaveWorkspace;
+      call.mockImplementationOnce((...args) => ({
+        promise: Promise.reject(new Error('transport')),
+        payload: args,
+      }));
+      const mounted = render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const row = screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector(
+          kind === 'host' ? '[data-session-id="guest-1"]' : '[data-workspace-id="ws-a"]',
+        ) as HTMLElement;
+      await fireEvent.click(within(row).getByRole('button', { name, exact: true }));
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name, exact: true }),
+      );
+      const errorId = kind === 'host' ? 'guest-leave-error' : 'guest-leave-workspace-error';
+      await screen.findByTestId(errorId);
+      await mounted.unmount();
+      render(GuestSessionsSettings);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+      expect(call).toHaveBeenLastCalledWith(
+        ...(kind === 'host' ? ['guest-1'] : ['guest-1', 'ws-a']),
+      );
+    },
+  );
+
+  async function replaceAdmission() {
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    const { principalReceived } = await import('$store/renderer/slices/principal/principal-slice');
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    const current = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        current.snapshot!,
+      ),
+    );
+  }
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 a different confirmation under a replaced admission cannot authorize an old %s retry',
+    async (kind) => {
+      mocks.sessions = [
+        guest,
+        { ...guest, id: 'guest-2', label: 'second.local', hostname: 'second.local' },
+      ];
+      const call = kind === 'host' ? mocks.leave : mocks.leaveWorkspace;
+      call.mockImplementationOnce(() => ({ promise: Promise.reject(new Error('transport')) }));
+      render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const selectorA =
+        kind === 'host'
+          ? '[data-session-id="guest-1"]'
+          : '[data-session-id="guest-1"] [data-workspace-id="ws-a"]';
+      const selectorB =
+        kind === 'host'
+          ? '[data-session-id="guest-2"]'
+          : '[data-session-id="guest-1"] [data-workspace-id="ws-b"]';
+      const clickRow = async (selector: string) =>
+        fireEvent.click(
+          within(
+            screen.getByTestId('guest-sessions-joined').querySelector(selector) as HTMLElement,
+          ).getByRole('button', { name, exact: true }),
+        );
+      const confirm = async () => {
+        await fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name, exact: true }),
+        );
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      };
+      await clickRow(selectorA);
+      await confirm();
+      const errorId = kind === 'host' ? 'guest-leave-error' : 'guest-leave-workspace-error';
+      await screen.findByTestId(errorId);
+      await replaceAdmission();
+      await clickRow(selectorB);
+      await confirm();
+      expect(call).toHaveBeenCalledTimes(2);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      expect(call).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('dialog').textContent).toContain(
+        kind === 'host' ? 'studio.local' : 'Design system',
+      );
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(call).toHaveBeenCalledTimes(2);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      await confirm();
+      expect(call).toHaveBeenCalledTimes(3);
+      expect(call).toHaveBeenLastCalledWith(
+        ...(kind === 'host' ? ['guest-1'] : ['guest-1', 'ws-a']),
+      );
+    },
+  );
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 rejects an unconfirmed %s dialog from an older admission',
+    async (kind) => {
+      mocks.sessions = [guest];
+      render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const row = screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector(
+          kind === 'host' ? '[data-session-id="guest-1"]' : '[data-workspace-id="ws-a"]',
+        ) as HTMLElement;
+      await fireEvent.click(within(row).getByRole('button', { name, exact: true }));
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', { name, exact: true });
+      await replaceAdmission();
+      await fireEvent.click(confirm);
+      expect(mocks.leave).not.toHaveBeenCalled();
+      expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    },
+  );
+
+  it('C2 same-id guest readmission enables a fresh confirmed server leave while retaining saved data', async () => {
+    mocks.sessions = [{ ...guest, pairedAt: 100, hostRole: 'member' }];
+    mocks.leaveWorkspace.mockImplementationOnce((id, workspaceId) => ({
+      promise: Promise.resolve({
+        id,
+        workspaceId,
+        left: false,
+        refused: 'host-membership-required',
+      }),
+    }));
+    render(GuestSessionsSettings);
+    const button = () =>
+      within(
+        screen
+          .getByTestId('guest-sessions-joined')
+          .querySelector('[data-workspace-id="ws-a"]') as HTMLElement,
+      ).getByRole('button', { name: 'Leave', exact: true }) as HTMLButtonElement;
+    await fireEvent.click(button());
+    await fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Leave', exact: true }),
+    );
+    await waitFor(() => expect(button().disabled).toBe(true));
+    mocks.sessions = [{ ...guest, pairedAt: 101, hostRole: 'guest' }];
+    mocks.publish();
+    await waitFor(() => expect(button().disabled).toBe(false));
+    expect(screen.getByText('Design system')).toBeTruthy();
+    await fireEvent.click(button());
+    expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(1);
+    await fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Leave', exact: true }),
+    );
+    await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(2));
+  });
+
   describe('a joined workspace the host projects with an empty title', () => {
     const untitled = { ...guest, workspaces: [{ id: 'ws-untitled', title: '' }] };
 

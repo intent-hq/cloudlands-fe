@@ -190,3 +190,7 @@ export const selectHostedRosterMemberCounts = store.createSelector((state): stri
 export const selectInheritedWorkspaceKeys = store.createSelector(
   (state) => state.guestSessions.inheritedWorkspaceKeys,
 );
+
+export const selectGuestLeaveConfirmations = store.createSelector(
+  (state) => state.guestSessions.leaveConfirmations,
+);

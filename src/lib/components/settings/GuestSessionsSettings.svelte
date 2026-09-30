@@ -45,6 +45,7 @@
   import { selectConnectionWorkflow } from '$store/renderer/slices/connections/connections-selectors';
   import {
     selectGuestSessions,
+    selectGuestLeaveConfirmations,
     selectWindowGuestSession,
     selectInheritedWorkspaceKeys,
     selectGuestSessionsConnectedIds,
@@ -60,11 +61,16 @@
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     collaborationSignInRequested,
+    guestLeaveConfirmed,
     leaveGuestSessionRequested,
     leaveGuestWorkspaceRequested,
     removeAllHostedGuestsRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import type { HostedSweepReport } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import {
+    guestSessionLifetime,
+    guestLeaveConfirmationKey,
+    type HostedSweepReport,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 
   import { store as appStore } from '$store/renderer/store';
 
@@ -92,7 +98,36 @@
   }
 
   /** What the *Leave host* confirm dialog shows — never what a retry acts on. */
-  let confirmedContext: string | null = null;
+  let hostConfirmedContext: string | null = null;
+  let workspaceConfirmedContext: string | null = null;
+  const confirmations$ = selectGuestLeaveConfirmations();
+  function sameSavedSession(session: GuestSessionRecord) {
+    return (
+      guestSessionLifetime(session) ===
+      guestSessionLifetime(
+        selectGuestSessions.select(appStore.state).find((current) => current.id === session.id),
+      )
+    );
+  }
+  function rememberConfirmation(
+    session: GuestSessionRecord,
+    workspaceId: string | null,
+    context: string | null,
+  ) {
+    const lifetime = guestSessionLifetime(session);
+    if (!context || !lifetime || !sameSavedSession(session)) return false;
+    appStore.dispatch(guestLeaveConfirmed({ id: session.id, workspaceId, context, lifetime }));
+    return true;
+  }
+  function canRetry(session: GuestSessionRecord, workspaceId: string | null) {
+    const confirmation = $confirmations$[guestLeaveConfirmationKey(session.id, workspaceId)];
+    return (
+      actionReady() &&
+      sameSavedSession(session) &&
+      confirmation?.context === selectPrincipalActionContext.select(appStore.state) &&
+      confirmation?.lifetime === guestSessionLifetime(session)
+    );
+  }
   function actionReady() {
     return selectCollaborationReady.select(appStore.state);
   }
@@ -115,7 +150,7 @@
   onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
   function requestLeave(session: GuestSessionRecord) {
     if (!actionReady()) return;
-    confirmedContext = selectPrincipalActionContext.select(appStore.state);
+    hostConfirmedContext = selectPrincipalActionContext.select(appStore.state);
     leaveTarget = session;
     leaveDialogOpen = true;
   }
@@ -124,9 +159,10 @@
     if (
       !session ||
       !actionReady() ||
-      confirmedContext !== selectPrincipalActionContext.select(appStore.state)
+      hostConfirmedContext !== selectPrincipalActionContext.select(appStore.state)
     )
       return;
+    if (!rememberConfirmation(session, null, hostConfirmedContext)) return;
     appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 
@@ -155,7 +191,7 @@
 
   function requestLeaveWorkspace(session: GuestSessionRecord, workspace: GuestWorkspaceRef) {
     if (!actionReady()) return;
-    confirmedContext = selectPrincipalActionContext.select(appStore.state);
+    workspaceConfirmedContext = selectPrincipalActionContext.select(appStore.state);
     leaveWorkspaceTarget = { session, workspace };
     leaveWorkspaceDialogOpen = true;
   }
@@ -164,10 +200,22 @@
     if (
       !target ||
       !actionReady() ||
-      confirmedContext !== selectPrincipalActionContext.select(appStore.state)
+      workspaceConfirmedContext !== selectPrincipalActionContext.select(appStore.state)
     )
       return;
+    if (!rememberConfirmation(target.session, target.workspace.id, workspaceConfirmedContext))
+      return;
     appStore.dispatch(leaveGuestWorkspaceRequested(target.session.id, target.workspace.id));
+  }
+
+  function retryHost(session: GuestSessionRecord) {
+    if (canRetry(session, null)) appStore.dispatch(leaveGuestSessionRequested(session.id));
+    else requestLeave(session);
+  }
+  function retryWorkspace(target: LeaveWorkspaceTarget) {
+    if (canRetry(target.session, target.workspace.id))
+      appStore.dispatch(leaveGuestWorkspaceRequested(target.session.id, target.workspace.id));
+    else requestLeaveWorkspace(target.session, target.workspace);
   }
 
   function removeAllFailureLines(report: HostedSweepReport): string[] {
@@ -433,8 +481,8 @@
         </p>
         <Button
           variant="ghost"
-          disabled={$leavingIds$.includes(failed.id)}
-          onclick={() => leaveHost(failed)}
+          disabled={!$ready$ || $leavingIds$.includes(failed.id)}
+          onclick={() => retryHost(failed)}
         >
           {m.settings_guestSessions_retry_label()}
         </Button>
@@ -459,7 +507,7 @@
           disabled={!$ready$ ||
             $leavingWorkspaceKeys$.includes(key) ||
             $inheritedWorkspaceKeys$.includes(key)}
-          onclick={() => leaveWorkspace(failed)}
+          onclick={() => retryWorkspace(failed)}
         >
           {m.settings_guestSessions_retry_label()}
         </Button>

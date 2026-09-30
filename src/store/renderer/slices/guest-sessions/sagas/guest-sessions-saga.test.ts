@@ -42,6 +42,7 @@ import {
 } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  guestSessionsListReceived,
   guestSessionsReducer,
   initialState,
   leaveGuestSessionRequested,
@@ -300,6 +301,80 @@ describe('guestSessionsSaga', () => {
     expect(run.getState().guestSessions.leavingIds).toEqual([]);
     expect(run.getState().guestSessions.failedLeaveIds).toEqual([GUEST.id]);
 
+    await stop(run.task);
+  });
+
+  it.each([
+    ['new pairing', { pairedAt: 200 }],
+    ['guest readmission', { hostRole: 'guest' as const }],
+  ])(
+    'C2 expires an inherited refusal on same-id %s but preserves unrelated refreshes',
+    async (_name, replacement) => {
+      const saved = { ...GUEST, pairedAt: 100, hostRole: 'member' as const };
+      invoke.mockImplementation(async (channel) =>
+        channel === GUEST_SESSIONS.LIST
+          ? { sessions: [saved], openIds: [], connectedIds: [] }
+          : {
+              id: saved.id,
+              workspaceId: 'ws-guest',
+              left: false,
+              refused: 'host-membership-required',
+            },
+      );
+      const run = start();
+      await settle();
+      const action = leaveGuestWorkspaceRequested(saved.id, 'ws-guest');
+      run.dispatch(action);
+      await action.promise;
+      const key = guestWorkspaceKey(saved.id, 'ws-guest');
+      expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([key]);
+      run.dispatch(
+        guestSessionsListReceived({
+          sessions: [{ ...saved, hostname: 'new label', updatedAt: 999 }],
+          openIds: [saved.id],
+          connectedIds: [],
+        }),
+      );
+      expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([key]);
+      const next = { ...saved, ...replacement };
+      run.dispatch(guestSessionsListReceived({ sessions: [next], openIds: [], connectedIds: [] }));
+      expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([]);
+      expect(getItems(run.getState().guestSessions.sessions)).toEqual([next]);
+      await stop(run.task);
+    },
+  );
+
+  it('C2 ignores a held old refusal after the same saved id receives a new pairing', async () => {
+    const held = Promise.withResolvers<{
+      id: string;
+      workspaceId: string;
+      left: boolean;
+      refused: 'host-membership-required';
+    }>();
+    const saved = { ...GUEST, pairedAt: 100, hostRole: 'member' as const };
+    invoke.mockImplementation(async (channel) =>
+      channel === GUEST_SESSIONS.LIST
+        ? { sessions: [saved], openIds: [], connectedIds: [] }
+        : held.promise,
+    );
+    const run = start();
+    await settle();
+    const action = leaveGuestWorkspaceRequested(saved.id, 'ws-guest');
+    run.dispatch(action);
+    const outcome = action.promise.catch((error: unknown) => error);
+    const replacement = { ...saved, pairedAt: 200, hostRole: 'guest' as const };
+    run.dispatch(
+      guestSessionsListReceived({ sessions: [replacement], openIds: [], connectedIds: [] }),
+    );
+    held.resolve({
+      id: saved.id,
+      workspaceId: 'ws-guest',
+      left: false,
+      refused: 'host-membership-required',
+    });
+    expect(await outcome).toMatchObject({ code: 'cancelled' });
+    expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([]);
+    expect(getItems(run.getState().guestSessions.sessions)).toEqual([replacement]);
     await stop(run.task);
   });
 

@@ -182,6 +182,7 @@ export interface GuestSessionsState {
   failedLeaveIds: string[];
   failedLeaveWorkspaceKeys: string[];
   inheritedWorkspaceKeys: string[];
+  leaveConfirmations: Record<string, GuestLeaveConfirmation>;
   failedMemberKeys: string[];
   /** Historical reports survive a membership delta removing a row from the hosting list. */
   sweepReports: Collection<HostedSweepReport, 'workspaceId'>;
@@ -213,4 +214,30 @@ export function hostedMemberKey(workspaceId: string, principalId: string): strin
 
 export function guestWorkspaceKey(sessionId: string, workspaceId: string): string {
   return `${sessionId}:${workspaceId}`;
+}
+
+/** Token-free lifetime for confirmation/refusal invalidation, never permission. */
+export function guestSessionLifetime(
+  session: GuestSessionRecord | null | undefined,
+): string | null {
+  if (!session) return null;
+  return JSON.stringify([
+    session.fingerprint,
+    session.principalId,
+    session.pairedAt ?? session.updatedAt,
+    session.hostRole ?? null,
+    session.identity?.provider ?? null,
+    session.identity?.host ?? null,
+    session.identity?.externalUserId ?? null,
+  ]);
+}
+
+export interface GuestLeaveConfirmation {
+  id: string;
+  workspaceId: string | null;
+  context: string;
+  lifetime: string;
+}
+export function guestLeaveConfirmationKey(id: string, workspaceId: string | null): string {
+  return JSON.stringify([id, workspaceId]);
 }
