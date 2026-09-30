@@ -30,13 +30,10 @@
   import { summarizeCrossFilterRows } from '$features/token-usage/utils/token-usage-utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
   interface Props {
     workspaceId: string;
   }
-
   type BreakdownKind = 'agent' | 'model';
-
   interface BreakdownRow {
     id: string;
     kind: BreakdownKind;
@@ -48,7 +45,6 @@
     humanMessages: number;
     agentMessages: number;
   }
-
   interface ScopeTarget {
     kind: BreakdownKind;
     id: string;
@@ -65,32 +61,26 @@
   let persistedModelTarget: ScopeTarget | null = $state(null);
   let lastPersistedKind: BreakdownKind | null = $state(null);
   let suppressTouchFocusPreview = false;
-
   const overlayWidth = 452;
   const overlayGap = 8;
   const viewportPadding = 8;
-
   const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
-
   // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
   const usage$ = selectWorkspaceTokenUsage(workspaceIdStore);
   const crossFilterRows$ = selectWorkspaceTokenUsageCrossFilterRows(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
-
   onMount(() => {
     appStore.dispatch(fetchWorkspaceTokenUsage(workspaceId));
   });
-
   $effect(() => {
     if (!disclosureElement || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(updateOverlayPosition);
     observer.observe(disclosureElement.closest('[data-sidebar-label-row]') ?? disclosureElement);
     return () => observer.disconnect();
   });
-
   const totals = $derived($usage$.totals);
   const processedTokens = $derived(tokenCount(totals));
   const crossFilterAvailable = $derived($crossFilterRows$ !== undefined);
@@ -108,7 +98,6 @@
   const detailsId = $derived(`workspace-token-usage-details-${workspaceId}`);
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
   const processedId = $derived(`workspace-token-usage-processed-${workspaceId}`);
-
   function tokenCount(entry: TokenUsageTotals): number {
     return (
       entry.inputTokens +
@@ -118,20 +107,16 @@
       (entry.thoughtTokens ?? 0)
     );
   }
-
   function share(value: number, total: number): number {
     return total > 0 ? value / total : 0;
   }
-
   function segmentWidth(valueShare: number, segmentCount: number): string {
     const totalGapWidth = Math.max(0, segmentCount - 1);
     return `calc((100% - ${totalGapWidth}px) * ${valueShare})`;
   }
-
   function shareLabel(value: number): string {
     return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
   }
-
   function messageCountsLabel(humanValue: number, agentValue = 0): string {
     const humanCount = Math.round(humanValue);
     const agentCount = Math.round(agentValue);
@@ -148,11 +133,24 @@
       ? m.workspace_tokenUsage_messageCounts_humanManyAgentOne_label(counts)
       : m.workspace_tokenUsage_messageCounts_humanManyAgentMany_label(counts);
   }
-
+  // Intrinsic sizing covers plural changes (including animated intermediate counts) before hover.
+  const messageCountBounds = $derived(
+    crossFilterRows.reduce(
+      (bounds, row) => ({
+        humanMessages: Math.max(bounds.humanMessages, row.humanMessages),
+        agentMessages: Math.max(bounds.agentMessages, row.agentMessages),
+      }),
+      { humanMessages: 2, agentMessages: 2 },
+    ),
+  );
+  const messageSizingLabels = $derived(
+    [1, messageCountBounds.humanMessages].flatMap((human) =>
+      [1, messageCountBounds.agentMessages].map((agent) => messageCountsLabel(human, agent)),
+    ),
+  );
   function compactWholeNumber(value: number): string {
     return formatCompactNumber(value, { maximumFractionDigits: 0 });
   }
-
   const legacyModelRows = $derived(
     Object.entries($usage$.byModel)
       .map(([model, modelTotals]): BreakdownRow => ({
@@ -197,17 +195,14 @@
   function rowTarget(row: BreakdownRow): ScopeTarget {
     return { kind: row.kind, id: row.id };
   }
-
   function targetKey(target: ScopeTarget | null): string | null {
     if (!target) return null;
     return `${target.kind}:${target.id}`;
   }
-
   function rowKey(target: ScopeTarget | null): string | null {
     if (!target) return null;
     return `${target.kind}:${target.id}`;
   }
-
   function filterRowsForSelection(
     rows: TokenUsageCrossFilterRow[],
     agent: BreakdownRow | undefined,
@@ -219,7 +214,6 @@
         (model === undefined || row.model === model.id),
     );
   }
-
   function matrixBreakdownRows(kind: BreakdownKind): BreakdownRow[] {
     const grouped = new Map<string, TokenUsageCrossFilterRow[]>();
     for (const cell of crossFilterRows) {
@@ -265,11 +259,9 @@
   const agentSegmentRows = $derived(agentRows.filter((row) => row.tokens > 0));
   const messageOnlyModelRows = $derived(modelRows.filter((row) => row.tokens === 0));
   const messageOnlyAgentRows = $derived(agentRows.filter((row) => row.tokens === 0));
-
   function firstNonzeroRow(rows: BreakdownRow[]): BreakdownRow | undefined {
     return rows.find((row) => row.tokens > 0);
   }
-
   function defaultRow(rows: BreakdownRow[]): BreakdownRow | undefined {
     return firstNonzeroRow(rows) ?? rows[0];
   }
@@ -769,14 +761,22 @@
             {#if crossFilterAvailable}
               <div class="composition-row message-composition-row min-w-0 py-1">
                 <dt
-                  class="composition-metric message-composition-metric min-w-0 text-left text-sm font-normal tabular-nums text-muted-foreground"
+                  class="composition-metric message-composition-metric grid min-w-0 text-left text-sm font-normal tabular-nums text-muted-foreground"
                 >
+                  {#each messageSizingLabels as label}
+                    <span
+                      class="pointer-events-none invisible col-start-1 row-start-1"
+                      aria-hidden="true"
+                    >
+                      {label}
+                    </span>
+                  {/each}
                   <AnimatedNumber
                     value={previewHumanMessages ?? 0}
                     secondaryValue={previewAgentMessages ?? 0}
                     format={messageCountsLabel}
                     pulse={false}
-                    class="message-composition-label min-w-0 max-w-full text-left"
+                    class="message-composition-label col-start-1 row-start-1 min-w-0 max-w-full self-start text-left"
                   />
                 </dt>
               </div>
@@ -1082,7 +1082,6 @@
     container: token-details / inline-size;
     z-index: var(--layer-popover);
   }
-
   .composition-list {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 4rem minmax(0, max-content) 3rem minmax(0, max-content);

@@ -7,6 +7,7 @@
   import { applyLanguagePreference, type AppLocale } from '$lib/i18n/locale';
   import { Button } from '$lib/components/ui/button';
   import { costOnlyUsage } from './token-usage-cost-fixture';
+  import { parseTokenUsage } from '$features/token-usage/token-usage-schema';
 
   interface Props {
     theme?: 'light' | 'dark';
@@ -22,6 +23,7 @@
     costOnly?: 'all' | 'mixed';
     costAmount?: number;
     surroundingControls?: boolean;
+    wrappedMessages?: boolean;
   }
 
   let {
@@ -38,6 +40,7 @@
     costOnly,
     costAmount = 2.5,
     surroundingControls = false,
+    wrappedMessages = false,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
@@ -302,6 +305,40 @@
     // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
     store.dispatch(
       tokenUsageReceived(workspaceId, costOnlyUsage(costAmount, costOnly === 'mixed')),
+    );
+  }
+
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  if (wrappedMessages) {
+    const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+    const tokens = { ...zero, inputTokens: 100 };
+    const messages = ['freezero', 'longname', 'tailzero'];
+    store.dispatch(
+      tokenUsageReceived(
+        workspaceId,
+        parseTokenUsage({
+          totals: tokens,
+          byAgentId: { alpha: tokens, ...Object.fromEntries(messages.map((id) => [id, zero])) },
+          byModel: { 'token-model': tokens, 'zero-model': zero },
+          byAgentModel: [
+            {
+              agentId: 'alpha',
+              model: 'token-model',
+              totals: tokens,
+              humanMessages: 1,
+              agentMessages: 1,
+            },
+            ...messages.map((agentId) => ({
+              agentId,
+              model: 'zero-model',
+              totals: zero,
+              humanMessages: 0,
+              agentMessages: 1,
+            })),
+          ],
+          lastScanAt: '2026-09-30T00:00:00Z',
+        }),
+      ),
     );
   }
 

@@ -891,6 +891,76 @@ test('retains each selected dimension and reaches message-only scopes', async ({
   await expect(modelGroup.locator('.breakdown-stack-item')).toHaveCount(4);
 });
 
+for (const locale of ['en', 'de'] as const) {
+  test(`keeps wrapped ${locale} summaries readable without retargeting native pointer clicks`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 280, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: { wrappedMessages: true, width: 232, locale },
+    });
+    await component.getByTestId('token-usage-disclosure').click();
+    const details = page.getByTestId('token-usage-details');
+    const group = details.getByTestId('token-usage-by-agent');
+    const target = group.getByRole('radio', { name: /Agent freezero/ });
+    const adjacent = group.getByRole('radio', { name: /Agent longname/ });
+    const summary = details.locator('.message-composition-label .animated-number-value');
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    const summaryGeometry = () =>
+      summary.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const box = element.closest('dt')!.getBoundingClientRect();
+        const rects = [...range.getClientRects()];
+        return {
+          lines: new Set(rects.map((rect) => rect.y)).size,
+          readable: rects.every(
+            (rect) =>
+              rect.left >= box.left && rect.right <= box.right + 1 && rect.bottom <= box.bottom + 1,
+          ),
+        };
+      });
+    const initialSummary = await summaryGeometry();
+    expect(initialSummary.lines).toBeGreaterThan(1);
+    expect(initialSummary.readable).toBe(true);
+    const before = (await target.boundingBox())!;
+    const point = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
+    await page.mouse.move(point.x, point.y);
+    await expect(details.locator('.token-summary .animated-number-value')).toHaveText('0');
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    const after = await target.boundingBox();
+    // Use the ORIGINAL pointer coordinates: locator.click() can chase a moving target.
+    await page.mouse.down();
+    await page.mouse.up();
+    await testInfo.attach('wrapped-summary-pointer.json', {
+      body: JSON.stringify(
+        { locale, point, before, after, initialSummary, previewSummary: await summaryGeometry() },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('wrapped-summary-pointer.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await expect(target).toBeChecked();
+    await expect(adjacent).not.toBeChecked();
+    expect(after).toEqual(before);
+    expect((await summaryGeometry()).readable).toBe(true);
+    await page.mouse.move(0, 0);
+    await target.blur();
+    await expect(target).toBeChecked();
+  });
+}
+
 test('uses localized radio group and segment semantics', async ({ mount, page }) => {
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
