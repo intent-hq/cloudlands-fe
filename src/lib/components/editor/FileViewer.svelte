@@ -385,7 +385,7 @@
     </div>
   {:else if fileType === 'svg'}
     <!-- SVG Viewer with code toggle -->
-    <div class="flex-1 flex flex-col">
+    <div class="min-h-0 flex-1 flex flex-col">
       <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
         <Button
           size="icon"
@@ -400,8 +400,24 @@
           {fileName}
         </div>
       </div>
-      <div class="flex-1 overflow-auto bg-checkered flex items-center justify-center p-4">
-        <img src={getSvgSrc()} alt={fileName} class="max-w-full max-h-full object-contain" />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
+          ? 'cursor-grabbing'
+          : 'cursor-grab'}"
+        onpointerdown={handleImagePointerDown}
+        onpointermove={handleImagePointerMove}
+        onpointerup={handleImagePointerEnd}
+        onpointercancel={handleImagePointerEnd}
+        onlostpointercapture={handleImagePointerEnd}
+      >
+        <img
+          src={getSvgSrc()}
+          alt={fileName}
+          draggable="false"
+          style="translate: {imageOffsetX}px {imageOffsetY}px;"
+          class="max-w-full max-h-full object-contain"
+        />
       </div>
     </div>
   {:else if fileType === 'video'}

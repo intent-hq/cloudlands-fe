@@ -91,3 +91,53 @@ test('pans zoomed and rotated images with native capture, releases outside, and 
     )
     .toContain('image/png');
 });
+
+test('pans SVG images and checkerboard with native capture and resets when switching viewer types', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(FileViewer, {
+    props: {
+      filePath: 'drawing.svg',
+      fileContent:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="teal"/><circle cx="160" cy="100" r="60" fill="gold"/></svg>',
+    },
+  });
+  await component.evaluate((node) => {
+    node.style.width = '640px';
+    node.style.height = '440px';
+    node.style.margin = '80px';
+  });
+  const image = page.getByRole('img', { name: 'drawing.svg' });
+  const viewport = image.locator('..');
+  await expect(viewport).toHaveCSS('cursor', 'grab');
+  const before = (await image.boundingBox())!;
+  await image.hover();
+  await page.mouse.down();
+  await page.mouse.move(before.x + before.width / 2 + 40, before.y + before.height / 2 + 25);
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const box = (await image.boundingBox())!;
+      return [Math.round(box.x - before.x), Math.round(box.y - before.y)];
+    })
+    .toEqual([40, 25]);
+  await page.screenshot({ path: testInfo.outputPath('svg-panned.png') });
+  const bounds = (await viewport.boundingBox())!;
+  await page.mouse.move(bounds.x + 8, bounds.y + 8);
+  await page.mouse.down();
+  await expect.poll(() => viewport.evaluate((node) => node.hasPointerCapture(1))).toBe(true);
+  await page.mouse.move(bounds.x - 25, bounds.y - 25);
+  await page.mouse.up();
+  await expect(viewport).toHaveCSS('cursor', 'grab');
+  const released = await image.boundingBox();
+  await page.mouse.move(bounds.x + 100, bounds.y + 100);
+  expect(await image.boundingBox()).toEqual(released);
+  await component.update({
+    props: { filePath: 'next.png', sourceUrl: (await image.getAttribute('src'))! },
+  });
+  await expect(page.getByRole('img', { name: 'next.png' })).toHaveCSS(
+    'translate',
+    /^0px(?: 0px)?$/,
+  );
+});
