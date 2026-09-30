@@ -86,7 +86,8 @@ export const scriptArchiveFinished =
   );
 
 /** Refresh scripts for a workspace (triggers saga) */
-export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
+export const refreshScripts =
+  createAction<[wsId: string, invalidateHistory?: boolean]>('scripts/refreshScripts');
 
 export const startScriptRequested = createAction<[wsId: string, scriptId: string]>(
   'scripts/startScriptRequested',
@@ -119,6 +120,16 @@ export const setScriptsData = createAction(
   'scripts/setScriptsData',
   (wsId: string, scripts: ScriptWithState[]) => ({ wsId, scripts }),
 );
+
+export const setActiveScriptsData =
+  createAction<[wsId: string, scripts: ScriptWithState[]]>('scripts/setActiveData');
+export const setArchivedScriptsData =
+  createAction<[wsId: string, scripts: ScriptWithState[], version: number]>(
+    'scripts/setArchivedData',
+  );
+export const setScriptHistoryLoadState = createAction<
+  [wsId: string, loading: boolean, error?: string]
+>('scripts/setHistoryLoadState');
 
 /** Upsert a single script definition */
 export const upsertScript =
@@ -193,7 +204,11 @@ scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, initialized });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    initialized,
+    ...(initialized ? {} : { historyVersion: (ws.historyVersion ?? 0) + 1 }),
+  });
 });
 scriptsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -201,7 +216,13 @@ scriptsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
   for (const script of scripts) {
     scriptsById[script.id] = script;
   }
-  return setWorkspaceState(state, wsId, { ...ws, scripts: scriptsById });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: scriptsById,
+    activeScriptIds: undefined,
+    archivedScriptIds: undefined,
+    historyInitialized: false,
+  });
 });
 scriptsReducer.with(upsertScript, (state, { payload: [wsId, script] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -215,7 +236,13 @@ scriptsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
   const ws = getWorkspaceState(state, wsId);
   const { [scriptId]: _s, ...scripts } = ws.scripts;
   const { [scriptId]: _o, ...outputBuffers } = ws.outputBuffers;
-  return setWorkspaceState(state, wsId, { ...ws, scripts, outputBuffers });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts,
+    outputBuffers,
+    activeScriptIds: ws.activeScriptIds?.filter((id) => id !== scriptId),
+    archivedScriptIds: ws.archivedScriptIds?.filter((id) => id !== scriptId),
+  });
 });
 scriptsReducer.with(updateRuntimeState, (state, { payload: { wsId, scriptId, partial } }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -263,3 +290,38 @@ scriptsReducer.with(scriptArchiveFinished, (state, { payload: [wsId, result] }) 
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, archiveOperation: { pending: false, ...result } });
 });
+
+scriptsReducer.with(refreshScripts, (state, { payload: [wsId, invalidateHistory] }) => {
+  if (!invalidateHistory) return state;
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, historyVersion: (ws.historyVersion ?? 0) + 1 });
+});
+scriptsReducer.with(setActiveScriptsData, (state, { payload: [wsId, entries] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const incoming = Object.fromEntries(entries.map((script) => [script.id, script]));
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: { ...ws.scripts, ...incoming },
+    activeScriptIds: entries.map((script) => script.id),
+    archivedScriptIds: ws.archivedScriptIds?.filter((id) => !incoming[id]),
+  });
+});
+scriptsReducer.with(setArchivedScriptsData, (state, { payload: [wsId, entries, version] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const incoming = Object.fromEntries(entries.map((script) => [script.id, script]));
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: { ...ws.scripts, ...incoming },
+    archivedScriptIds: entries.map((script) => script.id),
+    activeScriptIds: ws.activeScriptIds?.filter((id) => !incoming[id]),
+    historyInitialized: true,
+    historyLoadedVersion: version,
+  });
+});
+scriptsReducer.with(
+  setScriptHistoryLoadState,
+  (state, { payload: [wsId, historyLoading, historyError] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, { ...ws, historyLoading, historyError });
+  },
+);

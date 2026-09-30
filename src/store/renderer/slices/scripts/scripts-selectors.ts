@@ -26,6 +26,9 @@ export const selectScriptsInitialized = store.createSelector(
 export const selectScriptEntries = store.createSelector(
   (state, wsId: string | null): ScriptWithState[] => {
     const ws = getWs(state, wsId);
+    if (ws.lifecycleSupported && ws.activeScriptIds) {
+      return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+    }
     return Object.values(ws.scripts).filter(
       (script) => !ws.lifecycleSupported || !script.archivedAt,
     );
@@ -73,6 +76,9 @@ export const selectWorkspaceScriptsInitialized = store.createSelector(
 export const selectWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
+    if (ws.lifecycleSupported && ws.activeScriptIds) {
+      return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+    }
     return Object.values(ws.scripts).filter(
       (script) => !ws.lifecycleSupported || !script.archivedAt,
     );
@@ -97,4 +103,14 @@ export const selectAllWorkspaceScriptEntries = store.createSelector(
 );
 export const selectScriptHistoryState = store.createSelector((state, wsId: string) =>
   getWs(state, wsId),
+);
+
+/** Rows in the active or archived lists; retained output-only rows stay outside the manager. */
+export const selectScriptManagerEntries = store.createSelector(
+  (state, wsId: string): ScriptWithState[] => {
+    const ws = getWs(state, wsId);
+    if (!ws.lifecycleSupported || !ws.activeScriptIds) return Object.values(ws.scripts);
+    const ids = [...ws.activeScriptIds, ...(ws.archivedScriptIds ?? [])];
+    return ids.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+  },
 );

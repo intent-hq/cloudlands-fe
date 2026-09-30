@@ -1,3 +1,4 @@
+import { selectScriptHistoryState } from '../../scripts/scripts-selectors';
 import { buffers } from 'redux-saga';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { store } from '../../../store';
@@ -72,6 +73,9 @@ import {
   setScriptsData,
   setScriptsInitialized,
   setScriptListState,
+  setActiveScriptsData,
+  setArchivedScriptsData,
+  setScriptHistoryLoadState,
 } from '../../scripts/scripts-slice';
 import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
@@ -1135,14 +1139,32 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
       yield* put(setScriptListState(workspaceId, true, undefined, supported));
     }
     scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
-    if (supported) {
-      // An authoritative all-list recovers archived open IDs on reconnect and supplies
-      // persistent failure indications, even before the user opens History.
-      scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
-        archive: 'all' as const,
-      });
-    }
     yield* put(setScriptListState(workspaceId, false, undefined, supported));
+    if (supported) {
+      yield* put(setActiveScriptsData(workspaceId, scripts));
+      const cache = yield* selectScriptHistoryState.effect(workspaceId);
+      const version = cache.historyVersion ?? 0;
+      if (!cache.historyInitialized || cache.historyLoadedVersion !== version) {
+        yield* put(setScriptHistoryLoadState(workspaceId, true));
+        try {
+          const archived = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
+            archive: 'archived' as const,
+          });
+          yield* put(setArchivedScriptsData(workspaceId, archived, version));
+          yield* put(setScriptHistoryLoadState(workspaceId, false));
+        } catch (error) {
+          yield* put(
+            setScriptHistoryLoadState(
+              workspaceId,
+              false,
+              error instanceof Error ? error.message : String(error),
+            ),
+          );
+        }
+      }
+    } else {
+      yield* put(setScriptsData(workspaceId, scripts));
+    }
   } catch (error) {
     yield* put(
       setScriptListState(
@@ -1153,9 +1175,8 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
     );
     if (!isForbiddenErrorResponse(error)) throw error;
     logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
-    scripts = [];
+    yield* put(setScriptsData(workspaceId, []));
   }
-  yield* put(setScriptsData(workspaceId, scripts));
   yield* put(setScriptsInitialized(workspaceId, true));
 }
 

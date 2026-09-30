@@ -95,6 +95,12 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
     }),
     { select: () => scriptSelectorState.scripts },
   ),
+  selectScriptManagerEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
   selectScriptHistoryState: () => ({
     subscribe: (run: (value: object) => void) => {
       run({});

@@ -3,7 +3,7 @@
   import { Button } from '$lib/components/ui/button';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import {
-    selectAllWorkspaceScriptEntries,
+    selectScriptManagerEntries,
     selectScriptHistoryState,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -22,7 +22,7 @@
   let { workspaceId }: { workspaceId: string } = $props();
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
-  const entries$ = selectAllWorkspaceScriptEntries(workspaceIdStore);
+  const entries$ = selectScriptManagerEntries(workspaceIdStore);
   const state$ = selectScriptHistoryState(workspaceIdStore);
   let openFor = $state<string | null>(null);
   const attention = $derived($entries$.filter(historyNeedsAttention).length);
@@ -34,7 +34,7 @@
     size="sm"
     onclick={() => {
       openFor = workspaceId;
-      appStore.dispatch(refreshScripts(workspaceId));
+      appStore.dispatch(refreshScripts(workspaceId, true));
     }}
   >
     {attention
@@ -52,10 +52,10 @@
       {#key workspaceId}
         <ScriptHistoryView
           scripts={$entries$}
-          loading={$state$.loading}
-          error={$state$.loadError}
+          loading={$state$.loading || $state$.historyLoading}
+          error={$state$.loadError || $state$.historyError}
           operation={$state$.archiveOperation}
-          onRetry={() => appStore.dispatch(refreshScripts(workspaceId))}
+          onRetry={() => appStore.dispatch(refreshScripts(workspaceId, true))}
           onSubmit={(ids, operation) =>
             appStore.dispatch(scriptArchiveRequested(workspaceId, ids, operation))}
           onInspect={(id) => {

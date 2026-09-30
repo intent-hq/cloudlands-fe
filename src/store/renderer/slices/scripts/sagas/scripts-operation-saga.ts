@@ -135,7 +135,7 @@ function* runArchiveOperation(
     // A persistence failure can follow earlier per-ID commits. Re-read while this
     // workspace authority is still current; cleanup must not revive its requests.
     if (reconcile && authority === (yield* selectWorkspaceActionContext.effect(workspaceId))) {
-      yield* put(refreshScripts(workspaceId));
+      yield* put(refreshScripts(workspaceId, true));
     }
   }
 }

@@ -129,6 +129,8 @@ import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
   setScriptsData,
+  setActiveScriptsData,
+  setArchivedScriptsData,
   setScriptListState,
   updateRuntimeState,
   setScriptsInitialized,
@@ -261,7 +263,8 @@ describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
       runtime: { status: 'exited' as const, exitCode: 2, restartCount: 0 },
       lastRun: { outcome: 'failed' as const, exitCode: 2, stoppedAt: '2026-09-30T12:00:00Z' },
     };
-    appStore.dispatch(setScriptsData(WS_A, [archived]));
+    appStore.dispatch(setActiveScriptsData(WS_A, []));
+    appStore.dispatch(setArchivedScriptsData(WS_A, [archived], 0));
     appStore.dispatch(updateRuntimeState(WS_A, 'script-a', { status: 'exited', exitCode: 2 }));
     await tick();
     expect(container.querySelector('[data-testid="mock-script-output-viewer"]')).toBe(viewer);
@@ -279,7 +282,8 @@ describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
       runtime: { status: 'idle' as const, restartCount: 0 },
       lastRun: { outcome: 'interrupted' as const, stoppedAt: '2026-09-30T12:00:00Z' },
     };
-    appStore.dispatch(setScriptsData(WS_A, [archived]));
+    appStore.dispatch(setActiveScriptsData(WS_A, []));
+    appStore.dispatch(setArchivedScriptsData(WS_A, [archived], 0));
     const { rerender } = render(ScriptHistory, { props: { workspaceId: WS_A } });
     expect(screen.queryByRole('button', { name: /History and cleanup/ })).toBeNull();
     appStore.dispatch(setScriptListState(WS_A, false, undefined, true));

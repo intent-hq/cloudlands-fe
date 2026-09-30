@@ -184,7 +184,7 @@ describe('script archive operations', () => {
     await settle();
     expect(mocks.archive).toHaveBeenCalledWith(WS, ['one', 'two']);
     expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 1 }));
-    expect(run.actions).toContainEqual(refreshScripts(WS));
+    expect(run.actions).toContainEqual(refreshScripts(WS, true));
     run.actions.length = 0;
     mocks.archive.mockRejectedValue(new Error('durable write failed'));
     run.channel.put(scriptArchiveRequested(WS, ['one', 'two'], 'archive'));
@@ -193,7 +193,7 @@ describe('script archive operations', () => {
     expect(run.actions).toContainEqual(
       scriptArchiveFinished(WS, { error: 'durable write failed' }),
     );
-    expect(run.actions).toContainEqual(refreshScripts(WS));
+    expect(run.actions).toContainEqual(refreshScripts(WS, true));
     await stop(run.task);
   });
   it('restores without launch and drops late mutation results on workspace cleanup', async () => {

@@ -63,7 +63,13 @@ import {
 } from '../../changes/changes-slice';
 import { initContextForWorkspace } from '../../context/context-slice';
 import { refreshPRStatusRequested } from '../../pr-status/pr-status-slice';
-import { refreshScripts, setScriptListState } from '../../scripts/scripts-slice';
+import {
+  refreshScripts,
+  setScriptListState,
+  setActiveScriptsData,
+  setArchivedScriptsData,
+  setScriptHistoryLoadState,
+} from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
 import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associations/task-agent-associations-slice';
@@ -1169,7 +1175,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('recovers archived open IDs from an authoritative all-list on reconnect', async () => {
+  it('loads archived failures once alongside the initial active list', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
     const archived = {
       id: 'script-history',
@@ -1182,9 +1188,129 @@ describe('lifecycleReadSaga', () => {
       run.channel.put(refreshScripts(WS));
       await settle();
       await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS, { archive: 'all' }]]);
-      expect(run.actions).toContainEqual(setScriptsData(WS, [archived] as never));
+      expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS, { archive: 'archived' }]]);
+      expect(run.actions).toContainEqual(setActiveScriptsData(WS, []));
+      expect(run.actions).toContainEqual(setArchivedScriptsData(WS, [archived] as never, 0));
       expect(run.actions).toContainEqual(setScriptListState(WS, false, undefined, true));
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  function startScriptCache() {
+    let current = state();
+    const channel = stdChannel();
+    const actions: { type: string }[] = [];
+    const dispatch = (action: { type: string }) => {
+      actions.push(action);
+      current = { ...current, scripts: scriptsReducer(current.scripts, action) };
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
+    runningTasks.push(task);
+    return { task, dispatch, actions, getState: () => current.scripts };
+  }
+
+  it('caches history across routine refreshes and invalidates it explicitly per workspace', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list.mockResolvedValue([]);
+    const run = startScriptCache();
+    try {
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS, { archive: 'archived' }], [WS]]);
+      run.dispatch(refreshScripts(WS, true));
+      await settle();
+      await settle();
+      run.dispatch(refreshScripts('other'));
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([
+        [WS],
+        [WS, { archive: 'archived' }],
+        [WS],
+        [WS],
+        [WS, { archive: 'archived' }],
+        ['other'],
+        ['other', { archive: 'archived' }],
+      ]);
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('keeps active rows and a retryable error when history fails, then retries the missing history', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list
+      .mockResolvedValueOnce([{ id: 'active' }])
+      .mockRejectedValueOnce(new Error('history offline'))
+      .mockResolvedValue([]);
+    const run = startScriptCache();
+    try {
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(run.getState().byWorkspaceId[WS]).toMatchObject({
+        activeScriptIds: ['active'],
+        historyLoading: false,
+        historyError: 'history offline',
+        loading: false,
+      });
+      expect(run.actions).toContainEqual(setScriptHistoryLoadState(WS, false, 'history offline'));
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([
+        [WS],
+        [WS, { archive: 'archived' }],
+        [WS],
+        [WS, { archive: 'archived' }],
+      ]);
+      expect(run.getState().byWorkspaceId[WS].historyError).toBeUndefined();
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('does not lose a history invalidation arriving during an archived read', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    let resolveHistory!: (rows: unknown[]) => void;
+    mocks.scripts.list
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      )
+      .mockResolvedValue([]);
+    const run = startScriptCache();
+    try {
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      run.dispatch(refreshScripts(WS, true));
+      resolveHistory([]);
+      await settle();
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([
+        [WS],
+        [WS, { archive: 'archived' }],
+        [WS],
+        [WS, { archive: 'archived' }],
+      ]);
+      expect(run.getState().byWorkspaceId[WS]).toMatchObject({
+        historyVersion: 1,
+        historyLoadedVersion: 1,
+      });
     } finally {
       mocks.scripts.supportsLifecycle = undefined;
       await stop(run.task);
