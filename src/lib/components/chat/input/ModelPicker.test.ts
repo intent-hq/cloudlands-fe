@@ -166,7 +166,7 @@ const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
-    if (action.type?.startsWith('providerModels/')) {
+    if (action.type?.startsWith('providerModels/') || action.type === 'hostExecution/invalidated') {
       Object.assign(
         mockProviderModelsState,
         providerModelsReducer(
@@ -328,6 +328,7 @@ import {
   initialState as providerModelsInitialState,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -4950,6 +4951,55 @@ describe('ModelPicker cache hydration and explicit revalidation', () => {
     await waitFor(() => {
       expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie');
     });
+  });
+
+  it('refreshes a mounted workspace picker after host-context invalidation with unchanged providers', async () => {
+    seedCache('ws-1');
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }],
+    });
+    render(ModelPicker, {
+      props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+    });
+    const trigger = screen.getByRole('button');
+    expect(trigger.textContent).toContain('Claude Sonnet 4.6');
+    await tick();
+    const observers = mockProviderModelsState.observers;
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    await waitFor(() => expect(trigger.textContent).toContain('Current host Sonnet'));
+    expect(mockProviderModelsState.observers).toBe(observers);
+    expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
+      workspaceId: 'ws-1',
+    });
+    expect(trigger.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  it('replaces a held mounted workspace catalog after host-context invalidation without stale rows', async () => {
+    const releases: Array<(value: { models: { value: string; label: string }[] }) => void> = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    render(ModelPicker, {
+      props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => expect(releases).toHaveLength(1));
+    const observers = mockProviderModelsState.observers;
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    expect(releases).toHaveLength(1);
+    releases[0]({ models: [{ value: 'sonnet4.6', label: 'Obsolete host Sonnet' }] });
+    await waitFor(() => expect(releases).toHaveLength(2));
+    expect(trigger.textContent).not.toContain('Obsolete host Sonnet');
+    expect(mockProviderModelsState.byWorkspaceId?.['ws-1']?.auggie).toBeUndefined();
+    releases[1]({ models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }] });
+    await waitFor(() => expect(trigger.textContent).toContain('Current host Sonnet'));
+    expect(mockProviderModelsState.observers).toBe(observers);
+    expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(2);
+    expect(trigger.querySelector('.animate-pulse')).toBeNull();
   });
 
   it('discards a pre-clear response entirely (no local state, no write-through)', async () => {

@@ -18,6 +18,7 @@ import { modelReloadSaga } from '../../model/sagas/model-reload-saga';
 import { hydrateDefaultProvider, reloadModelsForProvider } from '../../model/model-slice';
 import { selectAvailableModels, selectLoadError } from '../../model/model-selectors';
 import { getModelsForProvider } from '../../model/model-utils';
+import { hostExecutionInvalidated } from '../../host-execution/host-execution-slice';
 import {
   providerModelsCacheCleared,
   providerModelsObserved,
@@ -74,6 +75,127 @@ afterEach(() => {
 });
 
 describe('registered model reload owner: picker catalogs', () => {
+  it('reloads every still-observed scope after host-context invalidation without re-observation', async () => {
+    admitLegacyPrincipal();
+    let generation = 'old';
+    request.mockImplementation((_method, params) => {
+      const { providerId, workspaceId } = params as { providerId: string; workspaceId?: string };
+      return Promise.resolve(reply(providerId, `${generation}-${workspaceId ?? 'direct'}`));
+    });
+    store.dispatch(providerModelsObserved('direct', ['codex']));
+    store.dispatch(providerModelsObserved('A', ['codex'], 'A'));
+    store.dispatch(providerModelsObserved('A-shared', ['codex'], 'A'));
+    store.dispatch(providerModelsObserved('B', ['auggie'], 'B'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(request).toHaveBeenCalledTimes(3);
+    const observers = store.state.providerModels.observers;
+    generation = 'current';
+    store.dispatch(hostExecutionInvalidated());
+    expect(cache()).toBeUndefined();
+    expect(cache('codex', 'A')).toBeUndefined();
+    await settle();
+    expect(store.state.providerModels.observers).toBe(observers);
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex' }],
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ['models.list', { providerId: 'auggie', workspaceId: 'B' }],
+      ['models.list', { providerId: 'codex' }],
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ['models.list', { providerId: 'auggie', workspaceId: 'B' }],
+    ]);
+    expect(cache()?.models[0].value).toBe('current-direct');
+    expect(cache('codex', 'A')?.models[0].value).toBe('current-A');
+    expect(cache('auggie', 'B')?.models[0].value).toBe('current-B');
+    expect(status('codex', 'A')).toMatchObject({ status: 'success', epoch: 1 });
+  });
+
+  it.each(['success', 'error'] as const)(
+    'coalesces host-context invalidations into one trailing read after old %s',
+    async (outcome) => {
+      admitLegacyPrincipal();
+      let resolveOld!: (value: ReturnType<typeof reply>) => void;
+      let rejectOld!: (reason: Error) => void;
+      let resolveCurrent!: (value: ReturnType<typeof reply>) => void;
+      request
+        .mockReturnValueOnce(
+          new Promise((resolve, reject) => {
+            resolveOld = resolve;
+            rejectOld = reject;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveCurrent = resolve;
+          }),
+        );
+      store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+      await vi.advanceTimersByTimeAsync(50);
+      store.dispatch(hostExecutionInvalidated());
+      store.dispatch(hostExecutionInvalidated());
+      store.dispatch(hostExecutionInvalidated());
+      expect(request).toHaveBeenCalledTimes(1);
+      if (outcome === 'success') resolveOld(reply('codex', 'stale'));
+      else rejectOld(new Error('obsolete failure'));
+      await settle();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(cache('codex', 'A')).toBeUndefined();
+      expect(status('codex', 'A')).toMatchObject({ status: 'loading', epoch: 3, error: undefined });
+      expect(notify.warning).not.toHaveBeenCalled();
+      resolveCurrent(reply('codex', 'current'));
+      await settle();
+      expect(cache('codex', 'A')?.models[0].value).toBe('current');
+      expect(status('codex', 'A')).toMatchObject({ status: 'success', epoch: 3 });
+      expect(request.mock.calls).toEqual([
+        ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+        ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ]);
+    },
+  );
+
+  it('does not start a host-context trailing read after the last observer releases', async () => {
+    let finish!: (value: ReturnType<typeof reply>) => void;
+    request.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+    await vi.advanceTimersByTimeAsync(50);
+    store.dispatch(hostExecutionInvalidated());
+    store.dispatch(providerModelsReleased('picker'));
+    finish(reply('codex', 'obsolete'));
+    await settle();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cache('codex', 'A')).toBeUndefined();
+    store.dispatch(hostExecutionInvalidated());
+    await settle();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a current host-context replacement failure actionable until explicit retry', async () => {
+    request
+      .mockResolvedValueOnce(reply('codex', 'old'))
+      .mockRejectedValueOnce(new Error('current offline'));
+    store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+    await vi.advanceTimersByTimeAsync(50);
+    store.dispatch(hostExecutionInvalidated());
+    await settle();
+    expect(cache('codex', 'A')).toBeUndefined();
+    expect(status('codex', 'A')).toMatchObject({
+      status: 'error',
+      epoch: 1,
+      error: 'codex: current offline',
+    });
+    store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(request).toHaveBeenCalledTimes(2);
+    request.mockResolvedValueOnce(reply('codex', 'recovered'));
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    await settle();
+    expect(cache('codex', 'A')?.models[0].value).toBe('recovered');
+    expect(status('codex', 'A')).toMatchObject({ status: 'success', error: undefined });
+  });
+
   it('isolates concurrent direct, A and B catalogs, errors and forced refreshes on the wire', async () => {
     const releases = new Map<string, (value: ReturnType<typeof reply>) => void>();
     request.mockImplementation(
