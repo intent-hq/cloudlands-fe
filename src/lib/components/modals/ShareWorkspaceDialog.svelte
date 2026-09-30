@@ -46,6 +46,8 @@
    * link (the daemon's Remote Access listener is down) has its Copy disabled.
    */
 
+  import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+  import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faCopy, faLink, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -102,6 +104,7 @@
      * selector, a bare pin, and a GitLab connection is not an identity forge.
      */
     identitySeamSupported?: boolean;
+    hostMembershipSupported?: boolean;
     /**
      * The forge that is the host's identity (its `principal.me` triple, else
      * the daemon's implied default), `null` while unlinked. Seeds the pin's
@@ -171,6 +174,7 @@
     gitlabStatusReady = true,
     canAdministerHost = true,
     identitySeamSupported = false,
+    hostMembershipSupported = false,
     identityProvider = null,
     canManage = false,
     members = [],
@@ -208,27 +212,39 @@
   /** GitLab counts as an identity forge only once the daemon serves the seam. */
   const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
   /** Any forge identity on the host lets it mint invites. */
-  const forgeConnected = $derived(githubConnected || gitlabIdentityConnected);
+  const forgeConnected = $derived(
+    hostMembershipSupported || githubConnected || gitlabIdentityConnected,
+  );
   /** Both forges connected on a seam-capable daemon: the pin's forge is the owner's pick. */
-  const pinProviderChoosable = $derived(githubConnected && gitlabIdentityConnected);
+  const pinProviderChoosable = $derived(
+    hostMembershipSupported || (githubConnected && gitlabIdentityConnected),
+  );
   /** The forge the pin is resolved on; `null` while no forge is connected. */
   const pinProvider = $derived.by((): IdentityProvider | null => {
     if (!forgeConnected) return null;
     if (pinProviderChoosable) {
       if (pinProviderDraft) return pinProviderDraft;
-      if (identityProvider) return identityProvider;
+      if (
+        identityProvider &&
+        (!hostMembershipSupported || identityProvider !== 'gitlab' || gitlabEnabled)
+      )
+        return identityProvider;
       return 'github';
     }
     return githubConnected ? 'github' : 'gitlab';
   });
   /** Only the GitHub typeahead exists; a GitLab pin is free text. */
-  const pinTypeahead = $derived(pinProvider === 'github');
+  const pinTypeahead = $derived(
+    pinProvider === 'github' && (!hostMembershipSupported || githubConnected),
+  );
   const pinProviderItems = $derived(
     [
       { value: 'github', label: m.workspace_share_pinProvider_github_label() },
       {
         value: 'gitlab',
-        label: m.workspace_share_pinProvider_gitlab_label({ host: gitlabHost }),
+        label: m.workspace_share_pinProvider_gitlab_label({
+          host: hostMembershipSupported ? pinHostDraft : gitlabHost,
+        }),
       },
     ].filter((item) => item.value !== 'gitlab' || gitlabEnabled || pinProvider === 'gitlab'),
   );
@@ -238,6 +254,10 @@
   );
 
   let pinLogin = $state('');
+  let pinHostDraft = $state('gitlab.com');
+  const selectedPinHost = $derived(
+    hostMembershipSupported ? canonicalInviteHost('gitlab', pinHostDraft) : gitlabHost,
+  );
   /** The owner's forge pick for the pin when both are connected; `''` follows `identityProvider`. */
   let pinProviderDraft = $state<IdentityProvider | ''>('');
   /** Suggestion the user picked; wins over the free-text draft on submit. */
@@ -306,6 +326,7 @@
   function resetPinDraft() {
     pinLogin = '';
     pinProviderDraft = '';
+    pinHostDraft = 'gitlab.com';
     selectedUser = null;
     suggestionsDismissed = false;
     activeSuggestion = -1;
@@ -388,11 +409,18 @@
     if (!workspaceId || !canManage || creating || atGuestCap) return;
     const login = selectedUser ? selectedUser.login : pinLogin.trim();
     let pin: InvitePin | undefined;
-    if (login && pinProvider === 'gitlab' && (!gitlabStatusReady || !gitlabHost)) return;
-    if (login && identitySeamSupported && pinProvider) {
+    if (
+      login &&
+      pinProvider === 'gitlab' &&
+      (hostMembershipSupported
+        ? !selectedPinHost || !gitlabEnabled
+        : !gitlabStatusReady || !gitlabHost)
+    )
+      return;
+    if (login && (hostMembershipSupported || identitySeamSupported) && pinProvider) {
       pin =
         pinProvider === 'gitlab'
-          ? { provider: 'gitlab', host: gitlabHost }
+          ? { provider: 'gitlab', host: selectedPinHost! }
           : { provider: 'github' };
     }
     if (pin) onCreateInvite?.(login, pin);
@@ -643,6 +671,10 @@
                 : m.workspace_share_pinLogin_label()}
             </Label>
           {/if}
+          {#if hostMembershipSupported && pinProvider === 'gitlab'}
+            <Label for="share-pin-host">{m.collaboration_pin_instance_label()}</Label>
+            <Input id="share-pin-host" bind:value={pinHostDraft} disabled={creating} />
+          {/if}
           <div class="flex flex-wrap items-center gap-2">
             {#if pinProviderChoosable && (gitlabEnabled || pinProvider === 'gitlab')}
               <div class="w-40 shrink-0">
@@ -717,7 +749,7 @@
                       autocomplete="off"
                       spellcheck={false}
                       disabled={creating}
-                      placeholder={pinTypeahead
+                      placeholder={pinProvider === 'github'
                         ? m.workspace_share_pinLogin_placeholder()
                         : m.workspace_share_pinLogin_gitlab_placeholder()}
                       role="combobox"
@@ -819,7 +851,9 @@
                 atGuestCap ||
                 (!!(selectedUser?.login || pinLogin.trim()) &&
                   pinProvider === 'gitlab' &&
-                  (!gitlabStatusReady || !gitlabHost))}
+                  (hostMembershipSupported
+                    ? !selectedPinHost || !gitlabEnabled
+                    : !gitlabStatusReady || !gitlabHost))}
               title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
             >
               <Fa icon={faLink} />
@@ -990,16 +1024,23 @@
                           <span class="truncate">
                             {m.workspace_share_member_identityRole_label({
                               handle: memberHandle(member),
-                              role: roleLabel(member.role),
+                              role:
+                                member.hostRole === 'member'
+                                  ? m.collaboration_host_member_label()
+                                  : roleLabel(member.role),
                             })}
                           </span>
                         {:else}
-                          <span>{roleLabel(member.role)}</span>
+                          <span
+                            >{member.hostRole === 'member'
+                              ? m.collaboration_host_member_label()
+                              : roleLabel(member.role)}</span
+                          >
                         {/if}
                       </div>
                     </div>
                   </div>
-                  {#if member.role !== 'owner'}
+                  {#if isWorkspaceGuest(member)}
                     {#if confirmRemovePrincipalId === member.principalId}
                       <div
                         class="flex shrink-0 items-center gap-1"

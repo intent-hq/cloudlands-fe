@@ -205,7 +205,7 @@ describe('authentication workflow production composition', () => {
     appStore.dispatch(request());
     await vi.waitFor(() =>
       expect(navigateToSettings).toHaveBeenCalledExactlyOnceWith({
-        tab: 'guest-sessions',
+        tab: 'collaboration',
       }),
     );
     expect(selectConnectionWorkflow.select(appStore.state, 'indicator')?.outcome).toEqual({

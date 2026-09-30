@@ -34,6 +34,7 @@ export interface WorkspaceMember {
   displayName: string | null;
   avatarUrl: string | null;
   role: WorkspaceRole;
+  hostRole?: 'owner' | 'member' | 'guest';
   addedAt: string;
   /** Provider-neutral account identity from `workspace.members.list`; omitted while unlinked. */
   identity?: PrincipalIdentity;
@@ -42,6 +43,8 @@ export interface WorkspaceMember {
 /** `workspace.members.list` result. */
 export interface WorkspaceMembersListResult {
   members: WorkspaceMember[];
+  guestCount?: number | null;
+  guestLimit?: number | null;
 }
 
 /** `workspace.members.remove` result. */
@@ -84,7 +87,8 @@ export interface WorkspaceInviteRevokeResult {
  * gate), `daemon` any other structured refusal, `transport` a bridge/socket/
  * timeout failure, `cancelled` a purge that cut the operation short.
  */
-export type HostedRosterFailureCode = 'forbidden' | 'daemon' | 'transport' | 'cancelled';
+export type HostedRosterFailureCode =
+  'forbidden' | 'host-membership-required' | 'daemon' | 'transport' | 'cancelled';
 
 /**
  * Outcome of one *Remove all guests* sweep (`removeAllHostedGuestsRequested`):
@@ -147,7 +151,11 @@ export interface HostedRoster {
    * entry as is; only purging the workspace entry ends it.
    */
   status: 'loading' | 'loaded' | 'error' | 'withheld';
+  /** Daemon refused these removals because access is inherited from the host. */
+  inheritedPrincipalIds?: string[];
   members: WorkspaceMember[];
+  guestCount?: number | null;
+  guestLimit?: number | null;
 }
 
 export interface GuestSessionsState {
@@ -173,6 +181,7 @@ export interface GuestSessionsState {
   /** Retryable failures of confirmed operations; confirmation dialogs never retarget these. */
   failedLeaveIds: string[];
   failedLeaveWorkspaceKeys: string[];
+  inheritedWorkspaceKeys: string[];
   failedMemberKeys: string[];
   /** Historical reports survive a membership delta removing a row from the hosting list. */
   sweepReports: Collection<HostedSweepReport, 'workspaceId'>;

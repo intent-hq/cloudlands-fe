@@ -318,7 +318,7 @@ describe('settings deep link through the boot window (intent-hq/intent#5514)', (
   });
 });
 
-describe('Guest Sessions experimental multiplayer gate', () => {
+describe('Collaboration experimental multiplayer gate', () => {
   it('preserves a protected deep link through lab toggles while principal discovery is unresolved', async () => {
     appStore.dispatch(
       connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
@@ -327,14 +327,12 @@ describe('Guest Sessions experimental multiplayer gate', () => {
     renderSettings('providers');
 
     appStore.dispatch(setLabsMultiplayerEnabled(true));
-    await screen.findByRole('button', { name: 'Guest Sessions' });
+    await screen.findByRole('button', { name: 'Collaboration' });
     expect(urlTab()).toBe('providers');
     expect(document.getElementById('providers')).toBeNull();
 
     appStore.dispatch(setLabsMultiplayerEnabled(false));
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Collaboration' })).toBeNull());
     expect(urlTab()).toBe('providers');
     expect(document.getElementById('providers')).toBeNull();
 
@@ -343,47 +341,58 @@ describe('Guest Sessions experimental multiplayer gate', () => {
     expect(document.getElementById('providers')).not.toBeNull();
   });
 
-  it.each(['guest-sessions', 'display#guest-sessions', 'display#sharing'])(
+  it.each([
+    'collaboration',
+    'sharing',
+    'guest-sessions',
+    'display#collaboration',
+    'display#guest-sessions',
+    'display#sharing',
+  ])(
     'hides and redirects ?tab=%s when multiplayer is disabled, even before identity settles',
     async (tab) => {
       appStore.dispatch(setLabsMultiplayerEnabled(false));
       renderSettings(tab);
 
-      expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull();
-      expect(document.getElementById('guest-sessions')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Collaboration' })).toBeNull();
+      expect(document.getElementById('collaboration')).toBeNull();
       await waitFor(() => expect(currentTab()).toBe('display'));
       expect(urlTab()).toBe('display');
       expect(window.location.hash).toBe('');
     },
   );
 
-  it.each(['guest-sessions', 'display#guest-sessions', 'display#sharing'])(
-    'opens Guest Sessions through ?tab=%s when multiplayer is enabled',
-    async (tab) => {
-      appStore.dispatch(setLabsMultiplayerEnabled(true));
-      renderSettings(tab);
+  it.each([
+    'collaboration',
+    'sharing',
+    'guest-sessions',
+    'display#collaboration',
+    'display#guest-sessions',
+    'display#sharing',
+  ])('opens Collaboration through ?tab=%s when multiplayer is enabled', async (tab) => {
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    renderSettings(tab);
 
-      await waitFor(() => expect(currentTab()).toBe('guest-sessions'));
-      expect(screen.getByRole('button', { name: 'Guest Sessions' })).not.toBeNull();
-      expect(document.getElementById('guest-sessions')).not.toBeNull();
-    },
-  );
+    await waitFor(() => expect(currentTab()).toBe('collaboration'));
+    expect(screen.getByRole('button', { name: 'Collaboration' })).not.toBeNull();
+    expect(document.getElementById('collaboration')).not.toBeNull();
+  });
 
   it('shows the tab when enabled and leaves the open page when disabled', async () => {
     appStore.dispatch(setLabsMultiplayerEnabled(false));
     renderSettings('display');
 
-    expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Collaboration' })).toBeNull();
     appStore.dispatch(setLabsMultiplayerEnabled(true));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Guest Sessions' }));
-    await waitFor(() => expect(currentTab()).toBe('guest-sessions'));
-    expect(document.getElementById('guest-sessions')).not.toBeNull();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Collaboration' }));
+    await waitFor(() => expect(currentTab()).toBe('collaboration'));
+    expect(document.getElementById('collaboration')).not.toBeNull();
 
     appStore.dispatch(setLabsMultiplayerEnabled(false));
 
     await waitFor(() => expect(currentTab()).toBe('display'));
     expect(urlTab()).toBe('display');
-    expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull();
-    expect(document.getElementById('guest-sessions')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Collaboration' })).toBeNull();
+    expect(document.getElementById('collaboration')).toBeNull();
   });
 });

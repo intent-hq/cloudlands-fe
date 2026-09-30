@@ -2627,6 +2627,13 @@ async function leaveGuestWorkspaceLocked(
   try {
     left = await requestGuestWorkspaceLeave(id, workspaceId);
   } catch (error) {
+    if (
+      error instanceof JsonRpcError &&
+      error.rpcCode === -32602 &&
+      error.code === 'host-membership-required'
+    ) {
+      return { id, workspaceId, left: false, refused: 'host-membership-required' };
+    }
     if (!(error instanceof JsonRpcError && error.rpcCode === -32602)) {
       const code = revokeFailureCode(error);
       logger.warn('workspace.members.leave failed; keeping the local record', {

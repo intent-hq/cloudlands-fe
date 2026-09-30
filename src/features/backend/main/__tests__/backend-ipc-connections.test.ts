@@ -5781,6 +5781,35 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(closeForBackend).not.toHaveBeenCalled();
   });
 
+  it('retains the saved workspace on inherited-membership refusal (#6390)', async () => {
+    installGuest();
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave')
+        throw new JsonRpcError({
+          code: -32602,
+          message: 'private-marker',
+          data: { code: 'host-membership-required' },
+        });
+      return {};
+    };
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = await findHandler('guest-sessions:leave-workspace')!(
+      {},
+      { id: GUEST.id, workspaceId: 'ws-guest' },
+    );
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: false,
+      refused: 'host-membership-required',
+    });
+  });
+
   it('guest-sessions:leave-workspace asks the host over the pooled client (10 s bound) and drops the workspace locally', async () => {
     installGuest();
     rpc.handler = async (method) => (method === 'workspace.members.leave' ? { left: true } : {});

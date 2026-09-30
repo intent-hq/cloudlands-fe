@@ -2,6 +2,8 @@
  * Guest Sessions Selectors (multiplayer w4)
  */
 
+import { selectCollaborationReady } from '../principal/principal-selectors';
+import { selectCanManageWorkspace } from '../workspace/workspace-selectors';
 import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -104,20 +106,16 @@ export const selectIsHostedWorkspaceListed = store.createSelector(
     getItem(state.workspace.workspaces, WorkspaceId(workspaceId)) !== undefined,
 );
 
-/**
- * Whether the caller manages a workspace's membership right now: the
- * workspace is in this window's list, `myRole` is not `collaborator` (absent
- * `myRole` — older daemon — reads as owner) and its roster is not already
- * terminally `withheld`. The saga's gate before AND after
- * `workspace.members.list` / `workspace.members.remove`: a collaborator, a
- * workspace that left the list, or a workspace the daemon already refused
- * never sends (or applies the result of) an owner RPC.
- */
+/** Current workspace management, with Multiplayer presentation enabled and no server refusal. */
 export const selectCanManageHostedWorkspace = store.createSelector(
   (state, workspaceId: string): boolean => {
     if (state.guestSessions.hostedRosters[workspaceId]?.status === 'withheld') return false;
     const ws = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
-    return ws !== undefined && ws.myRole !== 'collaborator';
+    return (
+      ws !== undefined &&
+      selectCollaborationReady.select(state) &&
+      selectCanManageWorkspace.select(state, workspaceId)
+    );
   },
 );
 
@@ -129,7 +127,7 @@ export const selectCanManageHostedWorkspace = store.createSelector(
  */
 export const selectHostedWorkspaces = store.createSelector((state): Workspace[] =>
   getItems(state.workspace.workspaces).filter(
-    (ws) => ws.myRole !== 'collaborator' && (ws.memberCount ?? 1) > 1,
+    (ws) => selectCanManageHostedWorkspace.select(state, ws.id) && (ws.memberCount ?? 1) > 1,
   ),
 );
 
@@ -180,8 +178,12 @@ export const selectHostedRosterMemberCounts = store.createSelector((state): stri
   for (const [workspaceId, roster] of Object.entries(state.guestSessions.hostedRosters)) {
     if (roster.status === 'withheld') continue;
     const ws = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
-    if (!ws || ws.myRole === 'collaborator') continue;
+    if (!ws || !selectCanManageHostedWorkspace.select(state, workspaceId)) continue;
     entries.push(`${workspaceId}:${ws.memberCount ?? 0}`);
   }
   return entries.sort();
 });
+
+export const selectInheritedWorkspaceKeys = store.createSelector(
+  (state) => state.guestSessions.inheritedWorkspaceKeys,
+);

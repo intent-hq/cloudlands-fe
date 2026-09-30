@@ -61,7 +61,7 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
     'input',
     'connections',
     'devices',
-    'guest-sessions',
+    'collaboration',
     'setup',
     'advanced',
     'agent-behavior',

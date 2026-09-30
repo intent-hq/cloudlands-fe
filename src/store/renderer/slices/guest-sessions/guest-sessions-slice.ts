@@ -45,6 +45,7 @@ export const initialState: GuestSessionsState = {
   leavingWorkspaceKeys: [],
   failedLeaveIds: [],
   failedLeaveWorkspaceKeys: [],
+  inheritedWorkspaceKeys: [],
   failedMemberKeys: [],
   sweepReports: createCollection<HostedSweepReport, 'workspaceId'>('workspaceId'),
   hostedRosters: {},
@@ -60,6 +61,8 @@ export const initialState: GuestSessionsState = {
  * Guest sessions list received — from the initial `guest-sessions:list`
  * invoke or a `guest-sessions:changed` push (same payload shape).
  */
+export const collaborationSignInRequested = createAction<[]>('guestSessions/signInRequested');
+
 export const guestSessionsListReceived = createAction<[result: GuestSessionsListResult]>(
   'guestSessions/listReceived',
 );
@@ -113,9 +116,14 @@ export const loadHostedRosterRequested = createAsyncAction<
 export const hostedRosterLoading = createAction<[workspaceId: string]>(
   'guestSessions/hostedRosterLoading',
 );
-export const hostedRosterReceived = createAction<[workspaceId: string, members: WorkspaceMember[]]>(
-  'guestSessions/hostedRosterReceived',
-);
+export const hostedRosterReceived = createAction<
+  [
+    workspaceId: string,
+    members: WorkspaceMember[],
+    guestCount?: number | null,
+    guestLimit?: number | null,
+  ]
+>('guestSessions/hostedRosterReceived');
 export const hostedRosterFailed = createAction<[workspaceId: string]>(
   'guestSessions/hostedRosterFailed',
 );
@@ -225,6 +233,19 @@ guestSessionsReducer.with(
   },
 );
 
+guestSessionsReducer.with(leaveGuestWorkspaceRequested.success, (state, { payload }) => {
+  const key = guestWorkspaceKey(...payload.request);
+  return {
+    ...state,
+    inheritedWorkspaceKeys:
+      payload.response.refused === 'host-membership-required'
+        ? state.inheritedWorkspaceKeys.includes(key)
+          ? state.inheritedWorkspaceKeys
+          : [...state.inheritedWorkspaceKeys, key]
+        : withoutId(state.inheritedWorkspaceKeys, key),
+  };
+});
+
 guestSessionsReducer.with(leaveGuestWorkspaceRequested.failure, (state, { payload }) => {
   const key = guestWorkspaceKey(...payload.request);
   return payload.error.message === 'cancelled' || state.failedLeaveWorkspaceKeys.includes(key)
@@ -251,25 +272,36 @@ guestSessionsReducer.with(hostedRosterLoading, (state, { payload: [workspaceId] 
         },
       },
 );
-guestSessionsReducer.with(hostedRosterReceived, (state, { payload: [workspaceId, members] }) => {
-  if (isWithheld(state, workspaceId)) return state;
-  const prefix = hostedMemberKey(workspaceId, '');
-  const memberKeys = new Set(
-    members.map((member) => hostedMemberKey(workspaceId, member.principalId)),
-  );
-  // A retry belongs to the membership that failed, not a later re-addition.
-  const failedMemberKeys = state.failedMemberKeys.filter(
-    (key) => !key.startsWith(prefix) || memberKeys.has(key),
-  );
-  return {
-    ...state,
-    hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'loaded', members } },
-    failedMemberKeys:
-      failedMemberKeys.length === state.failedMemberKeys.length
-        ? state.failedMemberKeys
-        : failedMemberKeys,
-  };
-});
+guestSessionsReducer.with(
+  hostedRosterReceived,
+  (state, { payload: [workspaceId, members, guestCount, guestLimit] }) => {
+    if (isWithheld(state, workspaceId)) return state;
+    const prefix = hostedMemberKey(workspaceId, '');
+    const memberKeys = new Set(
+      members.map((member) => hostedMemberKey(workspaceId, member.principalId)),
+    );
+    // A retry belongs to the membership that failed, not a later re-addition.
+    const failedMemberKeys = state.failedMemberKeys.filter(
+      (key) => !key.startsWith(prefix) || memberKeys.has(key),
+    );
+    return {
+      ...state,
+      hostedRosters: {
+        ...state.hostedRosters,
+        [workspaceId]: {
+          status: 'loaded',
+          members,
+          ...(guestCount === undefined ? {} : { guestCount }),
+          ...(guestLimit === undefined ? {} : { guestLimit }),
+        },
+      },
+      failedMemberKeys:
+        failedMemberKeys.length === state.failedMemberKeys.length
+          ? state.failedMemberKeys
+          : failedMemberKeys,
+    };
+  },
+);
 guestSessionsReducer.with(hostedRosterFailed, (state, { payload: [workspaceId] }) =>
   isWithheld(state, workspaceId)
     ? state
@@ -403,6 +435,23 @@ guestSessionsReducer.with(removeHostedMemberRequested.failure, (state, { payload
   )
     return state;
   const key = hostedMemberKey(workspaceId, principalId);
+  if (payload.error.message === 'host-membership-required') {
+    const roster = state.hostedRosters[workspaceId];
+    if (!roster) return state;
+    return {
+      ...state,
+      failedMemberKeys: withoutId(state.failedMemberKeys, key),
+      hostedRosters: {
+        ...state.hostedRosters,
+        [workspaceId]: {
+          ...roster,
+          inheritedPrincipalIds: [
+            ...new Set([...(roster.inheritedPrincipalIds ?? []), principalId]),
+          ],
+        },
+      },
+    };
+  }
   return state.failedMemberKeys.includes(key)
     ? state
     : { ...state, failedMemberKeys: [...state.failedMemberKeys, key] };

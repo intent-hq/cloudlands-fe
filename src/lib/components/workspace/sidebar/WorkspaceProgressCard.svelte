@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   /* eslint-disable max-lines */
@@ -437,15 +438,17 @@
   // On top of that the Multiplayer lab must be on: with it off (the default)
   // even the owner gets no Share item — and no presence-avatar fallback either,
   // since that fallback reuses this action.
+  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const shareAction: MenuAction | null = $derived(
-    $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
+    $canShare$
       ? {
           id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
           dividerBefore: true,
           onClick: () => {
-            if (!$workspace) return;
+            if (!$workspace || !selectCanShareWorkspace.select(appStore.state, $workspace.id))
+              return;
             appStore.dispatch(
               openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
             );

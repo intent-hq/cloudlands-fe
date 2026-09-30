@@ -65,12 +65,17 @@ vi.mock('$features/collaboration-auth/renderer/collaboration-auth.client', () =>
   openCollaborationSignIn: mocks.signIn,
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('$store/renderer/slices/workspace/workspace-selectors')
-  >()),
-  selectIsCollaboratorOnlyClient: () => mocks.readable(() => mocks.collaboratorOnly),
-}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/principal/principal-selectors')>();
+  return {
+    ...actual,
+    selectCanCreateWorkspace: Object.assign(() => mocks.readable(() => !mocks.collaboratorOnly), {
+      select: actual.selectCanCreateWorkspace.select,
+      effect: actual.selectCanCreateWorkspace.effect,
+    }),
+  };
+});
 
 import GuestSessionsSettings from './GuestSessionsSettings.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -344,7 +349,7 @@ describe('GuestSessionsSettings', () => {
 
   it('never shows the owner-side hosting section to a collaborator-only client', () => {
     mocks.collaboratorOnly = true;
-    mocks.hosted = [hostedWorkspace];
+    mocks.hosted = [{ ...hostedWorkspace, myRole: 'collaborator' }];
     render(GuestSessionsSettings);
     expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
     expect(mocks.loadRoster).not.toHaveBeenCalled();
@@ -1285,29 +1290,85 @@ describe('GuestSessionsSettings', () => {
       expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
     });
   });
-});
 
-describe('local collaboration sign-in entry', () => {
-  beforeEach(() => mocks.signIn.mockClear());
-  it.each([false, true])('requires Multiplayer even when GitLab is enabled=%s', async (gitlab) => {
-    const { setLabsGitLabEnabled, setLabsMultiplayerEnabled } =
-      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    appStore.dispatch(setLabsGitLabEnabled(gitlab));
-    appStore.dispatch(setLabsMultiplayerEnabled(false));
-    render(GuestSessionsSettings);
-    expect(screen.queryByRole('button', { name: 'Sign in for collaboration' })).toBeNull();
-    appStore.dispatch(setLabsMultiplayerEnabled(true));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in for collaboration' }));
-    expect(mocks.signIn).toHaveBeenCalledOnce();
-  });
-  it('keeps local sign-in available in a member window without exposing host account controls', async () => {
-    mocks.collaboratorOnly = true;
+  it('hides Collaboration without loading or revoking saved access when Multiplayer is disabled', async () => {
     const { setLabsMultiplayerEnabled } =
       await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
+    mocks.sessions = [guest];
+    mocks.hosted = [hostedWorkspace];
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
     render(GuestSessionsSettings);
-    expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Sign in for collaboration' }));
-    expect(mocks.signIn).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('guest-sessions-settings')).toBeNull();
+    appStore.dispatch(
+      guestActions.removeHostedMemberRequested(hostedWorkspace.id, collaborator.principalId),
+    );
+    appStore.dispatch(guestActions.removeAllHostedGuestsRequested(hostedWorkspace.id));
+    appStore.dispatch(guestActions.leaveGuestSessionRequested(guest.id));
+    appStore.dispatch(guestActions.leaveGuestWorkspaceRequested(guest.id, 'ws-a'));
+    appStore.dispatch(guestActions.collaborationSignInRequested());
+    await Promise.resolve();
+    expect(transport.request).not.toHaveBeenCalled();
+    expect(mocks.leave).not.toHaveBeenCalled();
+    expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(getItems(appStore.state.guestSessions.sessions)).toEqual([guest]);
+  });
+
+  describe('local collaboration sign-in entry', () => {
+    beforeEach(() => mocks.signIn.mockClear());
+    it.each([false, true])(
+      'requires Multiplayer even when GitLab is enabled=%s',
+      async (gitlab) => {
+        const { setLabsGitLabEnabled, setLabsMultiplayerEnabled } =
+          await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+        appStore.dispatch(setLabsGitLabEnabled(gitlab));
+        appStore.dispatch(setLabsMultiplayerEnabled(false));
+        render(GuestSessionsSettings);
+        expect(screen.queryByRole('button', { name: 'Sign in for collaboration' })).toBeNull();
+        appStore.dispatch(setLabsMultiplayerEnabled(true));
+        const { principalReceived } =
+          await import('$store/renderer/slices/principal/principal-slice');
+        const current = appStore.state.principal;
+        appStore.dispatch(
+          principalReceived(
+            {
+              context: current.context!,
+              invalidation: current.invalidation,
+              presentationVersion: current.presentationVersion,
+            },
+            current.snapshot!,
+          ),
+        );
+        await fireEvent.click(
+          await screen.findByRole('button', { name: 'Sign in for collaboration' }),
+        );
+        expect(mocks.signIn).toHaveBeenCalledOnce();
+      },
+    );
+    it('keeps local sign-in available in a member window without exposing host account controls', async () => {
+      mocks.collaboratorOnly = true;
+      const { setLabsMultiplayerEnabled } =
+        await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+      appStore.dispatch(setLabsMultiplayerEnabled(true));
+      const { principalReceived } =
+        await import('$store/renderer/slices/principal/principal-slice');
+      const { withHostPrincipal } = await import('../../../test/fixtures/principal-state');
+      const current = appStore.state.principal;
+      appStore.dispatch(
+        principalReceived(
+          {
+            context: current.context!,
+            invalidation: current.invalidation,
+            presentationVersion: current.presentationVersion,
+          },
+          withHostPrincipal(appStore.state, 'member').principal.snapshot!,
+        ),
+      );
+      render(GuestSessionsSettings);
+      expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
+      await fireEvent.click(screen.getByRole('button', { name: 'Sign in for collaboration' }));
+      expect(mocks.signIn).toHaveBeenCalledOnce();
+    });
   });
 });

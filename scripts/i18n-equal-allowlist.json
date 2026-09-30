@@ -1,4 +1,6 @@
 {
+  "settings_sidebar_guestSessions_label": ["fr"],
+  "settings_guestSessions_title": ["fr"],
   "agentOverview_hierarchyCard_agent_fallback": ["de", "fr"],
   "agentOverview_hierarchyCard_note_label": ["fr"],
   "agentOverview_hierarchyGraph_background_badge": ["ja", "ko", "de"],

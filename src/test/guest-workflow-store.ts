@@ -1,3 +1,7 @@
+import { principalReducer } from '$store/renderer/slices/principal/principal-slice';
+import { initialState as daemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { initialState as workspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import type { PrincipalState } from '$store/renderer/slices/principal/principal-types';
 import {
   userPreferencesReducer,
   initialState as userPreferences,
@@ -18,7 +22,39 @@ import {
 
 /** Component tests exercise production reducers and root-owned workflow sagas. */
 export function createGuestWorkflowTestStore() {
-  const freshState = () => ({ guestSessions, connections, workspace, userPreferences });
+  const freshState = () => ({
+    guestSessions,
+    connections: { ...connections, hasReceivedList: true },
+    workspace,
+    userPreferences: { ...userPreferences, labsMultiplayerEnabled: true },
+    daemonHealth: { ...daemonHealth, health: 'healthy' as const },
+    workspaceEvents: { ...workspaceEvents, subscriptionGeneration: 1 },
+    principal: {
+      context: JSON.stringify([connections.windowBackendId, daemonHealth.connectionGeneration, 1]),
+      status: 'ready',
+      boundPrincipalId: 'principal',
+      minimumRevision: 0,
+      invalidation: 0,
+      presentationVersion: 0,
+      refreshedPresentationVersion: 0,
+      error: null,
+      snapshot: {
+        principal: {
+          id: 'principal',
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: true,
+        },
+        capabilities: {
+          hostMembership: false,
+          collaborationIdentity: false,
+          authenticatedDevices: false,
+          personalPairing: false,
+        },
+      },
+    } as PrincipalState,
+  });
   let state = freshState();
   const channel = stdChannel();
   const listeners = new Set<() => void>();
@@ -32,6 +68,8 @@ export function createGuestWorkflowTestStore() {
     },
     dispatch(action: { type: string }) {
       state = {
+        ...state,
+        principal: principalReducer(state.principal, action as never),
         userPreferences: userPreferencesReducer(state.userPreferences, action as never),
         guestSessions: guestSessionsReducer(state.guestSessions, action as never),
         connections: connectionsReducer(state.connections, action as never),

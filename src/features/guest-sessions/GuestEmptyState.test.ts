@@ -83,7 +83,7 @@ describe('GuestEmptyState', () => {
     expect(screen.getByTestId('guest-empty-state').textContent).toContain('studio.local');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Manage guest sessions' }));
-    expect(mocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'guest-sessions' });
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'collaboration' });
     expect(mocks.leave).not.toHaveBeenCalled();
   });
 
