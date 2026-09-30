@@ -590,13 +590,72 @@ describe('BrowserCaptureService path boundaries', () => {
     try {
       const starting = browserCapture.startCapture(session.id, 'workspace-a');
       await ready;
-      await browserCapture.endSession(session.id, 'workspace-a');
+      const ending = browserCapture.endSession(session.id, 'workspace-a');
       finishSetup({ identifier: 'late-script' });
       await expect(starting).rejects.toThrow('ended');
+      await ending;
       expect(cdpMessageHandler).toBeUndefined();
     } finally {
       vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(original!);
     }
+  });
+
+  it('cancels pending capture setup when endCapture is called and permits a later restart', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    const original = vi.mocked(embeddedBrowserCdp.sendCdpCommand).getMockImplementation();
+    let finishSetup!: (value: { identifier: string }) => void;
+    let reachedSetup!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      reachedSetup = resolve;
+    });
+    vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(async (_id, method) => {
+      if (method === 'Page.addScriptToEvaluateOnNewDocument') {
+        reachedSetup();
+        return new Promise((resolve) => {
+          finishSetup = resolve;
+        });
+      }
+      return {};
+    });
+    try {
+      const starting = browserCapture.startCapture(session.id, 'workspace-a');
+      await ready;
+      const stopping = browserCapture.endCapture(session.id, 'workspace-a');
+      finishSetup({ identifier: 'cancelled-script' });
+      await expect(starting).rejects.toThrow();
+      await stopping;
+      expect(cdpMessageHandler).toBeUndefined();
+      expect(session.captureActive).toBe(false);
+    } finally {
+      vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(original!);
+    }
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    await browserCapture.endSession(session.id, 'workspace-a');
+  });
+
+  it('protects new exception details on getSummary while retaining legacy summary reads', async () => {
+    const session = await browserCapture.startSession({
+      workspaceId: 'workspace-a',
+      ownerAgentId: 'agent-1',
+    });
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    cdpMessageHandler?.('Runtime.exceptionThrown', {
+      exceptionDetails: { exception: { description: 'private failure detail from agent A' } },
+    });
+    await browserCapture.endSession(session.id, 'workspace-a');
+    const read = (agentId?: string) =>
+      executeActions(
+        { actions: [{ action: 'getSummary', captureId: session.captureId }] },
+        undefined,
+        agentId,
+        'workspace-a',
+      );
+    expect((await read('agent-2')).success).toBe(false);
+    expect(JSON.stringify(await read('agent-2'))).not.toContain('private failure');
+    expect(JSON.stringify(await read('agent-1'))).toContain('private failure');
+    expect((await read()).success).toBe(true);
+    await fs.unlink(path.join(session.outputDir, 'capture-owner.json'));
+    expect((await read('agent-2')).success).toBe(true);
   });
 
   it('reports unavailable and oversized response bodies without fetching them again', async () => {

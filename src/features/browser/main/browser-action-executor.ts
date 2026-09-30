@@ -1135,6 +1135,7 @@ async function executeAction(
         const result = await browserCapture.getSummary(
           requireWorkspaceId(workspaceId, action.action),
           action.captureId,
+          agentId,
         );
         return { action: 'getSummary', success: true, result };
       }

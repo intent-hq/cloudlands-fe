@@ -263,6 +263,9 @@ class BrowserCaptureService {
   private sessions = new Map<string, CaptureSession>();
 
   private startingGuests = new Set<number>();
+  private captureSetups = new Map<string, Promise<void>>();
+  private captureStops = new Map<string, Promise<void>>();
+  private endingSessions = new Set<string>();
 
   /** CDP event listeners keyed by the owning session, independent of tab lifetime. */
   private eventListeners = new Map<
@@ -453,6 +456,22 @@ class BrowserCaptureService {
    * Start capturing console/network events within a session
    */
   async startCapture(sessionId: string, workspaceId: string): Promise<void> {
+    this.getOwnedSession(sessionId, workspaceId);
+    if (this.endingSessions.has(sessionId) || this.captureStops.has(sessionId)) {
+      throw new Error('Capture session is stopping or ending');
+    }
+    const pending = this.captureSetups.get(sessionId);
+    if (pending) return pending;
+    const setup = this.attachCapture(sessionId, workspaceId);
+    this.captureSetups.set(sessionId, setup);
+    try {
+      await setup;
+    } finally {
+      this.captureSetups.delete(sessionId);
+    }
+  }
+
+  private async attachCapture(sessionId: string, workspaceId: string): Promise<void> {
     const session = this.getOwnedSession(sessionId, workspaceId);
 
     if (session.captureActive) {
@@ -482,7 +501,11 @@ class BrowserCaptureService {
         captureSink(session.diagnostics, (msg: ConsoleMessage) => session.consoleBuffer.push(msg)),
         captureSink(session.diagnostics, (req: NetworkRequest) => session.networkBuffer.push(req)),
       );
-      if (this.sessions.get(sessionId) !== session) {
+      if (
+        this.sessions.get(sessionId) !== session ||
+        this.endingSessions.has(sessionId) ||
+        this.captureStops.has(sessionId)
+      ) {
         await listeners.cleanup();
         throw new Error('Capture session ended during setup');
       }
@@ -499,6 +522,20 @@ class BrowserCaptureService {
    * Stop capturing console/network events within a session
    */
   async endCapture(sessionId: string, workspaceId: string): Promise<void> {
+    this.getOwnedSession(sessionId, workspaceId);
+    const pending = this.captureStops.get(sessionId);
+    if (pending) return pending;
+    const stop = this.stopCapture(sessionId, workspaceId);
+    this.captureStops.set(sessionId, stop);
+    try {
+      await stop;
+    } finally {
+      this.captureStops.delete(sessionId);
+    }
+  }
+
+  private async stopCapture(sessionId: string, workspaceId: string): Promise<void> {
+    await this.captureSetups.get(sessionId)?.catch(() => {});
     const session = this.getOwnedSession(sessionId, workspaceId);
 
     if (!session.captureActive) {
@@ -712,93 +749,96 @@ class BrowserCaptureService {
   async endSession(sessionId: string, workspaceId: string): Promise<SessionResult> {
     const session = this.getOwnedSession(sessionId, workspaceId);
 
-    // Stop capture if active
-    if (session.captureActive) {
+    if (this.endingSessions.has(sessionId)) throw new Error('Capture session is already ending');
+    this.endingSessions.add(sessionId);
+    try {
       await this.endCapture(sessionId, workspaceId);
-    }
 
-    // Stop any active traces
-    for (const traceName of session.activeTraces.keys()) {
-      await this.stopTrace(sessionId, workspaceId, traceName);
-    }
-
-    // Write console logs
-    const consolePath = path.join(session.outputDir, 'console.jsonl');
-    await writeJsonl(consolePath, session.consoleBuffer);
-
-    // Write network requests
-    const networkPath = path.join(session.outputDir, 'network.jsonl');
-    await writeJsonl(networkPath, session.networkBuffer);
-
-    // Get current tab info for metadata
-    const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
-    const tab = tabs.find((t) => t.tabId === session.tabId);
-
-    // Write session metadata
-    const metadata = {
-      url: captureText(tab?.url, 2000),
-      title: captureText(tab?.title, 500),
-      diagnostics: session.diagnostics,
-      domain: session.domain,
-      startTime: session.startTime,
-      endTime: new Date().toISOString(),
-      stepCount: session.stepCount,
-    };
-    await fs.writeFile(
-      path.join(session.outputDir, 'session.json'),
-      JSON.stringify(metadata, null, 2),
-    );
-
-    // Collect step directories
-    const steps: string[] = [];
-    const entries = await fs.readdir(session.outputDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith('step-')) {
-        steps.push(path.join(session.outputDir, entry.name));
+      // Stop any active traces
+      for (const traceName of session.activeTraces.keys()) {
+        await this.stopTrace(sessionId, workspaceId, traceName);
       }
-    }
 
-    // Collect trace files
-    const traces: string[] = [];
-    for (const entry of entries) {
-      if (
-        entry.isFile() &&
-        entry.name.endsWith('.json') &&
-        !['session.json', 'metadata.json', 'summary.json', 'capture-owner.json'].includes(
-          entry.name,
-        )
-      ) {
-        traces.push(path.join(session.outputDir, entry.name));
+      // Write console logs
+      const consolePath = path.join(session.outputDir, 'console.jsonl');
+      await writeJsonl(consolePath, session.consoleBuffer);
+
+      // Write network requests
+      const networkPath = path.join(session.outputDir, 'network.jsonl');
+      await writeJsonl(networkPath, session.networkBuffer);
+
+      // Get current tab info for metadata
+      const { tabs } = await embeddedBrowserCdp.listAllTabs(workspaceId);
+      const tab = tabs.find((t) => t.tabId === session.tabId);
+
+      // Write session metadata
+      const metadata = {
+        url: captureText(tab?.url, 2000),
+        title: captureText(tab?.title, 500),
+        diagnostics: session.diagnostics,
+        domain: session.domain,
+        startTime: session.startTime,
+        endTime: new Date().toISOString(),
+        stepCount: session.stepCount,
+      };
+      await fs.writeFile(
+        path.join(session.outputDir, 'session.json'),
+        JSON.stringify(metadata, null, 2),
+      );
+
+      // Collect step directories
+      const steps: string[] = [];
+      const entries = await fs.readdir(session.outputDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('step-')) {
+          steps.push(path.join(session.outputDir, entry.name));
+        }
       }
+
+      // Collect trace files
+      const traces: string[] = [];
+      for (const entry of entries) {
+        if (
+          entry.isFile() &&
+          entry.name.endsWith('.json') &&
+          !['session.json', 'metadata.json', 'summary.json', 'capture-owner.json'].includes(
+            entry.name,
+          )
+        ) {
+          traces.push(path.join(session.outputDir, entry.name));
+        }
+      }
+
+      // Generate and write summary for easy triage
+      const summary = generateSummary(session.consoleBuffer, session.networkBuffer, {
+        url: metadata.url,
+        title: metadata.title,
+        timestamp: metadata.endTime,
+      });
+      await fs.writeFile(
+        path.join(session.outputDir, 'summary.json'),
+        JSON.stringify(summary, null, 2),
+      );
+
+      // Note: We don't detach the debugger here anymore.
+      // The centralized EmbeddedBrowserCdpService manages debugger lifecycle.
+      // Detaching here would break other operations that expect the debugger to stay attached.
+
+      this.sessions.delete(sessionId);
+      logger.info('Session ended', { sessionId, outputDir: session.outputDir });
+
+      return {
+        captureId: session.captureId,
+        dir: session.outputDir,
+        steps,
+        console: consolePath,
+        network: networkPath,
+        traces,
+        metadata,
+      };
+    } finally {
+      this.endingSessions.delete(sessionId);
     }
-
-    // Generate and write summary for easy triage
-    const summary = generateSummary(session.consoleBuffer, session.networkBuffer, {
-      url: metadata.url,
-      title: metadata.title,
-      timestamp: metadata.endTime,
-    });
-    await fs.writeFile(
-      path.join(session.outputDir, 'summary.json'),
-      JSON.stringify(summary, null, 2),
-    );
-
-    // Note: We don't detach the debugger here anymore.
-    // The centralized EmbeddedBrowserCdpService manages debugger lifecycle.
-    // Detaching here would break other operations that expect the debugger to stay attached.
-
-    this.sessions.delete(sessionId);
-    logger.info('Session ended', { sessionId, outputDir: session.outputDir });
-
-    return {
-      captureId: session.captureId,
-      dir: session.outputDir,
-      steps,
-      console: consolePath,
-      network: networkPath,
-      traces,
-      metadata,
-    };
   }
 
   /**
@@ -1025,14 +1065,30 @@ class BrowserCaptureService {
   /**
    * Read a capture summary by its workspace-relative capture identifier.
    */
-  async getSummary(workspaceId: string, captureId: string): Promise<CaptureSummary | null> {
+  async getSummary(
+    workspaceId: string,
+    captureId: string,
+    agentId?: string,
+  ): Promise<CaptureSummary | null> {
     if (!captureId || path.isAbsolute(captureId)) {
       throw new Error('Invalid capture identifier');
     }
-    const captureRoot = await getCaptureRoot(workspaceId);
+    let captureRoot: string;
+    try {
+      captureRoot = await fs.realpath(await getCaptureRoot(workspaceId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
     const captureDir = safeResolvePath(captureRoot, captureId);
     if (!captureDir || captureDir === captureRoot) {
       throw new Error('Capture identifier must stay within the workspace capture directory');
+    }
+    try {
+      await this.assertCaptureOwner(captureDir, agentId, true);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
     }
     const summaryPath = resolveCaptureArtifact(captureDir, 'summary.json');
     try {
@@ -1072,21 +1128,7 @@ class BrowserCaptureService {
     const dir = safeResolvePath(root, captureId);
     if (!dir || dir === root || path.isAbsolute(captureId))
       throw new Error('Invalid capture identifier');
-    const realDir = await fs.realpath(dir);
-    if (realDir !== dir) throw new Error('Capture symlinks are not allowed');
-    const ownerFile = await fs.open(
-      path.join(dir, 'capture-owner.json'),
-      constants.O_RDONLY | constants.O_NOFOLLOW,
-    );
-    let owner: { ownerAgentId?: string };
-    try {
-      if ((await ownerFile.stat()).size > 4096) throw new Error('Invalid capture owner');
-      owner = JSON.parse(await ownerFile.readFile('utf8'));
-    } finally {
-      await ownerFile.close();
-    }
-    if (agentId && owner.ownerAgentId !== agentId)
-      throw new Error('Capture is owned by another caller');
+    await this.assertCaptureOwner(dir, agentId);
     const handle = await fs.open(
       path.join(dir, artifact),
       constants.O_RDONLY | constants.O_NOFOLLOW,
@@ -1109,6 +1151,34 @@ class BrowserCaptureService {
     } finally {
       await handle.close();
     }
+  }
+
+  private async assertCaptureOwner(
+    dir: string,
+    agentId?: string,
+    allowLegacy = false,
+  ): Promise<void> {
+    const realDir = await fs.realpath(dir);
+    if (realDir !== dir) throw new Error('Capture symlinks are not allowed');
+    let ownerFile;
+    try {
+      ownerFile = await fs.open(
+        path.join(dir, 'capture-owner.json'),
+        constants.O_RDONLY | constants.O_NOFOLLOW,
+      );
+    } catch (error) {
+      if (allowLegacy && (error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    let owner: { ownerAgentId?: string };
+    try {
+      if ((await ownerFile.stat()).size > 4096) throw new Error('Invalid capture owner');
+      owner = JSON.parse(await ownerFile.readFile('utf8'));
+    } finally {
+      await ownerFile.close();
+    }
+    if (agentId && owner.ownerAgentId !== agentId)
+      throw new Error('Capture is owned by another caller');
   }
 
   private getOwnedSession(sessionId: string, workspaceId: string): CaptureSession {

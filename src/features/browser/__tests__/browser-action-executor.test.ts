@@ -1342,7 +1342,11 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(browserCapture.getSummary).toHaveBeenCalledWith('workspace-a', 'example.test/snap');
+      expect(browserCapture.getSummary).toHaveBeenCalledWith(
+        'workspace-a',
+        'example.test/snap',
+        'agent-1',
+      );
     });
 
     it('requires trusted workspace context for session operations', async () => {
