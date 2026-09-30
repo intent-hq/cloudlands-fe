@@ -101,7 +101,26 @@ function survivorMetadata(root: string, survivors: string[]): string {
     return true;
   }
 
-  function visit(relative: string, depth: number): void {
+  function errorCode(error: unknown): string {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    return typeof code === 'string' && /^E[A-Z0-9]{1,30}$/.test(code) ? code : 'unavailable';
+  }
+
+  // Node has no openat API. Linux's descriptor paths anchor each operation to
+  // the opened parent, even if its original name is replaced by a symlink.
+  // Elsewhere omit metadata rather than perform an unsafe path-based walk.
+  const flags = fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW;
+  let rootFd: number | undefined;
+  let unavailable = 'safe traversal unavailable';
+  if (process.platform === 'linux') {
+    try {
+      rootFd = fs.openSync(root, flags);
+    } catch (error) {
+      unavailable = errorCode(error);
+    }
+  }
+
+  function visit(parent: string | undefined, name: string, relative: string, depth: number): void {
     if (stopped) return;
     if (entries >= maxEntries) {
       limits.add('entry limit');
@@ -109,7 +128,11 @@ function survivorMetadata(root: string, survivors: string[]): string {
       return;
     }
     entries++;
-    const full = path.join(root, relative);
+    if (parent === undefined) {
+      emit({ path: relative, error: unavailable });
+      return;
+    }
+    const full = path.join(parent, name);
     try {
       const stat = fs.lstatSync(full);
       const type = stat.isSymbolicLink()
@@ -127,29 +150,36 @@ function survivorMetadata(root: string, survivors: string[]): string {
       }
       // Read incrementally: a wide directory must not require an unbounded
       // readdir allocation just to print the first few entries.
-      const directory = fs.opendirSync(full);
+      const fd = fs.openSync(full, flags);
       try {
-        let entry: fs.Dirent | null;
-        while (!stopped && (entry = directory.readSync())) {
-          visit(path.join(relative, entry.name), depth + 1);
+        const anchored = `/proc/self/fd/${fd}`;
+        const directory = fs.opendirSync(anchored);
+        try {
+          let entry: fs.Dirent | null;
+          while (!stopped && (entry = directory.readSync())) {
+            visit(anchored, entry.name, path.join(relative, entry.name), depth + 1);
+          }
+        } finally {
+          directory.closeSync();
         }
       } finally {
-        directory.closeSync();
+        fs.closeSync(fd);
       }
     } catch (error) {
       // Entries can vanish or become unreadable between enumeration and stat.
       // Only log errno, not an exception message that could contain file data.
-      const code = (error as NodeJS.ErrnoException)?.code;
-      emit({
-        path: relative,
-        error: typeof code === 'string' && /^E[A-Z0-9]{1,30}$/.test(code) ? code : 'unavailable',
-      });
+      emit({ path: relative, error: errorCode(error) });
     }
   }
 
-  for (const entry of survivors) {
-    visit(entry, 0);
-    if (stopped) break;
+  try {
+    const parent = rootFd === undefined ? undefined : `/proc/self/fd/${rootFd}`;
+    for (const entry of survivors) {
+      visit(parent, entry, entry, 0);
+      if (stopped) break;
+    }
+  } finally {
+    if (rootFd !== undefined) fs.closeSync(rootFd);
   }
   if (limits.size) lines.push(`... truncated (${[...limits].join(', ')})`);
   return lines.join('\n');

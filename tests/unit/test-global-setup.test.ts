@@ -69,8 +69,10 @@ describe('temp-dir hygiene failure diagnostics', () => {
     expect(result.state).toMatchObject({ failed: false, removed: true, restored: true });
   });
 
-  it('reports nested metadata before cleanup without exposing file contents or following symlinks', () => {
-    const result = runGuard(`
+  it.skipIf(process.platform !== 'linux')(
+    'reports nested metadata before cleanup without exposing file contents or following symlinks',
+    () => {
+      const result = runGuard(`
       fs.mkdirSync(join(root, 'fixture', '.git'), { recursive: true });
       fs.writeFileSync(join(root, 'fixture', '.git', 'late.lock'), 'private-file-body');
       fs.utimesSync(join(root, 'fixture', '.git', 'late.lock'), new Date('2026-01-02T03:04:05Z'), new Date('2026-01-02T03:04:05Z'));
@@ -78,30 +80,75 @@ describe('temp-dir hygiene failure diagnostics', () => {
       fs.writeFileSync(join(parent, 'outside', 'private-target'), 'outside-private-body');
       fs.symlinkSync(join(parent, 'outside'), join(root, 'fixture', 'outside-link'), 'dir');
     `);
-    expectLeak(result);
-    expect(result.state.outsideIntact).toBe(true);
-    expect(result.stderr).toContain('fixture/.git/late.lock');
-    expect(result.stderr).toContain('2026-01-02T03:04:05.000Z');
-    expect(result.stderr).toContain('"type":"file"');
-    expect(result.stderr).toContain('"size":17');
-    expect(result.stderr).toContain('"type":"symlink"');
-    expect(result.stderr).not.toContain('private-file-body');
-    expect(result.stderr).not.toContain('private-target');
-    expect(result.stderr).not.toContain('outside-private-body');
-  });
+      expectLeak(result);
+      expect(result.state.outsideIntact).toBe(true);
+      expect(result.stderr).toContain('fixture/.git/late.lock');
+      expect(result.stderr).toContain('2026-01-02T03:04:05.000Z');
+      expect(result.stderr).toContain('"type":"file"');
+      expect(result.stderr).toContain('"size":17');
+      expect(result.stderr).toContain('"type":"symlink"');
+      expect(result.stderr).not.toContain('private-file-body');
+      expect(result.stderr).not.toContain('private-target');
+      expect(result.stderr).not.toContain('outside-private-body');
+    },
+  );
 
-  it('bounds depth and reports that deeper entries were omitted', () => {
-    const result = runGuard(`
+  it.skipIf(process.platform !== 'linux').each(['before directory open', 'before child stat'])(
+    'never follows a directory swapped for an outside symlink: %s',
+    (phase) => {
+      const result = runGuard(`
+        const fixture = join(root, 'fixture');
+        fs.mkdirSync(fixture);
+        fs.writeFileSync(join(fixture, 'shared-name'), 'inside');
+        fs.mkdirSync(join(parent, 'outside'));
+        fs.writeFileSync(join(parent, 'outside', 'private-target'), 'outside-private-body');
+        fs.writeFileSync(join(parent, 'outside', 'shared-name'), 'outside-file-metadata');
+        fs.utimesSync(join(parent, 'outside', 'shared-name'), new Date('2001-02-03T04:05:06Z'), new Date('2001-02-03T04:05:06Z'));
+        let swapped = false;
+        function swap() {
+          if (swapped) return;
+          swapped = true;
+          fs.renameSync(fixture, join(root, 'fixture-original'));
+          fs.symlinkSync(join(parent, 'outside'), fixture, 'dir');
+        }
+        const original = fs.opendirSync;
+        fs.opendirSync = function(path, ...args) {
+          if (fs.realpathSync(path) !== fixture) return original.call(this, path, ...args);
+          if ('${phase}' === 'before directory open') swap();
+          const directory = original.call(this, path, ...args);
+          const read = directory.readSync.bind(directory);
+          directory.readSync = () => {
+            const entry = read();
+            if ('${phase}' === 'before child stat' && entry) swap();
+            return entry;
+          };
+          return directory;
+        };
+        syncBuiltinESMExports();
+      `);
+      expectLeak(result);
+      expect(result.state.outsideIntact).toBe(true);
+      expect(result.stderr).not.toContain('private-target');
+      expect(result.stderr).not.toContain('2001-02-03T04:05:06.000Z');
+      expect(result.stderr).not.toContain('outside-private-body');
+    },
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'bounds depth and reports that deeper entries were omitted',
+    () => {
+      const result = runGuard(`
       fs.mkdirSync(join(root, 'fixture', 'one', 'two', 'three', 'four'), { recursive: true });
       fs.writeFileSync(join(root, 'fixture', 'one', 'two', 'three', 'four', 'too-deep'), 'secret');
     `);
-    expectLeak(result);
-    expect(result.stderr).toContain('fixture/one/two');
-    expect(result.stderr).toContain('depth limit');
-    expect(result.stderr).not.toContain('too-deep');
-  });
+      expectLeak(result);
+      expect(result.stderr).toContain('fixture/one/two');
+      expect(result.stderr).toContain('depth limit');
+      expect(result.stderr).not.toContain('too-deep');
+    },
+  );
 
-  it('bounds entry count even for a wide directory', () => {
+  it.skipIf(process.platform !== 'linux')('bounds entry count even for a wide directory', () => {
     const result = runGuard(`
       fs.mkdirSync(join(root, 'fixture'));
       for (let i = 0; i < 100; i++) fs.writeFileSync(join(root, 'fixture', 'entry-' + i), '');
@@ -111,6 +158,48 @@ describe('temp-dir hygiene failure diagnostics', () => {
     expect(listed.length).toBeGreaterThan(1);
     expect(listed.length).toBeLessThanOrEqual(32);
     expect(result.stderr).toContain('entry limit');
+  });
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses a symlink swapped in before acquiring a directory handle',
+    () => {
+      const result = runGuard(`
+      const fixture = join(root, 'fixture');
+      fs.mkdirSync(fixture);
+      fs.mkdirSync(join(parent, 'outside'));
+      fs.writeFileSync(join(parent, 'outside', 'private-target'), 'outside-body');
+      const original = fs.openSync;
+      let swapped = false;
+      fs.openSync = function(path, ...args) {
+        if (!swapped && String(path).endsWith('/fixture')) {
+          swapped = true;
+          fs.renameSync(fixture, join(root, 'fixture-original'));
+          fs.symlinkSync(join(parent, 'outside'), fixture, 'dir');
+        }
+        return original.call(this, path, ...args);
+      };
+      syncBuiltinESMExports();
+    `);
+      expectLeak(result);
+      expect(result.state.outsideIntact).toBe(true);
+      expect(result.stderr).toMatch(/ELOOP|ENOTDIR/);
+      expect(result.stderr).not.toContain('private-target');
+    },
+  );
+
+  it('omits unsafe metadata when descriptor anchoring is unavailable', () => {
+    const result = runGuard(`
+      fs.mkdirSync(join(root, 'fixture'));
+      fs.writeFileSync(join(root, 'fixture', 'private-target'), 'private-body');
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      fs.lstatSync = () => { throw new Error('must not stat unanchored entries'); };
+      syncBuiltinESMExports();
+    `);
+    expectLeak(result);
+    expect(result.stderr).toContain('"path":"fixture"');
+    expect(result.stderr).toContain('safe traversal unavailable');
+    expect(result.stderr).not.toContain('private-target');
+    expect(result.stderr).not.toContain('must not stat');
   });
 
   it('bounds output bytes and escapes control characters in filenames', () => {
@@ -126,7 +215,7 @@ describe('temp-dir hygiene failure diagnostics', () => {
     expect(result.stderr).toContain('\\nforged-output');
   });
 
-  it.each(['EACCES', 'ENOENT'])(
+  it.skipIf(process.platform !== 'linux').each(['EACCES', 'ENOENT'])(
     'retains the leak failure and cleanup when metadata is unavailable: %s',
     (code) => {
       const result = runGuard(`
@@ -154,20 +243,23 @@ describe('temp-dir hygiene failure diagnostics', () => {
     },
   );
 
-  it('continues cleanup and reports only errno when a directory cannot be read', () => {
-    const result = runGuard(`
+  it.skipIf(process.platform !== 'linux')(
+    'continues cleanup and reports only errno when a directory cannot be read',
+    () => {
+      const result = runGuard(`
       fs.mkdirSync(join(root, 'fixture'));
       const original = fs.opendirSync;
       fs.opendirSync = function(path, ...args) {
-        if (String(path) === join(root, 'fixture')) {
+        if (fs.realpathSync(path) === join(root, 'fixture')) {
           throw Object.assign(new Error('private directory detail'), { code: 'EACCES' });
         }
         return original.call(this, path, ...args);
       };
       syncBuiltinESMExports();
     `);
-    expectLeak(result);
-    expect(result.stderr).toContain('EACCES');
-    expect(result.stderr).not.toContain('private directory detail');
-  });
+      expectLeak(result);
+      expect(result.stderr).toContain('EACCES');
+      expect(result.stderr).not.toContain('private directory detail');
+    },
+  );
 });
