@@ -429,6 +429,7 @@
   // Watch for selected comment from the store
   $effect(() => {
     const selected = $selectedComment$?.id ?? null;
+    if (!comments.some((comment) => comment.id === selected)) return;
 
     // Only update if the selected comment actually changed
     if (selected && selected !== selectedCommentId) {
