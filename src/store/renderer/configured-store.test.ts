@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   storeConstructor: vi.fn(),
 }));
 
-vi.mock('@augmentcode/themis/svelte-store', () => ({
+vi.mock('@themislib/themis/svelte-store', () => ({
   Store: class {
     constructor(...args: unknown[]) {
       mocks.storeConstructor(...args);

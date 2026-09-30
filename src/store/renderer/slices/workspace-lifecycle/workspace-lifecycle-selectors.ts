@@ -1,6 +1,6 @@
 import { store } from '../../store';
 import type { Workspace } from '$shared/types';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   WorkspaceLoadError,
   WorkspaceLoadState,

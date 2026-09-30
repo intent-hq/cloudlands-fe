@@ -1,4 +1,4 @@
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import { store } from '../../store';

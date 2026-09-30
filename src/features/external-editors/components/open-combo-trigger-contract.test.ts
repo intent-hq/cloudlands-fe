@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { invoke } from '$lib/electron-bridge';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { StoreState } from '$store/renderer/types';

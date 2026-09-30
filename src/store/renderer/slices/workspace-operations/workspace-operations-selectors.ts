@@ -1,6 +1,6 @@
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import { selectAllWorkspaceAgents } from '../workspace-agents/workspace-agents-selectors';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import type { OpenPrWarningItem } from './workspace-operations-types';
 import { selectWorkspaceById } from '../workspace/workspace-selectors';

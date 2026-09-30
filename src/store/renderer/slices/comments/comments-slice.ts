@@ -2,15 +2,15 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
   getItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 import type { CommentsV2State, CommentThread } from './comments-types';
 

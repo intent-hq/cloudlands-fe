@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 import type { SettingsFormRequest } from '../settings-events/settings-events-types';
 import type { RtkSettingsIntent } from './rtk-settings-types';
 

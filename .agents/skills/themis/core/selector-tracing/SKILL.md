@@ -18,7 +18,7 @@ triggers:
 # Selector tracing — evidence-oriented performance diagnosis
 
 Diagnose recomputation, output-cache reuse, invalidation, scheduling, and duration.
-Public reference: `@augmentcode/themis/docs/SELECTORS.md` → Selector Tracing
+Public reference: `@themislib/themis/docs/SELECTORS.md` → Selector Tracing
 Diagnostics. Runtime/types are evidence, not a second public API.
 
 ## Scope and safety rules
@@ -155,9 +155,9 @@ All families share tracing options, events, summaries, privacy, and activation:
 
 | Family | Public direct selector output |
 | --- | --- |
-| `Store` from `@augmentcode/themis/svelte-store` | Svelte `Readable` |
-| `ReactStore` from `@augmentcode/themis/react-store` | Preact `ReadonlySignal` |
-| `StreamingStore` from `@augmentcode/themis/streaming-store` | Kefir `Observable` |
+| `Store` from `@themislib/themis/svelte-store` | Svelte `Readable` |
+| `ReactStore` from `@themislib/themis/react-store` | Preact `ReadonlySignal` |
+| `StreamingStore` from `@themislib/themis/streaming-store` | Kefir `Observable` |
 
 Do not mix family-specific lifecycle patterns in one app.
 

@@ -99,10 +99,12 @@ function* readWithPermit(
   try {
     const admission = yield* race({
       permit: take(permits),
-      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+      cleanup: take(matchesReadCleanup(workspaceId, path)),
     });
     if (admission.cleanup) {
-      clearWorkspaceGenerations(generations, workspaceId);
+      if (admission.cleanup.type === workspaceUnmounted.type)
+        clearWorkspaceGenerations(generations, workspaceId);
+      else generations.delete(key);
       return undefined;
     }
     acquired = true;
@@ -110,10 +112,12 @@ function* readWithPermit(
 
     const read = yield* race({
       result: call(loadFileContentWorker, workspaceId, path),
-      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+      cleanup: take(matchesReadCleanup(workspaceId, path)),
     });
     if (read.cleanup) {
-      clearWorkspaceGenerations(generations, workspaceId);
+      if (read.cleanup.type === workspaceUnmounted.type)
+        clearWorkspaceGenerations(generations, workspaceId);
+      else generations.delete(key);
       return undefined;
     }
     return read.result;
@@ -133,11 +137,12 @@ function clearWorkspaceGenerations(generations: Map<string, number>, workspaceId
   }
 }
 
-function matchesWorkspaceCleanup(workspaceId: string) {
+function matchesReadCleanup(workspaceId: string, path: string) {
   return (action: { type: string; payload?: unknown }) =>
-    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
-    action.payload[0] === workspaceId;
+    action.payload[0] === workspaceId &&
+    (action.type === workspaceUnmounted.type ||
+      (action.type === removeFileContentEntry.type && action.payload[1] === path));
 }
 
 function registerReadGeneration(

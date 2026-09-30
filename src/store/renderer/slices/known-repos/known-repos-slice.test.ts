@@ -1,6 +1,6 @@
 import type { KnownRepo } from '$shared/types/known-repo';
 import { describe, expect, it } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { initialState, knownReposReducer, removeRepo, setRepos } from './known-repos-slice';
 
 const mockRepo = (path: string, name = 'intent'): KnownRepo => ({

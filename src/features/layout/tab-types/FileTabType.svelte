@@ -7,10 +7,7 @@
 
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import {
-    closeTab,
-    updateFileTabPath,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { updateFileTabPath } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectFileContent,
@@ -27,11 +24,11 @@
     removeFileContentEntry,
     saveFileContentRequested,
     updateFileContent,
+    deleteFileWithUndoRequested,
   } from '$store/renderer/slices/files/files-slice';
   import { selectFileTrackingChanges } from '$store/renderer/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { invoke } from '$lib/electron-bridge';
   import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
   import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
   import { notify } from '$lib/components/patterns/notify';
@@ -59,11 +56,9 @@
     toggleDiffIndicators,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import { faDownload, faFloppyDisk, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
-  import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
@@ -288,14 +283,15 @@
   $effect(() => {
     const wsId = workspaceId;
     const filePath = tab.filePath;
+    const rootPath = repoPath;
     return () => {
       if (!wsId || !filePath) return;
       const content = selectFileContent.select(appStore.state, wsId, filePath);
       const dirty = selectFileIsDirty.select(appStore.state, wsId, filePath);
       const absolutePath = isAbsolutePath(filePath)
         ? filePath
-        : repoPath
-          ? `${repoPath}/${filePath}`
+        : rootPath
+          ? `${rootPath}/${filePath}`
           : null;
       if (dirty && content !== null && absolutePath) {
         appStore.dispatch(saveFileContentRequested(wsId, filePath, absolutePath, content));
@@ -450,36 +446,15 @@
     }
   }
 
-  async function handleDeleteFile() {
+  function handleDeleteFile() {
     const absolutePath = fileAbsolutePath;
     if (!tab.filePath || !workspaceId || !absolutePath) return;
-
-    const filePath = tab.filePath;
-    const fileName = filePath.split('/').pop() || m.layout_fileTab_file_fallback();
-    // Capture current content so we can restore on undo
-    const savedContent = selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
-
-    await deleteWithUndo(
-      `"${fileName}"`,
-      async () => {
-        // Delete action
-        const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-          path: filePath,
-          workspaceId,
-        });
-        if (!result?.success) {
-          throw new Error(result?.error || m.ui_workspaceActions_deleteFileFailed_error());
-        }
-        // Close the tab
-        appStore.dispatch(closeTab(workspaceId, tab.id));
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-      },
-      async () => {
-        // Undo action — re-create the file with saved content (immediate write).
-        appStore.dispatch(
-          saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent),
-        );
-      },
+    appStore.dispatch(
+      deleteFileWithUndoRequested(workspaceId, tab.filePath, {
+        absolutePath,
+        tabId: tab.id,
+        content: selectFileContent.select(appStore.state, workspaceId, tab.filePath) ?? '',
+      }),
     );
   }
 

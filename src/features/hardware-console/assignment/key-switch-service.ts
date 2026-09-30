@@ -32,7 +32,7 @@ import { HardwareInputDecoder } from '../input/input-decoder';
 import type { LogicalKeyId } from '../input/types';
 import { agentKeyToSlot, isKeyAssignableWorkspace, resolveKeySlots } from './key-assignment';
 import { isConsoleOwner } from '../owner-gate';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { focusPanel, setActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';

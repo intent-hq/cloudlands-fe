@@ -45,7 +45,7 @@ import {
 } from '$lib/client/live/backend-transport';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
 import {
   hydrateAgentsRequested,

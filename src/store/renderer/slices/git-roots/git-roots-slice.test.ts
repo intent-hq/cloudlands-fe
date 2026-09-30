@@ -3,7 +3,7 @@
  * intent-hq/monorepo#2053).
  */
 import { describe, expect, it } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   initialState as workspaceInitialState,
   removeWorkspaceEntity,

@@ -43,7 +43,7 @@ import { initialState as initialGuestState } from '../../guest-sessions/guest-se
 import { selectIsConnecting, selectIsOpeningConnection } from '../connections-selectors';
 import type { StoreState } from '../../../types';
 import { connectionsSaga } from './connections-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,

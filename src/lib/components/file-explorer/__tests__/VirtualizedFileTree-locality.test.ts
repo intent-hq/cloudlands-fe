@@ -17,6 +17,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: vi.fn(), success: vi.fn() },
 }));
 import { store as appStore } from '$store/renderer/store';
+import { deleteFileWithUndoRequested } from '$store/renderer/slices/files/files-slice';
 import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import {
@@ -111,6 +112,21 @@ describe('VirtualizedFileTree download/reveal locality gating (monorepo#2171)', 
 
   afterEach(() => {
     appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    vi.restoreAllMocks();
+  });
+
+  it('dispatches a workspace-relative delete intent from the file context menu', async () => {
+    appStore.dispatch(
+      setWorkspaceEntity({ id: WorkspaceId(WS_ID), path: '/home/dev/project' } as Workspace),
+    );
+    const dispatch = vi.fn(appStore.dispatch);
+    vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatch);
+    const { container } = render(VirtualizedFileTree, { flattenedNodes, workspaceId: WS_ID });
+    await openFileContextMenu(container);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    expect(dispatch).toHaveBeenCalledWith(
+      deleteFileWithUndoRequested(WS_ID, 'src/index.ts', { absolutePath: FILE_PATH }),
+    );
   });
 
   it('shows Download and Reveal for a local workspace on a local daemon', async () => {

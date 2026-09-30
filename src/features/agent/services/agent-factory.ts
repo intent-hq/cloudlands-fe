@@ -455,6 +455,12 @@ export class UnifiedAgentFactory {
           };
         }
         agent.id = createAgentId(backendResult.agentId);
+        // Only the daemon can confirm the durable prompt identity. An omitted
+        // marker must not leave the requested version in the reusable-chat cache.
+        agent.metadata = {
+          ...agent.metadata,
+          chiefPromptVersion: backendResult.chiefPromptVersion,
+        };
       }
 
       logger.debug('Backend agent created', {
@@ -719,7 +725,13 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
-  ): Promise<{ success: boolean; agentId?: string; error?: string; cause?: unknown }> {
+  ): Promise<{
+    success: boolean;
+    agentId?: string;
+    chiefPromptVersion?: number;
+    error?: string;
+    cause?: unknown;
+  }> {
     try {
       const request = {
         workspaceId: String(agent.workspaceId),
@@ -757,7 +769,11 @@ export class UnifiedAgentFactory {
 
       const created = await appClient.agents.create(request);
 
-      return { success: true, agentId: created.id ? String(created.id) : undefined };
+      return {
+        success: true,
+        agentId: created.id ? String(created.id) : undefined,
+        chiefPromptVersion: created.metadata?.chiefPromptVersion,
+      };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);
       // Keep the thrown error alongside the flattened message: a daemon

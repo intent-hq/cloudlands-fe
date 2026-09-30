@@ -1,4 +1,4 @@
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { OnboardingStep } from '../onboarding/onboarding-types';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';

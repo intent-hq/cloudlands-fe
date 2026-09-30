@@ -6,7 +6,7 @@ import {
   type TerminalPlacement,
   type TerminalTab,
 } from './terminals-slice';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
 function getActiveWs(state: StoreState, wsId: string | null | undefined) {
