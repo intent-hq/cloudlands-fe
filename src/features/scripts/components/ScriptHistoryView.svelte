@@ -5,6 +5,7 @@
   import { ListView, ListRow } from '$lib/components/patterns/collection';
   import type { ScriptWithState } from '../types';
   import { canArchiveScript, searchScripts } from '../utils/script-history';
+  import { formatDateTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -91,7 +92,7 @@
   {#if view === 'cleanup'}<p class="text-xs text-muted-foreground">
       {m.scripts_history_protection_description()}
     </p>{/if}
-  {#if operation?.error}<p role="alert" class="text-sm text-destructive">{operation.error}</p>{/if}
+  {#if operation?.error}<p role="alert" class="text-sm text-danger">{operation.error}</p>{/if}
   {#if operation?.changed !== undefined}<p role="status" class="text-sm text-muted-foreground">
       {m.scripts_history_result_label({
         changed: operation.changed,
@@ -169,7 +170,7 @@
               ? m.scripts_history_exit_label({ code: item.lastRun.exitCode })
               : ''}
           </p>
-          {#if item.lastRun}<p>{item.lastRun.stoppedAt}</p>{/if}
+          {#if item.lastRun}<p>{formatDateTime(item.lastRun.stoppedAt)}</p>{/if}
           {#if item.lastRun?.error}<p class="break-words">{item.lastRun.error}</p>{/if}
         {/snippet}
         {#snippet trailing()}<Button variant="ghost" size="sm" onclick={() => onInspect(item.id)}
