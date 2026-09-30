@@ -9,6 +9,8 @@ import { m } from '$shared/paraglide/messages.js';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import {
+  beginWorkspaceTitleMutation,
+  updateWorkspaceEntity,
   removeWorkspaceEntity,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
@@ -123,4 +125,67 @@ describe('encoder effort preview admission and lifetime', () => {
       expect(screen.getByTestId('effort-picker-trigger').hasAttribute('disabled')).toBe(true);
     },
   );
+});
+
+it.each(['replace', 'update', 'remove and recreate'] as const)(
+  'keeps a later %s and its title/detail metadata after creating the fixture row',
+  async (change) => {
+    await mountPreview();
+    highFeedback();
+    if (change === 'remove and recreate') store.dispatch(removeWorkspaceEntity(workspaceId));
+    if (change === 'update')
+      store.dispatch(updateWorkspaceEntity(workspaceId, { title: 'Updated row' }));
+    else
+      store.dispatch(
+        setWorkspaceEntity(
+          { ...previousWorkspace, title: 'Replacement row' },
+          { detailRead: true },
+        ),
+      );
+    const beforeTitle = selectWorkspaceById.select(store.state, workspaceId)!;
+    store.dispatch(
+      beginWorkspaceTitleMutation(workspaceId, 41, 'Pending title', beforeTitle.title),
+    );
+    const row = selectWorkspaceById.select(store.state, workspaceId);
+    const pending = store.state.workspace.pendingTitleMutations[workspaceId];
+    const detail = store.state.workspace.detailHydrated[workspaceId];
+    cleanup();
+    disposePreview?.();
+    expect(selectWorkspaceById.select(store.state, workspaceId)).toEqual(row);
+    expect(store.state.workspace.pendingTitleMutations[workspaceId]).toEqual(pending);
+    expect(store.state.workspace.detailHydrated[workspaceId]).toBe(detail);
+  },
+);
+
+it('does not remove a later row on a second disposal', async () => {
+  await mountPreview();
+  cleanup();
+  disposePreview?.();
+  expect(selectWorkspaceById.select(store.state, workspaceId)).toBeUndefined();
+  store.dispatch(setWorkspaceEntity(previousWorkspace, { detailRead: true }));
+  disposePreview?.();
+  expect(selectWorkspaceById.select(store.state, workspaceId)).toEqual(previousWorkspace);
+  expect(store.state.workspace.detailHydrated[workspaceId]).toBe(true);
+});
+
+it('does not tear down a newer fixture from an older disposer', async () => {
+  await mountPreview();
+  const oldDispose = disposePreview!;
+  disposePreview = setupEncoderEffortPreview();
+  const row = selectWorkspaceById.select(store.state, workspaceId);
+  oldDispose();
+  await tick();
+  expect(selectWorkspaceById.select(store.state, workspaceId)).toEqual(row);
+  highFeedback();
+});
+
+it('does not mutate a replacement store from an old disposer', async () => {
+  await mountPreview();
+  cleanup();
+  disposeStore();
+  disposeStore = store.init();
+  store.dispatch(setWorkspaceEntity(previousWorkspace, { detailRead: true }));
+  const state = store.state;
+  disposePreview?.();
+  expect(store.state).toBe(state);
 });
