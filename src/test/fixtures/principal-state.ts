@@ -85,23 +85,25 @@ export function withHostPrincipal(
   role: 'owner' | 'member' | 'guest' = 'owner',
 ): StoreState {
   const state = withLegacyPrincipal(input);
-  state.principal = {
-    ...state.principal,
-    snapshot: {
-      ...state.principal.snapshot!,
-      principal: {
-        ...state.principal.snapshot!.principal,
-        hostRole: role,
-        isAdministrator: role === 'owner',
-        hostMembershipRevision: 1,
-      },
-      capabilities: {
-        hostMembership: true,
-        collaborationIdentity: true,
-        personalPairing: true,
-        authenticatedDevices: true,
+  return {
+    ...state,
+    principal: {
+      ...state.principal,
+      snapshot: {
+        ...state.principal.snapshot!,
+        principal: {
+          ...state.principal.snapshot!.principal,
+          hostRole: role,
+          isAdministrator: role === 'owner',
+          hostMembershipRevision: 1,
+        },
+        capabilities: {
+          hostMembership: true,
+          collaborationIdentity: true,
+          personalPairing: true,
+          authenticatedDevices: true,
+        },
       },
     },
   };
-  return state;
 }

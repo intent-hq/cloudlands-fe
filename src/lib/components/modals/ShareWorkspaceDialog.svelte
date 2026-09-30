@@ -237,6 +237,7 @@
   const pinTypeahead = $derived(
     pinProvider === 'github' && (!hostMembershipSupported || githubConnected),
   );
+  let pinHostDraft = $state('gitlab.com');
   const pinProviderItems = $derived(
     [
       { value: 'github', label: m.workspace_share_pinProvider_github_label() },
@@ -254,7 +255,6 @@
   );
 
   let pinLogin = $state('');
-  let pinHostDraft = $state('gitlab.com');
   const selectedPinHost = $derived(
     hostMembershipSupported ? canonicalInviteHost('gitlab', pinHostDraft) : gitlabHost,
   );

@@ -101,15 +101,15 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       yield* call(hostMembershipClient.revokeInvite, command.inviteId);
     }
     if (!(yield* current(target))) return;
-    const [roster, invitationList] = yield* all([
-      call(hostMembershipClient.listMembers),
-      call(hostMembershipClient.listInvites),
-    ]);
+    const { roster, invitationList } = yield* all({
+      roster: call(hostMembershipClient.listMembers),
+      invitationList: call(hostMembershipClient.listInvites),
+    });
     if (!(yield* current(target))) return;
     clearHostInviteLinks(target.session);
     for (const invite of invitationList.invites) {
       if (invite.url) retainHostInviteLink(target.session, invite.id, invite.url);
-      else if (created?.id === invite.id)
+      else if (created && created.id === invite.id)
         retainHostInviteLink(target.session, invite.id, created.url);
     }
     yield* put(
