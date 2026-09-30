@@ -61,6 +61,20 @@ function seed(overrides: Partial<AgentSession> = {}) {
   store.dispatch(addAgent(workspace.id, session));
 }
 const current = () => selectAgentSession.select(store.state, agentId)!;
+// Match AgentLite: mode lives in metadata, and transcripts are not list/detail fields.
+function wireAgent(isBackground: boolean) {
+  const agent = current();
+  return {
+    id: agent.id,
+    workspaceId: agent.workspaceId,
+    name: agent.name,
+    status: agent.status,
+    parentAgentId: agent.parentAgentId,
+    metadata: { ...agent.metadata, isBackground },
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
+  };
+}
 const modeRequests = () => backend.requests.filter((r) => r.method === 'agent.update');
 async function openMenu(keyboard = false) {
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
@@ -94,10 +108,7 @@ describe('AgentCard mode switching', () => {
       });
       backend.onRequest('agent.update', (params) => ({
         success: true,
-        agent: {
-          ...current(),
-          isBackground: (params as { changes: { isBackground: boolean } }).changes.isBackground,
-        },
+        agent: wireAgent((params as { changes: { isBackground: boolean } }).changes.isBackground),
       }));
       render(AgentCard, { agentId, workspace, isBackground }); // stale display prop must not drive the action
       await openMenu(!isBackground);
@@ -135,69 +146,73 @@ describe('AgentCard mode switching', () => {
     },
   );
 
-  it('uses metadata mode, disables pending actions, and retains live delegated work', async () => {
-    seed({
-      parentAgentId: AgentId('parent'),
-      metadata: { isBackground: true, createdByAgentId: 'parent', taskNoteId: 'task' },
-      isStreaming: true,
-      messages: [
-        {
-          id: 'message-1',
-          role: 'user',
-          content: 'Keep working',
-          timestamp: '2026-09-30T00:00:00Z',
-        },
-      ] as AgentSession['messages'],
-    });
-    let resolve!: (value: unknown) => void;
-    backend.onRequest(
-      'agent.update',
-      () =>
-        new Promise((done) => {
-          resolve = done;
+  it.each([true, false])(
+    'saves background=%s while retaining live delegated work',
+    async (isBackground) => {
+      seed({
+        parentAgentId: AgentId('parent'),
+        metadata: { isBackground: !isBackground, createdByAgentId: 'parent', taskNoteId: 'task' },
+        isStreaming: true,
+        messages: [
+          {
+            id: 'message-1',
+            role: 'user',
+            content: 'Keep working',
+            timestamp: '2026-09-30T00:00:00Z',
+          },
+        ] as AgentSession['messages'],
+      });
+      let resolve!: (value: unknown) => void;
+      backend.onRequest(
+        'agent.update',
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      render(AgentCard, { agentId, workspace });
+      await openMenu();
+      const label = isBackground ? 'Move to background' : 'Move to foreground';
+      await fireEvent.click(await screen.findByRole('menuitem', { name: label }));
+      await waitFor(() => expect(modeRequests()).toHaveLength(1));
+      // A second mounted card shares the same pending request state.
+      cleanup();
+      render(AgentCard, { agentId, workspace });
+      await openMenu();
+      await waitFor(() =>
+        expect(screen.getByRole('menuitem', { name: label }).getAttribute('aria-disabled')).toBe(
+          'true',
+        ),
+      );
+      await store.dispatch(setAgentBackgroundRequested(workspace.id, agentId, isBackground));
+      expect(modeRequests()).toHaveLength(1);
+      store.dispatch(
+        updateSession(agentId, {
+          name: 'Live renamed agent',
+          metadata: { ...current().metadata, completionReport: 'New report' },
         }),
-    );
-    render(AgentCard, { agentId, workspace });
-    await openMenu();
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to foreground' }));
-    await waitFor(() => expect(modeRequests()).toHaveLength(1));
-    // A second mounted card shares the same pending request state.
-    cleanup();
-    render(AgentCard, { agentId, workspace });
-    await openMenu();
-    await waitFor(() =>
-      expect(
-        screen.getByRole('menuitem', { name: 'Move to foreground' }).getAttribute('aria-disabled'),
-      ).toBe('true'),
-    );
-    await store.dispatch(setAgentBackgroundRequested(workspace.id, agentId, true));
-    expect(modeRequests()).toHaveLength(1);
-    store.dispatch(
-      updateSession(agentId, {
+      );
+      resolve({ success: true, agent: wireAgent(isBackground) });
+      await waitFor(() =>
+        expect(selectAgentBackgroundPending.select(store.state, agentId)).toBe(false),
+      );
+      expect(current()).toMatchObject({
         name: 'Live renamed agent',
-        metadata: { ...current().metadata, completionReport: 'New report' },
-      }),
-    );
-    resolve({ success: true, agent: { ...current(), isBackground: false } });
-    await waitFor(() =>
-      expect(selectAgentBackgroundPending.select(store.state, agentId)).toBe(false),
-    );
-    expect(current()).toMatchObject({
-      name: 'Live renamed agent',
-      isBackground: false,
-      isStreaming: true,
-      parentAgentId: 'parent',
-      metadata: {
-        isBackground: false,
-        createdByAgentId: 'parent',
-        taskNoteId: 'task',
-        completionReport: 'New report',
-      },
-    });
-    expect(classifyAgentScope(current())).toBe('delegated');
-    expect(current().messages).toHaveLength(1);
-    expect(current().messages[0].id).toBe('message-1');
-  });
+        isBackground,
+        isStreaming: true,
+        parentAgentId: 'parent',
+        metadata: {
+          isBackground,
+          createdByAgentId: 'parent',
+          taskNoteId: 'task',
+          completionReport: 'New report',
+        },
+      });
+      expect(classifyAgentScope(current())).toBe('delegated');
+      expect(current().messages).toHaveLength(1);
+      expect(current().messages[0].id).toBe('message-1');
+    },
+  );
 
   it.each([true, false])(
     'keeps background=%s and unrelated updates after failure, then permits retry',
@@ -226,7 +241,7 @@ describe('AgentCard mode switching', () => {
       expect(current()).toMatchObject({ isBackground, name: 'New name' });
       backend.onRequest('agent.update', () => ({
         success: true,
-        agent: { ...current(), isBackground: !isBackground },
+        agent: wireAgent(!isBackground),
       }));
       await openMenu();
       await fireEvent.click(await screen.findByRole('menuitem', { name: label }));
@@ -237,7 +252,7 @@ describe('AgentCard mode switching', () => {
   it.each([true, false])(
     'reconciles loaded groups and authoritative counts after background=%s',
     async (isBackground) => {
-      seed({ isBackground: !isBackground });
+      seed({ metadata: { isBackground: !isBackground, taskNoteId: 'task' } });
       store.dispatch(setLazyBinLoaded(workspace.id, 'background', true));
       store.dispatch(
         setScopeCounts(workspace.id, {
@@ -249,12 +264,12 @@ describe('AgentCard mode switching', () => {
       let persisted = !isBackground;
       backend.onRequest('agent.update', () => {
         persisted = isBackground;
-        return { success: true, agent: { ...current(), isBackground: persisted } };
+        return { success: true, agent: wireAgent(persisted) };
       });
       backend.onRequest('agent.list', (params) => ({
         agents:
           (params as { scope: string }).scope === (persisted ? 'background' : 'topLevel')
-            ? [{ ...current(), isBackground: persisted }]
+            ? [wireAgent(persisted)]
             : [],
         retiredCount: 0,
         scopeCounts: { topLevel: persisted ? 0 : 1, background: persisted ? 1 : 0, delegated: 0 },
@@ -275,6 +290,14 @@ describe('AgentCard mode switching', () => {
         ]);
         expect(store.state.workspaceAgents.byWorkspaceId[workspace.id].agentIds).toContain(agentId);
         expect(classifyAgentScope(current())).toBe(isBackground ? 'background' : 'topLevel');
+        expect(current().metadata).toMatchObject({ isBackground, taskNoteId: 'task' });
+        render(AgentCard, { agentId, workspace });
+        await openMenu();
+        expect(
+          await screen.findByRole('menuitem', {
+            name: isBackground ? 'Move to foreground' : 'Move to background',
+          }),
+        ).toBeTruthy();
       } finally {
         stopReads();
       }

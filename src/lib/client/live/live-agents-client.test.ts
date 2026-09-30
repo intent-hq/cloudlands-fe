@@ -19,6 +19,7 @@ import {
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
 import { LiveAgentsClient } from './live-agents-client';
+import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 
 describe('LiveAgentsClient mutations (fake transport)', () => {
   let backend: MockBackendHandle;
@@ -1003,9 +1004,14 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
-  it.each([true, false])(
-    'persists background=%s and reads it after reloading',
-    async (isBackground) => {
+  it.each([
+    [true, false],
+    [false, false],
+    [true, true],
+    [false, true],
+  ])(
+    'persists background=%s and reloads (legacy top-level=%s)',
+    async (isBackground, legacyTopLevel) => {
       let persisted = !isBackground;
       const row = () => ({
         id: 'agent-mode',
@@ -1013,8 +1019,12 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         name: 'Mode fixture',
         status: 'active',
         parentAgentId: 'parent',
-        isBackground: persisted,
-        metadata: { isBackground: !persisted, taskNoteId: 'task-note', createdByAgentId: 'parent' },
+        ...(legacyTopLevel ? { isBackground: persisted } : {}),
+        metadata: {
+          isBackground: legacyTopLevel ? !persisted : persisted,
+          taskNoteId: 'task-note',
+          createdByAgentId: 'parent',
+        },
         createdAt: '2026-09-30T00:00:00Z',
         updatedAt: '2026-09-30T00:00:00Z',
       });
@@ -1039,8 +1049,9 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         },
       });
       const reloaded = await new LiveAgentsClient().get('agent-mode', 'ws-mode');
+      expect(isBackgroundAgentSession(reloaded!)).toBe(isBackground);
+      expect(reloaded?.isBackground).toBe(legacyTopLevel ? isBackground : undefined);
       expect(reloaded).toMatchObject({
-        isBackground,
         parentAgentId: 'parent',
         metadata: { isBackground, taskNoteId: 'task-note', createdByAgentId: 'parent' },
       });
