@@ -11,6 +11,9 @@
       imported: { props: { imported: true } },
       'imported-missing-skills': { props: { imported: true, missingSkills: true } },
       'import-diagnostics': { props: { diagnosticCode: 'invalid', emptyCatalog: true } },
+      'import-diagnostics-remote': {
+        props: { diagnosticCode: 'invalid', emptyCatalog: true, diagnosticWorkspace: 'remote' },
+      },
       'import-scan-limit': {
         props: { diagnosticCode: 'scan-limit', diagnosticIsDirectory: true, emptyCatalog: true },
       },
@@ -46,6 +49,8 @@
   import {
     startSpecialistCatalogPreview,
     interceptSpecialistEditorLaunches,
+    diagnosticWorkspaceId,
+    installDiagnosticWorkspace,
   } from './__tests__/specialist-detail.fixture';
 
   let {
@@ -56,6 +61,7 @@
     missingSkills = false,
     diagnosticCode,
     diagnosticIsDirectory = false,
+    diagnosticWorkspace,
     emptyCatalog = false,
     catalogFlow = false,
   }: {
@@ -66,6 +72,7 @@
     missingSkills?: boolean;
     diagnosticCode?: SpecialistImportDiagnostic['code'];
     diagnosticIsDirectory?: boolean;
+    diagnosticWorkspace?: 'local' | 'remote';
     emptyCatalog?: boolean;
     catalogFlow?: boolean;
   } = $props();
@@ -235,6 +242,14 @@
     );
   }
 
+  $effect(() => {
+    if (!diagnosticWorkspace) return;
+    return installDiagnosticWorkspace(
+      diagnosticWorkspace,
+      selectSpecialistImportDiagnostics.select(appStore.state),
+    );
+  });
+
   appStore.dispatch(setOpenAction('vscode'));
   if (catalogFlow) {
     liveCatalog = {
@@ -267,7 +282,9 @@
 </script>
 
 <div class="w-full min-w-0 bg-background p-6 text-foreground" data-specialist-detail-preview>
-  <SpecialistImportDiagnostics />
+  <SpecialistImportDiagnostics
+    workspaceId={diagnosticWorkspace ? diagnosticWorkspaceId : undefined}
+  />
   {#if catalogFlow}
     <!-- i18n-ignore (preview-only test controls) -->
     <Button data-testid="fail-catalog-refresh" onclick={() => refreshCatalog(false, true)}

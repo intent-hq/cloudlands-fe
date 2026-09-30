@@ -236,6 +236,55 @@ for (const [code, reason] of [
   });
 }
 
+for (const isDirectory of [false, true]) {
+  test(`diagnostic Open respects remote workspace locality for a ${isDirectory ? 'directory' : 'file'}`, async ({
+    mount,
+    page,
+    context,
+  }, testInfo) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const props = {
+      diagnosticCode: isDirectory ? ('scan-limit' as const) : ('invalid' as const),
+      diagnosticIsDirectory: isDirectory,
+      emptyCatalog: true,
+      diagnosticWorkspace: 'remote' as const,
+    };
+    const component = await mount(SpecialistDetailPreview, { props });
+    const panel = component.getByRole('region', { name: 'Claude agent import notices' });
+    const path = isDirectory
+      ? '/tmp/intent-demo/.claude/agents'
+      : '/tmp/intent-demo/.claude/agents/skipped-agent.md';
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Open', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Open in...' })).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Copy path', exact: true }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+    await expect(component.getByTestId('editor-launches')).toHaveText('[]');
+    await testInfo.attach('remote-diagnostic-copy-only', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
+
+    await component.update({ props: { ...props, diagnosticWorkspace: 'local' } });
+    await panel.getByRole('button', { name: 'Open', exact: true }).click();
+    await expect
+      .poll(async () => JSON.parse(await component.getByTestId('editor-launches').innerText()))
+      .toEqual([
+        {
+          channel: 'vscode:open',
+          args: [isDirectory ? path : { folder: path.slice(0, path.lastIndexOf('/')), file: path }],
+        },
+      ]);
+    await testInfo.attach('local-diagnostic-editor', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
+    await component.update({ props });
+    await expect(panel.getByRole('button', { name: 'Open', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Copy path', exact: true })).toBeVisible();
+  });
+}
+
 test('missing Claude skills clear after a catalog refresh without unlocking edits', async ({
   mount,
   page,

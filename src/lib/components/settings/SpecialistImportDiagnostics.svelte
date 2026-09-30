@@ -41,6 +41,7 @@
               >{diagnostic.path.split(/[\\/]/).pop()}</span
             >
             <OpenComboButton
+              {workspaceId}
               filePath={diagnostic.path}
               isDirectory={diagnostic.isDirectory === true}
             />
