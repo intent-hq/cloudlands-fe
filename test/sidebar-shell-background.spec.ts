@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { resolve } from 'node:path';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { createServer, type ViteDevServer } from 'vite';
-import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import type { ViteDevServer } from 'vite';
+import { createSidebarShellServer } from './sidebar-shell-server';
 import { prepareSidebarShell } from './sidebar-shell-import';
 
 let server: ViteDevServer;
@@ -10,42 +8,8 @@ let baseUrl: string;
 
 test.describe.configure({ mode: 'serial' });
 
-test.beforeAll(async () => {
-  const chiefStub = resolve(process.cwd(), 'test/fixtures/SidebarShellChiefStub.svelte');
-  server = await createServer({
-    configFile: false,
-    root: process.cwd(),
-    cacheDir: viteHarnessCacheDir('sidebar-shell-background'),
-    plugins: [
-      {
-        name: 'sidebar-shell-test-stubs',
-        enforce: 'pre',
-        resolveId(id) {
-          return id.endsWith('/cards/ChiefCard.svelte') ? chiefStub : null;
-        },
-      },
-      svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') }),
-    ],
-    optimizeDeps: { entries: [] },
-    resolve: {
-      alias: [
-        { find: '$lib', replacement: resolve(process.cwd(), 'src/lib') },
-        { find: '$store', replacement: resolve(process.cwd(), 'src/store') },
-        { find: '$features', replacement: resolve(process.cwd(), 'src/features') },
-        { find: '$shared', replacement: resolve(process.cwd(), 'src/shared') },
-        { find: '$app', replacement: resolve(process.cwd(), 'playwright/app-stubs') },
-        {
-          find: /^@fortawesome\/(?:fontawesome-common-types|fontawesome-svg-core|free-brands-svg-icons|free-regular-svg-icons|free-solid-svg-icons)$/,
-          replacement: resolve(process.cwd(), 'src/lib/icons/phosphor-icons.ts'),
-        },
-        {
-          find: /^svelte-fa$/,
-          replacement: resolve(process.cwd(), 'src/lib/components/shared/icons/fa-proxy.ts'),
-        },
-      ],
-    },
-    server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
-  });
+test.beforeAll(async ({}, workerInfo) => {
+  server = await createSidebarShellServer(workerInfo.workerIndex);
   await server.listen();
   baseUrl = server.resolvedUrls?.local[0] ?? '';
 });

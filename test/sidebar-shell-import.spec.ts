@@ -1,95 +1,108 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import type { ServerResponse } from 'node:http';
+import { createSidebarShellServer } from './sidebar-shell-server';
 import { prepareSidebarShell } from './sidebar-shell-import';
 
-test('sets up each document before importing the sidebar fixture after controlled replacement', async ({
+const fixture = '/test/fixtures/SidebarShellBackgroundHost.svelte';
+
+test('recovers an actual in-flight fixture import across document replacement', async ({
   page,
-}, testInfo) => {
-  const baseUrl = 'http://sidebar-import.test/';
-  const documentEnvironments: unknown[] = [];
-  let replacements = 0;
-  let evaluations = 0;
-  let fixtureRequests = 0;
-  await page.route(`${baseUrl}**`, async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/src/app.html') {
-      await route.fulfill({
-        contentType: 'text/html',
-        body: `<script>
-          globalThis.__environmentAtDocumentStart = globalThis.process?.env?.NODE_ENV ?? null;
-        </script>`,
-      });
-    } else if (path === '/test/fixtures/SidebarShellBackgroundHost.svelte') {
-      fixtureRequests += 1;
-      await route.fulfill({
-        contentType: 'text/javascript',
-        body: `
-          if (globalThis.process?.env?.NODE_ENV !== 'test') throw new Error('FIXTURE_SETUP_MISSING');
-          globalThis.__sidebarFixtureImported = true;
-          export {};
-        `,
-      });
-    } else {
-      await route.abort();
-    }
+}, info) => {
+  test.setTimeout(120_000);
+  let interrupted: ServerResponse | undefined;
+  let notifyRequest!: () => void;
+  const requested = new Promise<void>((resolve) => {
+    notifyRequest = resolve;
   });
-
-  const evaluate = page.evaluate.bind(page);
-  // Delegate to the real Page; replace its document just before the first import operation.
-  // This is a controlled navigation, not a reproduction of a natural optimizer reload.
-  page.evaluate = (async (fn, arg) => {
-    evaluations += 1;
-    if (evaluations === 2) {
-      documentEnvironments.push(
-        await evaluate(() => Reflect.get(globalThis, '__environmentAtDocumentStart')),
-      );
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      replacements += 1;
-      documentEnvironments.push(
-        await evaluate(() => Reflect.get(globalThis, '__environmentAtDocumentStart')),
-      );
-    }
-    return evaluate(fn, arg);
-  }) as Page['evaluate'];
-
-  let failure: unknown;
-  const failures: unknown[] = [];
+  let fixtureRequests = 0;
+  const server = await createSidebarShellServer(info.workerIndex, 'sidebar-import-controls', [
+    {
+      name: 'hold-first-fixture-request',
+      configureServer(vite) {
+        vite.middlewares.use((req, res, next) => {
+          if (req.url?.split('?')[0] === fixture && ++fixtureRequests === 1) {
+            interrupted = res;
+            notifyRequest();
+            return;
+          }
+          next();
+        });
+      },
+    },
+  ]);
+  let preparation: Promise<unknown> | undefined;
   try {
-    await prepareSidebarShell(page, baseUrl).catch((error: unknown) => {
-      failure = error;
+    await server.listen();
+    const base = server.resolvedUrls!.local[0];
+    // No Page method replacement or synthetic module: the production helper
+    // evaluates the real Svelte fixture over HTTP through the real Vite server.
+    preparation = prepareSidebarShell(page, base).then(
+      () => null,
+      (error) => error,
+    );
+    await requested;
+    const aborted = page.waitForEvent('requestfailed', (request) =>
+      request.url().includes(fixture),
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const failedRequest = await aborted;
+    interrupted?.destroy();
+    expect(await preparation).toBeNull();
+    expect(failedRequest.failure()?.errorText).toBeTruthy();
+    expect(fixtureRequests).toBeGreaterThanOrEqual(2);
+    expect(await page.evaluate(() => Reflect.get(globalThis, 'process').env.NODE_ENV)).toBe('test');
+    expect(
+      await page.evaluate(
+        async () =>
+          typeof (await import('/test/fixtures/SidebarShellBackgroundHost.svelte')).default,
+      ),
+    ).toBe('function');
+    await info.attach('import-replacement', {
+      body: JSON.stringify({
+        fixtureRequests,
+        failure: failedRequest.failure(),
+        url: failedRequest.url(),
+      }),
+      contentType: 'application/json',
     });
-    expect(replacements).toBe(1);
-    expect(documentEnvironments).toEqual(['test', 'test']);
-    expect(failure).toBeUndefined();
-    expect(fixtureRequests).toBe(1);
-    expect(await evaluate(() => Reflect.get(globalThis, '__sidebarFixtureImported'))).toBe(true);
-  } catch (error) {
-    failures.push(error);
-    if (failure !== undefined && failure !== error) failures.push(failure);
   } finally {
-    page.evaluate = evaluate;
-    try {
-      await testInfo.attach('controlled-document-replacement', {
-        body: JSON.stringify({
-          replacements,
-          documentEnvironments,
-          fixtureRequests,
-          failure: String(failure),
-        }),
-        contentType: 'application/json',
-      });
-    } catch (error) {
-      failures.push(new Error('Attaching document replacement evidence failed', { cause: error }));
-    }
-    try {
-      await page.unrouteAll({ behavior: 'wait' });
-    } catch (error) {
-      failures.push(new Error('Removing document replacement routes failed', { cause: error }));
-    }
+    interrupted?.destroy();
+    await page.close();
+    await preparation;
+    await server.close();
   }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) {
-    throw new AggregateError(failures, 'Document replacement control and finalization failed', {
-      cause: failures[0],
-    });
+});
+
+test('permanent HTTP fixture failure remains an import failure and never mounts', async ({
+  page,
+}, info) => {
+  let requests = 0;
+  const server = await createSidebarShellServer(info.workerIndex, 'sidebar-import-failure', [
+    {
+      name: 'permanent-fixture-failure',
+      configureServer(vite) {
+        vite.middlewares.use((req, res, next) => {
+          if (req.url?.split('?')[0] !== fixture) return next();
+          requests += 1;
+          res.statusCode = 503;
+          res.end('CONTROLLED_FIXTURE_UNAVAILABLE');
+        });
+      },
+    },
+  ]);
+  try {
+    await server.listen();
+    const failure = await prepareSidebarShell(page, server.resolvedUrls!.local[0]).then(
+      () => null,
+      (error) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).toContain('Failed to fetch dynamically imported module');
+    // Browser module failures are cached; retrying evaluate must not manufacture success.
+    expect(requests).toBe(1);
+    await expect(page.locator('.sidebar-panel')).toHaveCount(0);
+  } finally {
+    await page.close();
+    await server.close();
   }
 });

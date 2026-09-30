@@ -1,27 +1,68 @@
-name: Corrected sidebar cache matrix
-'on':
+name: Sidebar harness cold and warm controls
+on:
   pull_request:
-    types: [synchronize]
+    types: [opened, synchronize, reopened]
     branches: [main]
+    paths:
+      - 'test/vite-harness-cache.*'
+      - 'test/workspace-tab-strip-status-geometry.spec.ts'
+      - 'test/sidebar-shell-*'
+      - 'scripts/sidebar-shell-import.test.ts'
+      - 'scripts/vite-harness-cache.test.mjs'
+      - 'scripts/sidebar-corrected-pair.py'
+      - '.github/workflows/sidebar-corrected-matrix.yml'
 permissions:
   contents: read
 concurrency:
-  group: sidebar-corrected-matrix-pr2976
+  group: sidebar-harness-${{ github.event.number }}
   cancel-in-progress: false
 jobs:
-  strip-observation:
-    if: >-
-      github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
-      github.repository == 'intent-hq/cloudlands-fe' && github.event.number == 2976 &&
-      github.event.pull_request.state == 'open' && github.event.pull_request.draft == true &&
-      github.event.pull_request.user.login == 'panghy' &&
-      github.event.pull_request.head.repo.full_name == 'intent-hq/cloudlands-fe' &&
-      github.event.pull_request.head.ref == 'fix/5740-browser-harness-readiness' &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.before == 'd7bdc3034e43b7db7e167ae4d46cd163f843dd59' &&
-      github.event.after == github.event.pull_request.head.sha &&
-      github.run_attempt == '1' && github.run_number == '3'
-    uses: ./.github/workflows/sidebar-corrected-pair.yml
-    with:
-      workers: 2
-      controller_sha: ${{ github.event.pull_request.head.sha }}
+  controls:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: gh-linux-8x
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        workers: [1, 2]
+    env:
+      CI: 'true'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.21.0'
+          cache: pnpm
+      - name: Install and generate ordinary harness inputs
+        timeout-minutes: 8
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run generate:i18n
+          pnpm run generate:ipc-channels
+          pnpm exec playwright install chromium
+      - name: Focused pure controls
+        timeout-minutes: 2
+        run: |
+          node --test scripts/vite-harness-cache.test.mjs
+          pnpm exec vitest run scripts/sidebar-shell-import.test.ts
+      - name: Cold then unchanged warm cache, retries zero
+        timeout-minutes: 32
+        run: python3 scripts/sidebar-corrected-pair.py ${{ matrix.workers }} "$RUNNER_TEMP/harness-results"
+      - name: Preserve first-attempt evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidebar-harness-workers-${{ matrix.workers }}
+          path: ${{ runner.temp }}/harness-results
+          retention-days: 7
+          if-no-files-found: warn
