@@ -4954,24 +4954,35 @@ describe('ModelPicker cache hydration and explicit revalidation', () => {
   });
 
   it('refreshes a mounted workspace picker after host-context invalidation with unchanged providers', async () => {
-    seedCache('ws-1');
-    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
-      models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }],
-    });
-    render(ModelPicker, {
-      props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
-    });
-    const trigger = screen.getByRole('button');
-    expect(trigger.textContent).toContain('Claude Sonnet 4.6');
-    await tick();
-    const observers = mockProviderModelsState.observers;
-    mockAppStore.dispatch(hostExecutionInvalidated());
-    await waitFor(() => expect(trigger.textContent).toContain('Current host Sonnet'));
-    expect(mockProviderModelsState.observers).toBe(observers);
-    expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
-      workspaceId: 'ws-1',
-    });
-    expect(trigger.querySelector('.animate-pulse')).toBeNull();
+    vi.useFakeTimers();
+    try {
+      seedCache('ws-1');
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+        models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }],
+      });
+      render(ModelPicker, {
+        props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+      });
+      const trigger = screen.getByRole('button');
+      expect(trigger.textContent).toContain('Claude Sonnet 4.6');
+      await tick();
+      // Complete the real membership debounce before invalidation, so an
+      // initial observation cannot accidentally rescue the missing reload.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
+      const observers = mockProviderModelsState.observers;
+      mockAppStore.dispatch(hostExecutionInvalidated());
+      await vi.advanceTimersByTimeAsync(0);
+      await tick();
+      expect(trigger.textContent).toContain('Current host Sonnet');
+      expect(mockProviderModelsState.observers).toBe(observers);
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
+        workspaceId: 'ws-1',
+      });
+      expect(trigger.querySelector('.animate-pulse')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('replaces a held mounted workspace catalog after host-context invalidation without stale rows', async () => {

@@ -26,6 +26,7 @@ import {
 import type { ProviderModelsRequest, ProviderModelsRequestMode } from '../provider-models-types';
 import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import { providerModelsContextKey } from '../provider-models-utils';
+import { hostExecutionInvalidated } from '../../host-execution/host-execution-slice';
 
 type CatalogRead = {
   providerId: string;
@@ -198,7 +199,7 @@ export function* providerModelsSaga() {
         }
       }
     });
-    yield* takeEvery(providerModelsCacheCleared, function* () {
+    yield* takeEvery([providerModelsCacheCleared, hostExecutionInvalidated], function* () {
       for (const [key, { providerId, workspaceId }] of Object.entries(
         yield* selectObservedModelProviders.effect(),
       )) {
