@@ -126,6 +126,18 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
       await expect(messages.filter({ hasText: 'CHILD_ONLY:' }).last()).toBeVisible({
         timeout: 60_000,
       });
+      // Delegated requests are attributed messages, collapsed by default.
+      const delegatedRequest = messages.filter({
+        has: page.getByTestId('agent-message-attribution'),
+      });
+      await expect(delegatedRequest).toHaveCount(1);
+      await expect(delegatedRequest.getByTestId('agent-message-actor-name')).toHaveText(
+        (await parentCard.getByRole('heading').innerText()).trim(),
+      );
+      const disclosure = delegatedRequest.getByTestId('agent-message-disclosure-toggle');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      await disclosure.click();
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
       await expect(messages.filter({ hasText: 'CHILD_REQUEST:' })).toBeVisible();
       await expect(messages.filter({ hasText: 'PARENT_ONLY:' })).toHaveCount(0);
       await expect(messages.filter({ hasText: 'PARENT_REQUEST:' })).toHaveCount(0);
