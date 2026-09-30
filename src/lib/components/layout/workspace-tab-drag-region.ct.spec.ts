@@ -150,3 +150,76 @@ test('non-overflowing tabs keep their controls inside the bounded no-drag region
     .click();
   await expect(component.locator('[data-workspace-tab="geometry-alpha"]')).toHaveCount(0);
 });
+
+for (const admittedOwner of [false, true]) {
+  test(`tab overflow stays stable across frames and resizes ${admittedOwner ? 'with' : 'without'} the launcher`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 1200, height: 400 });
+    const component = await mount(WorkspaceTabDragRegionHarness, { props: { admittedOwner } });
+    const titlebar = component.locator('.window-title-bar');
+    const launcher = component.locator('[data-workspace-repo-launcher] button');
+    await expect(launcher).toHaveCount(admittedOwner ? 1 : 0);
+
+    for (const [stage, width, overflow] of [
+      ['wide', 1200, false],
+      ['narrow', 720, true],
+      ['wide-again', 1200, false],
+    ] as const) {
+      await page.setViewportSize({ width, height: 400 });
+      await dragRegionGeometry(titlebar);
+      // A single sample (even after capture readiness) can catch only the fitting
+      // half of an overflow/ResizeObserver cycle. Every following frame must agree.
+      const frames = await titlebar.evaluate(async (root) => {
+        const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
+        const launcher = root.querySelector<HTMLElement>('[data-workspace-repo-launcher]');
+        const frames = [];
+        for (let index = 0; index < 24; index += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          const bounds = strip.getBoundingClientRect();
+          frames.push({
+            overflow: strip.scrollWidth > strip.clientWidth,
+            width: bounds.width,
+            scrollWidth: strip.scrollWidth,
+            clientWidth: strip.clientWidth,
+            // The trailing padding can overlap the gap; visible tab controls cannot.
+            launcherOverlap: launcher
+              ? Array.from(strip.querySelectorAll('[data-workspace-tab]')).some((tab) => {
+                  const tabBounds = tab.getBoundingClientRect();
+                  return (
+                    Math.min(tabBounds.right, bounds.right) > launcher.getBoundingClientRect().left
+                  );
+                })
+              : false,
+          });
+        }
+        return frames;
+      });
+      await testInfo.attach(`${stage}-overflow-frames`, {
+        body: JSON.stringify(frames, null, 2),
+        contentType: 'application/json',
+      });
+      expect(
+        frames.map((frame) => frame.overflow),
+        `${stage}: overflow must not oscillate`,
+      ).toEqual(Array(24).fill(overflow));
+      const widths = frames.map((frame) => frame.width);
+      expect(
+        Math.max(...widths) - Math.min(...widths),
+        `${stage}: stationary controls must not move`,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        frames.some((frame) => frame.launcherOverlap),
+        `${stage}: tabs must not cover the launcher`,
+      ).toBe(false);
+      if (admittedOwner) await launcher.click({ trial: true });
+      await component.locator('[data-titlebar-settings]').click({ trial: true });
+    }
+    await testInfo.attach('stable-titlebar', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+  });
+}

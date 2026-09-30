@@ -885,12 +885,14 @@
     data-workspace-tab-list
   ></div>
   <!-- Clipped tabs must not carve titlebar no-drag holes. The lead-in keeps
-       the flare visible; the right margin reserves the launcher gap on overflow. -->
+       the flare visible; the right margin reserves the launcher gap on overflow.
+       Let flex shrink bound the strip: a percentage max-width against the intrinsic
+       parent makes the overflow-dependent margin toggle overflow every frame. -->
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
+      'flex w-fit min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
