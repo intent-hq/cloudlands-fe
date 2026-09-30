@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "Der Zugriff erfolgt über die Hostmitgliedschaft. Bitte den Hosteigentümer, diese zu entfernen; das Verlassen dieses Arbeitsbereichs hebt den geerbten Zugriff nicht auf.",
   "collaboration_host_revoke_title": "Host-Einladung widerrufen",
   "collaboration_host_revoke_description": "Diese Einladung kann kein Mitglied mehr aufnehmen. Bereits beigetretene Personen behalten ihren Zugriff.",
-  "collaboration_pin_unverifiable_error": "Diese Instanz konnte das Konto nicht verifizieren. Prüfe den öffentlichen Profilzugriff und versuche es erneut."
+  "collaboration_pin_unverifiable_error": "Diese Instanz konnte das Konto nicht verifizieren. Prüfe den öffentlichen Profilzugriff und versuche es erneut.",
+  "presence_role_owner": "Host-Eigentümer",
+  "presence_role_member": "Host-Mitglied",
+  "presence_role_guest": "Arbeitsbereichsgast",
+  "presence_status_online": "Online",
+  "presence_status_offline": "Offline",
+  "presence_status_viewing": "Online · Sieht diesen Arbeitsbereich an",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

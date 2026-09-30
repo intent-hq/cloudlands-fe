@@ -1,3 +1,5 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 /**
  * @vitest-environment jsdom
  *
@@ -175,7 +177,11 @@ const accepted = (principalId: string, role: WorkspaceMember['role']): Workspace
   addedAt: '2026-09-14T12:00:00Z',
 });
 const presenceState = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), presenceInitialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...presenceInitialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1'],
+  });
 const membership = presenceMembersReceived('ws-1', [
   accepted('me', 'owner'),
   accepted('ada', 'collaborator'),
@@ -198,7 +204,9 @@ async function renderProgressCard({
   myRole = 'owner' as Workspace['myRole'],
   memberCount = 4,
 } = {}) {
-  mocks.state.presence = presence;
+  const admitted = withLegacyPrincipal(mocks.state);
+  Object.assign(mocks.state, admitted);
+  mocks.state.presence = { ...presence, context: selectPrincipalActionContext.select(admitted) };
   mocks.state.workspace.workspaces = createCollection('id', [
     { id: WorkspaceId('ws-1'), title: 'Shared Workspace', ownerPrincipalId: 'me', memberCount },
   ] as Workspace[]);
@@ -231,7 +239,7 @@ describe('WorkspaceProgressCard presence row', () => {
     mocks.navigateToNote.mockClear();
     mocks.notes.length = 0;
     mocks.agents.length = 0;
-    mocks.state.userPreferences = undefined;
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
   });
 
   it('renders nothing for an unshared workspace, keeping the rest of the metadata block', async () => {
@@ -508,6 +516,26 @@ describe('WorkspaceProgressCard presence row', () => {
         type: openAgentTabRequested.type,
         payload: ['ws-1', expect.objectContaining({ agentId: 'agent-1' })],
       }),
+    );
+  });
+});
+
+describe('presence rollout mounted boundary', () => {
+  it('hides the complete row when Multiplayer is disabled, including focused avatars', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: false };
+    await renderProgressCard();
+    expect(presenceRow()).toBeNull();
+    expect(document.querySelector('[data-presence-person-button]')).toBeNull();
+  });
+  it('refuses a captured avatar click after admission invalidation', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.dispatch.mockClear();
+    await renderProgressCard();
+    const button = personButton('ada');
+    mocks.state.userPreferences = { labsMultiplayerEnabled: false };
+    await fireEvent.click(button);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: openAgentTabRequested.type }),
     );
   });
 });

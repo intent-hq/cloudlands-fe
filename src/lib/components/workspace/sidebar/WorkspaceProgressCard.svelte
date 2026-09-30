@@ -96,12 +96,14 @@
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
     presencePersonNameWithForge,
+    presencePersonLabel,
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
   import {
     selectWorkspacePresenceFocusTargets,
     selectWorkspacePresencePeople,
+    selectPresenceContext,
   } from '$store/renderer/slices/presence/presence-selectors';
   import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -468,23 +470,41 @@
     const allNotes = $notes;
     const wsId = $workspace?.id ? String($workspace.id) : undefined;
     const share = shareAction?.onClick ?? null;
+    const context = selectPresenceContext.select(appStore.state);
     return (person: PresenceCircle): PresenceCircleAction => {
       // The hover names the person's forge too: "Ada · @ada on GitHub · on Coordinator".
-      const name = presencePersonNameWithForge(person);
+      const name = person.hostRole
+        ? presencePersonLabel(person)
+        : presencePersonNameWithForge(person);
       const target = targets[person.principalId];
+      const guarded = (action: (event: MouseEvent) => void) => (event: MouseEvent) => {
+        if (!wsId || !context || context !== selectPresenceContext.select(appStore.state)) return;
+        if (
+          !selectWorkspacePresencePeople
+            .select(appStore.state, wsId)
+            .some((p) => p.principalId === person.principalId)
+        )
+          return;
+        const currentTarget = selectWorkspacePresenceFocusTargets.select(appStore.state, wsId)[
+          person.principalId
+        ];
+        if (JSON.stringify(currentTarget) !== JSON.stringify(target)) return;
+        action(event);
+      };
       if (target?.kind === 'agent') {
         const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
         return {
           label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
           onSelect: wsId
-            ? (event) =>
+            ? guarded((event) =>
                 appStore.dispatch(
                   openAgentTabRequested(wsId, {
                     agentId: target.agentId,
                     sourcePanelId: findSourcePanelId(event.target),
                     openInAdjacentPanel: isCmdClickModifier({ event }),
                   }),
-                )
+                ),
+              )
             : null,
         };
       }
@@ -492,14 +512,18 @@
         const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
         return {
           label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
-          onSelect: wsId ? () => void navigateToNote(target.noteId, { workspaceId: wsId }) : null,
+          onSelect: wsId
+            ? guarded(() => void navigateToNote(target.noteId, { workspaceId: wsId }))
+            : null,
         };
       }
       return {
-        label: person.online
-          ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
-          : m.workspace_progressCard_presenceOffline_tooltip({ name }),
-        onSelect: share,
+        label: person.hostRole
+          ? name
+          : person.online
+            ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
+            : m.workspace_progressCard_presenceOffline_tooltip({ name }),
+        onSelect: share ? guarded(share) : null,
       };
     };
   });

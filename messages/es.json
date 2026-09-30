@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "El acceso a este espacio procede de la pertenencia al host. Pide al propietario que la elimine; salir del espacio no elimina el acceso heredado.",
   "collaboration_host_revoke_title": "Revocar invitación al host",
   "collaboration_host_revoke_description": "Esta invitación ya no permitirá incorporar a un miembro. Quienes ya se hayan unido conservarán su acceso.",
-  "collaboration_pin_unverifiable_error": "Esta instancia no pudo verificar la cuenta. Comprueba el acceso al perfil público e inténtalo de nuevo."
+  "collaboration_pin_unverifiable_error": "Esta instancia no pudo verificar la cuenta. Comprueba el acceso al perfil público e inténtalo de nuevo.",
+  "presence_role_owner": "Propietario del host",
+  "presence_role_member": "Miembro del host",
+  "presence_role_guest": "Invitado del espacio de trabajo",
+  "presence_status_online": "En línea",
+  "presence_status_offline": "Sin conexión",
+  "presence_status_viewing": "En línea · Viendo este espacio de trabajo",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

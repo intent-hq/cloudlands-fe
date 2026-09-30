@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "This workspace is accessible through host membership. Ask the host owner to remove that membership; leaving this workspace cannot remove inherited access.",
   "collaboration_host_revoke_title": "Revoke host invitation",
   "collaboration_host_revoke_description": "This invitation will no longer admit a member. People who already joined keep their access.",
-  "collaboration_pin_unverifiable_error": "This instance could not verify the account. Check its public profile access and try again."
+  "collaboration_pin_unverifiable_error": "This instance could not verify the account. Check its public profile access and try again.",
+  "presence_role_owner": "Host owner",
+  "presence_role_member": "Host member",
+  "presence_role_guest": "Workspace guest",
+  "presence_status_online": "Online",
+  "presence_status_offline": "Offline",
+  "presence_status_viewing": "Online · Viewing this workspace",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

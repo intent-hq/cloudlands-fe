@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "此工作区通过主机成员身份授予访问权限。请让主机所有者移除成员身份；离开此工作区无法移除继承的访问权限。",
   "collaboration_host_revoke_title": "撤销主机邀请",
   "collaboration_host_revoke_description": "此邀请将无法再接纳成员。已加入的用户将保留访问权限。",
-  "collaboration_pin_unverifiable_error": "此实例无法验证该账户。请检查公开个人资料的访问权限后重试。"
+  "collaboration_pin_unverifiable_error": "此实例无法验证该账户。请检查公开个人资料的访问权限后重试。",
+  "presence_role_owner": "主机所有者",
+  "presence_role_member": "主机成员",
+  "presence_role_guest": "工作区访客",
+  "presence_status_online": "在线",
+  "presence_status_offline": "离线",
+  "presence_status_viewing": "在线 · 正在查看此工作区",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

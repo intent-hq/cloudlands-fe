@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "このワークスペースにはホストのメンバー資格でアクセスしています。削除はホスト所有者に依頼してください。ワークスペースから退出しても継承されたアクセスは解除されません。",
   "collaboration_host_revoke_title": "ホストへの招待を取り消す",
   "collaboration_host_revoke_description": "この招待ではメンバーを追加できなくなります。すでに参加したユーザーのアクセス権は維持されます。",
-  "collaboration_pin_unverifiable_error": "このインスタンスではアカウントを確認できませんでした。公開プロフィールへのアクセスを確認して、もう一度お試しください。"
+  "collaboration_pin_unverifiable_error": "このインスタンスではアカウントを確認できませんでした。公開プロフィールへのアクセスを確認して、もう一度お試しください。",
+  "presence_role_owner": "ホストの所有者",
+  "presence_role_member": "ホストのメンバー",
+  "presence_role_guest": "ワークスペースのゲスト",
+  "presence_status_online": "オンライン",
+  "presence_status_offline": "オフライン",
+  "presence_status_viewing": "オンライン · このワークスペースを表示中",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

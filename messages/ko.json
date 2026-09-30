@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "이 워크스페이스는 호스트 멤버십으로 접근할 수 있습니다. 호스트 소유자에게 멤버십 제거를 요청하세요. 워크스페이스를 떠나도 상속된 접근은 제거되지 않습니다.",
   "collaboration_host_revoke_title": "호스트 초대 취소",
   "collaboration_host_revoke_description": "이 초대로는 더 이상 멤버를 추가할 수 없습니다. 이미 참여한 사용자의 접근 권한은 유지됩니다.",
-  "collaboration_pin_unverifiable_error": "이 인스턴스에서 계정을 확인할 수 없습니다. 공개 프로필 접근 권한을 확인하고 다시 시도하세요."
+  "collaboration_pin_unverifiable_error": "이 인스턴스에서 계정을 확인할 수 없습니다. 공개 프로필 접근 권한을 확인하고 다시 시도하세요.",
+  "presence_role_owner": "호스트 소유자",
+  "presence_role_member": "호스트 멤버",
+  "presence_role_guest": "워크스페이스 게스트",
+  "presence_status_online": "온라인",
+  "presence_status_offline": "오프라인",
+  "presence_status_viewing": "온라인 · 이 워크스페이스 보는 중",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

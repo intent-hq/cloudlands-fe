@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "Cet espace est accessible via l’appartenance à l’hôte. Demandez au propriétaire de la retirer ; quitter cet espace ne supprime pas l’accès hérité.",
   "collaboration_host_revoke_title": "Révoquer l’invitation à l’hôte",
   "collaboration_host_revoke_description": "Cette invitation ne permettra plus d’ajouter un membre. Les personnes déjà inscrites conservent leur accès.",
-  "collaboration_pin_unverifiable_error": "Cette instance n’a pas pu vérifier le compte. Vérifiez l’accès au profil public et réessayez."
+  "collaboration_pin_unverifiable_error": "Cette instance n’a pas pu vérifier le compte. Vérifiez l’accès au profil public et réessayez.",
+  "presence_role_owner": "Propriétaire de l’hôte",
+  "presence_role_member": "Membre de l’hôte",
+  "presence_role_guest": "Invité de l’espace de travail",
+  "presence_status_online": "En ligne",
+  "presence_status_offline": "Hors ligne",
+  "presence_status_viewing": "En ligne · Consulte cet espace de travail",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }

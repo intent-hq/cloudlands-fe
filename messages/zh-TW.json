@@ -6921,5 +6921,12 @@
   "collaboration_workspace_inherited_error": "此工作區透過主機成員身分授予存取權限。請讓主機擁有者移除成員身分；離開此工作區無法移除繼承的存取權限。",
   "collaboration_host_revoke_title": "撤銷主機邀請",
   "collaboration_host_revoke_description": "此邀請將無法再接納成員。已加入的使用者將保留存取權限。",
-  "collaboration_pin_unverifiable_error": "此執行個體無法驗證該帳號。請檢查公開個人資料的存取權限後重試。"
+  "collaboration_pin_unverifiable_error": "此執行個體無法驗證該帳號。請檢查公開個人資料的存取權限後重試。",
+  "presence_role_owner": "主機擁有者",
+  "presence_role_member": "主機成員",
+  "presence_role_guest": "工作區訪客",
+  "presence_status_online": "上線",
+  "presence_status_offline": "離線",
+  "presence_status_viewing": "上線 · 正在檢視此工作區",
+  "presence_person_roleStatus": "{name} · {role} · {status}"
 }
