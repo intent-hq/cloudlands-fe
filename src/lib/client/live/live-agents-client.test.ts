@@ -19,6 +19,7 @@ import {
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
 import { LiveAgentsClient } from './live-agents-client';
+import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 
 describe('LiveAgentsClient mutations (fake transport)', () => {
   let backend: MockBackendHandle;
@@ -1001,6 +1002,73 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       workspaceId: 'ws-1',
       changes: { reasoningEffort: null },
     });
+  });
+
+  it.each([
+    [true, false],
+    [false, false],
+    [true, true],
+    [false, true],
+  ])(
+    'persists background=%s and reloads (legacy top-level=%s)',
+    async (isBackground, legacyTopLevel) => {
+      let persisted = !isBackground;
+      const row = () => ({
+        id: 'agent-mode',
+        workspaceId: 'ws-mode',
+        name: 'Mode fixture',
+        status: 'active',
+        parentAgentId: 'parent',
+        ...(legacyTopLevel ? { isBackground: persisted } : {}),
+        metadata: {
+          isBackground: legacyTopLevel ? !persisted : persisted,
+          taskNoteId: 'task-note',
+          createdByAgentId: 'parent',
+        },
+        createdAt: '2026-09-30T00:00:00Z',
+        updatedAt: '2026-09-30T00:00:00Z',
+      });
+      backend.onRequest('agent.update', (params) => {
+        persisted = (params as { changes: { isBackground: boolean } }).changes.isBackground;
+        return { success: true, agent: row() };
+      });
+      backend.onRequest('agent.get', () => ({ agent: row() }));
+      expect(
+        await new LiveAgentsClient().setBackground({
+          agentId: 'agent-mode',
+          workspaceId: 'ws-mode',
+          isBackground,
+        }),
+      ).toEqual({ success: true });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.update',
+        params: {
+          agentId: 'agent-mode',
+          workspaceId: 'ws-mode',
+          changes: { isBackground },
+        },
+      });
+      const reloaded = await new LiveAgentsClient().get('agent-mode', 'ws-mode');
+      expect(isBackgroundAgentSession(reloaded!)).toBe(isBackground);
+      expect(reloaded?.isBackground).toBe(legacyTopLevel ? isBackground : undefined);
+      expect(reloaded).toMatchObject({
+        parentAgentId: 'parent',
+        metadata: { isBackground, taskNoteId: 'task-note', createdByAgentId: 'parent' },
+      });
+    },
+  );
+
+  it('returns a background mode failure from the daemon', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new Error('Forbidden mode change');
+    });
+    expect(
+      await new LiveAgentsClient().setBackground({
+        agentId: 'agent-mode',
+        workspaceId: 'ws-mode',
+        isBackground: true,
+      }),
+    ).toEqual({ success: false, error: 'Forbidden mode change' });
   });
 
   it('setNotificationsMuted forwards agent.update with the boolean notificationsMuted change (§5.5)', async () => {

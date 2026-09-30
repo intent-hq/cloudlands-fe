@@ -106,6 +106,13 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
     session.parentAgentId = AgentId(raw.parentAgentId);
   }
+  // Canonical booleans override stale metadata, including a persisted false.
+  if (typeof raw.isBackground === 'boolean') {
+    session.metadata = { ...session.metadata, isBackground: raw.isBackground };
+    if (session.agentMetadata) {
+      session.agentMetadata = { ...session.agentMetadata, isBackground: raw.isBackground };
+    }
+  }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker
   // convergence after agent.markSeen — recomputes it through one seam.
@@ -762,6 +769,17 @@ export class LiveAgentsClient implements AgentsClient {
       agentId: params.agentId,
       workspaceId: params.workspaceId,
       changes: { notificationsMuted: params.notificationsMuted },
+    });
+  }
+  async setBackground(params: {
+    agentId: string;
+    workspaceId: string;
+    isBackground: boolean;
+  }): Promise<MutationResult> {
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { isBackground: params.isBackground },
     });
   }
   async updateSpecialist(params: {

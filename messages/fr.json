@@ -6859,5 +6859,13 @@
   "inviteConsent_account_choose_description": "Choisissez le compte enregistré à utiliser pour cette invitation.",
   "inviteConsent_returning_description": "Intent utilisera les identifiants personnels enregistrés pour cet hôte. Aucune nouvelle connexion ni preuve d’identité auprès de la forge n’est nécessaire.",
   "settings_backendSync_invitedPending": "La synchronisation des sessions invitées est en attente. Intent réessaiera.",
-  "workspace_client_accessChanged_error": "L’accès à l’espace de travail a changé. Rouvrez l’action après la reconnexion."
+  "workspace_client_accessChanged_error": "L’accès à l’espace de travail a changé. Rouvrez l’action après la reconnexion.",
+  "settings_providers_serviceTier_label": "Niveau de service",
+  "settings_providers_serviceTierStandard_label": "Standard",
+  "settings_providers_serviceTierFast_label": "Rapide",
+  "settings_providers_serviceTierUltraFast_label": "Ultra-rapide",
+  "settings_providers_serviceTierUltraFast_description": "Ultra-rapide n’est pas encore pris en charge.",
+  "chat_agentCard_menu_moveToBackground_label": "Passer en arrière-plan",
+  "chat_agentCard_menu_moveToForeground_label": "Passer au premier plan",
+  "agent_mutation_setBackgroundFailed_error": "Impossible de changer le mode de l’agent"
 }

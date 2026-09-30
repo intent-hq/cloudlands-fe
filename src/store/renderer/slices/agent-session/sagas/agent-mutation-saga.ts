@@ -40,6 +40,7 @@ import {
   agentProposalResolveRequested,
   agentSessionDismissQuestionsRequested,
   updateSession,
+  setAgentBackgroundPending,
 } from '../agent-session-slice';
 import {
   agentScopedProposalKey,
@@ -58,6 +59,9 @@ import {
   retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  setAgentBackgroundRequested,
+  hydrateAgentsRequested,
+  addAgent,
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
@@ -68,7 +72,7 @@ import {
   upsertSession,
 } from '../agent-session-slice';
 import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
-import { selectAgentSession } from '../agent-session-selectors';
+import { selectAgentBackgroundPending, selectAgentSession } from '../agent-session-selectors';
 import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
 import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
 
@@ -471,6 +475,63 @@ function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaG
   }
 }
 
+function* setBackground(
+  action: ReturnType<typeof setAgentBackgroundRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentId, isBackground] = action.payload;
+  // One mutation per agent, including duplicate actions from other mounted cards.
+  if (yield* selectAgentBackgroundPending.effect(agentId)) {
+    yield* put(action.success(undefined as never));
+    return;
+  }
+  const initial = yield* selectAgentSession.effect(agentId);
+  if (!initial || initial.workspaceId !== wsId || initial.retiredAt) {
+    yield* put(action.failure(new Error(m.agent_mutation_setBackgroundFailed_error())));
+    return;
+  }
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
+  yield* put(setAgentBackgroundPending(agentId, true));
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.setBackground], {
+      agentId,
+      workspaceId: wsId,
+      isBackground,
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_setBackgroundFailed_error());
+    const current = yield* selectAgentSession.effect(agentId);
+    if (current && ownership.isCurrent(current.workspaceId)) {
+      // Only patch mode, keeping transcript, runtime flags, and task/parent metadata
+      // that may have changed while the request was in flight.
+      const changes = {
+        isBackground,
+        metadata: { ...current.metadata, isBackground },
+        ...(current.agentMetadata
+          ? { agentMetadata: { ...current.agentMetadata, isBackground } }
+          : {}),
+      };
+      const next = { ...current, ...changes };
+      yield* put(updateSession(agentId, { ...changes, hasUnread: deriveAgentHasUnread(next) }));
+      yield* put(addAgent(wsId, next));
+      // Existing coalesced hydration refreshes authoritative bin counts and loaded groups.
+      yield* put(hydrateAgentsRequested(wsId));
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    const failure = mutationError(error, m.agent_mutation_setBackgroundFailed_error());
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    yield* put(setAgentBackgroundPending(agentId, false));
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_setBackgroundFailed_error())));
+    }
+  }
+}
+
 function* setNotificationsMuted(
   action: ReturnType<typeof setAgentNotificationsMutedRequested>,
 ): SagaGenerator<void> {
@@ -836,6 +897,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(renameAgentSessionRequested, renameAgent),
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
+    takeEvery(setAgentBackgroundRequested, setBackground),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
     takeEvery(agentProposalResolveRequested, resolveProposal),
     takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),

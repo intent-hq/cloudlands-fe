@@ -297,7 +297,7 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(cache('codex', 'B')?.models[0].value).toBe('B-model');
     expect(request.mock.calls.slice(2)).toEqual([
       ['models.list', { providerId: 'codex', workspaceId: 'A' }],
-      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ['models.list', { providerId: 'codex', workspaceId: 'A', forceRefresh: true }],
     ]);
   });
 
@@ -474,7 +474,7 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(request.mock.calls).toEqual([
       ['models.list', { providerId: 'codex' }],
       ['models.list', { providerId: 'auggie' }],
-      ['models.list', { providerId: 'codex' }],
+      ['models.list', { providerId: 'codex', forceRefresh: true }],
     ]);
     expect(status()).toMatchObject({ status: 'success', error: undefined });
     expect(cache()?.models[0].value).toBe('recovered');
@@ -591,7 +591,7 @@ describe('registered model reload owner: picker catalogs', () => {
       expect(request.mock.calls).toEqual([
         [
           'models.list',
-          trigger === 'refresh'
+          trigger !== 'clear'
             ? { providerId: 'codex', forceRefresh: true }
             : { providerId: 'codex' },
         ],
@@ -663,6 +663,42 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(request.mock.calls).toEqual(
       Array.from({ length: 3 }, () => ['models.list', { providerId: 'codex' }]),
     );
+  });
+
+  it('preserves degraded catalog metadata through a silent retry', async () => {
+    request.mockResolvedValue({
+      ...reply('codex', 'older'),
+      warning: 'probe failed; serving last-good models',
+      stale: true,
+    });
+    store.dispatch(providerModelsRequested('codex', 'silentRetry', 'A'));
+    await settle();
+    expect(cache('codex', 'A')).toMatchObject({
+      models: [{ value: 'older' }],
+      warning: 'probe failed; serving last-good models',
+      stale: true,
+    });
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+    ]);
+  });
+
+  it('coalesces explicit retries and forces a fresh probe in the same workspace', async () => {
+    let finish!: (value: unknown) => void;
+    request.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex', workspaceId: 'A', forceRefresh: true }],
+    ]);
+    finish(reply('codex', 'recovered'));
+    await settle();
+    expect(cache('codex', 'A')?.models[0].value).toBe('recovered');
+    expect(cache('codex', 'B')).toBeUndefined();
   });
 
   it('coalesces mounted readers and preserves exact wire refresh, warning and stale results', async () => {
@@ -748,7 +784,11 @@ describe('registered model reload owner: picker catalogs', () => {
       expect(request.mock.calls).toEqual([
         ['models.list', { providerId: 'codex' }],
         ['models.list', { providerId: 'auggie' }],
-        ...Array.from({ length: 3 }, () => ['models.list', { providerId: 'codex' }]),
+        ...Array.from({ length: 2 }, () => ['models.list', { providerId: 'codex' }]),
+        [
+          'models.list',
+          { providerId: 'codex', ...(recoveryMode === 'retry' ? { forceRefresh: true } : {}) },
+        ],
       ]);
     },
   );

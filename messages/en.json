@@ -6859,5 +6859,13 @@
   "inviteConsent_account_choose_description": "Choose the saved account to use for this invitation.",
   "inviteConsent_returning_description": "Intent will use the saved personal credential for this host. No new forge sign-in or identity proof is needed.",
   "settings_backendSync_invitedPending": "Invited session sync is pending. Intent will try again.",
-  "workspace_client_accessChanged_error": "Workspace access changed. Reopen the action after reconnecting."
+  "workspace_client_accessChanged_error": "Workspace access changed. Reopen the action after reconnecting.",
+  "settings_providers_serviceTier_label": "Service Tier",
+  "settings_providers_serviceTierStandard_label": "Standard",
+  "settings_providers_serviceTierFast_label": "Fast",
+  "settings_providers_serviceTierUltraFast_label": "Ultra-fast",
+  "settings_providers_serviceTierUltraFast_description": "Ultra-fast is not yet supported.",
+  "chat_agentCard_menu_moveToBackground_label": "Move to background",
+  "chat_agentCard_menu_moveToForeground_label": "Move to foreground",
+  "agent_mutation_setBackgroundFailed_error": "Failed to change agent mode"
 }

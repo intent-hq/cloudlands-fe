@@ -6859,5 +6859,13 @@
   "inviteConsent_account_choose_description": "Wählen Sie das gespeicherte Konto für diese Einladung.",
   "inviteConsent_returning_description": "Intent verwendet den gespeicherten persönlichen Zugang für diesen Host. Eine erneute Anmeldung oder ein neuer Identitätsnachweis beim Git-Anbieter ist nicht erforderlich.",
   "settings_backendSync_invitedPending": "Die Synchronisierung eingeladener Sitzungen steht aus. Intent versucht es erneut.",
-  "workspace_client_accessChanged_error": "Der Arbeitsbereichszugriff hat sich geändert. Öffne die Aktion nach dem erneuten Verbinden erneut."
+  "workspace_client_accessChanged_error": "Der Arbeitsbereichszugriff hat sich geändert. Öffne die Aktion nach dem erneuten Verbinden erneut.",
+  "settings_providers_serviceTier_label": "Servicestufe",
+  "settings_providers_serviceTierStandard_label": "Standard",
+  "settings_providers_serviceTierFast_label": "Schnell",
+  "settings_providers_serviceTierUltraFast_label": "Ultraschnell",
+  "settings_providers_serviceTierUltraFast_description": "Ultraschnell wird noch nicht unterstützt.",
+  "chat_agentCard_menu_moveToBackground_label": "In den Hintergrund verschieben",
+  "chat_agentCard_menu_moveToForeground_label": "In den Vordergrund verschieben",
+  "agent_mutation_setBackgroundFailed_error": "Agentenmodus konnte nicht geändert werden"
 }

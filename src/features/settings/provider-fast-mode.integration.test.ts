@@ -150,6 +150,24 @@ afterEach(async () => {
 });
 
 describe('Provider Fast mode through live settings client and hydration', () => {
+  it('saves Fast then Standard from an absent Codex preference using only the boolean contract', async () => {
+    saved = {};
+    await start();
+    appStore.dispatch(setProviderFastMode('codex', true));
+    await settle();
+    expect(saved).toEqual({ codex: true });
+    appStore.dispatch(setProviderFastMode('codex', false));
+    await settle();
+    expect(writes()).toEqual([
+      ['settings.update', { changes: [{ path: 'providers.fastMode', value: { codex: true } }] }],
+      ['settings.update', { changes: [{ path: 'providers.fastMode', value: { codex: false } }] }],
+    ]);
+    stopHydration();
+    stopHydration = appStore.runSaga(settingsHydrationSaga);
+    await settle();
+    expect(values()).toEqual({ codex: false });
+    expect(writes()).toHaveLength(2);
+  });
   it('persists independent preferences in both directions and reloads saved state', async () => {
     await start();
     expect(values()).toEqual({ 'claude-code': false, codex: true });

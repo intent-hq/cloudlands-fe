@@ -46,11 +46,14 @@ export interface AgentScopeInputs {
 
 /** The persisted background flag (`isBackground`, mirrored as `metadata.isBackground`). */
 export function isBackgroundAgentSession(agent: AgentScopeInputs): boolean {
-  return (
-    agent.isBackground === true ||
-    agent.metadata?.isBackground === true ||
-    agent.agentMetadata?.isBackground === true
-  );
+  for (const value of [
+    agent.isBackground,
+    agent.metadata?.isBackground,
+    agent.agentMetadata?.isBackground,
+  ]) {
+    if (typeof value === 'boolean') return value;
+  }
+  return false;
 }
 
 /**
