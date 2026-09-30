@@ -64,7 +64,7 @@ for (const dark of [false, true]) {
           'member · Host member · Online · Viewing this workspace',
         );
         await expect(memberTooltip).toBeVisible();
-        await expect(memberTooltip).toHaveAttribute('data-state', 'open');
+        await expect(memberTooltip).toHaveAttribute('data-state', 'instant-open');
         await expect
           .poll(() =>
             memberTooltip.evaluate(
