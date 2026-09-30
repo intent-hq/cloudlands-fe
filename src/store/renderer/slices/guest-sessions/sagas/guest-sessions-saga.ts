@@ -33,6 +33,7 @@ import {
   join,
   put,
   race,
+  select,
   take,
   takeEvery,
   takeLeading,
