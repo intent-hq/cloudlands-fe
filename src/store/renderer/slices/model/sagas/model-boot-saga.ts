@@ -2,13 +2,13 @@ import { selectCanAdministerHost } from '../../principal/principal-selectors';
 import { selectModelBootContext } from '../model-selectors';
 import { createChannelFromSelector } from '@themislib/themis/saga';
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { call, flush, put, race, take } from 'typed-redux-saga';
+import { call, flush, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
-import { setAvailableModels, setLoadingStateForProvider } from '../model-slice';
+import { loadModelCatalog } from './model-catalog-request';
 
 const logger = createLogger('ModelBootSaga');
 
@@ -22,15 +22,15 @@ const logger = createLogger('ModelBootSaga');
  * The active provider is read from the slice when settings hydration has
  * already landed, otherwise from the daemon (`settings.getProviderSettings`)
  * so the load does not race the hydration saga. Seeder semantics are kept:
- * dispatch only on a non-empty catalog and stay silent on failure — the
- * reload saga owns loading/error transitions for explicit provider switches.
+ * dispatch only on a non-empty catalog and stay silent on failure. If an
+ * explicit reload joins this read, the shared request owns its loading/error state.
  *
  * Returns whether the catalog load is settled: `true` when models were
  * dispatched (or an explicit provider switch took ownership mid-flight),
  * `false` when nothing landed and a retry on the next backend connect could
  * still help.
  */
-export function* loadModelsOnBootWorker() {
+export function* loadModelsOnBootWorker(force = false) {
   const context = yield* selectModelBootContext.effect();
   if (!context) return false;
   try {
@@ -43,24 +43,7 @@ export function* loadModelsOnBootWorker() {
     }
     if (!providerId || context !== (yield* selectModelBootContext.effect())) return false;
 
-    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
-      [appClient.models, appClient.models.list],
-      providerId,
-    );
-
-    // Provider mismatch guard: if the active provider changed while the list
-    // was in flight, the reload saga owns that provider's load — drop ours.
-    const activeProviderId = yield* selectActiveProviderId.effect();
-    if (
-      (activeProviderId && activeProviderId !== providerId) ||
-      context !== (yield* selectModelBootContext.effect())
-    )
-      return true;
-    if (models.length === 0) return false;
-
-    yield* put(setAvailableModels(models, providerId));
-    yield* put(setLoadingStateForProvider({ providerId, status: 'success', retryAttempt: 0 }));
-    return true;
+    return yield* call(loadModelCatalog, providerId, context, false, force);
   } catch (error) {
     if (context === (yield* selectModelBootContext.effect()))
       logger.warn('boot model catalog load failed; pickers will retry on demand', { error });
@@ -134,7 +117,7 @@ export function* modelBootSaga() {
         loaded = false;
       } else if (context !== attemptedContext || retryConnection) {
         attemptedContext = context;
-        loaded = yield* call(loadModelsOnBootWorker);
+        loaded = yield* call(loadModelsOnBootWorker, retryConnection);
       }
       const signal = yield* race({
         readiness: take(readinessChannel),
