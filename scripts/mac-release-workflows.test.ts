@@ -396,15 +396,29 @@ describe('packaged Mac verification invoked by native workflows', () => {
   });
 });
 
-it('keeps unsigned manual packaging functional with signing inputs removed', () => {
-  const dir = temp();
-  stub(dir, 'pnpm', 'test -z "${CSC_LINK+x}" && test -z "${CSC_KEY_PASSWORD+x}"');
-  const code = render(
-    step('manual-signed-build', 'build-macos', 'Build and package macOS app').run!,
-    { 'matrix.arch': 'x64', 'inputs.sign': 'false' },
-  );
-  expect(shell(dir, code, { CSC_LINK: 'secret', CSC_KEY_PASSWORD: 'secret' }).status).toBe(0);
-});
+it.each(['x64', 'arm64'])(
+  'keeps unsigned %s manual packaging free of signing and publishing',
+  (arch) => {
+    const dir = temp();
+    stub(
+      dir,
+      'pnpm',
+      'test -z "${CSC_LINK+x}" && test -z "${CSC_KEY_PASSWORD+x}" || exit 1\nprintf "%s\\n" "$@" > "$RUNNER_TEMP/unsigned-args"',
+    );
+    const code = render(
+      step('manual-signed-build', 'build-macos', 'Build and package macOS app').run!,
+      { 'matrix.arch': arch, 'inputs.sign': 'false' },
+    );
+    expect(shell(dir, code, { CSC_LINK: 'secret', CSC_KEY_PASSWORD: 'secret' }).status).toBe(0);
+    expect(readFileSync(join(dir, 'unsigned-args'), 'utf8').trim().split('\n')).toEqual([
+      'run',
+      'dist:mac',
+      `--${arch}`,
+      '--publish',
+      'never',
+    ]);
+  },
+);
 
 describe.each(['x64', 'arm64'])('%s differential update artifacts', (arch) => {
   it.each(['mac.zip', 'dmg'])('requires the %s blockmap', (kind) => {
