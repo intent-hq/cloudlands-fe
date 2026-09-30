@@ -2309,7 +2309,7 @@ function sidebarOriginals(packet: any, parent: any, child?: any) {
     expect(prepares[1].review.root).toEqual(parent.owner.root);
     expect(prepares[1].review.choice).toEqual({
       kind: 'afterCommit',
-      operationId: parent.preview.reviewPreparation.operationId,
+      operationId: parent.retained.execute.reviewExecution.preparation.operationId,
       captureId: expect.any(String),
     });
   }
