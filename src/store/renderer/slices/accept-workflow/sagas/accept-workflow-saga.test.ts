@@ -9,12 +9,17 @@ import { fileTrackingReducer, setCommitMessage, setCommitsData } from '../../cha
 import { gitReducer } from '../../git/git-slice';
 import { selectPostMergeState } from '../../git/git-selectors';
 import { selectAcceptOperation } from '../accept-workflow-selectors';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   acceptWorkflowReducer,
+  addAcceptRemoteRequested,
   archiveAndStartRequested,
   executeAcceptRequested,
+  mergePRAcceptRequested,
   mergePRWorkflowRequested,
   mergeToTrunkRequested,
+  prepareAcceptRequested,
+  resetAcceptToTrunkRequested,
   resetAndContinueRequested,
   setMergeDrawerOpen,
   undoAcceptRequested,
@@ -131,6 +136,205 @@ afterEach(async () => {
 });
 
 describe('acceptWorkflowSaga', () => {
+  it.each([
+    { name: 'prepare', create: () => prepareAcceptRequested('a', 'commit'), inBand: false },
+    {
+      name: 'add remote',
+      create: () => addAcceptRemoteRequested('a', 'https://example.com/repo'),
+      inBand: false,
+    },
+    { name: 'execute', create: () => executeAcceptRequested('a', 'commit'), inBand: true },
+    { name: 'merge PR', create: () => mergePRAcceptRequested('a', 42), inBand: true },
+    { name: 'reset', create: () => resetAcceptToTrunkRequested('a'), inBand: true },
+  ])(
+    'settles queued $name once on workspace unmount without starting transport',
+    async ({ create, inBand }) => {
+      const lease = reserveGitMutation('a');
+      const run = harness();
+      const action = create();
+      const settled = inBand
+        ? expect(action.promise).resolves.toEqual({
+            success: false,
+            steps: [],
+            error: 'Accept workflow cancelled',
+          })
+        : expect(action.promise).rejects.toThrow('Accept workflow cancelled');
+      try {
+        run.dispatch(action);
+        run.dispatch(workspaceUnmounted('a'));
+        await settled;
+        await lease.release();
+        await settle();
+        expect(mocks.request).not.toHaveBeenCalled();
+        expect(
+          run.actions.filter(
+            ({ type }) => type === action.success.type || type === action.failure.type,
+          ),
+        ).toHaveLength(1);
+        expect(run.state().acceptWorkflow.byWorkspaceId.a).toBeUndefined();
+      } finally {
+        await lease.release();
+      }
+    },
+  );
+
+  it('cancels only the closed workspace and preserves another workspace transport', async () => {
+    const first = deferred<AcceptChangesResult>();
+    const second = deferred<AcceptChangesResult>();
+    mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const run = harness();
+    const a = executeAcceptRequested('a', 'commit');
+    const b = executeAcceptRequested('b', 'commit');
+    run.dispatch(a);
+    run.dispatch(b);
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    run.dispatch(workspaceUnmounted('a'));
+    await expect(a.promise).resolves.toMatchObject({ success: false });
+    second.resolve(success);
+    await expect(b.promise).resolves.toEqual(success);
+    first.resolve(success);
+    await settle();
+    expect(selectAcceptOperation.select(run.state() as never, 'b', 'execute')?.status).toBe(
+      'succeeded',
+    );
+    expect(run.state().acceptWorkflow.byWorkspaceId.a).toBeUndefined();
+    expect(run.actions.filter(({ type }) => type === a.success.type)).toHaveLength(2);
+  });
+
+  it('settles a successful facade once when unmounted during its reconciliation tail', async () => {
+    const run = harness();
+    const action = executeAcceptRequested('a', 'commit');
+    run.dispatch(action);
+    expect(await action.promise).toEqual(success);
+    expect(isGitMutationPending('a')).toBe(true);
+    run.dispatch(workspaceUnmounted('a'));
+    const actionCount = run.actions.length;
+    await settle();
+    expect(
+      run.actions.filter(
+        ({ type }) => type === action.success.type || type === action.failure.type,
+      ),
+    ).toHaveLength(1);
+    expect(run.actions).toHaveLength(actionCount);
+    expect(isGitMutationPending('a')).toBe(false);
+  });
+
+  it('admits a remounted reset but waits for the cancelled transport to finish', async () => {
+    const pending = deferred<AcceptChangesResult>();
+    mocks.request.mockReturnValueOnce(pending.promise);
+    const run = harness();
+    run.dispatch(resetAndContinueRequested('a'));
+    await settle();
+    run.dispatch(workspaceUnmounted('a'));
+    run.dispatch(resetAndContinueRequested('a'));
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    pending.resolve(success);
+    await vi.waitFor(() => expect(mocks.success).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith({ id: 'a', baseCommitSha: 'new-head' });
+    expect(selectPostMergeState.select(run.state() as never, 'a').hasResetToTrunk).toBe(true);
+  });
+
+  const uiRequests = [
+    { name: 'reset', create: () => resetAndContinueRequested('a') },
+    { name: 'commit then merge', create: () => mergeToTrunkRequested('a', options) },
+    {
+      name: 'PR merge',
+      create: () => mergePRWorkflowRequested('a', { prNumber: 42, mergeHeadSha: 'head' }),
+    },
+    {
+      name: 'undo',
+      create: () => undoAcceptRequested('a', { action: 'undo-commit', commitHash: 'one' }),
+    },
+    { name: 'archive', create: () => archiveAndStartRequested('a') },
+  ];
+
+  function seedUndo(run: ReturnType<typeof harness>) {
+    run.dispatch(
+      setCommitsData(
+        'a',
+        [
+          {
+            hash: 'one',
+            message: 'one',
+            author: 'author',
+            timestamp: 0,
+            files: [{ path: 'a.ts', additions: 1, deletions: 0 }],
+            stage: 'local',
+            isPushed: false,
+          },
+        ],
+        'base',
+      ),
+    );
+  }
+
+  it.each(uiRequests)('does not start queued $name after workspace unmount', async ({ create }) => {
+    const lease = reserveGitMutation('a');
+    const run = harness();
+    seedUndo(run);
+    try {
+      run.dispatch(create());
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      run.dispatch(workspaceUnmounted('a'));
+      const actionCount = run.actions.length;
+      await lease.release();
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.details).not.toHaveBeenCalled();
+      expect(mocks.error).not.toHaveBeenCalled();
+      expect(run.actions).toHaveLength(actionCount);
+      expect(run.state().acceptWorkflow.byWorkspaceId.a).toBeUndefined();
+      expect(isGitMutationPending('a')).toBe(false);
+    } finally {
+      await lease.release();
+    }
+  });
+
+  it.each(uiRequests)(
+    'suppresses started $name followups after workspace unmount',
+    async ({ create }) => {
+      const pending = deferred<AcceptChangesResult>();
+      const archived = deferred<{ ok: boolean }>();
+      mocks.request.mockReturnValueOnce(pending.promise);
+      mocks.archive.mockReturnValueOnce(archived.promise);
+      const run = harness({ archived: true });
+      seedUndo(run);
+      try {
+        run.dispatch(create());
+        await settle();
+        expect(mocks.request.mock.calls.length + mocks.archive.mock.calls.length).toBe(1);
+        run.dispatch(workspaceUnmounted('a'));
+        const actionCount = run.actions.length;
+        expect(isGitMutationPending('a')).toBe(true);
+        pending.resolve(success);
+        archived.resolve({ ok: true });
+        await vi.waitFor(() => expect(isGitMutationPending('a')).toBe(false));
+        expect(mocks.request.mock.calls.length + mocks.archive.mock.calls.length).toBe(1);
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.unarchive).not.toHaveBeenCalled();
+        expect(mocks.success).not.toHaveBeenCalled();
+        expect(mocks.warning).not.toHaveBeenCalled();
+        expect(mocks.error).not.toHaveBeenCalled();
+        expect(mocks.confetti).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
+        expect(run.actions).toHaveLength(actionCount);
+        expect(run.state().acceptWorkflow.byWorkspaceId.a).toBeUndefined();
+        expect(run.state().git.byWorkspaceId.a).toBeUndefined();
+      } finally {
+        pending.resolve(success);
+        archived.resolve({ ok: true });
+        await settle();
+      }
+    },
+  );
+
   it('preserves a newer draft while an accepted merge finishes', async () => {
     const pending = deferred<AcceptChangesResult>();
     mocks.request.mockReturnValueOnce(pending.promise);

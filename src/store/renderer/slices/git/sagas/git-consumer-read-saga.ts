@@ -41,6 +41,7 @@ type Resource = {
   request: GitReadRequest;
   consumers: Map<string, { requestId: string; canRead?: () => boolean }>;
   revision: number;
+  failed: boolean;
 };
 type Resources = Map<string, Resource>;
 type ReadMessage = { resource: Resource; cancel?: boolean };
@@ -100,6 +101,7 @@ function* read(resource: Resource, signal: AbortSignal): SagaGenerator<GitReadRe
 function* refresh({ resource }: ReadMessage): SagaGenerator<void> {
   const controller = new AbortController();
   const revision = resource.revision;
+  resource.failed = false;
   try {
     do {
       if (isGitMutationPending(resource.workspaceId, resource.request.gitRootId))
@@ -116,6 +118,7 @@ function* refresh({ resource }: ReadMessage): SagaGenerator<void> {
           !pending &&
           epoch === getGitMutationVersion(resource.workspaceId, resource.request.gitRootId)
         ) {
+          resource.failed = result.kind === 'commitDetails' && result.details === null;
           yield* put(
             gitReadCompleted(resource.workspaceId, resource.key, generation, result, null),
           );
@@ -127,6 +130,7 @@ function* refresh({ resource }: ReadMessage): SagaGenerator<void> {
           !pending &&
           epoch === getGitMutationVersion(resource.workspaceId, resource.request.gitRootId)
         ) {
+          resource.failed = true;
           yield* put(
             gitReadCompleted(
               resource.workspaceId,
@@ -164,6 +168,11 @@ function* requested(
   let resource = resources.get(id);
   if (resource) {
     resource.consumers.set(consumerId, { requestId, canRead });
+    if (resource.failed) {
+      // Retry only on an explicit request; pending and successful resources stay shared.
+      resource.failed = false;
+      yield* put(reads, { resource });
+    }
     return;
   }
   resource = {
@@ -172,6 +181,7 @@ function* requested(
     request,
     consumers: new Map([[consumerId, { requestId, canRead }]]),
     revision: 0,
+    failed: false,
   };
   resources.set(id, resource);
   yield* put(reads, { resource });
@@ -204,6 +214,7 @@ function* invalidated(
   for (const resource of resources.values()) {
     if (resource.workspaceId !== workspaceId || resource.request.gitRootId !== gitRootId) continue;
     resource.revision++;
+    resource.failed = false;
     yield* put(reads, { resource });
   }
 }

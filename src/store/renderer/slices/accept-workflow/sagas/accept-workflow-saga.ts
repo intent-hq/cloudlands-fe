@@ -1,4 +1,13 @@
-import { all, call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancelled,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { acceptChangesTransport } from '$features/accept-changes/accept-changes.transport';
 import type { AcceptChangesResult, UndoCommitMetadata } from '$features/accept-changes/types';
 import { appClient } from '$lib/client';
@@ -30,6 +39,7 @@ import {
 } from '../../workspace/workspace-selectors';
 import { loadWorkspacesRequested, setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   acceptOperationFinished,
   acceptOperationStarted,
@@ -88,75 +98,99 @@ function* runOperation<T>(
     status: 'running',
     error: null,
   };
-  try {
-    yield* put(acceptOperationStarted(workspaceId, operation));
-    yield* call(() => lease.ready);
-    if (kind !== 'prepare') yield* call(requireOwner, workspaceId);
-    const result = yield* call(work, lease);
-    const failure =
-      typeof result === 'object' &&
-      result !== null &&
-      'success' in result &&
-      result.success === false;
-    const error =
-      failure && 'error' in result && typeof result.error === 'string' ? result.error : null;
-    yield* put(
-      acceptOperationFinished(workspaceId, {
-        ...operation,
-        status: failure ? 'failed' : 'succeeded',
-        error,
-      }),
-    );
-    // Transport completion is not domain success: the original in-band result is preserved.
-    if (settlement) yield* put(settlement.success(result));
-  } catch (thrown) {
-    const error =
-      thrown instanceof Error ? thrown : new Error(m.acceptChanges_client_executeFailed_error());
-    yield* put(
-      acceptOperationFinished(workspaceId, {
-        ...operation,
-        status: 'failed',
-        error: error.message,
-      }),
-    );
-    if (settlement) {
-      if (inBandFailure) yield* put(settlement.success(inBandFailure(error.message)));
-      else yield* put(settlement.failure(error));
-    } else if (error instanceof MergeNeedsRebase) {
-      yield* call(notify.error, error.message, {
-        description: m.workspace_mergePanel_conflicts_description(),
-        action: {
-          label: m.workspace_mergePanel_rebaseInTerminal_label(),
-          onClick: () => {
-            void appStore.dispatch(
-              prWorkflowRequested(error.workspaceId, {
-                kind: 'rebase-terminal',
-                targetBranch: error.targetBranch,
-              }),
-            );
-          },
-        },
-        duration: 10000,
-      });
-    } else {
-      yield* call(notify.error, error.message);
-    }
-  } finally {
-    const released = lease.release();
-    if (yield* cancelled()) {
+  let lifetimeEnded = false;
+  function* worker(): SagaGenerator<void> {
+    try {
+      yield* put(acceptOperationStarted(workspaceId, operation));
+      yield* call(() => lease.ready);
+      if (kind !== 'prepare') yield* call(requireOwner, workspaceId);
+      const result = yield* call(work, lease);
+      const failure =
+        typeof result === 'object' &&
+        result !== null &&
+        'success' in result &&
+        result.success === false;
+      const error =
+        failure && 'error' in result && typeof result.error === 'string' ? result.error : null;
       yield* put(
-        acceptOperationFinished(workspaceId, { ...operation, status: 'cancelled', error: null }),
+        acceptOperationFinished(workspaceId, {
+          ...operation,
+          status: failure ? 'failed' : 'succeeded',
+          error,
+        }),
+      );
+      // Transport completion is not domain success: the original in-band result is preserved.
+      if (settlement) yield* put(settlement.success(result));
+    } catch (thrown) {
+      const error =
+        thrown instanceof Error ? thrown : new Error(m.acceptChanges_client_executeFailed_error());
+      yield* put(
+        acceptOperationFinished(workspaceId, {
+          ...operation,
+          status: 'failed',
+          error: error.message,
+        }),
       );
       if (settlement) {
-        const error = new Error('Accept workflow cancelled');
         if (inBandFailure) yield* put(settlement.success(inBandFailure(error.message)));
         else yield* put(settlement.failure(error));
+      } else if (error instanceof MergeNeedsRebase) {
+        yield* call(notify.error, error.message, {
+          description: m.workspace_mergePanel_conflicts_description(),
+          action: {
+            label: m.workspace_mergePanel_rebaseInTerminal_label(),
+            onClick: () => {
+              void appStore.dispatch(
+                prWorkflowRequested(error.workspaceId, {
+                  kind: 'rebase-terminal',
+                  targetBranch: error.targetBranch,
+                }),
+              );
+            },
+          },
+          duration: 10000,
+        });
+      } else {
+        yield* call(notify.error, error.message);
       }
-    } else {
-      yield* call(() => released);
-      if (kind !== 'prepare') yield* call(invalidate, workspaceId);
+    } finally {
+      const released = lease.release();
+      if (yield* cancelled()) {
+        if (!lifetimeEnded)
+          yield* put(
+            acceptOperationFinished(workspaceId, {
+              ...operation,
+              status: 'cancelled',
+              error: null,
+            }),
+          );
+        if (settlement) {
+          const error = new Error('Accept workflow cancelled');
+          if (inBandFailure) yield* put(settlement.success(inBandFailure(error.message)));
+          else yield* put(settlement.failure(error));
+        }
+      } else {
+        yield* call(() => released);
+        if (kind !== 'prepare') yield* call(invalidate, workspaceId);
+      }
     }
   }
+  // Subscribe before starting work, including its queue wait and reconciliation.
+  // Cancellation releases the lease, whose transport tail remains a write barrier.
+  yield* race({
+    ended: call(function* () {
+      while (true) {
+        const {
+          payload: [endedWorkspaceId],
+        } = yield* take(workspaceUnmounted);
+        if (endedWorkspaceId === workspaceId) {
+          lifetimeEnded = true;
+          return;
+        }
+      }
+    }),
+    operation: call(worker),
+  });
 }
 
 function failedResult(error: string): AcceptChangesResult {

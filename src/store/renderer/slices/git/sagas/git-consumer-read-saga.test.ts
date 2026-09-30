@@ -131,6 +131,141 @@ describe('gitConsumerReadSaga', () => {
     });
   });
 
+  it('retries null commit details on the same consumer request without duplicating pending or successful reads', async () => {
+    const response = deferred<typeof details>();
+    vi.mocked(backendRequest)
+      .mockRejectedValueOnce(new Error('transport unavailable'))
+      .mockReturnValueOnce(response.promise);
+    const owner = start();
+    const request = { kind: 'commitDetails' as const, commitHash: 'sha' };
+    const expand = gitReadRequested('ws', 'pr:sha', 'sha', request);
+    owner.dispatch(expand);
+    await vi.waitFor(() =>
+      expect(owner.read('ws', 'pr:sha')).toMatchObject({
+        loading: false,
+        result: { kind: 'commitDetails', details: null },
+      }),
+    );
+    await settle();
+    expect(backendRequest).toHaveBeenCalledTimes(1);
+
+    owner.dispatch(expand);
+    expect(owner.read('ws', 'pr:sha')?.loading).toBe(true);
+    owner.dispatch(expand);
+    owner.dispatch(gitReadRequested('ws', 'timeline', 'timeline', request));
+    expect(vi.mocked(backendRequest).mock.calls).toEqual([
+      ['git.commitDetails', { workspaceId: 'ws', commitHash: 'sha' }],
+      ['git.commitDetails', { workspaceId: 'ws', commitHash: 'sha' }],
+    ]);
+    response.resolve(details);
+    await vi.waitFor(() =>
+      expect(owner.read('ws', 'pr:sha')).toMatchObject({
+        loading: false,
+        requestId: 'sha',
+        result: { kind: 'commitDetails', details },
+      }),
+    );
+    owner.dispatch(expand);
+    owner.dispatch(gitReadRequested('ws', 'tab', 'tab', request));
+    await settle();
+    expect(backendRequest).toHaveBeenCalledTimes(2);
+    expect(owner.read('ws', 'tab')?.result).toEqual({ kind: 'commitDetails', details });
+    owner.dispatch(releaseGitRead('ws', 'pr:sha', 'sha'));
+    expect(owner.read('ws', 'timeline')?.result).toEqual({ kind: 'commitDetails', details });
+  });
+
+  it('reuses successful empty commit details instead of treating an empty commit as a failed read', async () => {
+    const empty = { ...details, files: [], fileDetails: [] };
+    vi.mocked(backendRequest).mockResolvedValue(empty);
+    const owner = start();
+    const request = gitReadRequested('ws', 'pr:sha', 'sha', {
+      kind: 'commitDetails',
+      commitHash: 'sha',
+    });
+    owner.dispatch(request);
+    await vi.waitFor(() => expect(owner.read('ws', 'pr:sha')?.loading).toBe(false));
+    owner.dispatch(request);
+    await settle();
+    expect(backendRequest).toHaveBeenCalledTimes(1);
+    expect(owner.read('ws', 'pr:sha')?.result).toEqual({ kind: 'commitDetails', details: empty });
+  });
+
+  it('retries a caught read error and ignores a stale release of the same consumer', async () => {
+    const response = deferred<{ content: string }>();
+    vi.mocked(backendRequest)
+      .mockRejectedValueOnce(new Error('transport unavailable'))
+      .mockReturnValueOnce(response.promise);
+    const owner = start();
+    const request = { kind: 'showFile' as const, filePath: 'retry.ts', ref: 'HEAD' };
+    owner.dispatch(gitReadRequested('ws', 'tab', 'old', request));
+    await vi.waitFor(() =>
+      expect(owner.read('ws', 'tab')).toMatchObject({
+        loading: false,
+        result: null,
+        error: 'transport unavailable',
+      }),
+    );
+    owner.dispatch(gitReadRequested('ws', 'tab', 'new', request));
+    owner.dispatch(releaseGitRead('ws', 'tab', 'old'));
+    expect(owner.read('ws', 'tab')).toMatchObject({ requestId: 'new', loading: true, error: null });
+    expect(vi.mocked(backendRequest).mock.calls).toEqual([
+      ['git.showFile', { workspaceId: 'ws', filePath: 'retry.ts', ref: 'HEAD' }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'retry.ts', ref: 'HEAD' }],
+    ]);
+    response.resolve({ content: 'recovered' });
+    await vi.waitFor(() =>
+      expect(owner.read('ws', 'tab')).toMatchObject({
+        loading: false,
+        error: null,
+        result: { kind: 'showFile', content: 'recovered' },
+      }),
+    );
+    owner.dispatch(releaseGitRead('ws', 'tab', 'new'));
+    expect(owner.read('ws', 'tab')).toBeUndefined();
+  });
+
+  it.each(['last release', 'workspace unmount'] as const)(
+    'discards a pending retry after %s without overwriting a remounted resource',
+    async (teardown) => {
+      const response = deferred<typeof details>();
+      const fresh = { ...details, files: ['fresh.ts'], fileDetails: [] };
+      vi.mocked(backendRequest)
+        .mockRejectedValueOnce(new Error('transport unavailable'))
+        .mockReturnValueOnce(response.promise)
+        .mockResolvedValue(fresh);
+      const owner = start();
+      const request = { kind: 'commitDetails' as const, commitHash: 'sha' };
+      owner.dispatch(gitReadRequested('ws', 'pr:sha', 'first', request));
+      await vi.waitFor(() => expect(owner.read('ws', 'pr:sha')?.loading).toBe(false));
+      owner.dispatch(gitReadRequested('ws', 'pr:sha', 'retry', request));
+      expect(backendRequest).toHaveBeenCalledTimes(2);
+      owner.dispatch(
+        teardown === 'last release'
+          ? releaseGitRead('ws', 'pr:sha', 'retry')
+          : workspaceUnmounted('ws'),
+      );
+      expect(owner.read('ws', 'pr:sha')).toBeUndefined();
+      owner.dispatch(gitReadRequested('ws', 'pr:sha', 'remounted', request));
+      await vi.waitFor(() =>
+        expect(owner.read('ws', 'pr:sha')?.result).toEqual({
+          kind: 'commitDetails',
+          details: fresh,
+        }),
+      );
+      const completions = () =>
+        owner.actions.filter((action) => action.type === 'git/readCompleted');
+      expect(completions()).toHaveLength(2);
+      response.resolve(details);
+      await settle();
+      expect(completions()).toHaveLength(2);
+      expect(owner.read('ws', 'pr:sha')).toMatchObject({
+        requestId: 'remounted',
+        result: { kind: 'commitDetails', details: fresh },
+      });
+      expect(backendRequest).toHaveBeenCalledTimes(3);
+    },
+  );
+
   it('does not publish a late path completion or let an old release remove a replacement request', async () => {
     const old = deferred<{ content: string }>();
     vi.mocked(backendRequest)
