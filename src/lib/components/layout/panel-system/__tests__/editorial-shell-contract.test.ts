@@ -197,7 +197,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
-    expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
+    expect(tabs).toContain('w-fit min-w-0');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(nav).not.toContain('faBell');
