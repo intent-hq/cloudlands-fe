@@ -573,7 +573,11 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     await emulateViewport(1440, 1000);
 
     await target.click({ position: { x: 24, y: 96 } });
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+m' : 'Control+Shift+m');
+    await expect(target).toHaveAttribute('data-focused', 'true');
+    // Mod+Shift+M toggles workspace chrome; Mod+Shift+Enter zooms the focused panel.
+    await page.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+Shift+Enter' : 'Control+Shift+Enter',
+    );
     await expect(target).toHaveAttribute('data-zoomed', 'true');
     await capture('desktop-light-zoomed-panel');
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+J' : 'Control+J');
