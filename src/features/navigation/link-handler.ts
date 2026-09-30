@@ -387,6 +387,7 @@ async function openFilePathLink(
     focusSourcePanel(options);
     appStore.dispatch(
       openWorkspaceFile(workspaceId, path, {
+        filePathIsLiteral: true,
         line,
         openInAdjacentPanel,
         ...(options.sourcePanelId ? { sourcePanelId: options.sourcePanelId } : {}),

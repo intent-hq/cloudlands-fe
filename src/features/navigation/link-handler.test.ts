@@ -363,6 +363,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          filePathIsLiteral: true,
           line: undefined,
           openInAdjacentPanel: false,
         }),
@@ -406,6 +407,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       expect(reduxDispatchMock).toHaveBeenCalledTimes(2);
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          filePathIsLiteral: true,
           line: undefined,
           openInAdjacentPanel: false,
         }),
@@ -420,6 +422,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         openWorkspaceFile(TEST_WORKSPACE_ID, 'readme.md', {
+          filePathIsLiteral: true,
           line: 17,
           openInAdjacentPanel: false,
         }),
@@ -449,7 +452,11 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
           }),
         ).toBe(true);
         expect(reduxDispatchMock).toHaveBeenCalledWith(
-          openWorkspaceFile(TEST_WORKSPACE_ID, path, { line, openInAdjacentPanel: false }),
+          openWorkspaceFile(TEST_WORKSPACE_ID, path, {
+            filePathIsLiteral: true,
+            line,
+            openInAdjacentPanel: false,
+          }),
         );
       }
       expect(invokeIpcMock).not.toHaveBeenCalled();
@@ -467,6 +474,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
       });
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+          filePathIsLiteral: true,
           line: undefined,
           openInAdjacentPanel: false,
         }),
@@ -480,6 +488,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     await handleLink('/repo/clone/docs/design.md', { workspaceId: TEST_WORKSPACE_ID });
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -516,6 +525,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -533,6 +543,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/lib.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -550,6 +561,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       1,
       openWorkspaceFile(TEST_WORKSPACE_ID, relative, {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -557,6 +569,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       2,
       openWorkspaceFile(TEST_WORKSPACE_ID, relative, {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -569,6 +582,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
 
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -628,6 +642,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -645,6 +660,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: 42,
         openInAdjacentPanel: false,
       }),
@@ -661,6 +677,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: 17,
         openInAdjacentPanel: false,
       }),
@@ -678,6 +695,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: true,
       }),
@@ -708,6 +726,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       2,
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/scoped.ts', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-chat',
@@ -816,6 +835,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     });
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),

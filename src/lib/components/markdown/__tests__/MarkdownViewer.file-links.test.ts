@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel } from 'redux-saga';
+import type { PanelLayoutSliceState } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { warmImport } from '../../../../test/warm-import';
 
 // Keep Markdown processing, both link handlers, selectors, and action creators real.
@@ -55,6 +57,9 @@ vi.mock('$lib/components/patterns/notify', () => ({
 warmImport(() => import('../MarkdownViewer.svelte'));
 warmImport(() => import('$store/renderer/slices/workspace/workspace-selectors'));
 warmImport(() => import('$lib/utils/workspaces-link-handler'));
+warmImport(
+  () => import('$store/renderer/slices/workspace-navigation/sagas/workspace-navigation-tab-saga'),
+);
 
 let originalUrl: string;
 beforeEach(() => {
@@ -97,7 +102,12 @@ async function expectFile(path: string, line?: number, adjacent = false) {
       payload: [
         'owning-workspace',
         path,
-        { line, openInAdjacentPanel: adjacent, sourcePanelId: 'panel-chat' },
+        {
+          filePathIsLiteral: true,
+          line,
+          openInAdjacentPanel: adjacent,
+          sourcePanelId: 'panel-chat',
+        },
       ],
     }),
   );
@@ -108,6 +118,70 @@ async function expectFile(path: string, line?: number, adjacent = false) {
   ]);
   expect(mocks.backendRequest).not.toHaveBeenCalled();
   expectNoBrowserOrEditor();
+
+  // Consume the actual action through the production saga and layout reducer.
+  // A decoded literal suffix must still be intact in the opened tab, not merely
+  // at the link handler's dispatch boundary.
+  const { workspaceNavigationTabSaga } =
+    await import('$store/renderer/slices/workspace-navigation/sagas/workspace-navigation-tab-saga');
+  const { panelLayoutReducer, emptyWorkspaceState } =
+    await import('$store/renderer/slices/panel-layout/panel-layout-slice');
+  let layout: PanelLayoutSliceState = {
+    byWorkspaceId: {
+      'owning-workspace': {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'panel-chat' },
+            { type: 'panel', panelId: 'panel-right' },
+          ],
+          sizes: [50, 50],
+        },
+        columnCount: 2,
+        focusedPanelId: 'panel-chat',
+        panels: {
+          'panel-chat': {
+            id: 'panel-chat',
+            tabs: [{ id: 'agent-tab', type: 'agent', title: 'Agent', agentId: 'agent-1' }],
+            activeTabId: 'agent-tab',
+          },
+          'panel-right': { id: 'panel-right', tabs: [], activeTabId: null },
+        },
+      },
+    },
+  };
+  const channel = stdChannel();
+  const task = runSaga(
+    {
+      channel,
+      dispatch: (action) => {
+        layout = panelLayoutReducer(layout, action);
+      },
+      getState: () => ({ panelLayout: layout }),
+    },
+    workspaceNavigationTabSaga,
+  );
+  try {
+    channel.put(mocks.dispatch.mock.calls[1][0]);
+    const panels = Object.values(layout.byWorkspaceId['owning-workspace']!.panels);
+    const tabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'file');
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).toMatchObject({
+      type: 'file',
+      workspaceId: 'owning-workspace',
+      filePath: path,
+      title: path.split('/').pop(),
+    });
+    expect(tabs[0].data?.line).toBe(line);
+    const targetPanel = panels.find((panel) => panel.tabs.includes(tabs[0]))!;
+    expect(targetPanel.activeTabId).toBe(tabs[0].id);
+    expect(targetPanel.id === 'panel-chat').toBe(!adjacent);
+  } finally {
+    task.cancel();
+    await task.toPromise();
+  }
 }
 
 describe.each([false, true])('rendered file links (streaming=%s)', (isStreaming) => {
@@ -125,6 +199,10 @@ describe.each([false, true])('rendered file links (streaming=%s)', (isStreaming)
     ['docs/literal%2520%23L42.md', 'docs/literal%20#L42.md', undefined],
     ['docs/filename%23L42', 'docs/filename#L42', undefined],
     ['docs/filename%3A17', 'docs/filename:17', undefined],
+    ['docs/design.md%23L42', 'docs/design.md#L42', undefined],
+    ['/host/worktrees/owner/docs/design.md%3A17', 'docs/design.md:17', undefined],
+    ['docs/design.md%23L42#L9', 'docs/design.md#L42', 9],
+    ['/host/worktrees/owner/docs/design.md%3A17:9', 'docs/design.md:17', 9],
     ['readme.md:17', 'readme.md', 17],
     ['readme.md:17:4', 'readme.md', 17],
   ])('opens %s in the message owner', async (href, path, line) => {
@@ -145,6 +223,18 @@ describe.each([false, true])('rendered file links (streaming=%s)', (isStreaming)
     const { link } = await renderLink('intent://local/file/docs/report%20%231.pdf#L8', isStreaming);
     expect(await fireEvent.click(link)).toBe(false);
     await expectFile('docs/report #1.pdf', 8);
+  });
+
+  it.each([
+    ['intent://local/file/docs/design.md%23L42', 'docs/design.md#L42', undefined],
+    ['intent://local/owning-workspace/file/docs/design.md%3A17', 'docs/design.md:17', undefined],
+    ['intent://local/file/docs/design.md%23L42#L9', 'docs/design.md#L42', 9],
+    ['intent://local/file/docs/design.md%3A17:9', 'docs/design.md:17', 9],
+    ['intent://local/file/docs/literal%2523L42', 'docs/literal%23L42', undefined],
+  ])('preserves the literal filename in app link %s', async (href, path, line) => {
+    const { link } = await renderLink(href, isStreaming);
+    expect(await fireEvent.click(link)).toBe(false);
+    await expectFile(path, line);
   });
 });
 
