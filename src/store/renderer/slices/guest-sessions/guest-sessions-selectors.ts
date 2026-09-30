@@ -8,6 +8,7 @@ import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   hostedMemberKey,
+  guestSessionLifetime,
   guestWorkspaceKey,
   type GuestSessionRecord,
   type HostedRoster,
@@ -193,4 +194,8 @@ export const selectInheritedWorkspaceKeys = store.createSelector(
 
 export const selectGuestLeaveConfirmations = store.createSelector(
   (state) => state.guestSessions.leaveConfirmations,
+);
+
+export const selectGuestSessionLifetime = store.createSelector((state, id: string) =>
+  guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
 );

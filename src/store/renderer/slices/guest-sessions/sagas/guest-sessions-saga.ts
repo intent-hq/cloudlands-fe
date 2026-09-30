@@ -1,6 +1,3 @@
-import type { StoreState } from '../../../types';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-import { guestSessionLifetime } from '../guest-sessions-types';
 /**
  * Guest Sessions Saga (multiplayer w4)
  *
@@ -36,7 +33,6 @@ import {
   join,
   put,
   race,
-  select,
   take,
   takeEvery,
   takeLeading,
@@ -110,6 +106,7 @@ import {
 } from '../guest-sessions-slice';
 import {
   selectCanManageHostedWorkspace,
+  selectGuestSessionLifetime,
   selectGuestSessionsLoaded,
   selectHostedRemovingPrincipalIds,
   selectHostedRosterMemberCounts,
@@ -238,9 +235,7 @@ function* leaveWorkspace(
     yield* put(action.failure(new GuestSessionOperationError('cancelled')));
     return;
   }
-  const lifetime = yield* select((state: StoreState) =>
-    guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
-  );
+  const lifetime = yield* selectGuestSessionLifetime.effect(id);
   const context = yield* selectPrincipalActionContext.effect();
   const key = JSON.stringify([id, workspaceId]);
   const joiners = flights.get(key);
@@ -254,17 +249,13 @@ function* leaveWorkspace(
   yield* put(leaveWorkspaceOperationStarted(id, workspaceId));
   try {
     const result = yield* call(invokeLeaveWorkspace, { id, workspaceId });
-    const currentLifetime = yield* select((state: StoreState) =>
-      guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
-    );
+    const currentLifetime = yield* selectGuestSessionLifetime.effect(id);
     outcome =
       currentLifetime !== lifetime || context !== (yield* selectPrincipalActionContext.effect())
         ? { failure: new GuestSessionOperationError('cancelled') }
         : { result };
   } catch (error) {
-    const currentLifetime = yield* select((state: StoreState) =>
-      guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
-    );
+    const currentLifetime = yield* selectGuestSessionLifetime.effect(id);
     outcome = {
       failure:
         currentLifetime !== lifetime || context !== (yield* selectPrincipalActionContext.effect())
