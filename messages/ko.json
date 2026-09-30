@@ -2377,6 +2377,8 @@
   "chat_messageActions_copyMessage_label": "메시지 복사",
   "chat_messageActions_copySessionIdHint_label": "Shift를 누른 채 클릭하면 세션 ID 복사",
   "chat_messageActions_scrollToPrevious_label": "이전 메시지로 스크롤",
+  "chat_messageActions_previousMessageLoading_label": "이전 사용자 메시지를 찾는 중…",
+  "chat_chatPanel_previousMessageLoad_error": "이전 사용자 메시지를 불러오지 못했습니다. 다시 시도해 주세요.",
   "chat_messageActions_previousUserMessage_label": "이전 사용자 메시지",
   "chat_messageEditor_cancel_label": "취소",
   "chat_messageEditor_send_label": "보내기",

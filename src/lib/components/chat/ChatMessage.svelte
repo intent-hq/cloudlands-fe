@@ -239,6 +239,7 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Keeps an edited virtualized turn materialized until edit mode closes. */
     onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
@@ -278,6 +279,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    previousMessageLoading = false,
     onEditStateChange,
     isSticky = false,
     onStickyClick,
@@ -1538,6 +1540,7 @@
               onCopy={handleCopy}
               requestId={backendSessionId ?? undefined}
               {onScrollToPrevious}
+              {previousMessageLoading}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
               {queueInfo}
@@ -1912,6 +1915,7 @@
             role="assistant"
             {onRegenerate}
             {onScrollToPrevious}
+            {previousMessageLoading}
             {onFork}
             {onVote}
             onCopy={handleCopy}

@@ -6,6 +6,7 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { formatRelativeTime } from '$lib/i18n/format';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
@@ -260,6 +261,29 @@ async function verifyCatalogContract(testCase: ContractCase) {
     allowed.map(({ rule }) => rule).sort(),
   );
 }
+
+describe('catalog relative-time reference', () => {
+  it.each(['2026-09-29T13:59:59.000Z', '2026-09-29T14:00:01.000Z', '2030-03-15T12:00:00.000Z'])(
+    'keeps fixture time stable when the host date is %s',
+    async (hostDate) => {
+      const actual = await vi.importActual<typeof import('$lib/i18n/format')>('$lib/i18n/format');
+      // Mock Date only: catalog imports, capture stability and cleanup use real timers.
+      vi.setSystemTime(new Date(hostDate));
+      try {
+        expect(vi.isFakeTimers()).toBe(false);
+        expect(new Date().toISOString()).toBe(hostDate);
+        const fixtureDate = '2026-01-02T14:00:00.000Z';
+        expect(formatRelativeTime(fixtureDate)).toBe('8 months ago');
+        const options = { now: new Date('2026-01-02T14:05:00.000Z'), style: 'narrow' as const };
+        expect(formatRelativeTime(fixtureDate, options)).toBe(
+          actual.formatRelativeTime(fixtureDate, options),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
 
 describe('catalog generated identity normalization', () => {
   it.each([

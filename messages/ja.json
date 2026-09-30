@@ -2377,6 +2377,8 @@
   "chat_messageActions_copyMessage_label": "メッセージをコピー",
   "chat_messageActions_copySessionIdHint_label": "Shift を押しながらクリックでセッション ID をコピー",
   "chat_messageActions_scrollToPrevious_label": "前のメッセージへスクロール",
+  "chat_messageActions_previousMessageLoading_label": "前のユーザーメッセージを検索中…",
+  "chat_chatPanel_previousMessageLoad_error": "前のユーザーメッセージを読み込めませんでした。もう一度お試しください。",
   "chat_messageActions_previousUserMessage_label": "前のユーザーメッセージ",
   "chat_messageEditor_cancel_label": "キャンセル",
   "chat_messageEditor_send_label": "送信",
