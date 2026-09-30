@@ -902,6 +902,403 @@ export async function retainCompanionBundle(directory: string, destination: stri
   return files;
 }
 
+/** Private main observations are evidence, never native or renderer authority. */
+function companionMainObject(value: unknown, keys?: string[]): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Missing companion main evidence object');
+  if (
+    keys &&
+    (Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key)))
+  )
+    throw new Error('Unexpected companion main evidence fields');
+  return value as Record<string, any>;
+}
+function companionMainRequire(condition: unknown, reason: string): asserts condition {
+  if (!condition) throw new Error('Incomplete companion main evidence: ' + reason);
+}
+function companionMainJournal(value: unknown) {
+  const journal = companionMainObject(value, [
+    'version',
+    'observed',
+    'retained',
+    'dropped',
+    'failed',
+    'recordingComplete',
+    'ownerCompletionObserved',
+    'ownerCompletionLimit',
+    'rows',
+  ]);
+  companionMainRequire(
+    journal.version === 1 &&
+      journal.ownerCompletionObserved === false &&
+      journal.ownerCompletionLimit ===
+        'The public client API exposes no original outer healthCheck join' &&
+      journal.recordingComplete === true &&
+      journal.dropped === 0 &&
+      journal.failed === 0 &&
+      Array.isArray(journal.rows) &&
+      journal.rows.length <= 128 &&
+      journal.observed === journal.rows.length &&
+      journal.retained === journal.rows.length &&
+      JSON.stringify(journal.rows).length <= 1_048_576,
+    'journal counters, loss, bound or passive qualification',
+  );
+  const rows = journal.rows as Array<Record<string, any>>;
+  const phases = new Set([
+    'request-enter',
+    'request-settled',
+    'request-owner-unobserved',
+    'socket-event',
+    'renderer-roots-joined',
+    'pool-retirement',
+    'ledger-join-return',
+    'pool-dispose-enter',
+    'pool-dispose-return',
+  ]);
+  for (const [i, value] of rows.entries()) {
+    const row = companionMainObject(value);
+    companionMainRequire(
+      row.sequence === i + 1 && phases.has(row.phase),
+      'journal sequence or phase',
+    );
+    const callFields = ['callId', 'clientId', 'connectionId', 'incarnationId', 'socketId'];
+    const fields: Record<string, string[]> = {
+      'request-enter': [
+        ...callFields,
+        'owner',
+        ...(row.owner === 'unknown' ? [] : ['module', 'line', 'column']),
+      ],
+      'request-settled': [...callFields, 'state'],
+      'request-owner-unobserved': callFields,
+      'socket-event': ['socketId', 'host', 'event'],
+      'renderer-roots-joined': ['producers', 'seal'],
+      'pool-retirement': [
+        'ownersJoined',
+        'admissionSealed',
+        'outcome',
+        'exclusions',
+        'clients',
+        'failureKinds',
+      ],
+      'ledger-join-return': ['producersClosed', 'pending', 'sealed', 'rows'],
+      'pool-dispose-enter': ['pending'],
+      'pool-dispose-return': ['result', 'ownerJoined'],
+    };
+    companionMainObject(row, ['sequence', 'phase', ...fields[row.phase]]);
+  }
+  return rows;
+}
+
+/** Serialized by the original app.evaluate, never imported into the renderer. */
+function observeCompanionMainActivation() {
+  const fixture = (globalThis as unknown as { nativeReviewFixture?: Fixture }).nativeReviewFixture;
+  return {
+    version: 1,
+    pid: process.pid,
+    ppid: process.ppid,
+    platform: process.platform,
+    ui: process.env.NATIVE_REVIEW_UI === '1',
+    sidebar: process.env.NATIVE_REVIEW_SIDEBAR_UI === '1',
+    diagnostic: process.env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328 === '1',
+    ready: fixture?.ready === true,
+    statusProducers: fixture?.evidence().statusProducers ?? null,
+  };
+}
+export function assertCompanionMainActivation(value: unknown, mainPid: number, workerPid: number) {
+  const row = companionMainObject(value, [
+    'version',
+    'pid',
+    'ppid',
+    'platform',
+    'ui',
+    'sidebar',
+    'diagnostic',
+    'ready',
+    'statusProducers',
+  ]);
+  companionMainRequire(
+    Number.isSafeInteger(mainPid) &&
+      mainPid > 0 &&
+      Number.isSafeInteger(workerPid) &&
+      workerPid > 0 &&
+      mainPid !== workerPid &&
+      row.version === 1 &&
+      row.pid === mainPid &&
+      row.ppid === workerPid &&
+      row.platform === 'linux' &&
+      row.ui === true &&
+      row.sidebar === true &&
+      row.diagnostic === true &&
+      row.ready === true,
+    'actual main identity, mode or ready profile',
+  );
+  companionMainJournal(row.statusProducers);
+  return {
+    activated: true,
+    profile: 'linux-ui-sidebar-companion',
+    completion: 'not asserted',
+  } as const;
+}
+
+/** Validates the original aggregate API result; no generation-to-socket identity is invented. */
+export function assertCompanionMainOwnership(
+  value: unknown,
+  quiescence: unknown,
+  activationJournal: unknown,
+) {
+  const source = companionMainObject(value);
+  companionMainRequire(JSON.stringify(source).length <= 32 * 1024 * 1024, 'main evidence bound');
+  const rows = companionMainJournal(source.statusProducers);
+  const initial = companionMainJournal(activationJournal);
+  companionMainRequire(
+    initial.length <= rows.length &&
+      initial.every((row, index) => JSON.stringify(row) === JSON.stringify(rows[index])),
+    'original activation journal prefix',
+  );
+  const empty = (value: unknown) => Array.isArray(value) && value.length === 0;
+  const positive = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
+  const id = (value: unknown) =>
+    typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+  companionMainRequire(
+    empty(source.faults) &&
+      empty(source.completionFaults) &&
+      source.pending === 0 &&
+      source.outstandingOriginals === 0 &&
+      Array.isArray(source.completions) &&
+      source.completions.length <= 1024 &&
+      Array.isArray(source.records) &&
+      source.records.length <= 1024 &&
+      Array.isArray(source.allocations),
+    'original fault-sensitive completion fence',
+  );
+  const allocations = new Map<string, number>();
+  for (const raw of source.allocations) {
+    const row = companionMainObject(raw, ['socketId', 'host', 'destroyed']);
+    companionMainRequire(
+      id(row.socketId) &&
+        (row.host === 0 || row.host === 1) &&
+        row.destroyed === true &&
+        !allocations.has(row.socketId),
+      'original allocation',
+    );
+    allocations.set(row.socketId, row.host);
+  }
+  companionMainRequire(
+    allocations.size >= 2 && allocations.size <= 128,
+    'nonempty two-host allocation inventory',
+  );
+  const receipt = companionMainObject(quiescence, ['producers', 'joined']);
+  companionMainRequire(
+    Array.isArray(receipt.producers) && receipt.producers.length === 2,
+    'two original renderer producers',
+  );
+  const keys = new Set<string>(),
+    senders = new Set<number>();
+  const taskNames = [
+    'connectionsSaga',
+    'daemonEventsSaga',
+    'principalSaga',
+    'lifecycleReadSaga',
+    'repositoryContextSaga',
+    'gitReadSaga',
+    'acceptChangesStatusSaga',
+  ];
+  for (const raw of receipt.producers) {
+    const producer = companionMainObject(raw, ['key', 'sender', 'receipt']);
+    companionMainRequire(
+      ['host-A', 'local-B'].includes(producer.key) &&
+        !keys.has(producer.key) &&
+        positive(producer.sender) &&
+        !senders.has(producer.sender),
+      'renderer identity',
+    );
+    keys.add(producer.key);
+    senders.add(producer.sender);
+    const r = companionMainObject(producer.receipt);
+    companionMainRequire(
+      r.route?.startupSettled === true &&
+        r.route.closed === true &&
+        r.producersClosed === true &&
+        empty(r.faults) &&
+        Array.isArray(r.tasks) &&
+        r.tasks.length === 7,
+      'original seven-root receipt',
+    );
+    for (const name of taskNames)
+      companionMainRequire(
+        r.tasks.filter(
+          (task: any) => task.name === name && task.iteratorDone === true && task.joined === true,
+        ).length === 1,
+        'original root join',
+      );
+  }
+  const calls = new Map<string, Record<string, any>>(),
+    settled = new Set<string>(),
+    closed = new Set<string>();
+  let roots = 0,
+    retirement = 0,
+    ledger = 0,
+    closeCount = 0;
+  for (const row of rows) {
+    const base = ['sequence', 'phase'];
+    const callFields = ['callId', 'clientId', 'connectionId', 'incarnationId', 'socketId'];
+    if (row.phase === 'request-enter') {
+      companionMainObject(row, [...base, ...callFields, 'owner', 'module', 'line', 'column']);
+      companionMainRequire(
+        !retirement &&
+          callFields.every((key) => id(row[key])) &&
+          allocations.has(row.socketId) &&
+          !calls.has(row.callId) &&
+          [
+            'healthCheck',
+            'captureLocalDeviceKind',
+            'captureRemoteHostname',
+            'performOpenBackendWindow',
+          ].includes(row.owner) &&
+          /^backend\.ipc(?:-[A-Za-z0-9_-]+\.js|\.ts)$/.test(row.module) &&
+          /^\d+$/.test(row.line) &&
+          /^\d+$/.test(row.column),
+        'original status owner',
+      );
+      calls.set(row.callId, row);
+    } else if (row.phase === 'request-settled') {
+      companionMainObject(row, [...base, ...callFields, 'state']);
+      const original = calls.get(row.callId);
+      const matches = source.completions.filter(
+        (call: any) =>
+          call.layer === 'client' && call.method === 'host.status' && call.callId === row.callId,
+      );
+      companionMainRequire(
+        !retirement &&
+          original &&
+          !settled.has(row.callId) &&
+          row.state === 'fulfilled' &&
+          matches.length === 1 &&
+          matches[0].state === row.state &&
+          callFields.every((key) => original[key] === row[key] && matches[0][key] === row[key]),
+        'original status settlement identity',
+      );
+      settled.add(row.callId);
+    } else if (row.phase === 'socket-event') {
+      companionMainObject(row, [...base, 'socketId', 'host', 'event']);
+      companionMainRequire(
+        !retirement &&
+          allocations.has(row.socketId) &&
+          allocations.get(row.socketId) === row.host &&
+          ['end', 'close'].includes(row.event),
+        'original socket event',
+      );
+      if (row.event === 'close') {
+        companionMainRequire(!closed.has(row.socketId), 'duplicate original facade close');
+        closed.add(row.socketId);
+      }
+    } else if (row.phase === 'renderer-roots-joined') {
+      companionMainObject(row, [...base, 'producers', 'seal']);
+      companionMainRequire(
+        !retirement && row.producers === 2 && typeof row.seal === 'boolean',
+        'renderer root phase',
+      );
+      if (row.seal) {
+        companionMainRequire(!roots, 'duplicate final root join');
+        roots = row.sequence;
+      }
+    } else if (row.phase === 'pool-retirement') {
+      companionMainObject(row, [
+        ...base,
+        'ownersJoined',
+        'admissionSealed',
+        'outcome',
+        'exclusions',
+        'clients',
+        'failureKinds',
+      ]);
+      companionMainRequire(
+        roots &&
+          !retirement &&
+          calls.size === settled.size &&
+          closed.size === allocations.size &&
+          row.ownersJoined === true &&
+          row.admissionSealed === true &&
+          row.outcome === 'clean' &&
+          empty(row.exclusions) &&
+          empty(row.failureKinds) &&
+          Array.isArray(row.clients) &&
+          row.clients.length > 0 &&
+          row.clients.length <= 128,
+        'original aggregate pool retirement',
+      );
+      const generations = new Set<number>();
+      for (const raw of row.clients) {
+        const client = companionMainObject(raw, [
+          'generation',
+          'ownersJoined',
+          'outcome',
+          'closes',
+          'failureKinds',
+        ]);
+        companionMainRequire(
+          positive(client.generation) &&
+            !generations.has(client.generation) &&
+            client.ownersJoined === true &&
+            client.outcome === 'clean' &&
+            empty(client.failureKinds) &&
+            Array.isArray(client.closes) &&
+            client.closes.length > 0 &&
+            client.closes.length <= 128,
+          'original client aggregate',
+        );
+        generations.add(client.generation);
+        for (const rawClose of client.closes) {
+          const close = companionMainObject(rawClose, ['destroyRequested', 'closeObserved']);
+          companionMainRequire(
+            close.destroyRequested === true && close.closeObserved === true,
+            'original facade close join',
+          );
+          closeCount++;
+        }
+      }
+      companionMainRequire(
+        closeCount === closed.size,
+        'aggregate close count (not an identity mapping)',
+      );
+      retirement = row.sequence;
+    } else if (row.phase === 'ledger-join-return') {
+      companionMainObject(row, [...base, 'producersClosed', 'pending', 'sealed', 'rows']);
+      companionMainRequire(
+        retirement &&
+          !ledger &&
+          row.producersClosed === true &&
+          row.pending === 0 &&
+          row.sealed === true &&
+          row.rows === source.completions.length,
+        'original sealed ledger',
+      );
+      const joined = companionMainObject(receipt.joined, [
+        'producersClosed',
+        'pending',
+        'sealed',
+        'rows',
+      ]);
+      companionMainRequire(
+        ['producersClosed', 'pending', 'sealed', 'rows'].every((key) => joined[key] === row[key]),
+        'original quiescence ledger receipt',
+      );
+      ledger = row.sequence;
+    } else throw new Error('Incomplete companion main evidence: unknown owner or legacy disposal');
+  }
+  companionMainRequire(
+    roots > 0 && retirement > roots && ledger > retirement && ledger === rows.length,
+    'complete ordered final ownership evidence',
+  );
+  return {
+    complete: true,
+    scope: 'original main pool aggregate',
+    privateTicketIdentity: 'not exposed',
+    facadeCloses: closeCount,
+    nativeStop: 'not asserted',
+  } as const;
+}
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const evidence = process.env.NATIVE_REVIEW_EVIDENCE_DIR;
 const executable = process.env.NATIVE_REVIEW_DRIVER;
@@ -2532,6 +2929,7 @@ async function withDriver(
   if (diagnosticMode) {
     const observationErrors: string[] = [];
     let bodyError: unknown;
+    let observedMainPid: number | undefined;
     let bodyFailed = false;
     let finalSource: ReturnType<Fixture['evidence']> | undefined;
     await companionPhasesOnce(
@@ -2555,6 +2953,7 @@ async function withDriver(
                 ],
                 env: {
                   ...environment(home),
+                  NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328: '1',
                   ...(uiMode
                     ? {
                         NATIVE_REVIEW_UI: '1',
@@ -2573,6 +2972,13 @@ async function withDriver(
               await expect
                 .poll(() => app!.evaluate(() => !!(globalThis as any).nativeReviewFixture?.ready))
                 .toBe(true);
+              observedMainPid = app.process().pid;
+              const activation = await app.evaluate(observeCompanionMainActivation);
+              record(dir, 'electron', {
+                outer: { runId, workerPid: process.pid, mainPid: observedMainPid },
+                observed: activation,
+              });
+              assertCompanionMainActivation(activation, observedMainPid ?? 0, process.pid);
               await body({
                 dir,
                 ready: ready!,
@@ -2756,6 +3162,13 @@ async function withDriver(
           },
         },
         {
+          name: 'original-main-ownership-observation',
+          run: async () => {
+            if (!app) throw new Error('Original main unavailable for ownership observation');
+            record(dir, 'sidebar-main-ownership-final', await main(app, (f) => f.evidence()));
+          },
+        },
+        {
           name: 'original-app-close',
           run: async () => {
             if (app) await app.close();
@@ -2771,6 +3184,47 @@ async function withDriver(
           name: 'diagnostic-validation',
           run: async () => {
             const destination = join(evidence!, 'group-10', 'diagnostics');
+            let mainCoverage: unknown;
+            let coverageFailed = false;
+            let coverageError: unknown;
+            try {
+              const activation = companionMainObject(
+                JSON.parse(await readFile(join(destination, 'final-electron.json'), 'utf8')),
+                ['outer', 'observed'],
+              );
+              const outer = companionMainObject(activation.outer, [
+                'runId',
+                'workerPid',
+                'mainPid',
+              ]);
+              companionMainRequire(
+                outer.runId === runId &&
+                  outer.workerPid === process.pid &&
+                  outer.mainPid === observedMainPid,
+                'original activation binding',
+              );
+              const active = assertCompanionMainActivation(
+                activation.observed,
+                observedMainPid ?? 0,
+                process.pid,
+              );
+              const ownership = assertCompanionMainOwnership(
+                JSON.parse(
+                  await readFile(
+                    join(destination, 'final-sidebar-main-ownership-final.json'),
+                    'utf8',
+                  ),
+                ),
+                JSON.parse(await readFile(join(destination, 'final-ui-quiescence.json'), 'utf8')),
+                activation.observed.statusProducers,
+              );
+              mainCoverage = { activation: active, ownership };
+            } catch (error) {
+              coverageFailed = true;
+              coverageError = error;
+              mainCoverage = { complete: false, error: String(error) };
+            }
+            record(destination, 'main-coverage', mainCoverage);
             const worker = JSON.parse(await readFile(join(dir, 'worker.json'), 'utf8'));
             const supervisor = JSON.parse(await readFile(join(dir, 'supervisor.json'), 'utf8'));
             const owned = (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
@@ -2813,6 +3267,7 @@ async function withDriver(
             }
             record(destination, 'disposition', {
               bodyFailed,
+              mainCoverage,
               ownedCleanup: success,
               readerValid: parsed.valid,
               readerComplete: parsed.complete,
@@ -2820,6 +3275,7 @@ async function withDriver(
               nativeCompletion: 'original stop inventory only',
               historicalCause: false,
             });
+            if (coverageFailed) throw coverageError;
             if (!parsed.complete || !success)
               throw new Error('Diagnostic trace or original lifecycle incomplete');
           },
