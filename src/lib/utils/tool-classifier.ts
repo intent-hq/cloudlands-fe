@@ -483,6 +483,10 @@ function dirname(path: unknown): string {
   return parts.join('/');
 }
 
+function unquoteTitlePath(path: string): string {
+  return path.trim().replace(/^([\x60'"])(.*)\1$/, '$2');
+}
+
 /**
  * Context Engine tool names - tools that use Augment's proprietary context engine.
  * These get special treatment with Augment branding.
@@ -912,10 +916,10 @@ function classifyToolInner(
     !input.content &&
     !input.file_content
   ) {
-    // Extract from name like "Read `src/lib/App.svelte`" (use cleanedName to preserve case)
-    const nameBacktickMatch = cleanedName.match(/^read\s+`(.+)`\s*$/i);
-    if (nameBacktickMatch) {
-      const extracted = nameBacktickMatch[1];
+    // Match paired title quotes before shortening the path to its filename.
+    const nameQuotedMatch = cleanedName.match(/^read\s+([\x60'"])(.+)\1\s*$/i);
+    if (nameQuotedMatch) {
+      const extracted = nameQuotedMatch[2];
       const extractedIsDir = input.type === 'directory';
       return {
         category: 'file-read',
@@ -944,8 +948,7 @@ function classifyToolInner(
     if (typeof input._acpTitle === 'string') {
       const titleMatch = input._acpTitle.match(/^(?:Read|View|List\s+Contents?)\s+(.+)/i);
       if (titleMatch) {
-        // Strip surrounding backticks from extracted path
-        const candidate = titleMatch[1].trim().replace(/^`|`$/g, '');
+        const candidate = unquoteTitlePath(titleMatch[1]);
         if (candidate.includes('.') || candidate.includes('/')) {
           const titleIsDir =
             input.type === 'directory' || /^List\s+Contents?/i.test(input._acpTitle);
@@ -1001,7 +1004,7 @@ function classifyToolInner(
   if (!hasPath) {
     const writeMatch = cleanedName.match(/^(edit|save|write|create)\s+(.+)/i);
     if (writeMatch) {
-      const filePart = writeMatch[2].replace(/^`|`$/g, '');
+      const filePart = unquoteTitlePath(writeMatch[2]);
       if (filePart && (filePart.includes('.') || filePart.includes('/'))) {
         const verbLower = writeMatch[1].toLowerCase();
         const verb =
@@ -1020,7 +1023,7 @@ function classifyToolInner(
     }
     const readMatch = cleanedName.match(/^(read|view)\s+(.+)/i);
     if (readMatch) {
-      const filePart = readMatch[2].replace(/^`|`$/g, '');
+      const filePart = unquoteTitlePath(readMatch[2]);
       if (filePart && (filePart.includes('.') || filePart.includes('/'))) {
         const readIsDir = input.type === 'directory';
         return {
@@ -1038,7 +1041,7 @@ function classifyToolInner(
     }
     const deleteMatch = cleanedName.match(/^(delete|remove)\s+(.+)/i);
     if (deleteMatch) {
-      const filePart = deleteMatch[2].replace(/^`|`$/g, '');
+      const filePart = unquoteTitlePath(deleteMatch[2]);
       if (filePart && (filePart.includes('.') || filePart.includes('/'))) {
         return {
           category: 'file-delete',
@@ -1234,8 +1237,7 @@ function fileReadDisplay(name: string, input: Record<string, any>): ToolDisplay 
       /^(?:Edit|Save|Read|Write|Delete|View|Create)\s+(.+)/i,
     );
     if (titleMatch) {
-      // Strip surrounding backticks from extracted path
-      const candidate = titleMatch[1].trim().replace(/^`|`$/g, '');
+      const candidate = unquoteTitlePath(titleMatch[1]);
       if (candidate.includes('.') || candidate.includes('/')) {
         path = candidate;
       }
@@ -1286,8 +1288,7 @@ function fileWriteDisplay(name: string, input: Record<string, any>): ToolDisplay
       /^(?:Edit|Save|Read|Write|Delete|View|Create)\s+(.+)/i,
     );
     if (titleMatch) {
-      // Strip surrounding backticks from extracted path
-      const candidate = titleMatch[1].trim().replace(/^`|`$/g, '');
+      const candidate = unquoteTitlePath(titleMatch[1]);
       if (candidate.includes('.') || candidate.includes('/')) {
         path = candidate;
       }
