@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, stat, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
@@ -23,7 +24,7 @@ for (const isolated of [false, true]) {
           '<!doctype html><title>Optimizer control</title>',
         );
         await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }));
-        for (const name of ['alpha', 'beta']) {
+        for (const name of ['alpha', 'anchor', 'beta']) {
           const dir = join(root, 'node_modules', name);
           await mkdir(dir, { recursive: true });
           await writeFile(
@@ -35,7 +36,11 @@ for (const isolated of [false, true]) {
         }
         const urls: string[] = [];
         const caches: string[] = [];
-        for (const [workerIndex, name] of ['alpha', 'beta'].entries()) {
+        let lazyFile = '';
+        let lazyUrl = '';
+        let firstBase = '';
+        let lazyBefore: { ino: number; dev: number; sha256: string } | undefined;
+        for (const [workerIndex, name] of ['anchor', 'beta'].entries()) {
           const cacheDir = viteHarnessCacheDir('control', {
             root,
             workerIndex: isolated ? workerIndex : undefined,
@@ -45,7 +50,10 @@ for (const isolated of [false, true]) {
             configFile: false,
             root,
             cacheDir,
-            optimizeDeps: { entries: [], include: [name] },
+            optimizeDeps: {
+              entries: [],
+              include: workerIndex === 0 ? ['alpha', 'anchor'] : ['beta'],
+            },
             server: { host: '127.0.0.1', port: 0, watch: { ignored: ['**/*'] } },
           });
           servers.push(server);
@@ -72,21 +80,72 @@ for (const isolated of [false, true]) {
           expect(response.status()).toBe(200);
           expect(await imported).toEqual({ value: name, error: null });
           urls.push(response.url());
+          if (workerIndex === 0) {
+            firstBase = base;
+            // Alpha is optimized but deliberately never fetched by this server/browser.
+            // A previously served dep can survive on Vite's in-memory transform cache.
+            const metadata = JSON.parse(
+              await readFile(join(cacheDir, 'deps/_metadata.json'), 'utf8'),
+            );
+            lazyFile = resolve(cacheDir, 'deps', metadata.optimized.alpha.file);
+            expect(lazyFile.startsWith(resolve(cacheDir) + '/')).toBe(true);
+            const file = await stat(lazyFile);
+            lazyBefore = {
+              ino: file.ino,
+              dev: file.dev,
+              sha256: createHash('sha256')
+                .update(await readFile(lazyFile))
+                .digest('hex'),
+            };
+            lazyUrl = new URL(relative(root, lazyFile) + '?v=' + metadata.browserHash, base).href;
+          }
         }
-        // A fresh HTTP request cannot be satisfied by Chromium's module cache.
-        const oldModule = await context.request.get(urls[0]);
-        if (isolated) {
-          expect(caches[0]).not.toBe(caches[1]);
-          expect(oldModule.status()).toBe(200);
-          expect(await oldModule.text()).toContain('alpha');
-        } else {
-          expect(caches[0]).toBe(caches[1]);
-          expect(oldModule.status()).not.toBe(200);
-        }
+        const lazyAfter = await stat(lazyFile).then(
+          (file) => ({ ino: file.ino, dev: file.dev }),
+          (error) => {
+            if (error.code === 'ENOENT') return null;
+            throw error;
+          },
+        );
+        const oldModule = await context.request.get(lazyUrl);
+        const freshPage = await context.newPage();
+        await freshPage.goto(firstBase);
+        const lateImport = await freshPage
+          .evaluate(async () => (await import('/alpha.js')).value)
+          .then(
+            (value) => ({ value, error: null }),
+            (error) => ({ value: null, error: String(error) }),
+          );
         await info.attach('optimizer-publication', {
-          body: JSON.stringify({ isolated, caches, urls, firstModuleStatus: oldModule.status() }),
+          body: JSON.stringify({
+            isolated,
+            caches,
+            urls,
+            lazyUrl,
+            lazyBefore,
+            lazyAfter,
+            firstModuleStatus: oldModule.status(),
+            lateImport,
+          }),
           contentType: 'application/json',
         });
+        if (isolated) {
+          expect(caches[0]).not.toBe(caches[1]);
+          expect(lazyAfter).toEqual({ ino: lazyBefore!.ino, dev: lazyBefore!.dev });
+          expect(
+            createHash('sha256')
+              .update(await readFile(lazyFile))
+              .digest('hex'),
+          ).toBe(lazyBefore!.sha256);
+          expect(oldModule.status()).toBe(200);
+          expect(lateImport).toEqual({ value: 'alpha', error: null });
+        } else {
+          expect(caches[0]).toBe(caches[1]);
+          expect(lazyAfter).toBeNull();
+          expect(oldModule.status()).not.toBe(200);
+          expect(lateImport.value).toBeNull();
+          expect(lateImport.error).toContain('Failed to fetch dynamically imported module');
+        }
       } finally {
         await context.close();
         const closed = await Promise.allSettled(servers.map((server) => server.close()));
