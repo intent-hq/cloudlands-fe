@@ -107,7 +107,7 @@ function makeSelectionMatrixUsage(): TokenUsageFixture {
 
 function visibleText(element: Element): string {
   const copy = element.cloneNode(true) as Element;
-  copy.querySelectorAll('.animated-number-target').forEach((target) => target.remove());
+  copy.querySelectorAll('.animated-number-target, .invisible').forEach((target) => target.remove());
   return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
