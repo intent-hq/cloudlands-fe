@@ -1,3 +1,6 @@
+import { terminalsReducer, selectScript, openTerminalOverlay } from '../terminals/terminals-slice';
+import { setScriptListState, scriptArchiveRequested, scriptArchiveFinished } from './scripts-slice';
+import { selectAllWorkspaceScriptEntries, selectScriptHistoryState } from './scripts-selectors';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_OUTPUT_CHARS,
@@ -276,5 +279,66 @@ describe('scripts selectors', () => {
     };
     expect(selectScriptsInitialized.select(noWsState, WS)).toBe(false);
     expect(selectWorkspaceScriptsInitialized.select(noWsState, WS)).toBe(false);
+  });
+});
+
+describe('archive lifecycle reconciliation', () => {
+  it('keeps selected output and direct row handles, without reviving archived rows on runtime events', () => {
+    const active = makeScriptEntry({ mode: 'command', purpose: 'oneOff' });
+    let scripts = scriptsReducer(undefined, setScriptsData(WS, [active]));
+    scripts = scriptsReducer(scripts, setScriptListState(WS, false, undefined, true));
+    scripts = scriptsReducer(
+      scripts,
+      appendScriptOutput(WS, active.id, { text: 'retained output', timestamp: 'now' }),
+    );
+    let terminals = terminalsReducer(undefined, selectScript(WS, active.id));
+    terminals = terminalsReducer(terminals, openTerminalOverlay(WS));
+    const archived = {
+      ...active,
+      archivedAt: '2026-09-30T12:00:00Z',
+      lastRun: { outcome: 'failed' as const, exitCode: 2, stoppedAt: '2026-09-30T12:00:00Z' },
+    };
+    const refresh = setScriptsData(WS, [archived]);
+    scripts = scriptsReducer(scripts, refresh);
+    terminals = terminalsReducer(terminals, refresh);
+    scripts = scriptsReducer(
+      scripts,
+      updateRuntimeState(WS, active.id, { status: 'exited', exitCode: 2 }),
+    );
+    const root = { scripts } as never;
+    expect(selectWorkspaceScriptEntries.select(root, WS)).toEqual([]);
+    const legacy = scriptsReducer(scripts, setScriptListState(WS, false, undefined, false));
+    expect(selectWorkspaceScriptEntries.select({ scripts: legacy } as never, WS)).toHaveLength(1);
+    expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].lastRun?.outcome).toBe('failed');
+    expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe(
+      'retained output',
+    );
+    expect(terminals.workspaces[WS].selectedScriptId).toBe(active.id);
+    expect(terminals.workspaces[WS].isOpen).toBe(true);
+    scripts = scriptsReducer(scripts, setScriptsData(WS, [{ ...archived, archivedAt: undefined }]));
+    expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
+    expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks).toHaveLength(1);
+  });
+  it('preserves records on read errors and isolates loading/mutation results by workspace', () => {
+    const script = makeScriptEntry();
+    let state = scriptsReducer(undefined, setScriptsData(WS, [script]));
+    state = scriptsReducer(state, setScriptListState(WS, true, undefined, true));
+    state = scriptsReducer(state, setScriptListState(WS, false, 'offline'));
+    state = scriptsReducer(state, scriptArchiveRequested('other', ['id'], 'archive'));
+    state = scriptsReducer(state, scriptArchiveFinished('other', { changed: 1, skipped: 2 }));
+    expect(selectScriptHistoryState.select({ scripts: state } as never, WS)).toMatchObject({
+      loadError: 'offline',
+      loading: false,
+      lifecycleSupported: true,
+    });
+    expect(state.byWorkspaceId[WS].scripts[script.id]).toEqual(script);
+    expect(state.byWorkspaceId[WS].archiveOperation).toBeUndefined();
+    expect(state.byWorkspaceId.other.archiveOperation).toEqual({
+      pending: false,
+      changed: 1,
+      skipped: 2,
+    });
+    state = scriptsReducer(state, clearScriptOperations('other'));
+    expect(state.byWorkspaceId.other.archiveOperation).toBeUndefined();
   });
 });

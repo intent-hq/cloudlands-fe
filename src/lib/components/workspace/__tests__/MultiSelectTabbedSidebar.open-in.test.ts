@@ -144,6 +144,18 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
+  selectScriptHistoryState: () => ({
+    subscribe: (run: (value: object) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
   selectWorkspaceScriptEntries: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({

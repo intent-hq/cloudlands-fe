@@ -73,6 +73,18 @@ const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(em
 // Actions
 // ============================================================================
 
+export const setScriptListState =
+  createAction<[wsId: string, loading: boolean, error?: string, supported?: boolean]>(
+    'scripts/setListState',
+  );
+export const scriptArchiveRequested = createAction<
+  [wsId: string, scriptIds: string[], operation: 'archive' | 'restore']
+>('scripts/archiveRequested');
+export const scriptArchiveFinished =
+  createAction<[wsId: string, result: { error?: string; changed?: number; skipped?: number }]>(
+    'scripts/archiveFinished',
+  );
+
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
 
@@ -176,8 +188,8 @@ scriptsReducer.with(
 );
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
-  if (Object.keys(ws.operations).length === 0) return state;
-  return setWorkspaceState(state, wsId, { ...ws, operations: {} });
+  if (Object.keys(ws.operations).length === 0 && !ws.archiveOperation) return state;
+  return setWorkspaceState(state, wsId, { ...ws, operations: {}, archiveOperation: undefined });
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -229,4 +241,25 @@ scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chun
     ...ws,
     outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
   });
+});
+
+scriptsReducer.with(
+  setScriptListState,
+  (state, { payload: [wsId, loading, loadError, supported] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      loading,
+      loadError,
+      ...(supported !== undefined ? { lifecycleSupported: supported } : {}),
+    });
+  },
+);
+scriptsReducer.with(scriptArchiveRequested, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, archiveOperation: { pending: true } });
+});
+scriptsReducer.with(scriptArchiveFinished, (state, { payload: [wsId, result] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, archiveOperation: { pending: false, ...result } });
 });

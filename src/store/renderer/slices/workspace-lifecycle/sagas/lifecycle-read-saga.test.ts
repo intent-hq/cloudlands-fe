@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
   events: { queryPage: vi.fn() },
   skills: { list: vi.fn() },
-  scripts: { list: vi.fn() },
+  scripts: { list: vi.fn(), supportsLifecycle: undefined as undefined | (() => Promise<boolean>) },
   git: {
     prRefresh: vi.fn(),
     status: vi.fn(),
@@ -63,7 +63,7 @@ import {
 } from '../../changes/changes-slice';
 import { initContextForWorkspace } from '../../context/context-slice';
 import { refreshPRStatusRequested } from '../../pr-status/pr-status-slice';
-import { refreshScripts } from '../../scripts/scripts-slice';
+import { refreshScripts, setScriptListState } from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
 import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associations/task-agent-associations-slice';
@@ -950,6 +950,8 @@ describe('lifecycleReadSaga', () => {
       { type: 'context/hydrateContextItems', payload: [WS, [item]] },
       { type: 'taskAgentAssociations/hydrateTaskAgentAssociations', payload: [WS, links] },
       { type: 'skills/setSkills', payload: [WS, [skill]] },
+      setScriptListState(WS, true),
+      setScriptListState(WS, false, undefined, false),
       { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: [script] } },
       { type: 'scripts/setInitialized', payload: [WS, true] },
       { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [terminal]] },
@@ -1001,6 +1003,8 @@ describe('lifecycleReadSaga', () => {
       await settle();
 
       expect(run.actions).toEqual([
+        setScriptListState(WS, true),
+        setScriptListState(WS, false, 'Forbidden'),
         { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: [] } },
         { type: 'scripts/setInitialized', payload: [WS, true] },
         { type: 'terminals/removeTerminal', payload: [WS, 'term-1'] },
@@ -1024,7 +1028,10 @@ describe('lifecycleReadSaga', () => {
       run.channel.put(hydrateTerminalsRequested(WS));
       await settle();
 
-      expect(run.actions).toEqual([]);
+      expect(run.actions).toEqual([
+        setScriptListState(WS, true),
+        setScriptListState(WS, false, 'boom'),
+      ]);
       expect(selectScriptEntries.select(run.getState(), WS)).toHaveLength(1);
       expect(selectScriptsInitialized.select(run.getState(), WS)).toBe(false);
       expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toHaveLength(1);
@@ -1162,6 +1169,45 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('recovers archived open IDs from an authoritative all-list on reconnect', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    const archived = {
+      id: 'script-history',
+      archivedAt: '2026-09-30T12:00:00Z',
+      lastRun: { outcome: 'failed' },
+    };
+    mocks.scripts.list.mockResolvedValueOnce([]).mockResolvedValueOnce([archived]);
+    const run = start();
+    try {
+      run.channel.put(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS, { archive: 'all' }]]);
+      expect(run.actions).toContainEqual(setScriptsData(WS, [archived] as never));
+      expect(run.actions).toContainEqual(setScriptListState(WS, false, undefined, true));
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('exposes a supporting daemon load failure as retryable History, not an empty list', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list.mockRejectedValueOnce(new Error('history offline'));
+    const run = start();
+    try {
+      run.channel.put(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(run.actions).toContainEqual(setScriptListState(WS, true, undefined, true));
+      expect(run.actions).toContainEqual(setScriptListState(WS, false, 'history offline'));
+      expect(run.actions.some((action) => action.type === setScriptsData.type)).toBe(false);
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
   it('runs a trailing script refresh after an in-flight response can become stale', async () => {
     let resolveFirst!: (scripts: unknown[]) => void;
     const stale = [{ id: 'script-old' }];
@@ -1182,8 +1228,12 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      setScriptListState(WS, true),
+      setScriptListState(WS, false, undefined, false),
       { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: stale } },
       { type: 'scripts/setInitialized', payload: [WS, true] },
+      setScriptListState(WS, true),
+      setScriptListState(WS, false, undefined, false),
       { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: fresh } },
       { type: 'scripts/setInitialized', payload: [WS, true] },
     ]);
@@ -1268,7 +1318,7 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.scripts.list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
+    expect(run.actions).toEqual([setScriptListState(WS, true)]);
 
     run.channel.put(refreshScripts(WS));
     await settle();

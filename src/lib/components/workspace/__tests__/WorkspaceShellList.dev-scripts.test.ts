@@ -49,6 +49,18 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
+  selectScriptHistoryState: () => ({
+    subscribe: (run: (value: object) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
   selectWorkspaceScriptEntries: workspaceReadable(
     (workspaceId) => mocks.scripts[workspaceId] ?? [],
   ),

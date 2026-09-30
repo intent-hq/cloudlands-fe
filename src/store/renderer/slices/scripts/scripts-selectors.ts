@@ -22,11 +22,13 @@ export const selectScriptsInitialized = store.createSelector(
   },
 );
 
-/** All stored script entries (active workspace). */
+/** Normal list: archived entries are hidden only after capability negotiation. */
 export const selectScriptEntries = store.createSelector(
   (state, wsId: string | null): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    return Object.values(ws.scripts);
+    return Object.values(ws.scripts).filter(
+      (script) => !ws.lifecycleSupported || !script.archivedAt,
+    );
   },
 );
 
@@ -71,7 +73,9 @@ export const selectWorkspaceScriptsInitialized = store.createSelector(
 export const selectWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    return Object.values(ws.scripts);
+    return Object.values(ws.scripts).filter(
+      (script) => !ws.lifecycleSupported || !script.archivedAt,
+    );
   },
 );
 
@@ -85,4 +89,12 @@ export const selectWorkspaceScriptRuntime = store.createSelector(
     const ws = getWs(state, wsId);
     return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();
   },
+);
+
+/** Includes history: retained definitions keep open output views alive. */
+export const selectAllWorkspaceScriptEntries = store.createSelector(
+  (state, wsId: string): ScriptWithState[] => Object.values(getWs(state, wsId).scripts),
+);
+export const selectScriptHistoryState = store.createSelector((state, wsId: string) =>
+  getWs(state, wsId),
 );

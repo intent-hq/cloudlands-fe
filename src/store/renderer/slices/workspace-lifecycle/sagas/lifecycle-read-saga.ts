@@ -67,7 +67,12 @@ import {
   prStatusRefreshStarted,
   refreshPRStatusRequested,
 } from '../../pr-status/pr-status-slice';
-import { refreshScripts, setScriptsData, setScriptsInitialized } from '../../scripts/scripts-slice';
+import {
+  refreshScripts,
+  setScriptsData,
+  setScriptsInitialized,
+  setScriptListState,
+} from '../../scripts/scripts-slice';
 import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
   hydrateTaskAgentAssociations,
@@ -1121,9 +1126,31 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
  */
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
   let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
+  yield* put(setScriptListState(workspaceId, true));
   try {
+    const supported = appClient.scripts.supportsLifecycle
+      ? yield* call([appClient.scripts, appClient.scripts.supportsLifecycle])
+      : false;
+    if (appClient.scripts.supportsLifecycle) {
+      yield* put(setScriptListState(workspaceId, true, undefined, supported));
+    }
     scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
+    if (supported) {
+      // An authoritative all-list recovers archived open IDs on reconnect and supplies
+      // persistent failure indications, even before the user opens History.
+      scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
+        archive: 'all' as const,
+      });
+    }
+    yield* put(setScriptListState(workspaceId, false, undefined, supported));
   } catch (error) {
+    yield* put(
+      setScriptListState(
+        workspaceId,
+        false,
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
     if (!isForbiddenErrorResponse(error)) throw error;
     logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
     scripts = [];

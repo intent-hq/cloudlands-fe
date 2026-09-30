@@ -3,7 +3,15 @@ import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-stat
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), restart: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
+  restart: vi.fn(),
+  archive: vi.fn(),
+  restore: vi.fn(),
+  supportsLifecycle: vi.fn(),
+}));
+vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
 
@@ -13,6 +21,8 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearScriptOperations,
+  scriptArchiveRequested,
+  scriptArchiveFinished,
   refreshScripts,
   restartScriptRequested,
   scriptOperationFailed,
@@ -157,6 +167,83 @@ describe('scriptsOperationSaga', () => {
     pending.resolve({ success: true });
     await settle();
     expect(run.actions.some(({ type }) => type === refreshScripts.type)).toBe(false);
+    await stop(run.task);
+  });
+});
+
+describe('script archive operations', () => {
+  it('reconciles partial success and persistence errors without claiming rollback', async () => {
+    mocks.supportsLifecycle.mockResolvedValue(true);
+    mocks.archive.mockResolvedValue({
+      archived: ['one'],
+      skipped: [{ scriptId: 'two', reason: 'live' }],
+    });
+    const run = start();
+    run.channel.put(scriptArchiveRequested(WS, ['one', 'two'], 'archive'));
+    await settle();
+    await settle();
+    expect(mocks.archive).toHaveBeenCalledWith(WS, ['one', 'two']);
+    expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 1 }));
+    expect(run.actions).toContainEqual(refreshScripts(WS));
+    run.actions.length = 0;
+    mocks.archive.mockRejectedValue(new Error('durable write failed'));
+    run.channel.put(scriptArchiveRequested(WS, ['one', 'two'], 'archive'));
+    await settle();
+    await settle();
+    expect(run.actions).toContainEqual(
+      scriptArchiveFinished(WS, { error: 'durable write failed' }),
+    );
+    expect(run.actions).toContainEqual(refreshScripts(WS));
+    await stop(run.task);
+  });
+  it('restores without launch and drops late mutation results on workspace cleanup', async () => {
+    mocks.supportsLifecycle.mockResolvedValue(true);
+    mocks.start.mockClear();
+    mocks.restore.mockResolvedValue({ restored: ['one'], skipped: [] });
+    const run = start();
+    run.channel.put(scriptArchiveRequested(WS, ['one'], 'restore'));
+    await settle();
+    await settle();
+    expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 0 }));
+    expect(mocks.start).not.toHaveBeenCalled();
+    const pending = deferred<{ archived: string[]; skipped: [] }>();
+    mocks.archive.mockReturnValue(pending.promise);
+    run.channel.put(scriptArchiveRequested(WS, ['one'], 'archive'));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    run.actions.length = 0;
+    pending.resolve({ archived: ['one'], skipped: [] });
+    await settle();
+    await settle();
+    expect(run.actions.filter((a) => a.type === scriptArchiveFinished.type)).toEqual([]);
+    await stop(run.task);
+  });
+  it('does not send archive mutations without daemon capability', async () => {
+    mocks.supportsLifecycle.mockResolvedValue(false);
+    mocks.archive.mockClear();
+    const run = start();
+    run.channel.put(scriptArchiveRequested(WS, ['one'], 'archive'));
+    await settle();
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(
+      run.actions.some((a) => a.type === scriptArchiveFinished.type && a.payload[1].error),
+    ).toBe(true);
+    await stop(run.task);
+  });
+  it('does not mutate after unmount during a pending capability read', async () => {
+    const capability = deferred<boolean>();
+    mocks.supportsLifecycle.mockReturnValue(capability.promise);
+    mocks.archive.mockClear();
+    const run = start();
+    run.channel.put(scriptArchiveRequested(WS, ['one'], 'archive'));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    capability.resolve(true);
+    await settle();
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(run.actions.some((a) => a.type === refreshScripts.type)).toBe(false);
     await stop(run.task);
   });
 });

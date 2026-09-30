@@ -1,3 +1,8 @@
+import type {
+  ScriptArchiveFilter,
+  ScriptArchiveResult,
+  ScriptRestoreResult,
+} from '$features/scripts/types';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -1852,8 +1857,14 @@ export interface ScriptRunResult {
 }
 
 export interface ScriptsClient {
+  supportsLifecycle?(): Promise<boolean>;
+  archive?(workspaceId: string, scriptIds: string[]): Promise<ScriptArchiveResult>;
+  restore?(workspaceId: string, scriptIds: string[]): Promise<ScriptRestoreResult>;
   /** `script.list` — definitions with merged runtime state. */
-  list(workspaceId: string): Promise<ScriptWithState[]>;
+  list(
+    workspaceId: string,
+    options?: { archive?: ScriptArchiveFilter },
+  ): Promise<ScriptWithState[]>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.remove` — stop (if running) and forget a script. */
