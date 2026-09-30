@@ -156,41 +156,54 @@ async function capture(name: string) {
 
 async function expectEditorialSurface() {
   const panel = page.locator('[data-panel-id]').first();
-  const { insetBox, panelBox, styles } = await panel.evaluate((element) => {
-    const inset = document.querySelector('[data-testid="panel-workspace-inset"]')!;
-    const insetRect = inset.getBoundingClientRect();
-    const panelRect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
-    const canvas = getComputedStyle(document.querySelector('[aria-label="Workspace layout"]')!);
-    return {
-      insetBox: {
-        x: insetRect.x,
-        y: insetRect.y,
-        width: insetRect.width,
-        height: insetRect.height,
-      },
-      panelBox: {
-        x: panelRect.x,
-        y: panelRect.y,
-        width: panelRect.width,
-        height: panelRect.height,
-      },
-      styles: {
+  await expect(async () => {
+    const geometry = await panel.evaluate((element) => {
+      const inset = element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
+      const frame = element.closest('.panel-canvas-frame')!;
+      const rect = (node: Element) => {
+        const box = node.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      };
+      const style = getComputedStyle(element);
+      const insetStyle = getComputedStyle(inset);
+      return {
+        inset: rect(inset),
+        frame: rect(frame),
+        panel: rect(element),
+        padding: [
+          insetStyle.paddingLeft,
+          insetStyle.paddingTop,
+          insetStyle.paddingRight,
+          insetStyle.paddingBottom,
+        ].map(Number.parseFloat),
+        scrollLeft: inset.scrollLeft,
+        scrollWidth: inset.scrollWidth,
+        viewportWidth: innerWidth,
+        pageWidth: document.documentElement.scrollWidth,
         radius: style.borderRadius,
         shadow: style.boxShadow,
         surface: style.backgroundColor,
-        canvas: canvas.backgroundColor,
-      },
-    };
-  });
-  const expectedInset = (await page.evaluate(() => innerWidth)) < 640 ? 8 : 12;
-  expect(panelBox.x - insetBox.x).toBeCloseTo(expectedInset, 0);
-  expect(panelBox.y - insetBox.y).toBeCloseTo(expectedInset, 0);
-  expect(insetBox.x + insetBox.width - panelBox.x - panelBox.width).toBeCloseTo(expectedInset, 0);
-  expect(insetBox.y + insetBox.height - panelBox.y - panelBox.height).toBeCloseTo(expectedInset, 0);
-  expect(styles.radius).toBe('9px');
-  expect(styles.shadow).not.toBe('none');
-  expect(styles.surface).not.toBe(styles.canvas);
+        canvas: getComputedStyle(element.closest('[aria-label="Workspace layout"]')!)
+          .backgroundColor,
+      };
+    });
+    // The current uncontained canvas is flush left, with responsive top/right/
+    // bottom padding. Its intrinsic width may leave unused space to the right.
+    const inset = geometry.viewportWidth < 640 ? 8 : 12;
+    expect(geometry.padding).toEqual([0, inset, inset, inset]);
+    expect(geometry.panel.x - geometry.inset.x + geometry.scrollLeft).toBeCloseTo(0, 0);
+    expect(geometry.panel.y - geometry.inset.y).toBeCloseTo(inset, 0);
+    expect(
+      geometry.inset.y + geometry.inset.height - geometry.panel.y - geometry.panel.height,
+    ).toBeCloseTo(inset, 0);
+    expect(geometry.panel.width).toBeGreaterThan(0);
+    expect(geometry.panel.width).toBeCloseTo(geometry.frame.width, 0);
+    expect(geometry.scrollWidth + 1).toBeGreaterThanOrEqual(geometry.frame.width + inset);
+    expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+    expect(geometry.radius).toBe('12px');
+    expect(geometry.shadow).not.toBe('none');
+    expect(geometry.surface).not.toBe(geometry.canvas);
+  }).toPass({ timeout: 5_000 });
 }
 
 async function expectEightPixelGutters() {
@@ -211,49 +224,69 @@ async function expectEightPixelGutters() {
 }
 
 async function expectConversationGeometry() {
-  const geometry = await page.evaluate(() => {
-    const activeTab = document.querySelector('.tab-content-wrapper:not(.hidden)');
-    const panel = activeTab?.closest('[data-panel-id]');
-    const column = activeTab?.querySelector('.conversation-column');
-    const composer = activeTab?.querySelector('.conversation-composer');
-    const input = activeTab?.querySelector('.rich-input-container');
-    const assistant = activeTab?.querySelector('[data-message-role="assistant"]');
-    if (!panel || !column || !composer || !input || !assistant) return null;
-
-    const rect = (element: Element) => {
-      const box = element.getBoundingClientRect();
-      return {
-        left: box.left,
-        right: box.right,
-        top: box.top,
-        bottom: box.bottom,
-        width: box.width,
+  // Sample the transcript and inset composer lane together. The outer composer
+  // shell intentionally spans the panel and is not the shared content measure.
+  await expect(async () => {
+    const geometry = await page.evaluate(() => {
+      const activeTab = document.querySelector('.tab-content-wrapper[aria-hidden="false"]');
+      const panel = activeTab?.closest('[data-panel-id]');
+      const chat = activeTab?.querySelector('.chat-panel-container');
+      const column = activeTab?.querySelector('[data-testid="chat-transcript-inner"]');
+      const lane = activeTab?.querySelector('[data-testid="chat-composer-lane"]');
+      const input = activeTab?.querySelector('.rich-input-container');
+      const assistant = activeTab?.querySelector('[data-message-role="assistant"]');
+      if (!panel || !chat || !column || !lane || !input || !assistant) return null;
+      const rect = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return { left: box.left, right: box.right, bottom: box.bottom, width: box.width };
       };
-    };
-    const inputStyle = getComputedStyle(input);
-    return {
-      panel: rect(panel),
-      column: rect(column),
-      composer: rect(composer),
-      input: rect(input),
-      assistant: rect(assistant),
-      columnMaxWidth: getComputedStyle(column).maxWidth,
-      inputRadius: inputStyle.borderRadius,
-      inputShadow: inputStyle.boxShadow,
-      viewportWidth: document.documentElement.clientWidth,
-    };
-  });
-
-  expect(geometry).not.toBeNull();
-  expect(geometry!.columnMaxWidth).toBe('768px');
-  expect(geometry!.column.width).toBeLessThanOrEqual(Math.min(768, geometry!.viewportWidth));
-  expect(geometry!.composer.width).toBeCloseTo(geometry!.column.width, 0);
-  expect(geometry!.assistant.left).toBeGreaterThanOrEqual(geometry!.column.left);
-  expect(geometry!.assistant.right).toBeLessThanOrEqual(geometry!.column.right + 1);
-  expect(geometry!.inputRadius).toBe('8px');
-  expect(geometry!.inputShadow).not.toBe('none');
-  expect(geometry!.panel.bottom - geometry!.input.bottom).toBeGreaterThanOrEqual(8);
-  expect(geometry!.panel.bottom - geometry!.input.bottom).toBeLessThanOrEqual(20);
+      const inputStyle = getComputedStyle(input);
+      const columnStyle = getComputedStyle(column);
+      const laneStyle = getComputedStyle(lane);
+      return {
+        panel: rect(panel),
+        chat: rect(chat),
+        column: rect(column),
+        lane: rect(lane),
+        input: rect(input),
+        assistant: rect(assistant),
+        columnMaxWidth: Number.parseFloat(columnStyle.maxWidth),
+        columnFontSize: Number.parseFloat(columnStyle.fontSize),
+        laneMaxWidth: Number.parseFloat(laneStyle.maxWidth),
+        laneFontSize: Number.parseFloat(laneStyle.fontSize),
+        lanePadding: [laneStyle.paddingLeft, laneStyle.paddingRight, laneStyle.paddingBottom].map(
+          Number.parseFloat,
+        ),
+        inputRadius: inputStyle.borderRadius,
+        inputShadow: inputStyle.boxShadow,
+        inputBorder: inputStyle.borderBottomWidth,
+        viewportWidth: document.documentElement.clientWidth,
+        pageWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(geometry).not.toBeNull();
+    const g = geometry!;
+    expect(g.columnMaxWidth / g.columnFontSize).toBeCloseTo(140, 4);
+    expect(g.laneMaxWidth / g.laneFontSize).toBeCloseTo(140, 4);
+    expect(g.column.width).toBeLessThanOrEqual(Math.min(g.columnMaxWidth, g.chat.width) + 1);
+    expect(g.column.width).toBeGreaterThan(0);
+    expect(Math.abs(g.lane.width - g.column.width)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs((g.column.left + g.column.right - g.lane.left - g.lane.right) / 2),
+    ).toBeLessThanOrEqual(1);
+    const expectedInset = g.chat.width >= 640 ? 24 : 16;
+    expect(g.lanePadding).toEqual([expectedInset, expectedInset, expectedInset]);
+    expect(g.input.left - g.lane.left).toBeCloseTo(expectedInset, 0);
+    expect(g.lane.right - g.input.right).toBeCloseTo(expectedInset, 0);
+    expect(g.lane.bottom - g.input.bottom).toBeCloseTo(expectedInset, 0);
+    expect(g.panel.bottom - g.lane.bottom).toBeCloseTo(1, 0);
+    expect(g.assistant.left).toBeGreaterThanOrEqual(g.column.left - 1);
+    expect(g.assistant.right).toBeLessThanOrEqual(g.column.right + 1);
+    expect(g.pageWidth).toBeLessThanOrEqual(g.viewportWidth + 1);
+    expect(g.inputRadius).toBe('8px');
+    expect(g.inputShadow).toBe('none');
+    expect(g.inputBorder).toBe('1px');
+  }).toPass({ timeout: 5_000 });
 }
 
 test.describe('Build Smoke — Editorial Workspace Shell', () => {
