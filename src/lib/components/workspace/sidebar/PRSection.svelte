@@ -268,7 +268,17 @@
 
   $effect(() => {
     const wsId = workspaceId;
-    const hashes = (pushedCommits as CommitInfo[]).map((commit) => commit.hash);
+    // Component-owned subscription bookkeeping only; fetched data stays in Redux.
+    // A refreshed array must not release reads for commits that are still present.
+    let hashes = new Set<string>();
+    $effect(() => {
+      const nextHashes = new Set((pushedCommits as CommitInfo[]).map((commit) => commit.hash));
+      for (const hash of hashes) {
+        if (!nextHashes.has(hash))
+          appStore.dispatch(releaseGitRead(wsId, `${readConsumer}:${hash}`, hash));
+      }
+      hashes = nextHashes;
+    });
     return () => {
       for (const hash of hashes)
         appStore.dispatch(releaseGitRead(wsId, `${readConsumer}:${hash}`, hash));

@@ -22,12 +22,14 @@ import { setFileExplorerWorkspacePath } from './slices/file-explorer/file-explor
 import { setWorkspaceEntity } from './slices/workspace/workspace-slice';
 import { prepareContext } from './slices/background-agent-executor/utils/context-preparation';
 import { selectGitStatus } from './slices/git/git-selectors';
+import { selectHostRole } from './slices/principal/principal-selectors';
 
 // Mock only I/O. Production Store, complete startup registry, reducers,
 // compatibility facades and every participating saga execute unchanged.
 vi.mock('$lib/client/live/backend-transport', () => ({
+  electronAPI: () => window.electronAPI,
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => new Promise(() => {})),
+  backendSubscribe: vi.fn(async () => ({ subscriptionId: 'composition-events' })),
   backendUnsubscribe: vi.fn(async () => {}),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
@@ -68,13 +70,21 @@ function calls(method: string) {
   return vi.mocked(backendRequest).mock.calls.filter(([name]) => name === method);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   resetMockIpcRouter();
   for (const channel of ['agent:get-active-streams', 'workspace:list', 'auto-update:get-state']) {
     registerMockIpcHandler(channel, () => new Promise(() => {}));
   }
   handlers = new Map();
+  handlers.set('client.hello', () => ({ server: { capabilities: {} } }));
+  handlers.set('principal.me', () => ({
+    id: 'composition-owner',
+    login: null,
+    displayName: null,
+    avatarUrl: null,
+    isAdministrator: true,
+  }));
   handlers.set('git.status', () => status);
   handlers.set('git.stage', ({ paths }) => ({ ok: true, paths }));
   handlers.set('git.stageHunk', () => ({ ok: true }));
@@ -88,7 +98,9 @@ beforeEach(() => {
     const handler = handlers.get(method);
     return handler ? handler(params as Record<string, unknown>) : new Promise(() => {});
   });
-  vi.spyOn(window.electronAPI!, 'invoke').mockImplementation(() => new Promise(() => {}));
+  vi.spyOn(window.electronAPI!, 'invoke').mockImplementation(async (channel) =>
+    channel === 'backend:get-status' ? { status: 'connected' } : new Promise(() => {}),
+  );
   hmr = {};
   stopRoot = startRootStoreLifecycle(appStore, { startSagas: () => [] });
   stopApp = startAppStoreLifecycle(appStore, hmr);
@@ -96,6 +108,14 @@ beforeEach(() => {
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  await vi.waitFor(() => expect(selectHostRole.select(appStore.state)).toBe('owner'));
+  // Existing presence attachment reads its own ID; principal admission separately
+  // discovers authority. Both production owners use the same §5.49 wire contract.
+  expect(calls('principal.me')).toEqual([
+    ['principal.me', {}],
+    ['principal.me', {}],
+  ]);
+  expect(calls('client.hello')).toEqual([['client.hello', {}]]);
 });
 
 afterEach(() => {
@@ -108,6 +128,9 @@ afterEach(() => {
 
 describe('Git workflow production composition and reload smoke', () => {
   it('routes public Git/Accept facades and PR intent through one ordered owner without blocking another workspace', async () => {
+    for (const id of ['composition-a', 'composition-b']) {
+      appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: WorkspaceId(id) })));
+    }
     const stage = Promise.withResolvers<{ ok: boolean; paths: string[] }>();
     handlers.set('git.stage', () => stage.promise);
     const inBandFailure = { success: false, steps: [], error: 'commit hook rejected' };

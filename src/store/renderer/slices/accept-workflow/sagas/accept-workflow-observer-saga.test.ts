@@ -3,6 +3,7 @@ import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { Workspace } from '$shared/types';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import type { CommitInfo } from '../../changes/changes-types';
 import { initialState as guestState } from '../../guest-sessions/guest-sessions-slice';
 import {
@@ -44,7 +45,7 @@ function deferred<T>() {
 function harness(authenticated = true, role = 'owner') {
   const channel = stdChannel();
   const listeners = new Set<() => void>();
-  let state = {
+  let state = withLegacyPrincipal({
     acceptWorkflow: acceptWorkflowReducer(undefined, { type: 'init' }),
     changes: fileTrackingReducer(undefined, setHasLoadedInitialData('a', true)),
     agentLock: agentLockReducer(undefined, { type: 'init' }),
@@ -59,7 +60,7 @@ function harness(authenticated = true, role = 'owner') {
     },
     connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
     guestSessions: { ...guestState, hasReceivedList: true },
-  };
+  });
   const dispatch = vi.fn((action: { type: string }) => {
     state = {
       ...state,

@@ -7,6 +7,10 @@ import { prWorkflowSaga } from '$store/renderer/slices/pr-workflow/sagas/pr-work
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { createMockWorkspace } from '../../../test/factories/workspace.factory';
 import { backgroundGitActionsService } from '../background-git-actions.service';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -52,6 +56,10 @@ beforeEach(() => {
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  admitLegacyPrincipal();
+  for (const id of ['ws-1', 'ws-fail']) {
+    appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: WorkspaceId(id) })));
+  }
   stopRefreshObserver = appStore.runSaga(function* () {
     yield* takeEvery(refreshRequested, function* (action) {
       yield* call(refreshed, action.payload);

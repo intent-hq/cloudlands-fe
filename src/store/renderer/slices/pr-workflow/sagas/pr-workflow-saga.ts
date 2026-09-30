@@ -328,7 +328,7 @@ function* worker(
   try {
     if (command.kind !== 'refresh' && (yield* selectIsWorkspaceCollaborator.effect(workspaceId))) {
       yield* put(
-        action.success({ success: false, error: m.workspace_prSection_pullUnavailable_error() }),
+        action.success({ success: false, error: m.workspace_gitError_permissionDenied() }),
       );
       return;
     }
@@ -348,7 +348,7 @@ function* worker(
     yield* call(() => reservation.ready);
     if (command.kind !== 'refresh' && (yield* selectIsWorkspaceCollaborator.effect(workspaceId))) {
       yield* put(
-        action.success({ success: false, error: m.workspace_prSection_pullUnavailable_error() }),
+        action.success({ success: false, error: m.workspace_gitError_permissionDenied() }),
       );
       return;
     }

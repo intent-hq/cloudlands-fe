@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { store } from '../../../store';
 import type { AcceptChangesResult } from '$features/accept-changes/types';
 import { initialState as guestInitialState } from '../../guest-sessions/guest-sessions-slice';
@@ -75,7 +76,7 @@ async function settle() {
 
 function harness(overrides = {}) {
   const channel = stdChannel();
-  let state = {
+  let state = withLegacyPrincipal({
     acceptWorkflow: acceptWorkflowReducer(undefined, setMergeDrawerOpen('a', true)),
     changes: fileTrackingReducer(undefined, setCommitMessage('a', options.commitMessage)),
     git: gitReducer(undefined, { type: 'init' }),
@@ -90,11 +91,12 @@ function harness(overrides = {}) {
           archived: false,
           ...overrides,
         },
+        { id: 'b', myRole: 'owner' },
       ]),
     },
     connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
     guestSessions: { ...guestInitialState, hasReceivedList: true },
-  };
+  });
   const actions: { type: string; payload?: unknown }[] = [];
   const dispatch = (action: { type: string }) => {
     actions.push(action);

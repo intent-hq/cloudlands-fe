@@ -581,7 +581,46 @@ describe('PRSection', () => {
     expect(readRequests('abc')).toHaveLength(0);
   });
 
-  it('pushed commits arriving while expanded dispatch additional details intents', async () => {
+  it('retains details across equivalent commit lists and releases them on workspace switch', async () => {
+    const { container, rerender } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [makePushedCommit('abc')],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('[title="Toggle file list"]');
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    await fireEvent.click(toggle);
+    completeCommitFiles('abc', 'src/abc.ts');
+    await waitFor(() =>
+      expect(container.querySelector('[data-file-path="src/abc.ts"]')).not.toBeNull(),
+    );
+    const count = readRequests('abc').length;
+    const [wsId, consumerId, requestId] = readRequests('abc').at(-1)!.payload;
+
+    await rerender({ pushedCommits: [makePushedCommit('abc', { message: 'updated metadata' })] });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    expect(readRequests('abc')).toHaveLength(count);
+    expect(container.querySelector('[data-file-path="src/abc.ts"]')).not.toBeNull();
+
+    await fireEvent.click(toggle);
+    await rerender({ pushedCommits: [makePushedCommit('abc')] });
+    await fireEvent.click(toggle);
+    expect(readRequests('abc')).toHaveLength(count);
+    expect(container.querySelector('[data-file-path="src/abc.ts"]')).not.toBeNull();
+
+    await rerender({ workspaceId: 'ws-2' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    await waitFor(() =>
+      expect(container.querySelector('[data-file-path="src/abc.ts"]')).toBeNull(),
+    );
+  });
+
+  it('fetches only added commits while expanded and releases only removed commits', async () => {
     const { container, rerender } = await renderPR({
       hasPRs: true,
       hasOpenPR: true,
@@ -599,12 +638,15 @@ describe('PRSection', () => {
     await fireEvent.click(toggle);
     await waitFor(() => expect(readRequests('abc').length).toBeGreaterThan(0));
     completeCommitFiles('abc', 'src/abc.ts');
+    const count = readRequests('abc').length;
+    const [wsId, consumerId, requestId] = readRequests('abc').at(-1)!.payload;
 
     // A new push lands while the PR stays expanded — the new commit's files
     // are fetched without another expand interaction.
     await rerender({ pushedCommits: [makePushedCommit('abc'), makePushedCommit('def')] });
     await waitFor(() => expect(readRequests('def').length).toBeGreaterThan(0));
-    completeCommitFiles('abc', 'src/abc.ts');
+    expect(readRequests('abc')).toHaveLength(count);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
     completeCommitFiles('def', 'src/def.ts');
     await waitFor(() => {
       const paths = Array.from(container.querySelectorAll('[data-testid="file-row"]')).map((r) =>
@@ -612,6 +654,12 @@ describe('PRSection', () => {
       );
       expect(paths).toEqual(expect.arrayContaining(['src/abc.ts', 'src/def.ts']));
     });
+    const defCount = readRequests('def').length;
+    await rerender({ pushedCommits: [makePushedCommit('def')] });
+    expect(mocks.dispatch).toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    expect(readRequests('def')).toHaveLength(defCount);
+    expect(container.querySelector('[data-file-path="src/abc.ts"]')).toBeNull();
+    expect(container.querySelector('[data-file-path="src/def.ts"]')).not.toBeNull();
   });
 
   it('a failed lazy PR details fetch is retried on the next expand', async () => {

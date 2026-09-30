@@ -14,6 +14,7 @@ import { selectAcceptChangesState } from '$store/renderer/slices/changes/changes
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus, type Workspace } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -102,6 +103,7 @@ describe('PullRequestCreator', () => {
     );
     store.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     store.dispatch(setWorkspaceEntity(workspace));
+    admitLegacyPrincipal();
   });
   afterEach(() => {
     cleanup();

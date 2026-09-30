@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { store } from '$store/renderer/store';
 import { initialState as guestInitialState } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { acceptWorkflowSaga } from '$store/renderer/slices/accept-workflow/sagas/accept-workflow-saga';
@@ -48,11 +49,11 @@ describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
   beforeEach(() => {
     mocks.backendRequest.mockReset();
     const channel = stdChannel();
-    const state = {
+    const state = withLegacyPrincipal({
       workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
       connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
       guestSessions: { ...guestInitialState, hasReceivedList: true },
-    };
+    });
     task = runSaga(
       { channel, dispatch: (action) => channel.put(action), getState: () => state },
       acceptWorkflowSaga,

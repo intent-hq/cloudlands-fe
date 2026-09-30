@@ -5,6 +5,7 @@ import { notify } from '$lib/components/patterns/notify';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
 import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { store } from '../../../store';
 import { startRootStoreLifecycle } from '../../../root-store-lifecycle';
 import {
@@ -16,6 +17,7 @@ import '../../../seeders/git-bridge-seeder';
 import '../../../seeders/terminals-scripts-seeder';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { guestSessionsListReceived } from '../../guest-sessions/guest-sessions-slice';
+import { principalContextChanged } from '../../principal/principal-slice';
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { authCompleted } from '../../github-auth/github-auth-slice';
@@ -100,7 +102,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers = new Map([
     ['workspace.get', () => ({ workspace })],
-    ['git.agentCommit', () => ({ success: true })],
+    ['git.agentCommit', () => ({ ok: true, hash: 'committed', files: ['a.ts'], fileCount: 1 })],
     ['accept-changes.execute', () => ({ success: true, steps: [] })],
   ]);
   vi.mocked(backendRequest).mockImplementation(async (method, params) => {
@@ -131,6 +133,7 @@ beforeEach(() => {
   );
   store.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   store.dispatch(setWorkspaceEntity(workspace));
+  admitLegacyPrincipal();
 });
 afterEach(() => {
   stop();
@@ -141,6 +144,23 @@ afterEach(() => {
 });
 
 describe('PR workflow production owner with mocked transport', () => {
+  it('denies mutations until the current connection has an admitted principal', async () => {
+    store.dispatch(principalContextChanged(null));
+    const denied = prWorkflowRequested('pr-alpha', { kind: 'commit', commitMessage: 'Draft' });
+    store.dispatch(denied);
+    await expect(denied.promise).resolves.toMatchObject({ success: false });
+    expect(backendRequest).not.toHaveBeenCalled();
+    expect(isGitMutationPending('pr-alpha')).toBe(false);
+
+    admitLegacyPrincipal();
+    const admitted = prWorkflowRequested('pr-alpha', { kind: 'commit', commitMessage: 'Draft' });
+    store.dispatch(admitted);
+    await expect(admitted.promise).resolves.toMatchObject({ success: true });
+    expect(calls('git.agentCommit')).toEqual([
+      ['git.agentCommit', { workspaceId: 'pr-alpha', message: 'Draft', userRequested: true }],
+    ]);
+  });
+
   it.each(['owner', 'collaborator'] as const)(
     'keeps refresh feedback visible for a %s after routing reads without blocking file writes',
     async (myRole) => {
