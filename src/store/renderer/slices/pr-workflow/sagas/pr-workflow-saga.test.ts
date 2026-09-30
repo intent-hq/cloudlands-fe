@@ -137,16 +137,18 @@ afterEach(() => {
   stopRefreshObserver();
   dispose();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('PR workflow production owner with mocked transport', () => {
   it.each(['owner', 'collaborator'] as const)(
-    'owns ordered refresh and busy-flag cleanup for a %s without owner-only collaborator reads',
+    'keeps refresh feedback visible for a %s after routing reads without blocking file writes',
     async (myRole) => {
+      vi.useFakeTimers();
       store.dispatch(setWorkspaceEntity({ ...workspace, myRole }));
       const request = prWorkflowRequested('pr-alpha', { kind: 'refresh' });
       store.dispatch(request);
-      await expect(request.promise).resolves.toEqual({ success: true });
+      await vi.advanceTimersByTimeAsync(0);
       expect(
         refreshActions.mock.calls.map(([action]) => ({
           type: action.type,
@@ -159,11 +161,70 @@ describe('PR workflow production owner with mocked transport', () => {
         ...(myRole === 'owner'
           ? [{ type: 'changes/refreshAcceptChangesStatus', payload: ['pr-alpha'] }]
           : []),
-        { type: 'git/setGitOperationFlag', payload: ['pr-alpha', 'isRefreshingGitStatus', false] },
       ]);
+      expect(selectGitOperationFlags.select(store.state, 'pr-alpha').isRefreshingGitStatus).toBe(
+        true,
+      );
+      expect(isGitMutationPending('pr-alpha')).toBe(false);
+      const write = vi.fn(async () => undefined);
+      await queueFileMutation('pr-alpha', 'a.ts', write);
+      expect(write).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(299);
+      expect(selectGitOperationFlags.select(store.state, 'pr-alpha').isRefreshingGitStatus).toBe(
+        true,
+      );
+      expect(selectPRWorkflow.select(store.state, 'pr-alpha').operations.refresh?.status).toBe(
+        'pending',
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(request.promise).resolves.toEqual({ success: true });
       expect(selectGitOperationFlags.select(store.state, 'pr-alpha').isRefreshingGitStatus).toBe(
         false,
       );
+      expect(refreshActions.mock.calls.at(-1)?.[0]).toMatchObject({
+        type: 'git/setGitOperationFlag',
+        payload: ['pr-alpha', 'isRefreshingGitStatus', false],
+      });
+      expect(backendRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['workspace unmount', 'root cancellation'] as const)(
+    'cancels refresh feedback on %s without late workspace-state recreation',
+    async (termination) => {
+      vi.useFakeTimers();
+      const request = prWorkflowRequested('pr-alpha', { kind: 'refresh' });
+      store.dispatch(request);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(selectGitOperationFlags.select(store.state, 'pr-alpha').isRefreshingGitStatus).toBe(
+        true,
+      );
+      refreshActions.mockClear();
+
+      if (termination === 'root cancellation') {
+        stop();
+        expect(selectGitOperationFlags.select(store.state, 'pr-alpha').isRefreshingGitStatus).toBe(
+          false,
+        );
+        expect(refreshActions.mock.calls.map(([action]) => action.payload)).toEqual([
+          ['pr-alpha', 'isRefreshingGitStatus', false],
+        ]);
+        refreshActions.mockClear();
+      }
+      store.dispatch(workspaceUnmounted('pr-alpha'));
+      await expect(request.promise).resolves.toEqual({
+        success: false,
+        error: 'Git workflow cancelled',
+      });
+      expect(store.state.git.byWorkspaceId['pr-alpha']).toBeUndefined();
+      expect(store.state.prWorkflow.byWorkspaceId['pr-alpha']).toBeUndefined();
+      expect(isGitMutationPending('pr-alpha')).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(300);
+      expect(store.state.git.byWorkspaceId['pr-alpha']).toBeUndefined();
+      expect(store.state.prWorkflow.byWorkspaceId['pr-alpha']).toBeUndefined();
+      expect(refreshActions).not.toHaveBeenCalled();
       expect(backendRequest).not.toHaveBeenCalled();
     },
   );

@@ -68,6 +68,9 @@ import {
 } from '../pr-workflow-slice';
 import type { PRWorkflowCommand, PRWorkflowResult } from '../pr-workflow-types';
 
+// Preserve the sidebar refresh acknowledgement window, not an animation duration.
+const REFRESH_MIN_VISIBLE_MS = 300;
+
 const flags: Partial<Record<PRWorkflowCommand['kind'], GitOperationFlagName>> = {
   push: 'isPushing',
   pull: 'isPulling',
@@ -350,6 +353,7 @@ function* worker(
       return;
     }
     started = true;
+    const startedAt = Date.now();
     if (flag) yield* put(setGitOperationFlag(workspaceId, flag, true));
     const result = yield* call(perform, workspaceId, command, lease);
     yield* call(() => lease?.release());
@@ -362,6 +366,12 @@ function* worker(
         result.error || m.workspace_prCreator_createFailed_error(),
       );
     if (shouldReconcile) yield* call(reconcile, workspaceId, includeWorkspace);
+    // Reads are routed, not awaited. Keep feedback visible without retaining the
+    // transport lease; cancellation still goes straight to the existing cleanup.
+    if (command.kind === 'refresh') {
+      const remaining = REFRESH_MIN_VISIBLE_MS - (Date.now() - startedAt);
+      if (remaining > 0) yield* delay(remaining);
+    }
     yield* put(action.success(result));
   } catch (error) {
     const message =

@@ -30,7 +30,7 @@
   } from '$store/renderer/slices/changes/changes-slice';
   import { gitRootsUpdated } from '$store/renderer/slices/git-roots/git-roots-slice';
   import { setSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
-  import { installChangesSummaryMocks } from './changes-summary.preview-fixtures';
+  import { setupChangesSummaryPreview } from '../../../../test/changes-summary-preview';
   import { ChangeStage } from '$features/file-tracking/types';
 
   let { locked = false, admittedOwner = true }: Props = $props();
@@ -38,8 +38,8 @@
   const timestamp = '2026-09-01T00:00:00Z';
   const branch = 'feature/a-long-working-branch-for-sidebar-layout';
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
-  const restoreMocks = untrack(() =>
-    installChangesSummaryMocks(workspaceId, branch, admittedOwner),
+  const disposePreview = untrack(() =>
+    setupChangesSummaryPreview(workspaceId, branch, admittedOwner),
   );
   store.dispatch(
     setWorkspaceEntity({
@@ -117,7 +117,7 @@
     );
   });
   onDestroy(() => {
-    restoreMocks();
+    disposePreview();
     store.dispatch(removeWorkspaceEntity(workspaceId));
     dispose();
   });
