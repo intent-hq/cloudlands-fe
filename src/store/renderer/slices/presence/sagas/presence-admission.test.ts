@@ -1,3 +1,5 @@
+import type { PresenceRoster } from '$shared/types/presence';
+import { MemberProvider } from '$lib/services/mentions/providers/member-provider';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
@@ -170,6 +172,46 @@ describe('presence admission and avatar policy', () => {
       selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
     ).toEqual(['host']);
   });
+  it.each(['held', 'failed'] as const)(
+    'retains accepted avatars and MemberProvider mentions during a %s same-admission presence refresh',
+    async (outcome) => {
+      start();
+      await settle();
+      const provider = new MemberProvider();
+      const context = { workspaceId: 'ws' };
+      const previousMentions = await provider.search('', context);
+      expect(previousMentions.map((p) => p.meta?.principalId)).toEqual(['host', 'away', 'guest']);
+      let resolve!: (value: unknown) => void;
+      wire.request.mockImplementationOnce(() =>
+        outcome === 'failed'
+          ? Promise.reject(new Error('membership temporarily unavailable'))
+          : new Promise((done) => {
+              resolve = done;
+            }),
+      );
+      const update: PresenceRoster = roster();
+      update.members[1] = {
+        ...update.members[1],
+        focus: [{ workspaceId: 'ws', agentId: 'agent' }],
+        typing: [{ agentId: 'agent', source: 'remote', pulse: 1 }],
+      };
+      store.dispatch(presenceRosterReceived(update));
+      await vi.advanceTimersByTimeAsync(300);
+      expect(
+        selectWorkspacePresencePeople.select(store.state, 'ws').map((p) => p.principalId),
+      ).toEqual(['host', 'guest']);
+      expect(await provider.search('', context)).toEqual(previousMentions);
+      if (outcome === 'held') {
+        resolve({ members: accepted() });
+        await settle();
+        expect(await provider.search('', context)).toEqual(previousMentions);
+      }
+      store.dispatch(setLabsMultiplayerEnabled(false));
+      await settle();
+      expect(selectWorkspacePresencePeople.select(store.state, 'ws')).toEqual([]);
+      expect(await provider.search('', context)).toEqual([]);
+    },
+  );
   it('drops held membership and snapshot results after disabling without deleting workspaces', async () => {
     const pending: Array<() => void> = [];
     wire.request.mockImplementation((method: string) =>
@@ -191,15 +233,32 @@ describe('presence admission and avatar policy', () => {
     expect(store.state.presence.members).toEqual({});
     expect(getItem(store.state.workspace.workspaces, WorkspaceId('ws'))?.id).toBe('ws');
   });
-  it('withholds modern rows missing authoritative hostRole without guessing from profile or workspace role', async () => {
+  it('withholds modern rows missing authoritative hostRole from both membership and presence', async () => {
     wire.request.mockImplementation(async (method: string) =>
       method === 'workspace.members.list'
         ? { members: accepted().map(({ hostRole: _hostRole, ...p }) => p) }
-        : roster(),
+        : { ...roster(), members: roster().members.map(({ hostRole: _hostRole, ...p }) => p) },
     );
     start();
     await settle();
     expect(selectWorkspacePresencePeople.select(store.state, 'ws')).toEqual([]);
+  });
+  it('uses a validated newer online roster role over older membership presentation', async () => {
+    wire.request.mockImplementation(async (method: string) =>
+      method === 'workspace.members.list'
+        ? {
+            members: accepted().map((p) =>
+              p.principalId === 'host' ? member('host', 'guest') : p,
+            ),
+          }
+        : roster(),
+    );
+    start();
+    await settle();
+    const host = selectWorkspacePresencePeople
+      .select(store.state, 'ws')
+      .find((p) => p.principalId === 'host');
+    expect(host).toMatchObject({ hostRole: 'member', online: true, viewing: false });
   });
   it('ignores same-handle collisions and retained guest rows for offline host members', async () => {
     wire.request.mockImplementation(async (method: string) =>

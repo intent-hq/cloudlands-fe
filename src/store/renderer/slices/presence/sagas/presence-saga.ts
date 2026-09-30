@@ -338,7 +338,6 @@ function supersedesMembership(action: ObservedAction, workspaceId: string): bool
 function* hydrateMembership(reads: RosterReads, workspaceId: string): SagaGenerator<void> {
   const ordinal = (reads.get(workspaceId) ?? 0) + 1;
   reads.set(workspaceId, ordinal);
-  yield* put(presenceMembersReceived(workspaceId, []));
   const { membership } = yield* race({
     membership: call(readMembership, workspaceId),
     superseded: take((action: ObservedAction) => supersedesMembership(action, workspaceId)),
