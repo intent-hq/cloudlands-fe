@@ -839,9 +839,6 @@
             <p class="type-body mt-2 text-muted-foreground">
               {m.settings_aiBehavior_importedClaude_readOnly()}
             </p>
-            <code class="type-caption mt-2 block break-all text-muted-foreground"
-              >{specialistFilePath}</code
-            >
             {#if currentSpecialist.unsupportedFields?.length}
               <p data-testid="specialist-import-warning" class="type-body mt-2 text-danger">
                 {m.settings_aiBehavior_importedClaude_unsupported({

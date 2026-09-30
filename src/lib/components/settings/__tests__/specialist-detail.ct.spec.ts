@@ -176,7 +176,6 @@ for (const source of ['user', 'project'] as const) {
         source === 'project'
           ? '/tmp/intent-demo/.claude/agents/review-helper.md'
           : '/tmp/intent-demo/home/.claude/agents/review-helper.md';
-      await expect(component.getByText(file, { exact: true })).toBeVisible();
       await component.locator('[data-open-combo-control]').getByRole('button').first().click();
       await expect
         .poll(async () => JSON.parse(await component.getByTestId('editor-launches').innerText()))
