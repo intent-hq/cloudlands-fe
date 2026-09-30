@@ -10,12 +10,12 @@ import {
   sendFollowUpMessage,
   setMockAgentBehavior,
   waitForAgentNotStreaming,
+  exitPackagedApp,
+  getSmokeWorkspace,
 } from './build-smoke-helpers';
-import { launchApp } from './test-helpers';
 
 const artifactPhase = process.env.EDITORIAL_ARTIFACT_PHASE ?? 'current';
 const artifactDir = path.join(process.cwd(), 'e2e-reports', 'editorial-workspace', artifactPhase);
-const useBuiltApp = process.env.EDITORIAL_USE_BUILT_APP === '1';
 const conversationResponse = [
   '# Editorial conversation ready',
   '',
@@ -43,7 +43,6 @@ let app: ElectronApplication;
 let page: Page;
 let workspaceId: string;
 let cleanupRepo: (() => void) | undefined;
-let userDataDir: string;
 
 async function emulateViewport(width: number, height: number) {
   const cdp = await page.context().newCDPSession(page);
@@ -72,7 +71,7 @@ async function prepareSidebarFixture() {
   const longStatus =
     'Refining the rail, workspace identity, and selected sections while preserving every interaction.';
 
-  await page.getByTitle('Click to edit space title').click();
+  await page.getByTitle('Click to edit workspace title').click();
   const titleInput = page.locator('input[placeholder="Untitled"]').first();
   await titleInput.fill(longTitle);
   await titleInput.press('Enter');
@@ -82,7 +81,7 @@ async function prepareSidebarFixture() {
   await statusInput.fill(longStatus);
   await statusInput.press('Enter');
 
-  await expect(page.getByTitle('Click to edit space title')).toContainText(longTitle);
+  await expect(page.getByTitle('Click to edit workspace title')).toContainText(longTitle);
   await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
     longStatus,
   );
@@ -258,21 +257,20 @@ async function expectConversationGeometry() {
 }
 
 test.describe('Build Smoke — Editorial Workspace Shell', () => {
+  test.fixme(
+    process.env.BUILD_SMOKE_VALIDATE_JOURNEYS !== '1',
+    'Pending real packaged validation: intent-hq/intent#5608',
+  );
   test.beforeAll(async () => {
     const repo = createTempRepo();
     cleanupRepo = repo.cleanup;
-    userDataDir = await mkdtemp(path.join(tmpdir(), 'editorial-shell-user-data-'));
     const launchOptions = {
-      extraArgs: [`--user-data-dir=${userDataDir}`],
       extraEnv: {
         MOCK_AGENT_SCRIPT_PATH: path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
         DEFAULT_PROVIDER_OVERRIDE: 'mock',
-        INTENTD_DATA_DIR: path.join(userDataDir, 'intentd'),
       },
     };
-    const launched = useBuiltApp
-      ? await launchApp(launchOptions)
-      : await launchPackagedApp(launchOptions);
+    const launched = await launchPackagedApp(launchOptions);
     app = launched.app;
     page = launched.page;
     const behavior = setMockAgentBehavior({ response: conversationResponse });
@@ -286,7 +284,7 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     });
     await page.locator('[data-panel-id]').first().waitFor({ state: 'visible', timeout: 20_000 });
     await page
-      .getByTitle('Click to edit space title')
+      .getByTitle('Click to edit workspace title')
       .waitFor({ state: 'visible', timeout: 60_000 });
     await expect(
       page
@@ -299,15 +297,21 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
 
   test.afterAll(async () => {
     if (page && workspaceId) await archiveAndGoHome(page, workspaceId).catch(() => undefined);
-    if (app) await app.close().catch(() => undefined);
+    await exitPackagedApp(app);
     cleanupRepo?.();
-    if (userDataDir) await rm(userDataDir, { recursive: true, force: true });
   });
 
-  // fixme: the sidebar title tooltip is now "Click to edit workspace title"
-  // and the shell-state capture that follows is unverified against the
-  // current sidebar — intent-hq/intent#5608.
-  test.fixme('captures and verifies shell and conversation states', async () => {
+  test('captures and verifies shell and conversation states', async () => {
+    const workspace = await getSmokeWorkspace(page, workspaceId);
+    expect(workspace.id).toBe(workspaceId);
+    // A renderer reload must retain the title/status we changed through the UI.
+    await page.reload();
+    await expect(page.getByTitle('Click to edit workspace title')).toContainText(
+      'Extremely Long Workspace Title',
+    );
+    await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
+      'Navigating the entire workspace UI',
+    );
     test.setTimeout(360_000);
     for (const [label, width, height] of [
       ['desktop', 1440, 1000],

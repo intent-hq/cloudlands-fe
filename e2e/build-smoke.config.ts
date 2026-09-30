@@ -7,7 +7,10 @@
  * Usage: pnpm test:build-smoke
  */
 
+import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
+
+const reportRoot = process.env.BUILD_SMOKE_REPORT_DIR ?? 'e2e-reports';
 
 export default defineConfig({
   testDir: '.',
@@ -27,9 +30,13 @@ export default defineConfig({
 
   retries: 1,
 
-  reporter: [['html', { outputFolder: 'e2e-reports/build-smoke-html' }], ['list']],
+  reporter: [
+    ['html', { outputFolder: join(reportRoot, 'build-smoke-html') }],
+    ['json', { outputFile: join(reportRoot, 'results.json') }],
+    ['list'],
+  ],
 
-  outputDir: 'e2e-reports/build-smoke-results',
+  outputDir: join(reportRoot, 'build-smoke-results'),
 
   use: {
     trace: 'retain-on-failure',
