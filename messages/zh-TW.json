@@ -6899,5 +6899,19 @@
   "settings_providers_serviceTierUltraFast_description": "尚未支援超快速。",
   "chat_agentCard_menu_moveToBackground_label": "移至背景",
   "chat_agentCard_menu_moveToForeground_label": "移至前景",
-  "agent_mutation_setBackgroundFailed_error": "無法變更代理程式模式"
+  "agent_mutation_setBackgroundFailed_error": "無法變更代理程式模式",
+  "settings_personalDevices_title": "已登入的裝置",
+  "settings_personalDevices_identity_description": "{host} 上的 {person} · {role}",
+  "settings_personalDevices_pair_label": "以我的身分配對另一台裝置",
+  "settings_personalDevices_owner_label": "主機擁有者",
+  "settings_personalDevices_member_label": "主機成員",
+  "settings_personalDevices_guest_label": "工作區訪客",
+  "settings_personalDevices_roster_label": "已連線的裝置",
+  "settings_personalDevices_connected_label": "已連線",
+  "settings_personalDevices_empty_label": "沒有可顯示的已連線裝置。",
+  "settings_personalDevices_reusable_description": "此連結和 QR 碼可重複使用，以目前的存取權限配對您的裝置。請勿分享給他人。",
+  "settings_personalDevices_pairing_error": "暫時無法配對。請檢查連線和存取權限，然後重試。",
+  "settings_personalDevices_roster_error": "無法載入已連線的裝置。請重試。",
+  "settings_personalDevices_copy_label": "複製配對連結",
+  "settings_personalDevices_copied_label": "連結已複製"
 }

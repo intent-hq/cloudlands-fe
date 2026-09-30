@@ -32,6 +32,7 @@ export type WorkspaceBrowserClientsState = {
 
 export type BrowserClientsState = {
   /** The `clientId` this renderer's connection presents on `client.hello`. */
+  authenticatedContext?: string | null;
   ownClientId: string | null;
   /** `client.list` snapshot; empty until the first read lands. */
   liveClients: LiveClientCollection;

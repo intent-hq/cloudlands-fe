@@ -18,6 +18,8 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   browserClientsReducer,
+  authenticatedClientsReceived,
+  authenticatedClientsCleared,
   browserTabClosed,
   browserTabUpserted,
   initialState,
@@ -290,5 +292,20 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toBeNull();
     expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
     expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-2')).toBe(1);
+  });
+});
+
+describe('authenticated Devices view lifetime', () => {
+  it('replaces server rows and clears only the matching view context', () => {
+    const admitted = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('host-b-person-b', [desk]),
+    );
+    expect(selectLiveClients.select({ browserClients: admitted } as StoreState)).toEqual([desk]);
+    expect(browserClientsReducer(admitted, authenticatedClientsCleared('old-host'))).toBe(admitted);
+    const cleared = browserClientsReducer(admitted, authenticatedClientsCleared('host-b-person-b'));
+    expect(selectLiveClients.select({ browserClients: cleared } as StoreState)).toEqual([]);
+    expect(cleared.authenticatedContext).toBeNull();
+    expect(cleared.liveClientsLoaded).toBe(false);
   });
 });

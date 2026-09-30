@@ -288,6 +288,7 @@ describe('daemonEventsSaga', () => {
       'github:auth-changed',
       'sourceControl:auth-changed',
       'principal:identity-changed',
+      'client:updated',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',
