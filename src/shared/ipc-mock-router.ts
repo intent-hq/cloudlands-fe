@@ -197,15 +197,6 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES: readonly string[] = [
  * an unemitted listened channel is a bug unless proven otherwise.
  */
 export const UNEMITTED_LISTENER_ALLOWLIST: ReadonlyMap<string, string> = new Map<string, string>([
-  // ChatPanel auto-commit badges. The daemon auto-commits internally on
-  // agent:idle (intent-services auto_commit.rs) but emits no per-commit
-  // git:auto-commit-* events (PROTOCOL §6.5 lists git:* as reserved-but-
-  // unused), and the refresh these listeners would trigger reads
-  // git:get-auto-commit-status — itself an allowlisted absent surface above.
-  // The badges stay hidden until a daemon status surface exists.
-  ['git:auto-commit-started', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
-  ['git:auto-commit-succeeded', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
-  ['git:auto-commit-hook-failure', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
   // Tiptap editor agent-suggestion marks (editor-listeners.ts). The legacy
   // agent note-suggestion flow was never ported — no producer exists on the
   // daemon; the editor simply never renders suggestion marks.

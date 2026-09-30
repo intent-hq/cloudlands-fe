@@ -195,6 +195,8 @@ export const agentLineStatsRequestFailed = createAction(
 export const setCommitMessage = createAction<[workspaceId: string, message: string]>(
   'changes/setCommitMessage',
 );
+export const setPRContent =
+  createAction<[workspaceId: string, title: string, description: string]>('changes/setPRContent');
 export const setTargetBranch =
   createAction<[workspaceId: string, branch: string]>('changes/setTargetBranch');
 export const setPendingCommitAction = createAction<
@@ -234,6 +236,15 @@ export const setPendingAutoAction = createAction<
 // ---------------------------------------------------------------------------
 
 export const fileTrackingReducer = createReducer<FileTrackingState>(initialState);
+fileTrackingReducer.with(setPRContent, (state, { payload: [wsId, prTitle, prDescription] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.acceptChanges.prTitle === prTitle && ws.acceptChanges.prDescription === prDescription)
+    return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    acceptChanges: { ...ws.acceptChanges, prTitle, prDescription },
+  });
+});
 // Workspace lifecycle
 fileTrackingReducer.with(clearWorkspace, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),

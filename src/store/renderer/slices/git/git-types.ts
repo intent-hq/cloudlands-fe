@@ -8,6 +8,102 @@ import type { CommitFile } from '$features/file-tracking/types';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { CommitInfo, GitStatus, DiffChunk } from '$shared/types';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { CommitDetailsResult, GitDiffsOptions } from '$lib/client/app-client';
+
+export type GitReadRequest =
+  | ({ kind: 'diffs' } & GitDiffsOptions)
+  | { kind: 'commitDetails'; commitHash: string; gitRootId?: string }
+  | { kind: 'showFile'; filePath: string; ref: string; gitRootId?: string }
+  | {
+      kind: 'numstat';
+      staged?: boolean;
+      baseRef?: string;
+      baseCommitSha?: string;
+      targetRef?: string;
+      gitRootId?: string;
+    }
+  | { kind: 'autoCommitStatus'; agentId: string; gitRootId?: undefined }
+  | TrackedDiffReadRequest;
+
+export interface TrackedDiffReadRequest {
+  kind: 'trackedDiff';
+  filePath: string;
+  workspacePath: string;
+  stage: string;
+  commitHash?: string;
+  gitRootId?: string;
+  gitRootPath?: string;
+  gitlink?: { oldSha?: string; newSha?: string };
+  baseRef?: string;
+  baseCommitSha?: string;
+  providedOld?: string;
+  providedNew?: string;
+  useProvidedContent: boolean;
+  forceRefresh: boolean;
+  allowHeadReads: boolean;
+}
+
+export type AutoCommitReadStatus =
+  | { state: 'committing' }
+  | { state: 'committed'; hash: string; message: string; fileCount: number }
+  | { state: 'hook-failure'; status: 'waking-agent' | 'retries-exhausted'; retryCount: number };
+
+export type GitReadResult =
+  | { kind: 'diffs'; chunks: DiffChunk[] }
+  | { kind: 'commitDetails'; details: CommitDetailsResult | null }
+  | { kind: 'showFile'; content: string }
+  | { kind: 'numstat'; entries: { filePath: string; additions: number; deletions: number }[] }
+  | { kind: 'autoCommitStatus'; statuses: AutoCommitReadStatus[] }
+  | {
+      kind: 'trackedDiff';
+      oldContent: string;
+      newContent: string;
+      chunk?: DiffChunk;
+      gitlink: boolean;
+    };
+
+export type GitReadStoredResult =
+  | Exclude<GitReadResult, { kind: 'diffs' | 'commitDetails' | 'numstat' | 'autoCommitStatus' }>
+  | { kind: 'diffs'; chunks: Collection<DiffChunk, 'file'> }
+  | {
+      kind: 'commitDetails';
+      details:
+        | (Omit<CommitDetailsResult, 'fileDetails'> & {
+            fileDetails: Collection<CommitDetailsResult['fileDetails'][number], 'path'>;
+          })
+        | null;
+    }
+  | {
+      kind: 'numstat';
+      entries: Collection<{ filePath: string; additions: number; deletions: number }, 'filePath'>;
+    }
+  | {
+      kind: 'autoCommitStatus';
+      statuses: Collection<{ index: string; status: AutoCommitReadStatus }, 'index'>;
+    };
+
+interface GitReadConsumer {
+  consumerId: string;
+  requestId: string;
+  readKey: string;
+}
+
+interface GitReadEntry {
+  readKey: string;
+  generation: string;
+  request: GitReadRequest;
+  loading: boolean;
+  error: string | null;
+  result: GitReadStoredResult | null;
+}
+
+export interface GitReadView {
+  requestId: string;
+  request: GitReadRequest;
+  loading: boolean;
+  error: string | null;
+  result: GitReadResult | null;
+}
 
 // ── Git Operation Event Types ──
 
@@ -104,6 +200,8 @@ export type GitWorkspaceState = {
   acceptChangesStatusLoading: boolean;
   gitOperations: GitOperationFlags;
   secondaryRoots: Record<string, SecondaryRootGitState>;
+  readConsumers: Collection<GitReadConsumer, 'consumerId'>;
+  reads: Collection<GitReadEntry, 'readKey'>;
 };
 
 type SecondaryRootGitState = {

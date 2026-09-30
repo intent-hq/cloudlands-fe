@@ -57,6 +57,7 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectPostMergeState: mocks.selector({ hasRemote: true }),
   selectGitOperationFlags: mocks.selector({ isPushing: false }),
+  selectGitCommitDetailsFiles: mocks.selector({}),
 }));
 vi.mock('$lib/components/workspace/initializer/BranchSelector.svelte', async () => ({
   default: (await import('./mocks/MockBranchSelector.svelte')).default,
