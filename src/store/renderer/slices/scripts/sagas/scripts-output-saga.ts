@@ -1,4 +1,13 @@
-import { call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  actionChannel,
+  call,
+  delay,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { store } from '../../../store';
 import { appClient } from '$lib/client';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
@@ -76,11 +85,22 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
       return;
     }
   }
+  const releases = yield* actionChannel([
+    scriptOutputReleased,
+    workspaceUnmounted,
+    workspaceDeleted,
+    removeScript,
+  ]);
+  function* waitForCleanup(): SagaGenerator<void> {
+    while (true) if (cleanup(yield* take(releases))) return;
+  }
   try {
-    yield* race({ read: call(hydrate), cleanup: take(cleanup) });
+    yield* race({ read: call(hydrate), cleanup: call(waitForCleanup) });
   } catch {
     // Output is transient. Failed/expired reads must preserve anything already
     // visible; a subsequent viewer open or connection lifetime retries it.
+  } finally {
+    releases.close();
   }
 }
 
