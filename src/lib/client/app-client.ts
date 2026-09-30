@@ -877,6 +877,12 @@ export interface AgentsClient {
     workspaceId: string;
     notificationsMuted: boolean;
   }): Promise<MutationResult>;
+  /** Persist foreground/background mode through the partial agent.update writer. */
+  setBackground(params: {
+    agentId: string;
+    workspaceId: string;
+    isBackground: boolean;
+  }): Promise<MutationResult>;
   /** Persist a specialist picker change through the `agent.update` partial writer. */
   updateSpecialist(params: {
     agentId: string;

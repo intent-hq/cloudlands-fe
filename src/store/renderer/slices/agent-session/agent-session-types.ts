@@ -209,6 +209,8 @@ export interface AgentHistorySegment {
  * Messages are stored as an ordered, serializable array.
  */
 export interface AgentSessionState {
+  /** In-flight mode mutations; never persisted with agent sessions. */
+  backgroundModePending?: Record<string, true>;
   /** Agent sessions keyed by agentId */
   byAgentId: Record<string, StoredAgentSession>;
   /** Index: workspace ID → array of agent IDs belonging to that workspace */

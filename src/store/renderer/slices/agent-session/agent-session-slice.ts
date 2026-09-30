@@ -1391,6 +1391,10 @@ export const initialState: AgentSessionState = {
 // Actions
 // ============================================================================
 
+export const setAgentBackgroundPending = createAction<[agentId: string, pending: boolean]>(
+  'agentSessions/setAgentBackgroundPending',
+);
+
 /**
  * Upsert a wire session — normalize dates, order/prune messages to
  * `MAX_MESSAGES_PER_AGENT`, register in workspace index. The payload rejects
@@ -1723,6 +1727,12 @@ export const clearHistorySegment = createAction<[agentId: string]>(
 // ============================================================================
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState);
+agentSessionReducer.with(setAgentBackgroundPending, (state, { payload: [agentId, pending] }) => {
+  if (pending)
+    return { ...state, backgroundModePending: { ...state.backgroundModePending, [agentId]: true } };
+  const { [agentId]: _removed, ...rest } = state.backgroundModePending ?? {};
+  return { ...state, backgroundModePending: rest };
+});
 agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId]) return state;
 

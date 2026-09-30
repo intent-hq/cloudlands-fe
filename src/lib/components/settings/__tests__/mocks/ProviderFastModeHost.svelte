@@ -10,7 +10,13 @@
     supported = true,
     rejectWrites = false,
     daemonValue,
-  }: { supported?: boolean; rejectWrites?: boolean; daemonValue?: boolean } = $props();
+    onWrite,
+  }: {
+    supported?: boolean;
+    rejectWrites?: boolean;
+    daemonValue?: boolean;
+    onWrite?: Parameters<typeof setupProviderFastModePreview>[2];
+  } = $props();
   let ready = $state(false);
   // Test-only input simulates a pushed daemon preference while the menu stays mounted.
   $effect(() => {
@@ -22,7 +28,7 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog, not a domain fetch.
     const restoreProviders = setupPreviewProviders();
     // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory persistence seam; production saga owns writes.
-    const restoreFastMode = setupProviderFastModePreview(supported, rejectWrites);
+    const restoreFastMode = setupProviderFastModePreview(supported, rejectWrites, onWrite);
     ready = true;
     return () => {
       restoreFastMode();

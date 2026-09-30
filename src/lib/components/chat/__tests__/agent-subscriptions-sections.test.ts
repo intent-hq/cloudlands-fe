@@ -64,6 +64,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentDetailHydrated: () => makeReadable(false),
+  selectAgentBackgroundPending: () => makeReadable(false),
   selectAgentPreview: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
       makeDerivedReadable(agentId, (id) => {
