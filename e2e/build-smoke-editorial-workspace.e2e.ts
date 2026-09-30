@@ -207,20 +207,41 @@ async function expectEditorialSurface() {
 }
 
 async function expectEightPixelGutters() {
-  const gutters = page.locator('[data-split-gutter]');
-  expect(await gutters.count()).toBeGreaterThanOrEqual(2);
-  for (let index = 0; index < (await gutters.count()); index += 1) {
-    const gutter = gutters.nth(index);
-    const direction = await gutter.getAttribute('data-split-gutter');
-    const gutterBox = await gutter.boundingBox();
-    const targetBox = await gutter
-      .getByRole('button', { name: 'Resize panel', exact: true })
-      .boundingBox();
-    expect(gutterBox).not.toBeNull();
-    expect(targetBox).not.toBeNull();
-    expect(direction === 'horizontal' ? gutterBox!.width : gutterBox!.height).toBeCloseTo(8, 0);
-    expect(direction === 'horizontal' ? targetBox!.width : targetBox!.height).toBeCloseTo(16, 0);
-  }
+  // New gutter wrappers have the same resize intro as new panels. Read every
+  // gutter and handle in one frame, then require settled geometry without
+  // disabling motion or weakening the 8px gutter / 16px handle contract.
+  await expect(async () => {
+    const gutters = await page.locator('[data-split-gutter]').evaluateAll((elements) =>
+      elements.map((element) => {
+        const handles = element.querySelectorAll('button[aria-label="Resize panel"]');
+        const box = element.getBoundingClientRect();
+        const handle = handles[0]?.getBoundingClientRect();
+        return {
+          direction: element.getAttribute('data-split-gutter'),
+          width: box.width,
+          height: box.height,
+          handles: handles.length,
+          handleWidth: handle?.width,
+          handleHeight: handle?.height,
+          moving: element
+            .getAnimations()
+            .some((animation) => animation.pending || animation.playState === 'running'),
+        };
+      }),
+    );
+    expect(gutters.length).toBeGreaterThanOrEqual(2);
+    for (const gutter of gutters) {
+      expect(['horizontal', 'vertical']).toContain(gutter.direction);
+      expect(gutter.moving).toBe(false);
+      expect(gutter.handles).toBe(1);
+      expect(gutter.width).toBeGreaterThan(0);
+      expect(gutter.height).toBeGreaterThan(0);
+      expect(gutter.direction === 'horizontal' ? gutter.width : gutter.height).toBeCloseTo(8, 0);
+      expect(
+        gutter.direction === 'horizontal' ? gutter.handleWidth : gutter.handleHeight,
+      ).toBeCloseTo(16, 0);
+    }
+  }).toPass({ timeout: 5_000 });
 }
 
 async function expectConversationGeometry() {
