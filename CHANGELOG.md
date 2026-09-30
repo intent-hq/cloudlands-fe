@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.192.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.192.0...v2.192.1) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.126 ([#3049](https://github.com/intent-hq/cloudlands-fe/issues/3049)) ([11394c8](https://github.com/intent-hq/cloudlands-fe/commit/11394c8dc045c5672243d7bc0cfd48484643e142))
+* hide spec drafting hints once content exists ([#3047](https://github.com/intent-hq/cloudlands-fe/issues/3047)) ([ebe5723](https://github.com/intent-hq/cloudlands-fe/commit/ebe57238a9afb247ba7985a00fefe9fedbdf986c))
+* restore packaged smoke journeys ([#5608](https://github.com/intent-hq/cloudlands-fe/issues/5608)) ([#2977](https://github.com/intent-hq/cloudlands-fe/issues/2977)) ([4b7b730](https://github.com/intent-hq/cloudlands-fe/commit/4b7b730ed22a9194c1005ab8688b3fe706e6d26d))
+
 ## [2.192.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.191.0...v2.192.0) (2026-09-30)
 
 

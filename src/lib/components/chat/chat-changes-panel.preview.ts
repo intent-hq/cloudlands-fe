@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'svelte';
+import { setupChatChangesPreview } from '../../../test/chat-changes-preview';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import ChatChangesPanelHarness from './ChatChangesPanelHarness.svelte';
 import type { LocalFileChange } from './types';
@@ -56,6 +57,10 @@ export const preview = definePreview<ComponentProps<typeof ChatChangesPanelHarne
   id: 'chat-changes-panel',
   title: 'Chat changes panel',
   defaultState: 'populated',
+  // Reads settle before the async diff worker paints; wait for measured content too.
+  captureReadiness: {
+    selector: '[data-preview-diffs-ready="true"]',
+  },
   states: {
     'remote-offline': {
       props: {
@@ -66,6 +71,7 @@ export const preview = definePreview<ComponentProps<typeof ChatChangesPanelHarne
         isAggregate: true,
       },
       setup: () => {
+        const stop = setupChatChangesPreview();
         appStore.dispatch(
           bulkUpsertSessions([
             {
@@ -89,7 +95,10 @@ export const preview = definePreview<ComponentProps<typeof ChatChangesPanelHarne
             } satisfies AgentSession,
           ]),
         );
-        return () => appStore.dispatch(removeSession('preview-remote-diff'));
+        return () => {
+          stop();
+          appStore.dispatch(removeSession('preview-remote-diff'));
+        };
       },
     },
     'populated-linked': {
@@ -101,9 +110,17 @@ export const preview = definePreview<ComponentProps<typeof ChatChangesPanelHarne
           hash: '1234567890abcdef1234567890abcdef12345678',
         },
       },
-      setup: setupCommitRepository,
+      setup: () => {
+        const restoreRepository = setupCommitRepository();
+        const stop = setupChatChangesPreview();
+        return () => {
+          stop();
+          restoreRepository();
+        };
+      },
     },
     populated: {
+      setup: setupChatChangesPreview,
       props: {
         changes,
         commitInfo: { message: 'Align catalog surfaces', author: 'Preview author' },

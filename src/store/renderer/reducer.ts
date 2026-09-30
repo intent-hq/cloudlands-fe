@@ -65,6 +65,9 @@ import { backgroundHooksReducer } from './slices/background-hooks/background-hoo
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
+import { gitWriteReducer } from './slices/git/git-write-slice';
+import { acceptWorkflowReducer } from './slices/accept-workflow/accept-workflow-slice';
+import { prWorkflowReducer } from './slices/pr-workflow/pr-workflow-slice';
 import { gitRootsReducer } from './slices/git-roots/git-roots-slice';
 import { fileTrackingReducer } from './slices/changes/changes-slice';
 import { agentLockReducer } from './slices/agent-lock/agent-lock-slice';
@@ -174,6 +177,9 @@ export const reducers = {
   prMonitor: prMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
+  gitWrite: gitWriteReducer,
+  acceptWorkflow: acceptWorkflowReducer,
+  prWorkflow: prWorkflowReducer,
   gitRoots: gitRootsReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
