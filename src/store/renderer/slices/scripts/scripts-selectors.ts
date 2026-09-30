@@ -68,6 +68,14 @@ export const selectScriptOutput = store.createSelector(
   },
 );
 
+/** Formatted retained output belongs to a single mounted viewer lifetime. */
+export const selectScriptRetainedOutput = store.createSelector(
+  (state, wsId: string, scriptId: string, viewerId: string) => {
+    const output = getWs(state, wsId).retainedOutputs?.[viewerId];
+    return output?.scriptId === scriptId ? output : undefined;
+  },
+);
+
 /** Scripts data for a specific workspace (parameterized). */
 export const selectWorkspaceScriptsInitialized = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).initialized,

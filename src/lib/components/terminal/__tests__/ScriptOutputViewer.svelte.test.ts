@@ -35,6 +35,7 @@ const {
   lifecycleGate,
   outputReadableRef,
   authorityReadableRef,
+  retainedReadableRef,
 } = vi.hoisted(() => ({
   xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
   fontReadableRef: { value: null as any },
@@ -44,6 +45,7 @@ const {
   lifecycleGate: { hidesAgentLifecycleActions: false },
   outputReadableRef: { value: null as any },
   authorityReadableRef: { value: null as any },
+  retainedReadableRef: { value: null as any },
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -175,6 +177,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
         },
     ),
     selectScriptOutput: makeSel(getOutput),
+    selectScriptRetainedOutput: () => retainedReadableRef.value,
   };
 });
 
@@ -228,6 +231,7 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     scriptSelectorArgs.length = 0;
     lifecycleGate.hidesAgentLifecycleActions = false;
     outputReadableRef.value = null;
+    retainedReadableRef.value = createControllableReadable(undefined);
     authorityReadableRef.value = createControllableReadable<string | null>('authority');
     scriptState.byWorkspaceId = {
       'ws-failed': {
@@ -365,6 +369,7 @@ describe('retained output viewer lifecycle', () => {
     xtermMock.constructorOptions.length = 0;
     scriptSelectorArgs.length = 0;
     outputReadableRef.value = null;
+    retainedReadableRef.value = createControllableReadable(undefined);
     authorityReadableRef.value = createControllableReadable<string | null>('authority');
     fontReadableRef.value = createControllableReadable(SYSTEM_DEFAULT);
     scriptState.byWorkspaceId = {
@@ -422,35 +427,57 @@ describe('retained output viewer lifecycle', () => {
       payload: requests[1][0].payload,
     });
   });
-  it('replays a replacement snapshot on the mounted terminal, then streams only new chunks', async () => {
-    outputReadableRef.value = createControllableReadable({
-      chunks: [{ text: 'streamed', timestamp: 'now' }],
+  it('shows available history directly without writing it into the mounted live terminal', async () => {
+    outputReadableRef.value = createControllableReadable({ chunks: [], dropped: 0 });
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    await waitForXTermInit();
+    const terminal = xtermMock.instances[0];
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[2 lines]\nretained-failure\n',
+    });
+    await tick();
+    expect(screen.getByText(/retained-failure/)).toBeTruthy();
+    expect(screen.getByText('Retained output').closest('details')?.open).toBe(true);
+    expect(terminal.write).not.toHaveBeenCalledWith(expect.stringContaining('retained-failure'));
+    outputReadableRef.value.set({
+      chunks: [{ text: 'retained-failure\n', timestamp: 'late' }],
       dropped: 0,
-      revision: 0,
+    });
+    await tick();
+    expect(terminal.write.mock.calls).toEqual([['retained-failure\n']]);
+    expect(screen.getByText('Live output')).toBeTruthy();
+    expect(xtermMock.instances).toHaveLength(1);
+    expect(terminal.reset).not.toHaveBeenCalled();
+    expect(terminal.dispose).not.toHaveBeenCalled();
+  });
+  it('keeps a richer mounted terminal visible while the separate snapshot is collapsed', async () => {
+    outputReadableRef.value = createControllableReadable({
+      chunks: [{ text: 'richer live bytes', timestamp: 'now' }],
+      dropped: 0,
     });
     render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
     await waitForXTermInit();
     const terminal = xtermMock.instances[0];
-    terminal.write.mockClear();
-    outputReadableRef.value.set({
-      chunks: [{ text: 'old\nstreamed', timestamp: 'now' }],
-      dropped: 0,
-      revision: 1,
+    retainedReadableRef.value.set({
+      scriptId: 's-1',
+      status: 'available',
+      text: '[1 lines]\ntail',
     });
     await tick();
-    expect(terminal.reset).toHaveBeenCalledTimes(1);
-    expect(terminal.write.mock.calls).toEqual([['old\nstreamed']]);
-    outputReadableRef.value.set({
-      chunks: [
-        { text: 'old\nstreamed', timestamp: 'now' },
-        { text: ' later', timestamp: 'later' },
-      ],
-      dropped: 0,
-      revision: 1,
-    });
-    await tick();
-    expect(terminal.write.mock.calls).toEqual([['old\nstreamed'], [' later']]);
-    expect(xtermMock.instances).toHaveLength(1);
+    expect(screen.getByText('Retained output').closest('details')?.open).toBe(false);
+    expect(terminal.write.mock.calls).toEqual([['richer live bytes']]);
+    expect(terminal.reset).not.toHaveBeenCalled();
     expect(terminal.dispose).not.toHaveBeenCalled();
+  });
+  it('distinguishes retained output loading and unavailability', async () => {
+    render(ScriptOutputViewer, { props: { workspaceId: 'ws-failed', scriptId: 's-1' } });
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'loading' });
+    await tick();
+    expect(screen.getByRole('status').textContent).toBe('Loading retained output…');
+    retainedReadableRef.value.set({ scriptId: 's-1', status: 'unavailable' });
+    await tick();
+    expect(screen.getByRole('status').textContent).toBe('Retained output is unavailable.');
   });
 });

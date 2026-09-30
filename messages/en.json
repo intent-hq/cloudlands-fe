@@ -6932,5 +6932,10 @@
   "scripts_history_noMatches_label": "No matching commands.",
   "scripts_history_load_error": "Could not load script history. Try again.",
   "scripts_history_retry_label": "Retry",
-  "scripts_history_unsupported_error": "This daemon does not support script history. Reconnect after updating it."
+  "scripts_history_unsupported_error": "This daemon does not support script history. Reconnect after updating it.",
+  "terminal_scriptOutput_retained_label": "Retained output",
+  "terminal_scriptOutput_retained_description": "Snapshot of temporary output, limited to 10,000 lines. Live output is shown separately.",
+  "terminal_scriptOutput_retainedLoading_label": "Loading retained output…",
+  "terminal_scriptOutput_retainedUnavailable_label": "Retained output is unavailable.",
+  "terminal_scriptOutput_live_label": "Live output"
 }

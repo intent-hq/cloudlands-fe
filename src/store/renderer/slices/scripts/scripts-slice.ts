@@ -158,14 +158,7 @@ export const scriptOutputRequested =
 export const scriptOutputReleased =
   createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputReleased');
 export const scriptOutputSnapshotReceived = createAction<
-  [
-    wsId: string,
-    scriptId: string,
-    text: string,
-    revision: number,
-    position: number,
-    timestamp: string,
-  ]
+  [wsId: string, scriptId: string, viewerId: string, text: string]
 >('scripts/outputSnapshotReceived');
 
 /** Append one raw output chunk for a script */
@@ -260,6 +253,9 @@ scriptsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
     ...ws,
     scripts,
     outputBuffers,
+    retainedOutputs: Object.fromEntries(
+      Object.entries(ws.retainedOutputs ?? {}).filter(([, output]) => output.scriptId !== scriptId),
+    ),
     activeScriptIds: ws.activeScriptIds?.filter((id) => id !== scriptId),
     archivedScriptIds: ws.archivedScriptIds?.filter((id) => id !== scriptId),
   });
@@ -277,28 +273,37 @@ scriptsReducer.with(updateRuntimeState, (state, { payload: { wsId, scriptId, par
     },
   });
 });
+scriptsReducer.with(scriptOutputRequested, (state, { payload: [wsId, scriptId, viewerId] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (!ws?.scripts[scriptId]) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    retainedOutputs: { ...ws.retainedOutputs, [viewerId]: { scriptId, status: 'loading' } },
+  });
+});
+scriptsReducer.with(scriptOutputReleased, (state, { payload: [wsId, scriptId, viewerId] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (ws?.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
+  const { [viewerId]: _released, ...retainedOutputs } = ws.retainedOutputs;
+  return setWorkspaceState(state, wsId, { ...ws, retainedOutputs });
+});
 scriptsReducer.with(
   scriptOutputSnapshotReceived,
-  (state, { payload: [wsId, scriptId, text, revision, position, timestamp] }) => {
+  (state, { payload: [wsId, scriptId, viewerId, text] }) => {
     const ws = state.byWorkspaceId[wsId];
-    if (!ws?.scripts[scriptId] || !text) return state;
-    const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
-    // A stream event or another viewer's snapshot can land between the read and
-    // publication. Never replace newer bytes with an older snapshot.
-    if (
-      (current.revision ?? 0) !== revision ||
-      current.dropped + current.chunks.length !== position
-    )
+    if (!ws?.scripts[scriptId] || ws.retainedOutputs?.[viewerId]?.scriptId !== scriptId)
       return state;
-    if (current.chunks.map((chunk) => chunk.text).join('') === text) return state;
+    // This is a formatted, capped poll response, not raw PTY bytes. Even a
+    // successful read has no cursor with which to join delayed stream events.
+    const available = !!text && text !== 'No output yet.'; // daemon wire sentinel
     return setWorkspaceState(state, wsId, {
       ...ws,
-      outputBuffers: {
-        ...ws.outputBuffers,
-        [scriptId]: {
-          chunks: [{ text: text.slice(-MAX_OUTPUT_CHARS), timestamp }],
-          dropped: 0,
-          revision: revision + 1,
+      retainedOutputs: {
+        ...ws.retainedOutputs,
+        [viewerId]: {
+          scriptId,
+          status: available ? 'available' : 'unavailable',
+          ...(available ? { text: text.slice(-MAX_OUTPUT_CHARS) } : {}),
         },
       },
     });

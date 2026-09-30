@@ -6932,5 +6932,10 @@
   "scripts_history_noMatches_label": "Aucune commande correspondante.",
   "scripts_history_load_error": "Impossible de charger l’historique des scripts. Réessayez.",
   "scripts_history_retry_label": "Réessayer",
-  "scripts_history_unsupported_error": "Ce daemon ne prend pas en charge l’historique des scripts. Reconnectez-vous après l’avoir mis à jour."
+  "scripts_history_unsupported_error": "Ce daemon ne prend pas en charge l’historique des scripts. Reconnectez-vous après l’avoir mis à jour.",
+  "terminal_scriptOutput_retained_label": "Sortie conservée",
+  "terminal_scriptOutput_retained_description": "Instantané de la sortie temporaire, limité à 10 000 lignes. La sortie en direct est affichée séparément.",
+  "terminal_scriptOutput_retainedLoading_label": "Chargement de la sortie conservée…",
+  "terminal_scriptOutput_retainedUnavailable_label": "La sortie conservée est indisponible.",
+  "terminal_scriptOutput_live_label": "Sortie en direct"
 }

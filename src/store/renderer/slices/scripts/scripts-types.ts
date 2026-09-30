@@ -27,8 +27,13 @@ export type ScriptOutputChunk = {
 export type ScriptOutputBuffer = {
   chunks: ScriptOutputChunk[];
   dropped: number;
-  /** Changes when a retained snapshot replaces the stream, so mounted viewers can replay. */
-  revision?: number;
+};
+
+/** A viewer-owned formatted poll result, never part of the raw PTY stream. */
+export type ScriptRetainedOutput = {
+  scriptId: string;
+  status: 'loading' | 'available' | 'unavailable';
+  text?: string;
 };
 
 export type ScriptQuickAction = 'start' | 'stop' | 'restart';
@@ -47,6 +52,7 @@ export type ScriptsWorkspaceState = {
   scripts: Record<string, ScriptWithState>;
   /** Raw-chunk output ring buffers keyed by script ID */
   outputBuffers: Record<string, ScriptOutputBuffer>;
+  retainedOutputs?: Record<string, ScriptRetainedOutput>;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
   /** Whether the workspace scripts have been initialized */

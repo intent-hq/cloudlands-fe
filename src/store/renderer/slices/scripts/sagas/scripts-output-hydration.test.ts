@@ -71,7 +71,9 @@ function start() {
   tasks.push(runSaga({ channel, dispatch, getState: () => state }, scriptsOperationSaga));
   const text = () =>
     state.scripts.byWorkspaceId[WS]?.outputBuffers[ID]?.chunks.map((c) => c.text).join('') ?? '';
-  return { state, dispatch, text, actions };
+  const retained = (viewerId = 'viewer-1') =>
+    state.scripts.byWorkspaceId[WS]?.retainedOutputs?.[viewerId];
+  return { state, dispatch, text, retained, actions };
 }
 beforeEach(() => {
   store.dispose();
@@ -87,28 +89,32 @@ afterEach(async () => {
 });
 describe('retained script output hydration', () => {
   it('reads an archived command after reload without restoring or rerunning it', async () => {
-    transport.request.mockResolvedValue('FAILURE-RETAINED-OUTPUT\r\n');
+    transport.request.mockResolvedValue('[2 lines]\nFAILURE-RETAINED-OUTPUT\r\n');
     const run = start();
     run.dispatch(request());
     await settle();
     expect(transport.request.mock.calls).toEqual([
-      ['script.output', { workspaceId: WS, scriptId: ID }],
+      ['script.output', { workspaceId: WS, scriptId: ID, maxLines: 10_000 }],
     ]);
-    expect(run.text()).toBe('FAILURE-RETAINED-OUTPUT\r\n');
+    expect(run.text()).toBe('');
+    expect(run.retained()).toMatchObject({
+      status: 'available',
+      text: '[2 lines]\nFAILURE-RETAINED-OUTPUT\r\n',
+    });
     expect(run.state.scripts.byWorkspaceId[WS].scripts[ID].archivedAt).toBeTruthy();
   });
-  it('discards a snapshot raced by stream data, then retries without duplicate text', async () => {
+  it('keeps the formatted snapshot separate when stream events race the read', async () => {
     const first = deferred<string>();
-    transport.request.mockReturnValueOnce(first.promise).mockResolvedValue('old\r\nnew\r\n');
+    transport.request.mockReturnValueOnce(first.promise);
     const run = start();
     run.dispatch(request());
     await settle();
     run.dispatch(appendScriptOutput(WS, ID, { text: 'new\r\n', timestamp: 'now' }));
-    first.resolve('old\r\n');
+    first.resolve('[2 lines]\nold\r\n');
     await settle();
     expect(run.text()).toBe('new\r\n');
-    await vi.waitFor(() => expect(run.text()).toBe('old\r\nnew\r\n'));
-    expect(transport.request).toHaveBeenCalledTimes(2);
+    expect(run.retained()?.text).toBe('[2 lines]\nold\r\n');
+    expect(transport.request).toHaveBeenCalledTimes(1);
   });
   it('preserves existing buffers when retained output is empty or unavailable', async () => {
     const run = start();
@@ -143,6 +149,8 @@ describe('retained script output hydration', () => {
       pending.resolve('stale secret');
       await settle();
       expect(run.text()).toBe('');
+      expect(run.retained()?.status).not.toBe('available');
+      expect(run.actions.some((a) => a.type === 'scripts/outputSnapshotReceived')).toBe(false);
       expect(transport.request).toHaveBeenCalledTimes(1);
     },
   );
@@ -160,31 +168,80 @@ describe('retained script output hydration', () => {
     await settle();
     old.resolve('obsolete');
     await settle();
-    expect(run.text()).toBe('current');
+    expect(run.text()).toBe('');
+    expect(run.retained('viewer-2')?.text).toBe('current');
+    expect(run.retained()).toBeUndefined();
   });
-  it('deduplicates concurrent viewer snapshots and later streams append once', async () => {
+  it('isolates concurrent viewers and never merges snapshots with stream bytes', async () => {
     const first = deferred<string>(),
       second = deferred<string>();
-    transport.request
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
-      .mockResolvedValue('retained');
+    transport.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const run = start();
     run.dispatch(request('a'));
     run.dispatch(request('b'));
     await settle();
-    first.resolve('retained');
-    second.resolve('retained');
+    first.resolve('[1 lines]\nretained-a');
+    second.resolve('[1 lines]\nretained-b');
     await settle();
-    await vi.waitFor(() => expect(run.text()).toBe('retained'));
+    expect(run.retained('a')?.text).toBe('[1 lines]\nretained-a');
+    expect(run.retained('b')?.text).toBe('[1 lines]\nretained-b');
+    run.dispatch(release('a'));
+    expect(run.retained('a')).toBeUndefined();
+    expect(run.retained('b')?.text).toBe('[1 lines]\nretained-b');
     run.dispatch(appendScriptOutput(WS, ID, { text: ' live', timestamp: 'now' }));
-    expect(run.text()).toBe('retained live');
+    expect(run.text()).toBe(' live');
   });
-  it('rejects a stale snapshot at reducer publication after intervening stream output', () => {
+  it('rejects late snapshot publication for a released viewer without touching its replacement', () => {
     const run = start();
-    run.dispatch(appendScriptOutput(WS, ID, { text: 'fresh', timestamp: 'now' }));
-    run.dispatch(scriptOutputSnapshotReceived(WS, ID, 'stale', 0, 0, 'before'));
-    expect(run.text()).toBe('fresh');
+    run.dispatch(request('old'));
+    run.dispatch(release('old'));
+    run.dispatch(request('new'));
+    run.dispatch(scriptOutputSnapshotReceived(WS, ID, 'old', 'stale'));
+    expect(run.retained('old')).toBeUndefined();
+    expect(run.retained('new')?.status).toBe('loading');
+    expect(run.text()).toBe('');
+  });
+  it('preserves a richer local buffer when the daemon returns a formatted tail', async () => {
+    const raw = Array.from({ length: 160 }, (_, i) => `line-${i}`).join('\n');
+    transport.request.mockResolvedValue(
+      '[showing last 100 of 160 lines]\n' + raw.split('\n').slice(-100).join('\n'),
+    );
+    const run = start();
+    run.dispatch(appendScriptOutput(WS, ID, { text: raw, timestamp: 'now' }));
+    run.dispatch(request());
+    await settle();
+    expect(run.text()).toBe(raw);
+    expect(run.retained()?.text).toContain('[showing last 100 of 160 lines]');
+  });
+  it('preserves local bytes when daemon scrollback has expired', async () => {
+    transport.request.mockResolvedValue('No output yet.');
+    const run = start();
+    run.dispatch(appendScriptOutput(WS, ID, { text: 'local bytes', timestamp: 'now' }));
+    run.dispatch(request());
+    await settle();
+    expect(run.text()).toBe('local bytes');
+    expect(run.retained()).toEqual({ scriptId: ID, status: 'unavailable' });
+  });
+  it('keeps delayed fanout separate from a snapshot containing those bytes', async () => {
+    transport.request.mockResolvedValue('[2 lines]\nlast-chunk\n');
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    run.dispatch(appendScriptOutput(WS, ID, { text: 'last-chunk\n', timestamp: 'late' }));
+    expect(run.text()).toBe('last-chunk\n');
+    run.dispatch(appendScriptOutput(WS, ID, { text: 'last-chunk\n', timestamp: 'repeat' }));
+    expect(run.text()).toBe('last-chunk\nlast-chunk\n');
+  });
+  it('treats a sentinel inside real formatted output as genuine script text', async () => {
+    transport.request.mockResolvedValue('[1 lines]\nNo output yet.');
+    const run = start();
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()).toMatchObject({
+      status: 'available',
+      text: '[1 lines]\nNo output yet.',
+    });
+    expect(run.text()).toBe('');
   });
   it('does not request output without current workspace authority', async () => {
     const run = start();

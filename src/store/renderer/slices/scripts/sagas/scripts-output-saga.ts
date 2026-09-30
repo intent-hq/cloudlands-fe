@@ -1,7 +1,6 @@
 import {
   actionChannel,
   call,
-  delay,
   put,
   race,
   take,
@@ -15,7 +14,7 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectScriptById, selectScriptOutput } from '../scripts-selectors';
+import { selectScriptById } from '../scripts-selectors';
 import {
   removeScript,
   scriptOutputRequested,
@@ -56,34 +55,15 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     );
   }
   function* hydrate(): SagaGenerator<void> {
-    while (yield* isCurrent()) {
-      const before = yield* selectScriptOutput.effect(workspaceId, scriptId);
-      const output = yield* call(
-        [appClient.scripts, appClient.scripts.output],
-        workspaceId,
-        scriptId,
-      );
-      if (!(yield* isCurrent())) return;
-      const after = yield* selectScriptOutput.effect(workspaceId, scriptId);
-      if (before !== after) {
-        // The wire has no output cursor. A raced snapshot cannot be safely
-        // spliced by text overlap (repeated lines are legitimate output).
-        // Keep streaming visible and retry until a read spans a quiet interval.
-        yield* delay(50);
-        continue;
-      }
-      yield* put(
-        scriptOutputSnapshotReceived(
-          workspaceId,
-          scriptId,
-          output,
-          before.revision ?? 0,
-          before.dropped + before.chunks.length,
-          new Date().toISOString(),
-        ),
-      );
-      return;
-    }
+    if (!(yield* isCurrent())) return;
+    const output = yield* call(
+      [appClient.scripts, appClient.scripts.output],
+      workspaceId,
+      scriptId,
+      10_000,
+    );
+    if (!(yield* isCurrent())) return;
+    yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output));
   }
   const releases = yield* actionChannel([
     scriptOutputReleased,
@@ -92,13 +72,19 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     removeScript,
   ]);
   function* waitForCleanup(): SagaGenerator<void> {
-    while (true) if (cleanup(yield* take(releases))) return;
+    while (true) {
+      if (cleanup(yield* take(releases))) {
+        yield* put(scriptOutputReleased(workspaceId, scriptId, viewerId));
+        return;
+      }
+    }
   }
   try {
     yield* race({ read: call(hydrate), cleanup: call(waitForCleanup) });
   } catch {
-    // Output is transient. Failed/expired reads must preserve anything already
-    // visible; a subsequent viewer open or connection lifetime retries it.
+    if (yield* isCurrent()) {
+      yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, ''));
+    }
   } finally {
     releases.close();
   }

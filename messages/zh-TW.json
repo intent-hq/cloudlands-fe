@@ -6932,5 +6932,10 @@
   "scripts_history_noMatches_label": "沒有符合的命令。",
   "scripts_history_load_error": "無法載入指令碼歷史記錄。請重試。",
   "scripts_history_retry_label": "重試",
-  "scripts_history_unsupported_error": "此常駐程式不支援指令碼歷史記錄。請在更新後重新連線。"
+  "scripts_history_unsupported_error": "此常駐程式不支援指令碼歷史記錄。請在更新後重新連線。",
+  "terminal_scriptOutput_retained_label": "保留的輸出",
+  "terminal_scriptOutput_retained_description": "暫存輸出快照，最多 10,000 行。即時輸出會分開顯示。",
+  "terminal_scriptOutput_retainedLoading_label": "正在載入保留的輸出…",
+  "terminal_scriptOutput_retainedUnavailable_label": "保留的輸出無法使用。",
+  "terminal_scriptOutput_live_label": "即時輸出"
 }

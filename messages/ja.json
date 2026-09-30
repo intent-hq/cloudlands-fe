@@ -6932,5 +6932,10 @@
   "scripts_history_noMatches_label": "一致するコマンドがありません。",
   "scripts_history_load_error": "スクリプトの履歴を読み込めませんでした。もう一度お試しください。",
   "scripts_history_retry_label": "再試行",
-  "scripts_history_unsupported_error": "このデーモンはスクリプトの履歴に対応していません。更新後に再接続してください。"
+  "scripts_history_unsupported_error": "このデーモンはスクリプトの履歴に対応していません。更新後に再接続してください。",
+  "terminal_scriptOutput_retained_label": "保持された出力",
+  "terminal_scriptOutput_retained_description": "一時的な出力のスナップショットです。上限は10,000行です。ライブ出力は別に表示されます。",
+  "terminal_scriptOutput_retainedLoading_label": "保持された出力を読み込み中…",
+  "terminal_scriptOutput_retainedUnavailable_label": "保持された出力は利用できません。",
+  "terminal_scriptOutput_live_label": "ライブ出力"
 }

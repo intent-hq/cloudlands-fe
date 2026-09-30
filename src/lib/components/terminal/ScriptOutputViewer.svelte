@@ -24,6 +24,7 @@
     selectScriptById,
     selectScriptRuntime,
     selectScriptOutput,
+    selectScriptRetainedOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -54,6 +55,8 @@
 
   const workspaceIdStore = writable('');
   const scriptIdStore = writable('');
+  const viewerIdStore = writable('');
+  let retainedExpanded = $state(false);
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => scriptIdStore.set(scriptId));
 
@@ -71,6 +74,11 @@
   const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
   const runtime$ = selectScriptRuntime(workspaceIdStore, scriptIdStore);
   const output$ = selectScriptOutput(workspaceIdStore, scriptIdStore);
+  const retainedOutput$ = selectScriptRetainedOutput(
+    workspaceIdStore,
+    scriptIdStore,
+    viewerIdStore,
+  );
   // "Ask AI to Fix" creates an agent (`agent.create`), refused (-32003) for a
   // collaborator connection: the affordance is withheld.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
@@ -89,13 +97,14 @@
     void runtime.status;
     void runtime.startedAt;
     const viewerId = crypto.randomUUID();
+    viewerIdStore.set(viewerId);
+    retainedExpanded = untrack(() => $output$.chunks.length === 0);
     appStore.dispatch(scriptOutputRequested(wsId, id, viewerId));
     return () => appStore.dispatch(scriptOutputReleased(wsId, id, viewerId));
   });
 
   // Stream position already written to xterm: buffer.dropped + chunk index.
   let writtenChunkCount = $state(0);
-  let writtenRevision = 0;
 
   const isFailing = $derived(
     $runtime$.status === 'exited' &&
@@ -201,7 +210,6 @@
       xterm.write(buffer.chunks.map((c) => c.text).join(''));
     }
     writtenChunkCount = buffer.dropped + buffer.chunks.length;
-    writtenRevision = buffer.revision ?? 0;
   }
 
   function disposeXterm(): void {
@@ -233,15 +241,6 @@
     const written = untrack(() => writtenChunkCount); // NOT tracked — avoids cycle
     const total = buffer.dropped + buffer.chunks.length;
     if (!xterm) return;
-    if ((buffer.revision ?? 0) !== writtenRevision) {
-      // Replace content on the same terminal: a snapshot includes historical
-      // bytes that predate this viewer's first streamed chunk.
-      xterm.reset();
-      xterm.write(buffer.chunks.map((chunk) => chunk.text).join(''));
-      writtenRevision = buffer.revision ?? 0;
-      writtenChunkCount = total;
-      return;
-    }
     if (total <= written) return;
 
     // Write only chunks not yet rendered, verbatim — no injected newlines.
@@ -289,7 +288,10 @@
     }
 
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
-    const lastLines = scriptOutputTailText(buffer, 100);
+    const lastLines =
+      buffer.chunks.length > 0
+        ? scriptOutputTailText(buffer, 100)
+        : ($retainedOutput$?.text ?? '').split('\n').slice(-100).join('\n');
     const exitCode = $runtime$.exitCode;
     const failedText =
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
@@ -379,6 +381,33 @@
     </div>
   {/if}
 
+  {#if $retainedOutput$}
+    <details class="retained-output border-b border-border" bind:open={retainedExpanded}>
+      <summary class="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
+        {m.terminal_scriptOutput_retained_label()}
+      </summary>
+      <p class="px-3 pb-2 text-xs text-muted-foreground">
+        {m.terminal_scriptOutput_retained_description()}
+      </p>
+      {#if $retainedOutput$.status === 'available'}
+        <pre
+          class="retained-text px-3 pb-3 text-xs"
+          style:font-family={$codeFontFamilyCSS}>{$retainedOutput$.text}</pre>
+      {:else}
+        <p class="px-3 pb-3 text-xs text-muted-foreground" role="status">
+          {$retainedOutput$.status === 'loading'
+            ? m.terminal_scriptOutput_retainedLoading_label()
+            : m.terminal_scriptOutput_retainedUnavailable_label()}
+        </p>
+      {/if}
+    </details>
+  {/if}
+  {#if $output$.chunks.length > 0 && $retainedOutput$}
+    <div class="px-3 py-1 text-xs text-muted-foreground">
+      {m.terminal_scriptOutput_live_label()}
+    </div>
+  {/if}
+
   {#if $runtime$.status === 'idle' && $output$.chunks.length === 0}
     <!-- Empty state: script hasn't been run yet -->
     <div class="flex-1 flex items-center justify-center px-4 py-8">
@@ -410,6 +439,18 @@
 </div>
 
 <style>
+  .retained-output {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow: auto;
+    max-height: 60%;
+  }
+  .retained-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0;
+  }
+
   .script-output-viewer {
     display: flex;
     flex-direction: column;

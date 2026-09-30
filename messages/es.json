@@ -6932,5 +6932,10 @@
   "scripts_history_noMatches_label": "No hay comandos coincidentes.",
   "scripts_history_load_error": "No se pudo cargar el historial de scripts. Inténtalo de nuevo.",
   "scripts_history_retry_label": "Reintentar",
-  "scripts_history_unsupported_error": "Este daemon no admite el historial de scripts. Vuelve a conectarte después de actualizarlo."
+  "scripts_history_unsupported_error": "Este daemon no admite el historial de scripts. Vuelve a conectarte después de actualizarlo.",
+  "terminal_scriptOutput_retained_label": "Salida conservada",
+  "terminal_scriptOutput_retained_description": "Instantánea de la salida temporal, limitada a 10.000 líneas. La salida en directo se muestra por separado.",
+  "terminal_scriptOutput_retainedLoading_label": "Cargando salida conservada…",
+  "terminal_scriptOutput_retainedUnavailable_label": "La salida conservada no está disponible.",
+  "terminal_scriptOutput_live_label": "Salida en directo"
 }

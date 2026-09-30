@@ -6932,5 +6932,10 @@
   "scripts_history_noMatches_label": "일치하는 명령이 없습니다.",
   "scripts_history_load_error": "스크립트 기록을 불러올 수 없습니다. 다시 시도하세요.",
   "scripts_history_retry_label": "다시 시도",
-  "scripts_history_unsupported_error": "이 데몬은 스크립트 기록을 지원하지 않습니다. 업데이트 후 다시 연결하세요."
+  "scripts_history_unsupported_error": "이 데몬은 스크립트 기록을 지원하지 않습니다. 업데이트 후 다시 연결하세요.",
+  "terminal_scriptOutput_retained_label": "보관된 출력",
+  "terminal_scriptOutput_retained_description": "최대 10,000줄의 임시 출력 스냅샷입니다. 실시간 출력은 별도로 표시됩니다.",
+  "terminal_scriptOutput_retainedLoading_label": "보관된 출력 불러오는 중…",
+  "terminal_scriptOutput_retainedUnavailable_label": "보관된 출력을 사용할 수 없습니다.",
+  "terminal_scriptOutput_live_label": "실시간 출력"
 }
