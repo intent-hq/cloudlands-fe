@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { ListRow } from '$lib/components/patterns/collection';
@@ -24,9 +25,10 @@
     activeView: AIBehaviorView;
     onSelect: (view: AIBehaviorView) => void;
     isActive?: boolean;
+    workspaceId?: string;
   }
 
-  let { activeView, onSelect, isActive = true }: Props = $props();
+  let { activeView, onSelect, isActive = true, workspaceId }: Props = $props();
 
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
@@ -60,6 +62,8 @@
     return true;
   }
 </script>
+
+<SpecialistImportDiagnostics {workspaceId} />
 
 <!-- Specialists -->
 {#each visibleSpecialists as specialist (specialist.id)}

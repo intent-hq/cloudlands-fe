@@ -6904,5 +6904,14 @@
   "agent_mutation_setBackgroundFailed_error": "無法變更代理程式模式",
   "settings_aiBehavior_importedClaude_title": "從 Claude Code 匯入",
   "settings_aiBehavior_importedClaude_readOnly": "在 Intent 中為唯讀。請開啟原始檔案進行修改。",
-  "settings_aiBehavior_importedClaude_unsupported": "無法在 Intent 中啟動，因為不支援下列設定：{fields}。請開啟原始檔案，移除或調整這些設定後再啟動。"
+  "settings_aiBehavior_importedClaude_unsupported": "無法在 Intent 中啟動，因為不支援下列設定：{fields}。請開啟原始檔案，移除或調整這些設定後再啟動。",
+  "settings_aiBehavior_importNotices": "Claude 代理匯入提示",
+  "settings_aiBehavior_importInvalid": "代理定義無效",
+  "settings_aiBehavior_importUnreadable": "無法讀取代理檔案",
+  "settings_aiBehavior_importBrokenLink": "檔案連結已失效",
+  "settings_aiBehavior_importTooLarge": "代理檔案過大",
+  "settings_aiBehavior_importShadowed": "另一項定義優先",
+  "settings_aiBehavior_importScanLimit": "已達到探索上限",
+  "settings_aiBehavior_importMissingSkills": "此目錄中缺少必要的技能：{skills}。啟動此代理的工作區中必須提供這些技能。請在該工作區中還原或安裝它們，或更新原始代理檔案。",
+  "settings_aiBehavior_importDetails": "詳細資訊"
 }

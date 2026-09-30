@@ -1,3 +1,5 @@
+import { store } from '$store/renderer/store';
+import { specialistsSaga } from '$store/renderer/slices/specialists/sagas/specialists-saga';
 import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 
 /** Intercept the fixture's editor choices at the real routed IPC seam. */
@@ -12,3 +14,5 @@ export function interceptSpecialistEditorLaunches(
   );
   return () => disposers.forEach((dispose) => dispose());
 }
+
+export const startSpecialistCatalogPreview = () => store.runSaga(specialistsSaga);

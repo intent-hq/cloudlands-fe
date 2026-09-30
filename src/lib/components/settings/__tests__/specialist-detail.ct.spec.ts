@@ -192,3 +192,119 @@ for (const source of ['user', 'project'] as const) {
     });
   }
 }
+
+for (const [code, reason] of [
+  ['invalid', 'Invalid agent definition'],
+  ['unreadable', 'Cannot read agent file'],
+  ['broken-link', 'Broken file link'],
+  ['too-large', 'Agent file is too large'],
+  ['shadowed', 'Another definition takes precedence'],
+  ['scan-limit', 'Discovery limit reached'],
+] as const) {
+  test(`skipped Claude import ${code} is visible with an empty catalog`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(SpecialistDetailPreview, {
+      props: { diagnosticCode: code, emptyCatalog: true },
+    });
+    const panel = component.getByRole('region', { name: 'Claude agent import notices' });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText(reason, { exact: true })).toBeVisible();
+    await expect(panel.getByText('skipped-agent.md', { exact: true })).toBeVisible();
+    await expect(
+      panel.getByText('/tmp/intent-demo/.claude/agents/skipped-agent.md', { exact: true }),
+    ).toHaveCount(0);
+    await panel.locator('[data-open-combo-control]').getByRole('button').first().click();
+    await expect
+      .poll(async () => JSON.parse(await component.getByTestId('editor-launches').innerText()))
+      .toEqual([
+        {
+          channel: 'vscode:open',
+          args: [
+            {
+              folder: '/tmp/intent-demo/.claude/agents',
+              file: '/tmp/intent-demo/.claude/agents/skipped-agent.md',
+            },
+          ],
+        },
+      ]);
+    await testInfo.attach(`diagnostic-${code}`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
+  });
+}
+
+test('missing Claude skills clear after a catalog refresh without unlocking edits', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(SpecialistDetailPreview, {
+    props: { imported: true, missingSkills: true, catalogFlow: true },
+  });
+  const warning = component.getByTestId('specialist-missing-skills');
+  await expect(warning).toContainText('absent from this catalog');
+  await expect(warning).toContainText('workspace where you launch');
+  await expect(warning).toContainText('code-review');
+  await expect(component.getByRole('textbox')).toHaveAttribute('readonly', '');
+  await testInfo.attach('missing-skills', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
+  await component.getByTestId('restore-required-skill').click();
+  await expect(warning).toHaveCount(0);
+  await expect(component.getByRole('textbox')).toHaveAttribute('readonly', '');
+  await expect(
+    component.getByText('/tmp/intent-demo/home/.claude/agents/review-helper.md', { exact: true }),
+  ).toHaveCount(0);
+  await expect(component.getByRole('region', { name: 'Claude agent import notices' })).toHaveCount(
+    0,
+  );
+  await testInfo.attach('skills-restored', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
+});
+
+test('live catalog subscription keeps failed reads but clears a successful empty roster', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(SpecialistDetailPreview, {
+    props: { imported: true, catalogFlow: true },
+  });
+  await expect(component.getByTestId('catalog-ids')).toHaveText('["preview-detail"]');
+  await expect(component.getByTestId('catalog-requests')).toHaveText('1');
+  await component.getByTestId('fail-catalog-refresh').click();
+  await expect(component.getByTestId('catalog-requests')).toHaveText('2');
+  await expect(component.getByTestId('catalog-ids')).toHaveText('["preview-detail"]');
+  await component.getByTestId('empty-catalog-refresh').click();
+  await expect(component.getByTestId('catalog-requests')).toHaveText('3');
+  await expect(component.getByTestId('catalog-ids')).toHaveText('[]');
+  const notices = component.getByRole('region', { name: 'Claude agent import notices' });
+  await expect(notices.getByText('Invalid agent definition', { exact: true })).toBeVisible();
+  await notices.getByText('Details', { exact: true }).click();
+  await expect(
+    notices.getByText('Repair invalid frontmatter in the original agent file.', { exact: true }),
+  ).toBeVisible();
+  await expect(component.getByRole('heading', { name: 'Review helper', exact: true })).toHaveCount(
+    0,
+  );
+  await testInfo.attach('empty-catalog-diagnostics', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
+});
+
+test('directory scan-limit notice opens the directory target', async ({ mount }) => {
+  const component = await mount(SpecialistDetailPreview, {
+    props: { diagnosticCode: 'scan-limit', diagnosticIsDirectory: true, emptyCatalog: true },
+  });
+  const panel = component.getByRole('region', { name: 'Claude agent import notices' });
+  await expect(panel.getByText('agents', { exact: true })).toBeVisible();
+  await panel.locator('[data-open-combo-control]').getByRole('button').first().click();
+  await expect
+    .poll(async () => JSON.parse(await component.getByTestId('editor-launches').innerText()))
+    .toEqual([{ channel: 'vscode:open', args: ['/tmp/intent-demo/.claude/agents'] }]);
+});

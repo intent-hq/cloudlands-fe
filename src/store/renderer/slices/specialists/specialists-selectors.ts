@@ -1,3 +1,4 @@
+import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
@@ -166,6 +167,8 @@ export const selectSpecialists = store.createSelector(
           source: file.source,
           importedFrom: file.importedFrom,
           unsupportedFields: file.unsupportedFields,
+          requiredSkills: file.requiredSkills,
+          missingSkills: file.missingSkills,
           hidden: file.hidden,
           resolvedModel: file.resolvedModel,
           resolvedProvider: file.resolvedProvider,
@@ -190,7 +193,11 @@ export const selectSpecialists = store.createSelector(
     // source has produced specialists. Once file/daemon specialists loaded,
     // the loaded set is authoritative — shipped specialists absent from it
     // must not resurrect (daemon replacement mode).
-    if (fileSpecialists.length === 0 && bundledSpecialists.length === 0) {
+    if (
+      !state.specialists.bundledSpecialistsLoaded &&
+      fileSpecialists.length === 0 &&
+      bundledSpecialists.length === 0
+    ) {
       for (const specialist of SPECIALISTS) {
         if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
           seen.add(specialist.id);
@@ -283,6 +290,7 @@ export const selectSpecialistById = store.createSelector(
     // resolve during the async startup window, while specialists absent from
     // the loaded set must not resurrect (daemon replacement mode).
     if (
+      !state.specialists.bundledSpecialistsLoaded &&
       getItems(state.specialists.fileSpecialists).length === 0 &&
       state.specialists.bundledSpecialists.length === 0
     ) {
@@ -482,5 +490,14 @@ const selectResolvedDefaultCodingAgent = store.createSelector(
     return selectIsActiveProviderAvailable.select(state)
       ? selectActiveProviderId.select(state)
       : '';
+  },
+);
+
+export const selectSpecialistImportDiagnostics = store.createSelector(
+  (state, workspaceId?: string): SpecialistImportDiagnostic[] => {
+    if (workspaceId)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.importDiagnostics ?? [];
+    const diagnostics = state.specialists.importDiagnostics;
+    return diagnostics ? getItems(diagnostics) : [];
   },
 );

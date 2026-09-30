@@ -1,3 +1,4 @@
+import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -35,6 +36,8 @@ export interface FileSpecialist {
   importedFrom?: 'claude-code';
   /** Unsupported settings that prevent launching this imported definition. */
   unsupportedFields?: string[];
+  requiredSkills?: string[];
+  missingSkills?: string[];
   id: string;
   name: string;
   description: string;
@@ -101,6 +104,7 @@ export interface FileSpecialistReference {
 // ============================================================================
 
 export type SpecialistsState = {
+  importDiagnostics?: Collection<SpecialistImportDiagnostic & { id: string }, 'id'>;
   bundledSpecialists: import('$lib/constants/specialists').Specialist[];
   customSpecialists: Collection<CustomSpecialist, 'id'>;
   fileSpecialists: Collection<FileSpecialist, 'id'>;
@@ -123,6 +127,7 @@ export type SpecialistsState = {
 // ============================================================================
 
 export const initialState: SpecialistsState = {
+  importDiagnostics: createCollection<SpecialistImportDiagnostic & { id: string }, 'id'>('id'),
   bundledSpecialists: [],
   customSpecialists: createCollection<CustomSpecialist, 'id'>('id'),
   fileSpecialists: createCollection<FileSpecialist, 'id'>('id'),
@@ -144,6 +149,9 @@ export const initialState: SpecialistsState = {
 // Reducer Actions (pure state updates)
 // ============================================================================
 
+export const setSpecialistImportDiagnostics = createAction<
+  [diagnostics: SpecialistImportDiagnostic[]]
+>('specialists/setImportDiagnostics');
 export const setBundledSpecialists = createAction<
   [specialists: import('$lib/constants/specialists').Specialist[]]
 >('specialists/setBundledSpecialists');
@@ -180,6 +188,16 @@ export const deleteFileSpecialist = createAsyncAction<[specialist: FileSpecialis
 // ============================================================================
 
 export const specialistsReducer = createReducer<SpecialistsState>(initialState);
+specialistsReducer.with(setSpecialistImportDiagnostics, (state, { payload: [diagnostics] }) => ({
+  ...state,
+  importDiagnostics: createCollection(
+    'id',
+    diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      id: JSON.stringify([diagnostic.source, diagnostic.path, diagnostic.code]),
+    })),
+  ),
+}));
 specialistsReducer.with(setBundledSpecialists, (state, { payload: [specialists] }) => ({
   ...state,
   bundledSpecialists: specialists,

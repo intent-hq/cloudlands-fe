@@ -839,6 +839,17 @@
             <p class="type-body mt-2 text-muted-foreground">
               {m.settings_aiBehavior_importedClaude_readOnly()}
             </p>
+            {#if currentSpecialist.missingSkills?.length}
+              <p
+                data-testid="specialist-missing-skills"
+                role="status"
+                class="type-body mt-2 text-danger"
+              >
+                {m.settings_aiBehavior_importMissingSkills({
+                  skills: currentSpecialist.missingSkills.join(', '),
+                })}
+              </p>
+            {/if}
             {#if currentSpecialist.unsupportedFields?.length}
               <p data-testid="specialist-import-warning" class="type-body mt-2 text-danger">
                 {m.settings_aiBehavior_importedClaude_unsupported({

@@ -6904,5 +6904,14 @@
   "agent_mutation_setBackgroundFailed_error": "Agentenmodus konnte nicht geändert werden",
   "settings_aiBehavior_importedClaude_title": "Aus Claude Code importiert",
   "settings_aiBehavior_importedClaude_readOnly": "In Intent schreibgeschützt. Öffne die Originaldatei, um Änderungen vorzunehmen.",
-  "settings_aiBehavior_importedClaude_unsupported": "Start in Intent nicht möglich, da diese Einstellungen nicht unterstützt werden: {fields}. Öffne die Originaldatei und entferne oder passe diese Einstellungen vor dem Start an."
+  "settings_aiBehavior_importedClaude_unsupported": "Start in Intent nicht möglich, da diese Einstellungen nicht unterstützt werden: {fields}. Öffne die Originaldatei und entferne oder passe diese Einstellungen vor dem Start an.",
+  "settings_aiBehavior_importNotices": "Hinweise zum Claude-Agentenimport",
+  "settings_aiBehavior_importInvalid": "Ungültige Agentendefinition",
+  "settings_aiBehavior_importUnreadable": "Agentendatei kann nicht gelesen werden",
+  "settings_aiBehavior_importBrokenLink": "Defekter Dateilink",
+  "settings_aiBehavior_importTooLarge": "Agentendatei ist zu groß",
+  "settings_aiBehavior_importShadowed": "Eine andere Definition hat Vorrang",
+  "settings_aiBehavior_importScanLimit": "Suchlimit erreicht",
+  "settings_aiBehavior_importMissingSkills": "Erforderliche Skills fehlen in diesem Katalog: {skills}. Sie müssen im Arbeitsbereich verfügbar sein, in dem du diesen Agenten startest. Stelle sie dort wieder her, installiere sie oder aktualisiere die ursprüngliche Agentendatei.",
+  "settings_aiBehavior_importDetails": "Einzelheiten"
 }
