@@ -368,5 +368,8 @@ test('walkthrough settles a resize while its ancestor moves', async ({ page }, t
   expect(result.samples.at(-1)!.state).toBe('execute');
   expect(result.samples.every((sample) => sample.finitePaint)).toBe(true);
   expect(Math.max(...result.samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-  await root.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
+  // Capture the viewport after the behavioral checks: a locator clip can become
+  // stale while surrounding catalog sections reposition the settled diagram.
+  await root.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
 });
