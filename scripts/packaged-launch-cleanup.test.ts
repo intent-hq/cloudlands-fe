@@ -41,6 +41,9 @@ it.each([
   'evaluate',
   'profile',
   'worktree-boundary',
+  'worktree-missing-home',
+  'worktree-root-mismatch',
+  'worktree-platform-home',
   'firstWindow',
   'splash',
   'observation',
@@ -60,8 +63,10 @@ it.each([
     const binary = join(root, 'inert-file');
     writeFileSync(binary, 'not executable');
     vi.stubEnv('PACKAGED_APP_PATH', binary);
-    if (stage === 'worktree-boundary') {
+    if (stage.startsWith('worktree-')) {
       vi.stubEnv('BUILD_SMOKE_WORKSPACES_ROOT', join(root, 'home/intent/workspaces'));
+      vi.stubEnv('HOME', join(root, 'home'));
+      vi.stubEnv('INTENTD_WORKSPACES_DIR', join(root, 'home/intent/workspaces'));
     }
     const primary = new Error('setup failed');
     const secondary = new Error('cleanup failed');
@@ -136,6 +141,16 @@ it.each([
       const profile = options.env.INTENTD_DATA_DIR.slice(0, -'/intentd'.length);
       roots.push(profile);
       app.evaluate.mockImplementation(async (callback) => {
+        if (stage === 'worktree-platform-home') {
+          electronApp.getPath.mockImplementation((name) =>
+            name === 'home' ? '/platform/account' : join(profile, 'electron'),
+          );
+          vi.stubEnv('INTENTD_DATA_DIR', options.env.INTENTD_DATA_DIR);
+          const runtime = callback({ app: electronApp });
+          expect(runtime.home).toBe('/platform/account');
+          expect(runtime.environmentHome).toBe(join(root, 'home'));
+          return runtime;
+        }
         if (stage === 'quit-race') {
           electronApp.getPath.mockReturnValue(join(profile, 'electron'));
           return { ...callback({ app: electronApp }), dataDir: options.env.INTENTD_DATA_DIR };
@@ -152,7 +167,16 @@ it.each([
           userData: stage === 'profile' ? '/wrong/account/profile' : join(profile, 'electron'),
           dataDir: options.env.INTENTD_DATA_DIR,
           home: '/wrong/account',
-          workspacesRoot: process.env.BUILD_SMOKE_WORKSPACES_ROOT,
+          environmentHome:
+            stage === 'worktree-missing-home'
+              ? undefined
+              : stage === 'worktree-boundary'
+                ? '/wrong/account'
+                : options.env.HOME,
+          workspacesRoot:
+            stage === 'worktree-root-mismatch'
+              ? '/outside/workspaces'
+              : process.env.BUILD_SMOKE_WORKSPACES_ROOT,
         };
       });
       return app;
@@ -182,7 +206,7 @@ it.each([
       expect(error.errors).toEqual([primary, secondary]);
     } else if (stage === 'profile') {
       expect(error.message).toContain('runtime identity mismatch');
-    } else if (stage === 'worktree-boundary') {
+    } else if (stage.startsWith('worktree-') && stage !== 'worktree-platform-home') {
       expect(error.message).toContain('worktree boundary mismatch');
     } else expect(error).toBe(primary);
   },

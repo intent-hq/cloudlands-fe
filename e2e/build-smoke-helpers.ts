@@ -343,6 +343,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
           appPath: electronApp.getAppPath(),
           userData: electronApp.getPath('userData'),
           home: electronApp.getPath('home'),
+          environmentHome: process.env.HOME,
           workspacesRoot: process.env.INTENTD_WORKSPACES_DIR,
           dataDir: process.env.INTENTD_DATA_DIR,
         };
@@ -362,7 +363,8 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     if (
       fixtureWorkspaces &&
       (runtime.workspacesRoot !== fixtureWorkspaces ||
-        resolve(runtime.home, 'intent/workspaces') !== resolve(fixtureWorkspaces))
+        !runtime.environmentHome ||
+        resolve(runtime.environmentHome, 'intent/workspaces') !== resolve(fixtureWorkspaces))
     ) {
       throw new Error(`Packaged worktree boundary mismatch: ${JSON.stringify(runtime)}`);
     }
