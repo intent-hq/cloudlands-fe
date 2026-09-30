@@ -141,6 +141,7 @@ vi.mock('$store/renderer/store', async () => {
   // toggles store state proves the component anchors on the right selector.
   return createAppStoreMockModule({
     state: () => ({
+      git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
       transientUi: mocks.transientUi,
@@ -1393,7 +1394,7 @@ describe('ChatPanel mounted lifecycle', () => {
         intersectionObservers: 1,
         intersectionTargets: 1,
         windowListeners: expect.any(Number),
-        ipcListeners: 3,
+        ipcListeners: 0,
         chatSubscriptionLeases: 1,
       });
       expect(singleSurfaceOwnership.resizeObservers).toBeGreaterThan(0);
@@ -2904,7 +2905,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('detaches IPC, observer, and scroll-action lifecycles while inactive and restores them', async () => {
+  it('releases saga read interest, observers, and scroll actions while inactive and restores them', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const currentWorkspace = workspace('workspace-a');
     const view = render(ChatPanel, {
@@ -2912,7 +2913,16 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(mocks.listenSync).toHaveBeenCalledTimes(3);
+    expect(mocks.listenSync).not.toHaveBeenCalled();
+    const readRequest = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'git/readRequested');
+    expect(readRequest?.payload).toEqual([
+      'workspace-a',
+      expect.any(String),
+      expect.any(String),
+      { kind: 'autoCommitStatus', agentId: 'agent-a' },
+    ]);
     expect(mocks.followBottomOptions?.enabled).toBe(true);
 
     flushFrame();
@@ -2930,17 +2940,25 @@ describe('ChatPanel mounted lifecycle', () => {
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
     await tick();
 
-    expect(mocks.ipcListenerCleanups).toHaveLength(3);
-    expect(
-      mocks.ipcListenerCleanups.every((cleanupListener) => cleanupListener.mock.calls.length === 1),
-    ).toBe(true);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'git/releaseRead',
+        payload: readRequest.payload.slice(0, 3),
+      }),
+    );
     expect(mocks.followBottomOptions?.enabled).toBe(false);
     expect(mocks.pinnedPromptOptions?.enabled).toBe(false);
     expect(mocks.resizeDisconnect.mock.calls.length).toBeGreaterThan(disconnectsBeforeDeactivate);
 
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
     await tick();
-    expect(mocks.listenSync).toHaveBeenCalledTimes(6);
+    expect(mocks.listenSync).not.toHaveBeenCalled();
+    const readRequests = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'git/readRequested');
+    expect(readRequests).toHaveLength(2);
+    expect(readRequests[1].payload[1]).toBe(readRequest.payload[1]);
+    expect(readRequests[1].payload[2]).not.toBe(readRequest.payload[2]);
     expect(mocks.followBottomOptions?.enabled).toBe(true);
   });
 

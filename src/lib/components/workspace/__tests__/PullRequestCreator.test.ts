@@ -1,57 +1,27 @@
-/**
- * PullRequestCreator — PR creation routed through accept-changes.execute
- * (action "create-pr", PROTOCOL.md §5.18) with auto-fill from
- * accept-changes.prepare suggestions and real error surfacing.
- */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+/** Rendered PR intent through the production workflow owner and mocked daemon. */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { store } from '$store/renderer/store';
+import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+import { prWorkflowSaga } from '$store/renderer/slices/pr-workflow/sagas/pr-workflow-saga';
+import { prCreatorRequested } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { setPRContent } from '$store/renderer/slices/changes/changes-slice';
+import { selectAcceptChangesState } from '$store/renderer/slices/changes/changes-selectors';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { PullRequestStatus, type Workspace } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 
-const mocks = vi.hoisted(() => {
-  const dispatch = vi.fn();
-  const workspace: Record<string, unknown> = {
-    id: 'ws-1',
-    title: 'My Workspace',
-    branch: 'feat/x',
-    baseRef: 'main',
-  };
-  const selector = <T>(getter: () => T) => {
-    const fn = () => ({
-      subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
-      },
-    });
-    return Object.assign(fn, { select: () => getter() });
-  };
-  return {
-    dispatch,
-    workspace,
-    selector,
-    prepare: vi.fn(),
-    execute: vi.fn(),
-  };
-});
-
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch: mocks.dispatch });
-});
-
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceById: mocks.selector(() => mocks.workspace),
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
-
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  updateWorkspaceEntity: vi.fn((...args: unknown[]) => ({
-    type: 'workspace/updateWorkspaceEntity',
-    payload: args,
-  })),
-}));
-
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { prepare: mocks.prepare, execute: mocks.execute },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -64,7 +34,7 @@ async function renderCreator() {
   const onCreated = vi.fn();
   const onClose = vi.fn();
   const result = render(PullRequestCreator, {
-    props: { workspaceId: 'ws-1', onClose, onCreated },
+    props: { workspaceId: 'pr-creator', onClose, onCreated },
   });
   return { ...result, onCreated, onClose };
 }
@@ -81,77 +51,146 @@ warmImport(() => import('../sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../PullRequestCreator.svelte'));
 
 describe('PullRequestCreator', () => {
+  const workspace = {
+    id: WorkspaceId('pr-creator'),
+    title: 'My Workspace',
+    branch: 'feat/x',
+    baseRef: 'main',
+    myRole: 'owner',
+  } as Workspace;
+  const pr = {
+    id: '7',
+    number: 7,
+    url: 'https://github.test/o/r/pull/7',
+    title: 'Suggested title',
+    status: PullRequestStatus.Open,
+    createdAt: '2026-09-29T00:00:00Z',
+    updatedAt: '2026-09-29T00:00:00Z',
+  };
+  let dispose: () => void;
+  let stop: () => void;
+  let executeResult: Record<string, unknown>;
   beforeEach(() => {
-    mocks.dispatch.mockClear();
-    mocks.prepare.mockReset();
-    mocks.execute.mockReset();
-  });
-
-  it('auto-fills from accept-changes.prepare suggestions and creates the PR via accept-changes.execute', async () => {
-    mocks.prepare.mockResolvedValue({
-      valid: true,
-      warnings: [],
-      errors: [],
-      suggestedPRTitle: 'Suggested title',
-      suggestedPRBody: 'Suggested body',
-      filesCount: 1,
-      additions: 1,
-      deletions: 0,
-      files: [],
-    });
-    mocks.execute.mockResolvedValue({
+    vi.clearAllMocks();
+    executeResult = {
       success: true,
       steps: [{ id: 'create-pr', name: 'Create PR', status: 'completed' }],
-      result: { prNumber: 7, prUrl: 'https://api/pr/7', prHtmlUrl: 'https://gh/pr/7' },
+      result: { prNumber: 7, prHtmlUrl: pr.url },
+    };
+    vi.mocked(backendRequest).mockImplementation(async (method) => {
+      if (method === 'accept-changes.prepare')
+        return {
+          valid: true,
+          warnings: [],
+          errors: [],
+          suggestedPRTitle: 'Suggested title',
+          suggestedPRBody: 'Suggested body',
+          filesCount: 1,
+          additions: 1,
+          deletions: 0,
+          files: [],
+        };
+      if (method === 'accept-changes.execute') return executeResult;
+      if (method === 'workspace.get')
+        return { workspace: { ...workspace, activePullRequest: pr, prNumber: 7 } };
+      throw new Error(`Unexpected RPC ${method}`);
     });
+    dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+    stop = store.runSaga(prWorkflowSaga);
+    store.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+    );
+    store.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+    store.dispatch(setWorkspaceEntity(workspace));
+  });
+  afterEach(() => {
+    cleanup();
+    stop();
+    dispose();
+    vi.restoreAllMocks();
+  });
 
-    const { container, onCreated } = await renderCreator();
+  it('auto-fills and creates through the workflow, then calls back with the authoritative workspace PR', async () => {
+    const { container, onCreated, onClose } = await renderCreator();
     await fireEvent.click(findButton(container, 'Auto-fill & Create')!);
-
-    await waitFor(() => {
-      expect(container.textContent).toContain('Pull request created successfully!');
+    const completionWait = { timeout: 4000 };
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(pr), completionWait);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(backendRequest).toHaveBeenCalledWith('accept-changes.prepare', {
+      workspaceId: 'pr-creator',
+      action: 'create-pr',
     });
-
-    expect(mocks.prepare).toHaveBeenCalledWith('ws-1', 'create-pr');
-    expect(mocks.execute).toHaveBeenCalledWith('ws-1', 'create-pr', {
+    expect(backendRequest).toHaveBeenCalledWith('accept-changes.execute', {
+      workspaceId: 'pr-creator',
+      action: 'create-pr',
+      files: undefined,
+      commitMessage: undefined,
       prTitle: 'Suggested title',
       prBody: 'Suggested body',
       targetBranch: 'main',
+      mergeStrategy: undefined,
+      upToCommitHash: undefined,
+      undoCommitsMetadata: undefined,
+      options: {
+        stageUnstaged: undefined,
+        pushAfterCommit: undefined,
+        createPRAfterPush: undefined,
+        rebaseFirst: undefined,
+        localOnly: undefined,
+      },
     });
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/updateWorkspaceEntity' }),
-    );
-    expect(onCreated).toHaveBeenCalledWith(
-      expect.objectContaining({ number: 7, url: 'https://gh/pr/7', title: 'Suggested title' }),
-    );
   });
 
   it('surfaces the real daemon error when execute reports an in-band failure', async () => {
-    mocks.prepare.mockResolvedValue({
-      valid: true,
-      warnings: [],
-      errors: [],
-      suggestedPRTitle: 'Suggested title',
-      suggestedPRBody: '',
-      filesCount: 0,
-      additions: 0,
-      deletions: 0,
-      files: [],
-    });
-    mocks.execute.mockResolvedValue({
+    executeResult = {
       success: false,
       steps: [{ id: 'create-pr', name: 'Create PR', status: 'failed', error: 'boom' }],
       error: 'GitHub authentication required',
-    });
-
-    const { container, onCreated } = await renderCreator();
+    };
+    const { container, onCreated, onClose } = await renderCreator();
     await fireEvent.click(findButton(container, 'Auto-fill & Create')!);
-
     await waitFor(() => {
       expect(container.textContent).toContain('GitHub authentication required');
     });
-    expect(container.textContent).not.toContain('Pull request created successfully!');
     expect(onCreated).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(selectAcceptChangesState.select(store.state, 'pr-creator').prTitle).toBe(
+      'Suggested title',
+    );
+  });
+
+  it('keeps edited drafts through remount and suppresses callbacks after unmount', async () => {
+    store.dispatch(setPRContent('pr-creator', 'Existing title', 'Existing body'));
+    const first = await renderCreator();
+    const input = first.container.querySelector('input') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'Edited title' } });
+    await waitFor(() =>
+      expect(selectAcceptChangesState.select(store.state, 'pr-creator').prTitle).toBe(
+        'Edited title',
+      ),
+    );
+    first.unmount();
+    const second = await renderCreator();
+    expect((second.container.querySelector('input') as HTMLInputElement).value).toBe(
+      'Edited title',
+    );
+    const dispatch = vi.spyOn(store, 'dispatch');
+    await fireEvent.click(findButton(second.container, 'Create')!);
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(backendRequest)
+          .mock.calls.some(([method]) => method === 'accept-changes.execute'),
+      ).toBe(true),
+    );
+    second.unmount();
+    const request = dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === prCreatorRequested.type) as ReturnType<
+      typeof prCreatorRequested
+    >;
+    await request.promise;
+    expect(second.onCreated).not.toHaveBeenCalled();
+    expect(second.onClose).not.toHaveBeenCalled();
   });
 });

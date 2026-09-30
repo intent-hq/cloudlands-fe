@@ -6,7 +6,7 @@ import {
   getChangeCategory,
   applyNumstatStats,
   isPathLocked,
-} from '../ChatChangesPanel.svelte';
+} from '../chat-changes-enrichment';
 import type { LocalFileChange } from '../types';
 
 function mkChange(overrides: Partial<LocalFileChange>): LocalFileChange {
