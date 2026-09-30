@@ -61,6 +61,26 @@ for (const dark of [false, true]) {
         await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
       ).toBeLessThanOrEqual(1);
       if (process.env.AVATAR_CAPTURE_DIR) {
+        const tooltips = page.locator('[data-tooltip-content]');
+        await expect(tooltips.filter({ hasText: 'owner · Host owner · Online' })).toHaveCount(0);
+        const memberTooltip = tooltips.filter({ hasText: 'member · Host member' });
+        await expect(tooltips).toHaveCount(1);
+        await expect(memberTooltip).toHaveText(
+          'member · Host member · Online · Viewing this workspace',
+        );
+        await expect(memberTooltip).toBeVisible();
+        await expect(memberTooltip).toHaveAttribute('data-state', 'open');
+        await expect
+          .poll(() =>
+            memberTooltip.evaluate(
+              (element) =>
+                getComputedStyle(element).opacity === '1' &&
+                element
+                  .getAnimations()
+                  .every((animation) => !animation.pending && animation.playState === 'finished'),
+            ),
+          )
+          .toBe(true);
         await mkdir(process.env.AVATAR_CAPTURE_DIR, { recursive: true });
         await page.screenshot({
           path: join(
