@@ -2,14 +2,8 @@
  * Build Smoke Test — Multi-Agent Orchestration UI
  *
  * Tests the UI's reaction to multiple agents in a workspace.
- * Uses test-side IPC to create child agents (bypassing the MCP/tool_call
- * pipeline) and asserts that the sidebar, chat history, and streaming
+ * Uses the mock parent's authenticated workspace MCP bridge to create a child and asserts that the sidebar, chat history, and streaming
  * indicators update correctly.
- *
- * Approach: pure test-side orchestration — no changes to mock-acp-agent.js
- * or production code.  The test drives child creation via
- * `electronAPI.invoke('agent:create', ...)` which is the same IPC call
- * that `CreateAgentTool` ultimately makes.
  *
  * Run with: pnpm test:build-smoke
  */
@@ -21,7 +15,9 @@ import {
   launchPackagedApp,
   createTempRepo,
   createWorkspaceWithPrompt,
-  waitForAgentCompletion,
+  getSmokeWorkspace,
+  openAgentsSidebarPanel,
+  openAgentChat,
   archiveAndGoHome,
   setMockAgentBehavior,
   exitPackagedApp,
@@ -51,7 +47,9 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
 
     const mockScriptPath = path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js');
     const launched = await launchPackagedApp({
-      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath },
+      // The daemon's mock spawn adapter defaults to --mcp-config delivery.
+      // This fixture consumes the real parent bridge via ACP session/new instead.
+      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath, MOCK_AGENT_SESSION_MCP: '1' },
     });
     app = launched.app;
     page = launched.page;
@@ -71,176 +69,100 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
     }
   });
 
-  // fixme: asserts UI that no longer exists — the panel tab's running dot
-  // (PanelTabBar has no streaming indicator), child avatars inside the
-  // delegation toggle (now text-only `[data-agent-delegation-toggle]`), and
-  // `.bg-green-500` on the parent AgentCard — intent-hq/intent#5608.
-  test.fixme('child agent creation updates sidebar and chat isolation', async () => {
+  test('child agent creation updates sidebar and chat isolation', async () => {
     test.setTimeout(180_000);
-
-    // --- Phase 1: Create parent agent with slow streaming ---
-    // Use chunked streaming so the green dot (running indicator) is visible
-    // long enough to assert before the agent completes.
-    const parentMockEnv = setMockAgentBehavior({
-      chunks: ['I will coordinate the work. ', 'Delegating to a specialist now.'],
-      chunkDelayMs: 1500,
+    setMockAgentBehavior({
+      response: 'PARENT_ONLY: I will coordinate the work. TASK_COMPLETE',
+      delegate: { name: 'Implementor', prompt: 'CHILD_REQUEST: Implement the feature with tests' },
+      child: {
+        response: 'CHILD_ONLY: Implementation complete. TASK_COMPLETE',
+        files: { 'child-output.txt': 'Written by child agent' },
+      },
     });
-    await app.evaluate(({ app: _app }, behavior) => {
-      process.env.MOCK_AGENT_BEHAVIOR = behavior;
-    }, parentMockEnv.MOCK_AGENT_BEHAVIOR);
-
     const workspaceId = await createWorkspaceWithPrompt(page, {
       repoPath,
-      prompt: 'Build the feature end to end',
+      prompt: 'PARENT_REQUEST: Build the feature end to end',
       providerName: 'Mock (E2E)',
     });
-
     try {
-      // Wait for parent agent card to appear in sidebar
-      const parentCard = page.locator('[data-agent-id]').first();
-      await parentCard.waitFor({ state: 'visible', timeout: 15_000 });
-      const parentAgentId = await parentCard.getAttribute('data-agent-id');
-      console.log('✅ Parent agent appeared:', parentAgentId);
-
-      // 1a. Assert parent is streaming — green dot (bg-green-500) on the
-      //     panel tab avatar (PanelTabBar reads agent.isStreaming from Redux)
-      const parentTabRunningDot = page.locator(
-        '[data-tab-id][role="tab"][aria-selected="true"] .bg-green-500',
-      );
-      await expect(parentTabRunningDot).toBeVisible({ timeout: 10_000 });
-      console.log('✅ Parent panel tab shows green running dot');
-
-      // Wait for parent to finish
-      await waitForAgentCompletion(page, workspaceId, 60_000);
-      console.log('✅ Parent agent completed');
-
-      // 1b. Green dot should be gone now
-      await expect(parentTabRunningDot).toHaveCount(0, { timeout: 10_000 });
-      console.log('✅ Parent panel tab running dot cleared');
-
-      // Assert: only 1 agent in sidebar
-      await expect(page.locator('[data-agent-id]')).toHaveCount(1, { timeout: 5_000 });
-      console.log('✅ Sidebar shows 1 agent');
-
-      // --- Phase 2: Create child agent via IPC with slow streaming ---
-      const childMockEnv = setMockAgentBehavior({
-        chunks: ['Implementation complete. ', 'All tests pass.'],
-        chunkDelayMs: 1500,
-        files: { 'child-output.txt': 'Written by child agent' },
+      const messages = page.locator('.tab-content-wrapper:not(.hidden) [data-message-role]');
+      await expect(messages.filter({ hasText: 'PARENT_ONLY:' }).last()).toBeVisible({
+        timeout: 60_000,
       });
-      await app.evaluate(({ app: _app }, behavior) => {
-        process.env.MOCK_AGENT_BEHAVIOR = behavior;
-      }, childMockEnv.MOCK_AGENT_BEHAVIOR);
+      await openAgentsSidebarPanel(page);
+      const parentCard = page.locator('[data-testid="agent-panel"] [data-agent-id]').first();
+      await expect(parentCard).toBeVisible();
+      const parentAgentId = await parentCard.getAttribute('data-agent-id');
+      expect(parentAgentId).toBeTruthy();
+      const workspace = await getSmokeWorkspace(page, workspaceId);
 
-      // Create child agent via the same IPC the renderer uses
-      const childResult = await page.evaluate(
-        async (config) => {
-          const result = await (window as any).electronAPI.invoke('agent:create', {
-            workspaceId: config.workspaceId,
-            workspacePath: config.repoPath,
-            name: 'Implementor',
-            provider: 'mock',
-            initialMessage: 'Implement the feature with tests',
-            metadata: {
-              createdByAgentId: config.parentAgentId,
-              delegationDepth: 1,
-            },
+      const childAgentId = await page.evaluate(
+        async ({ workspaceId, parentAgentId }) => {
+          const result = await (window as any).electronAPI.invoke('backend:request', {
+            method: 'agent.list',
+            params: { workspaceId, scope: 'delegated', parentAgentId },
           });
-          return result;
+          if (!result.ok) throw new Error(JSON.stringify(result));
+          const children = result.result.agents.filter(
+            (agent: any) => agent.parentAgentId === parentAgentId,
+          );
+          if (children.length !== 1)
+            throw new Error(`Expected one real child: ${JSON.stringify(result)}`);
+          return children[0].id as string;
         },
-        { workspaceId, repoPath, parentAgentId },
+        { workspaceId, parentAgentId },
       );
-      console.log('✅ Child agent created via IPC:', JSON.stringify(childResult).substring(0, 200));
+      expect(childAgentId).not.toBe(parentAgentId);
 
-      if (!childResult?.success) {
-        throw new Error(`agent:create IPC failed: ${JSON.stringify(childResult)}`);
-      }
+      const delegation = page.locator(`[data-agent-delegation-toggle="${parentAgentId}"]`);
+      await expect(delegation).toContainText('1 delegated', { timeout: 30_000 });
+      if ((await delegation.getAttribute('aria-expanded')) !== 'true') await delegation.click();
+      await expect(page.locator(`[data-agent-id="${childAgentId}"]`).first()).toBeVisible();
+      await openAgentChat(page, childAgentId);
+      await expect(messages.filter({ hasText: 'CHILD_ONLY:' }).last()).toBeVisible({
+        timeout: 60_000,
+      });
+      // Delegated requests are attributed messages, collapsed by default.
+      const delegatedRequest = messages.filter({
+        has: page.getByTestId('agent-message-attribution'),
+      });
+      await expect(delegatedRequest).toHaveCount(1);
+      await expect(delegatedRequest.getByTestId('agent-message-actor-name')).toHaveText(
+        (await parentCard.getByRole('heading').innerText()).trim(),
+      );
+      const disclosure = delegatedRequest.getByTestId('agent-message-disclosure-toggle');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      await disclosure.click();
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+      await expect(messages.filter({ hasText: 'CHILD_REQUEST:' })).toBeVisible();
+      await expect(messages.filter({ hasText: 'PARENT_ONLY:' })).toHaveCount(0);
+      await expect(messages.filter({ hasText: 'PARENT_REQUEST:' })).toHaveCount(0);
+      await expect(page.getByTestId('pane-stack-selector-trigger')).toContainText('Implementor');
+      await expect
+        .poll(() => fs.readFile(path.join(workspace.worktreePath, 'child-output.txt'), 'utf8'))
+        .toBe('Written by child agent');
 
-      const childAgentId = childResult.data.agent.id;
-
-      // --- Phase 3: Assert the delegation UI ---
-
-      // 3a. Switch to the "Agents" sidebar tab
-      const agentsTab = page.locator('[data-testid="agent-panel-toggle"]');
-      await agentsTab.waitFor({ state: 'visible', timeout: 10_000 });
-      await agentsTab.click();
-      await page.waitForTimeout(1_000);
-      console.log('✅ Switched to Agents tab');
-
-      // 3b. Verify the delegation toggle shows "1 delegated" with avatar preview
-      const delegationToggle = page.locator('.delegation-toggle');
-      await delegationToggle.waitFor({ state: 'visible', timeout: 10_000 });
-      const toggleText = await delegationToggle.textContent();
-      expect(toggleText).toContain('1 delegated');
-      console.log('✅ Delegation toggle shows "1 delegated"');
-
-      // 3c. Avatar preview row — when collapsed, child avatar(s) render
-      //     inside the toggle button (AgentAvatarWithState, up to 4)
-      const avatarPreview = delegationToggle.locator('.avatar');
-      await expect(avatarPreview).toHaveCount(1, { timeout: 5_000 });
-      console.log('✅ Avatar preview shows 1 child avatar in collapsed toggle');
-
-      // 3d. Click the delegation toggle to expand and reveal child cards
-      await delegationToggle.click();
-      await page.waitForTimeout(1_000);
-
-      // Child card should now be visible (nested under parent)
-      const childCard = page.locator(`[data-agent-id="${childAgentId}"]`);
-      await childCard.waitFor({ state: 'visible', timeout: 10_000 });
-      console.log('✅ Child agent card visible after expanding');
-
-      // 3e. Wait for child agent to complete streaming
-      await waitForAgentCompletion(page, workspaceId, 60_000);
-      // In CI, IPC agent polling can fail before the child finishes. The mock child agent
-      // takes ~4.5s (3s delay + 1.5s chunk delay), so wait long enough before opening it.
-      await page.waitForTimeout(6_000);
-      console.log('✅ All agents completed');
-
-      // 3f. Agent status indicator — both agents finished streaming.
-      //     The AgentCard avatar's green dot (bg-green-500) may lag behind
-      //     the chat panel's streaming state, so use a generous timeout.
-      const parentRunningDot = page.locator(`[data-agent-id="${parentAgentId}"] .bg-green-500`);
-      await expect(parentRunningDot).toHaveCount(0, { timeout: 15_000 });
-      console.log('✅ Parent agent avatar is not in running state');
-
-      // NOTE: Skipping child green-dot check — agent:idle events are not
-      // forwarded to the renderer so activeStreamsTracker never clears.
-      // This is a known issue tracked separately.
-      // const childRunningDot = childCard.locator('.bg-green-500');
-      // await expect(childRunningDot).toHaveCount(0, { timeout: 15_000 });
-      // console.log('⚠️  Skipping child running-dot check (known event-forwarding gap)');
-
-      // 3g. Click child card to open its chat panel
-      await childCard.click();
-      await page.waitForTimeout(2_000);
-
-      const childMessage = page.locator('[data-message-role="assistant"]:visible').last();
-      await childMessage.waitFor({ state: 'visible', timeout: 10_000 });
-      const childText = await childMessage.textContent();
-      expect(childText).toContain('Implementation complete');
-      console.log('✅ Child chat shows correct response');
-
-      // 3h. Panel tab — verify the child's tab shows correct title
-      const childPanelTab = page.locator('[data-tab-id][role="tab"][aria-selected="true"]');
-      await childPanelTab.waitFor({ state: 'visible', timeout: 5_000 });
-      const tabTitle = await childPanelTab.locator('.tab-title').textContent();
-      expect(tabTitle).toContain('Implementor');
-      console.log('✅ Panel tab shows child agent name "Implementor"');
-
-      // 3i. Click parent card to switch back and verify original chat
-      const parentCardLocator = page.locator(`[data-agent-id="${parentAgentId}"]`);
-      await parentCardLocator.click();
-      await page.waitForTimeout(2_000);
-
-      const parentMessage = page.locator('[data-message-role="assistant"]:visible').last();
-      await parentMessage.waitFor({ state: 'visible', timeout: 10_000 });
-      const parentText = await parentMessage.textContent();
-      expect(parentText).toContain('coordinate the work');
-      console.log('✅ Parent chat preserved after switching');
-
+      await openAgentChat(page, parentAgentId!);
+      await expect(messages.filter({ hasText: 'PARENT_ONLY:' }).last()).toBeVisible();
+      await expect(messages.filter({ hasText: 'PARENT_REQUEST:' })).toBeVisible();
+      await expect(messages.filter({ hasText: 'CHILD_ONLY:' })).toHaveCount(0);
+      await expect(messages.filter({ hasText: 'CHILD_REQUEST:' })).toHaveCount(0);
+      // Switching twice catches history replacement as well as first-open routing.
+      await openAgentChat(page, childAgentId);
+      await expect(messages.filter({ hasText: 'CHILD_ONLY:' }).last()).toBeVisible();
+      await expect(messages.filter({ hasText: 'PARENT_ONLY:' })).toHaveCount(0);
+      await test.info().attach('agent-identities', {
+        body: JSON.stringify({
+          workspaceId,
+          parentAgentId,
+          childAgentId,
+          worktreePath: workspace.worktreePath,
+        }),
+        contentType: 'application/json',
+      });
       await takeScreenshot(page, 'multi-agent-complete');
     } finally {
-      await archiveAndGoHome(page, workspaceId).catch(() => {});
+      await archiveAndGoHome(page, workspaceId);
     }
   });
 });

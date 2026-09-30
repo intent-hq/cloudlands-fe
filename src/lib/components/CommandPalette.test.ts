@@ -21,6 +21,7 @@ const {
   collaboratorState,
   multiplayerState,
   gitlabState,
+  remoteAgentsState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -50,6 +51,7 @@ const {
     collaboratorState: { workspace: false, client: false },
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
+    remoteAgentsState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
@@ -140,6 +142,7 @@ vi.mock('$store/renderer/store', async () => {
       userPreferences: {
         labsMultiplayerEnabled: multiplayerState.enabled,
         labsGitLabEnabled: gitlabState.enabled,
+        labsRemoteAgentsEnabled: remoteAgentsState.enabled,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -271,6 +274,7 @@ describe('CommandPalette new actions', () => {
     collaboratorState.client = false;
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
+    remoteAgentsState.enabled = undefined;
   });
 
   it.each([undefined, false, true])(
@@ -312,6 +316,64 @@ describe('CommandPalette new actions', () => {
     storeEvents.emit();
     await screen.findByRole('button', { name: /Disable experimental GitLab/i });
     expect(screen.queryByRole('button', { name: /Enable experimental GitLab/i })).toBeNull();
+    expect(
+      reduxDispatchMock.mock.calls.filter(([action]) => action.type.startsWith('userPreferences/')),
+    ).toEqual([]);
+  });
+
+  it.each([undefined, false, true])(
+    'changes experimental remote agents from saved=%s without a workspace or an implicit preference change',
+    async (enabled) => {
+      remoteAgentsState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, initialQuery: 'remote agents', onClose } });
+      const command = await screen.findByRole('button', {
+        name: enabled
+          ? /Disable experimental remote agents/i
+          : /Enable experimental remote agents/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled
+            ? /Enable experimental remote agents/i
+            : /Disable experimental remote agents/i,
+        }),
+      ).toBeNull();
+      expect(
+        reduxDispatchMock.mock.calls.filter(([action]) =>
+          action.type.startsWith('userPreferences/'),
+        ),
+      ).toEqual([]);
+
+      reduxDispatchMock.mockClear();
+      if (enabled) await fireEvent.click(command);
+      else await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'userPreferences/setLabsRemoteAgentsEnabled',
+        payload: [!enabled],
+      });
+      expect(invokeMock).not.toHaveBeenCalled();
+      expect(backendRequestMock).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('updates the remote agents command after delayed hydration without changing the saved choice', async () => {
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'remote agents', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+    remoteAgentsState.enabled = true;
+    storeEvents.emit();
+    await screen.findByRole('button', { name: /Disable experimental remote agents/i });
+    expect(screen.queryByRole('button', { name: /Enable experimental remote agents/i })).toBeNull();
+    remoteAgentsState.enabled = false;
+    storeEvents.emit();
+    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+    expect(
+      screen.queryByRole('button', { name: /Disable experimental remote agents/i }),
+    ).toBeNull();
     expect(
       reduxDispatchMock.mock.calls.filter(([action]) => action.type.startsWith('userPreferences/')),
     ).toEqual([]);

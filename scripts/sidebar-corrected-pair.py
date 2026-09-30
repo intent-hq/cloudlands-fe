@@ -12,15 +12,13 @@ import subprocess
 import sys
 import time
 
-subject = Path.cwd()
-workers = int(sys.argv[1])
-assert workers in (1, 2)
-root = Path(sys.argv[2]).resolve()
-root.mkdir(mode=0o700)
-receipts = root / 'receipts'
-payload = root / 'payload'
-receipts.mkdir(mode=0o700)
-payload.mkdir(mode=0o700)
+# Keep the helper beside this script; importlib also supports focused Python controls.
+import importlib.util
+_membership_spec = importlib.util.spec_from_file_location(
+    'sidebar_membership', Path(__file__).with_name('sidebar-membership.py'))
+membership = importlib.util.module_from_spec(_membership_spec)
+_membership_spec.loader.exec_module(membership)
+
 SPECS = ['test/workspace-tab-strip-status-geometry.spec.ts',
          'test/sidebar-shell-background.spec.ts', 'test/sidebar-shell-import.spec.ts',
          'test/vite-harness-cache.spec.ts']
@@ -75,18 +73,25 @@ def process_group_absent(group):
     except ProcessLookupError:
         return True
 
-def run(cell):
+def run(cell, manifest=None):
+    collecting = cell == 'collection'
+    primary_seconds = 60 if collecting else 600
     out = payload / cell
     out.mkdir(mode=0o700)
     args = ['pnpm', 'exec', 'playwright', 'test', *SPECS, '--project=chromium',
             '--workers=' + str(workers), '--retries=0', '--repeat-each=1',
-            '--trace=on', '--reporter=list,json', '--output=' + str(out / 'test-results')]
+            '--trace=on', '--reporter=list,json,' + str(
+                Path(__file__).with_name('sidebar-membership-reporter.mjs').resolve()),
+            '--output=' + str(out / 'test-results')]
+    if collecting:
+        args.append('--list')
     env = dict(os.environ)
     for forbidden in ('WORKSPACE_TAB_STRIP_REF', 'NODE_V8_COVERAGE'):
         assert not env.get(forbidden), forbidden
     env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / 'results.json')
+    env['SIDEBAR_MEMBERSHIP_OUTPUT_FILE'] = str(out / 'native-membership.json')
     record(cell + '-start', {'argv': args, 'cwd': str(subject), 'time': now(),
-                           'workers': workers, 'primarySeconds': 600,
+                           'workers': workers, 'primarySeconds': primary_seconds,
                            'killAfterSeconds': 10, 'outerStepMinutes': 23,
                            'traceQualification': 'Always tracing adds observation overhead.'})
     global ownership_settled, observed_test_exit
@@ -171,7 +176,7 @@ def run(cell):
 
     # One anchor before launch, never reset by EOF, parent exit, I/O failure or cleanup.
     start = time.monotonic()
-    primary_deadline = start + 600
+    primary_deadline = start + primary_seconds
     ownership_settled = False
     try:
         native = subprocess.Popen(args, cwd=subject, env=env, stdout=subprocess.PIPE,
@@ -289,26 +294,12 @@ def run(cell):
     assert code in (0, 1) and all(eof.values()) and ownership_settled
     observed_test_exit = code
     assert terminal['completedWithinDeadline'] and receipt_within_deadline, 'late cleanup or terminal receipt'
-    assert (out / 'results.json').stat().st_size <= 8 * 1024 * 1024
-    report = json.loads((out / 'results.json').read_text())
-    cases = []
-    def visit(suites):
-        for suite in suites:
-            for spec in suite.get('specs', []):
-                for test in spec.get('tests', []):
-                    cases.append((spec, test))
-            visit(suite.get('suites', []))
-    visit(report['suites'])
-    assert len(cases) == 18 and not report.get('errors'), 'expected 8 strip + 6 sidebar + 4 controls'
-    assert report['config']['workers'] == workers
-    rows = []
-    for spec, case in cases:
-        assert Path(spec['file']).name in {Path(p).name for p in SPECS}
-        assert case['projectName'] == 'chromium' and case['expectedStatus'] == 'passed'
-        assert len(case['results']) == 1 and case['results'][0]['retry'] == 0
-        result = case['results'][0]
-        rows.append({'file': spec['file'], 'title': spec['title'], 'worker': result['workerIndex'],
-                     'status': result['status'], 'retry': result['retry']})
+    report = membership.load_report(out)
+    if collecting:
+        manifest = membership.collect_membership(report, workers, subject, SPECS, code)
+        record('membership', manifest)
+        return manifest
+    rows = membership.validate_report(report, manifest, workers, subject, SPECS, code)
     cache_starts = []
     for line in (out / 'stdout.raw').read_text().splitlines():
         if 'HARNESS_CACHE ' in line:
@@ -324,29 +315,55 @@ def run(cell):
     record(cell + '-results', {'cases': rows, 'nativeExit': code, 'cacheStarts': cache_starts})
     assert code == 0 and all(row['status'] == 'passed' for row in rows)
 
-ownership_settled = True
-observed_test_exit = None
-try:
-    record('source', {'head': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}'),
-        'parents': git('show', '-s', '--format=%P'),
-        'inputs': git('ls-tree', 'HEAD', '--', *SPECS, 'test/vite-harness-cache.mjs',
-            'test/sidebar-shell-import.ts', 'test/sidebar-shell-server.ts',
-            'playwright.config.ts', 'package.json', 'pnpm-lock.yaml'),
-        'run': os.environ.get('GITHUB_RUN_ID'), 'attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
-        'eventMerge': os.environ.get('GITHUB_SHA'), 'runner': os.environ.get('RUNNER_NAME'),
-        'node': subprocess.check_output(['node', '--version'], timeout=10).decode().strip(),
-        'pnpm': subprocess.check_output(['pnpm', '--version'], timeout=10).decode().strip()})
-    assert not git('status', '--porcelain', '--untracked-files=no')
-    cold = inventory([subject / p for p in CACHES], 256 * 1024 * 1024, 16384)
-    record('cold-cache', cold)
-    assert all(row.get('absent') for row in cold), 'runner must start without harness caches'
-    run('cold')
-    warm = inventory([subject / p for p in CACHES], 256 * 1024 * 1024, 16384)
-    record('warm-cache', warm)
-    assert warm == json.loads((receipts / 'cold-cache-at-terminal.json').read_text())
-    assert any('sha256' in row for row in warm), 'warm run must reuse actual optimizer files'
-    run('warm')
-    assert not git('status', '--porcelain', '--untracked-files=no')
-finally:
-    # Validate the upload cap even on failure; do not delete the original failure evidence.
-    inventory([root], 256 * 1024 * 1024, 4096)
+def main():
+    global subject, workers, root, receipts, payload, ownership_settled, observed_test_exit
+    subject = Path.cwd().resolve()
+    workers = int(sys.argv[1])
+    assert workers in (1, 2)
+    root = Path(sys.argv[2]).resolve()
+    root.mkdir(mode=0o700)
+    receipts = root / 'receipts'
+    payload = root / 'payload'
+    receipts.mkdir(mode=0o700)
+    payload.mkdir(mode=0o700)
+    ownership_settled = True
+    observed_test_exit = None
+    try:
+        head = git('rev-parse', 'HEAD')
+        record('source', {'head': head, 'tree': git('rev-parse', 'HEAD^{tree}'),
+            'parents': git('show', '-s', '--format=%P'),
+            'inputs': git('ls-tree', 'HEAD', '--', *SPECS, 'test/vite-harness-cache.mjs',
+                'test/sidebar-shell-import.ts', 'test/sidebar-shell-server.ts',
+                'playwright.config.ts', 'playwright/root-spec-pattern.mjs',
+                'scripts/sidebar-corrected-pair.py', 'scripts/sidebar-membership.py',
+                'scripts/sidebar-membership-reporter.mjs',
+                'package.json', 'pnpm-lock.yaml'),
+            'run': os.environ.get('GITHUB_RUN_ID'), 'attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
+            'eventMerge': os.environ.get('GITHUB_SHA'), 'runner': os.environ.get('RUNNER_NAME'),
+            'node': subprocess.check_output(['node', '--version'], timeout=10).decode().strip(),
+            'pnpm': subprocess.check_output(['pnpm', '--version'], timeout=10).decode().strip()})
+        assert not git('status', '--porcelain', '--untracked-files=no')
+        cold = inventory([subject / p for p in CACHES], 256 * 1024 * 1024, 16384)
+        record('cold-cache', cold)
+        membership.require_cold_caches(cold, cold)
+        manifest = run('collection')
+        assert git('rev-parse', 'HEAD') == head
+        assert not git('status', '--porcelain', '--untracked-files=no')
+        after_collection = inventory([subject / p for p in CACHES], 256 * 1024 * 1024, 16384)
+        record('cold-cache-after-collection', after_collection)
+        membership.require_cold_caches(cold, after_collection)
+        run('cold', manifest)
+        warm = inventory([subject / p for p in CACHES], 256 * 1024 * 1024, 16384)
+        record('warm-cache', warm)
+        assert warm == json.loads((receipts / 'cold-cache-at-terminal.json').read_text())
+        assert any('sha256' in row for row in warm), 'warm run must reuse actual optimizer files'
+        run('warm', manifest)
+        assert git('rev-parse', 'HEAD') == head
+        assert not git('status', '--porcelain', '--untracked-files=no')
+    finally:
+        # Validate the upload cap even on failure; do not delete the original failure evidence.
+        inventory([root], 256 * 1024 * 1024, 4096)
+
+
+if __name__ == '__main__':
+    main()

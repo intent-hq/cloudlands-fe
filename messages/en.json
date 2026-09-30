@@ -6822,6 +6822,8 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Disable experimental multiplayer",
   "lib_commandPalette_enableExperimentalGitlab_label": "Enable experimental GitLab",
   "lib_commandPalette_disableExperimentalGitlab_label": "Disable experimental GitLab",
+  "lib_commandPalette_enableExperimentalRemoteAgents_label": "Enable experimental remote agents",
+  "lib_commandPalette_disableExperimentalRemoteAgents_label": "Disable experimental remote agents",
   "inviteNotice_modal_findGitlabCommand_label": "Find GitLab command",
   "modals_retireAgent_title": "Retire Agent",
   "modals_retireAgent_description": "Retire “{name}”? This stops any running turn and cancels hooks, PR monitors, and other wake subscriptions. The conversation is preserved, and you can restore the agent later. Restoring does not restart cancelled hooks or monitors.",

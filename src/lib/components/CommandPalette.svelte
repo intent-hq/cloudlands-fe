@@ -4,13 +4,7 @@
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
   import { ShortcutChip } from '$lib/components/ui/kbd';
-  /**
-   * Global Modal Command Palette (Cmd/Ctrl+K)
-   *
-   * App-wide palette for commands, files, workspace search, notes and headings.
-   * This is the app-wide palette, not the inline slash-command suggester used
-   * in text inputs.
-   */
+  /** App-wide palette for commands, files, workspace search, notes and headings. */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
@@ -38,10 +32,12 @@
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import {
     selectLabsGitLabEnabled,
+    selectLabsRemoteAgentsEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     setLabsGitLabEnabled,
+    setLabsRemoteAgentsEnabled,
     setLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
@@ -137,6 +133,7 @@
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
+  const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -156,7 +153,9 @@
         !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
         !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer') &&
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
-        !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab'),
+        !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
+        !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -565,6 +564,8 @@
       });
       return;
     }
+    // Read before the deferred callback so live Labs changes refresh command results.
+    commands;
     const files = groupFiles;
     const messages = groupMessages;
     // Track activeFilter to trigger recomputation when it changes
@@ -825,6 +826,12 @@
         return true;
       case 'disable-experimental-gitlab':
         appStore.dispatch(setLabsGitLabEnabled(false));
+        return true;
+      case 'enable-experimental-remote-agents':
+        appStore.dispatch(setLabsRemoteAgentsEnabled(true));
+        return true;
+      case 'disable-experimental-remote-agents':
+        appStore.dispatch(setLabsRemoteAgentsEnabled(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {
