@@ -147,3 +147,78 @@ test('zooms and pans SVG images and checkerboard with native capture and resets 
     /^0px(?: 0px)?$/,
   );
 });
+
+for (const format of ['png', 'svg'] as const) {
+  test(`pans ${format} after scrolling to the bottom-right edge`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const sourceUrl = await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 400;
+      return canvas.toDataURL();
+    });
+    const component = await mount(FileViewer, {
+      props: {
+        filePath: `scroll-pan.${format}`,
+        ...(format === 'png'
+          ? { sourceUrl }
+          : {
+              fileContent:
+                '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="teal"/></svg>',
+            }),
+      },
+    });
+    await component.evaluate((node) => {
+      node.style.width = '640px';
+      node.style.height = '440px';
+      node.style.margin = '80px';
+    });
+    const image = page.getByRole('img', { name: `scroll-pan.${format}` });
+    const viewport = image.locator('..');
+    for (let step = 0; step < 8; step++) await page.getByTitle('Zoom in').click();
+    await expect(image).toHaveCSS('transform', 'matrix(3, 0, 0, 3, 0, 0)');
+    await viewport.hover();
+    await page.mouse.wheel(2000, 2000);
+    await expect
+      .poll(() =>
+        viewport.evaluate((node) => [
+          node.scrollLeft > 0 && node.scrollLeft === node.scrollWidth - node.clientWidth,
+          node.scrollTop > 0 && node.scrollTop === node.scrollHeight - node.clientHeight,
+        ]),
+      )
+      .toEqual([true, true]);
+    const before = (await image.boundingBox())!;
+    const bounds = (await viewport.boundingBox())!;
+    const start = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    expect(await image.boundingBox()).toEqual(before);
+    await page.mouse.move(start.x - 60, start.y - 60, { steps: 3 });
+    await expect
+      .poll(async () => {
+        const box = (await image.boundingBox())!;
+        return [Math.round(box.x - before.x), Math.round(box.y - before.y)];
+      })
+      .toEqual([-60, -60]);
+    await page.mouse.move(start.x + 30, start.y + 20, { steps: 3 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => {
+        const box = (await image.boundingBox())!;
+        return [Math.round(box.x - before.x), Math.round(box.y - before.y)];
+      })
+      .toEqual([30, 20]);
+    await expect(viewport).toHaveCSS('cursor', 'grab');
+    await page.screenshot({ path: testInfo.outputPath(`${format}-scroll-then-pan.png`) });
+    const released = (await image.boundingBox())!;
+    await page.mouse.wheel(-100, -100);
+    await expect
+      .poll(async () => {
+        const box = (await image.boundingBox())!;
+        return [Math.round(box.x - released.x), Math.round(box.y - released.y)];
+      })
+      .toEqual([100, 100]);
+  });
+}

@@ -97,6 +97,8 @@
   let copied = $state(false);
   let imageOffsetX = $state(0);
   let imageOffsetY = $state(0);
+  let imageScrollX = $state(0);
+  let imageScrollY = $state(0);
   let imageDragging = $state(false);
   let imageDrag: { pointerId: number; x: number; y: number; viewport: HTMLElement } | null = null;
 
@@ -124,6 +126,10 @@
       endImageDrag();
       return;
     }
+    // Keep the current scroll position reachable when translation shrinks overflow.
+    // Retain this floor after release so neither release nor reverse wheel scrolling jumps.
+    imageScrollX = imageDrag.viewport.scrollLeft;
+    imageScrollY = imageDrag.viewport.scrollTop;
     imageOffsetX += event.clientX - imageDrag.x;
     imageOffsetY += event.clientY - imageDrag.y;
     imageDrag.x = event.clientX;
@@ -133,6 +139,16 @@
   function handleImagePointerEnd(event: PointerEvent) {
     if (event.pointerId === imageDrag?.pointerId) endImageDrag();
   }
+
+  $effect(() => {
+    // A new image or zoom/rotation establishes a fresh native scroll range.
+    filePath;
+    sourceUrl;
+    imageZoom;
+    imageRotation;
+    imageScrollX = 0;
+    imageScrollY = 0;
+  });
 
   $effect(() => {
     // A reused viewer must not carry a drag or its offset into another file.
@@ -372,9 +388,10 @@
       <!-- Image Display -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
+        class="relative min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
           ? 'cursor-grabbing'
           : 'cursor-grab'}"
+        style="--pan-scroll-x: {imageScrollX}px; --pan-scroll-y: {imageScrollY}px;"
         onpointerdown={handleImagePointerDown}
         onpointermove={handleImagePointerMove}
         onpointerup={handleImagePointerEnd}
@@ -411,9 +428,10 @@
       </div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
+        class="relative min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
           ? 'cursor-grabbing'
           : 'cursor-grab'}"
+        style="--pan-scroll-x: {imageScrollX}px; --pan-scroll-y: {imageScrollY}px;"
         onpointerdown={handleImagePointerDown}
         onpointermove={handleImagePointerMove}
         onpointerup={handleImagePointerEnd}
@@ -563,6 +581,16 @@
 </div>
 
 <style>
+  .bg-checkered::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: calc(100% + var(--pan-scroll-x));
+    height: calc(100% + var(--pan-scroll-y));
+    pointer-events: none;
+  }
+
   .bg-checkered {
     background-image:
       linear-gradient(45deg, hsl(var(--muted)) 25%, transparent 25%),
