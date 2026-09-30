@@ -91,19 +91,25 @@ jobs:
     timeout-minutes: 60
     env:
       CI: 'true'
+    # 9 minutes setup + 45 tests + 4 upload = 58; 2 reserved for postlude.
     steps:
       - uses: actions/checkout@v7
+        timeout-minutes: 1
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@v6
+        timeout-minutes: 1
         with:
           version: 10.30.3
       - uses: actions/setup-node@v7
+        timeout-minutes: 1
         with:
           node-version: '22'
       - name: Install test dependencies
+        timeout-minutes: 4
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v8
+        timeout-minutes: 2
         with:
           name: manual-macos-dmg
           path: smoke-artifact
@@ -111,6 +117,7 @@ jobs:
         timeout-minutes: 45
         run: python3 scripts/run-packaged-macos-smoke.py smoke-artifact
       - name: Upload journey results and process receipts
+        timeout-minutes: 4
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:

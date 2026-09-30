@@ -14,6 +14,38 @@ smoke = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(smoke)
 
 class Admission(unittest.TestCase):
+    def test_archive_writer_bounds_actual_bytes_and_stays_failed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'partial.gz'
+            with path.open('xb', buffering=0) as raw, patch.object(smoke, 'ARCHIVE_LIMIT', 10), \
+                 patch.object(smoke, 'report_bytes', return_value=0):
+                writer = smoke.BoundedArchiveWriter(raw)
+                self.assertEqual(writer.write(b'12345678'), 8)
+                with self.assertRaisesRegex(RuntimeError, 'capture incomplete'): writer.write(b'XYZ')
+                with self.assertRaises(RuntimeError): writer.write(b'9')
+            self.assertEqual(path.read_bytes(), b'12345678')
+
+    def test_archive_headers_are_charged_even_for_empty_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'tmp').mkdir()
+            (root / 'tmp/empty').touch()
+            report = root / 'report'
+            report.mkdir()
+            with patch.object(smoke, 'REPORT_TREE', report), patch.object(smoke, 'REPORT', report), patch.object(smoke, 'ARCHIVE_LIMIT', 64):
+                with self.assertRaisesRegex(RuntimeError, 'capture incomplete'): smoke.retain_fixtures(root)
+            self.assertLessEqual((report / 'fixture-state.tar.gz').stat().st_size, 64)
+            self.assertFalse((report / 'fixture-state.json').exists())
+
+    def test_archive_reserves_receipt_space_in_total_report_bound(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'partial.gz'
+            with path.open('xb', buffering=0) as raw, patch.object(smoke, 'REPORT_LIMIT', 1024**2 + 10), \
+                 patch.object(smoke, 'report_bytes', return_value=8):
+                with self.assertRaisesRegex(RuntimeError, 'report byte limit'):
+                    smoke.BoundedArchiveWriter(raw).write(b'123')
+            self.assertEqual(path.stat().st_size, 0)
+
     def test_suite_deadline_records_primary_and_stops_owned_child(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -23,7 +55,7 @@ class Admission(unittest.TestCase):
                 child.returncode = -15
                 return -15
             child.wait.side_effect = wait
-            with patch.object(smoke, 'REPORT', root), \
+            with patch.object(smoke, 'REPORT_TREE', root), patch.object(smoke, 'REPORT', root), \
                  patch.object(smoke.subprocess, 'Popen', return_value=child) as spawn, \
                  patch.object(smoke.time, 'monotonic', side_effect=[0, 781]), \
                  patch.object(smoke.shutil, 'disk_usage', return_value=Mock(free=10 * 1024**3)), \
@@ -48,7 +80,7 @@ class Admission(unittest.TestCase):
             (root / 'Intent.app/binary').write_bytes(b'not evidence')
             report = root / 'report'
             report.mkdir()
-            with patch.object(smoke, 'REPORT', report): smoke.retain_fixtures(root)
+            with patch.object(smoke, 'REPORT_TREE', report), patch.object(smoke, 'REPORT', report): smoke.retain_fixtures(root)
             with tarfile.open(report / 'fixture-state.tar.gz') as archive:
                 self.assertEqual(set(archive.getnames()), {'tmp/repo/.git/HEAD', 'tmp/profile/store.sqlite'})
 
@@ -112,7 +144,7 @@ class Admission(unittest.TestCase):
                 'GITHUB_SHA': 'source', 'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1'}, clear=True), \
                 patch.object(smoke.platform, 'system', return_value='Darwin'), \
                 patch.object(smoke.platform, 'machine', return_value='arm64'), \
-                patch.object(smoke, 'REPORT', root / 'report'), patch.object(smoke.sys, 'argv', ['runner', temp]), \
+                patch.object(smoke, 'REPORT_TREE', root / 'report'), patch.object(smoke, 'REPORT', root / 'report'), patch.object(smoke.sys, 'argv', ['runner', temp]), \
                 patch.object(smoke, 'command', side_effect=command), patch.object(smoke, 'run_tests') as run:
                 if failure:
                     with self.assertRaises(RuntimeError): smoke.main()

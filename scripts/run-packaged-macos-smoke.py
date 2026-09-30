@@ -14,11 +14,39 @@ import tarfile
 import tempfile
 import time
 
-REPORT = Path('e2e-reports/packaged-run')
+REPORT_TREE = Path('e2e-reports')
+REPORT = REPORT_TREE / 'packaged-run'
 FIXTURE_ROOT = None
 SUITE_SECONDS = 780
+ARCHIVE_LIMIT = 256 * 1024**2
+REPORT_LIMIT = 2 * 1024**3
 # 780 admission + 2*780 suites + 40 termination + 120 evidence + 60 recording
 # = 2560s, leaving 140s inside the unchanged 45-minute step.
+
+def report_bytes():
+    return sum(p.stat().st_size for p in REPORT_TREE.rglob('*') if p.is_file() and not p.is_symlink())
+
+class BoundedArchiveWriter:
+    """Charge actual compressed bytes, including gzip headers/footer and tar overhead."""
+    def __init__(self, raw):
+        self.raw = raw
+        self.name = raw.name
+        self.failed = False
+    def tell(self):
+        return self.raw.tell()
+    def flush(self):
+        return self.raw.flush()
+    def write(self, data):
+        if self.failed or self.tell() + len(data) > ARCHIVE_LIMIT or report_bytes() + len(data) > REPORT_LIMIT - 1024**2:
+            self.failed = True
+            raise RuntimeError('Actual archive/report byte limit exceeded; capture incomplete')
+        try:
+            written = self.raw.write(data)
+            if written != len(data): raise OSError('Short archive write')
+            return written
+        except BaseException:
+            self.failed = True
+            raise
 
 def stop_test_child(child):
     """Only the session/group created by this runner; never discover/adopt one."""
@@ -48,7 +76,9 @@ def retain_fixtures(root):
     files = 0
     entries = 0
     omitted = []
-    with tarfile.open(REPORT / 'fixture-state.tar.gz', 'w:gz', dereference=False) as archive:
+    archive_path = REPORT / 'fixture-state.tar.gz'
+    # Unbuffered output makes each writer debit visible to the directory check.
+    with archive_path.open('xb', buffering=0) as raw, tarfile.open(fileobj=BoundedArchiveWriter(raw), mode='w:gz', dereference=False) as archive:
         for name in ('tmp', 'config', 'data', 'cache', 'gitconfig'):
             base = root / name
             paths = [base] if base.is_file() else base.rglob('*')
@@ -66,12 +96,23 @@ def retain_fixtures(root):
                 if size > 64 * 1024**2 or total > 256 * 1024**2 or files > 20000 or time.monotonic() - started > 120:
                     raise RuntimeError('Fixture evidence bound exceeded; partial archive is not complete')
                 archive.add(path, arcname=relative, recursive=False)
-    record('fixture-state', {'files': files, 'bytes': total, 'omittedNonregular': omitted,
+    if archive_path.stat().st_size > ARCHIVE_LIMIT or report_bytes() > REPORT_LIMIT:
+        raise RuntimeError('Final archive/report byte limit exceeded; capture incomplete')
+    record('fixture-state', {'files': files, 'inputBytes': total, 'archiveBytes': archive_path.stat().st_size,
+                            'omittedNonregular': omitted,
                             'consistency': 'post-test copy; see shutdown receipts for settlement'})
+    if report_bytes() > REPORT_LIMIT:
+        raise RuntimeError('Final report byte limit exceeded after capture receipt')
 
 def record(name, value):
     REPORT.mkdir(parents=True, exist_ok=True)
-    (REPORT / f'{name}.json').write_text(json.dumps(value, indent=2) + '\n')
+    path = REPORT / f'{name}.json'
+    data = (json.dumps(value, indent=2) + '\n').encode('utf8')
+    old_size = path.stat().st_size if path.exists() else 0
+    if report_bytes() - old_size + len(data) > REPORT_LIMIT:
+        raise RuntimeError('Report receipt does not fit total output bound')
+    path.write_bytes(data)
+    if report_bytes() > REPORT_LIMIT: raise RuntimeError('Final report byte limit exceeded')
 
 def command(args, timeout=60):
     result = subprocess.run(args, capture_output=True, timeout=timeout, check=False)

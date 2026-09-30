@@ -106,6 +106,9 @@ function processExists(pid: number): boolean {
 
 /** Each launch owns a fresh daemon/profile; no process-name cleanup is allowed. */
 const launchedProfiles = new WeakMap<ElectronApplication, string>();
+const logFailures = new WeakMap<ElectronApplication, Error>();
+const logSettlements = new WeakMap<ElectronApplication, Promise<void>>();
+const shutdowns = new WeakMap<ElectronApplication, Promise<void>>();
 
 /**
  * Exercise the app's SIGTERM shutdown (including its sidecar shutdown), then
@@ -114,6 +117,15 @@ const launchedProfiles = new WeakMap<ElectronApplication, string>();
  */
 export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
   if (!app) return;
+  let shutdown = shutdowns.get(app);
+  if (!shutdown) {
+    shutdown = stopPackagedApp(app);
+    shutdowns.set(app, shutdown);
+  }
+  return shutdown;
+}
+
+async function stopPackagedApp(app: ElectronApplication): Promise<void> {
   const proc = app.process();
   const profile = launchedProfiles.get(app);
   if (!profile) throw new Error('Cannot stop an app not owned by launchPackagedApp');
@@ -151,7 +163,7 @@ export async function exitPackagedApp(app: ElectronApplication | null | undefine
     // Disconnect the inspector as part of close so Electron does not wait for
     // its debugger forever. SIGTERM bypasses the interactive quit prompt.
     await Promise.race([
-      Promise.all([closed, app.close()]),
+      Promise.all([closed, app.close(), logSettlements.get(app)?.catch(() => undefined)]),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error('Owned app shutdown exceeded 30s; settlement unknown')),
@@ -171,6 +183,8 @@ export async function exitPackagedApp(app: ElectronApplication | null | undefine
     receipt.descendantSettlement =
       process.platform === 'win32' ? 'not observed' : 'observed descendants absent';
     receipt.settled = true;
+    const loggingFailure = logFailures.get(app);
+    if (loggingFailure) throw loggingFailure;
   } catch (error) {
     primary =
       observationError && observationError !== error
@@ -255,6 +269,26 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     // Append (like the renderer log) so every instance a run launches is kept,
     // not just the last one.
     const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
+    let handedOff = false;
+    let rejectLogging!: (error: Error) => void;
+    const loggingFailed = new Promise<never>((_, reject) => {
+      rejectLogging = reject;
+    });
+    // Also handle failures between awaited setup steps and after handoff.
+    void loggingFailed.catch(() => undefined);
+    const logSettled = new Promise<void>((resolve, reject) => {
+      logStream.once('close', resolve);
+      logStream.once('error', reject);
+    });
+    void logSettled.catch(() => undefined);
+    logSettlements.set(app, logSettled);
+    logStream.on('error', (error) => {
+      if (!logFailures.has(app)) logFailures.set(app, error);
+      rejectLogging(error);
+      if (handedOff) void exitPackagedApp(app).catch(() => undefined);
+    });
+    const withLogging = <T>(operation: Promise<T>): Promise<T> =>
+      Promise.race([operation, loggingFailed]);
     if (proc.stdout) {
       proc.stdout.pipe(logStream, { end: false });
     }
@@ -263,16 +297,19 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     }
 
     proc.once('close', () => logStream.end());
-    const runtime = await app.evaluate(({ app: electronApp }) => ({
-      arch: process.arch,
-      platform: process.platform,
-      versions: process.versions,
-      packaged: electronApp.isPackaged,
-      executable: process.execPath,
-      appPath: electronApp.getAppPath(),
-      userData: electronApp.getPath('userData'),
-      dataDir: process.env.INTENTD_DATA_DIR,
-    }));
+    await withLogging(new Promise<void>((resolve) => logStream.once('open', () => resolve())));
+    const runtime = await withLogging(
+      app.evaluate(({ app: electronApp }) => ({
+        arch: process.arch,
+        platform: process.platform,
+        versions: process.versions,
+        packaged: electronApp.isPackaged,
+        executable: process.execPath,
+        appPath: electronApp.getAppPath(),
+        userData: electronApp.getPath('userData'),
+        dataDir: process.env.INTENTD_DATA_DIR,
+      })),
+    );
     writeFileSync(join(logDir, `runtime-${proc.pid}.json`), JSON.stringify(runtime, null, 2));
     if (
       !runtime.packaged ||
@@ -283,7 +320,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     ) {
       throw new Error(`Packaged runtime identity mismatch: ${JSON.stringify(runtime)}`);
     }
-    const page = await app.firstWindow();
+    const page = await withLogging(app.firstWindow());
 
     // --- Capture renderer console output ---
     page.on('console', (msg) => {
@@ -297,31 +334,36 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     // The app has no data-testid="app-ready" attribute.
     // Instead, wait for the splash screen to be removed (signals Svelte layout mounted)
     // and then for the home page content to render.
-    await page.waitForFunction(() => document.getElementById('splash') === null, undefined, {
-      timeout: 30_000,
-    });
+    await withLogging(
+      page.waitForFunction(() => document.getElementById('splash') === null, undefined, {
+        timeout: 30_000,
+      }),
+    );
     // Give the home page components time to initialize
-    await page.waitForTimeout(2_000);
+    await withLogging(page.waitForTimeout(2_000));
 
     // --- Dismiss "Update check failed" toast if visible ---
     // The auto-updater may show an error toast that can interfere with UI interactions.
     try {
       const toastClose = page.locator('[data-sonner-toast] button[data-close-button]').first();
-      const toastVisible = await toastClose.isVisible().catch(() => false);
+      const toastVisible = await withLogging(toastClose.isVisible().catch(() => false));
       if (toastVisible) {
         console.log('🔕 Dismissing update-check toast');
-        await toastClose.click();
-        await page.waitForTimeout(500);
+        await withLogging(toastClose.click());
+        await withLogging(page.waitForTimeout(500));
       }
     } catch {
       // No toast or already gone — fine
     }
 
+    if (logFailures.has(app)) throw logFailures.get(app);
+    handedOff = true;
     return { app, page, logPaths: { mainProcess: mainProcessLogPath, renderer: rendererLogPath } };
   } catch (primary) {
     try {
       await exitPackagedApp(app);
     } catch (cleanup) {
+      if (cleanup === primary) throw primary;
       throw new AggregateError([primary, cleanup], 'Packaged launch failed; cleanup also failed');
     }
     throw primary;

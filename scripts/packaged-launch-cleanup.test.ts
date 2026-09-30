@@ -5,13 +5,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ launch: vi.fn(), observe: vi.fn() }));
+const mocks = vi.hoisted(() => ({ launch: vi.fn(), observe: vi.fn(), logStream: vi.fn() }));
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const api = { ...actual, createWriteStream: mocks.logStream };
+  return { ...api, default: api };
+});
 vi.mock('@playwright/test', () => ({ _electron: { launch: mocks.launch } }));
 vi.mock('child_process', () => {
   const api = { execFileSync: mocks.observe, execSync: vi.fn() };
   return { ...api, default: api };
 });
-import { launchPackagedApp } from '../e2e/build-smoke-helpers';
+import { exitPackagedApp, launchPackagedApp } from '../e2e/build-smoke-helpers';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -20,7 +25,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it.each(['evaluate', 'profile', 'firstWindow', 'splash', 'observation', 'close'])(
+it.each([
+  'evaluate',
+  'profile',
+  'firstWindow',
+  'splash',
+  'observation',
+  'close',
+  'log-open',
+  'log-write',
+  'log-after-handoff',
+])(
   'settles its owned handle when post-launch %s fails, preserving primary and cleanup',
   async (stage) => {
     const root = mkdtempSync(join(tmpdir(), 'launch-fake-'));
@@ -30,6 +45,13 @@ it.each(['evaluate', 'profile', 'firstWindow', 'splash', 'observation', 'close']
     vi.stubEnv('PACKAGED_APP_PATH', binary);
     const primary = new Error('setup failed');
     const secondary = new Error('cleanup failed');
+    const logStream = Object.assign(new EventEmitter(), {
+      end: vi.fn(() => logStream.emit('close')),
+    });
+    mocks.logStream.mockImplementation(() => {
+      queueMicrotask(() => logStream.emit(stage === 'log-open' ? 'error' : 'open', primary));
+      return logStream;
+    });
     mocks.observe.mockImplementation(() => {
       if (stage === 'observation') throw secondary;
       throw Object.assign(new Error('no children'), { status: 1 });
@@ -57,8 +79,11 @@ it.each(['evaluate', 'profile', 'firstWindow', 'splash', 'observation', 'close']
         return {
           on: vi.fn(),
           waitForFunction: vi.fn(async () => {
+            if (stage === 'log-after-handoff') return;
             throw primary;
           }),
+          waitForTimeout: vi.fn(async () => undefined),
+          locator: () => ({ first: () => ({ isVisible: async () => false }) }),
         };
       }),
     };
@@ -66,6 +91,10 @@ it.each(['evaluate', 'profile', 'firstWindow', 'splash', 'observation', 'close']
       const profile = options.env.INTENTD_DATA_DIR.slice(0, -'/intentd'.length);
       roots.push(profile);
       app.evaluate.mockImplementation(async () => {
+        if (stage === 'log-write') {
+          queueMicrotask(() => logStream.emit('error', primary));
+          return await new Promise(() => {});
+        }
         if (['evaluate', 'observation', 'close'].includes(stage)) throw primary;
         return {
           packaged: true,
@@ -77,7 +106,11 @@ it.each(['evaluate', 'profile', 'firstWindow', 'splash', 'observation', 'close']
       });
       return app;
     });
-    const error = await launchPackagedApp().catch((error) => error);
+    let error = await launchPackagedApp().catch((error) => error);
+    if (stage === 'log-after-handoff') {
+      logStream.emit('error', primary);
+      error = await exitPackagedApp(error.app).catch((error) => error);
+    }
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
     expect(app.close).toHaveBeenCalledOnce();
     expect(proc.exitCode).toBe(0);
