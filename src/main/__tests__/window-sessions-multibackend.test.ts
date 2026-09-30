@@ -28,12 +28,14 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
     static focused: FakeBrowserWindow | null = null;
     backendId = 'local';
     destroyed = false;
+    minimized = false;
     fullScreen = false;
     bounds: { x: number; y: number; width: number; height: number };
     handlers = new Map<string, (...args: unknown[]) => void>();
     private url = 'about:blank';
     webContents = {
       on: vi.fn(),
+      isDestroyed: () => this.destroyed,
       getURL: () => this.url,
       session: { clearCache: () => Promise.resolve() },
     };
@@ -83,7 +85,7 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
       return this;
     }
     isMinimized() {
-      return false;
+      return this.minimized;
     }
     isFullScreen() {
       return this.fullScreen;
@@ -91,7 +93,9 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
     setFullScreen = vi.fn((flag: boolean) => {
       this.fullScreen = flag;
     });
-    restore = vi.fn();
+    restore = vi.fn(() => {
+      this.minimized = false;
+    });
     show = vi.fn();
     focus = vi.fn(() => {
       FakeBrowserWindow.focused = this;
@@ -132,7 +136,7 @@ vi.mock('../utils/resolve-app-title', () => ({
 }));
 
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
-import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
+import { _resetHudWindowRefForTests, isTrackedHudWindow, registerHudWindow } from '../hud-window';
 import {
   _resetRendererWindowGateForTests,
   markRendererWindowsAllowed,
@@ -812,6 +816,123 @@ describe('multi-backend window sessions', () => {
       expect(remote.show).toHaveBeenCalledOnce();
       expect(remote.focus).toHaveBeenCalledOnce();
     });
+
+    it.each([
+      ['loaded production HUD', 'app://workspaces/hud', false],
+      ['loaded development HUD', 'http://127.0.0.1:5190/hud', false],
+      ['tracked HUD before navigation', 'about:blank', true],
+    ])(
+      'skips a %s and restores the first app window for the selected backend',
+      async (_, url, tracked) => {
+        const local = seedLiveWindow('app://workspaces/work/local');
+        const hud = seedLiveWindow(url, undefined, 'remote-1');
+        if (tracked) registerHudWindow(hud as never);
+        const closed = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+        closed.destroy();
+        const first = seedLiveWindow('app://workspaces/work/first', undefined, 'remote-1');
+        const second = seedLiveWindow('app://workspaces/work/second', undefined, 'remote-1');
+        first.minimized = true;
+        vi.mocked(setMainWindow).mockClear();
+
+        await openOrFocusWindowsForBackend('remote-1');
+
+        expect(FakeBrowserWindow.getAllWindows()).toEqual([local, hud, first, second]);
+        expect(first.restore).toHaveBeenCalledOnce();
+        expect(first.isMinimized()).toBe(false);
+        expect(first.show).toHaveBeenCalledOnce();
+        expect(first.focus).toHaveBeenCalledOnce();
+        expect(FakeBrowserWindow.getFocusedWindow()).toBe(first);
+        expect(setMainWindow).toHaveBeenCalledExactlyOnceWith(first);
+        for (const skipped of [local, hud, closed, second]) {
+          expect(skipped.restore).not.toHaveBeenCalled();
+          expect(skipped.show).not.toHaveBeenCalled();
+          expect(skipped.focus).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('opens and focuses a fresh app window when only a live HUD exists', async () => {
+      const hud = seedLiveWindow('app://workspaces/hud', undefined, 'remote-1');
+      vi.mocked(setMainWindow).mockClear();
+
+      await openOrFocusWindowsForBackend('remote-1');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(2);
+      expect(live[1].backendId).toBe('remote-1');
+      expect(new URL(live[1].webContents.getURL()).pathname).toBe('/workspace/new');
+      expect(FakeBrowserWindow.getFocusedWindow()).toBe(live[1]);
+      expect(setMainWindow).toHaveBeenLastCalledWith(live[1]);
+      expect(setMainWindow).not.toHaveBeenCalledWith(hud);
+      expect(hud.focus).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+      'restores saved app sessions without selecting the HUD (live HUD: %s)',
+      async (hasLiveHud) => {
+        const local = seedLiveWindow('app://workspaces/work/local');
+        const hud = hasLiveHud ? seedLiveWindow('about:blank', undefined, 'remote-1') : null;
+        if (hud) registerHudWindow(hud as never);
+        const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+        fs.writeFileSync(
+          getWindowSessionsPath(),
+          JSON.stringify({
+            'remote-1': [
+              { route: '/hud', bounds },
+              { route: '/work/first', bounds },
+              { route: '/work/second', bounds },
+            ],
+          }),
+        );
+        vi.mocked(setMainWindow).mockClear();
+
+        await openOrFocusWindowsForBackend('remote-1');
+
+        const live = FakeBrowserWindow.getAllWindows();
+        expect(live).toHaveLength(4);
+        const remote = live.filter((window) => window.backendId === 'remote-1');
+        expect(remote).toHaveLength(3);
+        const [restoredHud, first, second] = remote;
+        if (hud) expect(restoredHud).toBe(hud);
+        expect(new URL(first.webContents.getURL()).pathname).toBe('/work/first');
+        expect(new URL(second.webContents.getURL()).pathname).toBe('/work/second');
+        expect(FakeBrowserWindow.getFocusedWindow()).toBe(first);
+        expect(setMainWindow).toHaveBeenLastCalledWith(first);
+        expect(setMainWindow).not.toHaveBeenCalledWith(restoredHud);
+        expect(restoredHud.focus).not.toHaveBeenCalled();
+        expect(local.focus).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([false, true])(
+      'opens a regular app for HUD-only saved sessions (live HUD: %s)',
+      async (hasLiveHud) => {
+        const hud = hasLiveHud
+          ? seedLiveWindow('app://workspaces/hud', undefined, 'remote-1')
+          : null;
+        const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+        fs.writeFileSync(
+          getWindowSessionsPath(),
+          JSON.stringify({
+            'remote-1': [{ route: '/hud', bounds }],
+          }),
+        );
+        vi.mocked(setMainWindow).mockClear();
+
+        await openOrFocusWindowsForBackend('remote-1');
+
+        const live = FakeBrowserWindow.getAllWindows();
+        expect(live).toHaveLength(2);
+        const [restoredHud, regular] = live;
+        if (hud) expect(restoredHud).toBe(hud);
+        expect(regular.backendId).toBe('remote-1');
+        expect(new URL(regular.webContents.getURL()).pathname).toBe('/workspace/new');
+        expect(FakeBrowserWindow.getFocusedWindow()).toBe(regular);
+        expect(setMainWindow).toHaveBeenLastCalledWith(regular);
+        expect(setMainWindow).not.toHaveBeenCalledWith(restoredHud);
+        expect(restoredHud.focus).not.toHaveBeenCalled();
+      },
+    );
 
     it('resolves the focused window backend for menu and quit consumers', () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
