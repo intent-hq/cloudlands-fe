@@ -14,8 +14,10 @@ async function observeRootBrowser(browser: Pick<Browser, 'newBrowserCDPSession'>
   let firstError: unknown;
   try {
     const runtime = await session.send('Browser.getVersion');
-    const command = await session.send('Browser.getBrowserCommandLine');
-    return { runtime, arguments: command.arguments };
+    // Unlike Browser.getBrowserCommandLine, this works with the runner's normal
+    // launch arguments, which need not include --enable-automation.
+    const { commandLine } = await session.send('SystemInfo.getInfo');
+    return { runtime, commandLine };
   } catch (error) {
     firstError = error;
     throw error;
@@ -83,7 +85,16 @@ function assertRootRuntime(observation: Observation, plan: Plan) {
   if (!products.includes(observation.runtime.product)) {
     throw new Error(`Unexpected root Chromium runtime: ${observation.runtime.product}`);
   }
-  if (observation.arguments[0] !== plan.executablePath) {
+  // Chromium serializes the program first, followed by a space and arguments;
+  // Windows may quote the program. Keep the observed string, not invented argv.
+  const programs = [plan.executablePath, `"${plan.executablePath}"`];
+  if (
+    !plan.executablePath ||
+    !programs.some(
+      (program) =>
+        observation.commandLine === program || observation.commandLine.startsWith(`${program} `),
+    )
+  ) {
     throw new Error('Root Chromium command line does not identify the selected executable');
   }
 }
