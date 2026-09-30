@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
-export async function observeRootBrowser(browser: Pick<Browser, 'newBrowserCDPSession'>) {
+async function observeRootBrowser(browser: Pick<Browser, 'newBrowserCDPSession'>) {
   const session = await browser.newBrowserCDPSession();
   let firstError: unknown;
   try {
@@ -58,7 +58,7 @@ function fileIdentity(path: string) {
   }
 }
 
-export function rootBrowserPlan(headless: boolean) {
+function rootBrowserPlan(headless: boolean) {
   const testPackage = require.resolve('@playwright/test/package.json');
   const fromTest = createRequire(testPackage);
   const runnerPackage = fromTest.resolve('playwright/package.json');
@@ -78,7 +78,7 @@ export function rootBrowserPlan(headless: boolean) {
 type Observation = Awaited<ReturnType<typeof observeRootBrowser>>;
 type Plan = ReturnType<typeof rootBrowserPlan>;
 
-export function assertRootRuntime(observation: Observation, plan: Plan) {
+function assertRootRuntime(observation: Observation, plan: Plan) {
   const products = [`Chrome/${plan.browserVersion}`, `HeadlessChrome/${plan.browserVersion}`];
   if (!products.includes(observation.runtime.product)) {
     throw new Error(`Unexpected root Chromium runtime: ${observation.runtime.product}`);
@@ -95,7 +95,7 @@ type Identity = {
   source: { head: string; status: string; files: ReturnType<typeof fileIdentity>[] };
 };
 
-export async function attachRootRuntime(
+async function attachRootRuntime(
   identity: Identity,
   use: () => Promise<void>,
   testInfo: Pick<TestInfo, 'attach' | 'retry' | 'workerIndex' | 'titlePath'>,
