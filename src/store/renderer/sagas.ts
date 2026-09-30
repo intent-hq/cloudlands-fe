@@ -49,6 +49,11 @@ import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
+import { gitWriteSaga } from './slices/git/sagas/git-write-saga';
+import { acceptWorkflowSaga } from './slices/accept-workflow/sagas/accept-workflow-saga';
+import { acceptWorkflowObserverSaga } from './slices/accept-workflow/sagas/accept-workflow-observer-saga';
+import { prWorkflowSaga } from './slices/pr-workflow/sagas/pr-workflow-saga';
+import { chatChangesSaga } from './slices/chat-changes/sagas/chat-changes-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
@@ -146,6 +151,11 @@ export const sagas = [
   regenerateFromMessageSaga,
   agentFailureToastSaga,
   gitReadSaga,
+  gitWriteSaga,
+  acceptWorkflowSaga,
+  acceptWorkflowObserverSaga,
+  prWorkflowSaga,
+  chatChangesSaga,
   acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,

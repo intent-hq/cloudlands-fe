@@ -180,9 +180,10 @@ const {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { initialState } = await import('$store/renderer/slices/git/git-slice');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({ git: initialState }),
     dispatch: dispatchMock,
   });
 });

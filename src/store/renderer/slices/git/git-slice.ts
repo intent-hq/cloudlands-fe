@@ -7,7 +7,13 @@
 
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import { createCollection, upsertItem } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  getItems,
+  removeItem,
+  upsertItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
@@ -19,7 +25,11 @@ import type {
   GitOperationFlags,
   PostMergeState,
   SecondaryRootGitData,
+  GitReadRequest,
+  GitReadResult,
+  GitReadStoredResult,
 } from './git-types';
+import { gitReadKey } from './utils/git-read-key';
 export type { GitOperationCompletedEvent, GitOperationFailedEvent } from './git-types';
 import type { GitStatus } from '$shared/types';
 import type { CommitFile } from '$features/file-tracking/types';
@@ -48,6 +58,8 @@ const emptyWorkspaceState: GitWorkspaceState = {
   acceptChangesStatusLoading: false,
   gitOperations: { ...defaultGitOperationFlags },
   secondaryRoots: {},
+  readConsumers: createCollection('consumerId'),
+  reads: createCollection('readKey'),
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -66,6 +78,49 @@ export const initialState: GitState = {
 
 /** Trigger saga to load git status for a workspace */
 export const loadGitStatus = createAction<[wsId: string, forceRefresh?: boolean]>('git/loadStatus');
+
+export const gitReadRequested =
+  createAction<
+    [
+      wsId: string,
+      consumerId: string,
+      requestId: string,
+      request: GitReadRequest,
+      canRead?: () => boolean,
+    ]
+  >('git/readRequested');
+export const releaseGitRead =
+  createAction<[wsId: string, consumerId: string, requestId: string]>('git/releaseRead');
+export const gitReadStarted =
+  createAction<[wsId: string, readKey: string, generation: string]>('git/readStarted');
+export const gitReadCompleted =
+  createAction<
+    [
+      wsId: string,
+      readKey: string,
+      generation: string,
+      result: GitReadResult | null,
+      error: string | null,
+    ]
+  >('git/readCompleted');
+export const gitReadsInvalidated =
+  createAction<[wsId: string, gitRootId?: string]>('git/readsInvalidated');
+export const openGitCommitFileRequested = createAction<
+  [
+    wsId: string,
+    commitHash: string,
+    filePath: string,
+    additions?: number,
+    deletions?: number,
+    gitRootId?: string,
+  ]
+>('git/openCommitFileRequested');
+export const openGitPRFileRequested =
+  createAction<
+    [wsId: string, filePath: string, baseRef: string, additions?: number, deletions?: number]
+  >('git/openPRFileRequested');
+export const openGitXcodeRequested =
+  createAction<[wsId: string, folder: string, file?: string]>('git/openXcodeRequested');
 
 /** Set git status result */
 export const setGitStatus = createAction('git/setStatus', (wsId: string, status: GitStatus) => ({
@@ -137,6 +192,82 @@ export const setGitOperationFlag =
 // ── Reducer ──
 
 export const gitReducer = createReducer<GitState>(initialState);
+gitReducer.with(gitReadRequested, (state, { payload: [wsId, consumerId, requestId, request] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const readKey = gitReadKey(request);
+  const previous = getItem(ws.readConsumers, consumerId);
+  const readConsumers = upsertItem(ws.readConsumers, { consumerId, requestId, readKey });
+  let reads = ws.reads;
+  if (
+    previous &&
+    previous.readKey !== readKey &&
+    !getItems(readConsumers).some((consumer) => consumer.readKey === previous.readKey)
+  ) {
+    reads = removeItem(reads, previous.readKey);
+  }
+  if (!getItem(reads, readKey))
+    reads = upsertItem(reads, {
+      readKey,
+      generation: '',
+      request,
+      loading: true,
+      error: null,
+      result: null,
+    });
+  return setWorkspaceState(state, wsId, { ...ws, readConsumers, reads });
+});
+gitReducer.with(releaseGitRead, (state, { payload: [wsId, consumerId, requestId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const consumer = getItem(ws.readConsumers, consumerId);
+  if (!consumer || consumer.requestId !== requestId) return state;
+  const readConsumers = removeItem(ws.readConsumers, consumerId);
+  const reads = getItems(readConsumers).some((entry) => entry.readKey === consumer.readKey)
+    ? ws.reads
+    : removeItem(ws.reads, consumer.readKey);
+  return setWorkspaceState(state, wsId, { ...ws, readConsumers, reads });
+});
+gitReducer.with(gitReadStarted, (state, { payload: [wsId, readKey, generation] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const entry = getItem(ws.reads, readKey);
+  if (!entry) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    reads: upsertItem(ws.reads, { ...entry, generation, loading: true, error: null }),
+  });
+});
+gitReducer.with(
+  gitReadCompleted,
+  (state, { payload: [wsId, readKey, generation, result, error] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    const entry = getItem(ws.reads, readKey);
+    if (!entry || entry.generation !== generation) return state;
+    let stored: GitReadStoredResult | null = null;
+    if (result?.kind === 'diffs')
+      stored = { ...result, chunks: createCollection('file', result.chunks) };
+    else if (result?.kind === 'commitDetails')
+      stored = {
+        ...result,
+        details: result.details
+          ? { ...result.details, fileDetails: createCollection('path', result.details.fileDetails) }
+          : null,
+      };
+    else if (result?.kind === 'numstat')
+      stored = { ...result, entries: createCollection('filePath', result.entries) };
+    else if (result?.kind === 'autoCommitStatus')
+      stored = {
+        ...result,
+        statuses: createCollection(
+          'index',
+          result.statuses.map((status, index) => ({ index: String(index), status })),
+        ),
+      };
+    else stored = result;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      reads: upsertItem(ws.reads, { ...entry, loading: false, error, result: stored }),
+    });
+  },
+);
 gitReducer.with(setGitStatus, (state, action) => {
   const { wsId, status } = action.payload;
   const ws = getWorkspaceState(state, wsId);
