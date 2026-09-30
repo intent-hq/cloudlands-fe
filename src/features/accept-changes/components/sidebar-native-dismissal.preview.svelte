@@ -66,7 +66,7 @@
     row: number;
     generation: number;
     stage: string;
-    duration: number | string;
+    duration: number | string | CSSNumericValue;
     targetMatches: boolean;
     finished: boolean;
     held: boolean;
