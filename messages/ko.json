@@ -6901,5 +6901,8 @@
   "settings_providers_serviceTierUltraFast_description": "초고속은 아직 지원되지 않습니다.",
   "chat_agentCard_menu_moveToBackground_label": "백그라운드로 이동",
   "chat_agentCard_menu_moveToForeground_label": "포그라운드로 이동",
-  "agent_mutation_setBackgroundFailed_error": "에이전트 모드를 변경하지 못했습니다"
+  "agent_mutation_setBackgroundFailed_error": "에이전트 모드를 변경하지 못했습니다",
+  "settings_aiBehavior_importedClaude_title": "Claude Code에서 가져옴",
+  "settings_aiBehavior_importedClaude_readOnly": "Intent에서는 읽기 전용입니다. 변경하려면 원본 파일을 여세요.",
+  "settings_aiBehavior_importedClaude_unsupported": "다음 설정이 지원되지 않아 Intent에서 실행할 수 없습니다: {fields}. 실행하기 전에 원본 파일을 열어 해당 설정을 제거하거나 수정하세요."
 }

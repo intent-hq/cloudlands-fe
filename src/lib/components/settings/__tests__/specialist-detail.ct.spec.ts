@@ -143,3 +143,53 @@ test('keyboard activates separate launch, menu and advanced model-option control
   await expect(advanced).toHaveAttribute('aria-expanded', 'false');
   await expect(add).toBeHidden();
 });
+
+for (const source of ['user', 'project'] as const) {
+  for (const unsupported of [false, true]) {
+    test(`imported Claude ${source} agent is read-only with unsupported fields ${unsupported}`, async ({
+      mount,
+      page,
+    }, testInfo) => {
+      const component = await mount(SpecialistDetailPreview, {
+        props: { imported: true, unsupported, source },
+      });
+      await expect(component.getByText('Imported from Claude Code', { exact: true })).toBeVisible();
+      await expect(
+        component.getByText('Read-only in Intent. Open the original file to make changes.', {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(component.getByRole('textbox')).toHaveCount(1);
+      await expect(component.getByRole('textbox')).toHaveAttribute('readonly', '');
+      await expect(component.getByRole('button', { name: 'Delete specialist' })).toHaveCount(0);
+      await expect(component.getByRole('button', { name: 'Reset', exact: true })).toHaveCount(0);
+      await expect(component.getByRole('button', { name: 'Advanced', exact: true })).toHaveCount(0);
+      await expect(component.getByRole('combobox')).toHaveCount(0);
+      const warning = component.getByTestId('specialist-import-warning');
+      if (unsupported) {
+        await expect(warning).toContainText('Cannot launch in Intent');
+        await expect(warning).toContainText('tools, permissionMode');
+      } else {
+        await expect(warning).toHaveCount(0);
+      }
+      const file =
+        source === 'project'
+          ? '/tmp/intent-demo/.claude/agents/review-helper.md'
+          : '/tmp/intent-demo/home/.claude/agents/review-helper.md';
+      await expect(component.getByText(file, { exact: true })).toBeVisible();
+      await component.locator('[data-open-combo-control]').getByRole('button').first().click();
+      await expect
+        .poll(async () => JSON.parse(await component.getByTestId('editor-launches').innerText()))
+        .toEqual([
+          {
+            channel: 'vscode:open',
+            args: [{ folder: file.slice(0, file.lastIndexOf('/')), file }],
+          },
+        ]);
+      await testInfo.attach('imported-specialist', {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: 'image/png',
+      });
+    });
+  }
+}

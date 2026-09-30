@@ -125,6 +125,8 @@
     activeView.type === 'specialist' ? $specialists.find((s) => s.id === activeView.id) : null,
   );
 
+  const isImported = $derived(currentSpecialist?.importedFrom === 'claude-code');
+
   const isBuiltIn = $derived(
     currentSpecialist ? selectIsBuiltIn.select(appStore.state, currentSpecialist.id) : false,
   );
@@ -230,7 +232,7 @@
     compoundModelId: string,
     pick?: { providerId: string; modelId: string },
   ) {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
 
     // Empty string = the inherit ("use global default") option was picked:
     // clear the explicit pin so the saved file has no `model:` key. On a
@@ -364,7 +366,7 @@
    * deletes the file (monorepo#1450).
    */
   function handleSpecialistEffortChange(effort: string | undefined) {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     specialistEffortValue = effort;
 
     if (isFileBased) {
@@ -453,7 +455,7 @@
   }
 
   function handlePromptSave(prompt: string) {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (fileSpec) {
@@ -512,7 +514,7 @@
    * that then matches the bundled defaults deletes the file (monorepo#1450).
    */
   function handleModelOptionsCommit(options: SpecialistModelOption[]) {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     const next = options.length > 0 ? options : undefined;
 
     if (isFileBased) {
@@ -583,7 +585,7 @@
   }
 
   function handleNameSave(newNameValue: string) {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     const trimmed = newNameValue.trim();
     if (!trimmed || trimmed === currentSpecialist.name) return;
 
@@ -609,7 +611,7 @@
   }
 
   function handleDescriptionSave(newDescValue: string) {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     const trimmed = newDescValue.trim();
     if (trimmed === currentSpecialist.description) return;
 
@@ -635,7 +637,7 @@
   }
 
   function resetToDefault() {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     // Delete the user override file so the specialist reverts to bundled defaults
     appStore.dispatch(
       deleteFileSpecialistAction({
@@ -646,7 +648,7 @@
   }
 
   function deleteSpecialist() {
-    if (!currentSpecialist) return;
+    if (!currentSpecialist || isImported) return;
     // Capture values before deletion since currentSpecialist is a $derived
     // that will become null once the specialist is removed from the store
     const specialistId = currentSpecialist.id;
@@ -744,7 +746,7 @@
           data-testid="specialist-prompt-header"
           class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
         >
-          {#if !isBuiltIn && !hasOverrides}
+          {#if !isImported && !isBuiltIn && !hasOverrides}
             <Input
               type="text"
               value={currentSpecialist.name}
@@ -761,7 +763,7 @@
             />
           {:else}
             <h2 class="type-title font-medium text-foreground">{currentSpecialist.name}</h2>
-            {#if isBuiltIn && hasOverrides}
+            {#if !isImported && isBuiltIn && hasOverrides}
               <span
                 class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary-ink font-medium inline-flex items-center gap-1"
               >
@@ -770,7 +772,7 @@
               </span>
             {/if}
           {/if}
-          {#if isBuiltIn && hasOverrides}
+          {#if !isImported && isBuiltIn && hasOverrides}
             <Button
               variant="plain"
               size="sm"
@@ -788,21 +790,31 @@
             </div>
           {/if}
         </div>
-        <AutoSaveTextarea
-          value={effectiveBehaviorPrompt}
-          originalValue={currentSpecialist.defaultBehaviorPrompt}
-          placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
-          minRows={12}
-          maxLength={50000}
-          onSave={handlePromptSave}
-          class="xl:min-h-0 xl:flex-1"
-        />
+        {#if isImported}
+          <Textarea
+            value={effectiveBehaviorPrompt}
+            readonly
+            aria-label={m.settings_aiBehavior_systemPrompt_placeholder()}
+            rows={12}
+            class="xl:min-h-0 xl:flex-1"
+          />
+        {:else}
+          <AutoSaveTextarea
+            value={effectiveBehaviorPrompt}
+            originalValue={currentSpecialist.defaultBehaviorPrompt}
+            placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
+            minRows={12}
+            maxLength={50000}
+            onSave={handlePromptSave}
+            class="xl:min-h-0 xl:flex-1"
+          />
+        {/if}
       </div>
 
       <div data-testid="specialist-details-column" class="flex min-w-0 flex-col gap-6 xl:pt-8">
         <!-- Specialist identity and source context. -->
         <div class="min-w-0">
-          {#if !isBuiltIn && !hasOverrides}
+          {#if !isImported && !isBuiltIn && !hasOverrides}
             <Input
               type="text"
               value={currentSpecialist.description}
@@ -820,7 +832,24 @@
             <p class="type-body mt-1 text-muted-foreground">{currentSpecialist.description}</p>
           {/if}
 
-          {#if !isBuiltIn}
+          {#if isImported}
+            <p class="type-body mt-2 font-medium text-foreground">
+              {m.settings_aiBehavior_importedClaude_title()}
+            </p>
+            <p class="type-body mt-2 text-muted-foreground">
+              {m.settings_aiBehavior_importedClaude_readOnly()}
+            </p>
+            <code class="type-caption mt-2 block break-all text-muted-foreground"
+              >{specialistFilePath}</code
+            >
+            {#if currentSpecialist.unsupportedFields?.length}
+              <p data-testid="specialist-import-warning" class="type-body mt-2 text-danger">
+                {m.settings_aiBehavior_importedClaude_unsupported({
+                  fields: currentSpecialist.unsupportedFields.join(', '),
+                })}
+              </p>
+            {/if}
+          {:else if !isBuiltIn}
             <p class="type-body mt-2 text-muted-foreground">
               {#if sourceLabel === 'Project'}
                 {m.settings_aiBehavior_projectInfo_before()}
@@ -839,9 +868,11 @@
               {/if}
             </p>
           {/if}
-          <p class="type-body mt-2 text-muted-foreground">
-            {m.settings_aiBehavior_usageHint()}
-          </p>
+          {#if !isImported}
+            <p class="type-body mt-2 text-muted-foreground">
+              {m.settings_aiBehavior_usageHint()}
+            </p>
+          {/if}
         </div>
 
         <!-- Preserve the specialist model, reasoning, and delegation controls. -->
@@ -850,49 +881,58 @@
             <span class="type-body shrink-0 font-medium text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
-            <ModelPicker
-              workspaceId={currentSpecialist.source === 'project'
-                ? (routeWorkspaceId ?? undefined)
-                : undefined}
-              selectedModel={specialistModelValue}
-              onModelChange={handleSpecialistModelChange}
-              showDefaultOption={true}
-              defaultModelId={currentSpecialist.resolvedModel}
-              defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-              defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
-              defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
-              formatDefaultModelLabel={(model) =>
-                m.settings_aiBehavior_inheritModelPreview_label({ model })}
-              size="sm"
-              variant="default"
-              showReasoning
-              reasoningEffort={specialistEffortValue ?? null}
-              onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
-            />
+            {#if isImported}
+              <span class="type-body text-muted-foreground"
+                >{currentSpecialist.defaultModel ||
+                  m.settings_aiBehavior_inheritModel_label()}</span
+              >
+            {:else}
+              <ModelPicker
+                workspaceId={currentSpecialist.source === 'project'
+                  ? (routeWorkspaceId ?? undefined)
+                  : undefined}
+                selectedModel={specialistModelValue}
+                onModelChange={handleSpecialistModelChange}
+                showDefaultOption={true}
+                defaultModelId={currentSpecialist.resolvedModel}
+                defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+                defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
+                defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
+                formatDefaultModelLabel={(model) =>
+                  m.settings_aiBehavior_inheritModelPreview_label({ model })}
+                size="sm"
+                variant="default"
+                showReasoning
+                reasoningEffort={specialistEffortValue ?? null}
+                onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
+              />
+            {/if}
           </div>
 
           <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
                the specialist id so draft rows never leak across specialist
                switches (remounting resets the component's local rows). -->
-          <SettingsDisclosure
-            label={m.settings_aiBehavior_advanced_label()}
-            class="mt-4"
-            flush
-            muted
-          >
-            {#key currentSpecialist.id}
-              <SpecialistModelOptions
-                workspaceId={currentSpecialist.source === 'project'
-                  ? (routeWorkspaceId ?? undefined)
-                  : undefined}
-                savedOptions={savedModelOptions}
-                onCommit={handleModelOptionsCommit}
-              />
-            {/key}
-          </SettingsDisclosure>
+          {#if !isImported}
+            <SettingsDisclosure
+              label={m.settings_aiBehavior_advanced_label()}
+              class="mt-4"
+              flush
+              muted
+            >
+              {#key currentSpecialist.id}
+                <SpecialistModelOptions
+                  workspaceId={currentSpecialist.source === 'project'
+                    ? (routeWorkspaceId ?? undefined)
+                    : undefined}
+                  savedOptions={savedModelOptions}
+                  onCommit={handleModelOptionsCommit}
+                />
+              {/key}
+            </SettingsDisclosure>
+          {/if}
         </div>
 
-        {#if !isBuiltIn}
+        {#if !isImported && !isBuiltIn}
           <div class="pt-4 border-border">
             <Button
               variant="ghost"

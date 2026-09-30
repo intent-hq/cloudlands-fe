@@ -140,6 +140,8 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
+    importedFrom: def.importedFrom,
+    unsupportedFields: def.unsupportedFields,
     hidden: def.hidden,
     modelOptions: def.modelOptions,
     // Must be mapped from the daemon def: the post-mutation refetch replaces the
@@ -219,7 +221,10 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
   const [payload] = action.payload;
   let settled = false;
   try {
-    const existing = yield* selectGetFileSpecialist.effect(payload.id);
+    const existing = yield* selectGetFileSpecialist.effect(payload.id, payload.workspaceId);
+    if (existing?.importedFrom) {
+      throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
+    }
     const bundledSpecialists = yield* selectBundledSpecialists.effect();
     const bundled = (bundledSpecialists.length ? bundledSpecialists : SPECIALISTS).find(
       (specialist) => specialist.id === payload.id,
@@ -287,6 +292,10 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
   const [ref] = action.payload;
   let settled = false;
   try {
+    const existing = yield* selectGetFileSpecialist.effect(ref.id, ref.workspaceId);
+    if (existing?.importedFrom) {
+      throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
+    }
     yield* call(
       [appClient.specialists, appClient.specialists.delete],
       ref.id,

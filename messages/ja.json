@@ -6901,5 +6901,8 @@
   "settings_providers_serviceTierUltraFast_description": "超高速はまだサポートされていません。",
   "chat_agentCard_menu_moveToBackground_label": "バックグラウンドに移動",
   "chat_agentCard_menu_moveToForeground_label": "フォアグラウンドに移動",
-  "agent_mutation_setBackgroundFailed_error": "エージェントのモードを変更できませんでした"
+  "agent_mutation_setBackgroundFailed_error": "エージェントのモードを変更できませんでした",
+  "settings_aiBehavior_importedClaude_title": "Claude Code からインポート",
+  "settings_aiBehavior_importedClaude_readOnly": "Intent では読み取り専用です。変更するには元のファイルを開いてください。",
+  "settings_aiBehavior_importedClaude_unsupported": "次の設定はサポートされていないため、Intent で起動できません：{fields}。起動する前に元のファイルを開き、これらの設定を削除または調整してください。"
 }

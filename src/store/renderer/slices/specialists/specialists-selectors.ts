@@ -164,6 +164,8 @@ export const selectSpecialists = store.createSelector(
           defaultBehaviorPrompt: file.behaviorPrompt,
           roleReminder: file.roleReminder,
           source: file.source,
+          importedFrom: file.importedFrom,
+          unsupportedFields: file.unsupportedFields,
           hidden: file.hidden,
           resolvedModel: file.resolvedModel,
           resolvedProvider: file.resolvedProvider,

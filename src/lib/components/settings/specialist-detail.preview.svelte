@@ -8,6 +8,8 @@
     states: {
       modified: { props: {} },
       create: { props: { create: true } },
+      imported: { props: { imported: true } },
+      'imported-unsupported': { props: { imported: true, unsupported: true, source: 'project' } },
     },
   });
 </script>
@@ -32,7 +34,17 @@
   import AIBehaviorEditor from './AIBehaviorEditor.svelte';
   import { interceptSpecialistEditorLaunches } from './__tests__/specialist-detail.fixture';
 
-  let { create = false }: { create?: boolean } = $props();
+  let {
+    create = false,
+    imported = false,
+    unsupported = false,
+    source = 'user',
+  }: {
+    create?: boolean;
+    imported?: boolean;
+    unsupported?: boolean;
+    source?: 'user' | 'project';
+  } = $props();
 
   let launches = $state<Array<{ channel: string; args: unknown[] }>>([]);
   const disposeLaunchHandlers = interceptSpecialistEditorLaunches((launch) => {
@@ -63,15 +75,21 @@
     description: 'Reviews sample changes and explains useful next steps.',
     defaultBehaviorPrompt: 'Review the sample change.',
   };
-  appStore.dispatch(setBundledSpecialists([specialist]));
+  appStore.dispatch(setBundledSpecialists(imported ? [] : [specialist]));
   appStore.dispatch(
     setFileSpecialists([
       {
         ...specialist,
         model: '',
         behaviorPrompt: 'Review the sample change. Summarize the result clearly.',
-        filePath: '/tmp/intent-demo/specialists/review-helper.md',
-        source: 'user',
+        filePath: imported
+          ? source === 'project'
+            ? '/tmp/intent-demo/.claude/agents/review-helper.md'
+            : '/tmp/intent-demo/home/.claude/agents/review-helper.md'
+          : '/tmp/intent-demo/specialists/review-helper.md',
+        source,
+        importedFrom: imported ? 'claude-code' : undefined,
+        unsupportedFields: imported && unsupported ? ['tools', 'permissionMode'] : undefined,
       },
     ]),
   );

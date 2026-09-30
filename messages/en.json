@@ -6901,5 +6901,8 @@
   "settings_providers_serviceTierUltraFast_description": "Ultra-fast is not yet supported.",
   "chat_agentCard_menu_moveToBackground_label": "Move to background",
   "chat_agentCard_menu_moveToForeground_label": "Move to foreground",
-  "agent_mutation_setBackgroundFailed_error": "Failed to change agent mode"
+  "agent_mutation_setBackgroundFailed_error": "Failed to change agent mode",
+  "settings_aiBehavior_importedClaude_title": "Imported from Claude Code",
+  "settings_aiBehavior_importedClaude_readOnly": "Read-only in Intent. Open the original file to make changes.",
+  "settings_aiBehavior_importedClaude_unsupported": "Cannot launch in Intent because these settings are unsupported: {fields}. Open the original file and remove or adapt these settings before launching."
 }

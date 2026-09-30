@@ -6901,5 +6901,8 @@
   "settings_providers_serviceTierUltraFast_description": "Ultra-rapide n’est pas encore pris en charge.",
   "chat_agentCard_menu_moveToBackground_label": "Passer en arrière-plan",
   "chat_agentCard_menu_moveToForeground_label": "Passer au premier plan",
-  "agent_mutation_setBackgroundFailed_error": "Impossible de changer le mode de l’agent"
+  "agent_mutation_setBackgroundFailed_error": "Impossible de changer le mode de l’agent",
+  "settings_aiBehavior_importedClaude_title": "Importé depuis Claude Code",
+  "settings_aiBehavior_importedClaude_readOnly": "Lecture seule dans Intent. Ouvrez le fichier original pour le modifier.",
+  "settings_aiBehavior_importedClaude_unsupported": "Impossible de lancer dans Intent, car ces paramètres ne sont pas pris en charge : {fields}. Ouvrez le fichier original et supprimez ou adaptez ces paramètres avant de lancer."
 }
