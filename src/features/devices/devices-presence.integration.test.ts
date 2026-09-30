@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { invoke as bridgeInvoke } from '$lib/electron-bridge';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -30,6 +31,7 @@ import { identitySaga } from '$store/renderer/slices/identity/sagas/identity-sag
 import { presenceSaga } from '$store/renderer/slices/presence/sagas/presence-saga';
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
 import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+import { presenceTypingPulse } from '$store/renderer/slices/presence/presence-slice';
 import { MemberProvider } from '$lib/services/mentions/providers/member-provider';
 import { personalDevicesSaga } from './personal-devices-saga';
 import { selectPersonalDevices } from './personal-devices-selectors';
@@ -61,6 +63,8 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
 }));
 vi.mock('qrcode', () => ({ default: { toDataURL: wire.qr } }));
 
+// The ordinary setup supplies a separate module mock, not window.electronAPI.
+const setupInvoke = vi.mocked(bridgeInvoke).getMockImplementation();
 const workspaceId = 'shared-workspace';
 const identity = { provider: 'gitlab', host: 'gitlab.example.test', externalUserId: '7' } as const;
 const principal = (hostRole: HostRole = 'member', id = 'self') => ({
@@ -144,6 +148,7 @@ let role: HostRole;
 let firehose: string;
 let subscriptionOrdinal: number;
 let held: Map<string, Promise<unknown>>;
+let restoreVisibility: () => void;
 
 function emit(type: string, data: unknown, subscriptionId = firehose) {
   for (const notify of wire.notifications)
@@ -222,6 +227,8 @@ async function openPairing() {
 }
 
 beforeEach(() => {
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  restoreVisibility = () => visibility.mockRestore();
   store.init();
   stops = [];
   held = new Map();
@@ -268,6 +275,7 @@ beforeEach(() => {
     if (channel === 'presence:report') return { typingSource: 'own-window' };
     throw new Error('Unexpected integration IPC: ' + channel);
   });
+  vi.mocked(bridgeInvoke).mockReset().mockImplementation(wire.invoke);
   window.electronAPI = {
     invoke: wire.invoke,
     on: vi.fn(),
@@ -275,12 +283,18 @@ beforeEach(() => {
   } as unknown as Window['electronAPI'];
 });
 afterEach(async () => {
-  cleanup();
-  for (const stop of stops.reverse()) stop();
-  await settle();
-  expect(wire.notifications.size).toBe(0);
-  expect(wire.reconnects.size).toBe(0);
-  store.dispose();
+  try {
+    cleanup();
+    for (const stop of stops.reverse()) stop();
+    await settle();
+    expect(wire.notifications.size).toBe(0);
+    expect(wire.reconnects.size).toBe(0);
+  } finally {
+    store.dispose();
+    vi.mocked(bridgeInvoke).mockReset();
+    if (setupInvoke) vi.mocked(bridgeInvoke).mockImplementation(setupInvoke);
+    restoreVisibility();
+  }
 });
 
 describe('Devices and workspace presence share one admission', () => {
@@ -297,6 +311,13 @@ describe('Devices and workspace presence share one admission', () => {
     lease.resolve({ subscriptionId: firehose });
     await boot;
     await loaded();
+    await waitFor(() =>
+      expect(wire.invoke).toHaveBeenCalledWith('presence:report', {
+        focus: [{ workspaceId }],
+        typing: null,
+      }),
+    );
+    expect(store.state.presence.ownTypingSource).toBe('own-window');
   });
 
   it.each(['owner', 'member', 'guest'] as const)(
@@ -602,23 +623,49 @@ describe('Devices and workspace presence share one admission', () => {
     const saved = store.state.guestSessions;
     store.dispatch(setLabsMultiplayerEnabled(true));
     await loaded();
+    await waitFor(() => expect(store.state.presence.ownTypingSource).toBe('own-window'));
+    wire.invoke.mockClear();
+    store.dispatch(presenceTypingPulse('current-agent'));
+    await waitFor(() =>
+      expect(wire.invoke).toHaveBeenCalledWith('presence:report', {
+        focus: [{ workspaceId }],
+        typing: { agentId: 'current-agent' },
+      }),
+    );
+    const reportsBeforeDisable = wire.invoke.mock.calls.length;
     const admission = deferred();
     held.set('principal.me', admission.promise);
     store.dispatch(setLabsMultiplayerEnabled(false));
     await waitFor(() => expect(personIds()).toEqual([]));
+    await waitFor(() =>
+      expect(wire.invoke.mock.calls.slice(reportsBeforeDisable)).toEqual([
+        ['presence:report', { focus: [], typing: null }],
+      ]),
+    );
     expect(selectPersonalDevices.select(store.state)).toEqual([]);
     expect(store.state.guestSessions).toBe(saved);
     const reads = calls('presence.snapshot').length;
     emit('presence:changed', roster());
     store.dispatch(personalDevicesRefreshRequested());
-    await settle();
+    // Observe the unchanged 250ms production debounce after the allowed cleanup.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(calls('presence.snapshot')).toHaveLength(reads);
+    expect(wire.invoke.mock.calls).toHaveLength(reportsBeforeDisable + 1);
     store.dispatch(setLabsMultiplayerEnabled(true));
     await settle();
     expect(personIds()).toEqual([]);
+    expect(wire.invoke.mock.calls).toHaveLength(reportsBeforeDisable + 1);
+    wire.invoke.mockClear();
     held.clear();
     admission.resolve(principal(role));
     await loaded();
+    await waitFor(() =>
+      expect(wire.invoke).toHaveBeenCalledWith('presence:report', {
+        focus: [{ workspaceId }],
+        typing: null,
+      }),
+    );
+    expect(store.state.presence.ownTypingSource).toBe('own-window');
     expect(store.state.guestSessions).toBe(saved);
   });
 });
