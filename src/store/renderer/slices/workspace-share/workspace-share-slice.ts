@@ -38,6 +38,8 @@ import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
  * link once the dialog has been closed or retargeted to workspace B.
  */
 export interface WorkspaceShareTarget {
+  /** Captured only by the request owner; omitted on pure presentation actions. */
+  authority?: string | null;
   workspaceId: string;
   session: number;
 }

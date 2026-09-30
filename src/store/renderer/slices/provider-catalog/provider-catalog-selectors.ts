@@ -1,3 +1,7 @@
+import {
+  selectHostExecutionContext,
+  selectIsHostMember,
+} from '../host-execution/host-execution-selectors';
 /**
  * Provider Catalog Selectors
  *
@@ -58,7 +62,9 @@ export const selectEffectiveDefaultProviderId = store.createSelector(
       )?.value;
       return typeof value === 'string' ? value : '';
     }
-    return state.model?.defaultProviderId ?? '';
+    return selectIsHostMember.select(state)
+      ? (selectHostExecutionContext.select(state)?.defaultProviderId ?? '')
+      : (state.model?.defaultProviderId ?? '');
   },
 );
 
@@ -179,7 +185,9 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     model: string | null | undefined,
     errorMessage: string | null | undefined,
   ): ProviderAuthFailureGuidance | null => {
-    if (!errorMessage) return null;
+    if (!errorMessage || selectIsHostMember.select(state)) return null;
+    // Explicit identities, including historical aliases, resolve only through
+    // the catalog. They must not borrow a different provider's login guidance.
     let rawId = provider || '';
     if (!rawId && model?.includes(':')) {
       rawId = splitLegacyCompoundId(model).providerId || '';

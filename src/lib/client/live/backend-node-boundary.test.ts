@@ -20,6 +20,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
 import { setLocale } from '$shared/paraglide/runtime.js';
 afterEach(() => setLocale('en', { reload: false }));
 import { backendRequest } from './backend-transport';
+import { BackendError } from './backend-transport-types';
 
 beforeEach(() => {
   fixture.state.userPreferences.labsRemoteAgentsEnabled = false;
@@ -34,6 +35,48 @@ beforeEach(() => {
   });
 });
 describe('renderer final wire boundary', () => {
+  it.each(['workspace.get', 'agent.create'])(
+    'preserves host authorization recovery for %s during guarded creation',
+    async (deniedMethod) => {
+      const original = new BackendError({
+        code: 'host-execution-authorization',
+        rpcCode: -32603,
+        message: 'raw provider secret=do-not-render',
+        data: {
+          executionAuthorization: {
+            resource: 'ai',
+            reason: 'missing',
+            providerId: 'codex',
+            host: null,
+            recovery: { actor: 'host-owner', action: 'check-ai-authorization' },
+          },
+        },
+      });
+      fixture.request.mockImplementation(async (method: string) => {
+        if (method === deniedMethod) throw original;
+        if (method === 'client.hello')
+          return { server: { capabilities: { agentNodes: 1, localNodeIsolation: 1 } } };
+        return { workspace: { defaultAgentPlacement: { target: 'local', checkout: 'isolated' } } };
+      });
+      const error = await backendRequest('agent.create', { workspaceId: 'ws' }).catch((e) => e);
+      expect(error).toBeInstanceOf(BackendError);
+      expect(error.message).not.toContain('do-not-render');
+      expect(error.message).toMatch(/owner/i);
+      expect(error.code).toBe(original.code);
+      expect(error.rpcCode).toBe(original.rpcCode);
+      expect(error.data).toEqual(original.data);
+      if (deniedMethod === 'workspace.get')
+        expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(
+          false,
+        );
+      else
+        expect(fixture.request).toHaveBeenLastCalledWith(
+          'agent.create',
+          { workspaceId: 'ws', placement: { target: 'local', checkout: 'isolated' } },
+          undefined,
+        );
+    },
+  );
   it.each([undefined, null, false, 0, 1, 'true', {}])(
     'rejects non-boolean remote opt-in: %s',
     async (value) => {

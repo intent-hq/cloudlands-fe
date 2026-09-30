@@ -50,6 +50,7 @@
 
   import {
     selectIsWorkspaceCollaborator,
+    selectWorkspaceUpdateContext,
     selectWorkspaceById,
     selectWorkspaceActivePullRequest,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -64,7 +65,7 @@
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { onMount, untrack, type Snippet } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { readable, writable } from 'svelte/store';
   import {
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
@@ -135,21 +136,16 @@
 
   const workspace = selectWorkspaceById(workspaceIdStore);
 
-  // Multiplayer role gate for the whole Changes tab. A collaborator may only
-  // call the member class of the daemon's capability matrix (intentd
-  // `capability.rs` / transport `COLLABORATOR_METHODS`): git.stage / unstage /
-  // discard / push / pull / fetch and reads. Everything routed through
-  // `accept-changes.*` (commit, push-commits, undo, rebase, merge, PR create,
-  // reset-to-trunk), `github.*`, `workspace.setAutoCommit`, `workspace.archive`
-  // and the protected `workspace.update` fields (`branch`, `baseRef`,
-  // `baseCommitSha`) is owner-only, so those controls are not rendered for a
-  // collaborator. `selectIsWorkspaceCollaborator` fails closed — a guest window
-  // (multiplayer w4) reads as collaborator whatever `myRole` the row carries,
-  // as does every window until its identity has settled — while a missing
-  // `myRole` in a settled owner window is treated as owner, like the rest of
-  // the sidebar. Threaded to children as a prop.
+  // Host execution and protected workspace fields have separate gates. A
+  // scoped guest owner may update branch/base fields without access to the
+  // accept-changes, terminal, script or direct lifecycle methods below.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isOwner = $derived(!$isCollaborator$);
+  const updateContext$ = selectWorkspaceUpdateContext(
+    workspaceIdStore,
+    readable(['branch', 'baseRef', 'baseCommitSha']),
+  );
+  const canUpdateWorkspace = $derived($updateContext$ !== null);
 
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
   const pendingAutoAction$ = selectPendingAutoAction(workspaceIdStore);
@@ -1040,7 +1036,7 @@
 
   // Determine if trunk can be changed: only before the first push, and only
   // by the owner — `baseRef` is not collaborator-editable on `workspace.update`.
-  const canChangeTrunk = $derived(isOwner && !hasPushedCommits && unpushedCount === 0);
+  const canChangeTrunk = $derived(canUpdateWorkspace && !hasPushedCommits && unpushedCount === 0);
 
   // Track if we're in the middle of a workspace switch to disable animations
   let isWorkspaceSwitching = $state(false);
@@ -1141,7 +1137,7 @@
             {repoPath}
             {repoType}
             {canChangeTrunk}
-            {isOwner}
+            isOwner={canUpdateWorkspace}
           />
 
           <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
@@ -1252,6 +1248,7 @@
               {activeFileStaged}
               pullRequestCount={pullRequests.length}
               {isOwner}
+              canUpdateBaseCommit={canUpdateWorkspace}
             />
 
             {#snippet mergePanelContent()}

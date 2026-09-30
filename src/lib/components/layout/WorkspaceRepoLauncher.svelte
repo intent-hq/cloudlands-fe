@@ -3,20 +3,19 @@
   import { faPlus } from '$lib/icons/phosphor-icons';
   import { Button } from '$lib/components/ui/button';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
-  // Workspace creation (repo picker) is administrator-only (multiplayer w3):
-  // a collaborator-only client has no launcher.
-  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreate$ = selectWorkspaceCreationVisible();
 
   function openNewWorkspace() {
-    appStore.dispatch(setShowCreateModal(true));
+    if (selectWorkspaceCreationVisible.select(appStore.state))
+      appStore.dispatch(setShowCreateModal(true));
   }
 </script>
 
-{#if !$isCollaboratorOnlyClient$}
+{#if $canCreate$}
   <div
     class="app-no-drag shrink-0"
     data-workspace-repo-launcher

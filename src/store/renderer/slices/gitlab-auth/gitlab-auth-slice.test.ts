@@ -23,6 +23,7 @@ import {
   setGitLabAuthenticating,
   setGitLabAuthError,
   setGitLabAuthStatus,
+  resetGitLabAdmission,
   setGitLabDeviceFlowInfo,
   setGitLabHost,
   takeGitLabPatToken,
@@ -139,7 +140,9 @@ describe('gitlabAuthReducer', () => {
       deviceGrantSupported: true,
       user,
       method: 'pat',
+      statusReady: true,
     });
+    expect(gitlabAuthReducer(state, resetGitLabAdmission())).toEqual(initialState);
   });
 
   it('setGitLabAuthenticating(true) clears a previous error; false keeps it', () => {

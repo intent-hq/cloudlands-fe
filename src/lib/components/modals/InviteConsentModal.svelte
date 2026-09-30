@@ -63,7 +63,10 @@
   const signInMode = $derived(payload?.mode === 'sign-in-required');
   // The forge the proof names; a `prove` payload without `identity` is GitHub.
   const gitlabIdentity = $derived(
-    payload?.mode === 'prove' && payload.identity?.provider === 'gitlab' ? payload.identity : null,
+    (payload?.mode === 'prove' || payload?.mode === 'confirm') &&
+      payload.identity?.provider === 'gitlab'
+      ? payload.identity
+      : null,
   );
 
   function handleOpen() {
@@ -94,13 +97,20 @@
     {open}
     role="alertdialog"
     titleId={dialogTitleId}
-    title={m.inviteConsent_modal_title({
-      workspaceTitle: payload.workspaceTitle,
-      hostLabel: payload.hostLabel,
-    })}
+    title={payload.scope === 'host'
+      ? m.inviteConsent_host_title({ hostLabel: payload.hostLabel })
+      : m.inviteConsent_modal_title({
+          workspaceTitle: payload.workspaceTitle,
+          hostLabel: payload.hostLabel,
+        })}
     closeLabel={m.inviteConsent_modal_dismiss_ariaLabel()}
     onClose={cancel}
   >
+    {#if payload.scope === 'host'}
+      <p class="text-sm text-foreground" data-testid="invite-consent-host-permissions">
+        {m.inviteConsent_host_permissions()}
+      </p>
+    {/if}
     {#if payload.mode === 'connect-forge'}
       <section class="space-y-1" data-testid="invite-consent-connect-forge">
         <h3 class="text-sm font-medium text-foreground">
@@ -134,7 +144,9 @@
           data-provider={gitlabIdentity ? 'gitlab' : 'github'}
         >
           {#if payload.mode !== 'prove'}
-            {m.inviteConsent_modal_signedInAs_label({ login: `@${payload.login}` })}
+            {m.inviteConsent_modal_signedInAs_label({
+              login: `${payload.login ? `@${payload.login}` : m.inviteConsent_account_unknown()}${payload.identity ? ` (${payload.identity.host})` : ''}`,
+            })}
           {:else if gitlabIdentity}
             {m.inviteConsent_modal_signedInGitLab_label({
               host: gitlabIdentity.host,
@@ -147,7 +159,9 @@
       </div>
     {/if}
     <p class="text-xs text-subtle">
-      {#if connectMode && $gitlabEnabled$}
+      {#if payload.mode === 'confirm'}
+        {m.inviteConsent_returning_description()}
+      {:else if connectMode && $gitlabEnabled$}
         {m.inviteConsent_modal_hostLearnsForge_description()}
       {:else if gitlabIdentity}
         {m.inviteConsent_modal_hostLearnsGitLab_description({ host: gitlabIdentity.host })}

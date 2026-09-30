@@ -11,12 +11,27 @@
  * 3. Catch accidental prompt regressions
  */
 
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { SPECIALISTS, getSpecialistById } from '../../src/lib/constants/specialists';
 import {
   formatSpecialistsForPrompt,
   initSpecialistsService,
 } from '../../src/features/agent/main/specialists.service';
+
+// Own the root before the service's transitive IPC debug tracker resolves userData.
+const { specialistRoot, resolveSpecialistRoot } = await vi.hoisted(async () => {
+  const { createSpecialistTestRoot } = await import('./helpers/specialist-test-root');
+  const specialistRoot = await createSpecialistTestRoot();
+  return {
+    specialistRoot,
+    resolveSpecialistRoot: vi.fn(() => specialistRoot.path),
+  };
+});
+
+vi.mock('../../src/shared/main/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/shared/main/utils')>()),
+  getSafeHomeDir: resolveSpecialistRoot,
+}));
 
 // Mock electron-store for initSpecialistsService
 vi.mock('electron-store', () => ({
@@ -34,7 +49,7 @@ vi.mock('electron-store', () => ({
 // Mock electron app for file paths
 vi.mock('electron', () => ({
   app: {
-    getPath: () => '/tmp/test-augment',
+    getPath: () => specialistRoot.path,
     isPackaged: false,
   },
 }));
@@ -42,7 +57,16 @@ vi.mock('electron', () => ({
 describe('Specialist Prompts Verification', () => {
   // Initialize the specialists service to populate the file cache with bundled specialists
   beforeAll(async () => {
+    expect(resolveSpecialistRoot).not.toHaveBeenCalled();
     await initSpecialistsService();
+  });
+
+  afterAll(async () => {
+    await specialistRoot?.dispose();
+    resolveSpecialistRoot.mockImplementation(() => {
+      throw new Error('Specialist fixture root is released');
+    });
+    vi.restoreAllMocks();
   });
 
   describe('Specialist Definitions', () => {

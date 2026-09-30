@@ -5,6 +5,7 @@ test('late settings hydration preserves undismissed source rows in the open pick
   mount,
   page,
 }) => {
+  await page.route('https://github.com/fixture-owner.png*', (route) => route.abort());
   const component = await mount(Preview, { props: { persist: true, delayHydration: true } });
   const trigger = component.getByRole('button', { name: 'Choose fixture repository' });
   const open = async () => {

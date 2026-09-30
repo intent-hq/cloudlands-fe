@@ -10,6 +10,7 @@ export const labelMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ModalCatalogPreview.svelte',

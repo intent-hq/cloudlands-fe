@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import './app-layout.css';
   import { m } from '$shared/paraglide/messages.js';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
@@ -161,6 +162,7 @@
     installInviteConsentService,
     respondToInviteConsent,
   } from '$features/invite-consent/invite-consent-service';
+  import CollaborationSignInHost from '$features/collaboration-auth/renderer/CollaborationSignInHost.svelte';
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
@@ -180,6 +182,7 @@
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -675,7 +678,6 @@
     const toggleTerminal = () => {
       // Collaborators (multiplayer w3) are refused on terminal methods: no root
       // overlay for a collaborator-only client, none for a collaborator workspace.
-      if ($isCollaboratorOnlyClient$) return;
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
@@ -1097,7 +1099,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
+    open={$showCreateModal$ && $canCreateWorkspace$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1159,6 +1161,7 @@
   />
 
   <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <CollaborationSignInHost />
   <InviteConsentModal
     bind:open={showInviteConsentModal}
     payload={inviteConsentPayload}

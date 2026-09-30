@@ -1,4 +1,15 @@
-import { all, call, cancelled, delay, put, take, takeEvery, takeLatest } from 'typed-redux-saga';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import {
+  all,
+  call,
+  cancelled,
+  delay,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLatest,
+} from 'typed-redux-saga';
 import { buffers, eventChannel } from 'redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
@@ -16,7 +27,6 @@ import {
   takeLatestInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   selectHasCheckedOnce,
   selectProviderCheckEpochMap,
@@ -45,7 +55,7 @@ import {
   providerAvailabilityStopped,
 } from '../agent-availability-slice';
 import type { ProviderStatus } from '../agent-availability-types';
-import { hydrateProviderCatalog } from '../../provider-catalog/sagas/provider-catalog-saga';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import { reloadModelsForProvider } from '../../model/model-slice';
 import { providerModelsCacheCleared } from '../../provider-models/provider-models-slice';
 
@@ -66,6 +76,7 @@ export function* checkSingleProviderWorker(providerId: string) {
   // discards the terminal action when a newer check started meanwhile, so a
   // slow stale probe (e.g. a focus-triggered sweep that started before an
   // install finished) can never overwrite a fresher result.
+  const connection = yield* selectPrincipalConnectionContext.effect();
   const epoch = (yield* selectProviderCheckEpochMap.effect())[providerId] ?? 0;
   try {
     const result: SingleProviderResult = yield* call(
@@ -73,6 +84,7 @@ export function* checkSingleProviderWorker(providerId: string) {
       IPC_CHANNELS.PROVIDERS.CHECK_SINGLE,
       providerId,
     );
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
     if (result?.success && result.data) {
       yield* put(checkSingleProviderSuccess(providerId, result.data, epoch));
       const currentEpoch = (yield* selectProviderCheckEpochMap.effect())[providerId] ?? 0;
@@ -80,6 +92,7 @@ export function* checkSingleProviderWorker(providerId: string) {
     }
     yield* put(checkSingleProviderFailure(providerId, epoch));
   } catch (error) {
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
     logger.error(`Provider availability check failed for ${providerId}`, { error });
     yield* put(checkSingleProviderFailure(providerId, epoch));
   } finally {
@@ -88,6 +101,7 @@ export function* checkSingleProviderWorker(providerId: string) {
 }
 
 function* discoverProviders(silent: boolean) {
+  const connection = yield* selectPrincipalConnectionContext.effect();
   yield* put(providerDiscoveryStarted());
   const revision = yield* selectProviderDiscoveryRevision.effect();
   try {
@@ -95,6 +109,7 @@ function* discoverProviders(silent: boolean) {
       invoke<IpcResult<ProviderAvailabilityResult>>,
       IPC_CHANNELS.PROVIDERS.GET_AVAILABILITY,
     );
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return false;
     if (!result?.success || !result.data) {
       yield* put(
         providerDiscoverySettled(revision, {
@@ -113,6 +128,7 @@ function* discoverProviders(silent: boolean) {
     if (result.data.npx) yield* put(setNpxStatus(result.data.npx));
     return true;
   } catch (error) {
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return false;
     yield* put(
       providerDiscoverySettled(revision, {
         error: silent
@@ -130,6 +146,7 @@ function* discoverProviders(silent: boolean) {
 export function* checkAllProvidersWorker(silent = false) {
   const refreshModels = yield* selectProviderModelsRefreshPending.effect();
   const refreshRevision = yield* selectProviderModelsRefreshRevision.effect();
+  const connection = yield* selectPrincipalConnectionContext.effect();
   const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
   yield* put(setAllProvidersLoading(Object.fromEntries(providerIds.map((id) => [id, true]))));
 
@@ -149,12 +166,16 @@ export function* checkAllProvidersWorker(silent = false) {
     }
   } finally {
     const wasCancelled = yield* cancelled();
-    if (!wasCancelled) yield* put(checkAllProvidersComplete());
+    if (!wasCancelled && connection === (yield* selectPrincipalConnectionContext.effect()))
+      yield* put(checkAllProvidersComplete());
   }
 }
 
 function* handleCheckAllProvidersRequest(action: ReturnType<typeof checkAllProvidersRequested>) {
-  yield* call(checkAllProvidersWorker, action.payload[1] === true);
+  yield* race({
+    checked: call(checkAllProvidersWorker, action.payload[1] === true),
+    changed: take(hostExecutionConnectionChanged),
+  });
 }
 
 function* handleEnsureProvidersChecked(_action: ReturnType<typeof ensureProvidersChecked>) {
@@ -190,12 +211,6 @@ function* watchPanelRefresh(
   } finally {
     events.close();
   }
-}
-
-function* handleBackendStatus(payload: { status?: string }) {
-  if (payload.status !== 'connected') return;
-  yield* call(hydrateProviderCatalog);
-  yield* put(checkAllProvidersRequested());
 }
 
 function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProviderRequested>) {
@@ -291,8 +306,6 @@ export function* providerAvailabilitySaga() {
       (action) => action.payload[0],
       watchPanelRefresh,
     );
-    yield* call(hydrateProviderCatalog);
-    yield* takeEveryFromElectronChannel(IPC_CHANNELS.BACKEND.STATUS, handleBackendStatus);
     // Keep this owner alive so root teardown reaches its cleanup block.
     yield* take(providerAvailabilityStopped);
   } finally {

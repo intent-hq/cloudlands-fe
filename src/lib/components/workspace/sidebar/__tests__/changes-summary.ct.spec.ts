@@ -1,6 +1,25 @@
 import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../changes-summary.preview.svelte';
 
+test('owner metadata cannot enable branch editing before connection admission', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Preview, { props: { admittedOwner: false } });
+  const summary = page.locator('[data-branch-summary]');
+  await expect(summary).toBeVisible();
+  const working = summary.locator('[data-branch-field="working"]');
+  await working.getByRole('button').focus();
+  await page.keyboard.press('Enter');
+  await expect(working.getByRole('button')).toBeFocused();
+  await expect(working.getByRole('textbox')).toHaveCount(0);
+  const target = summary.locator('[data-branch-field="target"]');
+  await expect(target.getByRole('textbox')).toHaveAttribute('readonly', '');
+  await expect(target.getByRole('button', { name: /Select a branch/ })).toHaveCount(0);
+});
+
 for (const { width, locked } of [
   { width: 360, locked: false },
   { width: 280, locked: true },

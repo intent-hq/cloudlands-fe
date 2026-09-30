@@ -1,3 +1,5 @@
+import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
+import { BackendError } from './backend-transport-types';
 /**
  * Renderer-side entry point for the live backend transport.
  *
@@ -33,51 +35,67 @@ export async function backendRequest<T = unknown>(
   params?: unknown,
   options?: BackendRequestOptions,
 ): Promise<T> {
-  const transport = resolveBackendTransport();
-  if (needsPlacementPolicy(method, params)) {
-    const { store } = await import('$store/renderer/store');
-    // Read the strict boolean afresh without importing renderer selector declarations
-    // into the main-process compilation graph shared by this client boundary.
-    const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
-    const generation = store.state.daemonHealth.connectionGeneration;
-    const checkConnection = () => {
-      if (
-        transport !== resolveBackendTransport() ||
-        generation !== store.state.daemonHealth.connectionGeneration
-      )
-        throw new Error(m.agent_placement_backendChanged());
-    };
-    let agentNodes = false;
-    const request = async (name: string, data?: unknown): Promise<unknown> => {
-      checkConnection();
-      const result = await transport.request(name, data);
-      checkConnection();
-      if (name === 'client.hello')
-        agentNodes =
-          (result as { server?: { capabilities?: { agentNodes?: unknown } } })?.server?.capabilities
-            ?.agentNodes === 1;
-      return result;
-    };
-    do {
-      params = await prepareNodeRequest(
-        method,
-        params,
-        request,
-        remoteEnabled,
-        async (capabilities) => {
-          const { localPlacementRequested } =
-            await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-          checkConnection();
-          const placement = await store.dispatch(localPlacementRequested(capabilities));
-          checkConnection();
-          return placement;
-        },
+  try {
+    const transport = resolveBackendTransport();
+    if (needsPlacementPolicy(method, params)) {
+      const { store } = await import('$store/renderer/store');
+      // Read the strict boolean afresh without importing renderer selector declarations
+      // into the main-process compilation graph shared by this client boundary.
+      const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
+      const generation = store.state.daemonHealth.connectionGeneration;
+      const checkConnection = () => {
+        if (
+          transport !== resolveBackendTransport() ||
+          generation !== store.state.daemonHealth.connectionGeneration
+        )
+          throw new Error(m.agent_placement_backendChanged());
+      };
+      let agentNodes = false;
+      const request = async (name: string, data?: unknown): Promise<unknown> => {
+        checkConnection();
+        const result = await transport.request(name, data);
+        checkConnection();
+        if (name === 'client.hello')
+          agentNodes =
+            (result as { server?: { capabilities?: { agentNodes?: unknown } } })?.server
+              ?.capabilities?.agentNodes === 1;
+        return result;
+      };
+      do {
+        params = await prepareNodeRequest(
+          method,
+          params,
+          request,
+          remoteEnabled,
+          async (capabilities) => {
+            const { localPlacementRequested } =
+              await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
+            checkConnection();
+            const placement = await store.dispatch(localPlacementRequested(capabilities));
+            checkConnection();
+            return placement;
+          },
+        );
+        checkConnection();
+      } while (agentNodes && !remoteEnabled() && needsLocalPlacement(method, params));
+      assertRemoteRequestEnabled(method, params, remoteEnabled());
+    }
+    return await transport.request<T>(method, params, options);
+  } catch (error) {
+    if (error instanceof BackendError) {
+      const message = hostExecutionAuthorizationMessage(
+        (error.data as { executionAuthorization?: unknown } | undefined)?.executionAuthorization,
       );
-      checkConnection();
-    } while (agentNodes && !remoteEnabled() && needsLocalPlacement(method, params));
-    assertRemoteRequestEnabled(method, params, remoteEnabled());
+      if (message)
+        throw new BackendError({
+          code: error.code,
+          rpcCode: error.rpcCode,
+          data: error.data,
+          message,
+        });
+    }
+    throw error;
   }
-  return transport.request<T>(method, params, options);
 }
 
 /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */

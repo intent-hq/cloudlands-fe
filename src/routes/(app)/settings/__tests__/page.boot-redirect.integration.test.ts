@@ -6,6 +6,7 @@
  * the boot-time default, so `/settings?tab=providers` lands on Providers for
  * an administrator once daemon state loads.
  */
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace, WorkspaceId } from '$shared/types';
@@ -63,6 +64,14 @@ vi.mock('$features/external-editors/components/OpenComboButton.svelte', slotOnly
 vi.mock('$lib/components/settings/SpecialistModelOptions.svelte', slotOnly);
 
 import SettingsPage from '../+page.svelte';
+import {
+  hostMembershipChanged,
+  principalContextChanged,
+  principalReadFailed,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { parsePrincipalSnapshot, type HostRole } from '$shared/types/principal';
 
 const GUEST_SESSION: GuestSessionRecord = {
   id: 'guest-1',
@@ -117,6 +126,7 @@ function currentTab(): string | null {
 /** The window identity settles as an owner window: no host joined. */
 function settleAsOwner() {
   appStore.dispatch(guestSessionsListUnavailable());
+  admitLegacyPrincipal();
 }
 
 /** The window identity settles as a guest window bound to a joined host. */
@@ -130,6 +140,28 @@ function settleAsGuest() {
       activeId: GUEST_SESSION.id,
       windowBackendId: GUEST_SESSION.id,
     }),
+  );
+  admitLegacyPrincipal('guest');
+}
+
+function receiveRole(role: HostRole) {
+  const { context, invalidation, presentationVersion } = appStore.state.principal;
+  appStore.dispatch(
+    principalReceived(
+      { context: context!, invalidation, presentationVersion },
+      parsePrincipalSnapshot(
+        { server: { capabilities: { hostMembership: 1 } } },
+        {
+          id: 'principal',
+          isAdministrator: role === 'owner',
+          hostRole: role,
+          hostMembershipRevision: 1,
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+        },
+      )!,
+    ),
   );
 }
 
@@ -150,6 +182,92 @@ afterEach(() => {
 });
 
 describe('settings deep link through the boot window (intent-hq/intent#5514)', () => {
+  it('redirects a protected deep link after confirmed current-backend revocation', async () => {
+    settleAsOwner();
+    receiveRole('member');
+    appStore.dispatch(
+      hostMembershipChanged({
+        revision: 2,
+        principalId: 'principal',
+        action: 'removed',
+        hostRole: 'guest',
+      }),
+    );
+    renderSettings('providers');
+    await waitFor(() => expect(urlTab()).toBe('display'));
+    expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
+  });
+
+  it.each(['member', 'guest'] as const)(
+    'redirects after the current backend confirms %s',
+    async (role) => {
+      settleAsOwner();
+      appStore.dispatch(
+        principalContextChanged(selectPrincipalConnectionContext.select(appStore.state)),
+      );
+      renderSettings('providers');
+      expect(urlTab()).toBe('providers');
+      receiveRole(role);
+      await waitFor(() => expect(urlTab()).toBe('display'));
+      expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
+    },
+  );
+
+  it('preserves the deep link after malformed or failed role discovery', async () => {
+    settleAsOwner();
+    const context = selectPrincipalConnectionContext.select(appStore.state)!;
+    appStore.dispatch(principalContextChanged(context));
+    renderSettings('providers');
+    appStore.dispatch(
+      principalReadFailed(
+        { context, invalidation: 0, presentationVersion: 0 },
+        'incompatible-response',
+      ),
+    );
+    await waitFor(() => expect(appStore.state.principal.status).toBe('error'));
+    expect(urlTab()).toBe('providers');
+    expect(currentTab()).toBeNull();
+    expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
+  });
+
+  it('ignores an old backend reply and opens the requested page after the new owner is confirmed', async () => {
+    settleAsOwner();
+    const old = appStore.state.principal;
+    appStore.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'remote', windowBackendId: 'remote' }),
+    );
+    appStore.dispatch(
+      principalContextChanged(selectPrincipalConnectionContext.select(appStore.state)),
+    );
+    renderSettings('connections');
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: old.context!,
+          invalidation: old.invalidation,
+          presentationVersion: old.presentationVersion,
+        },
+        old.snapshot!,
+      ),
+    );
+    expect(urlTab()).toBe('connections');
+    expect(document.querySelector('[data-settings-tab="connections"]')).toBeNull();
+    receiveRole('owner');
+    await waitFor(() => expect(currentTab()).toBe('connections'));
+  });
+
+  it('keeps the deep link after storage settles while the connected principal is unresolved', async () => {
+    appStore.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+    );
+    appStore.dispatch(guestSessionsListUnavailable());
+    renderSettings('providers');
+    expect(urlTab()).toBe('providers');
+    expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
+    admitLegacyPrincipal();
+    await waitFor(() => expect(currentTab()).toBe('providers'));
+  });
+
   it.each(['providers', 'connections'])(
     'keeps ?tab=%s while identity is unsettled and shows it once the window settles as an owner',
     async (tab) => {
@@ -181,7 +299,7 @@ describe('settings deep link through the boot window (intent-hq/intent#5514)', (
     },
   );
 
-  it('redirects ?tab=providers to display for a settled owner window whose workspaces are all collaborator-role', async () => {
+  it('keeps owner authority when its current workspace list contains only collaborator rows', async () => {
     settleAsOwner();
     appStore.dispatch(
       replaceWorkspaceList([
@@ -193,14 +311,38 @@ describe('settings deep link through the boot window (intent-hq/intent#5514)', (
 
     renderSettings('providers');
 
-    await waitFor(() => expect(currentTab()).toBe('display'));
-    expect(urlTab()).toBe('display');
-    expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
-    expect(document.querySelector('[data-settings-tab="connections"]')).toBeNull();
+    await waitFor(() => expect(currentTab()).toBe('providers'));
+    expect(urlTab()).toBe('providers');
+    expect(document.querySelector('[data-settings-tab="providers"]')).not.toBeNull();
+    expect(document.querySelector('[data-settings-tab="connections"]')).not.toBeNull();
   });
 });
 
 describe('Guest Sessions experimental multiplayer gate', () => {
+  it('preserves a protected deep link through lab toggles while principal discovery is unresolved', async () => {
+    appStore.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+    );
+    appStore.dispatch(guestSessionsListUnavailable());
+    renderSettings('providers');
+
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    await screen.findByRole('button', { name: 'Guest Sessions' });
+    expect(urlTab()).toBe('providers');
+    expect(document.getElementById('providers')).toBeNull();
+
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull(),
+    );
+    expect(urlTab()).toBe('providers');
+    expect(document.getElementById('providers')).toBeNull();
+
+    admitLegacyPrincipal();
+    await waitFor(() => expect(currentTab()).toBe('providers'));
+    expect(document.getElementById('providers')).not.toBeNull();
+  });
+
   it.each(['guest-sessions', 'display#guest-sessions', 'display#sharing'])(
     'hides and redirects ?tab=%s when multiplayer is disabled, even before identity settles',
     async (tab) => {

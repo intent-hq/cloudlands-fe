@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { store } from '$store/renderer/store';
@@ -119,6 +120,7 @@ beforeEach(() => {
   });
   window.electronAPI = { invoke: mocks.ipc } as typeof window.electronAPI;
   store.init();
+  admitLegacyPrincipal();
   stopConnections = store.runSaga(connectionsSaga);
   stopSettings = store.runSaga(settingsHydrationSaga);
 });

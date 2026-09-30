@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,7 +53,8 @@ import { agentAttentionToastId } from '$features/agent/agent-attention-toast-ser
 import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { store as appStore } from '$store/renderer/store';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { AgentStatus } from '$shared/types';
 import {
   refreshWorkspaceSubscriptionEntriesRequested,
@@ -161,28 +163,37 @@ const GUEST_SESSION: GuestSessionRecord = {
  * backend id is a joined host).
  */
 function windowIdentity(guest = false) {
-  return {
-    workspace: { ...workspaceInitialState, hasLoaded: true },
-    daemonHealth: { ...daemonHealthInitialState },
-    connections: guest
-      ? connectionsReducer(
-          connectionsInitialState,
-          connectionsListReceived({
-            connections: [],
-            activeId: GUEST_SESSION.id,
-            windowBackendId: GUEST_SESSION.id,
-          }),
-        )
-      : connectionsInitialState,
-    guestSessions: guestSessionsReducer(
-      guestSessionsInitialState,
-      guestSessionsListReceived({
-        sessions: guest ? [GUEST_SESSION] : [],
-        openIds: [],
-        connectedIds: [],
-      }),
-    ),
-  };
+  return withLegacyPrincipal(
+    {
+      workspace: {
+        ...workspaceInitialState,
+        hasLoaded: true,
+        workspaces: createCollection('id', [
+          { id: WS, myRole: guest ? 'collaborator' : 'owner' } as Workspace,
+        ]),
+      },
+      daemonHealth: { ...daemonHealthInitialState },
+      connections: guest
+        ? connectionsReducer(
+            connectionsInitialState,
+            connectionsListReceived({
+              connections: [],
+              activeId: GUEST_SESSION.id,
+              windowBackendId: GUEST_SESSION.id,
+            }),
+          )
+        : connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({
+          sessions: guest ? [GUEST_SESSION] : [],
+          openIds: [],
+          connectedIds: [],
+        }),
+      ),
+    },
+    guest ? 'guest' : 'owner',
+  );
 }
 
 function start(

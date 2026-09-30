@@ -66,6 +66,8 @@ export interface InviteProgressHandle {
 export interface InviteProgressDeps {
   /** Window to show the dialog in (focused window, else main window). */
   getParentWindow(): BrowserWindow | null;
+  /** Explicit recovery action; only admission requests may receive it. */
+  onRetry?(): void;
 }
 
 function defaultGetParentWindow(): BrowserWindow | null {
@@ -79,8 +81,10 @@ function defaultGetParentWindow(): BrowserWindow | null {
 /** The renderer request main is currently showing. */
 interface PendingRendererRequest {
   requestId: string;
+  contentsId: number;
   ack: () => void;
   cancel: () => void;
+  retry?: () => void;
 }
 
 let pendingRendererRequest: PendingRendererRequest | null = null;
@@ -98,8 +102,11 @@ function registerRendererHandlers(): void {
     INVITE_PROGRESS_CHANNELS.ACK,
     createValidatedHandler(
       InviteProgressAckSchema,
-      async (_event, payload: InviteProgressAckPayload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload: InviteProgressAckPayload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.contentsId === event.sender?.id
+        ) {
           pendingRendererRequest.ack();
         }
         return { success: true };
@@ -111,12 +118,16 @@ function registerRendererHandlers(): void {
     INVITE_PROGRESS_CHANNELS.RESPONSE,
     createValidatedHandler(
       InviteProgressResponseSchema,
-      async (_event, payload: InviteProgressResponsePayload) => {
-        if (pendingRendererRequest?.requestId === payload.requestId) {
+      async (event, payload: InviteProgressResponsePayload) => {
+        if (
+          pendingRendererRequest?.requestId === payload.requestId &&
+          pendingRendererRequest.contentsId === event.sender?.id
+        ) {
           // A valid response proves the modal mounted — treat it as an
           // implicit ack so a lost ack invoke cannot abandon an answered modal.
           pendingRendererRequest.ack();
-          pendingRendererRequest.cancel();
+          if (payload.action === 'cancel') pendingRendererRequest.cancel();
+          else pendingRendererRequest.retry?.();
         }
         return { success: true };
       },
@@ -173,8 +184,10 @@ export function showInviteProgress(
   });
   const request: PendingRendererRequest = {
     requestId,
+    contentsId: contents.id,
     ack: ackReceived,
     cancel: settleCancelled,
+    retry: payload.phase === 'admission' ? deps.onRetry : undefined,
   };
   pendingRendererRequest = request;
 

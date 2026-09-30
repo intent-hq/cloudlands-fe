@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
@@ -333,6 +334,7 @@ providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload:
   };
 });
 
+providerSettingsReducer.with(hostExecutionConnectionChanged, () => initialState);
 // Keep confirmed daemon state separate from queued local intent. An older echo or
 // rejected write must never retire a newer click for the same provider.
 providerSettingsReducer.with(fastModeHydrationStarted, (state) => ({

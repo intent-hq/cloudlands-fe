@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  */
@@ -12,6 +13,7 @@ import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/s
 let stop: () => void;
 beforeEach(() => {
   store.init();
+  admitLegacyPrincipal();
   stop = store.runSaga(settingsFormSaga);
 });
 afterEach(() => {

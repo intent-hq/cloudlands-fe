@@ -288,7 +288,13 @@ describe('keychain-sync lifecycle triggers', () => {
   });
 
   it('runs the guest pass after the owner pass with its own adapter and status isolation', async () => {
-    const guestAdapter = { list: vi.fn(async () => []), applyRemote: vi.fn() };
+    const guestAdapter = {
+      read: vi.fn(async () => ({ items: [], pendingPairings: [] })),
+      apply: vi.fn(),
+      remember: vi.fn(),
+      authenticate: vi.fn(),
+      admitPairing: vi.fn(),
+    };
     const onGuestRemoteApplied = vi.fn();
     const onRemoteApplied = vi.fn();
     const order: string[] = [];

@@ -34,12 +34,18 @@
 
 import { clearGithubUserSearch } from '../../github-user-search/github-user-search-slice';
 import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
-import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
-import { forgeAuthClient } from '$features/forge-auth/renderer/forge-auth.client';
+import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import {
-  captureIntegrationContext,
-  integrationReconnectSettled,
-} from '$features/integrations-request-context';
+  selectGitLabAuthIsConfigured,
+  selectGitLabStatusReady,
+} from '../../gitlab-auth/gitlab-auth-selectors';
+import { selectHostExecutionContext } from '../../host-execution/host-execution-selectors';
+import {
+  selectCanAdministerHost,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
+import { selectWorkspaceManagementDenied } from '../../workspace/workspace-selectors';
+import { integrationReconnectSettled } from '$features/integrations-request-context';
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -191,8 +197,10 @@ function readShareData(workspaceId: string): {
 function* manageableTarget(): SagaGenerator<WorkspaceShareTarget | null> {
   const target = yield* selectShareTarget.effect();
   if (!target) return null;
-  if (yield* selectShareCanManage.effect()) return target;
-  yield* put(shareAccessWithheld({ target }));
+  if (yield* selectShareCanManage.effect())
+    return { ...target, authority: yield* selectPrincipalActionContext.effect() };
+  if (yield* selectWorkspaceManagementDenied.effect(target.workspaceId))
+    yield* put(shareAccessWithheld({ target }));
   return null;
 }
 
@@ -206,7 +214,9 @@ function* stillTargets(target: WorkspaceShareTarget): SagaGenerator<boolean> {
   return (
     current !== null &&
     current.workspaceId === target.workspaceId &&
-    current.session === target.session
+    current.session === target.session &&
+    (yield* selectShareCanManage.effect()) &&
+    target.authority === (yield* selectPrincipalActionContext.effect())
   );
 }
 
@@ -227,6 +237,7 @@ function* loadShareData(): SagaGenerator<void> {
       guestCount,
       guestLimit,
     } = yield* call(() => read.result);
+    if (!(yield* stillTargets(target))) return;
     const invites = yield* call(vaultInviteLinks, rows);
     yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
     if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
@@ -273,6 +284,18 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   const request = yield* selectShareCreateRequest.effect();
   const [{ pinLogin, pin }] = action.payload;
   const requestedPin = pinLogin.trim();
+  if (
+    requestedPin &&
+    pin?.provider === 'gitlab' &&
+    (!(yield* selectCanAdministerHost.effect()) ||
+      !(yield* selectGitLabStatusReady.effect()) ||
+      pin.host !== (yield* selectGitLabAuthHost.effect()))
+  ) {
+    yield* put(
+      shareInviteCreateFailed({ target, request, error: m.workspace_share_createFailed_error() }),
+    );
+    return;
+  }
   const outcome = yield* call(workspaceSharingClient.createInvite, target.workspaceId, {
     pinLogin: requestedPin,
     pin,
@@ -468,23 +491,23 @@ function* refreshOnMembershipChange(
 function* loadIntegrationAuth(
   action: ReturnType<typeof shareIntegrationAuthRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, host] = action.payload;
-  const target = yield* selectShareTarget.effect();
+  const [workspaceId] = action.payload;
+  const target = yield* manageableTarget();
   if (!target || target.workspaceId !== workspaceId) return;
-  const context = captureIntegrationContext(workspaceId);
-  const { github, gitlab } = yield* all({
-    github: call([githubAuthClient, githubAuthClient.isAuthenticated], workspaceId),
-    gitlab: call(
-      [forgeAuthClient, forgeAuthClient.getStatus],
-      'gitlab' as const,
-      host,
-      workspaceId,
-    ),
-  });
-  if (context.isCurrent())
-    yield* put(
-      shareIntegrationAuthLoaded(target, { github, gitlab: gitlab?.isConfigured === true }),
-    );
+  // No owner auth reads from a member/guest Share. The owner admission owns
+  // canonical status; members use only the existing allowlisted execution projection.
+  const owner = yield* selectCanAdministerHost.effect();
+  const execution = yield* selectHostExecutionContext.effect();
+  const github = owner
+    ? yield* selectGitHubAuthIsAuthenticated.effect()
+    : execution?.repositoryConnections.some((r) => r.provider === 'github' && r.configured) ===
+      true;
+  const gitlab =
+    owner &&
+    (yield* selectGitLabStatusReady.effect()) &&
+    (yield* selectGitLabAuthIsConfigured.effect());
+  if (yield* stillTargets(target))
+    yield* put(shareIntegrationAuthLoaded(target, { github, gitlab }));
 }
 
 export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {

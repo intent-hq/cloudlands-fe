@@ -122,18 +122,12 @@ export const githubAuthClient = {
    * List GitHub repositories for the authenticated user
    */
   async listRepos(page?: number, workspaceId?: string): Promise<GithubRepo[]> {
-    try {
-      const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
-        GITHUB_AUTH_CHANNELS.LIST_REPOS,
-        { page, ...(workspaceId === undefined ? {} : { workspaceId }) },
-      );
-      if (result.success && result.data) {
-        return result.data;
-      }
-      return [];
-    } catch {
-      return [];
-    }
+    const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
+      GITHUB_AUTH_CHANNELS.LIST_REPOS,
+      { page, ...(workspaceId === undefined ? {} : { workspaceId }) },
+    );
+    if (!result.success) throw new Error(result.error || 'Repository discovery failed'); // i18n-ignore (wire-error fallback)
+    return result.data ?? [];
   },
 
   /**

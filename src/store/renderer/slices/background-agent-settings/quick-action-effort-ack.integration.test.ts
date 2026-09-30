@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, expect, it, vi } from 'vitest';
 
 const { notifyError } = vi.hoisted(() => ({ notifyError: vi.fn() }));
@@ -79,6 +80,7 @@ function assertBareModels(changes: AppSettingChange[]) {
 
 function start() {
   dispose = store.init();
+  admitLegacyPrincipal();
   for (const saga of [
     settingsHydrationSaga,
     providerSettingsSaga,
