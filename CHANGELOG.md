@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.190.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.0...v2.190.1) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* load previous user messages from unloaded history ([#3001](https://github.com/intent-hq/cloudlands-fe/issues/3001)) ([9b0fc87](https://github.com/intent-hq/cloudlands-fe/commit/9b0fc8750afe538b3be8b5c8f4b5adbb228a4058))
+* verify locale completeness for affected changes ([#6293](https://github.com/intent-hq/cloudlands-fe/issues/6293)) ([#2999](https://github.com/intent-hq/cloudlands-fe/issues/2999)) ([eac3ef4](https://github.com/intent-hq/cloudlands-fe/commit/eac3ef42ab8ef9df40ef2571f277f1cde9d54a0e))
+
 ## [2.190.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.2...v2.190.0) (2026-09-29)
 
 
