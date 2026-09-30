@@ -35,10 +35,10 @@ export async function backendRequest<T = unknown>(
 ): Promise<T> {
   const transport = resolveBackendTransport();
   if (needsPlacementPolicy(method, params)) {
-    const [{ store }, { selectLabsRemoteAgentsEnabled }] = await Promise.all([
-      import('$store/renderer/store'),
-      import('$store/renderer/slices/user-preferences/user-preferences-selectors'),
-    ]);
+    const { store } = await import('$store/renderer/store');
+    // Read the strict boolean afresh without importing renderer selector declarations
+    // into the main-process compilation graph shared by this client boundary.
+    const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
     const generation = store.state.daemonHealth.connectionGeneration;
     const checkConnection = () => {
       if (
@@ -63,7 +63,7 @@ export async function backendRequest<T = unknown>(
         method,
         params,
         request,
-        () => selectLabsRemoteAgentsEnabled.select(store.state),
+        remoteEnabled,
         async (capabilities) => {
           const { localPlacementRequested } =
             await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
@@ -74,12 +74,8 @@ export async function backendRequest<T = unknown>(
         },
       );
       checkConnection();
-    } while (
-      agentNodes &&
-      !selectLabsRemoteAgentsEnabled.select(store.state) &&
-      needsLocalPlacement(method, params)
-    );
-    assertRemoteRequestEnabled(method, params, selectLabsRemoteAgentsEnabled.select(store.state));
+    } while (agentNodes && !remoteEnabled() && needsLocalPlacement(method, params));
+    assertRemoteRequestEnabled(method, params, remoteEnabled());
   }
   return transport.request<T>(method, params, options);
 }

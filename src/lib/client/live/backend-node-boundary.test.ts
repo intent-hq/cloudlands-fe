@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
-  enabled: false,
-  state: { daemonHealth: { connectionGeneration: 0 } },
+  state: {
+    daemonHealth: { connectionGeneration: 0 },
+    userPreferences: { labsRemoteAgentsEnabled: false as unknown },
+  },
   choose: vi.fn(),
   request: vi.fn(),
   transport: {} as { request: ReturnType<typeof vi.fn> },
@@ -15,15 +17,12 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   localPlacementRequested: (caps: unknown) => caps,
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectLabsRemoteAgentsEnabled: { select: () => fixture.enabled },
-}));
 import { setLocale } from '$shared/paraglide/runtime.js';
 afterEach(() => setLocale('en', { reload: false }));
 import { backendRequest } from './backend-transport';
 
 beforeEach(() => {
-  fixture.enabled = false;
+  fixture.state.userPreferences.labsRemoteAgentsEnabled = false;
   fixture.state.daemonHealth.connectionGeneration = 0;
   fixture.request.mockReset();
   fixture.choose.mockReset().mockRejectedValue(new Error('cancelled'));
@@ -35,6 +34,24 @@ beforeEach(() => {
   });
 });
 describe('renderer final wire boundary', () => {
+  it.each([undefined, null, false, 0, 1, 'true', {}])(
+    'rejects non-boolean remote opt-in: %s',
+    async (value) => {
+      fixture.state.userPreferences.labsRemoteAgentsEnabled = value;
+      await expect(
+        backendRequest('agent.create', {
+          placement: { target: 'remote', checkout: 'isolated' },
+        }),
+      ).rejects.toThrow();
+      expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+    },
+  );
+  it('allows a remote launch only with the current true preference', async () => {
+    fixture.state.userPreferences.labsRemoteAgentsEnabled = true;
+    const input = { placement: { target: 'remote', checkout: 'isolated' } };
+    await backendRequest('agent.create', input);
+    expect(fixture.request).toHaveBeenLastCalledWith('agent.create', input, undefined);
+  });
   it('sends the canonical local request without altering workspace checkout selection', async () => {
     const params = {
       checkoutMode: 'cow',
@@ -56,7 +73,7 @@ describe('renderer final wire boundary', () => {
     expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
   });
   it('checks fresh Labs state after deferred capability discovery', async () => {
-    fixture.enabled = true;
+    fixture.state.userPreferences.labsRemoteAgentsEnabled = true;
     let resolve: (value: unknown) => void = () => {};
     const pending = new Promise((done) => {
       resolve = done;
@@ -67,7 +84,7 @@ describe('renderer final wire boundary', () => {
       placement: { target: 'remote', checkout: 'isolated' },
     });
     await vi.waitFor(() => expect(fixture.request).toHaveBeenCalledWith('client.hello', {}));
-    fixture.enabled = false;
+    fixture.state.userPreferences.labsRemoteAgentsEnabled = false;
     resolve({ server: { capabilities: { agentNodes: 1 } } });
     await expect(creation).rejects.toThrow();
     expect(fixture.request).toHaveBeenCalledTimes(1);
