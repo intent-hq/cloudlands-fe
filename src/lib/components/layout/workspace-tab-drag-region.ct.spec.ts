@@ -125,11 +125,7 @@ test('non-overflowing tabs keep their controls inside the bounded no-drag region
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1200, height: 400 });
   const component = await mount(WorkspaceTabDragRegionHarness);
-  const titlebar = component.locator('.window-title-bar');
-  // Initial tab/sidebar layout can outlast the capture helper's two frames.
-  // Wait for the same no-overflow contract before exercising the settled controls.
-  await expect.poll(async () => (await dragRegionGeometry(titlebar)).overflow).toBe(false);
-  const geometry = await dragRegionGeometry(titlebar);
+  const geometry = await dragRegionGeometry(component.locator('.window-title-bar'));
   expect(geometry.overflow).toBe(false);
   expect(geometry.scrollerRegion).toBe('no-drag');
   expect(geometry.descendantRegions).toEqual(['none']);
