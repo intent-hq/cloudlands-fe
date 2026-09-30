@@ -6834,5 +6834,9 @@
   "agent_hub_blocked": "Merge needs attention: {detail}",
   "agent_placement_chooseLocal": "Choose where to run this agent",
   "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
-  "agent_placement_cancelled": "Agent launch cancelled."
+  "agent_placement_cancelled": "Agent launch cancelled.",
+  "agent_placement_retiredIsolation": "Per-agent CoW isolation is retired. Choose node placement.",
+  "agent_placement_incompatibleIsolation": "Placement cannot be combined with legacy isolation.",
+  "agent_placement_specialistUnavailable": "The selected specialist is unavailable. Select a specialist again.",
+  "agent_placement_backendChanged": "Backend changed while selecting agent placement. Try again."
 }

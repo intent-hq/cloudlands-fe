@@ -6834,5 +6834,9 @@
   "agent_hub_blocked": "La fusión requiere atención: {detail}",
   "agent_placement_chooseLocal": "Elige dónde ejecutar este agente",
   "agent_placement_chooseLocalDescription": "Los agentes remotos están desactivados en Labs. Elige una copia de trabajo local para este inicio o cancela para cambiar los ajustes de Labs. Los agentes remotos existentes siguen disponibles.",
-  "agent_placement_cancelled": "Inicio del agente cancelado."
+  "agent_placement_cancelled": "Inicio del agente cancelado.",
+  "agent_placement_retiredIsolation": "El aislamiento CoW por agente ya no está disponible. Elige la ubicación del nodo.",
+  "agent_placement_incompatibleIsolation": "La ubicación no se puede combinar con el aislamiento anterior.",
+  "agent_placement_specialistUnavailable": "El especialista seleccionado no está disponible. Vuelve a seleccionar un especialista.",
+  "agent_placement_backendChanged": "El backend cambió mientras seleccionabas la ubicación del agente. Inténtalo de nuevo."
 }

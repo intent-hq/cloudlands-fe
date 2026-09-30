@@ -6834,5 +6834,9 @@
   "agent_hub_blocked": "合并需要处理：{detail}",
   "agent_placement_chooseLocal": "选择此代理的运行位置",
   "agent_placement_chooseLocalDescription": "Labs 中的远程代理已关闭。请选择本次启动使用的本地检出副本，或取消以更改 Labs 设置。现有远程代理仍可使用。",
-  "agent_placement_cancelled": "代理启动已取消。"
+  "agent_placement_cancelled": "代理启动已取消。",
+  "agent_placement_retiredIsolation": "已停止支持单个代理的 CoW 隔离。请选择节点部署位置。",
+  "agent_placement_incompatibleIsolation": "部署位置不能与旧版隔离设置同时使用。",
+  "agent_placement_specialistUnavailable": "所选专家不可用。请重新选择专家。",
+  "agent_placement_backendChanged": "选择代理部署位置时后端发生了变化。请重试。"
 }

@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareNodeRequest } from './node-placement-policy';
+import { setLocale } from '$shared/paraglide/runtime.js';
+afterEach(() => setLocale('en', { reload: false }));
 const capabilities = { agentNodes: 1, localNodeIsolation: 1 };
 function fixture(defaultPlacement?: unknown, runsOn?: unknown) {
   return vi.fn(async (method: string): Promise<unknown> => {
@@ -11,6 +13,24 @@ function fixture(defaultPlacement?: unknown, runsOn?: unknown) {
   });
 }
 describe('creation boundary policy', () => {
+  it('localizes retired, incompatible and unavailable-specialist errors', async () => {
+    setLocale('fr', { reload: false });
+    await expect(
+      prepareNodeRequest('agent.create', { isolation: 'cow' }, fixture(), () => false),
+    ).rejects.toThrow('L’isolation CoW par agent n’est plus disponible.');
+    await expect(
+      prepareNodeRequest(
+        'agent.create',
+        { isolation: 'worktree', placement: { target: 'local', checkout: 'shared' } },
+        fixture(),
+        () => false,
+      ),
+    ).rejects.toThrow('Le placement ne peut pas être combiné');
+    const request = vi.fn(async () => ({ server: { capabilities } }));
+    await expect(
+      prepareNodeRequest('agent.create', { specialist: 'missing' }, request, () => false),
+    ).rejects.toThrow('Le spécialiste sélectionné est indisponible.');
+  });
   it('rejects an inherited remote workspace default with Labs off', async () => {
     const request = fixture({ target: 'remote', checkout: 'isolated' });
     await expect(

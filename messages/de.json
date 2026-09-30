@@ -6834,5 +6834,9 @@
   "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
   "agent_placement_chooseLocal": "Ausführungsort für diesen Agenten wählen",
   "agent_placement_chooseLocalDescription": "Remote-Agenten sind in Labs deaktiviert. Wähle einen lokalen Checkout für diesen Start oder brich ab, um die Labs-Einstellungen zu ändern. Bestehende Remote-Agenten bleiben verfügbar.",
-  "agent_placement_cancelled": "Agentenstart abgebrochen."
+  "agent_placement_cancelled": "Agentenstart abgebrochen.",
+  "agent_placement_retiredIsolation": "CoW-Isolation für einzelne Agenten wird nicht mehr unterstützt. Wähle eine Knotenplatzierung.",
+  "agent_placement_incompatibleIsolation": "Die Platzierung kann nicht mit der bisherigen Isolation kombiniert werden.",
+  "agent_placement_specialistUnavailable": "Der ausgewählte Spezialist ist nicht verfügbar. Wähle erneut einen Spezialisten aus.",
+  "agent_placement_backendChanged": "Das Backend hat sich während der Auswahl der Agentenplatzierung geändert. Versuche es erneut."
 }

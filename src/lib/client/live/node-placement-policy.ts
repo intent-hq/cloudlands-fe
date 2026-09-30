@@ -78,10 +78,9 @@ export async function prepareNodeRequest(
   const key = nestedKey(method);
   if (key === 'initialAgent' && !params[key]) return input;
   const creation = key ? object(params[key]) : params;
-  if (creation.isolation === 'cow')
-    throw new Error('Per-agent CoW isolation is retired. Choose node placement.');
+  if (creation.isolation === 'cow') throw new Error(m.agent_placement_retiredIsolation());
   if (creation.placement !== undefined && creation.isolation !== undefined)
-    throw new Error('Placement cannot be combined with legacy isolation.');
+    throw new Error(m.agent_placement_incompatibleIsolation());
   let placement = creation.placement;
   let capabilities = await client.capabilities();
   let readDefaults = false;
@@ -115,8 +114,7 @@ export async function prepareNodeRequest(
           ...(workspacePath ? { workspacePath } : {}),
         }),
       );
-      if (!result.specialist)
-        throw new Error('The selected specialist is unavailable. Select a specialist again.');
+      if (!result.specialist) throw new Error(m.agent_placement_specialistUnavailable());
       placement = object(result.specialist).runsOn;
     }
     if (placement == null && typeof workspaceId === 'string') {
@@ -149,8 +147,7 @@ export async function prepareNodeRequest(
     checked = await client.preparePlacement(checked);
   }
   if (!checked) return input;
-  if (creation.isolation !== undefined)
-    throw new Error('Placement cannot be combined with legacy isolation.');
+  if (creation.isolation !== undefined) throw new Error(m.agent_placement_incompatibleIsolation());
   const resolved = { ...creation, placement: checked };
   return key ? { ...params, [key]: resolved } : resolved;
 }

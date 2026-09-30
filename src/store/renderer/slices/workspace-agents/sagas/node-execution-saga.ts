@@ -3,6 +3,7 @@ import {
   call,
   put,
   takeLeading,
+  takeLatest,
   actionChannel,
   take,
   fork,
@@ -145,7 +146,7 @@ function* chooseLocalPlacements(): SagaGenerator<void> {
 export function* nodeExecutionSaga(): SagaGenerator<void> {
   yield* all([
     fork(chooseLocalPlacements),
-    takeLeading(nodeCapabilitiesRequested, loadCapabilities),
+    takeLatest(nodeCapabilitiesRequested, loadCapabilities),
     takeLeading(agentPlacementSaveRequested, savePlacement),
     takeLeading(agentHubActionRequested, manageHub),
   ]);

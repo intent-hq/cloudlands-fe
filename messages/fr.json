@@ -6834,5 +6834,9 @@
   "agent_hub_blocked": "La fusion nécessite votre attention : {detail}",
   "agent_placement_chooseLocal": "Choisir où exécuter cet agent",
   "agent_placement_chooseLocalDescription": "Les agents distants sont désactivés dans Labs. Choisissez une copie de travail locale pour ce lancement, ou annulez pour modifier les paramètres Labs. Les agents distants existants restent disponibles.",
-  "agent_placement_cancelled": "Lancement de l’agent annulé."
+  "agent_placement_cancelled": "Lancement de l’agent annulé.",
+  "agent_placement_retiredIsolation": "L’isolation CoW par agent n’est plus disponible. Choisissez un placement sur un nœud.",
+  "agent_placement_incompatibleIsolation": "Le placement ne peut pas être combiné avec l’ancien mode d’isolation.",
+  "agent_placement_specialistUnavailable": "Le spécialiste sélectionné est indisponible. Sélectionnez à nouveau un spécialiste.",
+  "agent_placement_backendChanged": "Le backend a changé pendant la sélection du placement de l’agent. Réessayez."
 }

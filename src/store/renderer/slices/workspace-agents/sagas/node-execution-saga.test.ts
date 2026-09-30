@@ -19,6 +19,7 @@ import {
 import { store } from '$store/renderer/store';
 import { appClient } from '$lib/client';
 import { bulkUpsertSessions, removeSession } from '../../agent-session/agent-session-slice';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { setLabsRemoteAgentsEnabled } from '../../user-preferences/user-preferences-slice';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -149,6 +150,45 @@ describe('node execution actions', () => {
         localNodeIsolation: false,
       }),
     );
+  });
+  it('refreshes the new connection while an old hello remains pending', async () => {
+    const backend = installMockBackend();
+    let resolveOld!: (value: unknown) => void;
+    const oldResponse = new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+    let helloCount = 0;
+    backend.onRequest('client.hello', () =>
+      ++helloCount === 1
+        ? oldResponse
+        : {
+            server: { capabilities: { agentNodes: 1, localNodeIsolation: 1 } },
+          },
+    );
+    const channel = start();
+    channel.put(nodeCapabilitiesRequested());
+    await vi.waitFor(() => expect(helloCount).toBe(1));
+    store.dispatch(connectionStatusChanged('connecting'));
+    const generation = store.state.daemonHealth.connectionGeneration;
+    channel.put(nodeCapabilitiesRequested());
+    try {
+      await vi.waitFor(() =>
+        expect(selectNodeCapabilities.select(store.state)).toEqual({
+          agentNodes: true,
+          localNodeIsolation: true,
+        }),
+      );
+      expect(helloCount).toBe(2);
+      resolveOld({ server: { capabilities: {} } });
+      await oldResponse;
+      await Promise.resolve();
+      expect(store.state.workspaceAgents.nodeSupport).toEqual({
+        generation,
+        capabilities: { agentNodes: true, localNodeIsolation: true },
+      });
+    } finally {
+      resolveOld({ server: { capabilities: {} } });
+    }
   });
   it('persists a local isolated workspace default and adopts the server response', async () => {
     const backend = installMockBackend();

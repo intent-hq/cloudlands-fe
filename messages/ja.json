@@ -6834,5 +6834,9 @@
   "agent_hub_blocked": "マージの確認が必要です：{detail}",
   "agent_placement_chooseLocal": "このエージェントの実行場所を選択",
   "agent_placement_chooseLocalDescription": "Labs でリモートエージェントが無効になっています。今回の起動に使うローカルチェックアウトを選択するか、キャンセルして Labs の設定を変更してください。既存のリモートエージェントは引き続き利用できます。",
-  "agent_placement_cancelled": "エージェントの起動をキャンセルしました。"
+  "agent_placement_cancelled": "エージェントの起動をキャンセルしました。",
+  "agent_placement_retiredIsolation": "エージェントごとのCoW分離は廃止されました。ノードの配置を選択してください。",
+  "agent_placement_incompatibleIsolation": "配置と従来の分離設定を併用することはできません。",
+  "agent_placement_specialistUnavailable": "選択したスペシャリストは利用できません。スペシャリストを選択し直してください。",
+  "agent_placement_backendChanged": "エージェントの配置を選択中にバックエンドが変更されました。もう一度お試しください。"
 }

@@ -7,6 +7,7 @@
  * (`electron-ipc-transport.ts`) when `window.electronAPI` exists. See
  * `backend-transport-types.ts` for the transport interface.
  */
+import { m } from '$shared/paraglide/messages.js';
 import {
   assertRemoteRequestEnabled,
   needsPlacementPolicy,
@@ -44,7 +45,7 @@ export async function backendRequest<T = unknown>(
         transport !== resolveBackendTransport() ||
         generation !== store.state.daemonHealth.connectionGeneration
       )
-        throw new Error('Backend changed while selecting agent placement. Try again.');
+        throw new Error(m.agent_placement_backendChanged());
     };
     let agentNodes = false;
     const request = async (name: string, data?: unknown): Promise<unknown> => {

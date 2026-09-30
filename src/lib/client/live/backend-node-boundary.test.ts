@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   enabled: false,
   state: { daemonHealth: { connectionGeneration: 0 } },
@@ -18,6 +18,8 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectLabsRemoteAgentsEnabled: { select: () => fixture.enabled },
 }));
+import { setLocale } from '$shared/paraglide/runtime.js';
+afterEach(() => setLocale('en', { reload: false }));
 import { backendRequest } from './backend-transport';
 
 beforeEach(() => {
@@ -70,7 +72,11 @@ describe('renderer final wire boundary', () => {
     await expect(creation).rejects.toThrow();
     expect(fixture.request).toHaveBeenCalledTimes(1);
   });
-  it('rejects a reconnect that reuses the same transport during preflight', async () => {
+  it.each([
+    ['en', 'Backend changed'],
+    ['fr', 'Le backend a changé'],
+  ] as const)('rejects a reconnect during preflight in %s', async (locale, message) => {
+    setLocale(locale, { reload: false });
     let resolve!: (value: unknown) => void;
     const pending = new Promise((done) => {
       resolve = done;
@@ -82,7 +88,7 @@ describe('renderer final wire boundary', () => {
     await vi.waitFor(() => expect(fixture.request).toHaveBeenCalled());
     fixture.state.daemonHealth.connectionGeneration++;
     resolve({ server: { capabilities: { agentNodes: 1 } } });
-    await expect(creation).rejects.toThrow(/changed/);
+    await expect(creation).rejects.toThrow(message);
     expect(fixture.request).toHaveBeenCalledTimes(1);
   });
   it('uses the explicit local answer for an unresolved launch', async () => {
