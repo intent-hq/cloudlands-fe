@@ -127,7 +127,10 @@ export const selectCanManageHostedWorkspace = store.createSelector(
  */
 export const selectHostedWorkspaces = store.createSelector((state): Workspace[] =>
   getItems(state.workspace.workspaces).filter(
-    (ws) => selectCanManageHostedWorkspace.select(state, ws.id) && (ws.memberCount ?? 1) > 1,
+    (ws) =>
+      selectCollaborationReady.select(state) &&
+      selectCanManageWorkspace.select(state, ws.id) &&
+      (ws.memberCount ?? 1) > 1,
   ),
 );
 

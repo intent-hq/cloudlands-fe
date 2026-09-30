@@ -173,9 +173,18 @@ function start(
     for (const listener of listeners) listener();
     return action;
   };
+  // Preserve Redux read identity while applying the admitted-principal fixture.
+  let projectedFrom: typeof state | undefined;
+  let admitted: StoreState;
+  const getState = () => {
+    if (projectedFrom !== state) {
+      admitted = withLegacyPrincipal(state);
+      projectedFrom = state;
+    }
+    return options.project ? options.project(admitted) : admitted;
+  };
   const reduxStore = {
-    getState: () =>
-      options.project ? options.project(withLegacyPrincipal(state)) : withLegacyPrincipal(state),
+    getState,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -187,8 +196,7 @@ function start(
   );
   return {
     dispatch,
-    getState: () =>
-      options.project ? options.project(withLegacyPrincipal(state)) : withLegacyPrincipal(state),
+    getState,
     task,
     actions,
   };
