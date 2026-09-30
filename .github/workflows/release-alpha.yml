@@ -133,7 +133,22 @@ jobs:
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
     needs: resolve
-    runs-on: macos-15-xlarge
+    name: macOS (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            label: Apple Silicon
+            runner: macos-15-xlarge
+            intentd_target: aarch64-apple-darwin
+          - arch: x64
+            label: Intel
+            runner: macos-15-large
+            intentd_target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    env:
+      INTENTD_TARGET: ${{ matrix.intentd_target }}
     timeout-minutes: 90
 
     steps:
@@ -179,6 +194,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '22'
+
+      - name: Verify native Mac runner
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e 'if (process.platform !== "darwin" || process.arch !== process.env.EXPECTED_ARCH) throw new Error("Mac runner architecture mismatch"); console.log(process.platform, process.arch)'
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -263,7 +283,7 @@ jobs:
       - name: Generate i18n catalog
         run: pnpm run generate:i18n
 
-      # dist:mac runs scripts/fetch-tailcat.cjs --targets=darwin-arm64, which
+      # dist:mac stages tailcat for the matrix CPU, which
       # builds the tailcat tunnel client from source (tailcat publishes no
       # prebuilt macOS assets) and needs a Go toolchain — the hosted
       # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
@@ -277,7 +297,7 @@ jobs:
           cache: false
 
       - name: Build and package macOS app
-        run: pnpm run dist:mac
+        run: pnpm run dist:mac --${{ matrix.arch }} --publish never
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
@@ -320,6 +340,9 @@ jobs:
           REQUIRE_SHARED_KEYCHAIN_GROUP: '1'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify packaged Mac build
+        run: bash scripts/verify-macos-build.sh "${{ matrix.arch }}" "true"
+
       - name: List built artifacts
         run: |
           echo "Built artifacts:"
@@ -328,7 +351,7 @@ jobs:
       - name: Upload macOS release assets
         uses: actions/upload-artifact@v7
         with:
-          name: release-macos
+          name: release-macos-${{ matrix.arch }}
           path: |
             dist-electron/*.dmg
             dist-electron/*.zip
@@ -697,12 +720,20 @@ jobs:
           echo "sha=${FE_SHA}" >> "$GITHUB_OUTPUT"
           echo "Captured fe SHA (tag commit): ${FE_SHA}"
 
-      # The release-notes and version-pin scripts used below are
-      # dependency-free (node builtins only), so no pnpm install is needed.
+      # Feed assembly uses the updater's locked YAML and semver dependencies.
+      # Ignore install hooks: publishing never rebuilds native app dependencies.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '22'
+
+      - name: Install feed assembly dependencies
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
 
       - name: Read pinned intentd version
         id: intentd_pin
@@ -719,8 +750,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
-          path: dist-electron
-          merge-multiple: true
+          path: release-downloads
+          merge-multiple: false
+
+      - name: Assemble release assets
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: node scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
 
       - name: Verify collected release assets
         run: |
@@ -1054,7 +1090,8 @@ jobs:
           # Derive actual artifact filenames from dist-electron and URL-encode
           # them (nsis installers contain "Setup"; portable exes do not)
           encode() { printf '%s' "$1" | jq -sRr @uri; }
-          DMG_FILE=$(find dist-electron -maxdepth 1 -name "*.dmg" -exec basename {} \; -quit)
+          DMG_ARM64=$(find dist-electron -maxdepth 1 -name "*-arm64.dmg" -exec basename {} \; -quit)
+          DMG_X64=$(find dist-electron -maxdepth 1 -name "*-x64.dmg" -exec basename {} \; -quit)
           EXE_FILE=$(find dist-electron -maxdepth 1 -name "*Setup*.exe" -exec basename {} \; -quit)
           APPIMAGE_X64=$(find dist-electron -maxdepth 1 -name "*.AppImage" ! -name "*arm64*" -exec basename {} \; -quit)
           APPIMAGE_ARM64=$(find dist-electron -maxdepth 1 -name "*arm64*.AppImage" -exec basename {} \; -quit)
@@ -1067,7 +1104,8 @@ jobs:
             echo "**Channel:** alpha"
             echo ""
             echo "### Download URLs"
-            echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_FILE"))"
+            echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_ARM64"))"
+            echo "- [Intel Mac (DMG)]($ALPHA_URL/$(encode "$DMG_X64"))"
             echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
             echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
             echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"
