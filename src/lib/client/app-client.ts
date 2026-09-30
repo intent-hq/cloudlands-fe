@@ -1,3 +1,4 @@
+import type { AgentPlacement } from '$shared/types/agent-node';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -186,6 +187,7 @@ export interface MutationResult {
  *   `name`-present ⇒ explicitly set.
  */
 export interface AgentCreateRequest {
+  placement?: AgentPlacement;
   workspaceId: string;
   prompt?: string;
   model?: string;
@@ -1905,6 +1907,7 @@ export interface SkillsClient {
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
 export interface SpecialistDef {
+  runsOn?: AgentPlacement;
   id: string;
   name: string;
   description: string;

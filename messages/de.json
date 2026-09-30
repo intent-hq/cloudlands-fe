@@ -6816,5 +6816,20 @@
   "file_pdf_canvas_ariaLabel": "{name}, Seite {page}",
   "settings_providers_fastMode_label": "Schnellmodus",
   "settings_providers_fastMode_description": "Gilt ab dem nächsten Dialogschritt. Nutzung und Kosten können steigen; die Verfügbarkeit hängt von Modell und Konto ab.",
-  "settings_providers_fastMode_error": "Schnellmodus konnte nicht gespeichert werden. Die gespeicherte Einstellung wurde wiederhergestellt."
+  "settings_providers_fastMode_error": "Schnellmodus konnte nicht gespeichert werden. Die gespeicherte Einstellung wurde wiederhergestellt.",
+  "agent_placement_label": "Platzierung neuer Agenten",
+  "agent_placement_shared": "Lokale gemeinsame Arbeitskopie",
+  "agent_placement_worktree": "Lokaler Arbeitsbaum",
+  "agent_placement_isolated": "Lokale isolierte Arbeitskopie",
+  "agent_placement_remote": "Entfernte isolierte Arbeitskopie",
+  "agent_placement_default": "Standardplatzierung verwenden",
+  "agent_placement_unavailable": "Knotenausführung ist auf diesem Daemon nicht verfügbar.",
+  "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten.",
+  "agent_hub_merge": "Prüfpunkt zusammenführen",
+  "agent_hub_discard": "Isolierte Arbeit verwerfen",
+  "agent_hub_discardDescription": "Diesen Agenten stoppen und seine isolierte Arbeitskopie und Wiederherstellungsreferenzen verwerfen?",
+  "agent_hub_discarded": "Isolierte Arbeit verworfen.",
+  "agent_hub_checkpointRequired": "Vor dem Zusammenführen ist ein erfolgreicher Prüfpunkt erforderlich.",
+  "agent_hub_merged": "Prüfpunkt zusammengeführt.",
+  "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}"
 }

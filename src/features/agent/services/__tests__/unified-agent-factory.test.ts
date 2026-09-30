@@ -114,6 +114,17 @@ describe('UnifiedAgentFactory', () => {
   });
 
   describe('createAgent', () => {
+    it('preserves explicit isolated placement through config normalization', async () => {
+      const placement = { target: 'local', checkout: 'isolated' } as const;
+      const result = await factory.createAgent(mockWorkspace, {
+        workspaceId: mockWorkspace.id as any,
+        name: 'Isolated agent',
+        placement,
+      });
+      expect(result.success).toBe(true);
+      expect(agentsApi.create).toHaveBeenCalledWith(expect.objectContaining({ placement }));
+    });
+
     it('should create an agent with valid configuration', async () => {
       const config: UnifiedAgentConfig = {
         name: 'Test Agent',

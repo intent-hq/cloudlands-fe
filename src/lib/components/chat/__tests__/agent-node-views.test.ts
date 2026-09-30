@@ -1,3 +1,4 @@
+import { nodeCapabilitiesReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -136,6 +137,33 @@ describe('node agents in existing views', () => {
       ).toBe(false);
     },
   );
+  it('offers hub management for existing isolated remote work with Labs off', async () => {
+    appStore.dispatch(setLabsRemoteAgentsEnabled(false));
+    appStore.dispatch(bulkUpsertSessions([makeAgent({ effectiveIsolation: 'isolated' })]));
+    appStore.dispatch(
+      nodeCapabilitiesReceived(appStore.state.daemonHealth.connectionGeneration, {
+        agentNodes: true,
+        localNodeIsolation: true,
+      }),
+    );
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    const view = render(AgentCard, { agentId: id });
+    await fireEvent.contextMenu(
+      view.container.querySelector('[data-testid="agent-list-item"] button')!,
+      { clientX: 10, clientY: 10 },
+    );
+    const merge = await screen.findByRole('menuitem', { name: 'Merge checkpoint' });
+    await fireEvent.click(merge);
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => action.type === 'workspaceAgents/agentHubActionRequested',
+      ),
+    ).toBe(true);
+    expect(
+      vi.mocked(invoke).mock.calls.some(([channel]) => channel === 'shell:showItemInFolder'),
+    ).toBe(false);
+  });
+
   it('keeps an existing remote agent visible and responsive after Labs is disabled', async () => {
     appStore.dispatch(setLabsRemoteAgentsEnabled(true));
     appStore.dispatch(bulkUpsertSessions([makeAgent()]));

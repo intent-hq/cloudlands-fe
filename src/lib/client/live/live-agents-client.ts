@@ -419,6 +419,7 @@ export class LiveAgentsClient implements AgentsClient {
       workspaceId: request.workspaceId,
       idempotencyKey: newIdempotencyKey(),
     };
+    if (request.placement !== undefined) params.placement = request.placement;
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
     if (request.specialist !== undefined && request.specialist !== null) {

@@ -6816,5 +6816,20 @@
   "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁",
   "settings_providers_fastMode_label": "快速模式",
   "settings_providers_fastMode_description": "從下一輪開始生效。用量與費用可能增加；是否可用取決於模型和帳戶。",
-  "settings_providers_fastMode_error": "無法儲存快速模式。已還原先前儲存的偏好設定。"
+  "settings_providers_fastMode_error": "無法儲存快速模式。已還原先前儲存的偏好設定。",
+  "agent_placement_label": "新代理程式的執行位置",
+  "agent_placement_shared": "本機共用簽出",
+  "agent_placement_worktree": "本機工作樹",
+  "agent_placement_isolated": "本機隔離簽出",
+  "agent_placement_remote": "遠端隔離簽出",
+  "agent_placement_default": "使用預設位置",
+  "agent_placement_unavailable": "此常駐程式不支援節點執行。",
+  "agent_placement_labsRequired": "開始遠端工作前，請在 Labs 中啟用遠端代理程式。",
+  "agent_hub_merge": "合併檢查點",
+  "agent_hub_discard": "捨棄隔離工作",
+  "agent_hub_discardDescription": "停止此代理程式並捨棄其隔離簽出和復原參照？",
+  "agent_hub_discarded": "已捨棄隔離工作。",
+  "agent_hub_checkpointRequired": "合併前需要成功的檢查點。",
+  "agent_hub_merged": "已合併檢查點。",
+  "agent_hub_blocked": "合併需要處理：{detail}"
 }

@@ -7,6 +7,11 @@
  * (`electron-ipc-transport.ts`) when `window.electronAPI` exists. See
  * `backend-transport-types.ts` for the transport interface.
  */
+import {
+  assertRemoteRequestEnabled,
+  needsPlacementPolicy,
+  prepareNodeRequest,
+} from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
 
@@ -26,7 +31,23 @@ export async function backendRequest<T = unknown>(
   params?: unknown,
   options?: BackendRequestOptions,
 ): Promise<T> {
-  return resolveBackendTransport().request<T>(method, params, options);
+  const transport = resolveBackendTransport();
+  if (needsPlacementPolicy(method, params)) {
+    const [{ store }, { selectLabsRemoteAgentsEnabled }] = await Promise.all([
+      import('$store/renderer/store'),
+      import('$store/renderer/slices/user-preferences/user-preferences-selectors'),
+    ]);
+    params = await prepareNodeRequest(
+      method,
+      params,
+      (name, data) => transport.request(name, data),
+      () => selectLabsRemoteAgentsEnabled.select(store.state),
+    );
+    assertRemoteRequestEnabled(method, params, selectLabsRemoteAgentsEnabled.select(store.state));
+    if (transport !== resolveBackendTransport())
+      throw new Error('Backend changed while selecting agent placement. Try again.');
+  }
+  return transport.request<T>(method, params, options);
 }
 
 /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */

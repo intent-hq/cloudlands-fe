@@ -1,4 +1,5 @@
-import { all, call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { nodeExecutionSaga } from './node-execution-saga';
+import { all, call, cancelled, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { agentFactory } from '$features/agent/services/agent-factory';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
@@ -466,6 +467,7 @@ function* launchAgent(
 }
 
 export function* agentCreationSaga(): SagaGenerator<void> {
+  yield* fork(nodeExecutionSaga);
   yield* all([
     takeEvery(createAgentRequested, createBasicAgent),
     takeEvery(createAgentWithSpecialistRequested, createSpecialistAgent),

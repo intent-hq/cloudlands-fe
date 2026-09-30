@@ -6816,5 +6816,20 @@
   "file_pdf_canvas_ariaLabel": "{name}、{page} ページ",
   "settings_providers_fastMode_label": "高速モード",
   "settings_providers_fastMode_description": "次のターンから適用されます。使用量や料金が増える場合があります。利用可否はモデルとアカウントによって異なります。",
-  "settings_providers_fastMode_error": "高速モードを保存できませんでした。保存済みの設定に戻しました。"
+  "settings_providers_fastMode_error": "高速モードを保存できませんでした。保存済みの設定に戻しました。",
+  "agent_placement_label": "新しいエージェントの配置",
+  "agent_placement_shared": "ローカル共有チェックアウト",
+  "agent_placement_worktree": "ローカル作業ツリー",
+  "agent_placement_isolated": "ローカル分離チェックアウト",
+  "agent_placement_remote": "リモート分離チェックアウト",
+  "agent_placement_default": "既定の配置を使用",
+  "agent_placement_unavailable": "このデーモンではノード実行を利用できません。",
+  "agent_placement_labsRequired": "リモート作業を開始する前に Labs でリモートエージェントを有効にしてください。",
+  "agent_hub_merge": "チェックポイントをマージ",
+  "agent_hub_discard": "分離された作業を破棄",
+  "agent_hub_discardDescription": "このエージェントを停止し、分離チェックアウトと復旧参照を破棄しますか？",
+  "agent_hub_discarded": "分離された作業を破棄しました。",
+  "agent_hub_checkpointRequired": "マージするには正常なチェックポイントが必要です。",
+  "agent_hub_merged": "チェックポイントをマージしました。",
+  "agent_hub_blocked": "マージの確認が必要です：{detail}"
 }

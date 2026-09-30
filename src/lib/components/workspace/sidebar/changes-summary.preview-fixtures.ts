@@ -23,6 +23,7 @@ export function installChangesSummaryMocks(workspaceId: string, branch: string) 
       workspace: {
         ...updated,
         // Update requests use null to clear; the returned Workspace uses optional scalars.
+        defaultAgentPlacement: updated.defaultAgentPlacement ?? undefined,
         prUrl: updated.prUrl ?? undefined,
         prNumber: updated.prNumber ?? undefined,
         prStatus: updated.prStatus ?? undefined,

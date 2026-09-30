@@ -6816,5 +6816,20 @@
   "file_pdf_canvas_ariaLabel": "{name}，第 {page} 页",
   "settings_providers_fastMode_label": "快速模式",
   "settings_providers_fastMode_description": "从下一轮开始生效。用量和费用可能增加；是否可用取决于模型和账户。",
-  "settings_providers_fastMode_error": "无法保存快速模式。已恢复之前保存的偏好设置。"
+  "settings_providers_fastMode_error": "无法保存快速模式。已恢复之前保存的偏好设置。",
+  "agent_placement_label": "新代理的运行位置",
+  "agent_placement_shared": "本地共享检出",
+  "agent_placement_worktree": "本地工作树",
+  "agent_placement_isolated": "本地隔离检出",
+  "agent_placement_remote": "远程隔离检出",
+  "agent_placement_default": "使用默认位置",
+  "agent_placement_unavailable": "此守护进程不支持节点执行。",
+  "agent_placement_labsRequired": "开始远程工作前，请在 Labs 中启用远程代理。",
+  "agent_hub_merge": "合并检查点",
+  "agent_hub_discard": "丢弃隔离工作",
+  "agent_hub_discardDescription": "停止此代理并丢弃其隔离检出和恢复引用？",
+  "agent_hub_discarded": "已丢弃隔离工作。",
+  "agent_hub_checkpointRequired": "合并前需要成功的检查点。",
+  "agent_hub_merged": "已合并检查点。",
+  "agent_hub_blocked": "合并需要处理：{detail}"
 }

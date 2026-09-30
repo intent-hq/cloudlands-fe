@@ -5,7 +5,7 @@ const decimalU64 = z
   .string()
   .regex(/^(0|[1-9][0-9]*)$/)
   .refine((value) => /^(0|[1-9][0-9]*)$/.test(value) && BigInt(value) <= 18446744073709551615n);
-const AgentPlacementSchema = z
+export const AgentPlacementSchema = z
   .object({
     target: z.enum(['local', 'remote']),
     checkout: z.enum(['shared', 'worktree', 'isolated']),
@@ -40,3 +40,5 @@ export const AgentNodeFieldsSchema = z.object({
 });
 export type AgentNodeFields = z.infer<typeof AgentNodeFieldsSchema>;
 export type AgentCheckpoint = z.infer<typeof AgentCheckpointSchema>;
+
+export type AgentPlacement = z.infer<typeof AgentPlacementSchema>;

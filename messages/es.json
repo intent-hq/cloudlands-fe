@@ -6816,5 +6816,20 @@
   "file_pdf_canvas_ariaLabel": "{name}, página {page}",
   "settings_providers_fastMode_label": "Modo rápido",
   "settings_providers_fastMode_description": "Se aplica a partir del próximo turno. Puede aumentar el uso y el coste; la disponibilidad depende del modelo y la cuenta.",
-  "settings_providers_fastMode_error": "No se pudo guardar el modo rápido. Se ha restaurado la preferencia guardada."
+  "settings_providers_fastMode_error": "No se pudo guardar el modo rápido. Se ha restaurado la preferencia guardada.",
+  "agent_placement_label": "Ubicación de nuevos agentes",
+  "agent_placement_shared": "Copia local compartida",
+  "agent_placement_worktree": "Árbol de trabajo local",
+  "agent_placement_isolated": "Copia local aislada",
+  "agent_placement_remote": "Copia remota aislada",
+  "agent_placement_default": "Usar ubicación predeterminada",
+  "agent_placement_unavailable": "La ejecución en nodos no está disponible en este daemon.",
+  "agent_placement_labsRequired": "Activa los agentes remotos en Labs antes de iniciar trabajo remoto.",
+  "agent_hub_merge": "Fusionar punto de control",
+  "agent_hub_discard": "Descartar trabajo aislado",
+  "agent_hub_discardDescription": "¿Detener este agente y descartar su copia aislada y referencias de recuperación?",
+  "agent_hub_discarded": "Trabajo aislado descartado.",
+  "agent_hub_checkpointRequired": "Se necesita un punto de control correcto antes de fusionar.",
+  "agent_hub_merged": "Punto de control fusionado.",
+  "agent_hub_blocked": "La fusión requiere atención: {detail}"
 }
