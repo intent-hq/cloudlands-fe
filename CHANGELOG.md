@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.190.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.1...v2.190.2) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.120 ([#3017](https://github.com/intent-hq/cloudlands-fe/issues/3017)) ([23a0bca](https://github.com/intent-hq/cloudlands-fe/commit/23a0bcaa077e1bb02063ebea53c06e65f333a35e))
+* load dependency CSS in harnesses and serialize native builds ([#3014](https://github.com/intent-hq/cloudlands-fe/issues/3014)) ([9bcd7bd](https://github.com/intent-hq/cloudlands-fe/commit/9bcd7bd88f9d195b518bec57fecb41e96c7a99d1))
+* remove wrapping quotes from file tool titles ([#3016](https://github.com/intent-hq/cloudlands-fe/issues/3016)) ([1fb4409](https://github.com/intent-hq/cloudlands-fe/commit/1fb44094e81a5500a47123d4cbc9256527b0c505))
+
 ## [2.190.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.0...v2.190.1) (2026-09-30)
 
 
