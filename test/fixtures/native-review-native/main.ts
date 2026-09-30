@@ -11,6 +11,54 @@ import type { BackendConnectionConfig } from '../../../src/features/backend/main
 import type { NativeReviewInput } from '../../../src/shared/types/native-review-operation';
 import { JsonRpcClient } from '../../../src/features/backend/main/json-rpc-client';
 
+/** Passive producer evidence; a request settlement is never an outer owner join. */
+export function statusProducerJournal() {
+  const rows: Array<Record<string, unknown>> = [];
+  let observed = 0;
+  let dropped = 0;
+  let failed = 0;
+  function record(phase: string, value: Record<string, unknown>) {
+    observed++;
+    try {
+      const row = JSON.parse(JSON.stringify({ sequence: observed, phase, ...value }));
+      if (rows.length >= 128 || JSON.stringify([...rows, row]).length > 1_048_576) {
+        dropped++;
+        return;
+      }
+      rows.push(row);
+    } catch {
+      failed++;
+    }
+  }
+  function callsite(stack: string | undefined) {
+    const matches = [
+      ...(stack ?? '').matchAll(
+        /at (?:Object\.)?(healthCheck|captureLocalDeviceKind|captureRemoteHostname|performOpenBackendWindow) \((?:[^\n]*[/\\])?(backend\.ipc(?:-[A-Za-z0-9_-]+\.js|\.ts)):(\d+):(\d+)\)/g,
+      ),
+    ];
+    if (matches.length !== 1) return { owner: 'unknown' };
+    const [, owner, module, line, column] = matches[0]!;
+    return { owner, module, line, column };
+  }
+  return {
+    record,
+    callsite,
+    snapshot() {
+      return {
+        version: 1,
+        observed,
+        retained: rows.length,
+        dropped,
+        failed,
+        recordingComplete: dropped === 0 && failed === 0,
+        ownerCompletionObserved: false,
+        ownerCompletionLimit: 'The public client API exposes no original outer healthCheck join',
+        rows: JSON.parse(JSON.stringify(rows)) as Array<Record<string, unknown>>,
+      };
+    },
+  };
+}
+
 /** Passive original-call ledger. Its observers never replace the returned value or Promise. */
 export function completionLedger() {
   const rows: Array<Record<string, any>> = [];
@@ -28,6 +76,7 @@ export function completionLedger() {
     args: unknown[],
     metadata: Record<string, unknown>,
     project: (value: unknown) => unknown = (value) => value,
+    onSettled?: (state: string) => void,
   ): T {
     if (sealed) faults.push('Original work issued after quiescence');
     if (rows.length >= 1024) faults.push('Original completion ledger overflow');
@@ -40,6 +89,11 @@ export function completionLedger() {
         if (JSON.stringify(rows).length > 16_777_216) faults.push('Completion evidence byte bound');
       } catch (error) {
         faults.push('Unobserved original completion: ' + String(error));
+      }
+      try {
+        onSettled?.(state);
+      } catch {
+        faults.push('Original settlement observer failed');
       }
       changed();
     };
@@ -317,6 +371,8 @@ async function run() {
   )
     throw new Error('Invalid sidebar UI mode');
   const completions = completionLedger();
+  const diagnosticOwnership = process.env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328 === '1';
+  const statusProducers = statusProducerJournal();
   const identities = new WeakMap<object, string>();
   const connectionSockets = new WeakMap<object, string>();
   const objectId = (object: object | null) => {
@@ -352,6 +408,26 @@ async function run() {
         const callId = randomUUID();
         const prior = activeCall;
         activeCall = callId;
+        const producer =
+          diagnosticOwnership && method === 'host.status'
+            ? {
+                callId,
+                clientId: objectId(this),
+                connectionId: objectId(connection),
+                incarnationId: objectId(connection?.incarnation ?? null),
+                socketId: originalSocket,
+              }
+            : null;
+        if (producer) {
+          try {
+            statusProducers.record('request-enter', {
+              ...producer,
+              ...statusProducers.callsite(new Error().stack),
+            });
+          } catch {
+            statusProducers.record('request-owner-unobserved', producer);
+          }
+        }
         try {
           return completions.invoke(
             original,
@@ -376,6 +452,9 @@ async function run() {
               })(),
             },
             (value) => observationValue(method, value, sidebarMode),
+            producer
+              ? (state) => statusProducers.record('request-settled', { ...producer, state })
+              : undefined,
           );
         } finally {
           activeCall = prior;
@@ -541,6 +620,8 @@ async function run() {
     } as Duplex['write'];
     const emit = socket.emit;
     socket.emit = function (event: string | symbol, ...args: any[]) {
+      if (diagnosticOwnership && !probe && (event === 'end' || event === 'close'))
+        statusProducers.record('socket-event', { socketId, host, event });
       if (event === 'data') record('response', args[0]);
       if (
         sidebarMode &&
@@ -812,6 +893,7 @@ async function run() {
               completions: completions.rows,
               completionFaults: completions.faults,
               outstandingOriginals: completions.pending.size,
+              ...(diagnosticOwnership ? { statusProducers: statusProducers.snapshot() } : {}),
             }
           : {}),
         allocations: [...allocations].map(([socketId, a]) => ({
@@ -836,6 +918,8 @@ async function run() {
         assertUiTasks(receipt, sidebarMode);
         producers.push({ key, sender: window.webContents.id, receipt });
       }
+      if (diagnosticOwnership)
+        statusProducers.record('renderer-roots-joined', { producers: producers.length, seal });
       const joined = await completions.join(
         () => producers.length === windows.size,
         () => pending.size === 0 && disposalComplete(completions.rows),
@@ -843,6 +927,7 @@ async function run() {
       );
       if (sidebarMode && (faults.length || wireBoundaries.some((complete) => !complete())))
         throw new Error('Incomplete original wire evidence');
+      if (diagnosticOwnership) statusProducers.record('ledger-join-return', { ...joined });
       return { producers, joined };
     },
     async role(role: 'owner' | 'member' | 'guest') {
@@ -887,7 +972,11 @@ async function run() {
     },
     async shutdown() {
       await Promise.allSettled([...pending]);
+      if (diagnosticOwnership)
+        statusProducers.record('pool-dispose-enter', { pending: completions.pending.size });
       backend.disposeAllBackendClients();
+      if (diagnosticOwnership)
+        statusProducers.record('pool-dispose-return', { result: 'void', ownerJoined: false });
       for (const window of windows.values()) if (!window.isDestroyed()) window.destroy();
       await new Promise<void>((resolve, reject) =>
         http.close((error) => (error ? reject(error) : resolve())),

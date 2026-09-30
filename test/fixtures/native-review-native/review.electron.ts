@@ -1043,6 +1043,14 @@ const uiRenderer = `
     selectWorkspaceHostOperationContext,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
+  import {
+    nativeReviewEditRequested, nativeReviewEditEnded, nativeReviewEditCleared,
+    nativeReviewCompanionRequested, nativeReviewConfirmRequested, nativeReviewObserved,
+    repositoryContextDemandEnded,
+  } from '$store/renderer/slices/repository-context/repository-context-slice';
+  import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
+  import { subscribeConfirmRequests } from '$lib/components/patterns/confirm/confirm-service';
+
   import { gitReadSaga } from '$store/renderer/slices/git/sagas/git-read-saga';
   import { acceptChangesStatusSaga } from '$store/renderer/slices/git/sagas/accept-changes-status-saga';
   import { selectFileTrackingChanges, selectPendingAutoAction } from '$store/renderer/slices/changes/changes-selectors';
@@ -1052,23 +1060,52 @@ const uiRenderer = `
 
 import App from '${join(root, 'test/fixtures/native-review-native/ui-renderer.svelte')}';
 import '${join(root, 'src/app.css')}';
+function dismissalEvidenceJournal() {
+  const rows: unknown[] = [];
+  let observed = 0, dropped = 0, failed = 0;
+  function record(kind: string, value: unknown) {
+    observed++;
+    try {
+      const row = JSON.parse(JSON.stringify({sequence:observed,kind,value}));
+      if (rows.length >= 128 || JSON.stringify([...rows,row]).length > 1_048_576) { dropped++; return; }
+      rows.push(row);
+    } catch { failed++; }
+  }
+  function snapshot() {
+    return {version:1,observed,retained:rows.length,dropped,failed,complete:dropped===0&&failed===0,rows:JSON.parse(JSON.stringify(rows))};
+  }
+  function incomplete(kind: string) { failed++; record(kind,null); }
+  return {record,snapshot,incomplete};
+}
 export function start() {
 const target = document.getElementById('ui');
 if (!target) throw new Error('Original UI mount target missing');
 const sidebarMode = ${JSON.stringify(sidebarMode)};
+const diagnosticEvidence = ${JSON.stringify(diagnosticMode)};
+const dismissalEvidence = dismissalEvidenceJournal();
+const diagnosticActionTypes = new Set([setPendingAutoAction.type,nativeReviewEditRequested.type,nativeReviewEditEnded.type,nativeReviewEditCleared.type,nativeReviewCompanionRequested.type,nativeReviewConfirmRequested.type,nativeReviewObserved.type,repositoryContextDemandEnded.type]);
+let stopConfirmationObservation: (() => unknown) | null = diagnosticEvidence ? subscribeConfirmRequests(request => dismissalEvidence.record('confirmation', request ? {id:request.id,kind:request.kind} : null)) : null;
   const faults: string[] = [];
   const queueObservations: unknown[] = [];
   let observing = true;
   if (sidebarMode) store.addMiddleware(() => next => function (action) {
-    if (!observing || typeof action !== 'object' || action === null || !('type' in action) || typeof action.type !== 'string' || !['changes/setPendingAutoAction','repositoryContext/nativeReviewEditRequested','repositoryContext/nativeReviewCompanionRequested','repositoryContext/nativeReviewConfirmRequested','repositoryContext/nativeReviewEditEnded'].includes(action.type)) return next(action);
+    if (!observing || typeof action !== 'object' || action === null || !('type' in action) || typeof action.type !== 'string' || !(diagnosticEvidence ? diagnosticActionTypes.has(action.type) : ['changes/setPendingAutoAction','repositoryContext/nativeReviewEditRequested','repositoryContext/nativeReviewCompanionRequested','repositoryContext/nativeReviewConfirmRequested','repositoryContext/nativeReviewEditEnded'].includes(action.type))) return next(action);
     let input: unknown;
-    try { input = JSON.parse(JSON.stringify(action)); } catch (error) { faults.push('Unobserved queue input: ' + String(error)); }
-    const result = next(action);
+    try { input = JSON.parse(JSON.stringify(action)); } catch (error) { if (diagnosticEvidence) dismissalEvidence.incomplete('action-input-unobserved'); else faults.push('Unobserved queue input: ' + String(error)); }
+    if (diagnosticEvidence) {
+      try { dismissalEvidence.record('action-before', {input,attempts:attemptProjection()}); } catch { dismissalEvidence.incomplete('action-before-unobserved'); }
+    }
+    let result: unknown;
+    try { result = next(action); } catch (error) {
+      if (diagnosticEvidence) dismissalEvidence.record('action-threw', {type:action.type});
+      throw error;
+    }
     try {
       const row = {input, attempts: attemptProjection(), queue: workspaceProjection()};
+      if (diagnosticEvidence) dismissalEvidence.record('action-after', row);
       if (queueObservations.length >= 128 || JSON.stringify([...queueObservations, row]).length > 1_048_576) throw new Error('Queue observation bound');
       queueObservations.push(row);
-    } catch (error) { faults.push('Unobserved queue result: ' + String(error)); }
+    } catch (error) { if (diagnosticEvidence) dismissalEvidence.incomplete('action-after-unobserved'); else faults.push('Unobserved queue result: ' + String(error)); }
     return result;
   });
 const component = mount(App, {target, props:{sidebar:sidebarMode}});
@@ -1163,10 +1200,11 @@ let closing: Promise<unknown> | null = null;
   function workspaceProjection() {
     return selectWorkspaceItems.select(store.state).map(row => ({id:row.id,baseRef:row.baseRef,changes:selectFileTrackingChanges.select(store.state,String(row.id)),queue:selectPendingAutoAction.select(store.state,String(row.id))}));
   }
-  function snapshot() {
+  function snapshot(includeEvidence = true) {
     const state = store.state;
     return {
       faults,
+      ...(diagnosticEvidence && includeEvidence ? {dismissalEvidence:dismissalEvidence.snapshot()} : {}),
       role: selectHostRole.select(state),
       admission: selectPrincipalAdmissionContext.select(state),
       hasReceivedList: state.connections.hasReceivedList,
@@ -1185,6 +1223,7 @@ let closing: Promise<unknown> | null = null;
   async function close() {
     if (closing) return closing;
     closing = (async () => {
+      try {
       await component.dismiss(); // Actual child onDestroy ends the original owner/demand.
       statusClosed = true;
       api.offById(IPC_CHANNELS.BACKEND.STATUS, statusListener);
@@ -1208,11 +1247,30 @@ let closing: Promise<unknown> | null = null;
         final,
         tasks: tasks.map(({ name, iteratorDone, joined }) => ({ name, iteratorDone, joined })),
       };
+      } finally {
+        if (diagnosticEvidence && stopConfirmationObservation) {
+          const originalStop = stopConfirmationObservation;
+          stopConfirmationObservation = null;
+          try { originalStop(); dismissalEvidence.record('confirmation-unsubscribed', null); } catch { dismissalEvidence.incomplete('confirmation-unsubscribe-failed'); }
+        }
+      }
     })();
     return closing;
   }
 
-const lifetime = {snapshot,close,async dismiss(){await component.dismiss();return snapshot();},
+const lifetime = {snapshot,close,async dismiss(){
+  try {
+    await component.dismiss();
+    const returned = snapshot(!diagnosticEvidence);
+    if (diagnosticEvidence) dismissalEvidence.record('dismiss-return', returned);
+    return returned;
+  } catch (error) {
+    if (diagnosticEvidence) {
+      try { dismissalEvidence.record('dismiss-threw', {name:error instanceof Error ? error.name : typeof error,message:error instanceof Error ? error.message : null}); } catch { dismissalEvidence.incomplete('dismiss-error-unobserved'); }
+    }
+    throw error;
+  }
+},
   async unstaged() {
     if (!sidebarMode || !selectPrincipalAdmissionContext.select(store.state) || selectWorkspaceItems.select(store.state).length !== 1) throw new Error('Original admitted sidebar workspace required');
     return appClient.files.read(String(selectWorkspaceItems.select(store.state)[0].id), 'unstaged.txt');
@@ -2535,7 +2593,23 @@ async function withDriver(
                 observationErrors.push('body-record: ' + String(recordError));
               }
               try {
-                await packet('failure-packet');
+                const rendererEvidence = app
+                  ? await Promise.all(
+                      app.windows().map(async (page) => {
+                        try {
+                          return {
+                            url: page.url(),
+                            evidence: await page.evaluate(() =>
+                              (window as any).nativeUi?.snapshot(),
+                            ),
+                          };
+                        } catch {
+                          return { unobserved: true };
+                        }
+                      }),
+                    )
+                  : null;
+                await packet('failure-packet', { rendererEvidence });
               } catch (packetError) {
                 try {
                   record(dir, 'failure-packet-error', String(packetError));
