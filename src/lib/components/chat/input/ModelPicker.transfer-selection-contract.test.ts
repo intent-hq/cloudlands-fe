@@ -55,6 +55,7 @@ import { notify } from '$lib/components/patterns/notify';
 import {
   providerCatalogLoaded,
   workspaceCatalogReceived,
+  workspaceCatalogInvalidated,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import {
   hydrateDefaultProvider,
@@ -245,6 +246,24 @@ describe('imported public sessions preserve the ModelPicker selection', () => {
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
     });
     expect(() => assertSelection(trigger, contract.expectations.explicit.renderer.label)).toThrow();
+    assertNoChanges();
+
+    // A reconnect makes the workspace registry unknown, not confirmation that
+    // this historical provider is gone. Rehydration can establish that again.
+    store.dispatch(workspaceCatalogInvalidated(true));
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+      expect(trigger.querySelector('[title]')?.getAttribute('title') ?? '').not.toMatch(
+        /no longer available/,
+      );
+    });
+    assertNoChanges();
+    hydrateFixtureState(false, session.workspaceId);
+    await waitFor(() => {
+      expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(
+        /no longer available/,
+      );
+    });
     assertNoChanges();
   });
 });
