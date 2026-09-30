@@ -6831,5 +6831,8 @@
   "agent_hub_discarded": "Trabajo aislado descartado.",
   "agent_hub_checkpointRequired": "Se necesita un punto de control correcto antes de fusionar.",
   "agent_hub_merged": "Punto de control fusionado.",
-  "agent_hub_blocked": "La fusión requiere atención: {detail}"
+  "agent_hub_blocked": "La fusión requiere atención: {detail}",
+  "agent_placement_chooseLocal": "Choose where to run this agent",
+  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
+  "agent_placement_cancelled": "Agent launch cancelled."
 }

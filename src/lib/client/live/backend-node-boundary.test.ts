@@ -1,13 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   enabled: false,
+  state: { daemonHealth: { connectionGeneration: 0 } },
+  choose: vi.fn(),
   request: vi.fn(),
   transport: {} as { request: ReturnType<typeof vi.fn> },
 }));
 vi.mock('./backend-transport-factory', () => ({
   resolveBackendTransport: () => fixture.transport,
 }));
-vi.mock('$store/renderer/store', () => ({ store: { state: {} } }));
+vi.mock('$store/renderer/store', () => ({
+  store: { state: fixture.state, dispatch: fixture.choose },
+}));
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
+  localPlacementRequested: (caps: unknown) => caps,
+}));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectLabsRemoteAgentsEnabled: { select: () => fixture.enabled },
 }));
@@ -15,7 +22,9 @@ import { backendRequest } from './backend-transport';
 
 beforeEach(() => {
   fixture.enabled = false;
+  fixture.state.daemonHealth.connectionGeneration = 0;
   fixture.request.mockReset();
+  fixture.choose.mockReset().mockRejectedValue(new Error('cancelled'));
   fixture.transport = { request: fixture.request };
   fixture.request.mockImplementation(async (method: string) => {
     if (method === 'client.hello')
@@ -42,7 +51,7 @@ describe('renderer final wire boundary', () => {
         placement: { target: 'remote', checkout: 'isolated' },
       }),
     ).rejects.toThrow();
-    expect(fixture.request).not.toHaveBeenCalled();
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
   });
   it('checks fresh Labs state after deferred capability discovery', async () => {
     fixture.enabled = true;
@@ -60,6 +69,35 @@ describe('renderer final wire boundary', () => {
     resolve({ server: { capabilities: { agentNodes: 1 } } });
     await expect(creation).rejects.toThrow();
     expect(fixture.request).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a reconnect that reuses the same transport during preflight', async () => {
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise((done) => {
+      resolve = done;
+    });
+    fixture.request.mockImplementationOnce(() => pending);
+    const creation = backendRequest('agent.create', {
+      placement: { target: 'local', checkout: 'shared' },
+    });
+    await vi.waitFor(() => expect(fixture.request).toHaveBeenCalled());
+    fixture.state.daemonHealth.connectionGeneration++;
+    resolve({ server: { capabilities: { agentNodes: 1 } } });
+    await expect(creation).rejects.toThrow(/changed/);
+    expect(fixture.request).toHaveBeenCalledTimes(1);
+  });
+  it('uses the explicit local answer for an unresolved launch', async () => {
+    fixture.choose.mockResolvedValue({ target: 'local', checkout: 'worktree' });
+    await backendRequest('agent.delegate', { workspaceId: 'ws', taskNoteId: 'task' });
+    expect(fixture.choose).toHaveBeenCalledOnce();
+    expect(fixture.request).toHaveBeenLastCalledWith(
+      'agent.delegate',
+      {
+        workspaceId: 'ws',
+        taskNoteId: 'task',
+        placement: { target: 'local', checkout: 'worktree' },
+      },
+      undefined,
+    );
   });
   it('preserves management of existing remote agents with Labs off', async () => {
     await backendRequest('agent.stop', { agentId: 'remote' });

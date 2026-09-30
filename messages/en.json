@@ -6831,5 +6831,8 @@
   "agent_hub_discarded": "Isolated work discarded.",
   "agent_hub_checkpointRequired": "A successful checkpoint is required before merging.",
   "agent_hub_merged": "Checkpoint merged.",
-  "agent_hub_blocked": "Merge needs attention: {detail}"
+  "agent_hub_blocked": "Merge needs attention: {detail}",
+  "agent_placement_chooseLocal": "Choose where to run this agent",
+  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
+  "agent_placement_cancelled": "Agent launch cancelled."
 }

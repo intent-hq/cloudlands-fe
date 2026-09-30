@@ -9,9 +9,17 @@
     capabilities: NodeCapabilities;
     remoteEnabled: boolean;
     disabled?: boolean;
+    insideDialog?: boolean;
     onchange: (placement: AgentPlacement) => void;
   }
-  let { value, capabilities, remoteEnabled, disabled = false, onchange }: Props = $props();
+  let {
+    value,
+    capabilities,
+    remoteEnabled,
+    disabled = false,
+    insideDialog = false,
+    onchange,
+  }: Props = $props();
   const options = $derived([
     {
       id: 'shared',
@@ -63,7 +71,7 @@
 
 <Select.Root value={selected} {disabled} onchange={select}>
   <Select.Trigger aria-label={m.agent_placement_label()}>{label}</Select.Trigger>
-  <Select.Content portal>
+  <Select.Content portal class={insideDialog ? 'z-(--layer-modal)' : undefined}>
     {#each options as option (option.id)}
       <Select.Item value={option.id} disabled={option.disabled}>{option.label}</Select.Item>
     {/each}

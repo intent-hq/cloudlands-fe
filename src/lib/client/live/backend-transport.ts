@@ -10,6 +10,7 @@
 import {
   assertRemoteRequestEnabled,
   needsPlacementPolicy,
+  needsLocalPlacement,
   prepareNodeRequest,
 } from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
@@ -37,15 +38,47 @@ export async function backendRequest<T = unknown>(
       import('$store/renderer/store'),
       import('$store/renderer/slices/user-preferences/user-preferences-selectors'),
     ]);
-    params = await prepareNodeRequest(
-      method,
-      params,
-      (name, data) => transport.request(name, data),
-      () => selectLabsRemoteAgentsEnabled.select(store.state),
+    const generation = store.state.daemonHealth.connectionGeneration;
+    const checkConnection = () => {
+      if (
+        transport !== resolveBackendTransport() ||
+        generation !== store.state.daemonHealth.connectionGeneration
+      )
+        throw new Error('Backend changed while selecting agent placement. Try again.');
+    };
+    let agentNodes = false;
+    const request = async (name: string, data?: unknown): Promise<unknown> => {
+      checkConnection();
+      const result = await transport.request(name, data);
+      checkConnection();
+      if (name === 'client.hello')
+        agentNodes =
+          (result as { server?: { capabilities?: { agentNodes?: unknown } } })?.server?.capabilities
+            ?.agentNodes === 1;
+      return result;
+    };
+    do {
+      params = await prepareNodeRequest(
+        method,
+        params,
+        request,
+        () => selectLabsRemoteAgentsEnabled.select(store.state),
+        async (capabilities) => {
+          const { localPlacementRequested } =
+            await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
+          checkConnection();
+          const placement = await store.dispatch(localPlacementRequested(capabilities));
+          checkConnection();
+          return placement;
+        },
+      );
+      checkConnection();
+    } while (
+      agentNodes &&
+      !selectLabsRemoteAgentsEnabled.select(store.state) &&
+      needsLocalPlacement(method, params)
     );
     assertRemoteRequestEnabled(method, params, selectLabsRemoteAgentsEnabled.select(store.state));
-    if (transport !== resolveBackendTransport())
-      throw new Error('Backend changed while selecting agent placement. Try again.');
   }
   return transport.request<T>(method, params, options);
 }

@@ -6831,5 +6831,8 @@
   "agent_hub_discarded": "격리된 작업을 삭제했습니다.",
   "agent_hub_checkpointRequired": "병합하려면 성공한 체크포인트가 필요합니다.",
   "agent_hub_merged": "체크포인트를 병합했습니다.",
-  "agent_hub_blocked": "병합 확인 필요: {detail}"
+  "agent_hub_blocked": "병합 확인 필요: {detail}",
+  "agent_placement_chooseLocal": "Choose where to run this agent",
+  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
+  "agent_placement_cancelled": "Agent launch cancelled."
 }

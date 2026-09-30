@@ -414,3 +414,7 @@ export const selectNodeCapabilities = store.createSelector((state) => {
 export const selectNodeOperationBusy = store.createSelector(
   (state) => state.workspaceAgents.nodeOperationBusy === true,
 );
+
+export const selectPlacementChoice = store.createSelector(
+  (state) => state.workspaceAgents.placementChoice,
+);

@@ -1,0 +1,53 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "local": {
+    "520": {
+      "probes": {
+        "data-required-placement-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 236,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 470,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 286,
+        "width": 520
+      }
+    }
+  },
+  "without-isolation": {
+    "520": {
+      "probes": {
+        "data-required-placement-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 236,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 470,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 286,
+        "width": 520
+      }
+    }
+  }
+}

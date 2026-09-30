@@ -6831,5 +6831,8 @@
   "agent_hub_discarded": "已捨棄隔離工作。",
   "agent_hub_checkpointRequired": "合併前需要成功的檢查點。",
   "agent_hub_merged": "已合併檢查點。",
-  "agent_hub_blocked": "合併需要處理：{detail}"
+  "agent_hub_blocked": "合併需要處理：{detail}",
+  "agent_placement_chooseLocal": "Choose where to run this agent",
+  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
+  "agent_placement_cancelled": "Agent launch cancelled."
 }

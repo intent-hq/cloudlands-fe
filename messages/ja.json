@@ -6831,5 +6831,8 @@
   "agent_hub_discarded": "分離された作業を破棄しました。",
   "agent_hub_checkpointRequired": "マージするには正常なチェックポイントが必要です。",
   "agent_hub_merged": "チェックポイントをマージしました。",
-  "agent_hub_blocked": "マージの確認が必要です：{detail}"
+  "agent_hub_blocked": "マージの確認が必要です：{detail}",
+  "agent_placement_chooseLocal": "Choose where to run this agent",
+  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
+  "agent_placement_cancelled": "Agent launch cancelled."
 }

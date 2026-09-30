@@ -28,6 +28,8 @@ import {
   agentHubActionRequested,
   agentPlacementSaveRequested,
   nodeCapabilitiesRequested,
+  localPlacementRequested,
+  placementChoiceAnswered,
 } from '../workspace-agents-slice';
 import { selectNodeCapabilities } from '../workspace-agents-selectors';
 
@@ -76,6 +78,25 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('node execution actions', () => {
+  it('queues concurrent choices, rejects a wrong answer id, and cancels only the matching launch', async () => {
+    const channel = start();
+    const caps = { agentNodes: true, localNodeIsolation: true };
+    const first = localPlacementRequested(caps);
+    const second = localPlacementRequested(caps);
+    channel.put(first);
+    const firstId = store.state.workspaceAgents.placementChoice!.id;
+    channel.put(second);
+    channel.put(placementChoiceAnswered('wrong-id', { target: 'local', checkout: 'shared' }));
+    expect(store.state.workspaceAgents.placementChoice?.id).toBe(firstId);
+    channel.put(placementChoiceAnswered(firstId, { target: 'local', checkout: 'isolated' }));
+    await expect(first.promise).resolves.toEqual({ target: 'local', checkout: 'isolated' });
+    const secondId = store.state.workspaceAgents.placementChoice!.id;
+    expect(secondId).not.toBe(firstId);
+    const rejection = expect(second.promise).rejects.toThrow(/cancelled/);
+    channel.put(placementChoiceAnswered(secondId, null));
+    await rejection;
+    expect(store.state.workspaceAgents.placementChoice).toBeUndefined();
+  });
   it.each(['merged', 'conflict', 'blocked'] as const)(
     'merges an existing remote checkpoint with Labs off: %s',
     async (status) => {
@@ -141,12 +162,10 @@ describe('node execution actions', () => {
     } as Workspace;
     store.dispatch(setWorkspaceEntity(workspace));
     const placement = { target: 'local', checkout: 'isolated' } as const;
-    const update = vi
-      .spyOn(appClient.workspaces, 'update')
-      .mockResolvedValue({
-        success: true,
-        workspace: { ...workspace, defaultAgentPlacement: placement },
-      });
+    const update = vi.spyOn(appClient.workspaces, 'update').mockResolvedValue({
+      success: true,
+      workspace: { ...workspace, defaultAgentPlacement: placement },
+    });
     start().put(agentPlacementSaveRequested('ws-hub', placement));
     await vi.waitFor(() =>
       expect(update).toHaveBeenCalledWith({ id: 'ws-hub', defaultAgentPlacement: placement }),

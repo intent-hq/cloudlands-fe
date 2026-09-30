@@ -1,4 +1,13 @@
-import { all, call, put, takeLeading, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  put,
+  takeLeading,
+  actionChannel,
+  take,
+  fork,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { NodeExecutionClient } from '$features/agent/services/node-execution';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { appClient } from '$lib/client';
@@ -11,6 +20,9 @@ import { selectLabsRemoteAgentsEnabled } from '../../user-preferences/user-prefe
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { updateWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
+  localPlacementRequested,
+  placementChoiceShown,
+  placementChoiceAnswered,
   nodeCapabilitiesRequested,
   nodeCapabilitiesReceived,
   agentPlacementSaveRequested,
@@ -106,8 +118,33 @@ function* manageHub({
     yield* put(nodeOperationBusyChanged(false));
   }
 }
+/** Queue launch prompts so concurrent creations cannot steal each other's answer. */
+function* chooseLocalPlacements(): SagaGenerator<void> {
+  const channel = yield* actionChannel(localPlacementRequested);
+  try {
+    while (true) {
+      const action = yield* take(channel);
+      const id = crypto.randomUUID();
+      try {
+        yield* put(placementChoiceShown({ id, capabilities: action.payload[0] }));
+        let answer = yield* take(placementChoiceAnswered);
+        while (answer.payload[0] !== id) answer = yield* take(placementChoiceAnswered);
+        const [, placement] = answer.payload;
+        if (!placement) throw new Error(m.agent_placement_cancelled());
+        yield* put(action.success(placement));
+      } catch (error) {
+        yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+      } finally {
+        yield* put(placementChoiceShown(undefined));
+      }
+    }
+  } finally {
+    channel.close();
+  }
+}
 export function* nodeExecutionSaga(): SagaGenerator<void> {
   yield* all([
+    fork(chooseLocalPlacements),
     takeLeading(nodeCapabilitiesRequested, loadCapabilities),
     takeLeading(agentPlacementSaveRequested, savePlacement),
     takeLeading(agentHubActionRequested, manageHub),
