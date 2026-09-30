@@ -6790,6 +6790,8 @@
   "lib_commandPalette_disableExperimentalMultiplayer_label": "Désactiver le multijoueur expérimental",
   "lib_commandPalette_enableExperimentalGitlab_label": "Activer GitLab expérimental",
   "lib_commandPalette_disableExperimentalGitlab_label": "Désactiver GitLab expérimental",
+  "lib_commandPalette_enableExperimentalRemoteAgents_label": "Activer les agents distants expérimentaux",
+  "lib_commandPalette_disableExperimentalRemoteAgents_label": "Désactiver les agents distants expérimentaux",
   "inviteNotice_modal_findGitlabCommand_label": "Chercher la commande GitLab",
   "modals_retireAgent_title": "Retirer l’agent",
   "modals_retireAgent_description": "Retirer « {name} » ? Cela arrête tout tour en cours et annule les hooks, les suivis de PR et les autres abonnements de réveil. La conversation est conservée et vous pourrez restaurer l’agent plus tard. La restauration ne relance pas les hooks ni les suivis annulés.",
