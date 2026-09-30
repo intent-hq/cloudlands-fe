@@ -120,6 +120,84 @@ afterEach(() => {
 });
 
 describe('model catalog admission through the real store and models client', () => {
+  it('does not use a held owner settings reply after admission is revoked', async () => {
+    let finish!: (value: unknown) => void;
+    settings.getProviderSettings.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    admitLegacyPrincipal();
+    start();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    store.dispatch(
+      hostMembershipChanged({ action: 'removed', principalId: 'principal', revision: 1 }),
+    );
+    finish({ activeProviderId: 'codex', enabledProviders: {} });
+    await settle();
+    expect(modelCalls()).toHaveLength(0);
+  });
+
+  it('drops a held member catalog across same-host membership revision and loads the new admission', async () => {
+    let finish!: (value: unknown) => void;
+    let first = true;
+    request.mockImplementation(async (method, params) => {
+      if (method === 'host.executionContext') return HOST_EXECUTION_FIXTURE;
+      if (method === 'providers.catalog') return MOCK_PROVIDER_CATALOG;
+      if (method === 'models.list') {
+        if (first) {
+          first = false;
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        }
+        return wire((params as { providerId: string }).providerId);
+      }
+      throw new Error(`Unexpected member request ${method}`);
+    });
+    cancellations.push(store.runSaga(hostExecutionSaga));
+    start();
+    connect();
+    member();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    member(2);
+    finish(wire('claude-code', 'obsolete-revision'));
+    await vi.waitFor(() => expect(modelCalls()).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(selectModelEffortLevels.select(store.state, 'catalog-only-model')).toEqual([
+        'low',
+        'medium',
+        'high',
+      ]),
+    );
+    expect(selectModelEffortLevels.select(store.state, 'obsolete-revision')).toBeUndefined();
+    expect(settings.getProviderSettings).not.toHaveBeenCalled();
+  });
+
+  it('cancels the original store loader before a new store accepts a held reply', async () => {
+    let finish!: (value: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    admitLegacyPrincipal();
+    provider();
+    start();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    dispose();
+    dispose = store.init();
+    admitLegacyPrincipal();
+    provider();
+    const model = store.state.model;
+    finish(wire('codex', 'obsolete-store'));
+    await settle();
+    expect(store.state.model).toBe(model);
+    expect(modelCalls()).toHaveLength(1);
+  });
+
   it('loads after startup/connected precede owner admission and settings, without losing saved effort', async () => {
     start();
     handlers.forEach((handler) => handler({ status: 'connected' }));
