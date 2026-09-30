@@ -58,8 +58,7 @@ jobs:
       - name: Focused pure controls
         timeout-minutes: 2
         run: |
-          node --test scripts/vite-harness-cache.test.mjs scripts/sidebar-request-boundary.test.mjs
-          pnpm exec vitest run scripts/sidebar-shell-import.test.ts
+          pnpm exec vitest run scripts/vite-harness-cache.test.mjs scripts/sidebar-request-boundary.test.mjs scripts/sidebar-shell-import.test.ts
       - name: Cold then unchanged warm cache, retries zero
         timeout-minutes: 23
         run: python3 scripts/sidebar-corrected-pair.py ${{ matrix.workers }} "$RUNNER_TEMP/harness-results"
