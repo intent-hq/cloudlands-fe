@@ -8,8 +8,7 @@ let server: ViteDevServer | undefined;
 
 test.describe.configure({ mode: 'default', timeout: 120_000 });
 
-// Keep first-attempt failures alongside the raw geometry. A failure screenshot is
-// post-failure; trace frames are sampled. Neither proves the violating box was painted.
+// Keep original failing attempts available alongside their geometry.
 test.use({ trace: 'retain-on-failure', screenshot: 'only-on-failure' });
 
 test.beforeAll(async () => {
@@ -42,28 +41,8 @@ const states = [
   { id: 'render', nodes: ['chat', 'daemon', 'redux'], edges: ['w2', 'w5'] },
 ];
 
-type SettlementCapture6036 = {
-  target: Element | null;
-  records: (Record<string, unknown> | null)[];
-  count: number;
-  overflow: boolean;
-  incomplete: boolean;
-  segment: string;
-  snapshots: string[];
-  serializedUnits: number;
-};
-
 function geometry(element: Element) {
   const root = element as HTMLElement;
-  const capture = (
-    globalThis as typeof globalThis & {
-      __walkthroughSettlement6036?: SettlementCapture6036;
-    }
-  ).__walkthroughSettlement6036;
-  if (capture) {
-    if (capture.target === null) capture.target = root;
-    else if (capture.target !== root) capture.incomplete = true;
-  }
   const viewport = root.querySelector('.diagram-scroll-container')!.getBoundingClientRect();
   const outer = root.getBoundingClientRect();
   const visible = (node: Element) => {
@@ -157,19 +136,6 @@ function geometry(element: Element) {
     animationCount: root
       .getAnimations({ subtree: true })
       .filter((animation) => animation.playState !== 'finished').length,
-    settlementDiagnostic: {
-      sampledAt: performance.now(),
-      timeOrigin: performance.timeOrigin,
-      segment: capture?.segment ?? null,
-      decisionCount: capture?.count ?? null,
-      rootLeft: outer.left,
-      rootTop: outer.top,
-      rootWidth: outer.width,
-      rootHeight: outer.height,
-      viewportLeft: viewport.left,
-      viewportTop: viewport.top,
-      documentScrollTop: root.ownerDocument.scrollingElement?.scrollTop ?? null,
-    },
   };
 }
 
@@ -200,13 +166,6 @@ async function sampleChange(
   return root.evaluate(
     async (element, { source, index, resizeWidth, interrupt }) => {
       const read = new Function(`return (${source})`)() as typeof geometry;
-      const capture = (
-        globalThis as typeof globalThis & {
-          __walkthroughSettlement6036?: SettlementCapture6036;
-        }
-      ).__walkthroughSettlement6036;
-      if (capture)
-        capture.segment = `${interrupt ? 'rapid' : resizeWidth ? 'resize' : 'step'}:${index}:${resizeWidth ?? 'unchanged'}`;
       const samples = [read(element)];
       element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
       if (resizeWidth) {
@@ -241,365 +200,173 @@ for (const width of [960, 662, 420]) {
       page,
     }, testInfo) => {
       test.setTimeout(90_000);
-      const captureSelected = width === 420;
-      let captureAttachmentAttempted = false;
-      let selectedBindingStarted = false;
-      let selectedDocumentLost = false;
-      let mainNavigationCount = 0;
-      const selectedMainFrame = page.mainFrame();
-      const observeMainNavigation = (frame: ReturnType<Page['mainFrame']>) => {
-        if (frame !== selectedMainFrame) return;
-        mainNavigationCount += 1;
-        if (selectedBindingStarted) selectedDocumentLost = true;
-      };
-      const observeDocumentLoss = () => {
-        selectedDocumentLost = true;
-      };
-      if (captureSelected) {
-        page.on('framenavigated', observeMainNavigation);
-        page.on('close', observeDocumentLoss);
-        page.on('crash', observeDocumentLoss);
+      const root = await open(page, width, motion);
+      const steps = [await root.evaluate(geometry)];
+      const transitions = [];
+      for (const index of [1, 2, 0]) {
+        const samples = await sampleChange(root, index);
+        transitions.push(samples);
+        const last = samples.at(-1)!;
+        expect(last.settled).toBe(true);
+        expect(last.nodes).toEqual(states[index].nodes);
+        expect(last.edges).toEqual(states[index].edges);
+        expect(last.labels).toEqual(states[index].edges);
+        steps.push(last);
       }
-      const attachSettlementDecisions = async (boundary: string) => {
-        if (!captureSelected || captureAttachmentAttempted) return;
-        captureAttachmentAttempted = true;
-        let payload: Record<string, unknown>;
-        const navigationsBeforeCollection = mainNavigationCount;
-        try {
-          payload = await page.evaluate((boundary) => {
-            const capture = (
-              globalThis as typeof globalThis & {
-                __walkthroughSettlement6036?: SettlementCapture6036;
-              }
-            ).__walkthroughSettlement6036;
-            if (!capture) return { boundary, incomplete: true, reason: 'missing-buffer' };
-            return {
-              boundary,
-              capacity: 4096,
-              count: capture.count,
-              overflow: capture.overflow,
-              incomplete:
-                capture.incomplete ||
-                capture.overflow ||
-                capture.target === null ||
-                capture.count === 0,
-              targetBound: capture.target !== null,
-              records: capture.records.slice(0, capture.count),
-              snapshots: capture.snapshots,
-              serializedUnits: capture.serializedUnits,
-            };
-          }, boundary);
-        } catch (error) {
-          payload = {
-            boundary,
-            incomplete: true,
-            reason: 'collection-error',
-            error: String(error),
-          };
-        }
-        payload.documentContinuity = {
-          bindingStarted: selectedBindingStarted,
-          mainNavigationCount,
-          navigationsBeforeCollection,
-          lost: selectedDocumentLost,
-        };
-        payload.incomplete =
-          payload.incomplete === true ||
-          !selectedBindingStarted ||
-          selectedDocumentLost ||
-          mainNavigationCount !== navigationsBeforeCollection;
-        try {
-          const serialized = JSON.stringify(payload);
-          const body =
-            Buffer.byteLength(serialized, 'utf8') <= 8 * 1024 * 1024
-              ? serialized
-              : JSON.stringify({ boundary, incomplete: true, reason: 'attachment-cap' });
-          await testInfo.attach('settlement-decisions', {
-            body,
-            contentType: 'application/json',
-          });
-        } catch (error) {
-          // Missing attachment invalidates diagnostic evidence, never the original oracle result.
-          console.warn('6036 settlement diagnostic attachment failed', String(error));
-        }
-      };
-      let paintAttempted = false;
-      let paintIncomplete = false;
-      const paintEvidence: Record<string, unknown>[] = [];
-      const observeFailedSegmentPaint = async (
-        root: Locator,
-        index: number,
-        resizeWidth: number,
-        samples: Awaited<ReturnType<typeof sampleChange>>,
-      ) => {
-        if (!captureSelected || paintAttempted || samples.at(-1)?.settled !== false) return;
-        paintAttempted = true;
-        const event: Record<string, unknown> = {
-          index,
-          resizeWidth,
-          failedSample: samples.at(-1),
-          hostStartedAt: Date.now(),
-          incomplete: false,
-          qualification:
-            'After sample return; target capture may scroll/wait. Neither image is the original sampled frame.',
-        };
-        paintEvidence.push(event);
-        try {
-          const before = await root.evaluate(geometry);
-          event.before = before;
-          const viewport = page.viewportSize();
-          if (!viewport || viewport.width !== 1280 || viewport.height !== 1000) {
-            throw new Error('Unexpected diagnostic viewport');
-          }
-          const d = before.settlementDiagnostic;
-          if (
-            !Number.isFinite(d.rootWidth) ||
-            !Number.isFinite(d.rootHeight) ||
-            d.rootWidth <= 0 ||
-            d.rootHeight <= 0 ||
-            d.rootWidth > 1600 ||
-            d.rootHeight > 1200 ||
-            d.rootWidth * d.rootHeight > 1_500_000
-          ) {
-            throw new Error('Target exceeds finite paint-capture bounds');
-          }
-          const attachPNG = async (name: string, png: Buffer) => {
-            if (png.byteLength > 8 * 1024 * 1024) throw new Error('PNG exceeds cap');
-            await testInfo.attach(name, { body: png, contentType: 'image/png' });
-          };
-          const beforeNavigationCount = mainNavigationCount;
-          await attachPNG(
-            'unsettled-segment-viewport',
-            await page.screenshot({
-              animations: 'allow',
-              caret: 'initial',
-              fullPage: false,
-              timeout: 2_000,
-            }),
+      await testInfo.attach('step-geometry', {
+        body: JSON.stringify({ steps, transitions }, null, 2),
+        contentType: 'application/json',
+      });
+      // A temporary transition frame must release its departing-scene space.
+      expect(steps.at(-1)!.height).toBeCloseTo(steps[0].height, 0);
+      expect(steps.at(-1)!.scale).toBeCloseTo(steps[0].scale, 4);
+      if (motion === 'full') {
+        const departure = transitions[0];
+        // Keep the outgoing user visible during its exit, rather than dropping
+        // paint to satisfy containment. Check every observed transition phase.
+        expect(
+          departure.some(
+            (sample) => sample.phase === 'exit' && sample.paintedNodes.includes('user'),
+          ),
+        ).toBe(true);
+        for (const phase of ['camera', 'exit', 'scene']) {
+          const frames = departure.filter((sample) => sample.phase === phase);
+          expect(frames.length, phase).toBeGreaterThan(0);
+          expect(Math.max(...frames.map((sample) => sample.overflow)), phase).toBeLessThanOrEqual(
+            1,
           );
-          event.afterViewport = await root.evaluate(geometry);
-          await attachPNG(
-            'unsettled-segment-target-later',
-            await root.screenshot({
-              animations: 'allow',
-              caret: 'initial',
-              timeout: 2_000,
-            }),
-          );
-          event.afterTarget = await root.evaluate(geometry);
-          event.beforeNavigationCount = beforeNavigationCount;
-          event.afterNavigationCount = mainNavigationCount;
-          if (selectedDocumentLost || mainNavigationCount !== beforeNavigationCount) {
-            throw new Error('Document continuity lost during paint capture');
-          }
-        } catch (error) {
-          paintIncomplete = true;
-          event.incomplete = true;
-          event.error = String(error).slice(0, 1024);
-        } finally {
-          event.hostEndedAt = Date.now();
-        }
-      };
-      let paintAttachmentAttempted = false;
-      const attachPaintEvidence = async () => {
-        if (!captureSelected || paintAttachmentAttempted) return;
-        paintAttachmentAttempted = true;
-        try {
-          await testInfo.attach('unsettled-segment-paint-context', {
-            body: JSON.stringify({
-              attempted: paintAttempted,
-              incomplete: paintIncomplete,
-              documentLost: selectedDocumentLost,
-              events: paintEvidence,
-            }),
-            contentType: 'application/json',
-          });
-        } catch (error) {
-          paintIncomplete = true;
-          console.warn('6036 paint attachment failed', String(error));
-        }
-      };
-      try {
-        if (captureSelected) {
-          await page.addInitScript(() => {
-            (
-              globalThis as typeof globalThis & {
-                __walkthroughSettlement6036?: SettlementCapture6036;
-              }
-            ).__walkthroughSettlement6036 = {
-              target: null,
-              records: new Array<Record<string, unknown> | null>(4096).fill(null),
-              count: 0,
-              overflow: false,
-              incomplete: false,
-              segment: 'initial',
-              snapshots: [],
-              serializedUnits: 0,
-            };
-          });
-        }
-        const root = await open(page, width, motion);
-        selectedBindingStarted = captureSelected;
-        const steps = [await root.evaluate(geometry)];
-        const transitions = [];
-        for (const index of [1, 2, 0]) {
-          const samples = await sampleChange(root, index);
-          transitions.push(samples);
-          const last = samples.at(-1)!;
-          expect(last.settled).toBe(true);
-          expect(last.nodes).toEqual(states[index].nodes);
-          expect(last.edges).toEqual(states[index].edges);
-          expect(last.labels).toEqual(states[index].edges);
-          steps.push(last);
-        }
-        await testInfo.attach('step-geometry', {
-          body: JSON.stringify({ steps, transitions }, null, 2),
-          contentType: 'application/json',
-        });
-        // A temporary transition frame must release its departing-scene space.
-        expect(steps.at(-1)!.height).toBeCloseTo(steps[0].height, 0);
-        expect(steps.at(-1)!.scale).toBeCloseTo(steps[0].scale, 4);
-        if (motion === 'full') {
-          const departure = transitions[0];
-          // Keep the outgoing user visible during its exit, rather than dropping
-          // paint to satisfy containment. Check every observed transition phase.
-          expect(
-            departure.some(
-              (sample) => sample.phase === 'exit' && sample.paintedNodes.includes('user'),
-            ),
-          ).toBe(true);
-          for (const phase of ['camera', 'exit', 'scene']) {
-            const frames = departure.filter((sample) => sample.phase === phase);
-            expect(frames.length, phase).toBeGreaterThan(0);
-            expect(Math.max(...frames.map((sample) => sample.overflow)), phase).toBeLessThanOrEqual(
-              1,
-            );
-          }
-        }
-        // Active-scene sizing intentionally changes height between steps. Bound each
-        // step's own whitespace, not a union or the first step's reserved frame.
-        for (const step of steps) {
-          expect(step.height).toBeLessThanOrEqual(step.contentHeight + 140);
-          expect(step.controlOffset - step.footerOffset).toBeCloseTo(
-            steps[0].controlOffset - steps[0].footerOffset,
-            0,
-          );
-          expect(step.fonts.length).toBeGreaterThanOrEqual(5);
-          expect(Math.min(...step.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
-          expect(Math.min(...step.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
-          expect(step.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
-            true,
-          );
-          expect(step.overflow).toBeLessThanOrEqual(1);
-          expect(step.nodes.length).toBe(3);
-          expect(
-            [step.width, step.height, step.contentHeight, step.scale].every(Number.isFinite),
-          ).toBe(true);
-        }
-        for (const samples of transitions) {
-          expect(samples.every((sample) => sample.finitePaint)).toBe(true);
-          expect(Math.max(...samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-          const navigationOffsets = samples.map(
-            (sample) => sample.controlOffset - sample.footerOffset,
-          );
-          expect(
-            Math.max(...navigationOffsets) - Math.min(...navigationOffsets),
-          ).toBeLessThanOrEqual(1);
-          if (motion === 'reduced')
-            expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
-          else expect(samples.some((sample) => sample.animationCount > 0)).toBe(true);
-        }
-        const rapid = await sampleChange(root, 1, undefined, true);
-        await testInfo.attach('rapid-geometry', {
-          body: JSON.stringify(rapid),
-          contentType: 'application/json',
-        });
-        expect(rapid.at(-1)!.settled).toBe(true);
-        expect(rapid.every((sample) => sample.finitePaint)).toBe(true);
-        expect(rapid.at(-1)!.state).toBe('request');
-        expect(rapid.at(-1)!.nodes).toEqual(states[0].nodes);
-        expect(rapid.at(-1)!.edges).toEqual(states[0].edges);
-        expect(Math.max(...rapid.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-        const resize = [];
-        const resizeSegments = [];
-        for (const [index, resizeWidth] of [
-          [1, 420],
-          [2, 960],
-          [0, width],
-        ]) {
-          const samples = await sampleChange(root, index, resizeWidth);
-          resize.push(...samples);
-          resizeSegments.push({ index, resizeWidth, samples });
-          await observeFailedSegmentPaint(root, index, resizeWidth, samples);
-        }
-        await testInfo.attach('resize-geometry', {
-          body: JSON.stringify(resize, null, 2),
-          contentType: 'application/json',
-        });
-        await testInfo.attach('resize-segments', {
-          body: JSON.stringify(resizeSegments, null, 2),
-          contentType: 'application/json',
-        });
-        await attachPaintEvidence();
-        await attachSettlementDecisions('before-resize-assertions');
-        expect(resize.at(-1)!.settled).toBe(true);
-        expect(resize.every((sample) => sample.finitePaint)).toBe(true);
-        expect(Math.max(...resize.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-        for (const { index, samples } of resizeSegments) {
-          const final = samples.at(-1)!;
-          expect(final.settled).toBe(true);
-          expect(final.state).toBe(states[index].id);
-          expect(final.nodes).toEqual(states[index].nodes);
-          expect(final.paintedNodes).toEqual(states[index].nodes);
-          expect(final.edges).toEqual(states[index].edges);
-          expect(final.labels).toEqual(states[index].edges);
-          expect(final.fonts.length).toBeGreaterThanOrEqual(5);
-          expect(Math.min(...final.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
-          expect(Math.min(...final.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
-          expect(
-            final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12),
-          ).toBe(true);
-          const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
-          expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
-          if (motion === 'reduced') {
-            expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
-          }
-        }
-        await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
-      } finally {
-        try {
-          await attachPaintEvidence();
-          await attachSettlementDecisions('failure-or-early-exit');
-          if (captureSelected) {
-            // Required companion: covers document loss after the earlier record attachment.
-            const continuity = {
-              boundary: 'after-last-browser-action',
-              observedAt: Date.now(),
-              bindingStarted: selectedBindingStarted,
-              mainNavigationCount,
-              lost: selectedDocumentLost,
-              incomplete: !selectedBindingStarted || selectedDocumentLost,
-              paintAttempted,
-              paintIncomplete,
-              paintAttachmentAttempted,
-            };
-            try {
-              await testInfo.attach('settlement-document-continuity', {
-                body: JSON.stringify(continuity, null, 2),
-                contentType: 'application/json',
-              });
-            } catch (error) {
-              console.warn('6036 settlement continuity attachment failed', String(error));
-            }
-          }
-        } finally {
-          if (captureSelected) {
-            page.off('framenavigated', observeMainNavigation);
-            page.off('close', observeDocumentLoss);
-            page.off('crash', observeDocumentLoss);
-          }
         }
       }
+      // Active-scene sizing intentionally changes height between steps. Bound each
+      // step's own whitespace, not a union or the first step's reserved frame.
+      for (const step of steps) {
+        expect(step.height).toBeLessThanOrEqual(step.contentHeight + 140);
+        expect(step.controlOffset - step.footerOffset).toBeCloseTo(
+          steps[0].controlOffset - steps[0].footerOffset,
+          0,
+        );
+        expect(step.fonts.length).toBeGreaterThanOrEqual(5);
+        expect(Math.min(...step.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
+        expect(Math.min(...step.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
+        expect(step.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
+          true,
+        );
+        expect(step.overflow).toBeLessThanOrEqual(1);
+        expect(step.nodes.length).toBe(3);
+        expect(
+          [step.width, step.height, step.contentHeight, step.scale].every(Number.isFinite),
+        ).toBe(true);
+      }
+      for (const samples of transitions) {
+        expect(samples.every((sample) => sample.finitePaint)).toBe(true);
+        expect(Math.max(...samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+        const navigationOffsets = samples.map(
+          (sample) => sample.controlOffset - sample.footerOffset,
+        );
+        expect(Math.max(...navigationOffsets) - Math.min(...navigationOffsets)).toBeLessThanOrEqual(
+          1,
+        );
+        if (motion === 'reduced')
+          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+        else expect(samples.some((sample) => sample.animationCount > 0)).toBe(true);
+      }
+      const rapid = await sampleChange(root, 1, undefined, true);
+      await testInfo.attach('rapid-geometry', {
+        body: JSON.stringify(rapid),
+        contentType: 'application/json',
+      });
+      expect(rapid.at(-1)!.settled).toBe(true);
+      expect(rapid.every((sample) => sample.finitePaint)).toBe(true);
+      expect(rapid.at(-1)!.state).toBe('request');
+      expect(rapid.at(-1)!.nodes).toEqual(states[0].nodes);
+      expect(rapid.at(-1)!.edges).toEqual(states[0].edges);
+      expect(Math.max(...rapid.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      const resize = [];
+      const resizeSegments = [];
+      for (const [index, resizeWidth] of [
+        [1, 420],
+        [2, 960],
+        [0, width],
+      ]) {
+        const samples = await sampleChange(root, index, resizeWidth);
+        resize.push(...samples);
+        resizeSegments.push({ index, resizeWidth, samples });
+      }
+      await testInfo.attach('resize-geometry', {
+        body: JSON.stringify(resize, null, 2),
+        contentType: 'application/json',
+      });
+      await testInfo.attach('resize-segments', {
+        body: JSON.stringify(resizeSegments, null, 2),
+        contentType: 'application/json',
+      });
+      expect(resize.at(-1)!.settled).toBe(true);
+      expect(resize.every((sample) => sample.finitePaint)).toBe(true);
+      expect(Math.max(...resize.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      for (const { index, samples } of resizeSegments) {
+        const final = samples.at(-1)!;
+        expect(final.settled).toBe(true);
+        expect(final.state).toBe(states[index].id);
+        expect(final.nodes).toEqual(states[index].nodes);
+        expect(final.paintedNodes).toEqual(states[index].nodes);
+        expect(final.edges).toEqual(states[index].edges);
+        expect(final.labels).toEqual(states[index].edges);
+        expect(final.fonts.length).toBeGreaterThanOrEqual(5);
+        expect(Math.min(...final.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
+        expect(Math.min(...final.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
+        expect(final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
+          true,
+        );
+        const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+        expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
+        if (motion === 'reduced') {
+          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+        }
+      }
+      await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
     });
   }
 }
+
+// Moving an ancestor changes viewport coordinates without changing the diagram's
+// own geometry. It must not keep a completed resize in the settling state.
+test('walkthrough settles a resize while its ancestor moves', async ({ page }, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  const result = await root.evaluate(async (element, source) => {
+    const read = new Function(`return (${source})`)() as typeof geometry;
+    const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
+    const motion = host.animate(
+      [{ transform: 'translateY(0px)' }, { transform: 'translateY(8px)' }],
+      { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'linear' },
+    );
+    const samples = [];
+    try {
+      element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[1].click();
+      host.style.width = '420px';
+      const start = performance.now();
+      do {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        samples.push({ ...read(element), rootTop: element.getBoundingClientRect().top });
+      } while (
+        (!samples.at(-1)!.settled || samples.length < 4) &&
+        performance.now() - start < 4000
+      );
+      return { samples, ancestorStillMoving: motion.playState === 'running' };
+    } finally {
+      motion.cancel();
+    }
+  }, geometry.toString());
+  await testInfo.attach('ancestor-motion-geometry', {
+    body: JSON.stringify(result),
+    contentType: 'application/json',
+  });
+  expect(result.ancestorStillMoving).toBe(true);
+  const tops = result.samples.map((sample) => sample.rootTop);
+  expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.01);
+  expect(result.samples.at(-1)!.settled).toBe(true);
+  expect(result.samples.at(-1)!.state).toBe('execute');
+  expect(result.samples.every((sample) => sample.finitePaint)).toBe(true);
+  expect(Math.max(...result.samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+  await root.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
+});

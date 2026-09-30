@@ -304,6 +304,9 @@
 
   function motionSnapshot() {
     if (!rendererEl) return '';
+    // Settlement belongs to this diagram. Scrolling or moving an ancestor must
+    // not keep unchanged local geometry in the settling state.
+    const origin = rendererEl.getBoundingClientRect();
     const selector = [
       '.diagram-content',
       '.diagram-svg-layer',
@@ -328,8 +331,8 @@
           element.getAttribute('data-group-id'),
           element.getAttribute('class'),
           element.getAttribute('d'),
-          bounds.x.toFixed(3),
-          bounds.y.toFixed(3),
+          (bounds.x - origin.x).toFixed(3),
+          (bounds.y - origin.y).toFixed(3),
           bounds.width.toFixed(3),
           bounds.height.toFixed(3),
           style.opacity,
@@ -339,789 +342,31 @@
       .join('\n');
   }
 
-  // Isolated diagnostic only: selected element identity is supplied by the test.
-  // Diagnostic-only state; no rune subscriptions or replacement scroll behavior.
-  let scrollObservationSequence6036 = 0;
-  let scrollElementSequence6036 = 0;
-  const scrollElementIds6036 = new WeakMap<Element, number>();
-  let activeScrollObservation6036:
-    | { id: number; revision: number; caller: 'settlement' | 'changeState'; write: number }
-    | undefined;
-
-  // Diagnostic only: observe existing resize deliveries in the selected catalog host.
-  type ResizeDeliveryToken6036 = {
-    capture: ResizeDeliveryCapture6036;
-    target: Element;
-    host: Element;
-    emitter: Element;
-    emitterId: number;
-    sequence: number;
-  };
-  type ResizeDeliveryCapture6036 = {
-    target: Element | null;
-    records: (Record<string, unknown> | null)[];
-    count: number;
-    segment: string;
-    serializedUnits: number;
-    overflow: boolean;
-    incomplete: boolean;
-    resizeDelivery6036?: {
-      target: Element;
-      host: Element;
-      emitters: WeakMap<Element, number>;
-      emitterCount: number;
-      sequence: number;
-      recordCount: number;
-      units: number;
-    };
-  };
-
-  // Diagnostic-only reserved record. Payload plus padding is exactly 4096 UTF-16 units.
-  // Charged once to the primary ledger and once to the RO ledger if it is created.
-  type FirstRejection6036 = {
-    decision: 'first-rejection';
-    schema: 1;
-    status: 'armed' | 'observed' | 'inherited-unknown' | 'encoding-failed';
-    payload: Record<string, unknown>;
-    padding: string;
-  };
-  type RejectionCapture6036 = {
-    target: Element | null;
-    records: (Record<string, unknown> | null)[];
-    count: number;
-    serializedUnits: number;
-    overflow: boolean;
-    incomplete: boolean;
-    segment: string;
-    snapshots?: string[];
-    resizeDelivery6036?: {
-      emitters: WeakMap<Element, number>;
-      emitterCount: number;
-      sequence: number;
-      recordCount: number;
-      units: number;
-    };
-    firstRejection6036?: FirstRejection6036;
-  };
-
-  function rejectionNumber6036(value: unknown): unknown[] {
-    return typeof value === 'number' &&
-      Number.isFinite(value) &&
-      Math.abs(value) <= Number.MAX_SAFE_INTEGER
-      ? ['value', value]
-      : ['unavailable'];
-  }
-
-  function rejectionRecord6036(
-    value: unknown,
-    reason?: string,
-    kind = 'recorder',
-    phase = 'unavailable',
-    token?: ResizeDeliveryToken6036 | null,
-    attemptedUnits?: number,
-    facts?: readonly number[],
-  ): FirstRejection6036 | undefined {
-    return untrack(() => {
-      const capture = value as RejectionCapture6036 | undefined;
-      if (!capture?.target || !Array.isArray(capture.records)) return undefined;
-      try {
-        let record = capture.firstRejection6036;
-        const inherited = capture.overflow || capture.incomplete;
-        if (!reason && !inherited) return record;
-        const ledger = capture.resizeDelivery6036;
-        const counters = [
-          rejectionNumber6036(capture.count),
-          rejectionNumber6036(capture.serializedUnits),
-          capture.snapshots ? rejectionNumber6036(capture.snapshots.length) : ['unavailable'],
-          ledger ? rejectionNumber6036(ledger.recordCount) : ['unavailable'],
-          ledger ? rejectionNumber6036(ledger.units) : ['unavailable'],
-          ledger ? rejectionNumber6036(ledger.emitterCount) : ['unavailable'],
-          ledger ? rejectionNumber6036(ledger.sequence) : ['unavailable'],
-          rejectionNumber6036(scrollObservationSequence6036),
-          rejectionNumber6036(scrollElementSequence6036),
-          rejectionNumber6036(movingEdgeIds.size),
-        ];
-        if (!record) {
-          if (
-            capture.count >= 4096 ||
-            capture.serializedUnits + 4096 > 2 * 1024 * 1024 ||
-            (ledger && (ledger.recordCount + 1 > 256 || ledger.units + 4096 > 128 * 1024))
-          ) {
-            // No space to preserve a reason: absence plus the original veto stays unknown.
-            capture.overflow = capture.incomplete = true;
-            return undefined;
-          }
-          record = {
-            decision: 'first-rejection',
-            schema: 1,
-            status: 'armed',
-            payload: {},
-            padding: '',
-          };
-          record.padding = ' '.repeat(4096 - JSON.stringify(record).length);
-          capture.records[capture.count++] = record;
-          capture.serializedUnits += 4096;
-          capture.firstRejection6036 = record;
-          if (ledger) {
-            ledger.recordCount += 1;
-            ledger.units += 4096;
-          }
-        }
-        // Every header-only path remains incomplete; never clear an inherited veto.
-        capture.incomplete = true;
-        if (record.status !== 'armed') return record;
-        const segment =
-          typeof capture.segment === 'string' && capture.segment.length <= 128
-            ? ['value', capture.segment]
-            : ['unavailable'];
-        record.status = inherited ? 'inherited-unknown' : 'observed';
-        record.payload = {
-          reason: inherited ? 'inherited-unknown' : reason,
-          kind: inherited ? 'unknown' : kind,
-          phase: inherited ? 'unknown' : phase,
-          observedAt: rejectionNumber6036(performance.now()),
-          segment,
-          revision: rejectionNumber6036(settlementRevision),
-          emitter: rejectionNumber6036(
-            token?.emitterId ?? (rendererEl ? ledger?.emitters.get(rendererEl) : undefined),
-          ),
-          sequence: token ? rejectionNumber6036(token.sequence) : ['unavailable'],
-          attemptedUTF16: inherited
-            ? ['unknown']
-            : attemptedUnits === undefined
-              ? ['not-computed']
-              : rejectionNumber6036(attemptedUnits),
-          counters,
-          facts: inherited
-            ? ['unknown']
-            : facts
-              ? facts.map(rejectionNumber6036)
-              : ['not-computed'],
-        };
-        record.padding = '';
-        const size = JSON.stringify(record).length;
-        if (size > 4096) {
-          record.status = 'encoding-failed';
-          record.payload = { reason: 'encoding-failed', complete: false };
-          capture.incomplete = true;
-        }
-        record.padding = ' '.repeat(4096 - JSON.stringify(record).length);
-        return record;
-      } catch {
-        capture.incomplete = true;
-        return undefined;
-      }
-    });
-  }
-
-  // Commit reservation and ordinary event together; an armed header is never published alone.
-  function admitDiagnosticRecord6036(
-    value: unknown,
-    record: Record<string, unknown>,
-    units: number,
-    resizeDelivery = false,
-  ): boolean {
-    return untrack(() => {
-      const capture = value as RejectionCapture6036;
-      try {
-        const ledger = capture.resizeDelivery6036;
-        const extra = capture.firstRejection6036 ? 0 : 1;
-        const reservedUnits = extra * 4096;
-        if (
-          capture.count + extra + 1 > 4096 ||
-          capture.serializedUnits + reservedUnits + units > 2 * 1024 * 1024 ||
-          (resizeDelivery && !ledger) ||
-          (ledger &&
-            (ledger.recordCount + extra + (resizeDelivery ? 1 : 0) > 256 ||
-              ledger.units + reservedUnits + (resizeDelivery ? units : 0) > 128 * 1024))
-        ) {
-          const reason =
-            capture.count + extra + 1 > 4096
-              ? 'admission.primary-records'
-              : capture.serializedUnits + reservedUnits + units > 2 * 1024 * 1024
-                ? 'admission.primary-units'
-                : !ledger
-                  ? 'admission.missing-ledger'
-                  : ledger.recordCount + extra + (resizeDelivery ? 1 : 0) > 256
-                    ? 'admission.secondary-records'
-                    : 'admission.secondary-units';
-          rejectionRecord6036(
-            capture,
-            reason,
-            resizeDelivery ? 'resize-delivery' : 'settlement',
-            'admit',
-            undefined,
-            units,
-          );
-          capture.overflow = capture.incomplete = true;
-          return false;
-        }
-        const header: FirstRejection6036 = capture.firstRejection6036 ?? {
-          decision: 'first-rejection',
-          schema: 1,
-          status: 'armed',
-          payload: {},
-          padding: '',
-        };
-        if (extra) header.padding = ' '.repeat(4096 - JSON.stringify(header).length);
-        const index = capture.count;
-        if (extra) capture.records[index] = header;
-        capture.records[index + extra] = record;
-        capture.count = index + extra + 1;
-        capture.serializedUnits += reservedUnits + units;
-        if (ledger) {
-          ledger.recordCount += extra + (resizeDelivery ? 1 : 0);
-          ledger.units += reservedUnits + (resizeDelivery ? units : 0);
-        }
-        capture.firstRejection6036 = header;
-        return true;
-      } catch {
-        rejectionRecord6036(capture, 'admission.exception', 'recorder', 'admit');
-        capture.incomplete = true;
-        return false;
-      }
-    });
-  }
-
-  function observeResizeDelivery6036(
-    phase: 'before' | 'after',
-    entries: ResizeObserverEntry[],
-    resizeLane: Element,
-    token?: ResizeDeliveryToken6036 | null,
-  ): ResizeDeliveryToken6036 | null {
-    return untrack(() => {
-      const capture = (
-        globalThis as typeof globalThis & {
-          __walkthroughSettlement6036?: ResizeDeliveryCapture6036;
-        }
-      ).__walkthroughSettlement6036;
-      rejectionRecord6036(capture);
-      if (phase === 'after' && !token) return null;
-      if (token && (capture !== token.capture || capture?.target !== token.target)) {
-        rejectionRecord6036(
-          token.capture,
-          'ro.capture-target-change',
-          'resize-delivery',
-          phase,
-          token,
-        );
-        token.capture.incomplete = true;
-        if (capture) {
-          rejectionRecord6036(capture, 'ro.capture-target-change', 'resize-delivery', phase, token);
-          capture.incomplete = true;
-        }
-        return null;
-      }
-      if (!capture?.target || !rendererEl) {
-        if (token) {
-          rejectionRecord6036(
-            token.capture,
-            'ro.missing-target-emitter',
-            'resize-delivery',
-            phase,
-            token,
-          );
-          token.capture.incomplete = true;
-        }
-        return null;
-      }
-      try {
-        const target = capture.target;
-        const host = target.closest('[data-testid="catalog-scene-focus"]');
-        if (!host || !target.isConnected) {
-          rejectionRecord6036(capture, 'ro.host-disconnected', 'resize-delivery', phase, token);
-          capture.incomplete = true;
-          return null;
-        }
-        if (rendererEl.closest('[data-testid="catalog-scene-focus"]') !== host) {
-          if (token) {
-            rejectionRecord6036(capture, 'ro.host-mismatch', 'resize-delivery', phase, token);
-            capture.incomplete = true;
-          }
-          return null;
-        }
-        if (
-          capture.overflow ||
-          capture.count >= 4096 ||
-          capture.serializedUnits >= 2 * 1024 * 1024
-        ) {
-          rejectionRecord6036(
-            capture,
-            capture.count >= 4096 ? 'primary.records' : 'primary.units-entry',
-            'resize-delivery',
-            phase,
-            token,
-          );
-          capture.overflow = capture.incomplete = true;
-          return null;
-        }
-        const ledger = (capture.resizeDelivery6036 ??= {
-          target,
-          host,
-          emitters: new WeakMap<Element, number>(),
-          emitterCount: 0,
-          sequence: 0,
-          recordCount: rejectionRecord6036(capture) ? 1 : 0,
-          units: rejectionRecord6036(capture) ? 4096 : 0,
-        });
-        if (ledger.target !== target || ledger.host !== host) {
-          rejectionRecord6036(capture, 'ro.ledger-identity', 'resize-delivery', phase, token);
-          capture.incomplete = true;
-          return null;
-        }
-        if (phase === 'before') {
-          let emitterId = ledger.emitters.get(rendererEl);
-          if (emitterId === undefined) {
-            if (ledger.emitterCount >= 64) {
-              rejectionRecord6036(capture, 'ro.emitters', 'resize-delivery', phase, token);
-              capture.overflow = capture.incomplete = true;
-              return null;
-            }
-            emitterId = ++ledger.emitterCount;
-            ledger.emitters.set(rendererEl, emitterId);
-          }
-          if (ledger.sequence >= 128) {
-            rejectionRecord6036(capture, 'ro.sequences', 'resize-delivery', phase, token);
-            capture.overflow = capture.incomplete = true;
-            return null;
-          }
-          token = {
-            capture,
-            target,
-            host,
-            emitter: rendererEl,
-            emitterId,
-            sequence: ++ledger.sequence,
-          };
-        }
-        if (!token || token.emitter !== rendererEl || token.host !== host) {
-          rejectionRecord6036(capture, 'ro.token-identity', 'resize-delivery', phase, token);
-          capture.incomplete = true;
-          return null;
-        }
-        if (
-          entries.some((entry) => entry.target !== scrollContainerEl && entry.target !== resizeLane)
-        ) {
-          rejectionRecord6036(
-            capture,
-            'ro.entry-role',
-            'resize-delivery',
-            phase,
-            token,
-            undefined,
-            [entries.length],
-          );
-          capture.incomplete = true;
-          return null;
-        }
-        if (entries.length > 2 || typeof diagram.id !== 'string' || diagram.id.length > 256) {
-          rejectionRecord6036(
-            capture,
-            entries.length > 2 ? 'ro.entry-count' : 'ro.diagram-id',
-            'resize-delivery',
-            phase,
-            token,
-            undefined,
-            [entries.length, typeof diagram.id === 'string' ? diagram.id.length : NaN],
-          );
-          capture.overflow = capture.incomplete = true;
-          return null;
-        }
-        const readStartedAt = performance.now();
-        const rect = (element: Element) => {
-          const box = element.getBoundingClientRect();
-          return [box.x, box.y, box.width, box.height];
-        };
-        const documentElement = target.ownerDocument.scrollingElement;
-        const record = {
-          sampledAt: performance.now(),
-          decision: 'resize-delivery',
-          segment: capture.segment,
-          resizeDelivery: {
-            phase,
-            sequence: token.sequence,
-            emitterId: token.emitterId,
-            emitterIsTarget: rendererEl === target,
-            diagramId: diagram.id,
-            site: 'DiagramRenderer:ResizeObserver:updateFitScale+flushSync',
-            emitterRevision: settlementRevision,
-            emitterTransitionRevision: transitionRevision,
-            layoutResizeRevision,
-            emitterState: currentStateId,
-            emitterPhase: motionPhase,
-            inputs: { noteLaneWidth, scrollContainerWidth, layoutWidthLimit, fitScale, resizing },
-            deliveredEntries: entries.map((entry) => ({
-              target: entry.target === scrollContainerEl ? 'scroll-container' : 'resize-lane',
-              width: entry.contentRect.width,
-              height: entry.contentRect.height,
-            })),
-            emitterRect: rect(rendererEl),
-            targetRect: rect(target),
-            hostRect: rect(host),
-            documentScroll: documentElement
-              ? [documentElement.scrollLeft, documentElement.scrollTop]
-              : null,
-            readStartedAt,
-            readEndedAt: performance.now(),
-          },
-        };
-        record.sampledAt = performance.now();
-        const units = JSON.stringify(record).length;
-        if (
-          ledger.recordCount >= 256 ||
-          ledger.units + units > 128 * 1024 ||
-          capture.serializedUnits + units > 2 * 1024 * 1024
-        ) {
-          rejectionRecord6036(
-            capture,
-            ledger.recordCount >= 256
-              ? 'ro.records'
-              : ledger.units + units > 128 * 1024
-                ? 'ro.units'
-                : 'primary.units-append',
-            'resize-delivery',
-            phase,
-            token,
-            units,
-          );
-          capture.overflow = capture.incomplete = true;
-          return null;
-        }
-        if (!admitDiagnosticRecord6036(capture, record, units, true)) return null;
-        return token;
-      } catch {
-        rejectionRecord6036(capture, 'ro.exception', 'resize-delivery', phase, token);
-        capture.incomplete = true;
-        return null;
-      }
-    });
-  }
-
-  function observeStepViewport6036(
-    phase: 'settlement-before' | 'step-before' | 'call-after' | 'write-before' | 'write-after',
-    revision?: number,
-    writer?: { ancestor: HTMLElement; delta: number; top: number; bottom: number; target: DOMRect },
-  ): number | null {
-    // Only new observation reads are untracked; original calls retain their dependencies.
-    return untrack(() => {
-      const capture = (
-        globalThis as typeof globalThis & {
-          __walkthroughSettlement6036?: {
-            target: Element | null;
-            count: number;
-            serializedUnits: number;
-            overflow: boolean;
-            incomplete: boolean;
-          };
-        }
-      ).__walkthroughSettlement6036;
-      if (!rendererEl || !capture || capture.target !== rendererEl) return null;
-      rejectionRecord6036(capture);
-      if (capture.overflow || capture.count >= 4096 || capture.serializedUnits >= 2 * 1024 * 1024) {
-        rejectionRecord6036(
-          capture,
-          capture.count >= 4096 ? 'primary.records' : 'primary.units-entry',
-          'viewport',
-          phase,
-        );
-        capture.overflow = capture.incomplete = true;
-        return null;
-      }
-      try {
-        if (phase === 'settlement-before' || phase === 'step-before') {
-          if (activeScrollObservation6036) {
-            rejectionRecord6036(capture, 'viewport.active-overlap', 'viewport', phase);
-            capture.incomplete = true;
-          }
-          if (scrollObservationSequence6036 >= 4096) {
-            rejectionRecord6036(capture, 'viewport.invocations', 'viewport', phase);
-            capture.overflow = true;
-            throw new Error('scroll callback capacity');
-          }
-          activeScrollObservation6036 = {
-            id: ++scrollObservationSequence6036,
-            revision: revision ?? settlementRevision,
-            caller: phase === 'settlement-before' ? 'settlement' : 'changeState',
-            write: 0,
-          };
-        }
-        const observation = activeScrollObservation6036;
-        if (!observation) {
-          rejectionRecord6036(capture, 'viewport.missing-invocation', 'viewport', phase);
-          capture.incomplete = true;
-          return null;
-        }
-        if (phase === 'write-before') observation.write += 1;
-        const id = (element: Element) => {
-          let value = scrollElementIds6036.get(element);
-          if (value === undefined) {
-            if (scrollElementSequence6036 >= 64) {
-              rejectionRecord6036(capture, 'viewport.identities', 'viewport', phase);
-              capture.overflow = true;
-              throw new Error('scroll identity capacity');
-            }
-            value = ++scrollElementSequence6036;
-            scrollElementIds6036.set(element, value);
-          }
-          return value;
-        };
-        const rect = (bounds: DOMRect) => [bounds.x, bounds.y, bounds.width, bounds.height];
-        const measure = (element: Element) => ({
-          id: id(element),
-          rect: rect(element.getBoundingClientRect()),
-          scroll: [element.scrollLeft, element.scrollTop],
-          client: [element.clientTop, element.clientHeight],
-        });
-        const readStartedAt = performance.now();
-        const ancestors = [];
-        for (let element = rendererEl.parentElement; element; element = element.parentElement) {
-          if (ancestors.length >= 16) {
-            rejectionRecord6036(
-              capture,
-              'viewport.ancestors',
-              'viewport',
-              phase,
-              undefined,
-              undefined,
-              [ancestors.length],
-            );
-            capture.overflow = true;
-            throw new Error('scroll ancestor capacity');
-          }
-          ancestors.push(measure(element));
-        }
-        const target = measure(rendererEl);
-        const page = rendererEl.ownerDocument.scrollingElement;
-        const documentScroll = page ? measure(page) : null;
-        const payload = {
-          phase,
-          caller: observation.caller,
-          readStartedAt,
-          readEndedAt: performance.now(),
-          target,
-          ancestors,
-          documentScroll,
-          writer: writer
-            ? {
-                site: 'keepStepInView:ancestor.scrollBy',
-                index: observation.write,
-                ancestorId: id(writer.ancestor),
-                requestedTop: writer.delta,
-                behavior: 'instant',
-                top: writer.top,
-                bottom: writer.bottom,
-                targetRect: rect(writer.target),
-              }
-            : null,
-        };
-        recordSettlementDecision(
-          observation.revision,
-          'viewport',
-          null,
-          null,
-          null,
-          undefined,
-          undefined,
-          null,
-          observation.id,
-          payload,
-        );
-        if (phase === 'call-after') activeScrollObservation6036 = undefined;
-        return observation.id;
-      } catch {
-        rejectionRecord6036(capture, 'viewport.exception', 'viewport', phase);
-        capture.incomplete = true;
-        return null;
-      }
-    });
-  }
-
-  function recordSettlementDecision(
-    revision: number,
-    decision:
-      | 'stale'
-      | 'continue'
-      | 'tick'
-      | 'settled'
-      | 'tick-resume'
-      | 'tick-stale'
-      | 'begin'
-      | 'viewport',
-    active: boolean | null,
-    previousSnapshotPresent: boolean | null,
-    snapshotEqual: boolean | null,
-    snapshot?: string,
-    previousSnapshot?: string,
-    finiteAnimationCount: number | null = null,
-    scrollObservationId: number | null = null,
-    scrollObservation: Record<string, unknown> | null = null,
-  ) {
-    const capture = (
-      globalThis as typeof globalThis & {
-        __walkthroughSettlement6036?: {
-          target: Element | null;
-          records: (Record<string, unknown> | null)[];
-          count: number;
-          overflow: boolean;
-          incomplete: boolean;
-          segment: string;
-          snapshots: string[];
-          serializedUnits: number;
-        };
-      }
-    ).__walkthroughSettlement6036;
-    if (!rendererEl || !capture || capture.target !== rendererEl) return;
-    rejectionRecord6036(capture);
-    try {
-      if (capture.count >= 4096) {
-        rejectionRecord6036(capture, 'primary.records', decision, 'append');
-        capture.overflow = true;
-        capture.incomplete = true;
-        return;
-      }
-      const intern = (value: string | undefined): number | null => {
-        if (value === undefined) return null;
-        const existing = capture.snapshots.indexOf(value);
-        if (existing !== -1) return existing;
-        const units = JSON.stringify(value).length;
-        if (
-          units > 32768 ||
-          capture.snapshots.length >= 256 ||
-          capture.serializedUnits + units > 2 * 1024 * 1024
-        ) {
-          rejectionRecord6036(
-            capture,
-            units > 32768
-              ? 'snapshot.item-units'
-              : capture.snapshots.length >= 256
-                ? 'snapshot.count'
-                : 'primary.units-snapshot',
-            decision,
-            'intern',
-            undefined,
-            units,
-          );
-          capture.overflow = capture.incomplete = true;
-          return null;
-        }
-        capture.serializedUnits += units;
-        return capture.snapshots.push(value) - 1;
-      };
-      const snapshotIndex = intern(snapshot);
-      const previousSnapshotIndex = intern(previousSnapshot);
-      const movingEdges: string[] = [];
-      for (const edgeId of movingEdgeIds) {
-        if (movingEdges.length === 64) break;
-        movingEdges.push(edgeId);
-      }
-      if (movingEdgeIds.size > 64) {
-        rejectionRecord6036(capture, 'primary.moving-edges', decision, 'append');
-        capture.overflow = capture.incomplete = true;
-      }
-      const record = {
-        sampledAt: performance.now(),
-        scrollObservationId,
-        scrollObservation,
-        segment: capture.segment,
-        snapshotIndex,
-        previousSnapshotIndex,
-        movingEdges,
-        finiteAnimationCount,
-        revision,
-        currentRevision: settlementRevision,
-        state: currentStateId,
-        phase: motionPhase,
-        movingEdgeCount: movingEdgeIds.size,
-        active,
-        previousSnapshotPresent,
-        snapshotEqual,
-        stateJustChanged,
-        decision,
-      };
-      const units = JSON.stringify(record).length;
-      if (capture.serializedUnits + units > 2 * 1024 * 1024) {
-        rejectionRecord6036(capture, 'primary.units-append', decision, 'append', undefined, units);
-        capture.overflow = capture.incomplete = true;
-        return;
-      }
-      admitDiagnosticRecord6036(capture, record, units);
-    } catch {
-      rejectionRecord6036(capture, 'primary.exception', decision, 'append');
-      capture.incomplete = true;
-    }
-  }
-
   function monitorDiagramSettlement(revision: number, previousSnapshot?: string) {
     settlementFrame = requestAnimationFrame(() => {
-      if (revision !== settlementRevision) {
-        recordSettlementDecision(revision, 'stale', null, null, null);
-        return;
-      }
-      const scrollObservationId6036 = observeStepViewport6036('settlement-before', revision);
+      if (revision !== settlementRevision) return;
       keepStepInView?.();
-      observeStepViewport6036('call-after');
       const snapshot = motionSnapshot();
-      let finiteAnimationCount: number | null = null;
       const active =
         motionPhase === 'camera' ||
         motionPhase === 'exit' ||
         movingEdgeIds.size > 0 ||
-        (finiteAnimationCount = activeFiniteAnimations().length) > 0;
+        activeFiniteAnimations().length > 0;
       if (!active && previousSnapshot !== undefined && snapshot === previousSnapshot) {
         if (stateJustChanged) {
-          recordSettlementDecision(
-            revision,
-            'tick',
-            active,
-            true,
-            true,
-            snapshot,
-            previousSnapshot,
-            finiteAnimationCount,
-            scrollObservationId6036,
-          );
           stateJustChanged = false;
           settlementFrame = undefined;
           void tick().then(() => {
-            recordSettlementDecision(
-              revision,
-              revision === settlementRevision ? 'tick-resume' : 'tick-stale',
-              null,
-              null,
-              null,
-            );
             if (revision === settlementRevision) monitorDiagramSettlement(revision);
           });
           return;
         }
-        recordSettlementDecision(
-          revision,
-          'settled',
-          active,
-          true,
-          true,
-          snapshot,
-          previousSnapshot,
-          finiteAnimationCount,
-          scrollObservationId6036,
-        );
         diagramSettled = true;
         motionPhase = 'settled';
         stopStepViewportTracking();
         settlementFrame = undefined;
         return;
       }
-      recordSettlementDecision(
-        revision,
-        'continue',
-        active,
-        previousSnapshot !== undefined,
-        active || previousSnapshot === undefined ? null : false,
-        snapshot,
-        previousSnapshot,
-        finiteAnimationCount,
-        scrollObservationId6036,
-      );
       monitorDiagramSettlement(revision, active ? undefined : snapshot);
     });
   }
@@ -1135,7 +380,6 @@
       stateJustChanged = false;
     }
     diagramSettled = false;
-    untrack(() => recordSettlementDecision(revision, 'begin', null, null, null));
     queueMicrotask(() => {
       if (revision === settlementRevision) monitorDiagramSettlement(revision);
     });
@@ -1739,8 +983,7 @@
       scrollContainerWidth = scrollContainerEl!.clientWidth;
       updateFitScale();
     });
-    const observer = new ResizeObserver((entries) => {
-      const resizeDelivery6036 = observeResizeDelivery6036('before', entries, resizeLane);
+    const observer = new ResizeObserver(() => {
       if (
         automaticallyFitState &&
         scrollContainerWidth !== null &&
@@ -1771,7 +1014,6 @@
           resizeFrame = undefined;
         });
       }
-      observeResizeDelivery6036('after', entries, resizeLane, resizeDelivery6036);
     });
     observer.observe(scrollContainerEl);
     if (resizeLane !== scrollContainerEl) observer.observe(resizeLane);
@@ -1979,23 +1221,7 @@
             : footer.querySelector('.state-navigation')!.getBoundingClientRect();
         const delta =
           target.bottom > bottom ? target.bottom - bottom : target.top < top ? target.top - top : 0;
-        if (Math.abs(delta) > 0.5) {
-          observeStepViewport6036('write-before', undefined, {
-            ancestor,
-            delta,
-            top,
-            bottom,
-            target,
-          });
-          ancestor.scrollBy({ top: delta, behavior: 'instant' });
-          observeStepViewport6036('write-after', undefined, {
-            ancestor,
-            delta,
-            top,
-            bottom,
-            target,
-          });
-        }
+        if (Math.abs(delta) > 0.5) ancestor.scrollBy({ top: delta, behavior: 'instant' });
       }
     };
   }
@@ -2183,9 +1409,7 @@
 
     // Notify parent so consumers (e.g. TipTap DiagramBlock) can persist the selected step
     onUpdate?.({ currentStateId: stateId });
-    observeStepViewport6036('step-before');
     keepStepInView?.();
-    observeStepViewport6036('call-after');
   }
 
   function handleEdgeMotion(edgeId: string, moving: boolean) {
