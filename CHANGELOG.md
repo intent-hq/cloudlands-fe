@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.191.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.4...v2.191.0) (2026-09-30)
+
+
+### 🚀 Features
+
+* add Codex service tier submenu ([#3028](https://github.com/intent-hq/cloudlands-fe/issues/3028)) ([60cc1af](https://github.com/intent-hq/cloudlands-fe/commit/60cc1afc510f784a7276f2b1f37b961804abe3e9))
+* switch agents between background and foreground ([#3027](https://github.com/intent-hq/cloudlands-fe/issues/3027)) ([bc9264e](https://github.com/intent-hq/cloudlands-fe/commit/bc9264ec3d67656a9b76a45907755555ac57f454))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.123 ([#3033](https://github.com/intent-hq/cloudlands-fe/issues/3033)) ([ad0836d](https://github.com/intent-hq/cloudlands-fe/commit/ad0836d5746fa24ba59794cb5a5ef5b4383fc08d))
+
 ## [2.190.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.3...v2.190.4) (2026-09-30)
 
 
