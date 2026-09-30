@@ -16,7 +16,7 @@
  * rosters.
  */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';

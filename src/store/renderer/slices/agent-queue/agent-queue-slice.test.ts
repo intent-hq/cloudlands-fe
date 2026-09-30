@@ -1,7 +1,7 @@
 import type { QueuedMessage } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   agentQueueReducer,
   clearAgentQueue,

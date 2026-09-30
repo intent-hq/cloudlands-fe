@@ -1,4 +1,4 @@
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 
 export const selectPdfPreview = store.createSelector((state, viewId: string) =>

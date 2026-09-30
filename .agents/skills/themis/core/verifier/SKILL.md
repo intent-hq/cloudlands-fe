@@ -34,7 +34,7 @@ Before verifying implementation or documentation diffs under this skill:
 Source rules:
 
 - `core/core-policy/SKILL.md` — agent preflight compliance, refactor cleanup, and utility reuse rules.
-- `@augmentcode/themis/docs/ARCHITECTURE.md` — Utility Reuse Discovery Protocol and Refactor Cleanup Guard.
+- `@themislib/themis/docs/ARCHITECTURE.md` — Utility Reuse Discovery Protocol and Refactor Cleanup Guard.
 - `core/state-integrity/SKILL.md` — canonical state, duplicate-owner rejection, preflight searches, and handoff evidence.
 - `core/reducers/SKILL.md` — canonical reducer state and reducer/helper reuse before extracting new helpers.
 - `core/testing/SKILL.md` — verifier evidence requirements for refactor cleanup.
@@ -55,7 +55,7 @@ If any gate fails, request changes. Do not accept “looks good” without evide
 
 ### Automated gate selection rules
 
-Use this repository's maintainer `npm run ...` scripts when reviewing package repo diffs. When verifying a consuming app that has installed the package, run ESLint with the app's composed domain root config imported from `@augmentcode/themis/eslint-plugins`.
+Use this repository's maintainer `npm run ...` scripts when reviewing package repo diffs. When verifying a consuming app that has installed the package, run ESLint with the app's composed domain root config imported from `@themislib/themis/eslint-plugins`.
 
 - **Always require** `git status --short` before the final decision to identify modified, staged, deleted, and untracked files that affect review scope.
 - **Always require** `git diff --check` for any local diff before acceptance; whitespace errors block acceptance until fixed or explicitly scoped out by the user.

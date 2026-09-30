@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { initialState as modelInitialState, modelReducer } from '../../model/model-slice';
 import { initialState as availabilityInitialState } from '../../agent-availability/agent-availability-slice';

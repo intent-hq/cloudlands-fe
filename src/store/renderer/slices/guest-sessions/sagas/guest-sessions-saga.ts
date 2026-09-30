@@ -32,7 +32,7 @@ import {
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
 import { backendRequest } from '$lib/client/live/backend-transport';

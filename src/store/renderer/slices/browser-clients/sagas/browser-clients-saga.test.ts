@@ -34,7 +34,7 @@ vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toast
 
 import type { LiveClient } from '$shared/types/browser-clients';
 import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
-import type { StoreAction } from '@augmentcode/themis/types';
+import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';

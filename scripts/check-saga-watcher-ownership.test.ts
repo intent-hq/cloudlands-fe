@@ -9,7 +9,7 @@ const root = (entries: string[], imports: string[] = []) => ({
 const actionOwner = (path: string, names: string[]) => ({
   path,
   content: [
-    "import { createAction } from '@augmentcode/themis/utils/store/create-action';",
+    "import { createAction } from '@themislib/themis/utils/store/create-action';",
     ...names.map((name) => `export const ${name} = createAction('test/${name}');`),
   ].join('\n'),
 });
@@ -137,8 +137,8 @@ describe('saga watcher ownership guard', () => {
       {
         path: 'src/store/renderer/slices/bad/canonical-actions.ts',
         content: [
-          "import * as factory from '@augmentcode/themis/utils/store/create-action';",
-          "import { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+          "import * as factory from '@themislib/themis/utils/store/create-action';",
+          "import { createAction as defineAction } from '@themislib/themis/utils/store/create-action';",
           "export const launchChannel = factory.createAction('test/openChannel');",
           "const refreshRequested = defineAction('test/refreshRequested');",
           'export { refreshRequested };',
@@ -392,7 +392,7 @@ describe('saga watcher ownership guard', () => {
       {
         path: 'src/store/renderer/slices/shared/factory-barrel.ts',
         content:
-          "export { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+          "export { createAction as defineAction } from '@themislib/themis/utils/store/create-action';",
       },
       {
         path: 'src/store/renderer/slices/shared/canonical-actions.ts',

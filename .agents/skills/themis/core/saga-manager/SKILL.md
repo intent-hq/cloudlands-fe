@@ -11,7 +11,7 @@ requires:
   - core/import-boundaries
   - core/state-serialization
 sources:
-  - "@augmentcode/themis/docs/SAGAS.md#saga-manager"
+  - "@themislib/themis/docs/SAGAS.md#saga-manager"
   - public configured Store instance API
   - package-internal saga manager implementation
 triggers:
@@ -27,11 +27,11 @@ triggers:
 
 # Saga Manager — crash and restart guidance
 
-Use this skill when an agent must explain, verify, or minimally adjust saga manager guidance. Keep `@augmentcode/themis/docs/SAGAS.md#saga-manager` as the human-facing source for long-form behavior; this file is the concise operational checklist.
+Use this skill when an agent must explain, verify, or minimally adjust saga manager guidance. Keep `@themislib/themis/docs/SAGAS.md#saga-manager` as the human-facing source for long-form behavior; this file is the concise operational checklist.
 
 ## Agent preflight compliance contract
 
-- **MUST** read `@augmentcode/themis/docs/SAGAS.md#saga-manager`, this skill, and any touched source before editing saga-manager guidance.
+- **MUST** read `@themislib/themis/docs/SAGAS.md#saga-manager`, this skill, and any touched source before editing saga-manager guidance.
 - **MUST** cite whether the task concerns public Store lifecycle behavior or package-owned internals.
 - **MUST** preserve import boundaries: app code uses public `Store` APIs and saga functions, not package-internal saga-manager modules.
 - **SHOULD** run targeted saga-manager tests when behavior claims change.
@@ -153,7 +153,7 @@ function closeDetailsPanelSafely(cancelSyncTodos: () => void) {
 
 ## Common mistakes to prevent
 
-- **Promoting internals as app APIs** — `addCrash`, `clearCrashes`, raw manager status records, reducer state keys, and `@internal_sagaManager` are package-owned. Public facade: the configured Store instance (`store.runSaga`); source context: `@augmentcode/themis/docs/SAGAS.md#saga-manager` and package-internal saga manager implementation.
+- **Promoting internals as app APIs** — `addCrash`, `clearCrashes`, raw manager status records, reducer state keys, and `@internal_sagaManager` are package-owned. Public facade: the configured Store instance (`store.runSaga`); source context: `@themislib/themis/docs/SAGAS.md#saga-manager` and package-internal saga manager implementation.
 - **Saying cleanup is global** — `clearCrashes(sagaName)` removes only one saga entry. This is package-internal behavior, not a public app API.
 - **Forgetting reference counting** — duplicate `store.runSaga(sagaFn)` calls for the same function share the saga and require matching cancels before the task stops. Public facade: the configured Store instance; source context: package-internal saga manager implementation.
 - **Using Store disposal as per-saga cleanup** — `store.dispose()` stops tasks owned by the initialized Store context as part of whole-store teardown; use `store.runSaga(sagaFn)` cancel functions for normal saga lifetimes. Public API: configured Store instance lifecycle methods.
@@ -167,7 +167,7 @@ function closeDetailsPanelSafely(cancelSyncTodos: () => void) {
 
 ## See also
 
-- `@augmentcode/themis/docs/SAGAS.md#saga-manager` — canonical human-facing explanation.
+- `@themislib/themis/docs/SAGAS.md#saga-manager` — canonical human-facing explanation.
 - [Do](../sagas/SKILL.md#do) and [Application saga startup](../sagas/SKILL.md#application-saga-startup) — typed-redux-saga implementation rules and framework-neutral startup ownership.
 - `core/import-boundaries` — public package exports and forbidden deep imports.
 - `core/testing` — saga/reducer verification patterns.

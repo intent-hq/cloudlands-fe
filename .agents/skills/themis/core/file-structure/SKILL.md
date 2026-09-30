@@ -15,7 +15,7 @@ triggers:
 ---
 # File Structure & Registration
 
-> Source: @augmentcode/themis/docs/ARCHITECTURE.md → Slice File Structure + Store Initialization; see [Core leaf routes](../SKILL.md#core-leaf-routes) for related owners.
+> Source: @themislib/themis/docs/ARCHITECTURE.md → Slice File Structure + Store Initialization; see [Core leaf routes](../SKILL.md#core-leaf-routes) for related owners.
 
 ## Setup — slice directory layout
 
@@ -32,7 +32,7 @@ src/slices/{slice-name}/
 
 Each slice directory owns exactly one `*-slice.ts` module and exactly one `*-selectors.ts` module. If a feature needs multiple logical slices, split them into sibling directories named after the slice owners instead of adding multiple slice or selectors files to one directory. Physical paths stay kebab-case, while the logical slice identity used in reducer-map keys and action namespaces is always camelCase (for example `src/slices/user-preferences/user-preferences-slice.ts` registers as `userPreferences` and emits `"userPreferences/updateTheme"`).
 
-The top-level store lives at `src/store.ts` (or wherever you export your `Store` instance) and registers all slices. `@augmentcode/themis/docs/ARCHITECTURE.md` shows the short form: `src/slices/<domain>/` with the same filenames.
+The top-level store lives at `src/store.ts` (or wherever you export your `Store` instance) and registers all slices. `@themislib/themis/docs/ARCHITECTURE.md` shows the short form: `src/slices/<domain>/` with the same filenames.
 
 ## Core Patterns
 
@@ -41,7 +41,7 @@ The top-level store lives at `src/store.ts` (or wherever you export your `Store`
 ```typescript
 // src/store.ts
 import { Store } from '<selected Store family package>';
-import type { StoreState } from '@augmentcode/themis/types';
+import type { StoreState } from '@themislib/themis/types';
 import { mySliceReducer } from './slices/my-slice/my-slice-slice';
 import { mySliceSaga } from './slices/my-slice/sagas/my-slice-saga';
 
@@ -65,7 +65,7 @@ Some slices exist only to define saga trigger actions with no meaningful state. 
 
 ```typescript
 // src/slices/triggers/triggers-slice.ts
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 
 export const rescanWorkspace = createAction('triggers/rescanWorkspace');
 ```

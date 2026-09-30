@@ -1,4 +1,4 @@
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type FileContentEntry = {
   path: string;
@@ -25,6 +25,18 @@ export type FileContentReadOptions = {
 
 export type FileContentSaveOptions = {
   intent?: 'save' | 'restore';
+};
+
+export type FileContentUpdateOptions = {
+  /** The standalone files route retains explicit-save behavior. */
+  autoSave?: boolean;
+};
+
+export type FileDeleteOptions = {
+  absolutePath: string;
+  tabId?: string;
+  /** Editor deletion restores the current draft; tree deletion reads the disk. */
+  content?: string;
 };
 
 export type FilesWorkspaceState = {

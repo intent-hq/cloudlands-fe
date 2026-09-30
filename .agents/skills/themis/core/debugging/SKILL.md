@@ -8,7 +8,7 @@ library: themis
 requires:
   - core
 sources:
-  - "@augmentcode/themis/svelte-store"
+  - "@themislib/themis/svelte-store"
   - package-internal devtools registration
 triggers:
   - svelteRedux api
@@ -128,7 +128,7 @@ window.svelteRedux.reduxContext.state;
 expect(reducer(initialState, noOpAction)).toBe(initialState);
 ```
 
-*Public facade: `@augmentcode/themis/svelte-store`; devtools registration is package-internal implementation context.*
+*Public facade: `@themislib/themis/svelte-store`; devtools registration is package-internal implementation context.*
 
 ### Expecting `reduxContext` to always be an object
 
@@ -164,7 +164,7 @@ const state = store.state;
 window.svelteRedux.reduxContext.dispatch(action);
 ```
 
-*Public API: `@augmentcode/themis/svelte-store` (`Store.state`, `Store.dispatch`).*
+*Public API: `@themislib/themis/svelte-store` (`Store.state`, `Store.dispatch`).*
 
 ## 6. See also
 

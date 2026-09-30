@@ -15,7 +15,7 @@ triggers:
 ---
 # Actions — `createAction` / `createAsyncAction`
 
-> Operational guidance for action creator work. API details and longer examples live in `@augmentcode/themis/docs/REDUCERS.md` → Actions and Async Actions. Public API: `@augmentcode/themis/utils/store/create-action`; related reducer guidance: [Do](../reducers/SKILL.md#do).
+> Operational guidance for action creator work. API details and longer examples live in `@themislib/themis/docs/REDUCERS.md` → Actions and Async Actions. Public API: `@themislib/themis/utils/store/create-action`; related reducer guidance: [Do](../reducers/SKILL.md#do).
 
 ## Use when
 
@@ -47,7 +47,7 @@ triggers:
 ### No-payload action for explicit events
 
 ```ts
-import { createAction, createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAction, createAsyncAction } from "@themislib/themis/utils/store/create-action";
 
 export const resetTodos = createAction("todos/reset");
 
@@ -65,8 +65,8 @@ The async example explicitly selects the response-type overload (`<void>`), whic
 ### Tuple payload action consumed by reducers
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 const renameTodo = createAction<[id: string, title: string]>("todos/rename");
 const reducer = createReducer({ titles: {} as Record<string, string> }).with(
@@ -78,7 +78,7 @@ const reducer = createReducer({ titles: {} as Record<string, string> }).with(
 ### Payload modifier when reducers need a named object
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAction } from "@themislib/themis/utils/store/create-action";
 
 export const renameTodo = createAction(
   "todos/rename",
@@ -92,7 +92,7 @@ action.payload.id satisfies string;
 ### Async request/success/failure triplet
 
 ```ts
-import { createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAsyncAction } from "@themislib/themis/utils/store/create-action";
 
 type Todo = { id: string; title: string };
 export const loadTodo = createAsyncAction<[id: string], { id: string }, Todo>(
@@ -123,7 +123,7 @@ try {
 
 ```ts
 import { call, cancelled, put, takeLatest } from "typed-redux-saga";
-import { createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAsyncAction } from "@themislib/themis/utils/store/create-action";
 import { fetchTodo } from "./todos-api";
 
 type Todo = { id: string; title: string };
@@ -154,7 +154,7 @@ Policy here: supersession and owner teardown reject the cancelled request and em
 ### ❌ Bad: duplicate owner plus tuple/object payload drift
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAction } from "@themislib/themis/utils/store/create-action";
 
 type RenameTodoPayload = { id: string; title: string };
 
@@ -182,7 +182,7 @@ const [{ id, title }] = renameTodoFromList({ id: "todo-1", title: "Ship docs" })
 
 ## See also
 
-- `@augmentcode/themis/docs/REDUCERS.md` — human reference for action and async-action examples.
+- `@themislib/themis/docs/REDUCERS.md` — human reference for action and async-action examples.
 - `core/reducers/SKILL.md` — consuming actions in `.with()` handlers.
 - `core/sagas/SKILL.md` — watcher patterns and typed-redux-saga usage.
 - `core/state-integrity/SKILL.md` — duplicate-owner search protocol.

@@ -9,8 +9,8 @@
  * mode/key so the reducer can discard stale replies after rapid switching.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { UsageStatsPeriod, UsageStatsResult } from '$lib/client/app-client';
 
 export type StatsState = {

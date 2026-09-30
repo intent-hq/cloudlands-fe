@@ -2,7 +2,7 @@
  * Workspace Share Selectors
  */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { selectIsWorkspaceOwner } from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';

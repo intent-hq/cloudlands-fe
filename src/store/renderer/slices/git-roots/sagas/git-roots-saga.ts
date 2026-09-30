@@ -1,6 +1,6 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import type { Task } from 'redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { call, cancel, delay, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';

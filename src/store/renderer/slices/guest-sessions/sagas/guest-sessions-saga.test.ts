@@ -57,7 +57,7 @@ import {
   type WorkspaceMember,
 } from '../guest-sessions-types';
 import { guestSessionsSaga } from './guest-sessions-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const GUEST_SESSIONS = IPC_CHANNELS.GUEST_SESSIONS;
 

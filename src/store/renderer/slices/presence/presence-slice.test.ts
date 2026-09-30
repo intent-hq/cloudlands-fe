@@ -1,4 +1,4 @@
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { PresenceMember, PresenceRoster, PresenceTypingEntry } from '$shared/types/presence';
 import type { WorkspaceRole } from '$shared/types';

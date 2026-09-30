@@ -9,7 +9,7 @@
  * which is what turns an online-only roster into the brief's member circles
  * (offline members dimmed, the owner blue).
  */
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { PresenceMember } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';

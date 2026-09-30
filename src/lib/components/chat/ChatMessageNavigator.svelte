@@ -9,7 +9,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
   import * as Menu from '$lib/components/ui/menu';
-  import { faComment, faArrowDown } from '@fortawesome/free-solid-svg-icons';
+  import { faComment } from '@fortawesome/free-solid-svg-icons';
   import { menuItem } from '$lib/components/ui/menu';
   import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { m } from '$shared/paraglide/messages.js';
@@ -337,13 +337,6 @@
       {@render messageList()}
     </Menu.SubContent>
   </Menu.Sub>
-  <Menu.CommandItem
-    icon={faArrowDown}
-    label={m.chat_chatPanel_scrollToBottom_tooltip()}
-    disabled={isAtBottom}
-    onSelect={onScrollToBottom}
-    data-testid="chat-scroll-to-bottom-button"
-  />
 {:else}
   <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
     <Popover.Root bind:open onOpenChange={handleOpenChange}>

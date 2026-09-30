@@ -4,8 +4,8 @@
  * Actions and reducer for Sentry authentication and issue state.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { SentryAuthState } from './sentry-auth-types';
 import type { SentryProject } from '$features/sentry-auth/types';
 import type {
