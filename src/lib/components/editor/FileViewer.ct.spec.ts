@@ -1,0 +1,93 @@
+import { test, expect } from '../../../test/ct-test';
+import FileViewer from './FileViewer.svelte';
+
+test('pans zoomed and rotated images with native capture, releases outside, and keeps wheel scrolling', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const sourceUrl = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 400;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#164e63';
+    context.fillRect(0, 0, 640, 400);
+    context.fillStyle = '#fbbf24';
+    context.fillRect(80, 60, 220, 180);
+    return canvas.toDataURL();
+  });
+  const component = await mount(FileViewer, { props: { filePath: 'pan-test.png', sourceUrl } });
+  await component.evaluate((node) => {
+    node.style.width = '640px';
+    node.style.height = '440px';
+    node.style.margin = '80px';
+  });
+  const image = page.getByRole('img', { name: 'pan-test.png' });
+  const viewport = image.locator('..');
+  await expect(image).toBeVisible();
+  await expect(viewport).toHaveCSS('cursor', 'grab');
+  const before = (await image.boundingBox())!;
+  await image.hover();
+  await page.mouse.down();
+  await expect(viewport).toHaveCSS('cursor', 'grabbing');
+  await page.mouse.move(before.x + before.width / 2 + 50, before.y + before.height / 2 + 30);
+  await expect
+    .poll(async () => {
+      const box = (await image.boundingBox())!;
+      return [Math.round(box.x - before.x), Math.round(box.y - before.y)];
+    })
+    .toEqual([50, 30]);
+  await page.mouse.up();
+
+  // Start on exposed checkerboard, then leave the viewport while still holding the button.
+  const bounds = (await viewport.boundingBox())!;
+  await page.mouse.move(bounds.x + 8, bounds.y + 8);
+  await page.mouse.down();
+  await expect.poll(() => viewport.evaluate((node) => node.hasPointerCapture(1))).toBe(true);
+  await page.mouse.move(bounds.x - 35, bounds.y - 25);
+  await page.mouse.up();
+  await expect(viewport).toHaveCSS('cursor', 'grab');
+  await expect.poll(() => viewport.evaluate((node) => node.hasPointerCapture(1))).toBe(false);
+  const released = await image.boundingBox();
+  await page.mouse.move(bounds.x + 100, bounds.y + 100);
+  expect(await image.boundingBox()).toEqual(released);
+  await page.screenshot({ path: testInfo.outputPath('released-outside-viewport.png') });
+
+  await page.getByTitle('Zoom in').click();
+  await page.getByTitle('Zoom in').click();
+  await page.getByTitle('Rotate').click();
+  await expect(image).toHaveCSS('transform', 'matrix(0, 1.5, -1.5, 0, 0, 0)');
+  const zoomed = (await image.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 60, bounds.y + bounds.height / 2 + 40);
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const box = (await image.boundingBox())!;
+      return [Math.round(box.x - zoomed.x), Math.round(box.y - zoomed.y)];
+    })
+    .toEqual([60, 40]);
+  await page.screenshot({ path: testInfo.outputPath('zoomed-rotated-pan.png') });
+
+  const scrollBefore = await viewport.evaluate((node) => node.scrollTop);
+  await viewport.hover();
+  await page.mouse.wheel(0, 100);
+  await expect
+    .poll(() => viewport.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(scrollBefore);
+  await expect(page.getByText('150%', { exact: true })).toBeVisible();
+  const download = page.waitForEvent('download');
+  await page.getByTitle('Download').click();
+  expect((await download).suggestedFilename()).toBe('pan-test.png');
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByTitle('Copy image').click();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const items = await navigator.clipboard.read();
+        return items.flatMap((item) => item.types);
+      }),
+    )
+    .toContain('image/png');
+});

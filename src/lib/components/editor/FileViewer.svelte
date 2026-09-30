@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
@@ -90,6 +91,56 @@
   let imageZoom = $state(100);
   let imageRotation = $state(0);
   let copied = $state(false);
+  let imageOffsetX = $state(0);
+  let imageOffsetY = $state(0);
+  let imageDragging = $state(false);
+  let imageDrag: { pointerId: number; x: number; y: number; viewport: HTMLElement } | null = null;
+
+  function endImageDrag() {
+    const drag = imageDrag;
+    imageDrag = null;
+    imageDragging = false;
+    if (drag?.viewport.hasPointerCapture(drag.pointerId)) {
+      drag.viewport.releasePointerCapture(drag.pointerId);
+    }
+  }
+
+  function handleImagePointerDown(event: PointerEvent) {
+    if (event.button !== 0 || !event.isPrimary || imageDrag) return;
+    const viewport = event.currentTarget as HTMLElement;
+    viewport.setPointerCapture(event.pointerId);
+    imageDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, viewport };
+    imageDragging = true;
+    event.preventDefault();
+  }
+
+  function handleImagePointerMove(event: PointerEvent) {
+    if (!imageDrag || event.pointerId !== imageDrag.pointerId) return;
+    if ((event.buttons & 1) === 0) {
+      endImageDrag();
+      return;
+    }
+    imageOffsetX += event.clientX - imageDrag.x;
+    imageOffsetY += event.clientY - imageDrag.y;
+    imageDrag.x = event.clientX;
+    imageDrag.y = event.clientY;
+  }
+
+  function handleImagePointerEnd(event: PointerEvent) {
+    if (event.pointerId === imageDrag?.pointerId) endImageDrag();
+  }
+
+  $effect(() => {
+    // A reused viewer must not carry a drag or its offset into another file.
+    filePath;
+    sourceUrl;
+    untrack(() => {
+      endImageDrag();
+      imageOffsetX = 0;
+      imageOffsetY = 0;
+    });
+    return endImageDrag;
+  });
 
   const imageMimeType = (path: string): string => {
     const ext = path.split('.').pop()?.toLowerCase();
@@ -245,10 +296,12 @@
   };
 </script>
 
+<svelte:window onblur={endImageDrag} />
+
 <div class="h-full flex flex-col">
   {#if fileType === 'image'}
     <!-- Image Viewer -->
-    <div class="flex-1 flex flex-col">
+    <div class="min-h-0 flex-1 flex flex-col">
       <!-- Image Controls -->
       <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
         <Button
@@ -309,11 +362,22 @@
       </div>
 
       <!-- Image Display -->
-      <div class="flex-1 overflow-auto bg-checkered flex items-center justify-center p-4">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
+          ? 'cursor-grabbing'
+          : 'cursor-grab'}"
+        onpointerdown={handleImagePointerDown}
+        onpointermove={handleImagePointerMove}
+        onpointerup={handleImagePointerEnd}
+        onpointercancel={handleImagePointerEnd}
+        onlostpointercapture={handleImagePointerEnd}
+      >
         <img
           src={getImageSrc()}
           alt={fileName}
-          style="transform: scale({imageZoom /
+          draggable="false"
+          style="translate: {imageOffsetX}px {imageOffsetY}px; transform: scale({imageZoom /
             100}) rotate({imageRotation}deg); transition: transform 0.2s;"
           class="max-w-full max-h-full object-contain"
         />
