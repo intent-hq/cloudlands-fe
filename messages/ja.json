@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "{name}、{page} ページ",
   "settings_providers_fastMode_label": "高速モード",
   "settings_providers_fastMode_description": "次のターンから適用されます。使用量や料金が増える場合があります。利用可否はモデルとアカウントによって異なります。",
-  "settings_providers_fastMode_error": "高速モードを保存できませんでした。保存済みの設定に戻しました。"
+  "settings_providers_fastMode_error": "高速モードを保存できませんでした。保存済みの設定に戻しました。",
+  "chat_agentCard_menu_moveToBackground_label": "バックグラウンドに移動",
+  "chat_agentCard_menu_moveToForeground_label": "フォアグラウンドに移動",
+  "agent_mutation_setBackgroundFailed_error": "エージェントのモードを変更できませんでした"
 }

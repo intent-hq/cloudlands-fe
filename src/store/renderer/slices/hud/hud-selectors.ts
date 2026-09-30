@@ -943,7 +943,7 @@ function hudAgentScopeInputs(
   });
   return {
     parentAgentId: notSelf(info.parentAgentId) ?? notSelf(session?.parentAgentId),
-    isBackground: info.isBackground === true || session?.isBackground === true,
+    isBackground: info.isBackground ?? session?.isBackground,
     metadata: scopeMetadata(session?.metadata),
     agentMetadata: scopeMetadata(session?.agentMetadata),
   };

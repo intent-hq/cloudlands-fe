@@ -408,6 +408,16 @@ describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bi
     expect(gatedRunning(state)).toEqual([]);
   });
 
+  it.each([
+    ['summary', { isBackground: false }, { isBackground: true }],
+    ['session', {}, { isBackground: false, metadata: { isBackground: true } }],
+    ['metadata', {}, { metadata: { isBackground: false }, agentMetadata: { isBackground: true } }],
+  ])('an explicit foreground %s overrides older background values', (_f, summary, session) => {
+    const state = scopeState(summary, session);
+    expect(probeRow(state)).toMatchObject({ topLevel: true, isBackground: false });
+    expect(gatedRunning(state)).toEqual(['Probe']);
+  });
+
   it('a background CHILD is delegated, and stays background', () => {
     const state = scopeState({ parentAgentId: 'coordinator', isBackground: true }, {}, [PARENT]);
     expect(probeRow(state)).toMatchObject({ topLevel: false, isBackground: true });

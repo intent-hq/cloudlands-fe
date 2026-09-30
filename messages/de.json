@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "{name}, Seite {page}",
   "settings_providers_fastMode_label": "Schnellmodus",
   "settings_providers_fastMode_description": "Gilt ab dem nächsten Dialogschritt. Nutzung und Kosten können steigen; die Verfügbarkeit hängt von Modell und Konto ab.",
-  "settings_providers_fastMode_error": "Schnellmodus konnte nicht gespeichert werden. Die gespeicherte Einstellung wurde wiederhergestellt."
+  "settings_providers_fastMode_error": "Schnellmodus konnte nicht gespeichert werden. Die gespeicherte Einstellung wurde wiederhergestellt.",
+  "chat_agentCard_menu_moveToBackground_label": "In den Hintergrund verschieben",
+  "chat_agentCard_menu_moveToForeground_label": "In den Vordergrund verschieben",
+  "agent_mutation_setBackgroundFailed_error": "Agentenmodus konnte nicht geändert werden"
 }
