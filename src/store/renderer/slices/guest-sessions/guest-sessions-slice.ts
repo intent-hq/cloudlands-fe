@@ -16,7 +16,7 @@ import {
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
-import { principalContextChanged, hostMembershipChanged } from '../principal/principal-slice';
+import { principalContextChanged } from '../principal/principal-slice';
 import { backendReconnected } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
