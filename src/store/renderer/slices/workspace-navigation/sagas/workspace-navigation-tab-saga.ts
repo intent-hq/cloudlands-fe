@@ -92,7 +92,9 @@ function* openCommit(action: ReturnType<typeof openWorkspaceCommitChangeset>): S
 function* openFile(action: ReturnType<typeof openWorkspaceFile>): SagaGenerator<void> {
   const [workspaceId, filePath, options] = action.payload;
   if (!workspaceId || !filePath) return;
-  const parsed = parseFilePathLineSuffix(filePath);
+  const parsed = options?.filePathIsLiteral
+    ? { path: filePath, line: undefined }
+    : parseFilePathLineSuffix(filePath);
   const line = options?.line !== undefined ? options.line : parsed.line;
   yield* openWorkspaceTab(
     workspaceId,
@@ -268,7 +270,7 @@ function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): Sa
   const [workspaceId, attachmentId, fileName] = action.payload;
   if (!workspaceId || !attachmentId) return;
   try {
-    const info: AttachmentInfo = yield* call(getAttachmentInfo, attachmentId);
+    const info: AttachmentInfo = yield* call(getAttachmentInfo, { attachmentId, workspaceId });
     if (!info.exists) {
       const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
       notify.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));

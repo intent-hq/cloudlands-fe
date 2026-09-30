@@ -201,11 +201,14 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       return unwrap(response);
     },
 
-    async unsubscribe(subscriptionId: string): Promise<void> {
+    async unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void> {
       const api = electronAPI();
       if (!api) return;
       try {
-        await api.invoke(BACKEND.UNSUBSCRIBE, { subscriptionId });
+        await api.invoke(BACKEND.UNSUBSCRIBE, {
+          subscriptionId,
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+        });
       } catch {
         // Unsubscribe is best-effort; ignore transport errors on teardown.
       }

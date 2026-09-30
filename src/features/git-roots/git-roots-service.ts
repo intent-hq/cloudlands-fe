@@ -194,7 +194,7 @@ export function subscribeGitRoots(
         if (disposed || epoch !== registerEpoch) {
           // Stale registration (disposed or superseded by a reconnect) —
           // drop the ack and release its server-side subscription.
-          if (acked) void backendUnsubscribe(acked);
+          if (acked) void backendUnsubscribe(acked, workspaceId);
           return;
         }
         subscriptionId = acked;
@@ -248,7 +248,7 @@ export function subscribeGitRoots(
       disposed = true;
       offNotification();
       offReconnected();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
+      if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     },
   };
 }

@@ -24,6 +24,9 @@
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { openCollaborationSignIn } from '$features/collaboration-auth/renderer/collaboration-auth.client';
+  const multiplayer$ = selectLabsMultiplayerEnabled();
   import { formatGuestSessionAddress, formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
   import type { GuestSessionRecord, GuestWorkspaceRef } from '$shared/types/guest-sessions';
@@ -166,6 +169,10 @@
       {m.settings_guestSessions_description()}
     </p>
   </div>
+
+  {#if $multiplayer$}
+    <Button onclick={openCollaborationSignIn}>{m.collaborationAuth_title()}</Button>
+  {/if}
 
   {#if !$isCollaboratorOnly$}
     <div data-testid="guest-sessions-hosting">

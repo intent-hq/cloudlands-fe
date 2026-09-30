@@ -1,9 +1,9 @@
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   SpecialistFileScope,
   SpecialistModelOption,
@@ -82,12 +82,14 @@ export interface FileSpecialistWritePayload {
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface FileSpecialistReference {
   id: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 // ============================================================================

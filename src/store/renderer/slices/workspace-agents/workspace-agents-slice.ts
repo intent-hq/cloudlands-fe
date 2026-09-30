@@ -9,8 +9,8 @@ import type {
 } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
@@ -123,6 +123,8 @@ export interface WorkspaceAgentState {
 export type LazyAgentListBin = Exclude<AgentListBin, 'topLevel'>;
 
 export interface WorkspaceAgentsState {
+  /** Connection-scoped read-through capability, invalidated by daemon reconnects. */
+  retirementSupport?: { connectionGeneration: number; supported: boolean };
   byWorkspaceId: Record<string, WorkspaceAgentState>;
 }
 
@@ -530,6 +532,11 @@ export const setAgentNotificationsMutedRequested = createAsyncAction<
   'workspaceAgents/setAgentNotificationsMuted',
   'workspaceAgents/setAgentNotificationsMutedRequested',
 );
+/** Persist mode before reconciling the session and scoped agent list. */
+export const setAgentBackgroundRequested = createAsyncAction<
+  [wsId: string, agentId: string, isBackground: boolean],
+  void
+>('workspaceAgents/setAgentBackground', 'workspaceAgents/setAgentBackgroundRequested');
 export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/deleteAgentSession',
   'workspaceAgents/deleteAgentSessionRequested',
@@ -590,6 +597,20 @@ export const restoreAgentSessionRequested = createAsyncAction<
   AgentSession | null
 >('workspaceAgents/restoreAgentSession', 'workspaceAgents/restoreAgentSessionRequested');
 
+export const agentRetirementSupportRequested = createAsyncAction<[], boolean>(
+  'workspaceAgents/agentRetirementSupport',
+  'workspaceAgents/agentRetirementSupportRequested',
+);
+export const agentRetirementSupportReceived = createAction<
+  [connectionGeneration: number, supported: boolean]
+>('workspaceAgents/agentRetirementSupportReceived');
+
+/** Direct user lifecycle action; never sends a model message. */
+export const retireAgentRequested = createAsyncAction<[wsId: string, agentId: string], void>(
+  'workspaceAgents/retireAgent',
+  'workspaceAgents/retireAgentRequested',
+);
+
 /**
  * Un-retire a soft-retired agent via `agent.restore` (§5.5). Distinct from
  * `restoreAgentSessionRequested`, which re-materializes a hidden session from
@@ -602,6 +623,13 @@ export const restoreRetiredAgentRequested = createAsyncAction<
 >('workspaceAgents/restoreRetiredAgent', 'workspaceAgents/restoreRetiredAgentRequested');
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
+workspaceAgentsReducer.with(
+  agentRetirementSupportReceived,
+  (state, { payload: [connectionGeneration, supported] }) => ({
+    ...state,
+    retirementSupport: { connectionGeneration, supported },
+  }),
+);
 workspaceAgentsReducer.with(setAgents, (state, { payload: [wsId, agents] }) => {
   const workspaceState = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, reconcileWorkspaceAgentSnapshot(workspaceState, agents));

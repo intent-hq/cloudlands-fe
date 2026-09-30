@@ -260,6 +260,7 @@
   import type { TrackedChange } from '$features/file-tracking/types';
 
   import { selectViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { setViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -285,6 +286,7 @@
 
   import { selectAgentFileRefreshes } from '$store/renderer/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
 
   /**
@@ -357,9 +359,9 @@
   let {
     changes,
     agentId = null,
-    isAggregate = false,
+    isAggregate: isAggregateProp = false,
     onOpenAgent,
-    showStagingControls = false,
+    showStagingControls: showStagingControlsProp = false,
     showCategoryFilter = false,
     onStage,
     onUnstage,
@@ -375,6 +377,40 @@
     gitRootId = undefined,
     gitRootPath = undefined,
   }: Props = $props();
+
+  const agentSession$ = $derived(selectAgentSession(agentId ?? ''));
+  const nodeOwnedPaths = $derived(
+    !!agentId && (!$agentSession$ || hasNodeOwnedAgentPath($agentSession$)),
+  );
+  const showStagingControls = $derived(showStagingControlsProp && !nodeOwnedPaths);
+  const isAggregate = $derived(isAggregateProp && !nodeOwnedPaths);
+  const offlineNode = $derived(nodeOwnedPaths && $agentSession$?.nodeState === 'offline');
+
+  // Cancel every parent-owned read when this view changes ownership or unmounts.
+  let headReadScope = new AbortController();
+  $effect(() => {
+    void agentId;
+    void nodeOwnedPaths;
+    void gitRootId;
+    void gitRootPath;
+    const scope = new AbortController();
+    headReadScope = scope;
+    return () => scope.abort();
+  });
+
+  function createHeadReadPolicy() {
+    const scope = headReadScope.signal;
+    const sourceAgentId = agentId;
+    const controller = new AbortController();
+    return {
+      signal: controller.signal,
+      canRead: () =>
+        !scope.aborted &&
+        !controller.signal.aborted &&
+        canOpenAgentPath(appStore.state, sourceAgentId),
+      cancel: () => controller.abort(),
+    };
+  }
 
   function toGitRootRelativePath(filePath: string, rootPath?: string): string {
     if (!rootPath) return filePath;
@@ -681,6 +717,14 @@
     const currentGitRootPath = gitRootPath;
     const workspaceId = routeWorkspaceId;
 
+    if (nodeOwnedPaths) {
+      ++fetchVersion;
+      enrichedChanges = currentChanges;
+      lastChangesKey = '';
+      isEnrichingChanges = false;
+      return;
+    }
+
     if (!workspaceId || currentChanges.length === 0) {
       // Only update if enrichedChanges is not already empty (avoid unnecessary reactivity)
       const currentEnrichedLength = untrack(() => enrichedChanges.length);
@@ -724,6 +768,7 @@
 
     // Increment version to cancel any in-flight fetches
     const thisVersion = ++fetchVersion;
+    const readPolicy = createHeadReadPolicy();
 
     // Clean up expired entries from recentlyRefreshedFiles
     const now = Date.now();
@@ -779,6 +824,7 @@
     // batcher so same-tick requests coalesce into one `git:diff` per (workspace, staged)
     // group instead of N serial round-trips.
     const fetchContent = async () => {
+      if (!readPolicy.canRead()) return;
       type PlanItem =
         | { kind: 'skip-refreshed' }
         | { kind: 'push-raw'; change: LocalFileChange }
@@ -948,7 +994,7 @@
           if (item.kind === 'fetch-branch-committed') {
             return batchedGitBranchBaseDiff(
               workspaceId,
-              { baseRef: item.baseRef, baseCommitSha: item.baseCommitSha },
+              { baseRef: item.baseRef, baseCommitSha: item.baseCommitSha, ...readPolicy },
               item.change.filePath,
             )
               .then((chunk) => ({ item, chunk }))
@@ -965,6 +1011,7 @@
             // submodule's sides from its pin SHAs instead of issuing
             // git.showFile/file.read calls that can only fail (#1739).
             return batchedGitDiff(workspaceId, item.staged, item.change.filePath, {
+              ...readPolicy,
               gitlink: item.change.gitlink,
               gitRootId: currentGitRootId,
               gitRootPath: currentGitRootPath,
@@ -983,7 +1030,7 @@
       );
 
       // Check cancellation after all fetches settle.
-      if (thisVersion !== fetchVersion) return;
+      if (thisVersion !== fetchVersion || !readPolicy.canRead()) return;
 
       const enriched: LocalFileChange[] = [];
       for (const result of resolved) {
@@ -1071,7 +1118,7 @@
           localNumstatPromise,
           committedNumstatPromise,
         ]);
-        if (thisVersion !== fetchVersion) return;
+        if (thisVersion !== fetchVersion || !readPolicy.canRead()) return;
 
         enrichedChanges = applyNumstatStats(enriched, localStats, committedStats);
         isEnrichingChanges = false;
@@ -1086,7 +1133,8 @@
       }
     };
 
-    fetchContent();
+    void fetchContent();
+    return readPolicy.cancel;
   });
 
   // Filter by enabled categories first
@@ -1278,7 +1326,7 @@
         })
         .join(';;');
 
-    if (newKey === lastMergedChangesKey) {
+    if (!nodeOwnedPaths && newKey === lastMergedChangesKey) {
       return; // Skip update - data hasn't changed
     }
     lastMergedChangesKey = newKey;
@@ -1326,11 +1374,15 @@
 
     // Fetch git diff for each file. Wave 4: use `batchedGitDiff` so same-tick
     // requests for (workspaceId, staged=false) collapse into one IPC instead of N.
+    const readPolicy = createHeadReadPolicy();
+    const sourceChanges = reactiveChanges;
     const fetchGitDiffs = async () => {
+      if (!readPolicy.canRead()) return;
       const fetchStart = performance.now();
       const chunks = await Promise.all(
-        reactiveChanges.map((change) =>
+        sourceChanges.map((change) =>
           batchedGitDiff(workspaceId, false, change.filePath, {
+            ...readPolicy,
             gitRootId,
             gitRootPath,
           }).catch((error) => {
@@ -1340,7 +1392,8 @@
         ),
       );
 
-      const results: LocalFileChange[] = reactiveChanges.map((change, i) => {
+      if (!readPolicy.canRead()) return;
+      const results: LocalFileChange[] = sourceChanges.map((change, i) => {
         const diffChunk = chunks[i];
         if (diffChunk && diffChunk.oldContent !== undefined && diffChunk.newContent !== undefined) {
           // Use git diff content with proper full file content
@@ -1364,7 +1417,8 @@
       });
     };
 
-    fetchGitDiffs();
+    void fetchGitDiffs();
+    return readPolicy.cancel;
   });
 
   // Use git diff changes for visualization when aggregate, otherwise use merged changes
@@ -1606,6 +1660,7 @@
   }
 
   function openCurrentDiff(filePath: string, event?: MouseEvent) {
+    if (nodeOwnedPaths) return;
     // Find the change object for this file to get full context
     const change = changes.find((c) => c.filePath === filePath);
 
@@ -1661,6 +1716,7 @@
   }
 
   function openFile(filePath: string, event?: MouseEvent) {
+    if (nodeOwnedPaths) return;
     const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
     const panelElement = event?.target
       ? (event.target as HTMLElement)?.closest('[data-panel-id]')
@@ -1674,8 +1730,11 @@
   // Refresh diff for a single file after staging/unstaging
   // This is more performant than refreshing all file tracking data
   async function refreshFileDiff(filePath: string) {
+    if (nodeOwnedPaths || !canOpenAgentPath(appStore.state, agentId)) return;
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) return;
+
+    const readPolicy = createHeadReadPolicy();
 
     // Track that this file is being refreshed (for loading indicator)
     refreshingFiles = new Set([...refreshingFiles, filePath]);
@@ -1691,14 +1750,19 @@
       // `batchedGitDiff` so concurrent refreshes for different files on the same
       // tick coalesce into one IPC per staging group.
       const [stagedChunk, unstagedChunk] = await Promise.all([
-        batchedGitDiff(workspaceId, true, filePath, { gitRootId, gitRootPath }).catch(
-          () => undefined,
-        ),
-        batchedGitDiff(workspaceId, false, filePath, { gitRootId, gitRootPath }).catch(
-          () => undefined,
-        ),
+        batchedGitDiff(workspaceId, true, filePath, {
+          gitRootId,
+          gitRootPath,
+          ...readPolicy,
+        }).catch(() => undefined),
+        batchedGitDiff(workspaceId, false, filePath, {
+          gitRootId,
+          gitRootPath,
+          ...readPolicy,
+        }).catch(() => undefined),
       ]);
 
+      if (!readPolicy.canRead()) return;
       const hasStagedChanges =
         !!stagedChunk && ((stagedChunk.chunks as DiffHunk[] | undefined)?.length ?? 0) > 0;
       const hasUnstagedChanges =
@@ -1777,6 +1841,7 @@
       // Update enrichedChanges: remove old entries for this file, add new ones
       enrichedChanges = [...enrichedChanges.filter((c) => c.filePath !== filePath), ...newEntries];
     } finally {
+      readPolicy.cancel();
       // Remove file from refreshing set (done loading)
       const newSet = new Set(refreshingFiles);
       newSet.delete(filePath);
@@ -2541,6 +2606,14 @@
   tabindex="-1"
   onpointerdown={handlePanelPointerDown}
 >
+  {#if offlineNode}
+    <p class="px-5 py-2 text-xs text-muted-foreground" role="status">
+      {$agentSession$?.checkpoint
+        ? m.agent_node_checkpoint_available({ time: $agentSession$.checkpoint.capturedAt })
+        : m.agent_node_checkpoint_unavailable()}
+      {m.agent_node_transcript_diff_notice()}
+    </p>
+  {/if}
   {#if allChangesSearchOpen}
     <PanelFindBar
       bind:query={allChangesSearchQuery}
@@ -3054,6 +3127,7 @@
           <Button
             variant="ghost-light"
             size="icon-xs"
+            disabled={nodeOwnedPaths}
             tooltip={m.chat_changesPanel_viewCurrentDiff_tooltip()}
             onclick={(e: MouseEvent) => {
               e.stopPropagation();
@@ -3065,6 +3139,7 @@
           <Button
             variant="ghost-light"
             size="icon-xs"
+            disabled={nodeOwnedPaths}
             tooltip={m.chat_changesPanel_openFile_tooltip()}
             onclick={(e: MouseEvent) => {
               e.stopPropagation();
@@ -3119,6 +3194,8 @@
             <!-- Single change (only staged or only unstaged) -->
             {@const category = getChangeCategory(change)}
             <InlineDiffItem
+              allowHeadReads={!nodeOwnedPaths}
+              canReadHeadFiles={() => canOpenAgentPath(appStore.state, agentId)}
               {change}
               foldUnchanged={$foldUnchanged}
               lineWrapping={$lineWrapping}

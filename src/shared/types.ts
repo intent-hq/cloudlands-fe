@@ -365,6 +365,8 @@ export interface Workspace {
    *  on older daemons. */
   ownerPrincipalId?: string;
   myRole?: WorkspaceRole;
+  /** Caller-relative management capability (PROTOCOL §5.49); absent on older daemons. */
+  canManage?: boolean;
   memberCount?: number;
   openInviteCount?: number;
   createdAt: string;
@@ -1176,6 +1178,9 @@ export interface AgentMetadata {
   source?: 'workspace-initializer' | 'contextual-menu' | 'chat-panel' | 'api' | string; // Source of agent creation
   agentType?: string; // Type of agent (e.g., "investigate", "implement", "verify")
   specialist?: string; // Specialist type (e.g., "spec-writer", "implementor", "verifier")
+  // Creation-time prompt identity, persisted and served by AgentLite (§5.5).
+  // Omitted on legacy sessions; creation dates never imply a version.
+  chiefPromptVersion?: number;
   isInitialAgent?: boolean; // Whether this is the initial agent for a workspace
   isInitialWorkspaceAgent?: boolean; // Alias for isInitialAgent
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent
@@ -1653,6 +1658,8 @@ export interface CreateWorkspaceRequest {
     agentId?: string;
     name?: string;
     model?: string;
+    /** Persisted before the first turn. Omit to inherit defaults; blank explicitly clears. */
+    reasoningEffort?: string;
     prompt?: string;
     rules?: string;
     agentType?: string;

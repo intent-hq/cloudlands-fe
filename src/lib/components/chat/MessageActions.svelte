@@ -6,6 +6,9 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { observeMessageActionDay } from './message-action-day-clock';
+  import { queueMessageControls } from './message-controls-mount-queue';
+  import { observeLazyTurnVisibility } from './lazy-turn-observer';
   import { ActionBar, defineActions } from '$lib/components/patterns/action-menu';
   import { formatDateTime, formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
   import {
@@ -44,6 +47,7 @@
     requestId?: string;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Canonical message time. */
     timestamp?: DateInput | null;
     /** Legacy fallback when the canonical timestamp is absent or invalid. */
@@ -64,14 +68,49 @@
     class: className = '',
     requestId,
     onScrollToPrevious,
+    previousMessageLoading = false,
     timestamp,
     createdAt,
     queueInfo,
   }: Props = $props();
 
   let actionSurface: HTMLDivElement;
+  let controlsReady = $state(false);
   let containerWidth = $state(Number.POSITIVE_INFINITY);
   onMount(() => {
+    const root = actionSurface.closest<HTMLElement>('[data-message-controls-root]');
+    const parent = actionSurface.parentElement;
+    if (!root || !parent) {
+      controlsReady = true;
+      return;
+    }
+    let stopObserving = () => {};
+    let released = false;
+    const release = () => {
+      // Both queued mounting and teardown release this registration.
+      if (released) return;
+      released = true;
+      stopObserving();
+      parent.removeEventListener('pointerenter', queued.mountNow);
+      parent.removeEventListener('focusin', queued.mountNow);
+    };
+    const queued = queueMessageControls(() => {
+      controlsReady = true;
+      release();
+    });
+    stopObserving = observeLazyTurnVisibility(actionSurface, root, (_intersecting, visible) => {
+      if (visible) queued.prioritize();
+    });
+    parent.addEventListener('pointerenter', queued.mountNow);
+    parent.addEventListener('focusin', queued.mountNow);
+    return () => {
+      queued.cancel();
+      release();
+    };
+  });
+
+  $effect(() => {
+    if (!controlsReady) return;
     const parent = actionSurface.parentElement;
     if (!parent || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(([entry]) => {
@@ -82,27 +121,7 @@
   });
 
   let today = $state(new Date().toDateString());
-  onMount(() => {
-    let midnightTimer: ReturnType<typeof setTimeout>;
-    function refreshDay() {
-      clearTimeout(midnightTimer);
-      const now = new Date();
-      today = now.toDateString();
-      const midnight = new Date(now);
-      // Use the next local midnight, not 24 hours: DST days may be shorter or longer.
-      midnight.setHours(24, 0, 0, 0);
-      midnightTimer = setTimeout(refreshDay, midnight.getTime() - now.getTime());
-    }
-    refreshDay();
-    // Catch up immediately when a sleeping or backgrounded window returns.
-    window.addEventListener('focus', refreshDay);
-    document.addEventListener('visibilitychange', refreshDay);
-    return () => {
-      clearTimeout(midnightTimer);
-      window.removeEventListener('focus', refreshDay);
-      document.removeEventListener('visibilitychange', refreshDay);
-    };
-  });
+  onMount(() => observeMessageActionDay((day) => (today = day)));
 
   let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
   const showDate = $derived(actionDate !== null && actionDate.toDateString() !== today);
@@ -135,6 +154,15 @@
         when: role === 'assistant' && Boolean(onRegenerate),
       },
       {
+        id: 'scroll-previous',
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_previousUserMessage_label(),
+        disabled: previousMessageLoading,
+        icon: faArrowUp,
+        when: role === 'assistant' && Boolean(onScrollToPrevious),
+      },
+      {
         id: 'fork',
         label: m.chat_messageActions_fork_ariaLabel(),
         icon: faCodeBranch,
@@ -164,7 +192,10 @@
       },
       {
         id: 'scroll-previous',
-        label: m.chat_messageActions_scrollToPrevious_label(),
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_scrollToPrevious_label(),
+        disabled: previousMessageLoading,
         icon: faArrowUp,
         when: role === 'user' && Boolean(onScrollToPrevious),
       },
@@ -226,17 +257,19 @@
     >
   {/if}
 
-  {#if role === 'user' && queueInfo}
-    <div class="min-w-0 {interactiveClass}">
-      <QueuedMessageNoticeHeader {queueInfo} />
-    </div>
-  {/if}
+  {#if controlsReady}
+    {#if role === 'user' && queueInfo}
+      <div class="min-w-0 {interactiveClass}">
+        <QueuedMessageNoticeHeader {queueInfo} />
+      </div>
+    {/if}
 
-  <ActionBar
-    {actions}
-    visibleCount={visibleActionCount}
-    class="shrink-0 {interactiveClass}"
-    overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
-    onAction={handleAction}
-  />
+    <ActionBar
+      {actions}
+      visibleCount={visibleActionCount}
+      class="shrink-0 {interactiveClass}"
+      overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
+      onAction={handleAction}
+    />
+  {/if}
 </div>

@@ -22,6 +22,7 @@ import {
   refreshDaemonEventsAfterReconnect,
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
+import { notifyInterruptedAgentsSubscriptionReady } from '$features/agent/interrupted-agents-service';
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -48,6 +49,7 @@ type DaemonChannelMessage =
   { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
 
 interface SubscriptionLease {
+  workspaceId?: string;
   subscriptionId?: string;
   cancelled: boolean;
 }
@@ -79,6 +81,7 @@ async function subscribeLease(
   lease: SubscriptionLease,
   params: Record<string, unknown>,
 ): Promise<void> {
+  lease.workspaceId = typeof params.workspaceId === 'string' ? params.workspaceId : undefined;
   try {
     const result = await backendSubscribe<{ subscriptionId?: string }>(params);
     const subscriptionId = result?.subscriptionId;
@@ -87,7 +90,7 @@ async function subscribeLease(
       return;
     }
     if (lease.cancelled) {
-      await backendUnsubscribe(subscriptionId);
+      await backendUnsubscribe(subscriptionId, lease.workspaceId);
       return;
     }
     lease.subscriptionId = subscriptionId;
@@ -106,7 +109,10 @@ function subscribeFirehose(lease: SubscriptionLease): Promise<void> {
  * every later change is guaranteed to arrive as an event.
  */
 function* announceFirehoseSubscribed(lease: SubscriptionLease) {
-  if (lease.subscriptionId) yield* put(daemonEventsSubscribed());
+  if (lease.subscriptionId) {
+    yield* put(daemonEventsSubscribed());
+    yield* call(notifyInterruptedAgentsSubscriptionReady);
+  }
 }
 
 function subscribeScopedFileEvents(lease: SubscriptionLease, workspaceId: string): Promise<void> {
@@ -123,7 +129,7 @@ async function unsubscribeLease(lease: SubscriptionLease): Promise<void> {
   lease.subscriptionId = undefined;
   if (!subscriptionId) return;
   try {
-    await backendUnsubscribe(subscriptionId);
+    await backendUnsubscribe(subscriptionId, lease.workspaceId);
   } catch (error) {
     logger.warn('events.unsubscribe failed during saga cleanup', error);
   }

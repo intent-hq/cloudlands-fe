@@ -487,6 +487,7 @@
     aria-invalid={invalid || undefined}
     placeholder={open ? searchPlaceholder : placeholder}
     onfocus={handleFocus}
+    onclick={handleFocus}
     oninput={handleInput}
     onkeydown={handleKeydown}
     data-size={resolvedSize}

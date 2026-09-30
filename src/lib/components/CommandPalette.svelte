@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
@@ -35,12 +36,17 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    selectLabsGitLabEnabled,
+    selectLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    setLabsGitLabEnabled,
+    setLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
-    selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -130,10 +136,11 @@
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
-  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreate$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
@@ -145,9 +152,11 @@
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
-        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
+        !(!$canCreate$ && command.id === 'new-workspace') &&
         !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
-        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer'),
+        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer') &&
+        !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
+        !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -798,7 +807,7 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        if (!$isCollaboratorOnlyClient$) {
+        if (selectWorkspaceCreationVisible.select(appStore.state)) {
           appStore.dispatch(setShowCreateModal(true));
         }
         return true;
@@ -810,6 +819,12 @@
         return true;
       case 'disable-experimental-multiplayer':
         appStore.dispatch(setLabsMultiplayerEnabled(false));
+        return true;
+      case 'enable-experimental-gitlab':
+        appStore.dispatch(setLabsGitLabEnabled(true));
+        return true;
+      case 'disable-experimental-gitlab':
+        appStore.dispatch(setLabsGitLabEnabled(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {
@@ -905,12 +920,11 @@
     const currentInitialQuery = initialQuery || '';
     if (currentInitialQuery !== prevInitialQuery) {
       prevInitialQuery = currentInitialQuery;
-      // Only update searchQuery if the initialQuery actually changed to a non-empty value
-      if (currentInitialQuery !== '') {
-        untrack(() => {
-          searchQuery = currentInitialQuery;
-        });
-      }
+      // Ordinary opens clear recovery/go-to-line queries. Unchanged props must
+      // leave user typing intact across unrelated parent or store updates.
+      untrack(() => {
+        searchQuery = currentInitialQuery;
+      });
     }
   });
 </script>

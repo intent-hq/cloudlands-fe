@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -9,6 +10,11 @@
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({});
+});
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -81,7 +87,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
+    state: () => ({ ...admittedFixture.state, workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
   });
 });
@@ -601,7 +607,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     expect(openIndex).toBeGreaterThan(hydrateIndex);
   });
 
-  it('applies a picked reasoning effort to the daemon-created initial agent', async () => {
+  it('sends picked effort atomically before the initial prompt can start', async () => {
     mocks.compactFormState$.set({ selectedReasoningEffort: 'high' });
     mocks.create.mockResolvedValue({
       ok: true,
@@ -624,14 +630,12 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     await component.applyPrefill();
 
-    await waitFor(() =>
-      expect(mocks.setReasoningEffort).toHaveBeenCalledWith({
-        agentId: 'agent-created',
-        workspaceId: 'ws-created',
-        reasoningEffort: 'high',
-      }),
-    );
-    expect(mocks.create.mock.calls[0][0].initialAgent).not.toHaveProperty('reasoningEffort');
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(mocks.create.mock.calls[0][0].initialAgent).toMatchObject({
+      reasoningEffort: 'high',
+      prompt: 'Build the thing',
+    });
+    expect(mocks.setReasoningEffort).not.toHaveBeenCalled();
   });
 
   it('drops hydrated effort when the saved model belongs to another provider', async () => {

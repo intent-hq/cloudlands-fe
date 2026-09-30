@@ -32,7 +32,7 @@ import {
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -794,7 +794,7 @@ function* tearDownOnGuestAuthRejection(
       cleanups.push([workspaceId, agentId]);
     }
     yield* put(destroyOwnedTabsForWorkspace(workspaceId));
-    yield* put(workspaceDeleted(workspaceId, [...agentIds]));
+    yield* put(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
     try {
       yield* call(closeWorkspaceTabAndNavigateAway, workspaceId);
     } catch (error) {
@@ -831,9 +831,8 @@ function* watchActions(): SagaGenerator<void> {
 
 export function* guestSessionsSaga(): SagaGenerator<void> {
   if (!getApi()) {
-    // Outside Electron there is no main to ask and nothing can be joined as a
-    // guest: settle the window's identity (`selectWindowIdentitySettled`) as
-    // owner instead of leaving it a boot-time unknown forever.
+    // Outside Electron there is no local session registry to ask. Mark that
+    // storage read unavailable; principal.me independently resolves authority.
     yield* put(guestSessionsListUnavailable());
     return;
   }

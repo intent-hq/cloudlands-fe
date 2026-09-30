@@ -37,6 +37,7 @@
     mode?: 'popover' | 'embedded';
     effortLevels?: readonly string[];
     effort?: string | null;
+    autoLabel?: string;
     modalAware?: boolean;
     onEffortChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
   }
@@ -50,6 +51,7 @@
     mode = 'popover',
     effortLevels = [],
     effort = null,
+    autoLabel,
     modalAware = false,
     onEffortChange,
   }: Props = $props();
@@ -87,7 +89,7 @@
   const options = $derived.by<EffortOption[]>(() => [
     {
       value: AUTO_OPTION_VALUE,
-      label: m.chat_effortPicker_level_auto(),
+      label: autoLabel ?? m.chat_effortPicker_level_auto(),
       effort: null,
       levelIndex: null,
     },

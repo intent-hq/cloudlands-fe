@@ -1,9 +1,10 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 // Shared boundary mocks and real Redux/saga runtime for encoder effort suites.
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import type { HardwareDeviceModel } from '../../input/types';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
@@ -54,6 +55,10 @@ import {
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { agentSessionReducer } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { sidebarNavReducer } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  initializeLayout,
+  panelLayoutReducer,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { encoderEffortSaga } from '$store/renderer/slices/hardware-console/sagas/encoder-effort-saga';
 import { watchHardwareConsoleEncoderHud } from '$store/renderer/slices/hardware-console/sagas/hardware-console-device-saga';
 import { installHardwareConsoleEncoder } from '../encoder-service';
@@ -83,7 +88,7 @@ function session(id: string, workspaceId = 'ws-1'): StoredAgentSession {
   };
 }
 function makeState() {
-  return {
+  return withLegacyPrincipal({
     hardwareConsole: { ...hardwareInitial },
     tabState: { currentTabId: 'ws-1' as string | null },
     agentSessions: {
@@ -100,6 +105,7 @@ function makeState() {
         'ws-2': { activeAgentId: 'agent-3' as string | null },
       },
     },
+    panelLayout: panelLayoutReducer(undefined, { type: 'init' }),
     workspace: {
       workspaces: createCollection('id', [
         {
@@ -118,18 +124,56 @@ function makeState() {
         },
       ]),
     },
+    providerCatalog: {
+      providers: createCollection<{ id: string }, 'id'>('id'),
+      loaded: false,
+      byWorkspaceId: Object.fromEntries(
+        ['ws-1', 'ws-2'].map((id) => [
+          id,
+          {
+            catalog: { providers: [] },
+            specialists: [],
+            readiness: {},
+            settings: [
+              { path: 'model.defaultProvider', value: 'codex' },
+              { path: 'model.providerDefaults', value: { codex: 'model-a' } },
+            ],
+          },
+        ]),
+      ),
+    },
+    providerModels: {
+      byProviderId: {},
+      clearEpoch: 0,
+      byWorkspaceId: Object.fromEntries(
+        ['ws-1', 'ws-2'].map((id) => [
+          id,
+          {
+            codex: {
+              models: [
+                { value: 'model-a', label: 'Model A', effortLevels: ['low', 'medium', 'high'] },
+                { value: 'model-b', label: 'Model B', effortLevels: ['minimal', 'ultra'] },
+              ],
+              fetchedAt: '2026-09-28T00:00:00Z',
+            },
+          },
+        ]),
+      ),
+    },
     model: {
+      availableModelsProviderId: 'codex',
       availableModels: createCollection('value', [
         { value: 'model-a', label: 'Model A', effortLevels: ['low', 'medium', 'high'] },
         { value: 'model-b', label: 'Model B', effortLevels: ['minimal', 'ultra'] },
       ]),
       defaultProviderId: 'codex',
+      providerModels: { codex: 'model-a' },
     },
     guestSessions: { sessions: createCollection('id', []), hasReceivedList: true },
     connections: { windowBackendId: 'local', hasReceivedList: true },
     sidebarNav: sidebarNavReducer(undefined, { type: 'init' }),
     daemonHealth: { stats: { protocolVersion: '6.1' } },
-  };
+  });
 }
 function setting() {
   return {
@@ -276,11 +320,37 @@ export function useEncoderEffortHarness() {
         hardwareConsole: hardwareConsoleReducer(state.hardwareConsole, action),
         agentSessions: agentSessionReducer(state.agentSessions, action),
         sidebarNav: sidebarNavReducer(state.sidebarNav, action),
+        panelLayout: panelLayoutReducer(state.panelLayout, action),
       };
       publish();
       channel.put(action);
       return action;
     });
+    for (const [workspaceId, agentIds] of [
+      ['ws-1', ['agent-1', 'agent-2']],
+      ['ws-2', ['agent-3']],
+    ] as const) {
+      mocks.dispatch(
+        initializeLayout(workspaceId, {
+          root: { type: 'panel', panelId: 'chat' },
+          focusedPanelId: 'chat',
+          panels: {
+            chat: {
+              id: 'chat',
+              activeTabId: agentIds[0],
+              tabs: agentIds.map((agentId) => ({
+                id: agentId,
+                type: 'agent',
+                title: agentId,
+                agentId,
+                workspaceId,
+                closable: true,
+              })),
+            },
+          },
+        }),
+      );
+    }
     request.mockReset().mockImplementation(async (method, params) => {
       if (method === 'settings.get') return setting();
       if (method === 'settings.update') {

@@ -1,5 +1,10 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  resetOnboarding,
+  setOnboardingFullFlowRequested,
+  goToStep,
+} from '../../onboarding/onboarding-slice';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 const mocks = vi.hoisted(() => ({
@@ -21,6 +26,7 @@ vi.mock('$lib/utils/safe-storage', () => ({
 }));
 vi.mock('$lib/i18n/locale', () => ({
   applyLanguagePreference: mocks.applyLanguagePreference,
+  getActiveLocale: () => 'en',
   resolvePreferenceToLocale: vi.fn(),
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
@@ -39,6 +45,8 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  toggleLabsGitLab,
   setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
@@ -127,7 +135,10 @@ describe('userPreferencesPersistenceSaga', () => {
     const fonts = ['Helvetica Neue', 'JetBrains Mono', 'Cascadia Code'];
     vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: true, data: fonts });
     const dispatch = vi.fn();
-    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    const task = runSaga(
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
     await settle();
 
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
@@ -181,6 +192,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'appearance:reduceMotionOnBattery': false,
       'labs:settingsVisible': true,
       'labs:multiplayerEnabled': true,
+      'labs:gitlabEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -207,6 +219,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setReduceMotionOnBattery(false)],
       [setLabsSettingsVisible(true)],
       [setLabsMultiplayerEnabled(true)],
+      [setLabsGitLabEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -253,6 +266,70 @@ describe('userPreferencesPersistenceSaga', () => {
     },
   );
 
+  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+    'keeps the GitLab lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:gitlabEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
+      expect(mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:gitlabEnabled')).toEqual([]);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])(
+    'persists GitLab %s across onboarding reruns and restart',
+    async (enabled) => {
+      const storage: Record<string, unknown> = {};
+      mocks.getJSON.mockImplementation((key: string) => storage[key]);
+      mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+        storage[key] = value;
+      });
+      const first = startPreferenceStore();
+      await settle();
+      first.dispatch(setLabsGitLabEnabled(!enabled));
+      first.dispatch(toggleLabsGitLab());
+      first.dispatch(setOnboardingFullFlowRequested(true));
+      first.dispatch(resetOnboarding());
+      first.dispatch(goToStep('forge'));
+      await settle();
+      expect(first.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      expect(storage['labs:gitlabEnabled']).toBe(enabled);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      await first.stop();
+      const restarted = startPreferenceStore();
+      await settle();
+      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      restarted.dispatch(resetOnboarding());
+      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      await restarted.stop();
+    },
+  );
+
+  it('keeps GitLab off until delayed preference hydration finishes without resetting it on rerun', async () => {
+    let finish!: (enabled: boolean) => void;
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:gitlabEnabled'
+        ? new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    const run = startPreferenceStore();
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
+    run.dispatch(resetOnboarding());
+    finish(true);
+    await settle();
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    run.dispatch(setOnboardingFullFlowRequested(true));
+    run.dispatch(resetOnboarding());
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    await run.stop();
+  });
+
   it.each([true, false])('hydrates Labs visibility saved as %s', async (visible) => {
     mocks.getJSON.mockImplementation((key: string) =>
       key === 'labs:settingsVisible' ? visible : undefined,
@@ -277,7 +354,10 @@ describe('userPreferencesPersistenceSaga', () => {
   );
 
   it('restores both visibility choices across launches without changing experiments', async () => {
-    const stored: Record<string, unknown> = { 'labs:multiplayerEnabled': true };
+    const stored: Record<string, unknown> = {
+      'labs:multiplayerEnabled': true,
+      'labs:gitlabEnabled': true,
+    };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     mocks.setJSON.mockImplementation((key: string, value: unknown) => {
       stored[key] = value;
@@ -294,6 +374,7 @@ describe('userPreferencesPersistenceSaga', () => {
     await settle();
     expect(second.getUserPreferences().labsSettingsVisible).toBe(true);
     expect(second.getUserPreferences().labsMultiplayerEnabled).toBe(true);
+    expect(second.getUserPreferences().labsGitLabEnabled).toBe(true);
     second.dispatch(toggleLabsSettingsVisibility());
     await settle();
     expect(stored['labs:settingsVisible']).toBe(false);
@@ -303,6 +384,8 @@ describe('userPreferencesPersistenceSaga', () => {
     await settle();
     expect(third.getUserPreferences().labsSettingsVisible).toBe(false);
     expect(third.getUserPreferences().labsMultiplayerEnabled).toBe(true);
+    expect(third.getUserPreferences().labsGitLabEnabled).toBe(true);
+    expect(stored['labs:gitlabEnabled']).toBe(true);
     expect(stored['labs:multiplayerEnabled']).toBe(true);
     await third.stop();
   });
@@ -511,6 +594,39 @@ describe('userPreferencesPersistenceSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+  it('applies rapid locale changes immediately but serializes and coalesces main-process writes', async () => {
+    let release!: () => void;
+    const invoke = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const { dispatch, stop } = startPreferenceStore();
+    window.electronAPI.invoke = invoke;
+    dispatch(setLanguagePreference('de'));
+    dispatch(setLanguagePreference('fr'));
+    dispatch(setLanguagePreference('ja'));
+    await settle();
+    expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de'], ['fr'], ['ja']]);
+    expect(mocks.setJSON.mock.calls).toEqual([
+      ['language-preference', 'de'],
+      ['language-preference', 'fr'],
+      ['language-preference', 'ja'],
+    ]);
+    expect(invoke.mock.calls).toEqual([['app:set-language-preference', { preference: 'de' }]]);
+    release();
+    await settle();
+    expect(invoke.mock.calls).toEqual([
+      ['app:set-language-preference', { preference: 'de' }],
+      ['app:set-language-preference', { preference: 'ja' }],
+    ]);
+    await stop();
+  });
+
   it('skips main-process language IPC outside Electron', async () => {
     mocks.isElectron.mockReturnValue(false);
     await runSaga(
@@ -601,7 +717,10 @@ describe('userPreferencesPersistenceSaga', () => {
     let resolve!: (value: unknown) => void;
     mocks.getJSON.mockReturnValue(new Promise((done) => (resolve = done)));
     const dispatch = vi.fn();
-    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    const task = runSaga(
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
     task.cancel();
     resolve({ enabled: true });
     await task.toPromise();

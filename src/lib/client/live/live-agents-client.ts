@@ -26,6 +26,7 @@ import type {
   AgentDeleteResult,
   AgentListOptions,
   AgentListResult,
+  AgentRetireResult,
   AgentsClient,
   FileBlock,
   ImageBlock,
@@ -105,6 +106,13 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
     session.parentAgentId = AgentId(raw.parentAgentId);
   }
+  // Canonical booleans override stale metadata, including a persisted false.
+  if (typeof raw.isBackground === 'boolean') {
+    session.metadata = { ...session.metadata, isBackground: raw.isBackground };
+    if (session.agentMetadata) {
+      session.agentMetadata = { ...session.agentMetadata, isBackground: raw.isBackground };
+    }
+  }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker
   // convergence after agent.markSeen — recomputes it through one seam.
@@ -167,6 +175,25 @@ function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefine
 }
 
 export class LiveAgentsClient implements AgentsClient {
+  private retirementCapabilityRequest: { generation: number; promise: Promise<boolean> } | null =
+    null;
+
+  supportsRetirement(connectionGeneration = 0): Promise<boolean> {
+    if (this.retirementCapabilityRequest?.generation !== connectionGeneration) {
+      const promise = backendRequest<{
+        server?: { capabilities?: { agentRetire?: number } };
+      }>('client.hello', {})
+        .then((result) => result?.server?.capabilities?.agentRetire === 1)
+        .catch(() => false)
+        .finally(() => {
+          if (this.retirementCapabilityRequest?.promise === promise)
+            this.retirementCapabilityRequest = null;
+        });
+      this.retirementCapabilityRequest = { generation: connectionGeneration, promise };
+    }
+    return this.retirementCapabilityRequest.promise;
+  }
+
   async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;
@@ -209,8 +236,11 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  async get(agentId: string): Promise<AgentSession | null> {
-    const result = await backendRequest<{ agent?: unknown } | unknown>('agent.get', { agentId });
+  async get(agentId: string, workspaceId?: string): Promise<AgentSession | null> {
+    const result = await backendRequest<{ agent?: unknown } | unknown>('agent.get', {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
     const raw =
       result && typeof result === 'object' && 'agent' in result
         ? (result as { agent?: unknown }).agent
@@ -244,6 +274,7 @@ export class LiveAgentsClient implements AgentsClient {
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
+    workspaceId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
@@ -263,6 +294,7 @@ export class LiveAgentsClient implements AgentsClient {
     for (;;) {
       const params: Record<string, unknown> = {
         agentId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
         limit: requestLimit,
         projection: 'slim',
       };
@@ -305,11 +337,13 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     messageId: string,
     blockId: string,
+    workspaceId?: string,
   ): Promise<ContentBlock> {
     const result = await backendRequest<{ block?: unknown }>('agent.getMessageBlock', {
       agentId,
       messageId,
       blockId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
     });
     const block = result?.block;
     if (!isContentBlock(block)) {
@@ -328,8 +362,15 @@ export class LiveAgentsClient implements AgentsClient {
   // can silently degrade to its tail-derived items: -32601 (older daemon
   // lacking the method) is marked `unsupported: true`; any other failure
   // keeps `unsupported: false`.
-  async listUserMessages(agentId: string, previewChars?: number): Promise<UserMessageIndexResult> {
-    const params: Record<string, unknown> = { agentId };
+  async listUserMessages(
+    agentId: string,
+    previewChars?: number,
+    workspaceId?: string,
+  ): Promise<UserMessageIndexResult> {
+    const params: Record<string, unknown> = {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    };
     if (previewChars !== undefined) params.previewChars = previewChars;
     try {
       const result = await backendRequest<{ items?: unknown[]; total?: unknown } | undefined>(
@@ -425,8 +466,8 @@ export class LiveAgentsClient implements AgentsClient {
     }
     return normalizeAgent(raw as Record<string, unknown>);
   }
-  async send(agentId: string, message: string): Promise<MutationResult> {
-    const workspaceId = await this.resolveAgentWorkspaceId(agentId);
+  async send(agentId: string, message: string, workspaceId?: string): Promise<MutationResult> {
+    workspaceId ??= (await this.resolveAgentWorkspaceId(agentId)) ?? undefined;
     if (!workspaceId) {
       return { success: false, error: `Unknown workspace for agent ${agentId}` };
     }
@@ -471,6 +512,7 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     message: string,
     options?: {
+      workspaceId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -484,7 +526,11 @@ export class LiveAgentsClient implements AgentsClient {
     // Optional `imageBlocks` / `fileBlocks` / `messageMetadata` only ride
     // along when supplied so the daemon sees an omitted param otherwise.
     try {
-      const params: Record<string, unknown> = { agentId, content: message };
+      const params: Record<string, unknown> = {
+        agentId,
+        content: message,
+        ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
+      };
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
       if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
@@ -511,6 +557,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string,
     content: string,
     editing?: boolean,
+    workspaceId?: string,
   ): Promise<MutationResult> {
     // `agent.editQueuedMessage` (§5.5) returns `{ success, queuedMessage }`
     // like `agent.queueMessage`; surface `queuedMessage` so callers can render
@@ -518,7 +565,12 @@ export class LiveAgentsClient implements AgentsClient {
     // edit — daemon drain skips held entries — and is only forwarded when the
     // caller supplied it so older daemons see an omitted param.
     try {
-      const params: Record<string, unknown> = { agentId, messageId, content };
+      const params: Record<string, unknown> = {
+        agentId,
+        messageId,
+        content,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      };
       if (editing !== undefined) params.editing = editing;
       const result = await backendRequest<{ queuedMessage?: QueuedMessage } | undefined>(
         'agent.editQueuedMessage',
@@ -569,16 +621,21 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }
-  async getQueue(agentId: string): Promise<QueuedMessage[]> {
+  async getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]> {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
     // daemon's queue array through verbatim (incl. optional `messageMetadata`).
     // Errors propagate as rejections, like the other reads.
     const result = await backendRequest<{ queue?: QueuedMessage[] }>('agent.getQueue', {
       agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
     });
     return Array.isArray(result?.queue) ? result.queue : [];
   }
-  async removeQueued(agentId: string, messageId: string): Promise<MutationResult> {
+  async removeQueued(
+    agentId: string,
+    messageId: string,
+    workspaceId?: string,
+  ): Promise<MutationResult> {
     // `agent.removeQueuedMessage` is **idempotent** on the daemon (§5.5): the
     // BE returns `{ success: true }` whether or not the messageId existed in
     // the persisted queue. `runMutation` folds the daemon body into a uniform
@@ -587,13 +644,20 @@ export class LiveAgentsClient implements AgentsClient {
     // chat-send-service) must treat both branches as "already removed" and
     // never roll the optimistic delete back, since the BE may have already
     // self-drained or the FE's seeded queue may diverge after a daemon restart.
-    return runMutation('agent.removeQueuedMessage', { agentId, messageId });
+    return runMutation('agent.removeQueuedMessage', {
+      agentId,
+      messageId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
-  async stop(agentId: string): Promise<MutationResult> {
+  async stop(agentId: string, workspaceId?: string): Promise<MutationResult> {
     // `agent.stop` (§5.5) takes `{ agentId }` and acks `{ success: true }`.
     // The daemon cancels the in-flight stream and emits the terminal
     // `agent:stream:end` (§7), which converges the FE streaming state.
-    return runMutation('agent.stop', { agentId });
+    return runMutation('agent.stop', {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
   async cancelSubscriptions(params: {
     agentId: string;
@@ -707,6 +771,17 @@ export class LiveAgentsClient implements AgentsClient {
       changes: { notificationsMuted: params.notificationsMuted },
     });
   }
+  async setBackground(params: {
+    agentId: string;
+    workspaceId: string;
+    isBackground: boolean;
+  }): Promise<MutationResult> {
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { isBackground: params.isBackground },
+    });
+  }
   async updateSpecialist(params: {
     agentId: string;
     workspaceId: string;
@@ -726,7 +801,7 @@ export class LiveAgentsClient implements AgentsClient {
   async rename(
     agentId: string,
     name: string,
-    _workspaceId?: string,
+    workspaceId?: string,
     options?: { skipIfExplicitlySet?: boolean },
   ): Promise<MutationResult> {
     // `agent.rename` (§5.5) takes `{ agentId, name }` (name non-empty) and
@@ -735,20 +810,23 @@ export class LiveAgentsClient implements AgentsClient {
     // The optional `skipIfExplicitlySet` guard only rides along when a caller
     // opts in (automated renames such as the chief first-message rename); a
     // user-initiated rename omits it — a user rename always wins. workspaceId
-    // is not part of the wire contract, so the seam's optional third argument
-    // (kept for AgentsClient contract parity) stays off the wire.
-    const params: Record<string, unknown> = { agentId, name };
+    // carries the captured origin when the caller supplied it.
+    const params: Record<string, unknown> = {
+      agentId,
+      name,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    };
     if (options?.skipIfExplicitlySet === true) params.skipIfExplicitlySet = true;
     return runMutation('agent.rename', params);
   }
   async delete(
     agentId: string,
-    _workspaceId?: string,
+    workspaceId?: string,
     options?: { undoDelayMs?: number },
   ): Promise<AgentDeleteResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
-    // the daemon resolves the workspace itself (agent_delete_op only consumes
-    // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
+    // the daemon preserves direct omission and is idempotent. We retain
+    // supplied workspace routing context and rely on
     // the emitted `agent:deleted` event to reconcile the list. With
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ success, scheduled, deleteAt }` — surfaced verbatim so the
@@ -759,7 +837,11 @@ export class LiveAgentsClient implements AgentsClient {
     try {
       const result = await backendRequest<{ scheduled?: unknown; deleteAt?: unknown }>(
         'agent.delete',
-        undoDelayMs && undoDelayMs > 0 ? { agentId, undoDelayMs } : { agentId },
+        {
+          agentId,
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+          ...(undoDelayMs && undoDelayMs > 0 ? { undoDelayMs } : {}),
+        },
       );
       const scheduled = result?.scheduled === true;
       const deleteAt = typeof result?.deleteAt === 'string' ? result.deleteAt : undefined;
@@ -772,17 +854,30 @@ export class LiveAgentsClient implements AgentsClient {
         : { success: false, error: mutationErrorMessage(error) };
     }
   }
-  async cancelDelete(agentId: string): Promise<AgentCancelDeleteResult> {
+  async cancelDelete(agentId: string, workspaceId?: string): Promise<AgentCancelDeleteResult> {
     // `agent.cancelDelete` (§5.5, delete grace window). `{ cancelled: false }`
     // is a race-safe non-error: the deletion already committed or was never
     // scheduled — surfaced so the caller can show "could not undo" instead of
     // resurrecting the agent. workspaceId is optional on the wire; the daemon
-    // resolves it, so the seam forwards just `{ agentId }`.
+    // resolves it for direct callers; workspace callers retain their origin.
     try {
       const result = await backendRequest<{ cancelled?: unknown }>('agent.cancelDelete', {
         agentId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
       return { success: true, cancelled: result?.cancelled === true };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async retire(agentId: string, workspaceId?: string): Promise<AgentRetireResult> {
+    const params: { agentId: string; workspaceId?: string } = { agentId };
+    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    try {
+      return await backendRequest<Extract<AgentRetireResult, { success: true }>>(
+        'agent.retire',
+        params,
+      );
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
@@ -792,8 +887,10 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent:restored`, which reconciles the list. Idempotent — restoring an
     // active agent succeeds. `workspaceId` is optional on the wire; it only
     // rides along when the caller supplied it.
-    const params: Record<string, unknown> = { agentId };
-    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    const params: Record<string, unknown> = {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    };
     return runMutation('agent.restore', params);
   }
   async retry(
@@ -842,6 +939,7 @@ export class LiveAgentsClient implements AgentsClient {
   async respondPermission(
     requestId: string,
     outcome: PermissionOutcome,
+    workspaceId?: string,
   ): Promise<RespondPermissionResult> {
     // `agent.respondPermission` (PROTOCOL §8) forwards the caller's outcome to
     // the blocked provider and emits `agent:permission:resolved` so any other
@@ -852,7 +950,7 @@ export class LiveAgentsClient implements AgentsClient {
     try {
       const result = await backendRequest<{ resolved?: unknown } | undefined>(
         'agent.respondPermission',
-        { requestId, outcome },
+        { requestId, outcome, ...(workspaceId !== undefined ? { workspaceId } : {}) },
       );
       const resolved = typeof result?.resolved === 'boolean' ? result.resolved : undefined;
       return resolved !== undefined ? { success: true, resolved } : { success: true };
@@ -955,7 +1053,7 @@ export class LiveAgentsClient implements AgentsClient {
     return createDeltaSubscription<AgentSession>({
       channel: {
         subscribeMethod: 'agent.subscribe',
-        unsubscribeMethod: 'agent.unsubscribe',
+        unsubscribeMethod: 'events.unsubscribe',
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),

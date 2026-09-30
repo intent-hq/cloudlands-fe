@@ -611,16 +611,21 @@ export class LiveGitClient implements GitClient {
     }
   }
 
-  // `git.getBranches` (PROTOCOL §5.6) is path-based, NOT workspace-scoped: the
-  // workspace-initializer asks for an arbitrary repo path BEFORE a workspace
-  // exists. Maps the daemon `GitBranches` (snake_case fields are serialized as
+  // `git.getBranches` (PROTOCOL §5.6) keeps path-based repository selection.
+  // Existing workspaces may supply their origin for routing; the initializer
+  // omits it before a workspace exists. Maps the daemon `GitBranches` (snake_case fields are serialized as
   // camelCase per the wire model) into the renderer `GitBranchesResult`.
   // Errors (including the daemon's "Unknown or unauthorized repository path"
   // gate rejection) fold to `null` so the caller surfaces a friendly fallback
   // instead of crashing on `result.success` against an undefined payload.
-  async getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null> {
+  async getBranches(
+    repoPath: string,
+    includeRemote: boolean,
+    workspaceId?: string,
+  ): Promise<GitBranchesResult | null> {
     try {
       const result = await backendRequest<Record<string, unknown>>('git.getBranches', {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
         repoPath,
         includeRemote,
       });
@@ -649,9 +654,14 @@ export class LiveGitClient implements GitClient {
   // the wire model) into the renderer `GitBranchStatusResult`. Errors
   // (including the known-repo gate rejection) fold to `null` so the seam
   // degrades silently — branch status is informational, never a hard failure.
-  async branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null> {
+  async branchStatus(
+    repoPath: string,
+    branchName: string,
+    workspaceId?: string,
+  ): Promise<GitBranchStatusResult | null> {
     try {
       const result = await backendRequest<Record<string, unknown>>('git.branchStatus', {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
         repoPath,
         branchName,
       });
@@ -779,11 +789,11 @@ export class LiveGitClient implements GitClient {
   // than the daemon's bound — so the daemon's structured `{ok:false}` result
   // wins over a flat 30s JSON-RPC transport timeout when a pull genuinely runs
   // long.
-  async pull(repoPath: string, branchName: string): Promise<MutationResult> {
+  async pull(repoPath: string, branchName: string, workspaceId?: string): Promise<MutationResult> {
     try {
       const result = await backendRequest<Record<string, unknown>>(
         'git.pull',
-        { repoPath, branchName },
+        { repoPath, branchName, ...(workspaceId === undefined ? {} : { workspaceId }) },
         { timeoutMs: PULL_TIMEOUT_MS },
       );
       if (result && typeof result === 'object' && result.ok === true) return { success: true };

@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => {
   }
   return {
     readable,
+    principalState: {} as Record<string, unknown>,
     dispatch: vi.fn(),
     goto: vi.fn(),
     create: vi.fn(),
@@ -57,7 +59,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
+    state: () => ({ ...mocks.principalState, workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
   });
 });
@@ -287,6 +289,7 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 
 describe('CompactWorkspaceInitializer folder drop (path references, local daemon only)', () => {
   beforeEach(() => {
+    mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.hydrated$.set(false);
@@ -477,8 +480,11 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
         expect(pills(result.container)).toHaveLength(2);
         expect(mocks.draftClear).not.toHaveBeenCalled();
         expect(mocks.goto).not.toHaveBeenCalled();
-        seedAutoCreatePrefill();
-        await result.component.applyPrefill();
+        // Retry the existing payload through the actual user control. A new
+        // prefill intentionally replaces the old submission.
+        await fireEvent.click(
+          result.container.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
+        );
       }
       try {
         await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
@@ -501,6 +507,9 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
         'ws-created',
         'notes.txt',
         expect.objectContaining({ sourcePath: '/home/user/projects/notes.txt' }),
+        undefined,
+        undefined,
+        expect.any(Function),
       );
       // ...and the folder reference rides the held agent.sendMessage alongside
       // the attachment-reference file block.

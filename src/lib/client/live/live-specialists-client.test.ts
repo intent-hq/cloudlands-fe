@@ -26,7 +26,7 @@ import {
   onBackendReconnected,
 } from './backend-transport';
 import { LiveSpecialistsClient } from './live-specialists-client';
-import type { SpecialistDef } from '../app-client';
+import type { SpecialistDef, SpecialistsClient } from '../app-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
@@ -72,6 +72,46 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it.each([undefined, 'codex'])(
+    'list forwards optional provider %j and preserves its resolved effort',
+    async (provider) => {
+      const def = {
+        ...COORDINATOR_DEF,
+        resolvedProvider: provider ?? 'auggie',
+        resolvedModel: 'shared-model-id',
+        resolvedReasoningEffort: provider === 'codex' ? 'low' : 'high',
+      };
+      mockedRequest.mockResolvedValueOnce({ specialists: [def] });
+      const client: SpecialistsClient = new LiveSpecialistsClient();
+
+      expect(await client.list(provider)).toEqual([def]);
+      expect(mockedRequest.mock.calls).toEqual([
+        provider === undefined ? ['specialist.list'] : ['specialist.list', { provider }],
+      ]);
+    },
+  );
+
+  it('keeps a default subscription independent of provider-scoped list calls', async () => {
+    const scoped = {
+      ...COORDINATOR_DEF,
+      resolvedProvider: 'codex',
+      resolvedReasoningEffort: 'low',
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [scoped] })
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+    const client: SpecialistsClient = new LiveSpecialistsClient();
+    expect(await client.list('codex')).toEqual([scoped]);
+    const handler = vi.fn();
+    const unsubscribe = client.subscribe(handler);
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledExactlyOnceWith([COORDINATOR_DEF]));
+    expect(mockedRequest.mock.calls).toEqual([
+      ['specialist.list', { provider: 'codex' }],
+      ['specialist.list'],
+    ]);
+    unsubscribe();
   });
 
   it('list folds a malformed result (no specialists array) to an empty list', async () => {
@@ -596,5 +636,27 @@ describe('LiveSpecialistsClient (fake transport)', () => {
         'specialist not found in user scope: missing',
       );
     });
+  });
+});
+
+it('routes list and project mutations without changing user-library writes', async () => {
+  mockedRequest.mockResolvedValue({ specialists: [], specialist: { id: 'custom' }, success: true });
+  const client = new LiveSpecialistsClient();
+  await client.list('codex', 'workspace-A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list', {
+    provider: 'codex',
+    workspaceId: 'workspace-A',
+  });
+  await client.delete('custom', 'project', '/repo', 'workspace-A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('specialist.delete', {
+    id: 'custom',
+    scope: 'project',
+    workspacePath: '/repo',
+    workspaceId: 'workspace-A',
+  });
+  await client.delete('custom', 'user', undefined, 'workspace-A');
+  expect(mockedRequest).toHaveBeenLastCalledWith('specialist.delete', {
+    id: 'custom',
+    scope: 'user',
   });
 });

@@ -1,4 +1,5 @@
-import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -113,6 +114,7 @@ import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
 
+const runningTasks: ReturnType<typeof runSaga>[] = [];
 const WS = 'ws-lifecycle';
 /** Default hydration read: the parentless-foreground bin (§5.5 row scope). */
 const TOP_LEVEL = { scope: 'topLevel' } as const;
@@ -128,6 +130,7 @@ const settle = async () => {
 function state(currentTabId: string | null = null, eventsNextToken: string | null = null) {
   return {
     tabState: { currentTabId },
+    workspaceShare: workspaceShareInitialState,
     workspaceTasks: { byWorkspaceId: {} },
     changes: { agentStats: {}, agentLineStatsRequests: {} },
     workspace: { workspaces: createCollection('id', []) },
@@ -149,6 +152,7 @@ function start(current = state()) {
     { channel, dispatch: (action) => actions.push(action), getState: () => current },
     lifecycleReadSaga,
   );
+  runningTasks.push(task);
   return { channel, actions, task };
 }
 
@@ -175,6 +179,7 @@ function startWithLoopback() {
     },
     lifecycleReadSaga,
   );
+  runningTasks.push(task);
   return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
 }
 
@@ -199,6 +204,8 @@ function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession 
 
 describe('lifecycleReadSaga', () => {
   beforeEach(() => {
+    appStore.dispose();
+    appStore.init();
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [] });
@@ -234,7 +241,9 @@ describe('lifecycleReadSaga', () => {
     mocks.isAgentDeletionPending.mockReturnValue(false);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const task of runningTasks.splice(0)) await stop(task);
+    appStore.dispose();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -250,8 +259,11 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
-      { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
-      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+      {
+        type: 'workspace/replaceWorkspaceList',
+        payload: [[workspace], { complete: false, deletionTokens: {} }],
+      },
+      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
       { type: 'workspace/loadRecencyData', payload: [{ lastViewedAt: { [WS]: 42 } }] },
     ]);
     await stop(run.task);
@@ -437,10 +449,13 @@ describe('lifecycleReadSaga', () => {
       await settle();
       expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
       expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([
-        { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
+        {
+          type: 'workspace/replaceWorkspaceList',
+          payload: [[workspace], { complete: false, deletionTokens: {} }],
+        },
       ]);
       expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
-        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
       ]);
       expect(run.getWorkspaceState().hasLoaded).toBe(true);
 
@@ -1408,6 +1423,23 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('drops a prior-connection PR refresh completion with a reused workspace ID', async () => {
+    let resolveOld!: (value: unknown) => void;
+    mocks.git.prRefresh.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    const run = start();
+    run.channel.put(refreshPRStatusRequested(WS, true, false));
+    await settle();
+    run.channel.put(backendReconnected());
+    resolveOld({ outcome: 'updated', prNumber: 9, pullRequests: [] });
+    await settle();
+    expect(run.actions.filter((action) => action.type === 'prStatus/refreshCompleted')).toEqual([]);
+    await stop(run.task);
+  });
+
   it('reports PR refresh success and maps only the branch lookup payload', async () => {
     const current = state();
     current.workspace.workspaces = createCollection('id', [
@@ -1818,6 +1850,7 @@ describe('lifecycleReadSaga', () => {
 
   it('covers agent line-stat success, cache no-op, force, and failure', async () => {
     const current = state();
+    current.agentSessions.byAgentId['agent-1'] = agent('agent-1');
     mocks.getAgentLineStats.mockResolvedValueOnce({ additions: 8, deletions: 3, filesChanged: 2 });
     const run = start(current);
     run.channel.put(requestAgentLineStats('agent-1'));
@@ -1833,7 +1866,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(requestAgentLineStats('agent-1', true));
     await settle();
 
-    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-1']]);
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([
+      ['agent-1', WS],
+      ['agent-1', WS],
+    ]);
     expect(run.actions).toEqual([
       {
         type: 'changes/agentLineStatsRequestStarted',
@@ -1870,21 +1906,31 @@ describe('lifecycleReadSaga', () => {
           (resolvers[agentId] ??= []).push(resolve);
         }),
     );
-    const run = start();
+    const current = state();
+    current.agentSessions.byAgentId['agent-1'] = agent('agent-1');
+    current.agentSessions.byAgentId['agent-2'] = agent('agent-2');
+    const run = start(current);
 
     run.channel.put(requestAgentLineStats('agent-1'));
     run.channel.put(requestAgentLineStats('agent-1'));
     run.channel.put(requestAgentLineStats('agent-2'));
     await settle();
 
-    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-2']]);
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([
+      ['agent-1', WS],
+      ['agent-2', WS],
+    ]);
     resolvers['agent-1'][0](null);
     resolvers['agent-2'][0](null);
     await settle();
 
     run.channel.put(requestAgentLineStats('agent-1'));
     await settle();
-    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-2'], ['agent-1']]);
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([
+      ['agent-1', WS],
+      ['agent-2', WS],
+      ['agent-1', WS],
+    ]);
     resolvers['agent-1'][1](null);
     await settle();
     await stop(run.task);
@@ -1964,6 +2010,7 @@ describe('lifecycleReadSaga', () => {
   });
 
   it('notifies the real agent-session selector once for a mixed N-agent hydration', async () => {
+    appStore.dispose();
     const dispose = appStore.init();
     const stopSaga = appStore.runSaga(lifecycleReadSaga);
     appStore.dispatch(

@@ -7,7 +7,7 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
 import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
@@ -962,7 +962,14 @@ describe('WorkspaceProgressCard driving browser client', () => {
       ownClientId: OWN,
       liveClients: createLiveClientCollection(clients),
       liveClientsLoaded: true,
-      byWorkspaceId: { 'ws-1': { ...emptyWorkspaceBrowserClientsState, browserClient } },
+      byWorkspaceId: {
+        'ws-1': {
+          ...emptyWorkspaceBrowserClientsState,
+          browserClient,
+          liveClients: createLiveClientCollection(clients),
+          liveClientsLoaded: true,
+        },
+      },
     } satisfies BrowserClientsState;
   }
 

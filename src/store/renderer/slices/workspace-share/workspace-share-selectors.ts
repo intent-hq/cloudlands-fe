@@ -2,9 +2,9 @@
  * Workspace Share Selectors
  */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
-import { selectIsWorkspaceOwner } from '../workspace/workspace-selectors';
+import { selectCanShareWorkspace } from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
 
 export const selectShareDialogOpen = store.createSelector((state) => state.workspaceShare.open);
@@ -20,15 +20,15 @@ export const selectShareTarget = store.createSelector<[], WorkspaceShareTarget |
 });
 
 /**
- * True when the connected principal owns the dialog's workspace
- * (`selectIsWorkspaceOwner`: `workspace.myRole === 'owner'` in a settled owner
- * window, PROTOCOL §5.1) and the daemon has not refused an owner-only sharing
+ * True when the connected principal can manage sharing for the dialog's workspace
+ * (`selectCanShareWorkspace`: server management authority and Multiplayer in this
+ * window, PROTOCOL §5.1) and the daemon has not refused a sharing
  * method. Gates every mutating control and RPC.
  */
 export const selectShareCanManage = store.createSelector((state) => {
   const { open, workspaceId, withheld } = state.workspaceShare;
   if (!open || !workspaceId || withheld) return false;
-  return selectIsWorkspaceOwner.select(state, workspaceId);
+  return selectCanShareWorkspace.select(state, workspaceId);
 });
 
 export const selectShareCreateRequest = store.createSelector(
@@ -61,7 +61,7 @@ export const selectShareInvites = store.createSelector((state) =>
 /**
  * Guests already authed on this host that are not yet on the roster
  * (`principal.list` minus `workspace.members.list`), in daemon order: the
- * candidates of the "Invite an existing GitHub user" dropdown.
+ * candidates of the "Invite an existing user" dropdown.
  */
 export const selectShareInvitablePrincipals = store.createSelector((state) => {
   const { principals, members } = state.workspaceShare;
@@ -122,7 +122,7 @@ export const selectWorkspaceRosterMembers = store.createSelector((state, workspa
 
 /**
  * Hover card: the owner may manage sharing for `workspaceId`
- * (`selectIsWorkspaceOwner`: `workspace.myRole === 'owner'` in a settled owner
+ * (`selectCanShareWorkspace`: server management authority and Multiplayer in this
  * window) and the daemon has not refused an owner-only method for it. Gates the
  * Share entry and every Remove control.
  */
@@ -130,7 +130,7 @@ export const selectWorkspaceRosterCanManage = store.createSelector(
   (state, workspaceId?: string) =>
     !!workspaceId &&
     !getRosterState(state.workspaceShare, workspaceId).withheld &&
-    selectIsWorkspaceOwner.select(state, workspaceId),
+    selectCanShareWorkspace.select(state, workspaceId),
 );
 
 /** Hover card: the daemon refused an owner-only method for `workspaceId`. */
@@ -149,4 +149,8 @@ export const selectWorkspaceRosterRemovingPrincipalId = store.createSelector(
 export const selectWorkspaceRosterRemoveError = store.createSelector(
   (state, workspaceId?: string) =>
     workspaceId ? getRosterState(state.workspaceShare, workspaceId).removeError : null,
+);
+
+export const selectShareIntegrationAuth = store.createSelector(
+  (state) => state.workspaceShare.integrationAuth,
 );

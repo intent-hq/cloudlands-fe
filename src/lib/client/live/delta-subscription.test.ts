@@ -507,7 +507,7 @@ describe('createDeltaSubscription', () => {
       source.emit(['w1']);
       await flush();
       expect(channelUnsubscribes()).toEqual([
-        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2' } },
+        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2', workspaceId: 'w2' } },
       ]);
       expect(handler).toHaveBeenLastCalledWith([{ id: 'a' }]);
       dispose();
@@ -530,7 +530,7 @@ describe('createDeltaSubscription', () => {
       chanDelta('chan-2', 5, { added: [{ id: 'x' }] });
       await flush(); // chan-3 = w2 re-registration
       expect(channelUnsubscribes()).toEqual([
-        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2' } },
+        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2', workspaceId: 'w2' } },
       ]);
       expect(channelSubscribes().length).toBe(3);
       // w2's stale values drop out of the merged collection while unseeded.
@@ -624,7 +624,7 @@ describe('createDeltaSubscription', () => {
       await flush();
       // The stale w2 reply releases its daemon-side subscription.
       expect(channelUnsubscribes()).toEqual([
-        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2' } },
+        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2', workspaceId: 'w2' } },
       ]);
 
       // w1 alone confirms → its entities only.
@@ -642,8 +642,8 @@ describe('createDeltaSubscription', () => {
       await flush();
       dispose();
       expect(channelUnsubscribes()).toEqual([
-        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-1' } },
-        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2' } },
+        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-1', workspaceId: 'w1' } },
+        { method: 'ws.unsubscribe', params: { subscriptionId: 'chan-2', workspaceId: 'w2' } },
       ]);
     });
 
@@ -669,4 +669,46 @@ describe('createDeltaSubscription', () => {
       }
     });
   });
+});
+
+it('retains workspace origin for late subscription cleanup after removal and reconnect', async () => {
+  deferChannelSubscribe = true;
+  let setIds!: (ids: readonly string[]) => void;
+  const dispose = createDeltaSubscription<Row>({
+    channel: {
+      subscribeMethod: 'agent.subscribe',
+      unsubscribeMethod: 'events.unsubscribe',
+      dynamic: {
+        subscribeIds: (listener) => {
+          setIds = listener;
+          listener(['workspace-a']);
+          return () => {};
+        },
+        paramsForId: (workspaceId) => ({ workspaceId }),
+      },
+    },
+    getId,
+    normalize,
+    handler: vi.fn(),
+  });
+  setIds(['workspace-b']);
+  channelSubscribeResolvers[0]();
+  await flush();
+  expect(requestCalls).toContainEqual({
+    method: 'events.unsubscribe',
+    params: { subscriptionId: 'chan-1', workspaceId: 'workspace-a' },
+  });
+  reconnectHandler?.();
+  channelSubscribeResolvers[1]();
+  await flush();
+  dispose();
+  channelSubscribeResolvers[2]();
+  await flush();
+  expect(
+    requestCalls.filter((c) => c.method === 'events.unsubscribe').map((c) => c.params),
+  ).toEqual([
+    { subscriptionId: 'chan-1', workspaceId: 'workspace-a' },
+    { subscriptionId: 'chan-2', workspaceId: 'workspace-b' },
+    { subscriptionId: 'chan-3', workspaceId: 'workspace-b' },
+  ]);
 });

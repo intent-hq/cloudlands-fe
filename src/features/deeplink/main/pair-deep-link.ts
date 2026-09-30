@@ -1,20 +1,14 @@
 /**
  * Main-process handler for `intent://pair?...` deep links (PROTOCOL §5
- * pairing URI): parse the link, match it against the stored connections by
- * pairing identity (cert fingerprint first, normalized host:port fallback —
- * `connectionsStore.findMatching`), and either connect/foreground the known
- * backend's window or — after a native confirmation dialog — register the new
- * backend and open it.
+ * pairing URI): authenticate the pinned bearer and classify the remote principal.
+ * Personal member/guest credentials enter the existing invited-session registry;
+ * administrator credentials retain the owner pairing and confirmation flow.
  *
  * Security posture:
- * - The bearer token from the link goes straight to the connections store
- *   (which encrypts it at rest) and is NEVER logged — log lines carrying
- *   free-form error text are scrubbed first.
- * - A known-server link never rewrites stored credentials: re-pairing lives
- *   in the settings flow, so a clicked link can't silently replace a good
- *   token with an attacker-supplied one.
- * - Everything fails soft: a malformed or incomplete link logs a scrubbed
- *   warning and returns; the app never crashes on a bad link.
+ * - Bearers stay in main and encrypted storage; diagnostics contain bounded fields.
+ * - Personal sessions deduplicate by verified principal and pin, never host alone.
+ * - Known owner links open the saved connection without replacing its credential.
+ * - Malformed or incomplete links return without changing either registry.
  */
 import { app, dialog, type MessageBoxOptions } from 'electron';
 
@@ -23,8 +17,11 @@ import { m } from '$shared/paraglide/messages.js';
 import { parsePairingUri } from '$shared/utils/pairing-uri';
 import { getMainWindow } from '../../../main/state';
 import * as connectionsStore from '../../backend/main/connections-store';
+import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
+import { inspectPersonalCredential, invitedRole } from '../../backend/main/invited-principal';
+import { canonicalFingerprint } from '../../backend/main/invited-session-key';
+import { captureInviteAttempt } from './invite-attempt';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
-import { scrubToken } from '../utils/scrub-token';
 
 const logger = new Logger('PairDeepLink');
 
@@ -49,6 +46,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     return;
   }
   pairLinkInFlight = true;
+  const attempt = captureInviteAttempt();
   try {
     const parsed = parsePairingUri(url);
     if (!parsed) {
@@ -56,7 +54,12 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       return;
     }
     const { hosts, port, fingerprint, token, tcAddress } = parsed;
-    if (hosts.length === 0 || port === null || fingerprint === null || token === null) {
+    if (
+      (hosts.length === 0 && !tcAddress) ||
+      port === null ||
+      fingerprint === null ||
+      token === null
+    ) {
       // Presence booleans only — never the values (the token must not leak).
       logger.warn('Ignoring pairing link with missing required fields', {
         hasHost: hosts.length > 0,
@@ -67,8 +70,48 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       return;
     }
 
+    const host = hosts[0] ?? tcAddress!;
+    const remote = await inspectPersonalCredential({
+      host,
+      hosts,
+      port,
+      fingerprint,
+      token,
+      tcAddress,
+    });
+    const role = invitedRole(remote);
+    if (role) {
+      if (!attempt.current() || !attempt.allowed(remote.principal.identity?.provider)) return;
+      const people = await guestSessionsStore.findAllMatching(fingerprint);
+      const known = people.find((row) => row.principalId === remote.principal.id);
+      if (!known && !(await confirmNewBackend(host, port, fingerprint))) return;
+      if (!attempt.current() || !attempt.allowed(remote.principal.identity?.provider)) return;
+      const record = await guestSessionsStore.add({
+        label: host,
+        host,
+        hosts,
+        port,
+        fingerprint,
+        tcAddress,
+        token,
+        principalId: remote.principal.id,
+        login: remote.principal.login,
+        identity: remote.principal.identity,
+        hostRole: role,
+      });
+      if (attempt.current())
+        await openBackendWindow(record.id, {
+          mayOpen: () => attempt.current() && attempt.allowed(remote.principal.identity?.provider),
+        });
+      return;
+    }
+    // Legacy isAdministrator remains sufficient for the established owner-only pairing path.
+    if (!remote.principal.isAdministrator) return;
     const existing = await connectionsStore.findMatching({ hosts, port, fingerprint });
-    if (existing) {
+    if (
+      existing?.fingerprint &&
+      canonicalFingerprint(existing.fingerprint) === canonicalFingerprint(fingerprint)
+    ) {
       // Known server: connect if needed and open-or-focus its window. Do NOT
       // rewrite the stored credentials from a clicked link (see header).
       logger.info('Pairing link matches a known backend; opening its window', {
@@ -78,7 +121,6 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       return;
     }
 
-    const host = hosts[0];
     if (!(await confirmNewBackend(host, port, fingerprint))) {
       logger.info('User declined pairing link for a new backend');
       return;
@@ -93,19 +135,18 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     });
     logger.info('Added backend from pairing link; opening its window', { id: record.id });
     await openBackendWindow(record.id);
-  } catch (error) {
-    logger.warn('Pair deep link handling failed', {
-      error: scrubToken(error instanceof Error ? error.message : String(error)),
-    });
+  } catch {
+    logger.warn('Pair deep link handling failed', { kind: 'pairing-failed' });
   } finally {
+    attempt.release();
     pairLinkInFlight = false;
   }
 }
 
 /**
  * Route a pair link arriving from the OS (macOS `open-url`). The pair flow
- * needs no existing window — the confirm dialog can show parentless and
- * `openBackendWindow` creates its own window — so the link is handled
+ * owner path needs no existing window — its confirm dialog can show parentless.
+ * Personal imports require the original renderer's invitation policy. The link is handled
  * whenever the app is ready. This covers macOS staying alive with zero
  * windows open, where a window-gated route would park the link forever
  * (the pending slot is only drained once, during startup). Before ready,

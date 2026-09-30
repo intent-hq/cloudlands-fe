@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { appClient } from '$lib/client';
 import { notify } from '$lib/components/patterns/notify';
 import { startRootStoreLifecycle } from './root-store-lifecycle';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { store as appStore } from './store';
 import { startAllAppSagas } from './sagas';
 import {
@@ -114,7 +115,17 @@ beforeEach(() => {
   hardware.reset();
   settingsGet.mockResolvedValue({ path: 'hardwareConsole.state', value: settingsBag } as never);
   settingsUpdate.mockResolvedValue([]);
-  const invoke = vi.fn(async (channel: string) => {
+  const invoke = vi.fn(async (channel: string, request?: { method?: string }) => {
+    if (channel === IPC_CHANNELS.CONNECTIONS.LIST)
+      return { connections: [], activeId: 'local', windowBackendId: 'local' };
+    if (channel === IPC_CHANNELS.GUEST_SESSIONS.LIST)
+      return { sessions: [], openIds: [], connectedIds: [] };
+    // Principal admission is explicit below; unrelated discovery stays pending.
+    if (
+      channel === IPC_CHANNELS.BACKEND.REQUEST &&
+      ['client.hello', 'principal.me'].includes(request?.method ?? '')
+    )
+      return new Promise(() => {});
     // Owner-status query (#1928): with a bridge present the saga flips
     // pessimistically to non-owner until main answers — answer as owner.
     if (channel === 'hardware-console:get-owner-status') return { isOwner: true };
@@ -145,6 +156,8 @@ describe('hardware-console production composition', () => {
     dispose = startRootStoreLifecycle(appStore, {
       startSagas: startAllAppSagas,
     });
+    await vi.waitFor(() => expect(appStore.state.connections.hasReceivedList).toBe(true));
+    admitLegacyPrincipal();
 
     await vi.waitFor(() => expect(hardware.manager.start).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(appStore.state.hardwareConsole.isConsoleOwner).toBe(true));

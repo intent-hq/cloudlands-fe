@@ -7,14 +7,19 @@
  * `selectedRepoType` defaulted to 'local' and the value-prop sync never
  * re-derived it, so the popup wrongly opened on "Copy local repo".
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (v: T) => void) {
       run(getter());
-      return () => {};
+      const notify = () => run(getter());
+      listeners.add(notify);
+      return () => {
+        listeners.delete(notify);
+      };
     },
   });
   const selector = <T>(getter: () => T) => {
@@ -30,13 +35,22 @@ const mocks = vi.hoisted(() => {
       owner?: string;
     }>,
   };
-  return { selector, state, dispatch: vi.fn() };
+  return { selector, state, listeners, appState: {} as Record<string, unknown>, dispatch: vi.fn() };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => mocks.appState,
+    dispatch: (action) => {
+      mocks.dispatch(action);
+      if (action.type === 'wi/recent') {
+        mocks.state.recentRepos = action.payload;
+        for (const notify of mocks.listeners) notify();
+      }
+    },
+  });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
@@ -71,6 +85,8 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerDismissedRecentRepoKeys: mocks.selector(() => ({})),
+  selectWorkspaceInitializerHydrated: mocks.selector(() => true),
   selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
   selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.state.recentRepos),
   selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
@@ -120,6 +136,11 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+
+beforeEach(() => {
+  mocks.appState = withLegacyPrincipal({});
+});
 import { warmImport } from '../../../../../test/warm-import';
 import { invoke } from '$lib/electron-bridge';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';

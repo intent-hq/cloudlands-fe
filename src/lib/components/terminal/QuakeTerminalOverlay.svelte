@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -840,7 +841,7 @@
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
     if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, termId));
-    terminalManager.disposeTerminal(termId);
+    terminalManager.disposeTerminal(termId, workspaceId);
   }
 
   function clearActiveTerminal() {
@@ -1251,6 +1252,7 @@
           {/if}
         </div>
 
+        <HostExecutionNotice />
         <!-- Terminal Content with Sidebar -->
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->

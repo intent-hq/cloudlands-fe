@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({
+  api: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() },
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   offNotification: vi.fn(),
   offReconnect: vi.fn(),
+  reconnectHandlers: new Set<() => void>(),
   notificationHandler: undefined as
     ((notification: { method: string; params?: unknown }) => void) | undefined,
   reconnectHandler: undefined as (() => void) | undefined,
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
+  electronAPI: () => mocks.api,
   backendSubscribe: mocks.subscribe,
   backendUnsubscribe: mocks.unsubscribe,
   onBackendNotification: (handler: typeof mocks.notificationHandler) => {
@@ -22,8 +25,14 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     return mocks.offNotification;
   },
   onBackendReconnected: (handler: typeof mocks.reconnectHandler) => {
-    mocks.reconnectHandler = handler;
-    return mocks.offReconnect;
+    mocks.reconnectHandlers.add(handler!);
+    mocks.reconnectHandler = () => {
+      for (const listener of mocks.reconnectHandlers) listener();
+    };
+    return () => {
+      mocks.reconnectHandlers.delete(handler!);
+      mocks.offReconnect();
+    };
   },
 }));
 
@@ -41,6 +50,7 @@ import {
 } from './daemon-events-saga';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
+import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
 import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   loadWorkspaceTabsState,
@@ -118,6 +128,7 @@ describe('daemonEventsSaga', () => {
     vi.clearAllMocks();
     mocks.notificationHandler = undefined;
     mocks.reconnectHandler = undefined;
+    mocks.reconnectHandlers.clear();
     mocks.subscribe.mockResolvedValue({ subscriptionId: 'sub-1' });
     mocks.unsubscribe.mockResolvedValue(undefined);
     mocks.refresh.mockResolvedValue(undefined);
@@ -126,6 +137,7 @@ describe('daemonEventsSaga', () => {
   afterEach(() => {
     mocks.notificationHandler = undefined;
     mocks.reconnectHandler = undefined;
+    mocks.reconnectHandlers.clear();
   });
 
   it('listens before subscribing and forwards buffered events in arrival order with its id', async () => {
@@ -248,6 +260,7 @@ describe('daemonEventsSaga', () => {
     expect(FILE_EVENTS_SUBSCRIBE_TYPES).toEqual(['file:*']);
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toEqual([
       'agent:*',
+      'hub:checkpoint',
       'note:*',
       'comment:*',
       'script:*',
@@ -273,6 +286,8 @@ describe('daemonEventsSaga', () => {
       'pr:*',
       'mcp.servers:status-changed',
       'github:auth-changed',
+      'sourceControl:auth-changed',
+      'principal:identity-changed',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',
@@ -282,6 +297,9 @@ describe('daemonEventsSaga', () => {
       'app:ui-highlight',
       'app:workspace-open',
       'presence:changed',
+      'host:members-changed',
+      'host:execution-context-changed',
+      'principal:identity-changed',
     ]);
   });
 
@@ -295,7 +313,7 @@ describe('daemonEventsSaga', () => {
     mocks.reconnectHandler!();
     await settle();
 
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-old');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-old', undefined);
     expect(mocks.subscribe).toHaveBeenCalledTimes(2);
     expect(mocks.refresh).toHaveBeenCalledTimes(1);
     expect(mocks.subscribe.mock.invocationCallOrder[1]).toBeLessThan(
@@ -303,7 +321,86 @@ describe('daemonEventsSaga', () => {
     );
     task.cancel();
     await task.toPromise();
-    expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-new');
+    expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-new', undefined);
+  });
+
+  it('discovers recovery that failed between the initial list and firehose subscription', async () => {
+    let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+    mocks.subscribe.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubscribe = resolve;
+      }),
+    );
+    mocks.api.invoke.mockResolvedValue({ status: 'connected' });
+    mocks.api.on.mockReturnValue('status-listener');
+    const listInterrupted = vi.fn().mockResolvedValue([]);
+    const show = vi.fn();
+    const dispose = installInterruptedAgentsService({ agents: { listInterrupted } }, show);
+    const { task } = startSaga();
+    try {
+      await settle();
+      expect(listInterrupted).toHaveBeenCalledTimes(1);
+      expect(show).not.toHaveBeenCalled();
+      const candidate = {
+        agentId: 'failed-startup',
+        workspaceId: 'ws-1',
+        workspaceName: 'Workspace',
+        agentName: 'Agent',
+        prevStatus: 'active',
+        interruptedAt: '2026-09-29T00:00:00Z',
+      };
+      // Failure was published before events.subscribe reached the daemon, so
+      // no notification is delivered to this client. Subscribe readiness must
+      // trigger an authoritative catch-up read.
+      listInterrupted.mockResolvedValue([candidate]);
+      resolveSubscribe({ subscriptionId: 'sub-ready' });
+      await settle();
+      expect(show).toHaveBeenCalledExactlyOnceWith([candidate]);
+    } finally {
+      dispose();
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('discovers recovery that failed while reconnect subscription restoration was delayed', async () => {
+    mocks.api.invoke.mockResolvedValue({ status: 'connected' });
+    mocks.api.on.mockReturnValue('status-listener');
+    const listInterrupted = vi.fn().mockResolvedValue([]);
+    const show = vi.fn();
+    const dispose = installInterruptedAgentsService({ agents: { listInterrupted } }, show);
+    const { task } = startSaga();
+    try {
+      await settle();
+      let finishUnsubscribe!: () => void;
+      mocks.unsubscribe.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishUnsubscribe = resolve;
+          }),
+      );
+      mocks.reconnectHandler!();
+      await settle();
+      expect(mocks.subscribe).toHaveBeenCalledTimes(1);
+      expect(show).not.toHaveBeenCalled();
+      const candidate = {
+        agentId: 'failed-startup',
+        workspaceId: 'ws-1',
+        workspaceName: 'Workspace',
+        agentName: 'Agent',
+        prevStatus: 'active',
+        interruptedAt: '2026-09-29T00:00:00Z',
+      };
+      listInterrupted.mockResolvedValue([candidate]);
+      finishUnsubscribe();
+      await settle();
+      expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+      expect(show).toHaveBeenCalledExactlyOnceWith([candidate]);
+    } finally {
+      dispose();
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('announces firehose readiness only once a subscription id is held, on boot and reconnect', async () => {
@@ -345,7 +442,10 @@ describe('daemonEventsSaga', () => {
     mocks.reconnectHandler!();
     await settle();
 
-    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-fire-old'], ['sub-file-old']]);
+    expect(mocks.unsubscribe.mock.calls).toEqual([
+      ['sub-fire-old', undefined],
+      ['sub-file-old', 'ws-1'],
+    ]);
     expect(mocks.subscribe.mock.calls).toEqual([
       [firehoseParams],
       [scopedFileParams('ws-1')],
@@ -358,7 +458,10 @@ describe('daemonEventsSaga', () => {
     );
     task.cancel();
     await task.toPromise();
-    expect(mocks.unsubscribe.mock.calls.slice(2)).toEqual([['sub-fire-new'], ['sub-file-new']]);
+    expect(mocks.unsubscribe.mock.calls.slice(2)).toEqual([
+      ['sub-fire-new', undefined],
+      ['sub-file-new', 'ws-1'],
+    ]);
   });
 
   it('replays and refreshes the desired workspace after selection A switches to workspace B', async () => {
@@ -430,7 +533,7 @@ describe('daemonEventsSaga', () => {
 
     expect(mocks.offNotification).toHaveBeenCalledTimes(1);
     expect(mocks.offReconnect).toHaveBeenCalledTimes(1);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1', undefined);
     expect(mocks.disposeRouting).toHaveBeenCalledTimes(1);
   });
 
@@ -443,7 +546,10 @@ describe('daemonEventsSaga', () => {
     task.cancel();
     await task.toPromise();
 
-    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-fire'], ['sub-file']]);
+    expect(mocks.unsubscribe.mock.calls).toEqual([
+      ['sub-fire', undefined],
+      ['sub-file', 'ws-1'],
+    ]);
     expect(mocks.disposeRouting).toHaveBeenCalledTimes(1);
   });
 
@@ -459,7 +565,7 @@ describe('daemonEventsSaga', () => {
 
     // The scoped lease is unsubscribed (no replacing subscribe on a clear)
     // and the routing gate no longer accepts its id.
-    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-file']]);
+    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-file', 'ws-1']]);
     expect(mocks.subscribe).toHaveBeenCalledTimes(2);
     mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
     await settle();
@@ -528,7 +634,7 @@ describe('daemonEventsSaga', () => {
     await settle();
 
     expect(mocks.subscribe.mock.calls).toEqual([[firehoseParams], [scopedFileParams('ws-1')]]);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-file-ws1');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-file-ws1', 'ws-1');
     mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
     await settle();
     expect(mocks.route).toHaveBeenLastCalledWith(
@@ -586,7 +692,7 @@ describe('daemonEventsSaga', () => {
 
     resolveSubscribe({ subscriptionId: 'sub-late' });
     await settle();
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-late');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-late', undefined);
   });
 
   it('routes settings bundles to the settings domain action without applying them itself', async () => {

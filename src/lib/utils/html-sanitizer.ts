@@ -97,6 +97,16 @@ DOMPurify.addHook('uponSanitizeElement', (node) => {
 // anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  // A bare filename with a line suffix looks like a URL scheme to DOMPurify
+  // (and to the browser). Make only that file form explicitly relative, while
+  // leaving the URI allowlist in charge of all actual schemes.
+  if (
+    node.nodeName === 'A' &&
+    data.attrName === 'href' &&
+    /^[^/\\:?#\s]+\.[^/\\:?#\s]+:\d+(?::\d+)?$/.test(data.attrValue)
+  ) {
+    data.attrValue = `./${data.attrValue}`;
+  }
   if (data.attrName === 'style') {
     if (!preserveKatexLayoutStyles || !(node instanceof Element) || !isKatexLayoutElement(node)) {
       data.keepAttr = false;

@@ -26,7 +26,7 @@ import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
 
@@ -99,7 +99,13 @@ interface GitlinkMeta {
   newSha?: string;
 }
 
+interface DiffReadPolicy {
+  signal?: AbortSignal;
+  canRead?: () => boolean;
+}
+
 interface PendingDiff {
+  callers: Map<string, Array<() => boolean>>;
   paths: Set<string>;
   resolvers: Map<string, Array<(chunk: DiffChunk | undefined) => void>>;
   rejecters: Array<(err: unknown) => void>;
@@ -111,6 +117,17 @@ interface PendingDiff {
    * `git.diffs` batcher only (#1739). */
   gitlinks?: Map<string, GitlinkMeta>;
   gitRootPath?: string;
+}
+
+/** A shared read remains authorized while at least one caller still needs this path. */
+function hasActiveCaller(pending: PendingDiff, path: string): boolean {
+  return pending.callers.get(path)?.some((canRead) => canRead()) ?? false;
+}
+
+function resolveAbortedGroup(pending: PendingDiff): void {
+  for (const resolvers of pending.resolvers.values()) {
+    for (const resolve of resolvers) resolve(undefined);
+  }
 }
 
 const pendingDiffs = new Map<string, PendingDiff>();
@@ -357,7 +374,17 @@ async function flushDiffGroup(key: string) {
     // into a single daemon read.
     // Sorted so the wire payload is deterministic regardless of request
     // arrival order within the tick.
-    const paths = Array.from(pending.paths).sort();
+    const paths = [
+      ...new Set(
+        [...pending.resolvers.keys()]
+          .filter((path) => hasActiveCaller(pending, path))
+          .map((path) => pending.wirePaths?.get(path) ?? path),
+      ),
+    ].sort();
+    if (paths.length === 0) {
+      resolveAbortedGroup(pending);
+      return;
+    }
     const result = await backendRequest<unknown>(
       'git.diffs',
       staged
@@ -374,6 +401,7 @@ async function flushDiffGroup(key: string) {
     const wirePathOf = (path: string) => pending.wirePaths?.get(path) ?? path;
     const matches = new Map<string, DiffChunk | undefined>();
     for (const path of pending.resolvers.keys()) {
+      if (!hasActiveCaller(pending, path)) continue;
       const wirePath = wirePathOf(path);
       matches.set(
         path,
@@ -389,7 +417,10 @@ async function flushDiffGroup(key: string) {
     // (workspaceId, staged) — and re-run the suffix-match fallback against it.
     // Well-formed relative paths that simply have no diff do NOT trigger this.
     const suspiciousUnmatched = [...matches.keys()].filter(
-      (path) => matches.get(path) === undefined && isSuspiciousDiffPath(wirePathOf(path)),
+      (path) =>
+        hasActiveCaller(pending, path) &&
+        matches.get(path) === undefined &&
+        isSuspiciousDiffPath(wirePathOf(path)),
     );
     if (suspiciousUnmatched.length > 0) {
       logger.warn(
@@ -416,7 +447,10 @@ async function flushDiffGroup(key: string) {
     // the gitlink metadata of the request path it matched (if any), so
     // status-marked gitlinks skip the failing content reads (#1739).
     const matchedChunks = new Set(
-      [...matches.values()].filter((chunk): chunk is DiffChunk => chunk !== undefined),
+      [...matches.entries()]
+        .filter(([path]) => hasActiveCaller(pending, path))
+        .map(([, chunk]) => chunk)
+        .filter((chunk): chunk is DiffChunk => chunk !== undefined),
     );
     const gitlinkByChunk = new Map<DiffChunk, GitlinkMeta>();
     for (const [path, chunk] of matches) {
@@ -464,7 +498,11 @@ async function flushBranchBaseDiffGroup(key: string) {
   if (pending.timer) clearTimeout(pending.timer);
 
   const [wsId, baseRef, baseCommitSha] = key.split('::');
-  const paths = Array.from(pending.paths);
+  const paths = [...pending.resolvers.keys()].filter((path) => hasActiveCaller(pending, path));
+  if (paths.length === 0) {
+    resolveAbortedGroup(pending);
+    return;
+  }
 
   try {
     const result = (await invoke('git:diff', {
@@ -507,13 +545,18 @@ export function batchedGitDiff(
   workspaceId: string,
   staged: boolean,
   filePath: string,
-  options?: { gitlink?: GitlinkMeta; gitRootId?: string; gitRootPath?: string },
+  options?: {
+    gitlink?: GitlinkMeta;
+    gitRootId?: string;
+    gitRootPath?: string;
+  } & DiffReadPolicy,
 ): Promise<DiffChunk | undefined> {
   const key = diffGroupKey(workspaceId, staged, options?.gitRootId);
   const existing = pendingDiffs.get(key);
   const pending: PendingDiff = existing ?? {
     paths: new Set(),
     resolvers: new Map(),
+    callers: new Map(),
     rejecters: [],
     timer: null,
     wirePaths: new Map(),
@@ -540,8 +583,12 @@ export function batchedGitDiff(
       resolvers = [];
       pending.resolvers.set(filePath, resolvers);
     }
-    resolvers.push(resolve);
-    pending.rejecters.push(reject);
+    const canRead = () => !options?.signal?.aborted && (options?.canRead?.() ?? true);
+    const callers = pending.callers.get(filePath) ?? [];
+    callers.push(canRead);
+    pending.callers.set(filePath, callers);
+    resolvers.push((chunk) => resolve(canRead() ? chunk : undefined));
+    pending.rejecters.push((err) => (canRead() ? reject(err) : resolve(undefined)));
   });
 }
 
@@ -552,7 +599,7 @@ export function batchedGitDiff(
  */
 export function batchedGitBranchBaseDiff(
   workspaceId: string,
-  options: BranchBaseDiffOptions,
+  options: BranchBaseDiffOptions & DiffReadPolicy,
   filePath: string,
 ): Promise<DiffChunk | undefined> {
   const key = branchBaseDiffGroupKey(workspaceId, options.baseRef, options.baseCommitSha);
@@ -560,6 +607,7 @@ export function batchedGitBranchBaseDiff(
   const pending: PendingDiff = existing ?? {
     paths: new Set(),
     resolvers: new Map(),
+    callers: new Map(),
     rejecters: [],
     timer: null,
   };
@@ -575,8 +623,12 @@ export function batchedGitBranchBaseDiff(
       resolvers = [];
       pending.resolvers.set(filePath, resolvers);
     }
-    resolvers.push(resolve);
-    pending.rejecters.push(reject);
+    const canRead = () => !options?.signal?.aborted && (options?.canRead?.() ?? true);
+    const callers = pending.callers.get(filePath) ?? [];
+    callers.push(canRead);
+    pending.callers.set(filePath, callers);
+    resolvers.push((chunk) => resolve(canRead() ? chunk : undefined));
+    pending.rejecters.push((err) => (canRead() ? reject(err) : resolve(undefined)));
   });
 }
 

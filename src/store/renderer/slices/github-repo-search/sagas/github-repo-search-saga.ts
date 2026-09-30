@@ -1,3 +1,4 @@
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import { call, delay, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
@@ -27,6 +28,7 @@ function normalizeRepo(repo: GithubRepo): GithubRepoItem {
 function* searchGithubReposWorker(
   action: ReturnType<typeof searchGithubRepos>,
 ): SagaGenerator<void> {
+  const connection = yield* selectPrincipalConnectionContext.effect();
   const query = action.payload[0].trim();
   if (query.length < MIN_QUERY_LENGTH) {
     yield* put(clearGithubRepoSearch());
@@ -34,11 +36,13 @@ function* searchGithubReposWorker(
   }
 
   yield* delay(SEARCH_DEBOUNCE_MS);
+  if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
   yield* put(setGithubRepoSearchLoading(query));
   const result: Awaited<ReturnType<typeof githubAuthClient.searchRepos>> = yield* call(
     [githubAuthClient, githubAuthClient.searchRepos],
     query,
   );
+  if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
   if (!result.success) {
     yield* put(setGithubRepoSearchError(query, result.error ?? UNKNOWN_SEARCH_ERROR));
     return;

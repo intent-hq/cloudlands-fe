@@ -24,13 +24,12 @@ import { app } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { getLocalPref } from '../../../main/local-prefs';
 import {
-  KEYCHAIN_SERVICE_GUEST_SESSIONS,
-  createHelperKeychainClient,
   reconcile,
   type KeychainSyncStatus,
   type LocalSyncAdapter,
   type ReconcileOptions,
 } from './keychain-sync';
+import { reconcileInvitedSessions, type InvitedSyncAdapter } from './invited-session-sync';
 import { applyRemoteSyncRecord, listSyncRecords, onConnectionsMutated } from './connections-store';
 import {
   getStoredSelfFingerprint,
@@ -113,28 +112,16 @@ export interface KeychainSyncLifecycleOptions {
    * settings verdict stays the owner service's — and a failure is logged
    * without disturbing the owner pass.
    */
-  guestAdapter?: LocalSyncAdapter;
+  guestAdapter?: InvitedSyncAdapter;
   /** Broadcast hook fired after the guest pass pulled/deleted local records. */
   onGuestRemoteApplied?: () => void | Promise<void>;
   guestReconcileFn?: (
-    adapter: LocalSyncAdapter,
+    adapter: InvitedSyncAdapter,
     options?: ReconcileOptions,
   ) => ReturnType<typeof reconcile>;
   isEnabled?: () => Promise<boolean>;
   debounceMs?: number;
   focusMinIntervalMs?: number;
-}
-
-/** Default guest pass: the shared reconcile pointed at the guest-sessions service. */
-function reconcileGuestSessions(
-  adapter: LocalSyncAdapter,
-  options: ReconcileOptions = {},
-): ReturnType<typeof reconcile> {
-  return reconcile(adapter, {
-    ...options,
-    client:
-      options.client ?? createHelperKeychainClient({ service: KEYCHAIN_SERVICE_GUEST_SESSIONS }),
-  });
 }
 
 /** Handle returned by {@link initKeychainSyncLifecycle}. */
@@ -161,7 +148,7 @@ export function initKeychainSyncLifecycle(
   options: KeychainSyncLifecycleOptions = {},
 ): KeychainSyncLifecycle {
   const runReconcile = options.reconcileFn ?? reconcile;
-  const runGuestReconcile = options.guestReconcileFn ?? reconcileGuestSessions;
+  const runGuestReconcile = options.guestReconcileFn ?? reconcileInvitedSessions;
   const isEnabled = options.isEnabled ?? isKeychainSyncEnabled;
   const debounceMs = options.debounceMs ?? RECONCILE_DEBOUNCE_MS;
   const focusMinIntervalMs = options.focusMinIntervalMs ?? FOCUS_MIN_INTERVAL_MS;

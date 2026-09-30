@@ -1,6 +1,10 @@
+/** @vitest-environment jsdom */
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import SpecialistChangeCard from './SpecialistChangeCard.svelte';
+import { WORKSPACE_ROUTE_CONTEXT } from '$lib/utils/workspace-route-context';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
   deleteFileSpecialist,
   initialState as specialistsInitialState,
@@ -21,15 +25,11 @@ const mocks = vi.hoisted(() => ({
   navigateToSettings: vi.fn(),
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: mocks.dispatch,
-    get state() {
-      return mocks.getState();
-    },
-    createSelector: vi.fn((fn) => ({ select: fn })),
-  },
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => mocks.getState(), dispatch: mocks.dispatch });
+});
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: mocks.navigateToSettings,
@@ -206,6 +206,50 @@ describe('specialist-proposal-actions', () => {
     });
   });
 
+  it('captures the project origin for apply and undo even after focus changes', async () => {
+    const proposal = makeCreateProposal();
+    if (proposal.kind !== 'specialist-edit') throw new Error('fixture');
+    proposal.payload.scope = 'project';
+    mocks.getState.mockReturnValue(
+      makeState({
+        workspace: {
+          workspaces: createCollection('id', [
+            { id: 'A', path: '/project/A' },
+            { id: 'B', path: '/project/B' },
+          ]),
+        } as unknown as StoreState['workspace'],
+      }),
+    );
+    const result = await applySpecialistProposalWork({ ...makeDetail(proposal), workspaceId: 'A' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: saveFileSpecialist.type,
+        payload: [
+          expect.objectContaining({
+            workspaceId: 'A',
+            workspacePath: '/project/A',
+            scope: 'project',
+          }),
+        ],
+      }),
+    );
+    expect(result.reverse).toEqual({
+      kind: 'delete',
+      id: 'review-buddy',
+      workspaceId: 'A',
+      workspacePath: '/project/A',
+      scope: 'project',
+    });
+    mocks.getState.mockReturnValue(makeState());
+    await undoSpecialistProposalWork(result.reverse);
+    expectDispatchedWrite(deleteFileSpecialist, {
+      id: 'review-buddy',
+      workspaceId: 'A',
+      workspacePath: '/project/A',
+      scope: 'project',
+    });
+  });
+
   it('returns edit proposal reverse action from current specialist values', async () => {
     mocks.getState.mockReturnValue(stateWithExistingSpecialist());
 
@@ -341,4 +385,110 @@ describe('specialist-proposal-actions', () => {
     expect(undoSpecialistProposal('missing')).toBe(false);
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
+});
+
+it('keeps rendered project apply and persisted undo on A after switching to B', async () => {
+  vi.clearAllMocks();
+  settleAsyncActions();
+  const snapshot = (id: string) => ({
+    catalog: { providers: [] },
+    settings: [],
+    readiness: {},
+    specialists: [
+      {
+        ...existingFileSpecialist(),
+        model: `model-${id}`,
+        behaviorPrompt: `prompt-${id}`,
+        source: 'project',
+      },
+    ],
+  });
+  const state = makeState({
+    proposalLifecycle: {},
+    providerCatalog: {
+      providers: createCollection('id'),
+      loaded: true,
+      byWorkspaceId: { A: snapshot('A'), B: snapshot('B') },
+    },
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: 'A', path: '/workspace/A' },
+        { id: 'B', path: '/workspace/B' },
+      ]),
+    },
+  } as unknown as Partial<StoreState>);
+  mocks.getState.mockReturnValue(state);
+  const proposal = {
+    ...makeEditProposal(),
+    payload: { ...makeEditProposal().payload, scope: 'project' },
+  } as Extract<Proposal, { kind: 'specialist-edit' }>;
+  let applied: Awaited<ReturnType<typeof applySpecialistProposalWork>> | undefined;
+  let pending: Promise<unknown> | undefined;
+  const card = render(SpecialistChangeCard, {
+    props: {
+      proposal,
+      onApply: (detail) => {
+        pending = applySpecialistProposalWork(detail).then((result) => {
+          applied = result;
+        });
+      },
+    },
+    context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'A' }]]),
+  });
+  try {
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await pending;
+    expectDispatchedWrite(
+      saveFileSpecialist,
+      expect.objectContaining({
+        workspaceId: 'A',
+        workspacePath: '/workspace/A',
+        model: 'model-A',
+        behaviorPrompt: 'New prompt',
+      }),
+    );
+    expect(applied?.reverse).toEqual({
+      kind: 'save',
+      specialist: expect.objectContaining({
+        workspaceId: 'A',
+        workspacePath: '/workspace/A',
+        model: 'model-A',
+        behaviorPrompt: 'prompt-A',
+      }),
+    });
+    card.unmount();
+    // Rehydrate history as persistence does, then reopen while B is focused and A is absent.
+    const reverse = JSON.parse(JSON.stringify(applied!.reverse));
+    mocks.getState.mockReturnValue({
+      ...state,
+      proposalLifecycle: {},
+      workspace: { workspaces: createCollection('id', [{ id: 'B', path: '/workspace/B' }]) },
+      specialistProposalHistory: {
+        entries: { [proposal.applyToolCallId!]: { appliedAt: Date.now(), reverse } },
+      },
+    });
+    render(SpecialistChangeCard, {
+      props: {
+        proposal,
+        onUndo: () => {
+          pending = undoSpecialistProposalWork(reverse);
+        },
+      },
+      context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'B' }]]),
+    });
+    mocks.dispatch.mockClear();
+    await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await pending;
+    expectDispatchedWrite(
+      saveFileSpecialist,
+      expect.objectContaining({
+        workspaceId: 'A',
+        workspacePath: '/workspace/A',
+        model: 'model-A',
+        behaviorPrompt: 'prompt-A',
+      }),
+    );
+  } finally {
+    cleanup();
+  }
 });

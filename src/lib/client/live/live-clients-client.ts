@@ -16,8 +16,11 @@ import { backendRequest } from './backend-transport';
 let ownClientIdPromise: Promise<string> | null = null;
 
 export class LiveClientsClient implements ClientsClient {
-  async list(): Promise<LiveClient[]> {
-    const result = await backendRequest<{ clients?: unknown }>('client.list');
+  async list(workspaceId?: string): Promise<LiveClient[]> {
+    const result = await backendRequest<{ clients?: unknown }>(
+      'client.list',
+      ...(workspaceId ? [{ workspaceId }] : []),
+    );
     if (!Array.isArray(result?.clients) || !result.clients.every(isLiveClient)) {
       throw new Error('Invalid client.list response shape');
     }

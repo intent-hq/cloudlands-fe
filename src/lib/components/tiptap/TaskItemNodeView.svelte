@@ -45,6 +45,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { getNoteTooltip } from '$features/notes/utils/note-tooltip';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -455,6 +456,7 @@
           type="button"
           variant="plain"
           data-testid="linked-task-title"
+          title={getNoteTooltip(linkedTaskTitle, linkedTaskStatus)}
           data-task-row-content
           data-task-row-title
           class="min-w-0 flex-1 cursor-pointer h-auto! overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-normal text-[length:inherit] leading-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 {linkedTaskNotFound

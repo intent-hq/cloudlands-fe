@@ -132,7 +132,9 @@ for (const theme of ['light', 'dark'] as const) {
         for (const messageId of ['assistant-finished', 'assistant-streaming']) {
           await unlockFollow();
           const message = component.locator(`[data-message-id="${messageId}"]`);
+          await message.evaluate((node) => node.scrollIntoView({ block: 'center' }));
           await message.getByTestId('response-group-disclosure').click();
+          await message.evaluate((node) => node.scrollIntoView({ block: 'center' }));
           const rows = message.locator('[data-chat-operational-row]');
           await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20);
           const groupContent = message.locator('[data-operational-expanded-content]').first();

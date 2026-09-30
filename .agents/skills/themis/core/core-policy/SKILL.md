@@ -26,7 +26,7 @@ Before editing code or docs under this skill:
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
 
-> These rules are the load-bearing contract for every slice, saga, and component in the package. The canonical policy is [Setup — core rules](#setup--core-rules); architectural background lives in `@augmentcode/themis/docs/ARCHITECTURE.md` → Core Principles.
+> These rules are the load-bearing contract for every slice, saga, and component in the package. The canonical policy is [Setup — core rules](#setup--core-rules); architectural background lives in `@themislib/themis/docs/ARCHITECTURE.md` → Core Principles.
 
 ## Setup — core rules
 
@@ -44,7 +44,7 @@ Before editing code or docs under this skill:
 
 > This package uses a CUSTOM Redux setup — NOT Redux Toolkit (RTK). Do not use createSlice, configureStore, createAsyncThunk, or any RTK APIs. Use only the custom utilities documented in the leaves.
 
-## Core Principles (from `@augmentcode/themis/docs/ARCHITECTURE.md`)
+## Core Principles (from `@themislib/themis/docs/ARCHITECTURE.md`)
 
 - **Single source of truth** — All shared application state lives in a single Redux store.
 - **State is read-only** — State is never mutated directly; changes happen only through dispatching actions.
@@ -118,7 +118,7 @@ Replace shared module-level store data with canonical Redux state: dispatch the
 owning slice's action and update its collection in a pure reducer. Do not expand
 the legacy shared store during migration.
 
-Source: [When to use Redux vs component-local state](#when-to-use-redux-vs-component-local-state), `@augmentcode/themis/README.md` · **Priority: CRITICAL**
+Source: [When to use Redux vs component-local state](#when-to-use-redux-vs-component-local-state), `@themislib/themis/README.md` · **Priority: CRITICAL**
 
 ### ❌ Using component effects for cross-component side effects
 
@@ -157,7 +157,7 @@ export { featureReducer, loadFeature } from './features/feature-slice';
 
 If a shim is required for external compatibility, add an adjacent comment that names the consumer or compatibility window and the planned removal condition. Verifiers must inspect old paths in the diff and report either “no pass-through wrappers” or the justified shim list.
 
-Source: `@augmentcode/themis/docs/ARCHITECTURE.md` → Refactor Cleanup Guard · **Priority: HIGH**
+Source: `@themislib/themis/docs/ARCHITECTURE.md` → Refactor Cleanup Guard · **Priority: HIGH**
 
 ## See also
 

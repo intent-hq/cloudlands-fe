@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Behavioral test for the Chief auto-start provider gate.
  *
@@ -12,7 +13,7 @@ import { tick } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
@@ -33,6 +34,7 @@ describe('ChiefCard auto-start provider gate', () => {
 
   beforeEach(() => {
     appStore.init();
+    admitLegacyPrincipal();
     // A settled owner window: the guest session list hydrated with no joined
     // host. The guest-window case below replaces it with a joined host.
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
@@ -55,7 +57,7 @@ describe('ChiefCard auto-start provider gate', () => {
   afterEach(() => {
     cleanup();
     dispatchSpy.mockRestore();
-    appStore.dispatch(setActiveProvider(''));
+    appStore.dispatch(hydrateDefaultProvider(''));
   });
 
   it('skips the launch while provider-less, then fires exactly once when configured', async () => {
@@ -67,7 +69,7 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(launchActions).toHaveLength(0);
 
     // Configure a provider: the ungated effect re-runs and launches once.
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
     await waitFor(() => expect(launchActions).toHaveLength(1));
 
     // The latch is set after the successful gate pass — no duplicate launch.
@@ -78,7 +80,7 @@ describe('ChiefCard auto-start provider gate', () => {
 
   it('preserves the collapsed preference when auto-start creates the first thread', async () => {
     appStore.dispatch(setChiefCollapsed(true));
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
     dispatchSpy.mockClear();
 
     render(ChiefCard, {
@@ -93,7 +95,7 @@ describe('ChiefCard auto-start provider gate', () => {
   });
 
   it('does not auto-start in an inactive tab and starts once when Intent becomes active', async () => {
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
     const { rerender } = render(ChiefCard, {
       props: { expanded: true, embedded: true, isActive: false },
     });
@@ -144,7 +146,7 @@ describe('ChiefCard auto-start provider gate', () => {
         windowBackendId: host.id,
       }),
     );
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
 
     render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
 

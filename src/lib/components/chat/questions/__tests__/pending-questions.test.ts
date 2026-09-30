@@ -20,7 +20,7 @@ import {
 } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock, QueuedMessage } from '$shared/types';
-import { createCollection, addItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, addItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
 

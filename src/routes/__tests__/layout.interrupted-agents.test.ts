@@ -16,6 +16,7 @@ installConsoleTeardownGuard();
 
 const interruptedService = vi.hoisted(() => ({
   resolveInterruptedAgents: vi.fn(async () => {}),
+  notifyInterruptedAgentsModalClosed: vi.fn(),
   showHandler: null as ((agents: InterruptedAgent[]) => void) | null,
   LiveAppClientStub: class {},
   installedClient: null as unknown,
@@ -60,7 +61,7 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
     interruptedService.showHandler = showHandler;
     return () => {};
   },
-  notifyInterruptedAgentsModalClosed: () => {},
+  notifyInterruptedAgentsModalClosed: interruptedService.notifyInterruptedAgentsModalClosed,
   resolveInterruptedAgents: interruptedService.resolveInterruptedAgents,
 }));
 vi.mock('$lib/client/live/live-app-client', () => ({
@@ -150,7 +151,7 @@ const childrenSnippet = createRawSnippet(() => ({
 type ModalProps = {
   onResumeSelected?: (resumeIds: string[], abandonIds: string[]) => Promise<void> | void;
   onAbandonAll?: (abandonIds: string[]) => Promise<void> | void;
-  close: () => void;
+  close: (reason?: 'dismissed' | 'resolved') => void;
   resume: (resumeIds: string[], abandonIds: string[]) => void;
   abandon: (abandonIds: string[]) => void;
 };
@@ -218,6 +219,16 @@ describe('+layout.svelte interrupted-agents resolve handlers', () => {
 
     expect(interruptedService.installedClient).toBeInstanceOf(interruptedService.LiveAppClientStub);
   });
+
+  it.each(['dismissed', 'resolved'] as const)(
+    'forwards the recovery close reason: %s',
+    async (reason) => {
+      await renderLayout();
+      showInterruptedAgents(AGENTS);
+      modalProps().close(reason);
+      expect(interruptedService.notifyInterruptedAgentsModalClosed).toHaveBeenCalledWith(reason);
+    },
+  );
 
   it('routes resume-selected through resolveInterruptedAgents (stops the watcher)', async () => {
     await renderLayout();

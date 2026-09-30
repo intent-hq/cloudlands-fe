@@ -42,8 +42,8 @@ let runeCount = $state(0);
 let runeUsername = $state("");
 
 // AFTER: Redux slice
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type CounterState = {
   count: number;
@@ -78,8 +78,8 @@ runeCount += 1;
 
 // AFTER: Redux
 // In the slice, define the actions:
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type CounterState = { count: number };
 const initialState: CounterState = { count: 0 };
@@ -113,8 +113,8 @@ export const preferences = $state({
 
 ```typescript
 // src/lib/store/slices/preferences/preferences-slice.ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type PreferencesState = { theme: "light" | "dark"; sidebarOpen: boolean };
 const initialState: PreferencesState = { theme: "dark", sidebarOpen: true };
@@ -135,9 +135,9 @@ or lookup frequency. Arrays in Redux state hold primitive facts/ids only; see
 
 ```typescript
 // src/lib/store/slices/todos/todos-slice.ts
-import { createCollection, upsertItem, type Collection } from "@augmentcode/themis/utils/collections/collection-utils";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createCollection, upsertItem, type Collection } from "@themislib/themis/utils/collections/collection-utils";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { items: Collection<Todo, "id"> };

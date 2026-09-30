@@ -8951,7 +8951,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Attachments"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="attachments" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="file-picker drop-target file-tiles remove-file max-files" data-catalog-renderer-fixture="attachments">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9080,7 +9080,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Basic"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="basic" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="empty draft history-recall auto-resize hover focus" data-catalog-renderer-fixture="basic">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9166,7 +9166,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Disabled"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="disabled" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="disabled" data-catalog-renderer-fixture="disabled">
-              <div class="bg-surface-2 duration-spring-fast ease-spring-fast flex flex-col opacity-50 p-2 pointer-events-none rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border duration-spring-fast ease-spring-fast flex flex-col opacity-50 p-2 pointer-events-none rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9252,7 +9252,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Left slot only"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="left-slot-only" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="left-slot" data-catalog-renderer-fixture="left-slot-only">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9351,7 +9351,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Playground"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="playground" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="idle streaming-stop streaming-queue compact light dark" data-catalog-renderer-fixture="playground">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9457,7 +9457,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Queued messages"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="queued-messages" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="queue edit delete keyboard-reorder drag-reorder auto-dispatch" data-catalog-renderer-fixture="queued-messages">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9577,7 +9577,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Right slot only"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="right-slot-only" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="right-slot" data-catalog-renderer-fixture="right-slot-only">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9672,7 +9672,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Send handler"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="send-handler" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="send action-feedback" data-catalog-renderer-fixture="send-handler">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9763,7 +9763,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
               "Suggestions"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="suggestions" data-catalog-preview="message-composer">
             <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="placeholder-suggestion tab-fill listbox keyboard-highlight" data-catalog-renderer-fixture="suggestions">
-              <div class="bg-surface-2 cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-surface-2 transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
                     <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
@@ -9986,7 +9986,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-label="Ada Lovelace · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="ada" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                        <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
                           <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "A"
@@ -9994,7 +9994,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-label="Grace Hopper · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="grace" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                        <span class="border border-background inline-flex relative ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
                           <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "G"
@@ -10002,7 +10002,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-label="linus · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="linus" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                        <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
                           <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "L"
@@ -10010,7 +10010,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-disabled="true" aria-label="Cy Offline · offline" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="cy" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                        <span class="border border-background inline-flex relative ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
                           <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "C"
@@ -10090,19 +10090,19 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                 <p class="text-muted-foreground type-caption">
                   "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
                 <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
-                  <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                  <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
                     <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "A"
-                  <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                  <span class="border border-background inline-flex relative ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
                     <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "G"
-                  <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                  <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
                     <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "L"
-                  <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                  <span class="border border-background inline-flex relative ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
                     <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "C"
@@ -10181,28 +10181,28 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                   "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
                 <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                    <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
                       <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "A"
                     <span class="sr-only">
                       "Ada Lovelace (you)"
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                    <span class="border border-background inline-flex relative ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
                       <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "G"
                     <span class="sr-only">
                       "Grace Hopper"
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                    <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
                       <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "L"
                     <span class="sr-only">
                       "linus"
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                    <span class="border border-background inline-flex relative ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
                       <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "C"

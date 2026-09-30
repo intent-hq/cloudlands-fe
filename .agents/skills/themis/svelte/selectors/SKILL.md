@@ -16,7 +16,7 @@ triggers:
 ---
 # Selectors — `store.createSelector` / collection utility reads
 
-> Operational guidance for selector authoring. Full API reference and examples: `@augmentcode/themis/docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@augmentcode/themis/svelte-store`; selector/cache internals are package-private implementation context.
+> Operational guidance for selector authoring. Full API reference and examples: `@themislib/themis/docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@themislib/themis/svelte-store`; selector/cache internals are package-private implementation context.
 
 ## Use when
 
@@ -123,7 +123,7 @@ export const selectVisibleTodos = store.createSelector((state) => {
 ### 4. Back collection reads with public collection utilities
 
 ```ts
-import { getItem, getItems, type Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+import { getItem, getItems, type Collection } from "@themislib/themis/utils/collections/collection-utils";
 
 export const selectTodosCollection = store.createSelector(
   (state): Collection<Todo, "id"> => state.todos.collection
@@ -179,7 +179,7 @@ export const selectVisibleTodosOnce = store.createSelector((state) => {
 
 ## See also
 
-- `@augmentcode/themis/docs/SELECTORS.md` — human reference and examples for all call forms.
+- `@themislib/themis/docs/SELECTORS.md` — human reference and examples for all call forms.
 - `../selector-lifecycle/SKILL.md` — lifecycle crash prevention.
 - `../../core/selector-channels/SKILL.md` — reacting to selector changes from sagas.
 - `../../core/collections/SKILL.md` — normalized state shape and collection utilities used by selectors.

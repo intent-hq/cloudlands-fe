@@ -29,7 +29,7 @@ export interface PanelHeaderState {
 }
 
 export interface PanelHeaderActions {
-  /** Stable controls rendered directly in the panel header before the action menu. */
+  /** Legacy content menu items, rendered in the Actions section. Prefer actions. */
   primary?: Snippet;
   /** Presentation and view controls shown in the Display section. */
   display?: Snippet;
@@ -37,6 +37,8 @@ export interface PanelHeaderActions {
   actions?: Snippet;
   /** Destructive content commands, separated from presentation and layout controls. */
   destructive?: Snippet;
+  /** Additional content commands following the main reference groups. */
+  additional?: Snippet;
 }
 
 export interface PanelHeaderContext {

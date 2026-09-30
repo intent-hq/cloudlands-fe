@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,11 +8,14 @@ const mocks = vi.hoisted(() => ({
   updateSpecialist: vi.fn(),
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
+  setBackground: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
   resolveProposal: vi.fn(),
   restore: vi.fn(),
+  retire: vi.fn(),
+  supportsRetirement: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
   dismiss: vi.fn(),
@@ -24,11 +28,14 @@ vi.mock('$lib/client', () => ({
       updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
+      setBackground: mocks.setBackground,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
       resolveProposal: mocks.resolveProposal,
       restore: mocks.restore,
+      retire: mocks.retire,
+      supportsRetirement: mocks.supportsRetirement,
     },
   },
 }));
@@ -43,9 +50,11 @@ import {
   listPendingAgentDeletions,
 } from '$features/agent/utils/pending-agent-deletions';
 import { agentAttentionToastId } from '$features/agent/agent-attention-toast-service';
+import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { store as appStore } from '$store/renderer/store';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { AgentStatus } from '$shared/types';
 import {
   refreshWorkspaceSubscriptionEntriesRequested,
@@ -63,16 +72,21 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
+import { initialState as daemonHealthInitialState } from '../../daemon-health/daemon-health-slice';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
   activateAgentRequested,
+  agentRetirementSupportRequested,
+  agentRetirementSupportReceived,
   deleteAgentWithUndoRequested,
   deleteAgentSessionRequested,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
+  retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  setAgentBackgroundRequested,
   undoAgentDeletionRequested,
   initialState as workspaceAgentsInitialState,
   workspaceAgentsReducer,
@@ -149,27 +163,37 @@ const GUEST_SESSION: GuestSessionRecord = {
  * backend id is a joined host).
  */
 function windowIdentity(guest = false) {
-  return {
-    workspace: { ...workspaceInitialState, hasLoaded: true },
-    connections: guest
-      ? connectionsReducer(
-          connectionsInitialState,
-          connectionsListReceived({
-            connections: [],
-            activeId: GUEST_SESSION.id,
-            windowBackendId: GUEST_SESSION.id,
-          }),
-        )
-      : connectionsInitialState,
-    guestSessions: guestSessionsReducer(
-      guestSessionsInitialState,
-      guestSessionsListReceived({
-        sessions: guest ? [GUEST_SESSION] : [],
-        openIds: [],
-        connectedIds: [],
-      }),
-    ),
-  };
+  return withLegacyPrincipal(
+    {
+      workspace: {
+        ...workspaceInitialState,
+        hasLoaded: true,
+        workspaces: createCollection('id', [
+          { id: WS, myRole: guest ? 'collaborator' : 'owner' } as Workspace,
+        ]),
+      },
+      daemonHealth: { ...daemonHealthInitialState },
+      connections: guest
+        ? connectionsReducer(
+            connectionsInitialState,
+            connectionsListReceived({
+              connections: [],
+              activeId: GUEST_SESSION.id,
+              windowBackendId: GUEST_SESSION.id,
+            }),
+          )
+        : connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({
+          sessions: guest ? [GUEST_SESSION] : [],
+          openIds: [],
+          connectedIds: [],
+        }),
+      ),
+    },
+    guest ? 'guest' : 'owner',
+  );
 }
 
 function start(
@@ -206,12 +230,48 @@ describe('agentMutationSaga', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.deleteAgent.mockResolvedValue({ success: true });
+    mocks.supportsRetirement.mockResolvedValue(true);
   });
 
   afterEach(() => {
     clearPendingAgentDeletions();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('settles a cancelled mode request and releases its pending state', async () => {
+    mocks.setBackground.mockReturnValue(new Promise(() => {}));
+    const run = start({ [A1]: session() }, { live: true });
+    const action = setAgentBackgroundRequested(WS, A1, true);
+    const rejected = expect(action.promise).rejects.toThrow('Failed to change agent mode');
+    run.dispatch(action);
+    await settle();
+    expect(run.getState().agentSessions.backgroundModePending?.[A1]).toBe(true);
+    await stop(run.task);
+    await rejected;
+    expect(run.getState().agentSessions.backgroundModePending?.[A1]).toBeUndefined();
+    expect(run.getState().agentSessions.byAgentId[A1].isBackground).toBeUndefined();
+  });
+
+  it('does not publish a mode response into an agent now owned by another workspace', async () => {
+    let resolve!: (result: { success: boolean }) => void;
+    mocks.setBackground.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = start({ [A1]: session() }, { live: true });
+    const action = setAgentBackgroundRequested(WS, A1, true);
+    run.dispatch(action);
+    await settle();
+    run.dispatch(
+      updateSession(A1, { workspaceId: 'other-workspace' as AgentSession['workspaceId'] }),
+    );
+    resolve({ success: true });
+    await action.promise;
+    expect(run.getState().agentSessions.byAgentId[A1].isBackground).toBeUndefined();
+    expect(run.getState().agentSessions.backgroundModePending?.[A1]).toBeUndefined();
+    await stop(run.task);
   });
 
   it('restores through agents.get, preserves hydrated messages, and settles success', async () => {
@@ -223,9 +283,224 @@ describe('agentMutationSaga', () => {
     channel.put(action);
 
     await expect(action.promise).resolves.toEqual(expect.objectContaining({ id: A1, messages }));
-    expect(mocks.get).toHaveBeenCalledWith(A1);
+    expect(mocks.get).toHaveBeenCalledWith(A1, WS);
     const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
     expect(upsert.payload[0][0]).toEqual(expect.objectContaining({ id: A1, messages }));
+    await stop(task);
+  });
+
+  it('publishes retirement support only for the probed connection', async () => {
+    let resolve!: (supported: boolean) => void;
+    mocks.supportsRetirement.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((done) => {
+          resolve = done;
+        }),
+    );
+    const { channel, dispatched, task, getState } = start();
+    const action = agentRetirementSupportRequested();
+    channel.put(action);
+    getState().daemonHealth.connectionGeneration++;
+    resolve(true);
+    await expect(action.promise).resolves.toBe(true);
+    expect(dispatched.some((a) => a.type === agentRetirementSupportReceived.type)).toBe(false);
+    const next = agentRetirementSupportRequested();
+    channel.put(next);
+    await next.promise;
+    expect(dispatched.find((a) => a.type === agentRetirementSupportReceived.type)?.payload).toEqual(
+      [1, true],
+    );
+    await stop(task);
+  });
+
+  it('retires only after daemon success and preserves the conversation', async () => {
+    const existing = session();
+    mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+    const { channel, dispatched, task } = start({ [A1]: existing });
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    const patch = dispatched.find((candidate) => candidate.type === updateSession.type);
+    expect(patch.payload).toEqual([A1, { retiredAt: '2026-09-28T08:00:00Z' }]);
+    expect(dispatched.some((candidate) => candidate.type === removeSession.type)).toBe(false);
+    await stop(task);
+  });
+
+  it('rejects a retirement failure without marking the session retired', async () => {
+    mocks.retire.mockResolvedValue({ success: false, error: 'A descendant is running' });
+    const { channel, dispatched, task } = start();
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow('A descendant is running');
+    expect(dispatched.some((candidate) => candidate.type === updateSession.type)).toBe(false);
+    await stop(task);
+  });
+
+  it.each(['local Restore', 'restored metadata'])(
+    'does not undo %s when an older retirement response arrives late',
+    async (restoredBy) => {
+      let finishRetire!: (result: { success: true; retiredAt: string }) => void;
+      mocks.retire.mockReturnValue(new Promise((resolve) => (finishRetire = resolve)));
+      mocks.restore.mockResolvedValue({ success: true });
+      mocks.get.mockResolvedValue(session());
+      const existing = session();
+      const harness = start({ [A1]: existing }, { live: true });
+      const retire = retireAgentRequested(WS, A1);
+      harness.channel.put(retire);
+      await settle();
+      expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+
+      // The retirement event refresh can expose Restore before its RPC replies.
+      harness.dispatch(updateSession(A1, { retiredAt: '2026-09-28T08:00:00Z' }));
+      if (restoredBy === 'local Restore') {
+        const restore = restoreRetiredAgentRequested(WS, A1);
+        harness.channel.put(restore);
+        await expect(restore.promise).resolves.toBeUndefined();
+      } else {
+        harness.dispatch(bulkUpsertSessions([session(A1, { updatedAt: '2026-09-28T09:00:00Z' })]));
+      }
+      expect(harness.getState().agentSessions.byAgentId[A1].retiredAt).toBeUndefined();
+
+      finishRetire({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+      await expect(retire.promise).resolves.toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1].retiredAt).toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1].messages).toEqual(existing.messages);
+      expect(mocks.get).toHaveBeenCalledWith(A1, WS);
+      await stop(harness.task);
+    },
+  );
+
+  it.each(['retire', 'restore'] as const)(
+    '%s never changes a foreign workspace row already present at dispatch',
+    async (operation) => {
+      const foreign = session(A1, { workspaceId: 'ws-other', retiredAt: '2026-09-28T09:00:00Z' });
+      mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+      mocks.restore.mockResolvedValue({ success: true });
+      const harness = start({ [A1]: foreign }, { live: true });
+      const action =
+        operation === 'retire'
+          ? retireAgentRequested(WS, A1)
+          : restoreRetiredAgentRequested(WS, A1);
+      harness.channel.put(action);
+      await expect(action.promise).resolves.toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1]).toEqual(foreign);
+      expect(mocks.get).not.toHaveBeenCalled();
+      await stop(harness.task);
+    },
+  );
+
+  it.each(['retire', 'restore'] as const)(
+    '%s ignores its late result after workspace ownership changes',
+    async (operation) => {
+      let finish!: (result: { success: true; retiredAt: string }) => void;
+      mocks[operation].mockReturnValue(new Promise((resolve) => (finish = resolve)));
+      const harness = start(undefined, { live: true });
+      const action =
+        operation === 'retire'
+          ? retireAgentRequested(WS, A1)
+          : restoreRetiredAgentRequested(WS, A1);
+      harness.channel.put(action);
+      await settle();
+      expect(mocks[operation]).toHaveBeenCalledWith(A1, WS);
+      harness.dispatch(
+        bulkUpsertSessions([
+          session(A1, {
+            workspaceId: 'ws-other',
+            retiredAt: '2026-09-28T09:00:00Z',
+          }),
+        ]),
+      );
+      const foreign = harness.getState().agentSessions.byAgentId[A1];
+      finish({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+      await expect(action.promise).resolves.toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1]).toBe(foreign);
+      expect(mocks.get).not.toHaveBeenCalled();
+      await stop(harness.task);
+    },
+  );
+
+  it.each(['retire', 'restore'] as const)(
+    '%s ignores its late result after a replacement read lifetime returns to the same workspace',
+    async (operation) => {
+      let finish!: (result: { success: true; retiredAt: string }) => void;
+      mocks[operation].mockReturnValue(new Promise((resolve) => (finish = resolve)));
+      const existing = session(A1, { retiredAt: '2026-09-28T09:00:00Z' });
+      const harness = start({ [A1]: existing }, { live: true });
+      const action =
+        operation === 'retire'
+          ? retireAgentRequested(WS, A1)
+          : restoreRetiredAgentRequested(WS, A1);
+      harness.channel.put(action);
+      await settle();
+      claimAgentReadOwnership(A1, 'ws-other');
+      claimAgentReadOwnership(A1, WS);
+      finish({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+      await expect(action.promise).resolves.toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1]).toEqual(existing);
+      expect(mocks.get).not.toHaveBeenCalled();
+      await stop(harness.task);
+    },
+  );
+
+  it('captures retirement ownership before awaiting capability discovery', async () => {
+    let finishCapability!: (supported: boolean) => void;
+    mocks.supportsRetirement.mockReturnValueOnce(
+      new Promise((resolve) => (finishCapability = resolve)),
+    );
+    mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+    const harness = start(undefined, { live: true });
+    const action = retireAgentRequested(WS, A1);
+    harness.channel.put(action);
+    harness.dispatch(bulkUpsertSessions([session(A1, { workspaceId: 'ws-other' })]));
+    const foreign = harness.getState().agentSessions.byAgentId[A1];
+    finishCapability(true);
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.retire).toHaveBeenCalledWith(A1, WS);
+    expect(harness.getState().agentSessions.byAgentId[A1]).toBe(foreign);
+    expect(mocks.get).not.toHaveBeenCalled();
+    await stop(harness.task);
+  });
+
+  it('allows collaborators to steer retirement', async () => {
+    mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+    const { channel, task } = start(undefined, { guest: true });
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    await stop(task);
+  });
+
+  it('reconciles instead of patching a retirement response from an old connection', async () => {
+    let finishRetire!: (result: { success: true; retiredAt: string }) => void;
+    mocks.retire.mockReturnValue(new Promise((resolve) => (finishRetire = resolve)));
+    mocks.get.mockResolvedValue(session());
+    const harness = start(undefined, { live: true });
+    const before = harness.getState().agentSessions.byAgentId[A1];
+    const action = retireAgentRequested(WS, A1);
+    harness.channel.put(action);
+    await settle();
+    expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    harness.getState().daemonHealth.connectionGeneration++;
+    finishRetire({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(harness.getState().agentSessions.byAgentId[A1]).toBe(before);
+    expect(harness.dispatched.some((candidate) => candidate.type === updateSession.type)).toBe(
+      false,
+    );
+    expect(mocks.get).toHaveBeenCalledWith(A1, WS);
+    await stop(harness.task);
+  });
+
+  it('refuses unsupported retirement before sending the mutation', async () => {
+    mocks.supportsRetirement.mockResolvedValue(false);
+    const { channel, task } = start();
+    const action = retireAgentRequested(WS, A1);
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow();
+    expect(mocks.retire).not.toHaveBeenCalled();
     await stop(task);
   });
 
@@ -560,7 +835,14 @@ describe('agentMutationSaga', () => {
     const hydration = loadChatTranscript(agentId);
     // Wait for the held request itself, not the read service's number of microtasks.
     await conversationStarted.promise;
-    expect(mocks.getConversation).toHaveBeenCalledWith(agentId, 50, undefined);
+    expect(mocks.getConversation).toHaveBeenCalledWith(
+      agentId,
+      50,
+      undefined,
+      undefined,
+      undefined,
+      WS,
+    );
 
     const { channel, task } = start({ [agentId]: staleSession });
     const deletion = deleteAgentSessionRequested(WS, agentId);
@@ -1064,7 +1346,7 @@ describe('agentMutationSaga', () => {
           const action = activateAgentRequested(WS, A1);
           harness.channel.put(action);
           await settle();
-          expect(mocks.get).toHaveBeenCalledWith(A1);
+          expect(mocks.get).toHaveBeenCalledWith(A1, WS);
           const current = harness.getState().agentSessions.byAgentId[A1];
           expect(current.activationState).toBe('activating');
           harness.dispatch(restoreStoredSessions([{ ...current, ...LIVE } as StoredAgentSession]));

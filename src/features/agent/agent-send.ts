@@ -1,3 +1,5 @@
+import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 /**
  * Agent send pipeline.
  *
@@ -137,10 +139,17 @@ export async function sendMessage(
     messageMetadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
+  const admission = selectWorkspaceParticipationContext.select(appStore.state, workspace.id);
+  if (!admission) return;
+  const ownership = captureAgentMutationOwnership(agentId, workspace.id);
+  const isCurrent = () =>
+    admission === selectWorkspaceParticipationContext.select(appStore.state, workspace.id) &&
+    ownership.isCurrent(appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId);
   // Wrap entire sendMessage operation with performance tracking
   return performanceOptimizer.track(
-    `sendMessage:${agentId}`,
+    `sendMessage:${ownership.key}:${agentId}`,
     async () => {
+      if (!isCurrent()) return;
       logger.debug(`Sending message to agent ${agentId}`, {
         contentLength: content.length,
         hasContextReferences: !!options.contextReferences?.length,
@@ -149,6 +158,7 @@ export async function sendMessage(
 
       // --- Session load/activate (runs once, outside retry boundary) ---
       let session = await appStore.dispatch(restoreAgentSessionRequested(workspace.id, agentId));
+      if (!isCurrent()) return;
       if (!session) {
         throw new Error(m.agent_streamLifecycle_sessionNotFound_error({ agentId }));
       }
@@ -181,6 +191,7 @@ export async function sendMessage(
             const activatedSession = await appStore.dispatch(
               activateAgentRequested(workspace.id, agentId),
             );
+            if (!isCurrent()) return;
             if (activatedSession) {
               session = activatedSession;
             }
@@ -300,6 +311,7 @@ export async function sendMessage(
             async () =>
               errorBoundary.wrap(
                 async () => {
+                  if (!isCurrent()) return;
                   // Streaming and terminal state for this turn arrive via the
                   // standing chat.subscribe delta stream (PROTOCOL §7.1,
                   // chat-subscribe saga) and the daemon events bridge
@@ -347,7 +359,7 @@ export async function sendMessage(
                   // hydrate-reconciled fold (monorepo#2486) — advances this
                   // seq, and the queued-response queue seed below must then
                   // yield to it.
-                  const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
+                  const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
                   // persistence); legacy-only fields (messages, resetHistory,
@@ -378,7 +390,11 @@ export async function sendMessage(
                         ? { messageMetadata: options.messageMetadata }
                         : {}),
                     },
-                  );
+                  ).catch((error: unknown) => {
+                    if (isCurrent()) throw error;
+                    return undefined;
+                  });
+                  if (!isCurrent()) return;
 
                   if (isInFlightPromptDedupResponse(response)) {
                     logger.info('Backend dropped duplicate in-flight prompt', {
@@ -474,13 +490,20 @@ export async function sendMessage(
                         // (including the shrunk-after-drain one) is at least
                         // as fresh as this echo, so seeding over it would
                         // re-add a just-drained row (monorepo#2481).
-                        if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
-                          const existing = selectAgentQueueMessages.select(appStore.state, agentId);
+                        if (
+                          isCurrent() &&
+                          getAgentQueueEventSnapshotSeq(agentId, workspace.id) === queueSeqAtSend
+                        ) {
+                          const existing = selectAgentQueueMessages.select(
+                            appStore.state,
+                            agentId,
+                            workspace.id,
+                          );
                           const next = existing.some((m) => m.id === queuedMessage.id)
                             ? existing
                             : [...existing, queuedMessage];
-                          dispatchRedux(replaceAgentQueue(agentId, next));
-                        } else {
+                          dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
+                        } else if (isCurrent()) {
                           logger.debug(
                             'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
                             { agentId, queuedMessageId: queuedMessage.id },
@@ -495,7 +518,7 @@ export async function sendMessage(
                           // without it if drained. Swallowed on failure — the
                           // send itself succeeded, and the service leaves the
                           // prior mirror intact on error.
-                          await hydrateAgentQueue(agentId).catch(() => undefined);
+                          await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
                         }
                       }
 
@@ -529,6 +552,7 @@ export async function sendMessage(
             throw result.error || new Error(m.agent_streamLifecycle_sendFailed_error());
           }
         } catch (streamingError) {
+          if (!isCurrent()) return;
           // If saveSession or any pre-retry-boundary code throws after
           // setAgentStreaming(true), reset the streaming flag so the UI
           // doesn't stay stuck on "Thinking…" until the safety detector fires.

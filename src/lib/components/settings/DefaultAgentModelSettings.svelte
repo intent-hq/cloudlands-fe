@@ -76,10 +76,20 @@
       getCurrentWorkspacePath,
     );
     for (const payload of saves) {
-      appStore.dispatch(saveFileSpecialist(payload));
+      appStore.dispatch(
+        saveFileSpecialist({
+          ...payload,
+          ...(payload.scope === 'project' ? { workspaceId: routeWorkspaceId ?? undefined } : {}),
+        }),
+      );
     }
     for (const ref of deletes) {
-      appStore.dispatch(deleteFileSpecialistAction(ref));
+      appStore.dispatch(
+        deleteFileSpecialistAction({
+          ...ref,
+          ...(ref.scope === 'project' ? { workspaceId: routeWorkspaceId ?? undefined } : {}),
+        }),
+      );
     }
   }
 

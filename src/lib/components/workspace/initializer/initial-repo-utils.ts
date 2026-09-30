@@ -28,7 +28,8 @@ export interface InitialRepoFormState {
   pendingPreviousWorkspace?: { id: string; title: string } | null;
 }
 
-export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore' | 'restore-recent';
+export type LastSelectedRepoHydrationAction =
+  'wait' | 'skip' | 'restore' | 'restore-recent' | 'create-member-default';
 
 export interface LastSelectedRepoHydrationInput {
   isHydrated: boolean;
@@ -38,6 +39,7 @@ export interface LastSelectedRepoHydrationInput {
   currentRepoPath?: string;
   hasLastSelectedRepo: boolean;
   recentRepos: WorkspaceInitializerRecentRepo[];
+  canCreateMember?: boolean;
 }
 
 /**
@@ -115,11 +117,14 @@ export function getLastSelectedRepoHydrationAction({
   currentRepoPath,
   hasLastSelectedRepo,
   recentRepos,
+  canCreateMember = false,
 }: LastSelectedRepoHydrationInput): LastSelectedRepoHydrationAction {
   if (!isHydrated || alreadyHandled || hasPrefillData) return 'wait';
-  if (!isFormPersistenceEnabled || currentRepoPath) return 'skip';
+  if (currentRepoPath) return 'skip';
+  if (!isFormPersistenceEnabled) return canCreateMember ? 'create-member-default' : 'skip';
   if (hasLastSelectedRepo) return 'restore';
   // Fall back to the most recent repo when lastSelectedRepo is unset
   if (recentRepos.length > 0) return 'restore-recent';
+  if (canCreateMember) return 'create-member-default';
   return 'wait';
 }

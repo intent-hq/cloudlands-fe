@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render } from '../components/chat/__tests__/operational-renderer-test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
 import { getCatalogEntry } from './catalog';
 import CatalogFixtureList from './CatalogFixtureList.svelte';
+import { warmImport } from '../../test/warm-import';
 import {
   CHAT_POLISH_STORAGE_KEY,
   chatPolishGeometryControls,
@@ -11,6 +13,7 @@ import {
 } from './chat-polish/chat-polish-geometry';
 
 const entry = getCatalogEntry('chat-polish')!;
+warmImport(() => import('./renderers/ChatPolishCatalogPreview.svelte'));
 
 async function renderReadyPreview() {
   const view = render(CatalogFixtureList, { props: { entry } });

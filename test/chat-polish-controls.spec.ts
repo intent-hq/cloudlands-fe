@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './root-browser-fixtures';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -24,7 +25,19 @@ async function openSandbox(page: Page) {
   await expect(page.getByTestId('chat-polish-conversation')).toHaveCount(1);
 }
 
+async function showOperationalRows(page: Page) {
+  const preview = page.getByTestId('chat-polish-preview');
+  // Slider interactions scroll the controls into view. Admit conversation rows
+  // again before measuring their seams; offscreen rows are represented by spacers.
+  await preview.scrollIntoViewIfNeeded();
+  await expect(preview).toBeInViewport();
+  await expect
+    .poll(() => preview.locator('[data-adjacent-operational-row="true"]').count())
+    .toBeGreaterThan(0);
+}
+
 async function operationalMargins(page: Page) {
+  await showOperationalRows(page);
   return page
     .getByTestId('chat-polish-preview')
     .evaluate((preview) =>
@@ -36,12 +49,18 @@ async function operationalMargins(page: Page) {
 }
 
 async function sectionBoundary(page: Page) {
-  return page.getByTestId('chat-polish-preview').evaluate((preview) => {
-    const operational = preview.querySelector<HTMLElement>(
-      '[data-tool-executing] .content-block--tool_use',
-    );
-    const text = operational?.nextElementSibling as HTMLElement | null;
-    return operational && text?.classList.contains('content-block--text')
+  await showOperationalRows(page);
+  const section = page.locator('[data-operational-window="fixture-streaming"]');
+  await section.scrollIntoViewIfNeeded();
+  await expect(section.locator('[data-tool-use-id="fixture-context-streaming"]')).toBeVisible();
+  await expect(section.locator('.content-block--text')).toBeVisible();
+  return section.evaluate((section) => {
+    const operational = section
+      .querySelector<HTMLElement>('[data-tool-use-id="fixture-context-streaming"]')
+      ?.closest<HTMLElement>('.content-block--tool_use');
+    const row = operational?.closest('[data-operational-window-key]');
+    const text = row?.nextElementSibling?.querySelector<HTMLElement>('.content-block--text');
+    return operational && text
       ? text.getBoundingClientRect().top - operational.getBoundingClientRect().bottom
       : null;
   });
@@ -115,6 +134,8 @@ for (const zoom of [1, 2]) {
     }, zoom);
     const slider = page.getByRole('slider', { name: 'Operational row gap' });
     const boundaryBefore = await sectionBoundary(page);
+    expect(boundaryBefore).not.toBeNull();
+    expect(Number.isFinite(boundaryBefore)).toBe(true);
 
     for (const value of [0, 4, 32]) {
       await slider.fill(String(value));
@@ -137,6 +158,7 @@ test('keeps grouped, streaming, hidden-result, and expanded-detail paths on the 
   await openSandbox(page);
   const slider = page.getByRole('slider', { name: 'Operational row gap' });
   await slider.fill('18');
+  await showOperationalRows(page);
   const detail = page.locator(
     '[data-tool-use-id="fixture-command-failed"] [data-testid="tool-call-disclosure"]',
   );

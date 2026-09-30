@@ -104,7 +104,13 @@ function runKnip() {
   return new Promise((resolve, reject) => {
     knipChild = execFile(
       process.execPath,
-      [resolveKnipBin(), '--reporter', 'json'],
+      [
+        resolveKnipBin(),
+        '--config',
+        fileURLToPath(new URL('./knip.config.js', import.meta.url)),
+        '--reporter',
+        'json',
+      ],
       {
         cwd: REPO_ROOT,
         encoding: 'utf8',

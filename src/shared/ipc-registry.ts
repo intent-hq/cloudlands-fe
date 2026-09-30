@@ -333,6 +333,14 @@ export const IPC_CHANNELS = {
 
   // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
   // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  COLLABORATION_AUTH: {
+    POLICY: 'collaboration-auth:policy',
+    OPEN: 'collaboration-auth:open',
+    SHOW: 'collaboration-auth:show',
+    ACTION: 'collaboration-auth:action',
+    DISMISS: 'collaboration-auth:dismiss',
+  },
+
   INVITE_CONSENT: {
     /** Main → renderer: show the invite-consent modal for a request. */
     SHOW: 'invite-consent:show',
@@ -735,6 +743,15 @@ export const IPC_CHANNELS = {
     LIST_REPOS: 'github-auth:list-repos',
     SEARCH_REPOS: 'github-auth:search-repos',
     SEARCH_USERS: 'github-auth:search-users',
+  },
+
+  // Provider-generic forge auth (daemon `sourceControl.*`, GitHub + GitLab)
+  FORGE_AUTH: {
+    GET_STATUS: 'forge-auth:get-status',
+    CONNECT: 'forge-auth:connect',
+    CANCEL_AUTH: 'forge-auth:cancel',
+    REVOKE: 'forge-auth:revoke',
+    GET_USER: 'forge-auth:get-user',
   },
 
   // Linear Auth (via daemon API OAuth)

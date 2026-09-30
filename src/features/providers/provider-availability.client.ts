@@ -1,3 +1,5 @@
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { store } from '$store/renderer/store';
 /**
  * Provider Availability Client
  *
@@ -60,7 +62,11 @@ export interface ProviderAvailabilityResult {
 // TTL + single-flight cache mirrors the auth-status pattern), so the renderer
 // must never store — and therefore never resurface — a stale or degraded
 // answer on its own.
-let inFlight: Promise<ProviderAvailabilityResult> | null = null;
+let inFlight: {
+  connection: string | null;
+  token: object;
+  promise: Promise<ProviderAvailabilityResult>;
+} | null = null;
 
 /**
  * Get aggregated availability status for all providers. Every call reaches
@@ -78,12 +84,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     return getDefaultResult();
   }
 
-  if (inFlight) {
+  const connection = selectPrincipalConnectionContext.select(store.state);
+  if (inFlight && inFlight.connection === connection) {
     logger.debug('Joining in-flight provider availability request');
-    return inFlight;
+    return inFlight.promise;
   }
 
-  inFlight = (async () => {
+  const token = {};
+  const promise = (async () => {
     try {
       logger.debug('Checking provider availability via IPC');
 
@@ -120,11 +128,12 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 
       return data;
     } finally {
-      inFlight = null;
+      if (inFlight?.token === token) inFlight = null;
     }
   })();
 
-  return inFlight;
+  inFlight = { connection, token, promise };
+  return promise;
 }
 
 /**

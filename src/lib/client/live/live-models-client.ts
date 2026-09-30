@@ -30,11 +30,15 @@ import type { AppClient, ModelsClient, SubscriptionHandler, Unsubscribe } from '
 import { backendRequest } from './backend-transport';
 
 export class LiveModelsClient implements ModelsClient {
-  async list(providerId?: string): Promise<AuggieModel[]> {
+  async list(providerId?: string, workspaceId?: string): Promise<AuggieModel[]> {
     try {
-      const result = providerId
-        ? await backendRequest<WireModelsListResult>('models.list', { providerId })
-        : await backendRequest<WireModelsListResult>('models.list');
+      const result =
+        providerId || workspaceId
+          ? await backendRequest<WireModelsListResult>('models.list', {
+              ...(providerId ? { providerId } : {}),
+              ...(workspaceId ? { workspaceId } : {}),
+            })
+          : await backendRequest<WireModelsListResult>('models.list');
       // Scoped replies identify their provider. Never attribute legacy unscoped
       // Auggie rows (or another provider's rows) to the requested provider.
       if (providerId && result.providerId !== providerId) return [];

@@ -5,15 +5,43 @@
  */
 import type { WorkspaceRole } from '$shared/types';
 
+/** The forges a principal identity can live on (`Principal.identity.provider`). */
+export const IDENTITY_PROVIDERS = ['github', 'gitlab'] as const;
+export type IdentityProvider = (typeof IDENTITY_PROVIDERS)[number];
+
+/**
+ * The provider-neutral identity triple the daemon keys principals by
+ * (`Principal.identity`): the forge, the instance host (`github.com` for
+ * GitHub) and the account id on that instance as a string.
+ */
+export interface PrincipalIdentity {
+  provider: IdentityProvider;
+  host: string;
+  externalUserId: string;
+}
+
+/**
+ * The forge a `workspace.invite.create` pin names (`pinProvider` / `pinHost`).
+ * `host` is omitted for GitHub; for GitLab it is the instance the login lives
+ * on. Both are omitted entirely when the host has one identity forge, so the
+ * daemon defaults to its own.
+ */
+export interface InvitePin {
+  provider: IdentityProvider;
+  host?: string;
+}
+
 /** One `workspace.members.list` row — a membership joined to its principal. */
 export interface WorkspaceMember {
   principalId: string;
-  /** GitHub login; null for a principal without a resolved identity. */
+  /** Forge login; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   role: WorkspaceRole;
   addedAt: string;
+  /** Identity triple; omitted while the principal is unlinked. */
+  identity?: PrincipalIdentity;
 }
 
 /**
@@ -37,11 +65,14 @@ export interface WorkspaceMembersList {
  */
 export interface HostPrincipal {
   principalId: string;
-  /** GitHub login; null for a principal without a resolved identity. */
+  /** Forge login; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  /** Kept for GitHub identities (`null` for a GitLab or unlinked principal). */
   githubUserId: number | null;
+  /** Identity triple; omitted while the principal is unlinked. */
+  identity?: PrincipalIdentity;
 }
 
 /** `workspace.members.add` result; `added: false` when already a member. */
@@ -60,10 +91,12 @@ export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
   createdByPrincipalId: string;
-  /** GitHub user id the invite is pinned to; absent when open to anyone. */
+  /** GitHub user id the invite is pinned to; absent when open to anyone or pinned to GitLab. */
   pinGithubUserId?: number;
-  /** Canonical GitHub login of the pinned account (as resolved by the daemon). */
+  /** Canonical forge login of the pinned account (as resolved by the daemon). */
   pinLogin?: string;
+  /** The pinned account's identity triple; absent when open to anyone. */
+  pinIdentity?: PrincipalIdentity;
   createdAt: string;
   expiresAt: string;
   /** Last redemption (a reusable invite stays open across redemptions). */

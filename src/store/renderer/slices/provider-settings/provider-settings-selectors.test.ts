@@ -21,7 +21,7 @@ import {
   initialState as providerSettingsInitialState,
   loadEnabledProvidersFromStorage,
   providerSettingsReducer,
-  setActiveProvider,
+  activeProviderAccepted,
   setProviderEnabled,
 } from './provider-settings-slice';
 import { hydrateDefaultProvider } from '../model/model-slice';
@@ -398,13 +398,13 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
 
     // (d) The user picks claude-code on step 3 (AgentGrid's
     // handleSelectProvider dispatch sequence; the model slice mirrors
-    // setActiveProvider into its defaultProviderId/normalization).
+    // activeProviderAccepted into its defaultProviderId/normalization).
     settings = providerSettingsReducer(
       settings,
       setProviderEnabled({ providerId: 'claude-code', enabled: true }),
     );
-    settings = providerSettingsReducer(settings, setActiveProvider('claude-code'));
-    model = modelReducer(model, setActiveProvider('claude-code'));
+    settings = providerSettingsReducer(settings, activeProviderAccepted('claude-code'));
+    model = modelReducer(model, activeProviderAccepted('claude-code'));
 
     // Step 4's gate: claude-code is available+enabled, so ModelPicker's
     // hasNoAvailableProvider condition is false.

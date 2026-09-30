@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { update: mocks.update } } }));
@@ -13,6 +13,7 @@ import {
   setActiveProvider,
   setProviderEnabled,
   toggleProvider,
+  initialState,
 } from '../provider-settings-slice';
 import { hydrateDefaultProvider } from '../../model/model-slice';
 import { PROVIDER_SETTINGS_RETRY_DELAYS_MS, providerSettingsSaga } from './provider-settings-saga';
@@ -26,6 +27,7 @@ const settle = async () => {
 function state(canBeDisabled = true) {
   return {
     providerSettings: {
+      ...initialState,
       activeProviderId: 'auggie',
       enabledProviders: { codex: true },
     },
@@ -196,7 +198,7 @@ describe('providerSettingsSaga', () => {
     expect(mocks.update.mock.calls).toEqual([
       [[{ path: 'providers.enabled', value: { codex: true, 'claude-code': true } }]],
     ]);
-    expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code'));
+    expect(dispatch).toHaveBeenCalledWith(enablementPersistRejected('claude-code', 0));
     task.cancel();
     await task.toPromise();
   });
