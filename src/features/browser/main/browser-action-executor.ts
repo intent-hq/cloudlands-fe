@@ -178,6 +178,16 @@ const GetSummaryActionSchema = z
   })
   .strict();
 
+const ReadCaptureActionSchema = z
+  .object({
+    action: z.literal('readCapture'),
+    captureId: z.string().min(1).max(512),
+    artifact: z.enum(['console.jsonl', 'network.jsonl', 'summary.json', 'session.json']),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    maxBytes: z.number().int().min(1).max(65536).optional(),
+  })
+  .strict();
+
 // Emulated viewport bounds for agent-owned tabs (monorepo#2857).
 const ViewportDimensionSchema = z
   .number()
@@ -300,6 +310,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   EndSessionActionSchema,
   ResetTabActionSchema,
   GetSummaryActionSchema,
+  ReadCaptureActionSchema,
   OpenTabActionSchema,
   ClaimTabActionSchema,
   ResizeTabActionSchema,
@@ -808,6 +819,12 @@ async function executeAction(
   }
 
   try {
+    if ('sessionId' in action)
+      browserCapture.assertSessionOwner(
+        action.sessionId,
+        requireWorkspaceId(workspaceId, action.action),
+        agentId,
+      );
     switch (action.action) {
       case 'listTabs': {
         const scope = action.scope ?? 'all';
@@ -1032,6 +1049,7 @@ async function executeAction(
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
         const options: SessionOptions = {
+          ownerAgentId: agentId,
           workspaceId: captureWorkspaceId,
           tabId,
           name: action.name,
@@ -1099,6 +1117,18 @@ async function executeAction(
       case 'resetTab': {
         const result = await browserCapture.resetTab(tabId, workspaceId);
         return { action: 'resetTab', success: true, result };
+      }
+
+      case 'readCapture': {
+        const result = await browserCapture.readCapture(
+          requireWorkspaceId(workspaceId, action.action),
+          action.captureId,
+          action.artifact,
+          agentId,
+          action.offset,
+          action.maxBytes,
+        );
+        return { action: 'readCapture', success: true, result };
       }
 
       case 'getSummary': {

@@ -52,6 +52,8 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
 
 vi.mock('../main/browser-capture-service', () => ({
   browserCapture: {
+    assertSessionOwner: vi.fn(),
+    readCapture: vi.fn(),
     snapshot: vi.fn(),
     startSession: vi.fn(),
     endSession: vi.fn(),

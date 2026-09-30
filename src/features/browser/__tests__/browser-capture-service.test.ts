@@ -69,6 +69,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
       height: 800,
     }),
     sendCdpCommand: vi.fn(async (_: number, method: string) => {
+      if (method === 'Page.addScriptToEvaluateOnNewDocument') return { identifier: 'early-script' };
       if (method === 'Tracing.end') {
         queueMicrotask(() => {
           cdpMessageHandler?.('Tracing.dataCollected', { value: [{ name: 'event' }] });
@@ -283,5 +284,348 @@ describe('BrowserCaptureService path boundaries', () => {
     expect(traversalSummary.results[0]?.error).toContain('must stay within');
     expect(ownedSummary.results[0]?.result).toEqual(summary);
     expect(crossWorkspaceSummary.results[0]?.result).toBeNull();
+  });
+  it('captures thrown exceptions and failing HTTP requests before navigation', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    cdpMessageHandler?.('Runtime.exceptionThrown', {
+      exceptionDetails: {
+        text: 'Uncaught',
+        exception: {
+          description:
+            'Error: fixture throw\\n    at boot (https://example.test/app.js?token=secret:1:2)',
+        },
+        stackTrace: {
+          callFrames: [
+            {
+              functionName: 'boot',
+              url: 'https://example.test/app.js?token=secret',
+              lineNumber: 1,
+              columnNumber: 2,
+            },
+          ],
+        },
+      },
+    });
+    cdpMessageHandler?.('Network.requestWillBeSent', {
+      requestId: 'failure',
+      wallTime: 1700000000,
+      request: { method: 'GET', url: 'https://user:password@example.test/module.js?token=secret' },
+      initiator: {
+        type: 'script',
+        stack: {
+          callFrames: [
+            {
+              functionName: 'boot',
+              url: 'https://example.test/entry.js',
+              lineNumber: 4,
+              columnNumber: 2,
+            },
+          ],
+        },
+      },
+    });
+    cdpMessageHandler?.('Network.responseReceived', {
+      requestId: 'failure',
+      response: { status: 500, statusText: 'Server Error', mimeType: 'text/plain' },
+    });
+    vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockResolvedValueOnce({
+      body: 'module failed token=secret',
+      base64Encoded: false,
+    });
+    cdpMessageHandler?.('Network.loadingFinished', { requestId: 'failure', encodedDataLength: 30 });
+    await browserCapture.endCapture(session.id, 'workspace-a');
+    const result = await browserCapture.endSession(session.id, 'workspace-a');
+    const consoleLog = await fs.readFile(result.console, 'utf8');
+    const networkLog = await fs.readFile(result.network, 'utf8');
+    expect(consoleLog).toContain('fixture throw');
+    expect(consoleLog).toContain('boot');
+    expect(networkLog).toContain('module failed');
+    expect(networkLog).toContain('entry.js');
+    expect(networkLog).toContain('2023-11-14T22:13:20.000Z');
+    expect(consoleLog + networkLog).not.toMatch(/password|secret/);
+    expect(embeddedBrowserCdp.sendCdpCommand).toHaveBeenCalledWith(
+      1,
+      'Page.addScriptToEvaluateOnNewDocument',
+      expect.objectContaining({ source: expect.any(String) }),
+    );
+  });
+
+  it('cleans up the original guest even when the tab vanishes', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({ tabs: [], stale: false });
+    await browserCapture.endCapture(session.id, 'workspace-a');
+    expect(cdpMessageHandler).toBeUndefined();
+    await browserCapture.endSession(session.id, 'workspace-a');
+  });
+
+  it('retrieves only the caller-owned bounded artifacts after a session ends', async () => {
+    const start = await executeActions(
+      { actions: [{ action: 'startSession', name: 'owned-read' }] },
+      undefined,
+      'agent-1',
+      'workspace-a',
+    );
+    const session = start.results[0]?.result as CaptureSession;
+    await executeActions(
+      { actions: [{ action: 'endSession', sessionId: session.id }] },
+      undefined,
+      'agent-1',
+      'workspace-a',
+    );
+    const read = (agent: string, artifact = 'session.json') =>
+      executeActions(
+        {
+          actions: [
+            { action: 'readCapture', captureId: session.captureId, artifact, maxBytes: 32 },
+          ],
+        },
+        undefined,
+        agent,
+        'workspace-a',
+      );
+    const own = await read('agent-1');
+    expect(own.success).toBe(true);
+    expect(own.results[0]?.result).toMatchObject({
+      encoding: 'base64',
+      nextOffset: 32,
+      eof: false,
+    });
+    expect((await read('agent-2')).success).toBe(false);
+    expect((await read('agent-1', '../outside')).success).toBe(false);
+    for (const captureId of ['../outside', '/tmp/private', '.', 'missing/capture']) {
+      await expect(
+        browserCapture.readCapture('workspace-a', captureId, 'session.json', 'agent-1'),
+      ).rejects.toThrow();
+    }
+    for (const [offset, maxBytes] of [
+      [-1, 32],
+      [0, 65537],
+      [0, 0],
+      [0.5, 32],
+    ]) {
+      await expect(
+        browserCapture.readCapture(
+          'workspace-a',
+          session.captureId,
+          'session.json',
+          'agent-1',
+          offset,
+          maxBytes,
+        ),
+      ).rejects.toThrow('Invalid');
+    }
+    const first = own.results[0]?.result as { data: string };
+    const rest = await browserCapture.readCapture(
+      'workspace-a',
+      session.captureId,
+      'session.json',
+      'agent-1',
+      32,
+    );
+    expect(rest.eof).toBe(true);
+    expect(
+      Buffer.concat([Buffer.from(first.data, 'base64'), Buffer.from(rest.data, 'base64')]).toString(
+        'utf8',
+      ),
+    ).toBe(await fs.readFile(path.join(session.outputDir, 'session.json'), 'utf8'));
+    expect(
+      await browserCapture.readCapture(
+        'workspace-a',
+        session.captureId,
+        'session.json',
+        'agent-1',
+        rest.totalBytes,
+      ),
+    ).toMatchObject({ data: '', eof: true });
+  });
+  it('bounds diagnostic storage across restart intervals and records dropped events', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    for (let interval = 0; interval < 2; interval++) {
+      await browserCapture.startCapture(session.id, 'workspace-a');
+      for (let n = 0; n < 5000; n++)
+        cdpMessageHandler?.('Runtime.consoleAPICalled', {
+          type: 'error',
+          args: [{ value: 'fixture-' + 'x'.repeat(17000) }],
+        });
+      await browserCapture.endCapture(session.id, 'workspace-a');
+    }
+    const result = await browserCapture.endSession(session.id, 'workspace-a');
+    expect((await fs.stat(result.console)).size).toBeLessThan(4 * 1024 * 1024 + 4096);
+    expect(session.diagnostics.dropped).toBeGreaterThan(0);
+    expect(
+      JSON.parse(await fs.readFile(path.join(result.dir, 'session.json'), 'utf8')).diagnostics
+        .dropped,
+    ).toBe(session.diagnostics.dropped);
+  });
+
+  it('retains serialized window errors and rejections and removes installed script/binding', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    const originalSend = vi.mocked(embeddedBrowserCdp.sendCdpCommand).getMockImplementation();
+    vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(async (_id, method) =>
+      method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'script-early' } : {},
+    );
+    try {
+      await browserCapture.startCapture(session.id, 'workspace-a');
+      const call = vi
+        .mocked(embeddedBrowserCdp.sendCdpCommand)
+        .mock.calls.findLast((c) => c[1] === 'Runtime.addBinding');
+      const name = call?.[2]?.name;
+      for (const kind of ['window.error', 'unhandledrejection'])
+        cdpMessageHandler?.('Runtime.bindingCalled', {
+          name,
+          payload: JSON.stringify({
+            kind,
+            message: 'early failure',
+            stack:
+              'Error: early failure\n at start (https://user:pass@example.test/app.js?key=sensitive)',
+            url: 'https://example.test/?token=sensitive',
+          }),
+        });
+      cdpMessageHandler?.('Runtime.bindingCalled', { name, payload: '{bad json' });
+      await browserCapture.endCapture(session.id, 'workspace-a');
+      expect(session.consoleBuffer.map((m) => m.source)).toEqual([
+        'window.error',
+        'unhandledrejection',
+      ]);
+      expect(JSON.stringify(session.consoleBuffer)).not.toMatch(/sensitive|user:pass/);
+      expect(embeddedBrowserCdp.sendCdpCommand).toHaveBeenCalledWith(
+        1,
+        'Page.removeScriptToEvaluateOnNewDocument',
+        { identifier: 'script-early' },
+      );
+      expect(embeddedBrowserCdp.sendCdpCommand).toHaveBeenCalledWith(1, 'Runtime.removeBinding', {
+        name,
+      });
+      await browserCapture.endSession(session.id, 'workspace-a');
+    } finally {
+      vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(originalSend!);
+    }
+  });
+
+  it('does not let another agent stop a session or read symlinked artifacts', async () => {
+    const start = await executeActions(
+      { actions: [{ action: 'startSession', name: 'isolated' }] },
+      undefined,
+      'agent-1',
+      'workspace-a',
+    );
+    const session = start.results[0]?.result as CaptureSession;
+    const stopped = await executeActions(
+      { actions: [{ action: 'endSession', sessionId: session.id }] },
+      undefined,
+      'agent-2',
+      'workspace-a',
+    );
+    expect(stopped.success).toBe(false);
+    await browserCapture.endSession(session.id, 'workspace-a');
+    const outside = path.join(tempRoot, 'outside.txt');
+    await fs.writeFile(outside, 'private');
+    await fs.unlink(path.join(session.outputDir, 'network.jsonl'));
+    await fs.symlink(outside, path.join(session.outputDir, 'network.jsonl'));
+    await expect(
+      browserCapture.readCapture('workspace-a', session.captureId, 'network.jsonl', 'agent-1'),
+    ).rejects.toThrow();
+    await expect(
+      browserCapture.readCapture('workspace-b', session.captureId, 'console.jsonl', 'agent-1'),
+    ).rejects.toThrow();
+  });
+
+  it('keeps separate artifacts when two agents choose the same name', async () => {
+    const a = await browserCapture.startSession({
+      workspaceId: 'workspace-a',
+      ownerAgentId: 'a',
+      name: 'same',
+    });
+    const b = await browserCapture.startSession({
+      workspaceId: 'workspace-a',
+      ownerAgentId: 'b',
+      name: 'same',
+    });
+    expect(a.captureId).not.toBe(b.captureId);
+    await browserCapture.endSession(a.id, 'workspace-a');
+    await browserCapture.endSession(b.id, 'workspace-a');
+    await expect(
+      browserCapture.readCapture('workspace-a', a.captureId, 'session.json', 'b'),
+    ).rejects.toThrow('owned');
+  });
+  it('rolls back listeners when early script installation fails and allows another start', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    const original = vi.mocked(embeddedBrowserCdp.sendCdpCommand).getMockImplementation();
+    vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(async (_id, method) => {
+      if (method === 'Page.addScriptToEvaluateOnNewDocument') throw new Error('guest closed');
+      return {};
+    });
+    try {
+      await expect(browserCapture.startCapture(session.id, 'workspace-a')).rejects.toThrow(
+        'guest closed',
+      );
+      expect(cdpMessageHandler).toBeUndefined();
+      expect(session.captureActive).toBe(false);
+    } finally {
+      vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(original!);
+    }
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    await browserCapture.endSession(session.id, 'workspace-a');
+  });
+
+  it('removes instrumentation when its session ends during capture setup', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    const original = vi.mocked(embeddedBrowserCdp.sendCdpCommand).getMockImplementation();
+    let finishSetup!: (value: { identifier: string }) => void;
+    let reachedSetup!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      reachedSetup = resolve;
+    });
+    vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(async (_id, method) => {
+      if (method === 'Page.addScriptToEvaluateOnNewDocument') {
+        reachedSetup();
+        return new Promise((resolve) => {
+          finishSetup = resolve;
+        });
+      }
+      return {};
+    });
+    try {
+      const starting = browserCapture.startCapture(session.id, 'workspace-a');
+      await ready;
+      await browserCapture.endSession(session.id, 'workspace-a');
+      finishSetup({ identifier: 'late-script' });
+      await expect(starting).rejects.toThrow('ended');
+      expect(cdpMessageHandler).toBeUndefined();
+    } finally {
+      vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockImplementation(original!);
+    }
+  });
+
+  it('reports unavailable and oversized response bodies without fetching them again', async () => {
+    const session = await browserCapture.startSession({ workspaceId: 'workspace-a' });
+    await browserCapture.startCapture(session.id, 'workspace-a');
+    for (const id of ['unavailable', 'large']) {
+      cdpMessageHandler?.('Network.requestWillBeSent', {
+        requestId: id,
+        request: { method: 'GET', url: 'https://example.test/' + id },
+      });
+      cdpMessageHandler?.('Network.responseReceived', {
+        requestId: id,
+        response: { status: 500, mimeType: 'text/plain' },
+      });
+      if (id === 'unavailable')
+        vi.mocked(embeddedBrowserCdp.sendCdpCommand).mockRejectedValueOnce(new Error('evicted'));
+      cdpMessageHandler?.('Network.loadingFinished', {
+        requestId: id,
+        encodedDataLength: id === 'large' ? 1000000 : 10,
+      });
+    }
+    await browserCapture.endCapture(session.id, 'workspace-a');
+    expect(session.networkBuffer).toHaveLength(2);
+    expect(session.networkBuffer.every((r) => r.failed && r.bodyUnavailable && !r.body)).toBe(true);
+    expect(
+      vi
+        .mocked(embeddedBrowserCdp.sendCdpCommand)
+        .mock.calls.filter((c) => c[1] === 'Network.getResponseBody'),
+    ).toHaveLength(1);
+    await browserCapture.endSession(session.id, 'workspace-a');
   });
 });
