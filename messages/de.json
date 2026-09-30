@@ -6925,8 +6925,8 @@
   "presence_role_owner": "Host-Eigentümer",
   "presence_role_member": "Host-Mitglied",
   "presence_role_guest": "Arbeitsbereichsgast",
-  "presence_status_online": "Online",
-  "presence_status_offline": "Offline",
+  "presence_status_online": "Verbunden",
+  "presence_status_offline": "Nicht verbunden",
   "presence_status_viewing": "Online · Sieht diesen Arbeitsbereich an",
   "presence_person_roleStatus": "{name} · {role} · {status}"
 }
