@@ -4,6 +4,17 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.190.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.3...v2.190.4) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.122 ([#3029](https://github.com/intent-hq/cloudlands-fe/issues/3029)) ([6d46621](https://github.com/intent-hq/cloudlands-fe/commit/6d466218fd40a5b1026e5bf5998d87e110c012f1))
+* isolate comments by workspace and note (intent-hq/intent[#6347](https://github.com/intent-hq/cloudlands-fe/issues/6347)) ([#3022](https://github.com/intent-hq/cloudlands-fe/issues/3022)) ([a42ca28](https://github.com/intent-hq/cloudlands-fe/commit/a42ca2872248b2174f0c29589532f69178d235a3))
+* preserve model selection through transient catalog failures ([#3025](https://github.com/intent-hq/cloudlands-fe/issues/3025)) ([0b63da7](https://github.com/intent-hq/cloudlands-fe/commit/0b63da750fd331bd0f99eb027960a7b95ce67311))
+* preserve sidebar fixture errors across document recovery ([#2976](https://github.com/intent-hq/cloudlands-fe/issues/2976)) ([1220971](https://github.com/intent-hq/cloudlands-fe/commit/1220971b0f7707ee4ffa2d8bbfa3b911d83cca92))
+* settle walkthrough geometry independently of ancestor motion ([#2979](https://github.com/intent-hq/cloudlands-fe/issues/2979)) ([8c48a28](https://github.com/intent-hq/cloudlands-fe/commit/8c48a288ae4e91217c0d9d59b800df4f5f4db716))
+
 ## [2.190.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.2...v2.190.3) (2026-09-30)
 
 
