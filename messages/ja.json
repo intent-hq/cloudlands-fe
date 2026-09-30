@@ -6812,6 +6812,11 @@
   "file_pdf_next_label": "次のページ",
   "file_pdf_page_label": "{page} / {total} ページ",
   "file_pdf_canvas_ariaLabel": "{name}、{page} ページ",
+  "settings_providers_serviceTier_label": "サービスティア",
+  "settings_providers_serviceTierStandard_label": "標準",
+  "settings_providers_serviceTierFast_label": "高速",
+  "settings_providers_serviceTierUltraFast_label": "超高速",
+  "settings_providers_serviceTierUltraFast_description": "超高速はまだサポートされていません。",
   "settings_providers_fastMode_label": "高速モード",
   "settings_providers_fastMode_description": "次のターンから適用されます。使用量や料金が増える場合があります。利用可否はモデルとアカウントによって異なります。",
   "settings_providers_fastMode_error": "高速モードを保存できませんでした。保存済みの設定に戻しました。"

@@ -6812,6 +6812,11 @@
   "file_pdf_next_label": "下一页",
   "file_pdf_page_label": "第 {page} 页，共 {total} 页",
   "file_pdf_canvas_ariaLabel": "{name}，第 {page} 页",
+  "settings_providers_serviceTier_label": "服务等级",
+  "settings_providers_serviceTierStandard_label": "标准",
+  "settings_providers_serviceTierFast_label": "快速",
+  "settings_providers_serviceTierUltraFast_label": "超快速",
+  "settings_providers_serviceTierUltraFast_description": "暂不支持超快速。",
   "settings_providers_fastMode_label": "快速模式",
   "settings_providers_fastMode_description": "从下一轮开始生效。用量和费用可能增加；是否可用取决于模型和账户。",
   "settings_providers_fastMode_error": "无法保存快速模式。已恢复之前保存的偏好设置。"

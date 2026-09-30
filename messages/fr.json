@@ -6812,6 +6812,11 @@
   "file_pdf_next_label": "Page suivante",
   "file_pdf_page_label": "Page {page} sur {total}",
   "file_pdf_canvas_ariaLabel": "Page {page} du document {name}",
+  "settings_providers_serviceTier_label": "Niveau de service",
+  "settings_providers_serviceTierStandard_label": "Standard",
+  "settings_providers_serviceTierFast_label": "Rapide",
+  "settings_providers_serviceTierUltraFast_label": "Ultra-rapide",
+  "settings_providers_serviceTierUltraFast_description": "Ultra-rapide n’est pas encore pris en charge.",
   "settings_providers_fastMode_label": "Mode rapide",
   "settings_providers_fastMode_description": "S’applique dès le prochain tour. L’utilisation et les coûts peuvent augmenter ; la disponibilité dépend de votre modèle et de votre compte.",
   "settings_providers_fastMode_error": "Impossible d’enregistrer le mode rapide. Votre préférence enregistrée a été restaurée."
