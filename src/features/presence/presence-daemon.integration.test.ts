@@ -77,8 +77,8 @@ async function loaded() {
         online: false,
       });
       expect(target()).not.toBeNull();
-      expect(target()).toHaveAttribute('data-presence-ring', 'guest');
-      expect(target()).toHaveAttribute('data-presence-offline', 'true');
+      expect(target()?.getAttribute('data-presence-ring')).toBe('guest');
+      expect(target()?.getAttribute('data-presence-offline')).toBe('true');
     },
     { timeout: 10_000 },
   );
