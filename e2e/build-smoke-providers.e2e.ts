@@ -30,6 +30,7 @@ import {
   startChatNudgeMonitor,
   setMockAgentBehavior,
   exitPackagedApp,
+  openAgentsSidebarPanel,
 } from './build-smoke-helpers';
 import { join } from 'path';
 
@@ -248,7 +249,12 @@ test.describe('Build Smoke — Provider Verification', () => {
         lastWorkspaceId = workspaceId;
 
         // Wait for at least one agent to appear (proves provider connected)
-        await page.waitForSelector('[data-agent-id]', { timeout: 60_000 });
+        await openAgentsSidebarPanel(page);
+        await expect(
+          page.locator('[data-testid="agent-panel"] [data-agent-id]').first(),
+        ).toBeVisible({
+          timeout: 30_000,
+        });
         await takeScreenshot(page, `${providerId}-agent-started`);
 
         // Auto-approve any permission requests (e.g. tool-use approvals)

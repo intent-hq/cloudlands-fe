@@ -79,9 +79,21 @@ def retain_fixtures(root):
     archive_path = REPORT / 'fixture-state.tar.gz'
     # Unbuffered output makes each writer debit visible to the directory check.
     with archive_path.open('xb', buffering=0) as raw, tarfile.open(fileobj=BoundedArchiveWriter(raw), mode='w:gz', dereference=False) as archive:
-        for name in ('tmp', 'config', 'data', 'cache', 'home', 'gitconfig'):
+        # Capture real worktrees first. The reproducible npm download cache is
+        # excluded from the archive, but remains charged by the whole-root
+        # 20 GiB growth guard. No other home subtree is excluded.
+        for name in ('home', 'tmp', 'config', 'data', 'cache', 'gitconfig'):
             base = root / name
-            paths = [base] if base.is_file() else base.rglob('*')
+            if name == 'home':
+                def home_paths():
+                    for directory, dirs, names in os.walk(base, followlinks=False):
+                        if Path(directory) == base and '.npm' in dirs:
+                            dirs.remove('.npm')
+                        for child in dirs + names:
+                            yield Path(directory) / child
+                paths = home_paths()
+            else:
+                paths = [base] if base.is_file() else base.rglob('*')
             for path in paths:
                 entries += 1
                 if entries > 20000 or time.monotonic() - started > 120:
@@ -94,12 +106,13 @@ def retain_fixtures(root):
                 total += size
                 files += 1
                 if size > 64 * 1024**2 or total > 256 * 1024**2 or files > 20000 or time.monotonic() - started > 120:
-                    raise RuntimeError('Fixture evidence bound exceeded; partial archive is not complete')
+                    raise RuntimeError(f'Fixture evidence bound exceeded at {relative}: fileBytes={size}, inputBytes={total}, files={files}; partial archive is not complete')
                 archive.add(path, arcname=relative, recursive=False)
     if archive_path.stat().st_size > ARCHIVE_LIMIT or report_bytes() > REPORT_LIMIT:
         raise RuntimeError('Final archive/report byte limit exceeded; capture incomplete')
     record('fixture-state', {'files': files, 'inputBytes': total, 'archiveBytes': archive_path.stat().st_size,
                             'omittedNonregular': omitted,
+                            'excludedReproducibleCaches': ['home/.npm'],
                             'consistency': 'post-test copy; see shutdown receipts for settlement'})
     if report_bytes() > REPORT_LIMIT:
         raise RuntimeError('Final report byte limit exceeded after capture receipt')

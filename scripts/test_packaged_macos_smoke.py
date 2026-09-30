@@ -117,6 +117,29 @@ class Admission(unittest.TestCase):
             kill.assert_called_once_with(12345, smoke.signal.SIGTERM)
             self.assertEqual(json.loads((report / 'fixture-failure.json').read_text())['cleanup']['directChildWait'], -15)
 
+    def test_capture_excludes_only_npm_cache_and_keeps_actual_worktree_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            retained = {
+                'home/intent/workspaces/child/repo/child-output.txt': b'child result',
+                'home/intent/workspaces/mock/repo/README.md': b'hello world',
+                'home/.local/state/fixture': b'other home state',
+            }
+            for name, data in {**retained, 'home/.npm/_cacache/download': b'reproducible cache'}.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            report = root / 'report'
+            report.mkdir()
+            with patch.object(smoke, 'REPORT_TREE', report), patch.object(smoke, 'REPORT', report):
+                smoke.retain_fixtures(root)
+            with tarfile.open(report / 'fixture-state.tar.gz') as archive:
+                self.assertEqual(set(archive.getnames()), set(retained))
+                for name, data in retained.items(): self.assertEqual(archive.extractfile(name).read(), data)
+            receipt = json.loads((report / 'fixture-state.json').read_text())
+            self.assertEqual(receipt['excludedReproducibleCaches'], ['home/.npm'])
+            self.assertEqual(receipt['inputBytes'], sum(map(len, retained.values())))
+
     def test_timeout_terminates_only_created_group_and_waits(self):
         child = Mock(pid=12345)
         child.poll.return_value = None
