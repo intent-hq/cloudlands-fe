@@ -5,10 +5,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ launch: vi.fn(), observe: vi.fn(), logStream: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  launch: vi.fn(),
+  observe: vi.fn(),
+  logStream: vi.fn(),
+  write: vi.fn(),
+}));
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
-  const api = { ...actual, createWriteStream: mocks.logStream };
+  const api = {
+    ...actual,
+    createWriteStream: mocks.logStream,
+    writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+      mocks.write(...args);
+      return actual.writeFileSync(...args);
+    },
+  };
   return { ...api, default: api };
 });
 vi.mock('@playwright/test', () => ({ _electron: { launch: mocks.launch } }));
@@ -35,6 +47,9 @@ it.each([
   'log-open',
   'log-write',
   'log-after-handoff',
+  'log-after-handoff-close',
+  'log-after-handoff-receipt',
+  'log-after-handoff-close-receipt',
 ])(
   'settles its owned handle when post-launch %s fails, preserving primary and cleanup',
   async (stage) => {
@@ -45,6 +60,14 @@ it.each([
     vi.stubEnv('PACKAGED_APP_PATH', binary);
     const primary = new Error('setup failed');
     const secondary = new Error('cleanup failed');
+    const recording = new Error('receipt failed');
+    let receipt: any;
+    mocks.write.mockImplementation((file, data) => {
+      if (String(file).includes('/shutdown-')) {
+        receipt = JSON.parse(String(data));
+        if (stage.includes('receipt')) throw recording;
+      }
+    });
     const logStream = Object.assign(new EventEmitter(), {
       end: vi.fn(() => logStream.emit('close')),
     });
@@ -71,7 +94,7 @@ it.each([
     const app = {
       process: () => proc,
       close: vi.fn(async () => {
-        if (stage === 'close') throw secondary;
+        if (stage.includes('close')) throw secondary;
       }),
       evaluate: vi.fn(),
       firstWindow: vi.fn(async () => {
@@ -79,7 +102,7 @@ it.each([
         return {
           on: vi.fn(),
           waitForFunction: vi.fn(async () => {
-            if (stage === 'log-after-handoff') return;
+            if (stage.startsWith('log-after-handoff')) return;
             throw primary;
           }),
           waitForTimeout: vi.fn(async () => undefined),
@@ -107,14 +130,25 @@ it.each([
       return app;
     });
     let error = await launchPackagedApp().catch((error) => error);
-    if (stage === 'log-after-handoff') {
+    if (stage.startsWith('log-after-handoff')) {
       logStream.emit('error', primary);
       error = await exitPackagedApp(error.app).catch((error) => error);
     }
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
     expect(app.close).toHaveBeenCalledOnce();
     expect(proc.exitCode).toBe(0);
-    if (stage === 'observation' || stage === 'close') {
+    if (stage.startsWith('log-after-handoff') && stage !== 'log-after-handoff') {
+      const flatten = (value: any): any[] =>
+        value instanceof AggregateError ? value.errors.flatMap(flatten) : [value];
+      expect(flatten(error)).toEqual([
+        primary,
+        ...(stage.includes('close') ? [secondary] : []),
+        ...(stage.includes('receipt') ? [recording] : []),
+      ]);
+      expect(receipt.loggingError).toBe(String(primary));
+      expect(receipt.cleanupError).toBe(stage.includes('close') ? String(secondary) : null);
+      expect(receipt.logClose).toBe('failed; close unconfirmed');
+    } else if (stage === 'observation' || stage === 'close') {
       expect(error).toBeInstanceOf(AggregateError);
       expect(error.errors).toEqual([primary, secondary]);
     } else if (stage === 'profile') {

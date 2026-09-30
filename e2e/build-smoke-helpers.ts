@@ -141,9 +141,14 @@ async function stopPackagedApp(app: ElectronApplication): Promise<void> {
     signalCode: proc.signalCode,
     settled: false,
     error: null as string | null,
+    loggingError: null as string | null,
+    cleanupError: null as string | null,
+    observationError: null as string | null,
+    logClose: 'unconfirmed',
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   let primary: unknown;
+  let firstError: unknown = logFailures.get(app);
   let observationError: unknown;
   try {
     try {
@@ -151,6 +156,7 @@ async function stopPackagedApp(app: ElectronApplication): Promise<void> {
       receipt.observedDescendants = descendants;
     } catch (error) {
       observationError = error;
+      firstError ??= error;
     }
     const closed = new Promise<void>((resolve, reject) => {
       if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
@@ -163,7 +169,18 @@ async function stopPackagedApp(app: ElectronApplication): Promise<void> {
     // Disconnect the inspector as part of close so Electron does not wait for
     // its debugger forever. SIGTERM bypasses the interactive quit prompt.
     await Promise.race([
-      Promise.all([closed, app.close(), logSettlements.get(app)?.catch(() => undefined)]),
+      Promise.all([
+        closed,
+        app.close(),
+        logSettlements.get(app)?.then(
+          () => {
+            receipt.logClose = 'closed';
+          },
+          () => {
+            receipt.logClose = 'failed; close unconfirmed';
+          },
+        ),
+      ]),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error('Owned app shutdown exceeded 30s; settlement unknown')),
@@ -186,10 +203,16 @@ async function stopPackagedApp(app: ElectronApplication): Promise<void> {
     const loggingFailure = logFailures.get(app);
     if (loggingFailure) throw loggingFailure;
   } catch (error) {
+    const loggingError = logFailures.get(app);
+    receipt.loggingError = loggingError ? String(loggingError) : null;
+    receipt.observationError = observationError ? String(observationError) : null;
+    receipt.cleanupError =
+      error !== loggingError && error !== observationError ? String(error) : null;
+    const errors = [
+      ...new Set([firstError, loggingError, observationError, error].filter(Boolean)),
+    ];
     primary =
-      observationError && observationError !== error
-        ? new AggregateError([observationError, error], 'Observation and shutdown failed')
-        : error;
+      errors.length > 1 ? new AggregateError(errors, 'Logging/observation/shutdown failed') : error;
     receipt.error = String(primary);
     throw primary;
   } finally {
