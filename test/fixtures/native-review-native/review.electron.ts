@@ -40,16 +40,22 @@ import type {
 const companionDiagnosticGrep =
   '^ review\\.electron\\.ts 10 UI sidebar held child close and original receipts$';
 const companionDiagnosticRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-fixture-metadata-6328';
+const companionDiagnosticArtifactRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-fixture-metadata-artifact-692a7716';
+const companionDiagnosticEnvelopeRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/native-fixture-metadata-6328';
+const companionDiagnosticInheritedRoot =
   '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-companion-clock-6328';
 const companionDiagnosticIdentity = {
-  sourceCommit: '581a3c62a784e6803301b316a2bf7f8c018efb35',
-  parent: '3feca80dbdada0d334f67010a2d971c3e58cc343',
-  sourceTree: '78a10bf7e11a8b0a9da4a2e07ddb580e7e234e41',
-  driverBlob: '33c807f1a255ffa40a1d9fc53ec41edc249d01b7',
-  sourceSha256: 'e35f1d6004d7107f35db10f246e64995aacb69bfc3d3407dbcbecde640684146',
-  executableSha256: '4568a45c687cd734234d021254efe33247871f3336f06570d09c621b20afba94',
-  bytes: 267856512,
-  basename: 'e2e-native-review-wire-581a3c62-x86_64-unknown-linux-gnu',
+  sourceCommit: '692a771667212edfd1040665f76a80ba348acc4f',
+  parent: '581a3c62a784e6803301b316a2bf7f8c018efb35',
+  sourceTree: '8121211b5668ba3c29e5624a07c4d88ed16402fa',
+  driverBlob: 'c7ca01aa837ad0a86d16495b78b716781803edd9',
+  sourceSha256: 'd411554e168c3460899dadbe26b140431f65cd0e5e2511456c21071cb4662519',
+  executableSha256: 'ae30b7369ee705a3b09667bfaf9d04cfdc416d3571e58a2e1f5d5b8be35d2001',
+  bytes: 269130632,
+  basename: 'e2e-native-review-wire-692a7716-x86_64-unknown-linux-gnu',
 };
 export function companionDiagnosticMode(env: NodeJS.ProcessEnv): boolean {
   const value = env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328;
@@ -64,7 +70,8 @@ export async function assertCompanionDiagnosticIdentity(
 ) {
   if (
     driverSource !== join(companionDiagnosticRoot, 'packages/intentd') ||
-    artifactPath !== join(companionDiagnosticRoot, 'artifact', companionDiagnosticIdentity.basename)
+    artifactPath !==
+      join(companionDiagnosticArtifactRoot, 'artifact', companionDiagnosticIdentity.basename)
   )
     throw new Error('Unreleased diagnostic source or executable locator');
   const git = (...args: string[]) =>
@@ -73,6 +80,7 @@ export async function assertCompanionDiagnosticIdentity(
   if (
     git('rev-parse', 'HEAD') !== pin.sourceCommit ||
     git('rev-parse', 'HEAD^') !== pin.parent ||
+    git('rev-list', '--parents', '-n', '1', 'HEAD') !== pin.sourceCommit + ' ' + pin.parent ||
     git('rev-parse', 'HEAD^{tree}') !== pin.sourceTree ||
     git('status', '--porcelain', '--untracked-files=all') !== ''
   )
@@ -98,52 +106,113 @@ export async function assertCompanionDiagnosticIdentity(
     hash(await readFile(artifactPath)) !== pin.executableSha256
   )
     throw new Error('Diagnostic artifact mismatch');
-  const contracts = [
+  const inheritedContracts = [
     [
-      join(companionDiagnosticRoot, 'HANDOFF.json'),
+      join(companionDiagnosticInheritedRoot, 'HANDOFF.json'),
       'c30945dc3f5ca341728aceec8044c0d3023957d978f59870e29ed9b0684c2798',
     ],
     [
-      join(companionDiagnosticRoot, 'CONTRACT-v1.json'),
+      join(companionDiagnosticInheritedRoot, 'CONTRACT-v1.json'),
       '5e1d773d4f5cdd98ac8a2afbe49359315b0d18798bde3353362bc64344ab7577',
     ],
     [
-      join(companionDiagnosticRoot, 'qualification-contract-v3.json'),
+      join(companionDiagnosticInheritedRoot, 'qualification-contract-v3.json'),
       'd7eab6b8e449272b42a2ca68ff72034c579fe33bff925ef06a32b1a21f05e3b3',
     ],
     [
-      join(companionDiagnosticRoot, 'finite-plan-v3.json'),
+      join(companionDiagnosticInheritedRoot, 'finite-plan-v3.json'),
       'f5df33601298a00f7e043f6fb84d51e80540b1387964be9f8d8ac88b9ee921a9',
     ],
     [
-      join(companionDiagnosticRoot, '../native-review-owned-cleanup/CONTROL-CONTRACT.md'),
+      join(companionDiagnosticInheritedRoot, '../native-review-owned-cleanup/CONTROL-CONTRACT.md'),
       'cdddfbff85798cc3b071e0fa8da8f1ba16b6e57d155a9a08433d16972b176f9b',
     ],
     [
-      join(companionDiagnosticRoot, '../repository-native-review-companion/COMPILED-CONTRACT.md'),
+      join(
+        companionDiagnosticInheritedRoot,
+        '../repository-native-review-companion/COMPILED-CONTRACT.md',
+      ),
       '79412b9ae89ecb16886b186715072778f40a8a29f3bcac638d6f124ab46e3612',
+    ],
+  ];
+  const sourceHandoffPath = join(companionDiagnosticEnvelopeRoot, 'HANDOFF.json');
+  const metadataContractPath = join(companionDiagnosticEnvelopeRoot, 'CONTRACT.json');
+  const artifactHandoffPath = join(companionDiagnosticArtifactRoot, 'HANDOFF.json');
+  const sourceHandoffSha256 = 'c3738c1e7702a2eac82b969cd5d39e01b4b414fde28a1512e96815b490aa8661';
+  const contracts = [
+    ...inheritedContracts,
+    [sourceHandoffPath, sourceHandoffSha256],
+    [
+      join(companionDiagnosticEnvelopeRoot, 'MANIFEST.json'),
+      '304659521a30a65945cca15462f7c8a258bfa77a6212e9ecd73e562875c8c7f7',
+    ],
+    [metadataContractPath, 'ab42221bf3a79bdf0f653d89c84fceca8bcc8f9cb2ae83c1c584fa4dff046111'],
+    [artifactHandoffPath, '0f0bb7165420584660e923325af1a7535a3008e51265270e75b93bb96a7db312'],
+    [
+      join(companionDiagnosticArtifactRoot, 'MANIFEST.json'),
+      '6bc0bf57472e0d08e91e2f7c283fd32b647b9bde1fa3387b2de075b62c0b7edb',
     ],
   ];
   for (const [path, expected] of contracts)
     if (hash(await readFile(path)) !== expected)
       throw new Error('Diagnostic contract identity mismatch');
-  const handoff = JSON.parse(await readFile(contracts[0][0], 'utf8'));
+  // The six older contracts retain their original tuple and qualification scope.
+  const inherited = JSON.parse(await readFile(inheritedContracts[0][0], 'utf8'));
+  if (
+    inherited.source.head !== '581a3c62a784e6803301b316a2bf7f8c018efb35' ||
+    inherited.source.soleParent !== '3feca80dbdada0d334f67010a2d971c3e58cc343' ||
+    inherited.source.tree !== '78a10bf7e11a8b0a9da4a2e07ddb580e7e234e41' ||
+    inherited.artifact.artifact.path !==
+      join(
+        companionDiagnosticInheritedRoot,
+        'artifact/e2e-native-review-wire-581a3c62-x86_64-unknown-linux-gnu',
+      ) ||
+    inherited.artifact.artifact.sha256 !==
+      '4568a45c687cd734234d021254efe33247871f3336f06570d09c621b20afba94' ||
+    inherited.artifact.artifact.bytes !== 267856512 ||
+    inherited.artifact.artifact.mode !== '0o555' ||
+    inherited.manifest.sha256 !== '106a6a2bf4e039a523512d2b1afbac55e94b7bb10964a52bab0d7b2e82d2acf7'
+  )
+    throw new Error('Inherited diagnostic handoff binding mismatch');
+  const handoff = JSON.parse(await readFile(artifactHandoffPath, 'utf8'));
+  const sourceHandoff = JSON.parse(await readFile(sourceHandoffPath, 'utf8'));
+  const metadata = JSON.parse(await readFile(metadataContractPath, 'utf8'));
   if (
     handoff.source.head !== pin.sourceCommit ||
-    handoff.source.soleParent !== pin.parent ||
+    handoff.source.parent !== pin.parent ||
     handoff.source.tree !== pin.sourceTree ||
-    handoff.artifact.artifact.path !== artifactPath ||
-    handoff.artifact.artifact.sha256 !== pin.executableSha256 ||
-    handoff.artifact.artifact.bytes !== pin.bytes ||
-    handoff.artifact.artifact.mode !== '0o555' ||
-    handoff.manifest.sha256 !== '106a6a2bf4e039a523512d2b1afbac55e94b7bb10964a52bab0d7b2e82d2acf7'
+    handoff.source.root !== driverSource ||
+    handoff.source.acceptedSourceEnvelope !== companionDiagnosticEnvelopeRoot ||
+    handoff.source.acceptedSourceHandoffSha256 !== sourceHandoffSha256 ||
+    handoff.artifact.path !== artifactPath ||
+    handoff.artifact.sha256 !== pin.executableSha256 ||
+    handoff.artifact.bytes !== pin.bytes ||
+    handoff.artifact.mode !== '0o555' ||
+    sourceHandoff.head !== pin.sourceCommit ||
+    sourceHandoff.parent !== pin.parent ||
+    sourceHandoff.tree !== pin.sourceTree ||
+    sourceHandoff.checkout !== driverSource ||
+    sourceHandoff.contract !== 'CONTRACT.json' ||
+    metadata.version !== 'owned-fixture-metadata/1' ||
+    metadata.sourceHead !== pin.sourceCommit ||
+    metadata.parent !== pin.parent ||
+    metadata.sourceTree !== pin.sourceTree ||
+    metadata.partition[fixture].post.mode !== '100644' ||
+    metadata.partition[fixture].post.blob !== pin.driverBlob ||
+    metadata.partition[fixture].post.sha256 !== pin.sourceSha256 ||
+    metadata.fixtureRegistration.system !== 'StatusOnly' ||
+    metadata.fixtureRegistration.pairing !== 'LocalInfoOnly' ||
+    JSON.stringify(metadata.fixtureRegistration.methods) !==
+      JSON.stringify(['system.status', 'server.pairingInfo']) ||
+    metadata.inheritedABI !==
+      '10.13/nativeReviewCompanion:1; native/control/observer DTOs unchanged'
   )
     throw new Error('Diagnostic handoff binding mismatch');
   return {
     pin,
     contracts,
     qualification:
-      'four b908 + A-prime 3feca + B 581a; post-project comparator untested; historical pending wording unchanged',
+      '52 staged metadata controls on recorded v2/v3 inputs; inherited four b908 + A-prime 3feca + B 581a; post-project comparator UNTESTED; historical pending wording unchanged; no native-runtime claim',
   };
 }
 
