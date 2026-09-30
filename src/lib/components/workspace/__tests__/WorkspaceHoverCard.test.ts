@@ -21,7 +21,6 @@ import {
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
 import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-import type { StoreState } from '$store/renderer/types';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
 
