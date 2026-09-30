@@ -1388,6 +1388,197 @@ if (sidebarMode && process.env.TEST_WORKER_INDEX === undefined) {
   process.env.NATIVE_REVIEW_SIDEBAR_SELECTION = JSON.stringify(originalSelection);
 }
 let bundle: string;
+
+/** Owns diagnostic setup only; admission closure is not cancellation. */
+function createCompanionSetupOwner(failed: () => boolean, persist: (value: unknown) => void) {
+  const id = randomUUID();
+  const origin = process.hrtime.bigint();
+  const rows: Array<{ sequence: number; elapsedNs: string; phase: string; kind: string }> = [];
+  let sequence = 0;
+  let dropped = 0;
+  let writesFailed = 0;
+  let closed = false;
+  let ready = false;
+  let allocated: string | undefined;
+  let original: Promise<void> | undefined;
+  let settlement: 'pending' | 'fulfilled' | 'rejected' = 'pending';
+  let primary: { error: unknown } | undefined;
+  let child: ChildProcess | undefined;
+  let childClose: Promise<void> | undefined;
+  let childTerminal: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+  let archive: Promise<unknown> | undefined;
+  let archiveState: 'unattempted' | 'pending' | 'fulfilled' | 'rejected' = 'unattempted';
+  let cleanup: Promise<void> | undefined;
+  let removal: 'unattempted' | 'pending' | 'fulfilled' | 'rejected' = 'unattempted';
+  const snapshot = () => ({
+    version: 1,
+    id,
+    workerPid: process.pid,
+    clock: 'process.hrtime.bigint',
+    originNs: origin.toString(),
+    bundle: allocated ? basename(allocated) : null,
+    closed,
+    ready,
+    settlement,
+    archive: archiveState,
+    removal,
+    child: child
+      ? { pid: child.pid ?? null, parentPid: process.pid, terminal: childTerminal ?? null }
+      : null,
+    sequence,
+    dropped,
+    writesFailed,
+    complete:
+      settlement === 'fulfilled' &&
+      ready &&
+      (!child || !!childTerminal) &&
+      archiveState !== 'pending' &&
+      archiveState !== 'rejected' &&
+      removal === 'fulfilled' &&
+      dropped === 0 &&
+      writesFailed === 0,
+    cancellationObserved: false,
+    rows: rows.map((row) => ({ ...row })),
+  });
+  const observe = (phase: string, kind = 'observed') => {
+    sequence++;
+    if (rows.length < 128)
+      rows.push({
+        sequence,
+        elapsedNs: (process.hrtime.bigint() - origin).toString(),
+        phase,
+        kind,
+      });
+    else dropped++;
+    try {
+      persist(snapshot());
+    } catch {
+      writesFailed++;
+    }
+  };
+  const failureKind = (error: unknown) =>
+    error instanceof Error ? 'Error' : error === null ? 'null' : typeof error;
+  const admit = (phase: string) => {
+    if (failed()) closed = true;
+    if (closed) {
+      observe(phase, 'admission-refused');
+      throw new Error('Diagnostic setup admission closed');
+    }
+    if (dropped || writesFailed) throw new Error('Diagnostic setup evidence incomplete');
+    observe(phase, 'entered');
+  };
+  return {
+    snapshot,
+    observe,
+    admit,
+    run(body: () => Promise<void>) {
+      if (original) throw new Error('Diagnostic setup already started');
+      observe('setup', 'entered');
+      original = body();
+      // Observe the same promise without replacing the caller's value or error.
+      void original.then(
+        () => {
+          settlement = 'fulfilled';
+          observe('setup', 'fulfilled');
+        },
+        (error: unknown) => {
+          primary = { error };
+          settlement = 'rejected';
+          observe('setup', failureKind(error));
+        },
+      );
+      return original;
+    },
+    allocated(path: string) {
+      if (allocated) throw new Error('Diagnostic setup allocated twice');
+      allocated = path;
+      observe('allocation', 'fulfilled');
+    },
+    child(builder: ChildProcess) {
+      if (child) throw new Error('Diagnostic setup child already owned');
+      child = builder;
+      childClose = new Promise<void>((resolveClose) => {
+        builder.once('close', (code, signal) => {
+          childTerminal = { code, signal };
+          observe('kit-child', 'close');
+          resolveClose();
+        });
+      });
+      observe('kit-child', 'spawned');
+    },
+    archive(action: () => Promise<unknown>) {
+      if (archive) return archive;
+      archiveState = 'pending';
+      observe('failure-archive', 'entered');
+      archive = action();
+      void archive.then(
+        () => {
+          archiveState = 'fulfilled';
+          observe('failure-archive', 'fulfilled');
+        },
+        (error: unknown) => {
+          archiveState = 'rejected';
+          observe('failure-archive', failureKind(error));
+        },
+      );
+      return archive;
+    },
+    publish() {
+      admit('ready');
+      ready = true;
+      observe('ready', 'published');
+      if (dropped || writesFailed) throw new Error('Diagnostic setup evidence incomplete');
+    },
+    retire(remove: (path: string) => Promise<void>) {
+      if (cleanup) return cleanup;
+      closed = true;
+      observe('cleanup', 'admission-closed');
+      cleanup = (async () => {
+        if (!original) throw new Error('Diagnostic setup owner missing');
+        try {
+          await original;
+        } catch (error) {
+          primary ??= { error };
+        }
+        // Spawn failure can reject the setup before the actual close event.
+        if (childClose) await childClose;
+        if (archive) {
+          try {
+            await archive;
+          } catch {
+            // Preserve available files if failure retention itself did not finish.
+          }
+        }
+        observe('cleanup', 'originals-joined');
+        if (archiveState === 'rejected') {
+          observe('cleanup', 'archive-incomplete');
+          if (primary) throw primary.error;
+          throw new Error('Diagnostic setup archive incomplete');
+        }
+        if (allocated) {
+          removal = 'pending';
+          observe('removal', 'entered');
+          try {
+            await remove(allocated);
+            removal = 'fulfilled';
+            observe('removal', 'fulfilled');
+          } catch (error) {
+            removal = 'rejected';
+            observe('removal', failureKind(error));
+            if (primary) throw primary.error;
+            throw error;
+          }
+        }
+        if (primary) throw primary.error;
+        if (dropped || writesFailed) throw new Error('Diagnostic setup evidence incomplete');
+      })();
+      return cleanup;
+    },
+  };
+}
+let setupOwner: ReturnType<typeof createCompanionSetupOwner> | undefined;
+let setupEvidenceReady = false;
+
 const python = '/usr/bin/python3';
 const hash = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const record = (dir: string, name: string, value: unknown) =>
@@ -2055,10 +2246,12 @@ export default {
   record(evidence!, 'kit-generated-inputs', inputs);
   // Kit's post-build workers rediscover Vite config from cwd. The original child
   // owns that cwd for every phase, without changing this worker or the application.
+  setupOwner?.admit('kit-child');
   const builder = spawn(process.execPath, [join(scaffold, 'build.mjs')], {
     cwd: scaffold,
     stdio: 'inherit',
   });
+  setupOwner?.child(builder);
   const terminal = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
       builder.once('error', reject);
@@ -2074,6 +2267,8 @@ export default {
     waitedOriginalChild: true,
   });
   if (terminal.code !== 0 || terminal.signal) throw new Error('Original Kit build child failed');
+  setupOwner?.observe('kit-child', 'original-wait-fulfilled');
+  setupOwner?.observe('kit-final-retention', 'entered');
   // Post-build files may differ from generateBundle graph-stage digests.
   for (const side of ['client', 'server']) {
     const folder = join(scaffold, '.kit/output', side);
@@ -2104,6 +2299,7 @@ export default {
     record(evidence!, 'kit-' + side + '-final-closure', final);
   }
 
+  setupOwner?.observe('kit-final-retention', 'fulfilled');
   const compiled: Array<{
     id: string;
     renderedLength: number;
@@ -2298,10 +2494,13 @@ export default {
   const manifest = { version: 1, entry: '/index.html', assets, total };
   record(output, 'asset-manifest', manifest);
   record(evidence!, 'asset-manifest', manifest);
+  setupOwner?.observe('kit-served-retention', 'fulfilled');
 }
 
-test.beforeAll(async () => {
+async function prepareNativeFixture() {
   await mkdir(evidence!, { recursive: true, mode: 0o700 });
+  setupEvidenceReady = true;
+  setupOwner?.admit('identity');
   if (sidebarMode) {
     const info = test.info();
     if (
@@ -2372,7 +2571,10 @@ test.beforeAll(async () => {
     rendererHash: hash(activeRenderer),
   });
   try {
+    setupOwner?.admit('allocation');
     bundle = await mkdtemp(join(tmpdir(), 'native-review-electron-code-'));
+    setupOwner?.allocated(bundle);
+    setupOwner?.admit('bootstrap');
     await symlink(await realpath(join(root, 'node_modules')), join(bundle, 'node_modules'));
     await writeFile(join(bundle, 'pipe-controller.py'), pipeController, { mode: 0o600 });
     await writeFile(join(evidence!, 'pipe-controller.py'), pipeController, { mode: 0o600 });
@@ -2392,6 +2594,7 @@ test.beforeAll(async () => {
       ['test/fixtures/native-review-native/main.ts', 'main.mjs'],
       ['src/preload/index.ts', 'preload.cjs'],
     ]) {
+      setupOwner?.admit(name);
       await build({
         configFile: false,
         logLevel: 'error',
@@ -2409,10 +2612,13 @@ test.beforeAll(async () => {
           },
         },
       });
+      setupOwner?.observe(name, 'build-fulfilled');
+      setupOwner?.admit('main-output');
       await copyFile(join(bundle, name), join(evidence!, name));
     }
     // Reuse the application's exact renderer resolution, including its existing
     // icon compatibility mappings; do not replace components or install packages.
+    setupOwner?.admit('renderer-config');
     const appConfig = uiMode
       ? await loadConfigFromFile(
           { command: 'build', mode: 'production' },
@@ -2432,6 +2638,7 @@ test.beforeAll(async () => {
           'Unchanged application resolution and defines only; fixture owns its build plugins and entry',
       });
     if (uiMode) {
+      setupOwner?.admit('kit');
       await buildKitFixture(appConfig!.config);
     } else {
       await build({
@@ -2471,6 +2678,7 @@ test.beforeAll(async () => {
       });
       await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
     }
+    setupOwner?.admit('compiled');
     record(
       evidence!,
       'compiled',
@@ -2488,6 +2696,7 @@ test.beforeAll(async () => {
     if (uiMode) {
       // Each worker owns a separate build. Keep its actual bytes before a later
       // failed worker can overwrite the shared diagnostic paths.
+      setupOwner?.admit('epoch');
       const epoch = join(evidence!, 'build-epochs', basename(bundle));
       await mkdir(epoch, { recursive: true });
       for (const name of [
@@ -2532,10 +2741,14 @@ test.beforeAll(async () => {
         specSha256: hash(await readFile(fileURLToPath(import.meta.url))),
       });
     }
+    setupOwner?.publish();
   } catch (error) {
     if (diagnosticMode && bundle) {
       try {
-        await retainCompanionBundle(bundle, join(evidence!, 'failed-build', basename(bundle)));
+        const archive = () =>
+          retainCompanionBundle(bundle, join(evidence!, 'failed-build', basename(bundle)));
+        if (setupOwner) await setupOwner.archive(archive);
+        else await archive();
       } catch (archiveError) {
         try {
           record(evidence!, 'failed-build-archive-error', String(archiveError));
@@ -2546,8 +2759,23 @@ test.beforeAll(async () => {
     }
     throw error;
   }
+}
+test.beforeAll(() => {
+  if (!diagnosticMode) return prepareNativeFixture();
+  const info = test.info();
+  setupOwner = createCompanionSetupOwner(
+    () => info.status !== 'passed' || info.errors.length > 0,
+    (value) => {
+      if (setupEvidenceReady) record(evidence!, 'setup-ownership', value);
+    },
+  );
+  return setupOwner.run(prepareNativeFixture);
 });
 test.afterAll(async () => {
+  if (diagnosticMode && setupOwner) {
+    await setupOwner.retire((path) => rm(path, { recursive: true, force: true }));
+    return;
+  }
   if (bundle) await rm(bundle, { recursive: true, force: true });
 });
 
