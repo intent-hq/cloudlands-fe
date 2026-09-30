@@ -500,8 +500,16 @@ function recordPoolError(owner: PoolOwner | undefined, error: unknown): void {
 }
 
 function poolAuxiliary(kind: string): void {
-  poolLifecycle?.exclusions.add(kind);
-  poolChanged();
+  const scope = poolLifecycle;
+  if (!scope) return;
+  scope.exclusions.add(kind);
+  if (scope.phase === 'sealed' || scope.phase === 'finished') {
+    const error = new Error('Auxiliary pool work after admission sealed');
+    scope.failures.push({ kind: 'auxiliary', error });
+    poolChanged(scope);
+    throw error;
+  }
+  poolChanged(scope);
 }
 
 function poolClient(owner: PoolOwner | undefined, client: JsonRpcClient): JsonRpcClient {
@@ -595,12 +603,13 @@ export function enrollBackendClientLifecycle() {
             );
             const forced = finalClientFailures.some((f) => f.kind === 'forced');
             const ownershipFault =
+              scope.exclusions.size > 0 ||
               scope.failures.some((f) => f.kind !== 'original') ||
               finalClientFailures.some((f) => ['late', 'unknown', 'close'].includes(f.kind));
             resolve(
               Object.freeze({
                 scope: scope.scope,
-                ownersJoined: true,
+                ownersJoined: scope.exclusions.size === 0,
                 admissionSealed: true,
                 outcome: forced
                   ? 'forced'
