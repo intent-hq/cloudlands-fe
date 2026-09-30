@@ -5,6 +5,7 @@ import {
   test,
   type ElectronApplication,
   type Page,
+  type TestInfo,
 } from '@playwright/test';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -26,6 +27,7 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, join, resolve, posix } from 'node:path';
 import { tmpdir } from 'node:os';
+import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { build, loadConfigFromFile, type Plugin, type UserConfig } from 'vite';
 import type { Fixture, Ready, WireRecord } from './main';
@@ -37,8 +39,81 @@ import type {
 } from '../../../src/shared/types/native-review-operation';
 
 // Private companion diagnostics are evidence, never continuation authority.
-const companionDiagnosticGrep =
-  '^ review\\.electron\\.ts 10 UI sidebar held child close and original receipts$';
+const companionDiagnosticProfiles = Object.freeze([
+  Object.freeze({
+    index: 8,
+    title: '09 UI sidebar staged commit and child creation',
+    grep: '^ review\\.electron\\.ts 09 UI sidebar staged commit and child creation$',
+    parentPacket: 'sidebar-owner-committed',
+    nestedParent: true,
+    outcomePacket: 'sidebar-owner-created',
+    outcome: 'created',
+    posts: 1,
+    memberTransition: false,
+  } as const),
+  Object.freeze({
+    index: 9,
+    title: '10 UI sidebar held child close and original receipts',
+    grep: '^ review\\.electron\\.ts 10 UI sidebar held child close and original receipts$',
+    parentPacket: 'sidebar-held-parent',
+    nestedParent: false,
+    outcomePacket: 'sidebar-child-original-after-close',
+    outcome: 'reused',
+    posts: 0,
+    memberTransition: false,
+  } as const),
+  Object.freeze({
+    index: 10,
+    title: '11 UI sidebar Member reuse and Guest refusal',
+    grep: '^ review\\.electron\\.ts 11 UI sidebar Member reuse and Guest refusal$',
+    parentPacket: 'sidebar-member-parent',
+    nestedParent: false,
+    outcomePacket: 'sidebar-member-reused',
+    outcome: 'reused',
+    posts: 0,
+    memberTransition: true,
+  } as const),
+]);
+type CompanionDiagnosticProfile = (typeof companionDiagnosticProfiles)[number];
+
+function selectCompanionDiagnosticProfile(argv: string[]): CompanionDiagnosticProfile {
+  const greps = argv.flatMap((arg, index) =>
+    arg === '--grep' ? [argv[index + 1]] : arg.startsWith('--grep=') ? [arg.slice(7)] : [],
+  );
+  const profile = companionDiagnosticProfiles.find((candidate) => candidate.grep === greps[0]);
+  if (greps.length !== 1 || !profile)
+    throw new Error('Exactly one original diagnostic sidebar title required');
+  return profile;
+}
+
+function assertCompanionDiagnosticSelection(
+  profile: CompanionDiagnosticProfile,
+  env: NodeJS.ProcessEnv,
+  argv: string[],
+  info: Pick<
+    TestInfo,
+    'title' | 'workerIndex' | 'parallelIndex' | 'repeatEachIndex' | 'config' | 'project' | 'retry'
+  >,
+  index: number,
+) {
+  if (
+    !companionDiagnosticMode(env) ||
+    !assertSidebarSelection(env, argv) ||
+    selectCompanionDiagnosticProfile(argv) !== profile ||
+    index !== profile.index ||
+    info.title !== profile.title ||
+    info.workerIndex !== 0 ||
+    info.parallelIndex !== 0 ||
+    info.repeatEachIndex !== 0 ||
+    info.config.workers !== 1 ||
+    info.project.retries !== 0 ||
+    info.project.repeatEach !== 1 ||
+    info.retry !== 0 ||
+    !info.config.argv ||
+    !isDeepStrictEqual(info.config.argv.slice(2), argv)
+  )
+    throw new Error('Original diagnostic profile/title/worker/index mismatch');
+}
 const companionDiagnosticRoot =
   '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-fixture-metadata-6328';
 const companionDiagnosticArtifactRoot =
@@ -1331,10 +1406,324 @@ function assertDirectStatusOwners(
 }
 
 /** Validates the original aggregate API result; no generation-to-socket identity is invented. */
+async function readCompanionPacket(directory: string, name: string) {
+  if (!/^sidebar-[a-z-]+$/.test(name)) throw new Error('Unreleased sidebar packet');
+  const path = join(directory, name + '.json');
+  const before = await lstat(path);
+  if (
+    !before.isFile() ||
+    before.isSymbolicLink() ||
+    (before.mode & 0o777) !== 0o600 ||
+    before.size > 32 * 1024 * 1024
+  )
+    throw new Error('Incomplete private sidebar packet');
+  const bytes = await readFile(path);
+  const after = await lstat(path);
+  if (
+    before.ino !== after.ino ||
+    before.dev !== after.dev ||
+    before.mtimeMs !== after.mtimeMs ||
+    bytes.length !== before.size ||
+    after.size !== before.size
+  )
+    throw new Error('Original sidebar packet changed during read');
+  return companionMainObject(JSON.parse(bytes.toString('utf8')));
+}
+
+async function retainCompanionMemberDisposal(directory: string, destination: string) {
+  const name = 'sidebar-member-original-disposal';
+  const value = await readCompanionPacket(directory, name);
+  const bytes = await readFile(join(directory, name + '.json'));
+  if (!isDeepStrictEqual(JSON.parse(bytes.toString('utf8')), value))
+    throw new Error('Original Member receipt changed before retention');
+  await writeFile(join(destination, 'final-' + name + '.json'), bytes, { flag: 'wx', mode: 0o600 });
+  record(destination, 'member-disposal-retention', {
+    name: name + '.json',
+    bytes: bytes.length,
+    sha256: hash(bytes),
+    mode: 0o600,
+    originalLocation: 'body-owned evidence root',
+    scope: 'nonfinal original renderer/root/ledger receipt',
+  });
+  return value;
+}
+
+function companionDiagnosticParent(profile: CompanionDiagnosticProfile, packet: unknown) {
+  companionMainRequire(companionDiagnosticProfiles.includes(profile), 'original immutable profile');
+  const value = companionMainObject(companionMainObject(packet).value);
+  const parent = companionMainObject(profile.nestedParent ? value.parent : value);
+  companionMainRequire(
+    parent.owner?.attemptId === parent.attemptId &&
+      typeof parent.attemptId === 'string' &&
+      !!parent.retained?.execute,
+    'profile original parent',
+  );
+  return parent;
+}
+
+function assertCompanionDiagnosticOutcome(
+  profile: CompanionDiagnosticProfile,
+  packet: unknown,
+  parent: Record<string, any>,
+  correlation: ReturnType<typeof correlateCompanionDiagnostics>,
+) {
+  companionMainRequire(
+    companionDiagnosticProfiles.includes(profile) && profile.index !== 9,
+    'creation or Member outcome profile',
+  );
+  const saved = companionMainObject(packet),
+    value = companionMainObject(saved.value);
+  const result = companionMainObject(value.result),
+    original = result.retained?.execute;
+  const preparation = original?.reviewExecution?.preparation;
+  companionMainRequire(
+    isDeepStrictEqual(value.parent, parent) &&
+      result.attemptId === result.owner?.attemptId &&
+      result.attemptId !== parent.attemptId &&
+      ['root', 'admission', 'hostContext'].every((key) =>
+        isDeepStrictEqual(result.owner[key], parent.owner[key]),
+      ) &&
+      isDeepStrictEqual(parent.owner, correlation.parent.owner) &&
+      preparation?.operationId === correlation.child.returnedOperationId &&
+      preparation.operationId === correlation.child.allocatedOperationId &&
+      preparation.operationId !== correlation.parent.operationId &&
+      isDeepStrictEqual(preparation.root, parent.owner.root) &&
+      preparation.scope.daemonId === correlation.parent.daemonId &&
+      original.operationId === preparation.operationId &&
+      original.state === 'settled' &&
+      original.success === true &&
+      original.reviewExecution.requestId === preparation.operationId &&
+      original.reviewExecution.outcome.status === profile.outcome &&
+      isDeepStrictEqual(original.reviewExecution.gitReceipts, []) &&
+      original.reviewExecution.publication.state === 'local-ahead' &&
+      saved.hosts?.length === 2 &&
+      saved.hosts[0].effects.posts === profile.posts &&
+      saved.hosts.every((host: any) => host.effects.pushes === 0),
+    'original case outcome and local-versus-remote effects',
+  );
+  const rows = companionMainObject(value.renderer).attempts;
+  companionMainRequire(
+    Array.isArray(rows) && rows.filter((row: any) => isDeepStrictEqual(row, result)).length === 1,
+    'original rendered child',
+  );
+  const source = companionMainObject(saved.source);
+  const calls = source.completions.filter(
+    (call: any) =>
+      call.layer === 'client' &&
+      call.captured === true &&
+      call.method === 'accept-changes.execute' &&
+      call.params?.review?.operationId === preparation.operationId,
+  );
+  const ipc = source.ipcRecords.filter(
+    (call: any) =>
+      call.main === true &&
+      call.channel === 'backend:native-review:execute' &&
+      call.args?.[0]?.id === correlation.child.handle,
+  );
+  companionMainRequire(
+    calls.length === 1 &&
+      calls[0].state === 'fulfilled' &&
+      isDeepStrictEqual(calls[0].value, original) &&
+      correlation.links.filter(
+        (link) =>
+          link.callId === calls[0].callId &&
+          link.operation === preparation.operationId &&
+          link.socketId === calls[0].socketId &&
+          link.state === 'fulfilled' &&
+          !link.publicError,
+      ).length === 1 &&
+      ipc.length === 1 &&
+      ipc[0].sender === correlation.parent.sender &&
+      ipc[0].frame === correlation.parent.frame &&
+      ipc[0].result?.ok === true &&
+      isDeepStrictEqual(ipc[0].result.result.execute, original),
+    'original child result transfer',
+  );
+  return {
+    profile: profile.title,
+    outcome: profile.outcome,
+    posts: profile.posts,
+    parent: correlation.parent.operationId,
+    child: preparation.operationId,
+    submittedPayloadEquality: 'not asserted',
+    remoteHeadEquality: 'not asserted',
+  };
+}
+
+function assertCompanionMemberTransition(
+  source: Record<string, any>,
+  finalReceipt: Record<string, any>,
+  input: { disposal: unknown; member: unknown; before: unknown; denied: unknown },
+) {
+  const receipt = companionMainObject(input.disposal, ['producers', 'joined']);
+  const member = companionMainObject(input.member),
+    before = companionMainObject(input.before),
+    denied = companionMainObject(input.denied);
+  const journal = companionMainJournal(source.statusProducers);
+  const roots = journal.filter(
+    (row) => row.phase === 'renderer-roots-joined' && row.seal === false,
+  );
+  const ledgers = journal.filter(
+    (row) => row.phase === 'ledger-join-return' && row.sealed === false,
+  );
+  companionMainRequire(
+    roots.length === 1 && ledgers.length === 1 && ledgers[0].sequence === roots[0].sequence + 1,
+    'one ordered original Member join',
+  );
+  const joined = companionMainObject(receipt.joined, [
+    'producersClosed',
+    'pending',
+    'sealed',
+    'rows',
+  ]);
+  companionMainRequire(
+    joined.producersClosed === true &&
+      joined.pending === 0 &&
+      joined.sealed === false &&
+      Number.isSafeInteger(joined.rows) &&
+      joined.rows > 0 &&
+      joined.rows < source.completions.length &&
+      ['producersClosed', 'pending', 'sealed', 'rows'].every(
+        (key) => joined[key] === ledgers[0][key],
+      ),
+    'exact intermediate unsealed row count',
+  );
+  companionMainRequire(
+    Array.isArray(receipt.producers) && receipt.producers.length === 2,
+    'two intermediate original roots',
+  );
+  const names = [
+    'connectionsSaga',
+    'daemonEventsSaga',
+    'principalSaga',
+    'lifecycleReadSaga',
+    'repositoryContextSaga',
+    'gitReadSaga',
+    'acceptChangesStatusSaga',
+  ];
+  const producers = new Map<string, Record<string, any>>(),
+    senders = new Set<number>();
+  for (const raw of receipt.producers) {
+    const producer = companionMainObject(raw, ['key', 'sender', 'receipt']),
+      r = companionMainObject(producer.receipt);
+    companionMainRequire(
+      ['host-A', 'local-B'].includes(producer.key) &&
+        !producers.has(producer.key) &&
+        Number.isSafeInteger(producer.sender) &&
+        producer.sender > 0 &&
+        !senders.has(producer.sender) &&
+        r.route?.startupSettled === true &&
+        r.route.closed === true &&
+        r.producersClosed === true &&
+        isDeepStrictEqual(r.faults, []) &&
+        Array.isArray(r.tasks) &&
+        r.tasks.length === 7 &&
+        names.every(
+          (name) =>
+            r.tasks.filter(
+              (task: any) =>
+                task.name === name && task.iteratorDone === true && task.joined === true,
+            ).length === 1,
+        ),
+      'exact intermediate seven-root receipt',
+    );
+    producers.set(producer.key, producer);
+    senders.add(producer.sender);
+  }
+  const finalA = finalReceipt.producers.find((producer: any) => producer.key === 'host-A');
+  const finalB = finalReceipt.producers.find((producer: any) => producer.key === 'local-B');
+  const original = producers.get('host-A')!,
+    local = producers.get('local-B')!;
+  const originalState = companionMainObject(original.receipt.final);
+  const next = companionMainObject(finalA?.receipt.final);
+  const memberState = companionMainObject(member.value?.renderer);
+  const guest = companionMainObject(before.value),
+    refused = companionMainObject(denied.value);
+  const identity = (state: Record<string, any>) => ({
+    role: state.role,
+    admission: state.admission,
+    workspaceAdmission: state.workspaceAdmission,
+    windowBackendId: state.windowBackendId,
+    workspaces: state.workspaces,
+  });
+  companionMainRequire(
+    original.sender === finalA?.sender &&
+      isDeepStrictEqual(local, finalB) &&
+      originalState.role === 'member' &&
+      next.role === 'guest' &&
+      typeof originalState.admission === 'string' &&
+      originalState.admission.length > 0 &&
+      typeof next.admission === 'string' &&
+      next.admission.length > 0 &&
+      originalState.admission !== next.admission &&
+      originalState.windowBackendId !== next.windowBackendId &&
+      originalState.workspaceAdmission === originalState.admission &&
+      next.workspaceAdmission === next.admission &&
+      isDeepStrictEqual(identity(originalState), identity(memberState)) &&
+      isDeepStrictEqual(identity(next), identity(guest)) &&
+      isDeepStrictEqual(identity(next), identity(refused)) &&
+      originalState.workspaces.length === 1 &&
+      next.workspaces.length === 1 &&
+      originalState.workspaces[0].id === next.workspaces[0].id,
+    'original Member to fresh Guest document and cached local root receipt',
+  );
+  const prefix = source.completions.slice(0, joined.rows);
+  companionMainRequire(
+    prefix.every(
+      (row: any, i: number) =>
+        row.sequence === i && ['fulfilled', 'rejected', 'thrown'].includes(row.state),
+    ),
+    'joined original ledger prefix',
+  );
+  for (const packet of [before, denied]) {
+    const saved = companionMainObject(packet.source),
+      rows = companionMainJournal(saved.statusProducers);
+    companionMainRequire(
+      isDeepStrictEqual(saved.faults, []) &&
+        isDeepStrictEqual(saved.completionFaults, []) &&
+        rows.length >= ledgers[0].sequence &&
+        rows.length < journal.length &&
+        rows.every((row, i) => isDeepStrictEqual(row, journal[i])) &&
+        Array.isArray(saved.completions) &&
+        saved.completions.length > joined.rows &&
+        isDeepStrictEqual(saved.completions.slice(0, joined.rows), prefix),
+      'original unsealed prefix before fresh Guest work',
+    );
+  }
+  const memberRows = companionMainJournal(companionMainObject(member.source).statusProducers);
+  companionMainRequire(
+    memberRows.length < roots[0].sequence &&
+      memberRows.every((row, i) => isDeepStrictEqual(row, journal[i])),
+    'Member body precedes its original root join',
+  );
+  const native = (packet: Record<string, any>) =>
+    packet.source.records.filter(
+      (row: any) =>
+        row.direction === 'request' &&
+        /^accept-changes\.(prepare|execute|reconcile)$/.test(row.envelope.method),
+    );
+  companionMainRequire(
+    isDeepStrictEqual(native(before), native(denied)) &&
+      before.hosts?.length === 2 &&
+      denied.hosts?.length === 2 &&
+      before.hosts.every((host: any, i: number) =>
+        isDeepStrictEqual(host.effects, denied.hosts[i].effects),
+      ),
+    'original Guest no added commands or effects',
+  );
+  return {
+    roots: roots[0].sequence,
+    ledger: ledgers[0].sequence,
+    rows: joined.rows,
+    localReceipt: 'original cached receipt, not fresh work',
+  };
+}
+
 export function assertCompanionMainOwnership(
   value: unknown,
   quiescence: unknown,
   activationJournal: unknown,
+  memberTransition?: { disposal: unknown; member: unknown; before: unknown; denied: unknown },
 ) {
   const source = companionMainObject(value);
   companionMainRequire(JSON.stringify(source).length <= 32 * 1024 * 1024, 'main evidence bound');
@@ -1422,6 +1811,11 @@ export function assertCompanionMainOwnership(
         'original root join',
       );
   }
+  const intermediate = memberTransition
+    ? assertCompanionMemberTransition(source, receipt, memberTransition)
+    : undefined;
+  let intermediateRoots = false,
+    intermediateLedger = false;
   const calls = new Map<string, Record<string, any>>(),
     settled = new Set<string>(),
     closed = new Set<string>();
@@ -1504,6 +1898,12 @@ export function assertCompanionMainOwnership(
       if (row.seal) {
         companionMainRequire(!roots, 'duplicate final root join');
         roots = row.sequence;
+      } else {
+        companionMainRequire(
+          intermediate && !intermediateRoots && !roots && row.sequence === intermediate.roots,
+          'matched nonfinal Member root join',
+        );
+        intermediateRoots = true;
       }
     } else if (row.phase === 'pool-retirement') {
       companionMainObject(row, [
@@ -1567,6 +1967,22 @@ export function assertCompanionMainOwnership(
       retirement = row.sequence;
     } else if (row.phase === 'ledger-join-return') {
       companionMainObject(row, [...base, 'producersClosed', 'pending', 'sealed', 'rows']);
+      if (row.sealed === false) {
+        companionMainRequire(
+          intermediate &&
+            intermediateRoots &&
+            !intermediateLedger &&
+            !roots &&
+            !retirement &&
+            row.sequence === intermediate.ledger &&
+            row.producersClosed === true &&
+            row.pending === 0 &&
+            row.rows === intermediate.rows,
+          'matched unsealed Member ledger',
+        );
+        intermediateLedger = true;
+        continue;
+      }
       companionMainRequire(
         retirement &&
           !ledger &&
@@ -1592,6 +2008,10 @@ export function assertCompanionMainOwnership(
   companionMainRequire(
     roots > 0 && retirement > roots && ledger > retirement && ledger === rows.length,
     'complete ordered final ownership evidence',
+  );
+  companionMainRequire(
+    !intermediate || (intermediateRoots && intermediateLedger),
+    'Member phase consumed',
   );
   assertDirectStatusOwners(rows, calls);
   return {
@@ -1655,7 +2075,8 @@ export function assertSidebarSelection(env: NodeJS.ProcessEnv, argv: string[]): 
     );
   if (
     values('--grep').length !== 1 ||
-    values('--grep')[0] !== (diagnostic ? companionDiagnosticGrep : sidebarGrep) ||
+    values('--grep')[0] !==
+      (diagnostic ? selectCompanionDiagnosticProfile(argv).grep : sidebarGrep) ||
     argv.some(
       (arg) =>
         arg.startsWith('-g') ||
@@ -1686,6 +2107,9 @@ const originalSelection =
 if (!Array.isArray(originalSelection) || !originalSelection.every((arg) => typeof arg === 'string'))
   throw new Error('Original CLI selection missing');
 const sidebarMode = assertSidebarSelection(process.env, originalSelection);
+const diagnosticProfile = diagnosticMode
+  ? selectCompanionDiagnosticProfile(originalSelection)
+  : undefined;
 if (sidebarMode && process.env.TEST_WORKER_INDEX === undefined) {
   if (process.env.NATIVE_REVIEW_SIDEBAR_SELECTION)
     throw new Error('Inherited CLI must originate in this runner');
@@ -2809,7 +3233,7 @@ async function prepareNativeFixture() {
     const info = test.info();
     if (
       !(diagnosticMode
-        ? info.title === sidebarGroups[1][0]
+        ? info.title === diagnosticProfile!.title
         : sidebarGroups.some(([title]) => title === info.title)) ||
       (diagnosticMode &&
         (info.workerIndex !== 0 ||
@@ -2824,9 +3248,17 @@ async function prepareNativeFixture() {
       info.retry !== 0
     )
       throw new Error('Actual sidebar title/worker/retry differs from the original CLI selection');
+    if (diagnosticProfile)
+      assertCompanionDiagnosticSelection(
+        diagnosticProfile,
+        process.env,
+        originalSelection,
+        info,
+        diagnosticProfile.index,
+      );
     record(evidence!, 'actual-runner-selection', {
       argv: originalSelection,
-      cliGrep: diagnosticMode ? companionDiagnosticGrep : sidebarGrep,
+      cliGrep: diagnosticProfile ? diagnosticProfile.grep : sidebarGrep,
       configuredGrep: String(info.config.grep),
       title: info.title,
       workers: info.config.workers,
@@ -3359,7 +3791,14 @@ async function withDriver(
     packet(name: string, value?: unknown): Promise<any>;
   }) => Promise<void>,
 ) {
-  if (diagnosticMode && index !== 9) throw new Error('Diagnostic mode requires only case10');
+  if (diagnosticProfile)
+    assertCompanionDiagnosticSelection(
+      diagnosticProfile,
+      process.env,
+      originalSelection,
+      test.info(),
+      index,
+    );
   if (sidebarMode !== index >= 8 || (index >= 5 && !uiMode) || index < 0 || index > 10)
     throw new Error('Case does not match the selected fixture mode');
   const dir = await mkdtemp(join(tmpdir(), `nrv-${index + 1}-`));
@@ -3666,7 +4105,7 @@ async function withDriver(
             if (!success)
               await archiveCompanionFiles(
                 dir,
-                join(evidence!, 'group-10', 'diagnostics'),
+                join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
                 'partial',
               );
           },
@@ -3710,13 +4149,21 @@ async function withDriver(
         {
           name: 'final-original-archive',
           run: async () => {
-            await archiveCompanionFiles(dir, join(evidence!, 'group-10', 'diagnostics'), 'final');
+            await archiveCompanionFiles(
+              dir,
+              join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+              'final',
+            );
           },
         },
         {
           name: 'diagnostic-validation',
           run: async () => {
-            const destination = join(evidence!, 'group-10', 'diagnostics');
+            const destination = join(
+              evidence!,
+              `group-${diagnosticProfile!.index + 1}`,
+              'diagnostics',
+            );
             let mainCoverage: unknown;
             let coverageFailed = false;
             let coverageError: unknown;
@@ -3750,6 +4197,14 @@ async function withDriver(
                 ),
                 JSON.parse(await readFile(join(destination, 'final-ui-quiescence.json'), 'utf8')),
                 activation.observed.statusProducers,
+                diagnosticProfile!.memberTransition
+                  ? {
+                      disposal: await retainCompanionMemberDisposal(evidence!, destination),
+                      member: await readCompanionPacket(dir, 'sidebar-member-reused'),
+                      before: await readCompanionPacket(dir, 'sidebar-guest-before'),
+                      denied: await readCompanionPacket(dir, 'sidebar-guest-denied'),
+                    }
+                  : undefined,
               );
               mainCoverage = { activation: active, ownership };
             } catch (error) {
@@ -3785,14 +4240,22 @@ async function withDriver(
               const observed =
                 finalSource ??
                 JSON.parse(await readFile(join(dir, 'failure-packet.json'), 'utf8')).source;
-              const parentPacket = JSON.parse(
-                await readFile(join(dir, 'sidebar-held-parent.json'), 'utf8'),
+              const parent = companionDiagnosticParent(
+                diagnosticProfile!,
+                await readCompanionPacket(dir, diagnosticProfile!.parentPacket),
               );
-              correlation = correlateCompanionDiagnostics(
-                parsed.frames,
-                observed,
-                parentPacket.value,
-              );
+              correlation = correlateCompanionDiagnostics(parsed.frames, observed, parent);
+              if (diagnosticProfile!.index !== 9)
+                record(
+                  destination,
+                  'case-outcome',
+                  assertCompanionDiagnosticOutcome(
+                    diagnosticProfile!,
+                    await readCompanionPacket(dir, diagnosticProfile!.outcomePacket),
+                    parent,
+                    correlation as ReturnType<typeof correlateCompanionDiagnostics>,
+                  ),
+                );
               record(destination, 'correlation', correlation);
             } catch (error) {
               record(destination, 'correlation-failure', String(error));
@@ -3815,7 +4278,7 @@ async function withDriver(
         },
       ],
       (rows) =>
-        record(evidence!, 'group-10-diagnostic-outcomes', {
+        record(evidence!, `group-${diagnosticProfile!.index + 1}-diagnostic-outcomes`, {
           rows,
           bodyFailed,
           primaryError: bodyFailed ? String(bodyError) : null,
