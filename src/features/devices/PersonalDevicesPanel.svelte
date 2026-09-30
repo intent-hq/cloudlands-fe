@@ -107,7 +107,7 @@
   {#if $capabilities$.authenticatedDevices}
     <ListView
       items={$clients$}
-      getKey={(client) => `${client.principalId}:${client.clientId}`}
+      getKey={(client) => client.deviceKey}
       getText={(client) => client.prettyHostname ?? client.name ?? client.clientId}
       virtualize={false}
       ariaLabel={m.settings_personalDevices_roster_label()}

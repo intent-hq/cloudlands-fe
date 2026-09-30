@@ -5,7 +5,6 @@ import {
   selectPrincipalActionContext,
   selectPrincipalSnapshot,
 } from '$store/renderer/slices/principal/principal-selectors';
-import { selectLiveClients } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
 
 export const selectPersonalDevicesContext = store.createSelector((state) => {
   const capabilities = selectCollaborationCapabilities.select(state);
@@ -29,12 +28,11 @@ export const selectPersonalDevices = store.createSelector((state) => {
   const context = selectPersonalDevicesContext.select(state);
   const principal = selectPrincipalSnapshot.select(state)?.principal;
   if (!context || !principal || state.browserClients.authenticatedContext !== context) return [];
-  return selectLiveClients
-    .select(state)
-    .filter(
-      (client) =>
-        client.principalId &&
-        client.hostRole &&
-        (principal.hostRole !== 'guest' || client.principalId === principal.id),
-    );
+  const clients = state.browserClients.authenticatedClients;
+  return (clients ? getItems(clients) : []).filter(
+    (client) =>
+      client.principalId &&
+      client.hostRole &&
+      (principal.hostRole !== 'guest' || client.principalId === principal.id),
+  );
 });

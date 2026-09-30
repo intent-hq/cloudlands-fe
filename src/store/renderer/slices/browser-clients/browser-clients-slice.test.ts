@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 vi.mock('svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('svelte')>()),
@@ -307,5 +308,46 @@ describe('authenticated Devices view lifetime', () => {
     expect(selectLiveClients.select({ browserClients: cleared } as StoreState)).toEqual([]);
     expect(cleared.authenticatedContext).toBeNull();
     expect(cleared.liveClientsLoaded).toBe(false);
+  });
+  it('retains principal/client tuples while leaving raw browser-routing IDs unchanged', () => {
+    const a = { ...desk, principalId: 'person-a', hostRole: 'owner' as const, connections: 2 };
+    const b = { ...desk, principalId: 'person-b', hostRole: 'member' as const, name: 'B phone' };
+    let state = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('context', [a, b]),
+    );
+    const rows = () => getItems(state.authenticatedClients!);
+    expect(rows()).toMatchObject([a, b]);
+    expect(rows().map((row) => row.clientId)).toEqual(['cli-desk', 'cli-desk']);
+    expect(selectLiveClient.select({ browserClients: state } as StoreState, 'cli-desk')).toEqual(b);
+    state = browserClientsReducer(
+      state,
+      authenticatedClientsReceived('context', [a, { ...b, name: 'B tablet' }]),
+    );
+    expect(rows()).toMatchObject([a, { ...b, name: 'B tablet' }]);
+    state = browserClientsReducer(state, authenticatedClientsReceived('context', [b]));
+    expect(rows()).toMatchObject([b]);
+    state = browserClientsReducer(
+      state,
+      authenticatedClientsReceived('context', [a, { ...a, connections: 3 }]),
+    );
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toMatchObject({
+      principalId: 'person-a',
+      clientId: 'cli-desk',
+      connections: 3,
+    });
+    state = browserClientsReducer(state, authenticatedClientsCleared('context'));
+    expect(rows()).toEqual([]);
+  });
+  it('does not alias tuples whose fields contain delimiters', () => {
+    const state = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('context', [
+        { ...desk, principalId: 'a:b', clientId: 'c' },
+        { ...desk, principalId: 'a', clientId: 'b:c' },
+      ]),
+    );
+    expect(getItems(state.authenticatedClients!)).toHaveLength(2);
   });
 });

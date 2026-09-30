@@ -23,6 +23,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { BrowserClientsState } from './browser-clients-types';
 import {
+  createAuthenticatedClientCollection,
   createLiveClientCollection,
   emptyWorkspaceBrowserClientsState,
   initialState,
@@ -133,6 +134,7 @@ browserClientsReducer.with(authenticatedClientsCleared, (state, { payload: [cont
     : {
         ...state,
         authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
         liveClients: createLiveClientCollection(),
         liveClientsLoaded: false,
       },
@@ -143,6 +145,7 @@ browserClientsReducer.with(
   (state, { payload: [context, clients] }) => ({
     ...state,
     authenticatedContext: context,
+    authenticatedClients: createAuthenticatedClientCollection(clients),
     liveClients: createLiveClientCollection(clients),
     liveClientsLoaded: true,
   }),
@@ -155,6 +158,7 @@ browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
   authenticatedContext: null,
+  authenticatedClients: createAuthenticatedClientCollection(),
   byWorkspaceId: Object.fromEntries(
     Object.entries(state.byWorkspaceId).map(([id, entry]) => [
       id,
@@ -172,6 +176,7 @@ browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, wor
     : {
         ...state,
         authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
         liveClients: createLiveClientCollection(clients),
         liveClientsLoaded: true,
       },

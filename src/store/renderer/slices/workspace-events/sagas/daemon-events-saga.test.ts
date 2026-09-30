@@ -300,7 +300,6 @@ describe('daemonEventsSaga', () => {
       'presence:changed',
       'host:members-changed',
       'host:execution-context-changed',
-      'principal:identity-changed',
     ]);
   });
 

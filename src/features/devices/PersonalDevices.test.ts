@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { store } from '$store/renderer/store';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
-import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import {
+  connectionStatusChanged,
+  systemStatusSuccess,
+} from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   principalContextChanged,
@@ -19,6 +22,10 @@ import type { HostRole } from '$shared/types/principal';
 import { m } from '$shared/paraglide/messages.js';
 import { personalDevicesSaga } from './personal-devices-saga';
 import PersonalDevices from './PersonalDevices.svelte';
+import { selectPersonalDevices } from './personal-devices-selectors';
+import { principalSaga } from '$store/renderer/slices/principal/sagas/principal-saga';
+import { identitySaga } from '$store/renderer/slices/identity/sagas/identity-saga';
+import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { browserClientsSaga } from '$store/renderer/slices/browser-clients/sagas/browser-clients-saga';
@@ -433,6 +440,223 @@ describe('Devices current-person UI through the actual store and IPC transport',
       await waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));
     } finally {
       stopBrowser();
+    }
+  });
+  it.each(['owner', 'member', 'guest'] as const)(
+    'preserves tuple-distinct devices, grouped sockets, updates and removals for %s',
+    async (role) => {
+      admit(role);
+      const own = { ...device('same', 'person-b', role), name: 'My phone', connections: 2 };
+      const other = { ...device('same', 'person-a', 'owner'), name: 'Another phone' };
+      rpc.mockResolvedValue({ clients: [own, other] });
+      render(PersonalDevices);
+      await screen.findByText('My phone');
+      if (role === 'guest') expect(screen.queryByText('Another phone')).toBeNull();
+      else await screen.findByText('Another phone');
+      expect(
+        selectPersonalDevices
+          .select(store.state)
+          .map(({ principalId, clientId, connections }) => [principalId, clientId, connections]),
+      ).toEqual(
+        role === 'guest'
+          ? [['person-b', 'same', 2]]
+          : [
+              ['person-b', 'same', 2],
+              ['person-a', 'same', 1],
+            ],
+      );
+      rpc.mockResolvedValue({ clients: [{ ...other, name: 'Renamed other phone' }, own] });
+      store.dispatch(refreshLiveClientsRequested());
+      await waitFor(() =>
+        expect(
+          selectPersonalDevices.select(store.state).find((c) => c.principalId === 'person-a')?.name,
+        ).toBe(role === 'guest' ? undefined : 'Renamed other phone'),
+      );
+      await screen.findByText('My phone');
+      rpc.mockResolvedValue({ clients: [own] });
+      store.dispatch(refreshLiveClientsRequested());
+      await waitFor(() => expect(screen.queryByText('Renamed other phone')).toBeNull());
+      expect(selectPersonalDevices.select(store.state)).toMatchObject([
+        { principalId: 'person-b', clientId: 'same', connections: 2 },
+      ]);
+    },
+  );
+
+  it.each([
+    ['rekey', false],
+    ['unlink', false],
+    ['rekey', true],
+    ['unlink', true],
+  ] as const)(
+    'real %s notifications invalidate Devices with pairing held=%s and readmit freshly',
+    async (change, held) => {
+      const triple = {
+        provider: 'gitlab' as const,
+        host: 'gitlab.example.test',
+        externalUserId: '7',
+      };
+      const revalidation = deferred<unknown>();
+      const heldPairing = deferred<unknown>();
+      let changing = false;
+      let holdPairing = held;
+      const fresh = {
+        ...principal('owner'),
+        login: change === 'rekey' ? 'new-person-label' : null,
+        ...(change === 'rekey' ? { identity: triple } : {}),
+      };
+      rpc.mockImplementation(async (method) => {
+        if (method === 'client.hello')
+          return {
+            server: {
+              capabilities: {
+                hostMembership: 1,
+                personalPairing: 1,
+                authenticatedDevices: 1,
+                collaborationIdentity: 1,
+              },
+            },
+          };
+        if (method === 'principal.me')
+          return changing
+            ? revalidation.promise
+            : { ...principal('owner'), login: 'old-person-label' };
+        if (method === 'client.list') return { clients: [device('phone', 'person-b', 'owner')] };
+        if (method === 'pairing.getSelfInfo')
+          return holdPairing ? heldPairing.promise : { ...pairing('owner'), principal: fresh };
+        throw new Error(`Unexpected RPC ${method}`);
+      });
+      admit('owner');
+      store.dispatch(
+        systemStatusSuccess(
+          {
+            running: true,
+            listenMode: 'wss',
+            protocolVersion: '10.8',
+            host: { os: 'linux', arch: 'x64', locality: 'remote' },
+          }, // protocol-version-ok: identity seam fixture
+          '2026-09-30T12:00:00Z',
+          store.state.daemonHealth.connectionGeneration,
+        ),
+      );
+      const stopPrincipal = store.runSaga(principalSaga);
+      const stopIdentity = store.runSaga(identitySaga);
+      try {
+        render(PersonalDevices);
+        await screen.findByText(/old-person-label/);
+        await open();
+        if (!held) await ready();
+        await waitFor(() =>
+          expect(rpc.mock.calls.some(([method]) => method === 'pairing.getSelfInfo')).toBe(true),
+        );
+        const callsBefore = rpc.mock.calls.filter(([method]) => method === 'principal.me').length;
+        changing = true;
+        routeDaemonEventsNotification(
+          'events.event',
+          {
+            subscriptionId: 'devices-firehose',
+            event: {
+              type: 'principal:identity-changed',
+              data: { principalId: 'person-b', identity: change === 'rekey' ? triple : null },
+            },
+          },
+          'devices-firehose',
+        );
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(store.state.principal.snapshot).toBeNull();
+        expect(store.state.identity.currentIdentity).toEqual(change === 'rekey' ? triple : null);
+        const qrCalls = qr.mock.calls.length;
+        heldPairing.resolve(pairing('owner'));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(qr).toHaveBeenCalledTimes(qrCalls);
+        expect(clipboard).not.toHaveBeenCalled();
+        expect(rpc.mock.calls.filter(([method]) => method === 'principal.me').length).toBe(
+          callsBefore + 2,
+        );
+        revalidation.resolve(fresh);
+        await waitFor(() =>
+          expect(store.state.principal.snapshot?.principal.login).toBe(fresh.login),
+        );
+        await waitFor(() => expect(store.state.identity.currentLogin).toBe(fresh.login));
+        expect(screen.queryByText(/old-person-label/)).toBeNull();
+        holdPairing = false;
+        await open();
+        await ready();
+        expect(rpc.mock.calls.filter(([method]) => method === 'pairing.getSelfInfo')).toHaveLength(
+          2,
+        );
+      } finally {
+        stopIdentity();
+        stopPrincipal();
+      }
+    },
+  );
+
+  it('unrelated, malformed and foreign-subscription identity events cannot change admitted Devices authority', async () => {
+    admit('owner');
+    rpc.mockImplementation(async (method) => {
+      if (method === 'client.hello')
+        return {
+          server: {
+            capabilities: {
+              hostMembership: 1,
+              personalPairing: 1,
+              authenticatedDevices: 1,
+              collaborationIdentity: 1,
+            },
+          },
+        };
+      if (method === 'principal.me') return principal('owner');
+      return method === 'client.list' ? { clients: [] } : pairing('owner');
+    });
+    const stopPrincipal = store.runSaga(principalSaga);
+    try {
+      render(PersonalDevices);
+      await open();
+      await ready();
+      rpc.mockClear();
+      const before = store.state.principal;
+      const triple = { provider: 'gitlab', host: 'gitlab.example.test', externalUserId: '7' };
+      for (const data of [
+        { principalId: 'someone-else', identity: triple },
+        { identity: null },
+        { principalId: '', identity: null },
+        { principalId: 7, identity: null },
+        { principalId: 'person-b' },
+        { principalId: 'person-b', identity: false },
+        { principalId: 'person-b', identity: { ...triple, provider: 'unknown' } },
+        { principalId: 'person-b', identity: { ...triple, host: '' } },
+        { principalId: 'person-b', identity: { ...triple, externalUserId: '' } },
+      ])
+        routeDaemonEventsNotification(
+          'events.event',
+          {
+            subscriptionId: 'devices-firehose',
+            event: {
+              type: 'principal:identity-changed',
+              data,
+            },
+          },
+          'devices-firehose',
+        );
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'foreign',
+          event: {
+            type: 'principal:identity-changed',
+            data: { principalId: 'person-b', identity: null },
+          },
+        },
+        'devices-firehose',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(store.state.principal).toBe(before);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(qr).toHaveBeenCalledTimes(1);
+      expect(store.state.identity.currentIdentity).toEqual(triple);
+      expect(rpc.mock.calls.map(([method]) => method)).not.toContain('principal.me');
+    } finally {
+      stopPrincipal();
     }
   });
 });
