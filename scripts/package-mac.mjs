@@ -5,6 +5,7 @@
  * Omitted architecture uses the Node host architecture. Use one native macOS
  * runner per architecture; cross-building and universal artifacts are unsupported.
  * Other electron-builder options (including signing overrides) pass through.
+ * Prepackaged app inputs are rejected because they skip native/signing hooks.
  * INTENTD_BIN retains copy-sidecar's local/pre-fetched sidecar contract.
  */
 import { execFileSync } from 'node:child_process';
@@ -42,6 +43,10 @@ export function resolveMacArguments(argv, platform = process.platform, hostArch 
     })
     .parseSync(['--mac', `--${arch}`, ...builderArgs]);
   if (parsed._.length) throw new Error('Only native Mac build options are supported.');
+  // Existing app inputs skip doPack and therefore every native/signing hook.
+  if (parsed.prepackaged !== undefined) {
+    throw new Error('Prepackaged apps are unsupported by the native Mac staging entry point.');
+  }
   const { targets } = normalizeOptions(parsed);
   const expectedArch = arch === 'x64' ? 1 : 3;
   if (

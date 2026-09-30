@@ -22,6 +22,20 @@ describe('native Mac packaging entry point', () => {
     configureBuildCommand(createYargs()).exitProcess(false).strict().parseSync(args);
 
   it.each([
+    ['--prepackaged', '/fixture/Intent-arm64.app'],
+    ['--pd', '/fixture/Intent-arm64.app'],
+    ['--prepackaged=/fixture/Intent-arm64.app'],
+    ['--pd=/fixture/Intent-arm64.app'],
+  ])('rejects existing app input %j before staging or archiving', (...args) => {
+    expect(parseBuilder(['--mac', '--x64', ...args]).prepackaged).toBe('/fixture/Intent-arm64.app');
+    const execute = vi.fn();
+    expect(() =>
+      packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+    ).toThrow(/prepackaged/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
     { args: ['--arm64=true'], targets: [['mac', [1, 3]]] },
     { args: ['--macos=zip:arm64'], targets: [['mac', [3]]] },
     {
