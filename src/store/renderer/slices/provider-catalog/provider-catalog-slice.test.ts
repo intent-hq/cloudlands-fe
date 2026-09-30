@@ -260,6 +260,31 @@ describe('authoritative provider alias identity', () => {
     expect(selectNormalizedProviderId.select(storeWith(catalog), 'pi')).toBe('pi');
   });
 
+  it.each(aliases)('uses only advertised %s identity for login guidance', (alias) => {
+    const catalog = providerCatalogReducer(
+      initialState,
+      providerCatalogLoaded({
+        providers: [
+          CATALOG.providers[0],
+          {
+            ...CATALOG.providers[2],
+            legacyAliases: aliases,
+            authErrorPatterns: ['pi login required'],
+            loginCommandHint: 'pi login',
+          },
+        ],
+      }),
+    );
+    const state = storeWith(catalog, {}, { activeProviderId: 'auggie' });
+    expect(
+      selectProviderAuthFailureGuidance.select(state, alias, 'auggie:model', 'pi login required'),
+    ).toEqual({ providerId: 'pi', loginCommandHint: 'pi login', showClaudeDesktopNote: false });
+    expect(selectProviderAuthFailureGuidance.select(state, alias, null, 'auggie login')).toBeNull();
+    expect(
+      selectProviderAuthFailureGuidance.select(state, 'unknown', 'auggie:model', 'auggie login'),
+    ).toBeNull();
+  });
+
   it.each(['future-provider', 'acp', 'augment', 'default', ''])(
     'preserves unresolved %s before hydration and on an older daemon',
     (raw) => {

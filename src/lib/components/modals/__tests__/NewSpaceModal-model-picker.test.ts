@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,6 +48,7 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
+  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
   // A remembered orchestration choice: the modal opens in team mode so the
   // team card's picker is live from the start.
@@ -330,6 +332,7 @@ describe('NewSpaceModal model-picker composition', () => {
     };
     mocks.create.mockResolvedValue({ ok: false, error: 'Fixture stops after request capture' });
     disposeStore = appStore.init();
+    admitLegacyPrincipal();
     appStore.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
     appStore.dispatch(hydrateDefaultProvider('auggie'));
     appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));

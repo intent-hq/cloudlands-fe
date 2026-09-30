@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "c9db2b745fd1bfacb78fd6f1343ea90d0f2ed431",
+  "sourcePath": "src/features/backend/main/keychain-sync.ts",
+  "sourceSha256": "9ff86ff24aacf2bba4f2ed7248384f39645b41e335b148eca0624c934fb58e3f",
+  "fixtureTransformation": "Only shared import paths changed from ../../../shared/ to ../../../../../shared/; parser and reconciler unchanged.",
+  "protocolCommit": "68c7dacba5011e91feda3f065b23d0f965205bae",
+  "sessionVectors": {
+    "B": "invited-v2-s:8e4ca5301c7e9fdeb66c53a80eb0c36dcd84707596e010f972342e9631b39c02",
+    "C": "invited-v2-s:8b7992fc9596dc890a8acb87157e82a26cbf1cea7e7f3cf1d6747198b3db5015",
+    "é": "invited-v2-s:397d72f58023e3b4931f01f0f521bdb0cb82260caedf458af7c2a0c57e22ab78"
+  },
+  "removalVector": "invited-v2-r:afb2ccf2baac828571f18cf41dc2df0f1e6938f53476efeda9aad4738b4ef56f"
+}

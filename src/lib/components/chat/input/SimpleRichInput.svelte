@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
@@ -305,11 +307,16 @@
   const skillsLoading$ = selectSkillsLoading(workspaceIdStore);
   const skillsError$ = selectSkillsError(workspaceIdStore);
 
+  const participation$ = selectWorkspaceParticipationContext(workspaceIdStore);
+  const creation$ = selectWorkspaceCreationVisible();
+  const admitted = $derived(workspace?.id ? !!$participation$ : $creation$);
+
   // Derived state: whether there's content to send (text, context items, or inline images).
   // Blocked while any attachment placement is in flight or failed — a failed
   // pill must be retried or removed before the message can go out.
   let canSend = $derived(
-    (value.trim() || contextItems.length > 0 || hasInlineImages) &&
+    admitted &&
+      (value.trim() || contextItems.length > 0 || hasInlineImages) &&
       !hasBlockingAttachments(contextItems),
   );
 
@@ -792,7 +799,7 @@
   }
 
   async function handleEnhancePrompt() {
-    if (!enhanceAvailable || disabled) return;
+    if (!admitted || !enhanceAvailable || disabled) return;
     if (!value.trim() || isEnhancing) return;
 
     const originalPrompt = value;

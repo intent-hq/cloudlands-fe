@@ -1,3 +1,5 @@
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,11 +38,23 @@ function deferred<T>() {
 function start() {
   const channel = stdChannel();
   const actions: any[] = [];
+  const state = withLegacyPrincipal({
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WS, myRole: 'owner' },
+        { id: 'ws-2', myRole: 'owner' },
+      ]),
+    },
+  });
   const task = runSaga(
-    { channel, dispatch: (action) => (actions.push(action), channel.put(action), action) },
+    {
+      channel,
+      getState: () => state,
+      dispatch: (action) => (actions.push(action), channel.put(action), action),
+    },
     scriptsOperationSaga,
   );
-  return { actions, channel, task };
+  return { actions, channel, task, state };
 }
 
 async function stop(task: Task) {
@@ -109,6 +123,22 @@ describe('scriptsOperationSaga', () => {
     expect(mocks.restart).not.toHaveBeenCalled();
     pending.resolve({ success: true });
     await settle();
+    await stop(run.task);
+  });
+
+  it('withholds a remembered action and drops completion after admission changes', async () => {
+    const pending = deferred<{ success: boolean }>();
+    mocks.start.mockReturnValue(pending.promise);
+    const run = start();
+    run.channel.put(startScriptRequested(WS, 'old-action'));
+    await settle();
+    run.state.principal.status = 'loading';
+    pending.resolve({ success: true });
+    await settle();
+    run.channel.put(stopScriptRequested(WS, 'old-action'));
+    await settle();
+    expect(run.actions).toEqual([]);
+    expect(mocks.stop).not.toHaveBeenCalled();
     await stop(run.task);
   });
 

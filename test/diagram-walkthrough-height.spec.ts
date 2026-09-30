@@ -8,6 +8,9 @@ let server: ViteDevServer | undefined;
 
 test.describe.configure({ mode: 'default', timeout: 120_000 });
 
+// Keep original failing attempts available alongside their geometry.
+test.use({ trace: 'retain-on-failure', screenshot: 'only-on-failure' });
+
 test.beforeAll(async () => {
   if (externalBaseUrl) return;
   const ownedServer = await createServer({
@@ -279,21 +282,94 @@ for (const width of [960, 662, 420]) {
       expect(rapid.at(-1)!.edges).toEqual(states[0].edges);
       expect(Math.max(...rapid.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
       const resize = [];
+      const resizeSegments = [];
       for (const [index, resizeWidth] of [
         [1, 420],
         [2, 960],
         [0, width],
       ]) {
-        resize.push(...(await sampleChange(root, index, resizeWidth)));
+        const samples = await sampleChange(root, index, resizeWidth);
+        resize.push(...samples);
+        resizeSegments.push({ index, resizeWidth, samples });
       }
       await testInfo.attach('resize-geometry', {
         body: JSON.stringify(resize, null, 2),
         contentType: 'application/json',
       });
+      await testInfo.attach('resize-segments', {
+        body: JSON.stringify(resizeSegments, null, 2),
+        contentType: 'application/json',
+      });
       expect(resize.at(-1)!.settled).toBe(true);
       expect(resize.every((sample) => sample.finitePaint)).toBe(true);
       expect(Math.max(...resize.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      for (const { index, samples } of resizeSegments) {
+        const final = samples.at(-1)!;
+        expect(final.settled).toBe(true);
+        expect(final.state).toBe(states[index].id);
+        expect(final.nodes).toEqual(states[index].nodes);
+        expect(final.paintedNodes).toEqual(states[index].nodes);
+        expect(final.edges).toEqual(states[index].edges);
+        expect(final.labels).toEqual(states[index].edges);
+        expect(final.fonts.length).toBeGreaterThanOrEqual(5);
+        expect(Math.min(...final.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
+        expect(Math.min(...final.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
+        expect(final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
+          true,
+        );
+        const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+        expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
+        if (motion === 'reduced') {
+          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+        }
+      }
       await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
     });
   }
 }
+
+// Moving an ancestor changes viewport coordinates without changing the diagram's
+// own geometry. It must not keep a completed resize in the settling state.
+test('walkthrough settles a resize while its ancestor moves', async ({ page }, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  const result = await root.evaluate(async (element, source) => {
+    const read = new Function(`return (${source})`)() as typeof geometry;
+    const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
+    const motion = host.animate(
+      [{ transform: 'translateY(0px)' }, { transform: 'translateY(8px)' }],
+      { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'linear' },
+    );
+    const samples = [];
+    try {
+      element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[1].click();
+      host.style.width = '420px';
+      const start = performance.now();
+      do {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        samples.push({ ...read(element), rootTop: element.getBoundingClientRect().top });
+      } while (
+        (!samples.at(-1)!.settled || samples.length < 4) &&
+        performance.now() - start < 4000
+      );
+      return { samples, ancestorStillMoving: motion.playState === 'running' };
+    } finally {
+      motion.cancel();
+    }
+  }, geometry.toString());
+  await testInfo.attach('ancestor-motion-geometry', {
+    body: JSON.stringify(result),
+    contentType: 'application/json',
+  });
+  expect(result.ancestorStillMoving).toBe(true);
+  const tops = result.samples.map((sample) => sample.rootTop);
+  expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.01);
+  expect(result.samples.at(-1)!.settled).toBe(true);
+  expect(result.samples.at(-1)!.state).toBe('execute');
+  expect(result.samples.every((sample) => sample.finitePaint)).toBe(true);
+  expect(Math.max(...result.samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+  // Capture the viewport after the behavioral checks: a locator clip can become
+  // stale while surrounding catalog sections reposition the settled diagram.
+  await root.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
+});

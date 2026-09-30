@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * Provider Catalog Slice
  *
@@ -43,6 +44,10 @@ providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] 
   loaded: true,
 }));
 
+providerCatalogReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...initialState,
+  workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
+}));
 export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
   'providerCatalog/workspaceCatalogRequested',
 );

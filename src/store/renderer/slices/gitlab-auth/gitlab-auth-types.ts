@@ -4,6 +4,8 @@ import type { ForgeAuthMethod, ForgeDeviceFlowInfo, ForgeUser } from '$features/
 export type GitLabAuthChangedStatus = 'authorized' | 'expired' | 'denied' | 'error' | 'revoked';
 
 export type GitLabAuthState = {
+  /** Canonical status belongs to the current owner admission; pending is not a host. */
+  statusReady: boolean;
   /** GitLab instance host the connection targets (defaults to gitlab.com) */
   host: string;
   /** Whether a GitLab credential is configured daemon-side */

@@ -28,6 +28,12 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
 import { meetsMinimumVersion } from '$shared/utils/version-compare';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { store as appStore } from '../store';
+import {
+  selectHostAdministrationContext,
+  selectHostRole,
+  selectPrincipalConnectionContext,
+} from '../slices/principal/principal-selectors';
 import { mockUserPreferences } from '$lib/client/mock/fixtures';
 import { openExternalUrl } from '$lib/utils/open-external';
 import { EDITOR_REGISTRY } from '$shared/editors/editor-registry';
@@ -70,7 +76,24 @@ function asRecord(arg: unknown): Record<string, unknown> {
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
   try {
-    const result = await backendRequest<HostCheckGitResult>('host.checkGit');
+    const role = selectHostRole.select(appStore.state);
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
+    if (!connection || !role) return { success: true, data: { available: 'unknown' } };
+    const result =
+      role === 'owner'
+        ? await backendRequest<HostCheckGitResult>('host.checkGit')
+        : (
+            await backendRequest<{ tools: Record<string, HostCheckGitResult> }>(
+              'host.toolAvailability',
+              { tools: ['git'] },
+            )
+          ).tools.git;
+    if (
+      connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+      role !== selectHostRole.select(appStore.state)
+    ) {
+      return { success: true, data: { available: 'unknown' } };
+    }
     const available = result?.available === true;
     const version = typeof result?.version === 'string' ? result.version : undefined;
     return {
@@ -235,7 +258,10 @@ interface HostListInstalledEditorsResult {
 
 /** Fetch the daemon-host editor catalog (detection runs on the daemon host). */
 async function listInstalledEditors(): Promise<HostInstalledEditorEntry[]> {
+  const context = selectHostAdministrationContext.select(appStore.state);
+  if (!context) return [];
   const result = await backendRequest<HostListInstalledEditorsResult>('host.listInstalledEditors');
+  if (context !== selectHostAdministrationContext.select(appStore.state)) return [];
   return Array.isArray(result?.editors) ? result.editors : [];
 }
 

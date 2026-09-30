@@ -304,6 +304,9 @@
 
   function motionSnapshot() {
     if (!rendererEl) return '';
+    // Settlement belongs to this diagram. Scrolling or moving an ancestor must
+    // not keep unchanged local geometry in the settling state.
+    const origin = rendererEl.getBoundingClientRect();
     const selector = [
       '.diagram-content',
       '.diagram-svg-layer',
@@ -328,8 +331,8 @@
           element.getAttribute('data-group-id'),
           element.getAttribute('class'),
           element.getAttribute('d'),
-          bounds.x.toFixed(3),
-          bounds.y.toFixed(3),
+          (bounds.x - origin.x).toFixed(3),
+          (bounds.y - origin.y).toFixed(3),
           bounds.width.toFixed(3),
           bounds.height.toFixed(3),
           style.opacity,

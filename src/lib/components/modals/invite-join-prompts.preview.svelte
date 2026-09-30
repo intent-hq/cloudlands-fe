@@ -8,14 +8,20 @@
    */
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { store as appStore } from '$store/renderer/store';
-  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    setLabsGitLabEnabled,
+    setLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
-  import { closePalette } from '$store/renderer/slices/palette/palette-slice';
+  import type { InviteProgressShowPayload } from '$shared/ipc/invite-progress';
+  import { closePalette, openPalette } from '$store/renderer/slices/palette/palette-slice';
 
   interface InviteJoinPromptsProps {
     consent?: InviteConsentShowPayload;
     notice?: InviteNoticeShowPayload;
+    progress?: InviteProgressShowPayload;
+    onRetry?: () => void;
   }
 
   function enableGitLab() {
@@ -34,6 +40,16 @@
     };
   }
 
+  function setupMultiplayerRecovery() {
+    const before = appStore.state.userPreferences.labsMultiplayerEnabled;
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    appStore.dispatch(closePalette());
+    return () => {
+      appStore.dispatch(closePalette());
+      appStore.dispatch(setLabsMultiplayerEnabled(before));
+    };
+  }
+
   const GITLAB_HOST = 'gitlab.example.com';
   const base = {
     requestId: 'preview-request',
@@ -46,6 +62,10 @@
     title: 'Invite join prompts (identity seam)',
     defaultState: 'prove-gitlab',
     states: {
+      'multiplayer-recovery': {
+        setup: setupMultiplayerRecovery,
+        props: { progress: { requestId: 'controlled-recovery', phase: 'admission' } },
+      },
       'prove-gitlab': {
         props: {
           consent: {
@@ -113,13 +133,15 @@
 <script lang="ts">
   import InviteConsentModal from './InviteConsentModal.svelte';
   import InviteNoticeModal from './InviteNoticeModal.svelte';
+  import InviteProgressModal from './InviteProgressModal.svelte';
   import CommandPalette from '../CommandPalette.svelte';
   import {
     selectIsPaletteOpen,
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
 
-  let { consent, notice }: InviteJoinPromptsProps = $props();
+  let { consent, notice, progress, onRetry }: InviteJoinPromptsProps = $props();
+  let progressOpen = $state(true);
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
 </script>
@@ -130,6 +152,15 @@
   {/if}
   {#if notice}
     <InviteNoticeModal open payload={notice} />
+  {/if}
+  {#if progress}
+    <InviteProgressModal
+      bind:open={progressOpen}
+      payload={progress}
+      recoveryHidden={$isPaletteOpen$}
+      onFindMultiplayer={() => appStore.dispatch(openPalette('Multiplayer'))}
+      {onRetry}
+    />
   {/if}
   <CommandPalette
     isOpen={$isPaletteOpen$}

@@ -34,6 +34,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
     selectAgentSession: Object.assign(() => makeReadable(session()), { select: () => session() }),
     selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
     selectAgentDetailHydrated: () => makeReadable(false),
+    selectAgentBackgroundPending: () => makeReadable(false),
     selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
     // Mirrors the stored-session predicate: the raw waiting reason includes an
     // unresolved tool_use on the in-flight turn.

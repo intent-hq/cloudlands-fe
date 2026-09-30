@@ -1,4 +1,10 @@
+import {
+  selectHostExecutionContext,
+  selectHostExecutionGeneration,
+  selectIsHostMember,
+} from '../host-execution/host-execution-selectors';
 import { store } from '../../store';
+import { selectHostRole, selectPrincipalActionContext } from '../principal/principal-selectors';
 import {
   getItem,
   getItems,
@@ -17,6 +23,21 @@ import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
 } from '../provider-catalog/provider-catalog-selectors';
+
+/** Unscoped catalogs belong to one admitted owner/member and provider projection. */
+export const selectModelBootContext = store.createSelector((state): string | null => {
+  const admission = selectPrincipalActionContext.select(state);
+  const role = selectHostRole.select(state);
+  if (!admission || (role !== 'owner' && role !== 'member')) return null;
+  const provider = selectActiveProviderId.select(state);
+  // Members get defaults from host.executionContext, never owner settings.
+  if (role === 'member' && !provider) return null;
+  return JSON.stringify([
+    admission,
+    provider,
+    role === 'member' ? selectHostExecutionGeneration.select(state) : null,
+  ]);
+});
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
@@ -40,7 +61,12 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
     state.model.availableModelsProviderId === effectiveProviderId
       ? getItems<AuggieModel, 'value'>(state.model.availableModels)
       : [];
-  const persisted = state.model.providerModels[effectiveProviderId];
+  const context = selectHostExecutionContext.select(state);
+  const persisted = selectIsHostMember.select(state)
+    ? context?.defaultProviderId === effectiveProviderId
+      ? context.defaultModelId
+      : null
+    : state.model.providerModels[effectiveProviderId];
   // Catalogs can be cold, stale, or partial. They supply defaults only when
   // the user has no persisted choice; absence is not a new model selection.
   if (persisted) return persisted;

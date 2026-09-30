@@ -532,6 +532,11 @@ export const setAgentNotificationsMutedRequested = createAsyncAction<
   'workspaceAgents/setAgentNotificationsMuted',
   'workspaceAgents/setAgentNotificationsMutedRequested',
 );
+/** Persist mode before reconciling the session and scoped agent list. */
+export const setAgentBackgroundRequested = createAsyncAction<
+  [wsId: string, agentId: string, isBackground: boolean],
+  void
+>('workspaceAgents/setAgentBackground', 'workspaceAgents/setAgentBackgroundRequested');
 export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/deleteAgentSession',
   'workspaceAgents/deleteAgentSessionRequested',

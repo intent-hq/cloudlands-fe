@@ -1,5 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import SimpleRichInput from '../SimpleRichInput.svelte';
   import ChatMessage from '../../ChatMessage.svelte';
   import Comment from '$lib/components/tiptap/comments/Comment.svelte';
@@ -119,14 +124,29 @@
       'search.fileNames': response('search.fileNames', { files: [] }),
       'note.list': response('note.list', { notes: [] }),
     });
+    const previousPrincipal = store.state.principal;
+    const fixtureDispatch = store.dispatch;
     store.dispatch(presenceReset());
     store.dispatch(replaceWorkspaceList([workspace]));
     store.dispatch(openWorkspaceTab(workspace.id));
     const cancel = store.runSaga(presenceSaga);
     store.dispatch(daemonEventsSubscribed());
+    // Bind admission after subscription readiness; principal.me above only supplies mention identity.
+    admitLegacyPrincipal();
+    const fixturePrincipal = store.state.principal;
     return () => {
       cancel();
       store.dispatch(presenceReset());
+      if (store.dispatch === fixtureDispatch && store.state.principal === fixturePrincipal) {
+        store.dispatch(principalContextChanged(previousPrincipal.context));
+        if (previousPrincipal.context && previousPrincipal.snapshot)
+          store.dispatch(
+            principalReceived(
+              { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+              previousPrincipal.snapshot,
+            ),
+          );
+      }
       window.electronAPI = previousBridge;
     };
   });

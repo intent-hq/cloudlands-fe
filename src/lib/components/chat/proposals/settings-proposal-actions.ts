@@ -45,6 +45,7 @@ import {
   selectHasCompletedProviderSetup,
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
+  selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -101,6 +102,7 @@ import {
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -300,6 +302,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectLabsMultiplayerEnabled.select(state);
     case 'labs.gitlab':
       return selectLabsGitLabEnabled.select(state);
+    case 'labs.remoteAgents':
+      return selectLabsRemoteAgentsEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -411,6 +415,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'labs.gitlab':
       appStore.dispatch(setLabsGitLabEnabled(Boolean(value)));
+      return true;
+    case 'labs.remoteAgents':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setLabsRemoteAgentsEnabled(value));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

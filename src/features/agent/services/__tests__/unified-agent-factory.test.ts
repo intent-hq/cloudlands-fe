@@ -481,6 +481,33 @@ describe('UnifiedAgentFactory', () => {
     });
   });
 
+  it('leaves specialist provider selection to the host instead of forcing the window default', async () => {
+    mockStoreState.current = {
+      ...mockStoreState.current,
+      model: { defaultProviderId: 'auggie' },
+      agentAvailability: { hasCheckedOnce: false, providerStatusMap: {} },
+    };
+    agentsApi.create.mockResolvedValueOnce({
+      id: 'agent-specialist-selected',
+      workspaceId: mockWorkspace.id,
+      name: 'Reviewer',
+      provider: 'codex',
+      model: 'host-review-model',
+      status: 'Idle',
+      messages: [],
+    });
+    const result = await factory.createAgent(mockWorkspace, {
+      name: 'Reviewer',
+      workspaceId: mockWorkspace.id as any,
+      metadata: { specialist: 'verifier' },
+    });
+    expect(result.success).toBe(true);
+    expect(agentsApi.create.mock.calls.at(-1)?.[0]).toMatchObject({ specialist: 'verifier' });
+    expect(agentsApi.create.mock.calls.at(-1)?.[0].provider).toBeUndefined();
+    expect(result.agent?.provider).toBe('codex');
+    expect(result.agent?.model).toBe('host-review-model');
+  });
+
   describe('active-provider availability guard (D1-B)', () => {
     it('fails closed for implicit Antigravity when readiness lookup cannot resolve', async () => {
       mockStoreState.current = {

@@ -96,9 +96,10 @@
     activeFileStaged?: boolean | null;
     pullRequestCount?: number;
     /** Owner-only controls (push / undo via `accept-changes.execute`, amend
-     * via `system.executeCommand`, base-commit context menu via
-     * `workspace.update`) render only when true. */
+     * via `system.executeCommand`) render only when true. */
     isOwner?: boolean;
+    /** Independent scoped workspace.update gate for base fields only. */
+    canUpdateBaseCommit?: boolean;
   }
 
   let {
@@ -107,6 +108,7 @@
     activeFileStaged = null,
     pullRequestCount = 0,
     isOwner = true,
+    canUpdateBaseCommit = isOwner,
   }: Props = $props();
 
   // Redux selectors at component init
@@ -206,7 +208,7 @@
   $effect(() => {
     if (
       commitContextMenu &&
-      (!isOwner ||
+      (!canUpdateBaseCommit ||
         commitContextMenu.workspaceId !== workspaceId ||
         ![...allCommits, ...olderCommits].some(
           (commit) => commit.hash === commitContextMenu?.commitHash,
@@ -239,7 +241,7 @@
 
   // Context menu handlers
   function handleCommitContextMenu(e: MouseEvent | KeyboardEvent, commitHash: string) {
-    if (!isOwner) return;
+    if (!canUpdateBaseCommit) return;
     const position = getSidebarContextPosition(e);
     if (!position) return;
     const row = e.currentTarget as HTMLElement;
@@ -295,7 +297,7 @@
   }
 
   async function handleSetBaseCommit(commitHash: string) {
-    if (!$workspace) return;
+    if (!canUpdateBaseCommit || !$workspace) return;
     try {
       const result = await persistWorkspaceChanges({ baseCommitSha: commitHash });
       if (result.ok) {
@@ -312,7 +314,7 @@
   }
 
   async function handleClearBaseCommit() {
-    if (!$workspace) return;
+    if (!canUpdateBaseCommit || !$workspace) return;
     try {
       const result = await persistWorkspaceChanges({ baseCommitSha: '' });
       if (result.ok) {

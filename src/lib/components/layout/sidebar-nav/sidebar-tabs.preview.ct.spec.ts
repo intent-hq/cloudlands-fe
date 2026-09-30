@@ -4,6 +4,13 @@ import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
 test.use({ reducedMotion: 'reduce' });
 
+test('withholds the Intent tab until the preview caller is admitted', async ({ mount }) => {
+  const component = await mount(SidebarTabsPreview, { props: { admittedOwner: false } });
+  await expect(component.getByRole('tab', { name: 'Workspaces', exact: true })).toBeVisible();
+  await expect(component.getByRole('tab', { name: 'Intent', exact: true })).toHaveCount(0);
+  await expect(component.locator('[data-workspace-card-row]')).toHaveCount(4);
+});
+
 async function expectNoFocusRing(tab: Locator) {
   await expect(tab).toHaveCSS('outline-style', 'none');
   // Tailwind's ring-0 serializes as zero-size shadow layers, not necessarily 'none'.

@@ -1,10 +1,11 @@
+import { store } from '$store/renderer/store';
 /**
  * Wire-contract tests for `runProviderTestPrompt` (host.providerTestPrompt,
  * PROTOCOL §5.14). FAKE transport only: `backendRequest` is mocked so no
  * request reaches a real daemon. Asserts the exact method + params emitted
  * and how PROTOCOL-shaped responses fold into the typed result.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -22,7 +23,12 @@ import { runProviderTestPrompt } from './provider-test-prompt.client';
 const mockedRequest = vi.mocked(backendRequest);
 
 describe('runProviderTestPrompt wire contract (fake transport)', () => {
+  let dispose: () => void;
+  beforeEach(() => {
+    dispose = store.init();
+  });
   afterEach(() => {
+    dispose();
     __resetProviderAuthStatusForTests();
     mockedRequest.mockReset();
   });

@@ -1,3 +1,4 @@
+import './electron-browser-capture.fixture';
 /** Real Electron guest identity evidence; never launches Intent or a daemon. */
 import {
   _electron as electron,

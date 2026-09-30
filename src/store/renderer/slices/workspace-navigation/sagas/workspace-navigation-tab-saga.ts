@@ -92,7 +92,9 @@ function* openCommit(action: ReturnType<typeof openWorkspaceCommitChangeset>): S
 function* openFile(action: ReturnType<typeof openWorkspaceFile>): SagaGenerator<void> {
   const [workspaceId, filePath, options] = action.payload;
   if (!workspaceId || !filePath) return;
-  const parsed = parseFilePathLineSuffix(filePath);
+  const parsed = options?.filePathIsLiteral
+    ? { path: filePath, line: undefined }
+    : parseFilePathLineSuffix(filePath);
   const line = options?.line !== undefined ? options.line : parsed.line;
   yield* openWorkspaceTab(
     workspaceId,

@@ -13,6 +13,7 @@ import {
   setGithubLinkDefaultAction,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -310,6 +311,38 @@ describe('settings-proposal-actions', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(false));
   });
+
+  it('applies and reverses the remote agents lab preference', async () => {
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('labs.remoteAgents', true)),
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsRemoteAgentsEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.remoteAgents',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
+      },
+    ]);
+
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsRemoteAgentsEnabled(false));
+  });
+
+  it.each(['true', 1, null, {}])(
+    'rejects invalid remote agent opt-in proposals: %j',
+    async (value) => {
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('labs.remoteAgents', value))),
+      ).rejects.toThrow('Invalid value');
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it('falls back to the proposal value when a numeric edit is invalid', async () => {
     const proposal = makeProposal('notifications.volume', 0.75);

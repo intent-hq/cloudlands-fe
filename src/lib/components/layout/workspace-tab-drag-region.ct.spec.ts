@@ -3,7 +3,15 @@ import { expect, test } from '../../../test/ct-test';
 import WorkspaceTabDragRegionHarness from './WorkspaceTabDragRegionHarness.svelte';
 
 async function dragRegionGeometry(titlebar: Locator) {
-  return titlebar.evaluate((root) => {
+  return titlebar.evaluate(async (root) => {
+    // Mounting precedes font readiness and frame-scheduled tab/sidebar layout.
+    // Use the same capture boundary as geometry goldens before measuring once.
+    const geometryWindow = window as typeof window & {
+      __INTENT_GEOMETRY_CT__: {
+        waitForCaptureStability: typeof import('$lib/component-catalog/capture-stability').waitForCaptureStability;
+      };
+    };
+    await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(root as HTMLElement);
     const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
     const fixed = root.querySelector('[data-titlebar-fixed-controls]')!;
     const bounds = strip.getBoundingClientRect();

@@ -4,6 +4,55 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.192.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.191.0...v2.192.0) (2026-09-30)
+
+
+### 🚀 Features
+
+* add experimental remote agents opt-in ([#2965](https://github.com/intent-hq/cloudlands-fe/issues/2965)) ([7076b48](https://github.com/intent-hq/cloudlands-fe/commit/7076b4899b76839aa7646c3fd0718fcb21f3d71f))
+* **browser:** capture early failures and read owned diagnostics ([#3037](https://github.com/intent-hq/cloudlands-fe/issues/3037)) ([363cd05](https://github.com/intent-hq/cloudlands-fe/commit/363cd05151fc329636e4c20e935d423f606bc560))
+* redesign workspace token stats ([#2154](https://github.com/intent-hq/cloudlands-fe/issues/2154)) ([5914542](https://github.com/intent-hq/cloudlands-fe/commit/59145423904abfd563a6a40e7d6911f9c3f27eae))
+* support role-aware shared host workspaces ([#2911](https://github.com/intent-hq/cloudlands-fe/issues/2911)) ([9cd6428](https://github.com/intent-hq/cloudlands-fe/commit/9cd6428b0ce4c9e1b18cfd6d4bcc9f5c83411f79))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.124 ([#3034](https://github.com/intent-hq/cloudlands-fe/issues/3034)) ([21fbee7](https://github.com/intent-hq/cloudlands-fe/commit/21fbee7d7b5c6a4770fa477ce4472d0fb56326db))
+* bump intentd sidecar to v0.9.125 ([#3039](https://github.com/intent-hq/cloudlands-fe/issues/3039)) ([5bb1132](https://github.com/intent-hq/cloudlands-fe/commit/5bb1132a601c8f0cf5fc7e82d20db64bf08b8e07))
+* focus app windows when switching backends ([#3030](https://github.com/intent-hq/cloudlands-fe/issues/3030)) ([a45c6f7](https://github.com/intent-hq/cloudlands-fe/commit/a45c6f705e28897d0860db8d7cd341d5a18c20c7))
+* resolve workspace file links consistently ([#3031](https://github.com/intent-hq/cloudlands-fe/issues/3031)) ([05dd7a7](https://github.com/intent-hq/cloudlands-fe/commit/05dd7a7c4b0f45749d2125e89a349bc00be015d8))
+
+## [2.191.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.4...v2.191.0) (2026-09-30)
+
+
+### 🚀 Features
+
+* add Codex service tier submenu ([#3028](https://github.com/intent-hq/cloudlands-fe/issues/3028)) ([60cc1af](https://github.com/intent-hq/cloudlands-fe/commit/60cc1afc510f784a7276f2b1f37b961804abe3e9))
+* switch agents between background and foreground ([#3027](https://github.com/intent-hq/cloudlands-fe/issues/3027)) ([bc9264e](https://github.com/intent-hq/cloudlands-fe/commit/bc9264ec3d67656a9b76a45907755555ac57f454))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.123 ([#3033](https://github.com/intent-hq/cloudlands-fe/issues/3033)) ([ad0836d](https://github.com/intent-hq/cloudlands-fe/commit/ad0836d5746fa24ba59794cb5a5ef5b4383fc08d))
+
+## [2.190.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.3...v2.190.4) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.122 ([#3029](https://github.com/intent-hq/cloudlands-fe/issues/3029)) ([6d46621](https://github.com/intent-hq/cloudlands-fe/commit/6d466218fd40a5b1026e5bf5998d87e110c012f1))
+* isolate comments by workspace and note (intent-hq/intent[#6347](https://github.com/intent-hq/cloudlands-fe/issues/6347)) ([#3022](https://github.com/intent-hq/cloudlands-fe/issues/3022)) ([a42ca28](https://github.com/intent-hq/cloudlands-fe/commit/a42ca2872248b2174f0c29589532f69178d235a3))
+* preserve model selection through transient catalog failures ([#3025](https://github.com/intent-hq/cloudlands-fe/issues/3025)) ([0b63da7](https://github.com/intent-hq/cloudlands-fe/commit/0b63da750fd331bd0f99eb027960a7b95ce67311))
+* preserve sidebar fixture errors across document recovery ([#2976](https://github.com/intent-hq/cloudlands-fe/issues/2976)) ([1220971](https://github.com/intent-hq/cloudlands-fe/commit/1220971b0f7707ee4ffa2d8bbfa3b911d83cca92))
+* settle walkthrough geometry independently of ancestor motion ([#2979](https://github.com/intent-hq/cloudlands-fe/issues/2979)) ([8c48a28](https://github.com/intent-hq/cloudlands-fe/commit/8c48a288ae4e91217c0d9d59b800df4f5f4db716))
+
+## [2.190.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.2...v2.190.3) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.121 ([#3020](https://github.com/intent-hq/cloudlands-fe/issues/3020)) ([5163dae](https://github.com/intent-hq/cloudlands-fe/commit/5163dae35ccd0c42489242929fd201ab86537e55))
+
 ## [2.190.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.1...v2.190.2) (2026-09-30)
 
 

@@ -9,7 +9,7 @@
    */
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faUsers } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { FocusTrap } from '$lib/utils/accessibility';
@@ -21,9 +21,19 @@
     payload?: InviteProgressShowPayload | null;
     /** Called exactly once per open when the user cancels the join. */
     onCancel?: () => void;
+    onRetry?: () => void;
+    onFindMultiplayer?: () => void;
+    recoveryHidden?: boolean;
   }
 
-  let { open = $bindable(false), payload = null, onCancel }: Props = $props();
+  let {
+    open = $bindable(false),
+    payload = null,
+    onCancel,
+    onRetry,
+    onFindMultiplayer,
+    recoveryHidden = false,
+  }: Props = $props();
 
   const dialogTitleId = 'invite-progress-dialog-title';
   const dialogDescriptionId = 'invite-progress-dialog-description';
@@ -31,10 +41,17 @@
   let dialogEl = $state<HTMLDivElement | null>(null);
 
   const opening = $derived(payload?.phase === 'opening');
+  const admission = $derived(payload?.phase === 'admission');
+  const visible = $derived(open && !(admission && recoveryHidden));
   const title = $derived(
-    opening ? m.inviteProgress_modal_opening_title() : m.inviteProgress_modal_connecting_title(),
+    admission
+      ? m.inviteProgress_admission_title()
+      : opening
+        ? m.inviteProgress_modal_opening_title()
+        : m.inviteProgress_modal_connecting_title(),
   );
   const message = $derived.by(() => {
+    if (admission) return m.inviteProgress_admission_message();
     if (opening) {
       return payload?.workspaceTitle
         ? m.inviteProgress_modal_opening_message({ workspaceTitle: payload.workspaceTitle })
@@ -49,7 +66,7 @@
   // immediately, and trap it there so Tab cycles within the dialog; focus
   // returns to where it was once the dialog closes.
   $effect(() => {
-    if (!open || !payload || !dialogEl) return;
+    if (!visible || !payload || !dialogEl) return;
     const el = dialogEl;
     const trap = new FocusTrap(el);
     trap.activate();
@@ -72,7 +89,7 @@
   }
 </script>
 
-{#if open && payload}
+{#if visible && payload}
   <Portal target="body" zIndex={100}>
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-[1px]"
@@ -86,7 +103,7 @@
         onclick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
-        aria-busy="true"
+        aria-busy={!admission}
         aria-labelledby={dialogTitleId}
         aria-describedby={dialogDescriptionId}
         tabindex="-1"
@@ -97,7 +114,10 @@
             <div
               class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-muted/40 text-foreground ring-1 ring-border"
             >
-              <IntentMarkLoader size={20} class="shrink-0" />
+              {#if admission}<Fa icon={faUsers} />{:else}<IntentMarkLoader
+                  size={20}
+                  class="shrink-0"
+                />{/if}
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">{title}</h2>
@@ -121,6 +141,12 @@
           <Button variant="outline" class="sm:min-w-[6rem]" onclick={cancel}>
             {m.inviteProgress_modal_cancelButton_label()}
           </Button>
+          {#if admission}
+            <Button variant="outline" onclick={onFindMultiplayer}
+              >{m.inviteProgress_admission_findButton()}</Button
+            >
+            <Button onclick={onRetry}>{m.inviteProgress_admission_retryButton()}</Button>
+          {/if}
         </div>
       </div>
     </div>

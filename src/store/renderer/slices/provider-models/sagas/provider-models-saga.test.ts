@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('$lib/electron-bridge');
@@ -17,6 +18,7 @@ import { modelReloadSaga } from '../../model/sagas/model-reload-saga';
 import { hydrateDefaultProvider, reloadModelsForProvider } from '../../model/model-slice';
 import { selectAvailableModels, selectLoadError } from '../../model/model-selectors';
 import { getModelsForProvider } from '../../model/model-utils';
+import { hostExecutionInvalidated } from '../../host-execution/host-execution-slice';
 import {
   providerModelsCacheCleared,
   providerModelsObserved,
@@ -73,6 +75,127 @@ afterEach(() => {
 });
 
 describe('registered model reload owner: picker catalogs', () => {
+  it('reloads every still-observed scope after host-context invalidation without re-observation', async () => {
+    admitLegacyPrincipal();
+    let generation = 'old';
+    request.mockImplementation((_method, params) => {
+      const { providerId, workspaceId } = params as { providerId: string; workspaceId?: string };
+      return Promise.resolve(reply(providerId, `${generation}-${workspaceId ?? 'direct'}`));
+    });
+    store.dispatch(providerModelsObserved('direct', ['codex']));
+    store.dispatch(providerModelsObserved('A', ['codex'], 'A'));
+    store.dispatch(providerModelsObserved('A-shared', ['codex'], 'A'));
+    store.dispatch(providerModelsObserved('B', ['auggie'], 'B'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(request).toHaveBeenCalledTimes(3);
+    const observers = store.state.providerModels.observers;
+    generation = 'current';
+    store.dispatch(hostExecutionInvalidated());
+    expect(cache()).toBeUndefined();
+    expect(cache('codex', 'A')).toBeUndefined();
+    await settle();
+    expect(store.state.providerModels.observers).toBe(observers);
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex' }],
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ['models.list', { providerId: 'auggie', workspaceId: 'B' }],
+      ['models.list', { providerId: 'codex' }],
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ['models.list', { providerId: 'auggie', workspaceId: 'B' }],
+    ]);
+    expect(cache()?.models[0].value).toBe('current-direct');
+    expect(cache('codex', 'A')?.models[0].value).toBe('current-A');
+    expect(cache('auggie', 'B')?.models[0].value).toBe('current-B');
+    expect(status('codex', 'A')).toMatchObject({ status: 'success', epoch: 1 });
+  });
+
+  it.each(['success', 'error'] as const)(
+    'coalesces host-context invalidations into one trailing read after old %s',
+    async (outcome) => {
+      admitLegacyPrincipal();
+      let resolveOld!: (value: ReturnType<typeof reply>) => void;
+      let rejectOld!: (reason: Error) => void;
+      let resolveCurrent!: (value: ReturnType<typeof reply>) => void;
+      request
+        .mockReturnValueOnce(
+          new Promise((resolve, reject) => {
+            resolveOld = resolve;
+            rejectOld = reject;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveCurrent = resolve;
+          }),
+        );
+      store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+      await vi.advanceTimersByTimeAsync(50);
+      store.dispatch(hostExecutionInvalidated());
+      store.dispatch(hostExecutionInvalidated());
+      store.dispatch(hostExecutionInvalidated());
+      expect(request).toHaveBeenCalledTimes(1);
+      if (outcome === 'success') resolveOld(reply('codex', 'stale'));
+      else rejectOld(new Error('obsolete failure'));
+      await settle();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(cache('codex', 'A')).toBeUndefined();
+      expect(status('codex', 'A')).toMatchObject({ status: 'loading', epoch: 3, error: undefined });
+      expect(notify.warning).not.toHaveBeenCalled();
+      resolveCurrent(reply('codex', 'current'));
+      await settle();
+      expect(cache('codex', 'A')?.models[0].value).toBe('current');
+      expect(status('codex', 'A')).toMatchObject({ status: 'success', epoch: 3 });
+      expect(request.mock.calls).toEqual([
+        ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+        ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ]);
+    },
+  );
+
+  it('does not start a host-context trailing read after the last observer releases', async () => {
+    let finish!: (value: ReturnType<typeof reply>) => void;
+    request.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+    await vi.advanceTimersByTimeAsync(50);
+    store.dispatch(hostExecutionInvalidated());
+    store.dispatch(providerModelsReleased('picker'));
+    finish(reply('codex', 'obsolete'));
+    await settle();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cache('codex', 'A')).toBeUndefined();
+    store.dispatch(hostExecutionInvalidated());
+    await settle();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a current host-context replacement failure actionable until explicit retry', async () => {
+    request
+      .mockResolvedValueOnce(reply('codex', 'old'))
+      .mockRejectedValueOnce(new Error('current offline'));
+    store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+    await vi.advanceTimersByTimeAsync(50);
+    store.dispatch(hostExecutionInvalidated());
+    await settle();
+    expect(cache('codex', 'A')).toBeUndefined();
+    expect(status('codex', 'A')).toMatchObject({
+      status: 'error',
+      epoch: 1,
+      error: 'codex: current offline',
+    });
+    store.dispatch(providerModelsObserved('picker', ['codex'], 'A'));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(request).toHaveBeenCalledTimes(2);
+    request.mockResolvedValueOnce(reply('codex', 'recovered'));
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    await settle();
+    expect(cache('codex', 'A')?.models[0].value).toBe('recovered');
+    expect(status('codex', 'A')).toMatchObject({ status: 'success', error: undefined });
+  });
+
   it('isolates concurrent direct, A and B catalogs, errors and forced refreshes on the wire', async () => {
     const releases = new Map<string, (value: ReturnType<typeof reply>) => void>();
     request.mockImplementation(
@@ -174,7 +297,7 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(cache('codex', 'B')?.models[0].value).toBe('B-model');
     expect(request.mock.calls.slice(2)).toEqual([
       ['models.list', { providerId: 'codex', workspaceId: 'A' }],
-      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+      ['models.list', { providerId: 'codex', workspaceId: 'A', forceRefresh: true }],
     ]);
   });
 
@@ -351,7 +474,7 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(request.mock.calls).toEqual([
       ['models.list', { providerId: 'codex' }],
       ['models.list', { providerId: 'auggie' }],
-      ['models.list', { providerId: 'codex' }],
+      ['models.list', { providerId: 'codex', forceRefresh: true }],
     ]);
     expect(status()).toMatchObject({ status: 'success', error: undefined });
     expect(cache()?.models[0].value).toBe('recovered');
@@ -468,7 +591,7 @@ describe('registered model reload owner: picker catalogs', () => {
       expect(request.mock.calls).toEqual([
         [
           'models.list',
-          trigger === 'refresh'
+          trigger !== 'clear'
             ? { providerId: 'codex', forceRefresh: true }
             : { providerId: 'codex' },
         ],
@@ -540,6 +663,42 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(request.mock.calls).toEqual(
       Array.from({ length: 3 }, () => ['models.list', { providerId: 'codex' }]),
     );
+  });
+
+  it('preserves degraded catalog metadata through a silent retry', async () => {
+    request.mockResolvedValue({
+      ...reply('codex', 'older'),
+      warning: 'probe failed; serving last-good models',
+      stale: true,
+    });
+    store.dispatch(providerModelsRequested('codex', 'silentRetry', 'A'));
+    await settle();
+    expect(cache('codex', 'A')).toMatchObject({
+      models: [{ value: 'older' }],
+      warning: 'probe failed; serving last-good models',
+      stale: true,
+    });
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+    ]);
+  });
+
+  it('coalesces explicit retries and forces a fresh probe in the same workspace', async () => {
+    let finish!: (value: unknown) => void;
+    request.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex', workspaceId: 'A', forceRefresh: true }],
+    ]);
+    finish(reply('codex', 'recovered'));
+    await settle();
+    expect(cache('codex', 'A')?.models[0].value).toBe('recovered');
+    expect(cache('codex', 'B')).toBeUndefined();
   });
 
   it('coalesces mounted readers and preserves exact wire refresh, warning and stale results', async () => {
@@ -625,7 +784,11 @@ describe('registered model reload owner: picker catalogs', () => {
       expect(request.mock.calls).toEqual([
         ['models.list', { providerId: 'codex' }],
         ['models.list', { providerId: 'auggie' }],
-        ...Array.from({ length: 3 }, () => ['models.list', { providerId: 'codex' }]),
+        ...Array.from({ length: 2 }, () => ['models.list', { providerId: 'codex' }]),
+        [
+          'models.list',
+          { providerId: 'codex', ...(recoveryMode === 'retry' ? { forceRefresh: true } : {}) },
+        ],
       ]);
     },
   );
@@ -706,7 +869,21 @@ describe('registered model reload owner: picker catalogs', () => {
     expect(request).toHaveBeenCalledTimes(3);
   });
 
+  it.each(['unknown', 'guest'] as const)(
+    'does not send an active-catalog reload for an %s principal',
+    async (principal) => {
+      if (principal === 'guest') admitLegacyPrincipal('guest');
+      store.dispatch(hydrateDefaultProvider('codex'));
+      const model = store.state.model;
+      store.dispatch(reloadModelsForProvider());
+      await settle();
+      expect(request).not.toHaveBeenCalled();
+      expect(store.state.model).toBe(model);
+    },
+  );
+
   it('preserves the unchanged reload action and standalone model utility caller', async () => {
+    admitLegacyPrincipal();
     request.mockResolvedValue(reply('codex', 'selected'));
     store.dispatch(hydrateDefaultProvider('codex'));
     store.dispatch(reloadModelsForProvider());

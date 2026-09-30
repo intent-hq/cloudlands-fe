@@ -15,6 +15,7 @@ import {
 } from '../agent-queue/agent-queue-slice';
 import {
   agentSessionReducer,
+  setAgentBackgroundPending,
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
@@ -7378,4 +7379,15 @@ it('does not carry frontend fields or old workspace indexes across an opaque age
   expect(state.byAgentId['shared-origin'].liveTurnOpen).not.toBe(true);
   expect(state.byAgentId['shared-origin'].metadata?.pendingQuestionsMessageId).toBeUndefined();
   expect(state.agentIdsByWorkspace['workspace-a'] ?? []).not.toContain('shared-origin');
+});
+
+describe('background mode request state', () => {
+  it('tracks independent agents and clears only the settled request', () => {
+    let state = agentSessionReducer(initialState, setAgentBackgroundPending('a', true));
+    state = agentSessionReducer(state, setAgentBackgroundPending('b', true));
+    expect(state.backgroundModePending).toEqual({ a: true, b: true });
+    state = agentSessionReducer(state, setAgentBackgroundPending('a', false));
+    expect(state.backgroundModePending).toEqual({ b: true });
+    expect(state.byAgentId).toEqual({});
+  });
 });

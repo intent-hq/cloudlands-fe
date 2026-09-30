@@ -2,6 +2,15 @@ import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import Harness from './NewSpaceRepoChooserHarness.svelte';
 
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/github\.com\/fixture-owner\.png(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="16" fill="lightgray"/></svg>',
+    }),
+  );
+});
+
 async function expectPointerReachable(control: Locator) {
   await control.scrollIntoViewIfNeeded();
   await expect

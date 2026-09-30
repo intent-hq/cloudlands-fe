@@ -377,6 +377,7 @@ import {
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
 import { workspaceService } from '../features/workspace/main/workspace.service';
 
+import { registerCollaborationAuthHandlers } from '../features/collaboration-auth/main/collaboration-auth.ipc';
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import {
@@ -1538,6 +1539,7 @@ const bootFlow = app.whenReady().then(async () => {
   // daemon is up (fire-and-forget; see refreshAboutPanelIntentdVersion above).
   void refreshAboutPanelIntentdVersion();
 
+  registerCollaborationAuthHandlers();
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)

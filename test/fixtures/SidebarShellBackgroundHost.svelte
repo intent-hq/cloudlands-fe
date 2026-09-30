@@ -4,6 +4,11 @@
   import SidebarPanel from '$lib/components/layout/sidebar-nav/SidebarPanel.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+  import { admitLegacyPrincipal } from '../../src/test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import {
     closePanel,
     openPanel,
@@ -21,9 +26,10 @@
   document.documentElement.classList.toggle('dark', theme === 'dark');
   Object.assign(page, { url: new URL('http://localhost/workspace/sidebar-shell-0') });
   appStore.init();
-  // Settle the window identity as an owner window (no guest list outside
-  // Electron); until it settles the panel reads as collaborator-only and
-  // withholds the Chief card this suite measures.
+  // Model the admitted legacy owner whose Chief card this fixture measures.
+  // An unavailable guest list alone does not establish host authority.
+  const previousPrincipal = appStore.state.principal;
+  admitLegacyPrincipal();
   appStore.dispatch(guestSessionsListUnavailable());
   appStore.dispatch(resetWorkspaceState());
   appStore.dispatch(setWorkspaceHasLoaded(true));
@@ -58,6 +64,14 @@
   appStore.dispatch(openPanel('all-workspaces'));
 
   onDestroy(() => {
+    appStore.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      appStore.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
     appStore.dispatch(closePanel());
     appStore.dispatch(resetWorkspaceState());
     Object.assign(page, { url: new URL('http://localhost/') });

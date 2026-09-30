@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
@@ -11,6 +12,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('FileViewer');
@@ -89,7 +91,76 @@
   // Image viewer state
   let imageZoom = $state(100);
   let imageRotation = $state(0);
+  const zoomPercent = $derived(
+    formatNumber(imageZoom / 100, { style: 'percent', maximumFractionDigits: 0 }),
+  );
   let copied = $state(false);
+  let imageOffsetX = $state(0);
+  let imageOffsetY = $state(0);
+  let imageScrollX = $state(0);
+  let imageScrollY = $state(0);
+  let imageDragging = $state(false);
+  let imageDrag: { pointerId: number; x: number; y: number; viewport: HTMLElement } | null = null;
+
+  function endImageDrag() {
+    const drag = imageDrag;
+    imageDrag = null;
+    imageDragging = false;
+    if (drag?.viewport.hasPointerCapture(drag.pointerId)) {
+      drag.viewport.releasePointerCapture(drag.pointerId);
+    }
+  }
+
+  function handleImagePointerDown(event: PointerEvent) {
+    if (event.button !== 0 || !event.isPrimary || imageDrag) return;
+    const viewport = event.currentTarget as HTMLElement;
+    viewport.setPointerCapture(event.pointerId);
+    imageDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, viewport };
+    imageDragging = true;
+    event.preventDefault();
+  }
+
+  function handleImagePointerMove(event: PointerEvent) {
+    if (!imageDrag || event.pointerId !== imageDrag.pointerId) return;
+    if ((event.buttons & 1) === 0) {
+      endImageDrag();
+      return;
+    }
+    // Keep the current scroll position reachable when translation shrinks overflow.
+    // Retain this floor after release so neither release nor reverse wheel scrolling jumps.
+    imageScrollX = imageDrag.viewport.scrollLeft;
+    imageScrollY = imageDrag.viewport.scrollTop;
+    imageOffsetX += event.clientX - imageDrag.x;
+    imageOffsetY += event.clientY - imageDrag.y;
+    imageDrag.x = event.clientX;
+    imageDrag.y = event.clientY;
+  }
+
+  function handleImagePointerEnd(event: PointerEvent) {
+    if (event.pointerId === imageDrag?.pointerId) endImageDrag();
+  }
+
+  $effect(() => {
+    // A new image or zoom/rotation establishes a fresh native scroll range.
+    filePath;
+    sourceUrl;
+    imageZoom;
+    imageRotation;
+    imageScrollX = 0;
+    imageScrollY = 0;
+  });
+
+  $effect(() => {
+    // A reused viewer must not carry a drag or its offset into another file.
+    filePath;
+    sourceUrl;
+    untrack(() => {
+      endImageDrag();
+      imageOffsetX = 0;
+      imageOffsetY = 0;
+    });
+    return endImageDrag;
+  });
 
   const imageMimeType = (path: string): string => {
     const ext = path.split('.').pop()?.toLowerCase();
@@ -245,32 +316,38 @@
   };
 </script>
 
+{#snippet zoomControls()}
+  <Button
+    size="icon"
+    variant="ghost"
+    class="h-7 w-7"
+    onclick={handleZoomOut}
+    title={m.editor_fileViewer_zoomOut_tooltip()}
+  >
+    <Fa icon={faSearchMinus} size="sm" />
+  </Button>
+  <span class="text-xs text-subtle min-w-[50px] text-center">{zoomPercent}</span>
+  <Button
+    size="icon"
+    variant="ghost"
+    class="h-7 w-7"
+    onclick={handleZoomIn}
+    title={m.editor_fileViewer_zoomIn_tooltip()}
+  >
+    <Fa icon={faSearchPlus} size="sm" />
+  </Button>
+  <div class="w-px h-5 bg-border mx-1"></div>
+{/snippet}
+
+<svelte:window onblur={endImageDrag} />
+
 <div class="h-full flex flex-col">
   {#if fileType === 'image'}
     <!-- Image Viewer -->
-    <div class="flex-1 flex flex-col">
+    <div class="min-h-0 flex-1 flex flex-col">
       <!-- Image Controls -->
       <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
-        <Button
-          size="icon"
-          variant="ghost"
-          class="h-7 w-7"
-          onclick={handleZoomOut}
-          title={m.editor_fileViewer_zoomOut_tooltip()}
-        >
-          <Fa icon={faSearchMinus} size="sm" />
-        </Button>
-        <span class="text-xs text-subtle min-w-[50px] text-center">{imageZoom}%</span>
-        <Button
-          size="icon"
-          variant="ghost"
-          class="h-7 w-7"
-          onclick={handleZoomIn}
-          title={m.editor_fileViewer_zoomIn_tooltip()}
-        >
-          <Fa icon={faSearchPlus} size="sm" />
-        </Button>
-        <div class="w-px h-5 bg-border mx-1"></div>
+        {@render zoomControls()}
         <Button
           size="icon"
           variant="ghost"
@@ -309,20 +386,33 @@
       </div>
 
       <!-- Image Display -->
-      <div class="flex-1 overflow-auto bg-checkered flex items-center justify-center p-4">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="relative min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
+          ? 'cursor-grabbing'
+          : 'cursor-grab'}"
+        style="--pan-scroll-x: {imageScrollX}px; --pan-scroll-y: {imageScrollY}px;"
+        onpointerdown={handleImagePointerDown}
+        onpointermove={handleImagePointerMove}
+        onpointerup={handleImagePointerEnd}
+        onpointercancel={handleImagePointerEnd}
+        onlostpointercapture={handleImagePointerEnd}
+      >
         <img
           src={getImageSrc()}
           alt={fileName}
-          style="transform: scale({imageZoom /
+          draggable="false"
+          style="translate: {imageOffsetX}px {imageOffsetY}px; transform: scale({imageZoom /
             100}) rotate({imageRotation}deg); transition: transform 0.2s;"
           class="max-w-full max-h-full object-contain"
         />
       </div>
     </div>
   {:else if fileType === 'svg'}
-    <!-- SVG Viewer with code toggle -->
-    <div class="flex-1 flex flex-col">
+    <!-- SVG Viewer -->
+    <div class="min-h-0 flex-1 flex flex-col">
       <div class="flex items-center gap-2 p-2 border-b border-border bg-muted/30">
+        {@render zoomControls()}
         <Button
           size="icon"
           variant="ghost"
@@ -336,8 +426,25 @@
           {fileName}
         </div>
       </div>
-      <div class="flex-1 overflow-auto bg-checkered flex items-center justify-center p-4">
-        <img src={getSvgSrc()} alt={fileName} class="max-w-full max-h-full object-contain" />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="relative min-h-0 flex-1 overflow-auto bg-checkered flex items-center justify-center p-4 select-none {imageDragging
+          ? 'cursor-grabbing'
+          : 'cursor-grab'}"
+        style="--pan-scroll-x: {imageScrollX}px; --pan-scroll-y: {imageScrollY}px;"
+        onpointerdown={handleImagePointerDown}
+        onpointermove={handleImagePointerMove}
+        onpointerup={handleImagePointerEnd}
+        onpointercancel={handleImagePointerEnd}
+        onlostpointercapture={handleImagePointerEnd}
+      >
+        <img
+          src={getSvgSrc()}
+          alt={fileName}
+          draggable="false"
+          style="translate: {imageOffsetX}px {imageOffsetY}px; transform: scale({imageZoom / 100});"
+          class="max-w-full max-h-full object-contain"
+        />
       </div>
     </div>
   {:else if fileType === 'video'}
@@ -474,6 +581,16 @@
 </div>
 
 <style>
+  .bg-checkered::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: calc(100% + var(--pan-scroll-x));
+    height: calc(100% + var(--pan-scroll-y));
+    pointer-events: none;
+  }
+
   .bg-checkered {
     background-image:
       linear-gradient(45deg, hsl(var(--muted)) 25%, transparent 25%),

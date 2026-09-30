@@ -25,6 +25,10 @@ import {
   selectNormalizedProviderId,
 } from '../provider-catalog/provider-catalog-selectors';
 
+export const selectAgentBackgroundPending = store.createSelector(
+  (state, agentId: string) => state.agentSessions.backgroundModePending?.[agentId] === true,
+);
+
 // ============================================================================
 // Internal helpers
 // ============================================================================

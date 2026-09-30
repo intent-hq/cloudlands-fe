@@ -228,6 +228,13 @@
     appStore.dispatch(setProviderFastMode(providerId, !enabled));
   }
 
+  function handleSelectCodexServiceTier(enabled: boolean, event: Event) {
+    // Keep selection tied to the confirmed/optimistic Redux value, including failed saves.
+    event.preventDefault();
+    const current = selectProviderFastModeValues.select(appStore.state).codex ?? false;
+    if (current !== enabled) appStore.dispatch(setProviderFastMode('codex', enabled));
+  }
+
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
   }
@@ -487,24 +494,75 @@
                         <div
                           class={hasWarning ||
                           needsLogin ||
-                          $fastModeProviders$.includes(provider.id)
+                          ($fastModeProviders$.includes(provider.id) && provider.id !== 'codex')
                             ? 'w-64'
                             : 'w-44'}
                         >
                           {#if $fastModeProviders$.includes(provider.id)}
-                            <Menu.CheckboxItem
-                              checked={$fastModeValues$[provider.id] ?? false}
-                              onSelect={(event) => handleToggleFastMode(provider.id, event)}
-                              aria-describedby={`fast-mode-description-${provider.id}`}
-                            >
-                              {m.settings_providers_fastMode_label()}
-                            </Menu.CheckboxItem>
-                            <p
-                              id={`fast-mode-description-${provider.id}`}
-                              class="px-2 py-1.5 type-caption text-muted-foreground"
-                            >
-                              {m.settings_providers_fastMode_description()}
-                            </p>
+                            {#if provider.id === 'codex'}
+                              <Menu.Sub>
+                                <Menu.SubTrigger
+                                  >{m.settings_providers_serviceTier_label()}</Menu.SubTrigger
+                                >
+                                <Menu.SubContent class="w-64">
+                                  <Menu.RadioGroup
+                                    value={$fastModeValues$.codex ? 'fast' : 'standard'}
+                                    aria-label={m.settings_providers_serviceTier_label()}
+                                  >
+                                    <Menu.RadioItem
+                                      value="standard"
+                                      onSelect={(event) =>
+                                        handleSelectCodexServiceTier(false, event)}
+                                      aria-describedby="fast-mode-description-codex"
+                                    >
+                                      {m.settings_providers_serviceTierStandard_label()}
+                                    </Menu.RadioItem>
+                                    <Menu.RadioItem
+                                      value="fast"
+                                      onSelect={(event) =>
+                                        handleSelectCodexServiceTier(true, event)}
+                                      aria-describedby="fast-mode-description-codex"
+                                    >
+                                      {m.settings_providers_serviceTierFast_label()}
+                                    </Menu.RadioItem>
+                                    <Menu.RadioItem
+                                      value="ultra-fast"
+                                      disabled
+                                      aria-describedby="ultra-fast-description-codex"
+                                    >
+                                      {m.settings_providers_serviceTierUltraFast_label()}
+                                    </Menu.RadioItem>
+                                  </Menu.RadioGroup>
+                                  <Menu.Separator />
+                                  <p
+                                    id="fast-mode-description-codex"
+                                    class="px-2 py-1.5 type-caption text-muted-foreground"
+                                  >
+                                    {m.settings_providers_fastMode_description()}
+                                  </p>
+                                  <p
+                                    id="ultra-fast-description-codex"
+                                    class="px-2 py-1.5 type-caption text-muted-foreground"
+                                  >
+                                    {m.settings_providers_serviceTierUltraFast_description()}
+                                  </p>
+                                </Menu.SubContent>
+                              </Menu.Sub>
+                            {:else}
+                              <Menu.CheckboxItem
+                                checked={$fastModeValues$[provider.id] ?? false}
+                                onSelect={(event) => handleToggleFastMode(provider.id, event)}
+                                aria-describedby={`fast-mode-description-${provider.id}`}
+                              >
+                                {m.settings_providers_fastMode_label()}
+                              </Menu.CheckboxItem>
+                              <p
+                                id={`fast-mode-description-${provider.id}`}
+                                class="px-2 py-1.5 type-caption text-muted-foreground"
+                              >
+                                {m.settings_providers_fastMode_description()}
+                              </p>
+                            {/if}
                             <Menu.Separator />
                           {/if}
                           {#if provider.id === 'antigravity'}

@@ -9,11 +9,16 @@ import { selectProviderFastModeState } from '$store/renderer/slices/provider-set
 import { providerFastModeSaga } from '$store/renderer/slices/provider-settings/sagas/provider-fast-mode-saga';
 
 /** Exercise production persistence against an isolated, in-memory daemon seam. */
-export function setupProviderFastModePreview(supported = true, rejectWrites = false) {
+export function setupProviderFastModePreview(
+  supported = true,
+  rejectWrites = false,
+  onWrite?: (changes: Parameters<NonNullable<typeof appClient.settings.updateSnapshot>>[0]) => void,
+) {
   const before = selectProviderFastModeState.select(appStore.state);
   const update = appClient.settings.updateSnapshot;
   let revision = 1;
   appClient.settings.updateSnapshot = async (changes) => {
+    onWrite?.(changes);
     if (rejectWrites) throw new Error('Fixture daemon rejected Fast mode');
     return { applied: changes, revision: ++revision };
   };

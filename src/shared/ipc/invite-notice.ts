@@ -63,6 +63,7 @@ export type InviteFailureReason =
   | 'owner-self-join'
   | 'denied'
   | 'flow-expired'
+  | 'collaboration-upgrade-required'
   | 'sign-in-failed'
   | 'launch-failed'
   | 'proof-not-connected'

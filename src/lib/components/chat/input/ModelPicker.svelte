@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  const hostMember$ = selectIsHostMember();
   import { onDestroy, onMount, untrack } from 'svelte';
   import { writable, derived } from 'svelte/store';
 
@@ -343,6 +346,7 @@
     agentId: string;
     workspaceId: string;
     revision: number;
+    connection: string | null;
   };
   let pendingModelUpdate = $state<ModelChange | null>(null);
   let isApplyingModelUpdate = $state(false);
@@ -668,7 +672,8 @@
       !destroyed &&
       change.revision === modelChangeRevision &&
       change.agentId === agentId &&
-      change.workspaceId === workspaceId
+      change.workspaceId === workspaceId &&
+      change.connection === selectPrincipalConnectionContext.select(appStore.state)
     );
   }
 
@@ -795,9 +800,17 @@
     }
     onModelChange?.(model, pick);
     if (effectiveLocked || destroyed) return;
-    if (updateGlobalDefault) appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+    if (updateGlobalDefault && !$hostMember$)
+      appStore.dispatch(selectModel(pick.modelId, pick.providerId));
     if (!updateGlobalStore || !agentId || !workspaceId) return;
-    const change: ModelChange = { pick, previous, agentId, workspaceId, revision };
+    const change: ModelChange = {
+      pick,
+      previous,
+      agentId,
+      workspaceId,
+      revision,
+      connection: selectPrincipalConnectionContext.select(appStore.state),
+    };
     if (deferUpdate) pendingModelUpdate = change;
     else await applyBackendModelUpdate(change);
   }
@@ -1164,6 +1177,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
+    if ($hostMember$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1174,14 +1188,21 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
-          id: 'no-provider-available',
-          duration: 6000,
-          action: {
-            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: openProviderSettings,
+        notify.error(
+          $hostMember$
+            ? m.hostExecution_providerSetup_description()
+            : m.chat_modelPicker_noProviderAvailable_toast(),
+          {
+            id: 'no-provider-available',
+            duration: 6000,
+            action: $hostMember$
+              ? undefined
+              : {
+                  label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+                  onClick: openProviderSettings,
+                },
           },
-        });
+        );
       }
     } else {
       noProviderToastShown = false;
@@ -1432,7 +1453,7 @@
     return sessionModelId !== localModelId;
   });
 
-  const isSelectedModelUnavailable = $derived.by(() => {
+  const isSelectedModelMissingAfterLoad = $derived.by(() => {
     if (isGuestLocked) return false;
     // Settings-derived: does not wait for catalog loads or availability probes.
     if (isSelectedModelProviderDisabled) return true;
@@ -1443,6 +1464,23 @@
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;
     return isSelectedModelMissingFromCatalog;
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (!isSelectedModelMissingAfterLoad) return false;
+    if (isSelectedModelProviderDisabled) return true;
+    const provider = selectedModelGateProviderId;
+    // A hydrated registry can establish that a historical provider no longer
+    // resolves, even though that provider can never return a model catalog.
+    if ($providerCatalogEntries$.length > 0 && !hasResolvedProvider(provider)) return true;
+    const catalog = $providerCatalogs$[provider];
+    const request = $providerRequests$[provider];
+    // A failed probe or a degraded/last-good list cannot establish removal.
+    // Keep the user's model and effort until this provider has a fresh result.
+    if (!catalog || catalog.stale || catalog.warning) return false;
+    if (request?.error || request?.status === 'loading' || request?.status === 'cancelled')
+      return false;
+    return true;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -1837,13 +1875,15 @@
     if (isGuestLocked) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
-    if (!isSelectedModelUnavailable) return;
+    if (!isSelectedModelMissingAfterLoad) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
 
     const currentProvider = selectedModelGateProviderId;
 
     // Try same-provider fallback first
-    const fallbackOption = findFallbackOption(currentProvider);
+    const fallbackOption = isSelectedModelUnavailable
+      ? findFallbackOption(currentProvider)
+      : undefined;
     if (fallbackOption) {
       logger.info('Workspace initializer: falling back to same-provider model', {
         unavailableModel: localModel,
@@ -1892,6 +1932,7 @@
       dropdownValue = currentDropdownValue();
       return;
     }
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
     const modelValue = value as string;
     const pick =
       modelValue === USE_DEFAULT_VALUE
@@ -1930,7 +1971,13 @@
                 parseCompoundModelId(modelValue).modelId),
         },
       );
-      if (!confirmed || confirmation !== confirmationRevision || effectiveLocked || destroyed) {
+      if (
+        !confirmed ||
+        connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+        confirmation !== confirmationRevision ||
+        effectiveLocked ||
+        destroyed
+      ) {
         dropdownValue = currentDropdownValue();
         return;
       }
@@ -2195,7 +2242,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider}
+        {#if !hasNoAvailableProvider && !$hostMember$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2312,6 +2359,7 @@
         {isLoadingModels}
         {blockingLoadError}
         {hasNoAvailableProvider}
+        hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />

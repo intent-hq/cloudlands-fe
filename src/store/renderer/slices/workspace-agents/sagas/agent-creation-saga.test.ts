@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -96,13 +97,13 @@ const GUEST_SESSION: GuestSessionRecord = {
 
 // A settled owner window: the guest session list hydrated with no joined host.
 function ownerWindowIdentity() {
-  return {
+  return withLegacyPrincipal({
     connections: connectionsInitialState,
     guestSessions: guestSessionsReducer(
       guestSessionsInitialState,
       guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
     ),
-  };
+  });
 }
 
 // A settled guest window: the window's backend id is a joined host.

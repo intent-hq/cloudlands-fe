@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  */
@@ -165,6 +166,7 @@ beforeEach(() => {
   // No sagas run here: settle the window's guest/owner identity as an owner
   // (multiplayer w4) so the administrator-only tabs are rendered.
   appStore.dispatch(guestSessionsListUnavailable());
+  admitLegacyPrincipal();
 });
 
 afterEach(() => {

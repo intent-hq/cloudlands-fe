@@ -1,5 +1,14 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import {
+    selectCanAdministerHost,
+    selectPrincipalActionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
+  const hostMember$ = selectIsHostMember();
+  const canAdministerHost$ = selectCanAdministerHost();
+  const admission$ = selectPrincipalActionContext();
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
@@ -22,6 +31,7 @@
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
+  import type { Workspace } from '$shared/types';
 
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -33,16 +43,19 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerDismissedRecentRepoKeys,
+    selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerRemoteSetups,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
   import type {
     WorkspaceInitializerRecentRepo,
     WorkspaceInitializerRemoteSetup,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
@@ -98,6 +111,9 @@
     );
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
+  const mountedDispatch = appStore.dispatch;
+  const initializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const dismissedRecentRepoKeys$ = selectWorkspaceInitializerDismissedRecentRepoKeys();
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
@@ -105,6 +121,9 @@
   // GitHub autocomplete sources for the "Pick a repo" tab: the user's own
   // repos (client-side filtered) plus a debounced global search.
   const isGithubAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const canBrowseGithub = $derived(
+    $hostMember$ || ($canAdministerHost$ && $isGithubAuthenticated$),
+  );
   const githubRepos$ = selectGithubRepos();
   const githubReposLoading$ = selectGithubReposLoading();
   const githubReposLoaded$ = selectGithubReposLoaded();
@@ -218,7 +237,28 @@
     relativePathFromGitRoot?: string;
     isSubdirectoryOfGitRepo?: boolean;
   } | null>(null);
-  const recentRepos = $derived($workspaceInitializerRecentRepos$);
+  // Source suggestions can render before saved settings settle, but must not
+  // become a whole-history write that overwrites that still-pending read.
+  let pendingSourceView = $state<{
+    admission: string;
+    repos: WorkspaceInitializerRecentRepo[];
+    workspaces: Workspace[];
+    registryRepos: KnownRepo[];
+  } | null>(null);
+  const recentRepos = $derived.by(() => {
+    const saved = $workspaceInitializerRecentRepos$;
+    if (
+      !pendingSourceView ||
+      pendingSourceView.admission !== $admission$ ||
+      appStore.dispatch !== mountedDispatch
+    )
+      return saved;
+    const merged = new Map(saved.map((repo) => [recentRepoKey(repo), repo]));
+    for (const repo of pendingSourceView.repos) merged.set(recentRepoKey(repo), repo);
+    return [...merged.values()]
+      .filter((repo) => !$dismissedRecentRepoKeys$[recentRepoKey(repo)])
+      .slice(0, 9);
+  });
 
   async function handleDismissRecentRepo(event: MouseEvent, repo: WorkspaceInitializerRecentRepo) {
     event.preventDefault();
@@ -425,7 +465,7 @@
 
   /** Single combined suggestion list rendered under the GitHub input. */
   const githubSuggestions = $derived.by<GithubRepoItem[]>(() =>
-    activeTab === 'github' && $isGithubAuthenticated$
+    activeTab === 'github' && canBrowseGithub
       ? [...ownedGithubSuggestions, ...discoverGithubSuggestions]
       : [],
   );
@@ -458,7 +498,7 @@
   $effect(() => {
     if (
       activeTab === 'github' &&
-      $isGithubAuthenticated$ &&
+      canBrowseGithub &&
       !$githubReposLoaded$ &&
       !$githubReposLoading$ &&
       !$githubReposError$
@@ -671,12 +711,11 @@
   // That logic lives in the parent flow to avoid side effects when this component
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
-  onMount(async () => {
+  async function loadRecentRepos(isCurrent: () => boolean, admission: string, publish: boolean) {
     performanceMonitor.start('loadRecentRepos');
 
     // Refresh the GitHub auth snapshot so the "Pick a repo" tab knows whether
     // it can offer autocomplete suggestions.
-    appStore.dispatch(initializeGitHubAuth());
 
     try {
       // Simulate network delay if enabled
@@ -684,6 +723,9 @@
         await new Promise((resolve) => setTimeout(resolve, debugConfig.get('networkDelay') || 0));
       }
 
+      if (!isCurrent()) return;
+
+      const deletionTokens = appStore.state.workspace?.deletionTokens ?? {};
       // Load repos from both workspace-derived and persistent registry in parallel
       const [workspaceListResult, registryResult] = await Promise.all([
         workspaceClient.list({ lite: true }),
@@ -692,11 +734,30 @@
           {},
         ).catch(() => null),
       ]);
+      if (!isCurrent()) return;
+      if (!workspaceListResult.ok && !registryResult?.success) return;
 
-      const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
-      if (workspaceListResult.ok) {
-        appStore.dispatch(replaceWorkspaceList(workspaces));
+      // A successful source replaces only its own provisional observations. A
+      // failure is not evidence that the other source's suggestions disappeared.
+      const previousSources = pendingSourceView?.admission === admission ? pendingSourceView : null;
+      const workspaces = workspaceListResult.ok
+        ? workspaceListResult.data
+        : (previousSources?.workspaces ?? []);
+      const registryRepos = registryResult?.success
+        ? (registryResult.data ?? [])
+        : (previousSources?.registryRepos ?? []);
+      // Retained workspace data contributes suggestions/exclusions only; never
+      // publish a failed list as a current workspace/capability projection.
+      if (workspaceListResult.ok && publish) {
+        mountedDispatch(
+          replaceWorkspaceList(workspaces, {
+            complete: workspaceListResult.complete === true,
+            deletionTokens,
+          }),
+        );
       }
+
+      if (!isCurrent()) return;
 
       // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
       const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
@@ -726,15 +787,15 @@
       };
 
       // Persisted recents may predate the daemon-managed exclusions below.
-      for (const repo of $workspaceInitializerRecentRepos$) {
+      for (const repo of selectWorkspaceInitializerRecentRepos.select(appStore.state)) {
         if (isDaemonManagedRepoPath(repo.path) || workspaceOwnedCheckouts.has(repo.path)) continue;
         repoMap.set(entryKey(repo), repo);
       }
 
       // Add persistent registry repos. Path-less GitHub picks carry a
       // githubUrl and use the owner/repo shorthand as their key.
-      if (registryResult?.success && Array.isArray(registryResult.data)) {
-        for (const repo of registryResult.data) {
+      if (Array.isArray(registryRepos)) {
+        for (const repo of registryRepos) {
           if (repo.githubUrl) {
             const entry: RecentEntry = {
               path: repo.path,
@@ -816,14 +877,42 @@
 
       // Redux applies persisted dismissals to the latest source results, including
       // removals made while this request was in flight, before enforcing the limit.
-      appStore.dispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
+      if (!isCurrent()) return;
+      if (publish) {
+        mountedDispatch(setWorkspaceInitializerRecentRepos(refreshedRepos));
+        pendingSourceView = null;
+      } else {
+        pendingSourceView = { admission, repos: refreshedRepos, workspaces, registryRepos };
+      }
     } catch (err) {
+      if (!isCurrent()) return;
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
       logger.error('Failed to load recent repositories', appError);
     } finally {
-      isLoading = false;
+      if (isCurrent()) isLoading = false;
       performanceMonitor.end('loadRecentRepos');
     }
+  }
+
+  $effect(() => {
+    if ($canAdministerHost$) appStore.dispatch(initializeGitHubAuth());
+  });
+  $effect(() => {
+    const admission = $admission$;
+    const awaitingHydration = $canAdministerHost$ && !$initializerHydrated$;
+    isLoading = true;
+    // Settings readiness gates publication, not reading current source suggestions.
+    // Members still use local preferences without owner-only hydration.
+    if (!admission || appStore.dispatch !== mountedDispatch) return;
+    let active = true;
+    const isCurrent = () =>
+      active &&
+      appStore.dispatch === mountedDispatch &&
+      admission === selectPrincipalActionContext.select(appStore.state);
+    void untrack(() => loadRecentRepos(isCurrent, admission, !awaitingHydration));
+    return () => {
+      active = false;
+    };
   });
 
   // Parse GitHub URL using the URL API for robust parsing
@@ -974,7 +1063,7 @@
    * Signed-out users get no dispatch at all.
    */
   function dispatchGithubSearch(query: string) {
-    if (!$isGithubAuthenticated$) return;
+    if (!canBrowseGithub) return;
     appStore.dispatch(searchGithubRepos(query.trim()));
   }
 
@@ -1543,6 +1632,8 @@
                 <Fa icon={faFolder} class="text-ghost opacity-50" />
               </Button>
             {:else if activeTab === 'github'}
+              <HostExecutionNotice kind="repository" />
+              <HostExecutionNotice />
               <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
               <div
                 class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
@@ -1576,14 +1667,18 @@
             typed text, then deduped global search results. Signed-out users
             get a connect hint instead; manual owner/repo entry keeps working.
           -->
-              {#if !$isGithubAuthenticated$}
+              {#if !canBrowseGithub && $canAdministerHost$}
                 <GitHubAuthBanner
                   class="mt-2"
                   message={m.workspace_repoSelector_githubSignIn_description()}
                 />
               {:else if $githubReposError$}
                 <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
-                  <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
+                  <span
+                    >{$hostMember$
+                      ? $githubReposError$
+                      : m.workspace_repoSelector_suggestionsUnavailable_label()}</span
+                  >
                   <Button
                     variant="ghost"
                     type="button"
