@@ -3,10 +3,10 @@ import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, cancelled, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { scriptsClient } from '$features/scripts/scripts.client';
-import { takeLeadingInContext } from '../../../utils/context-saga-effects';
+import { takeLeadingInContext, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   workspaceDeleted,
   workspaceUnmounted,
@@ -22,6 +22,7 @@ import {
   startScriptRequested,
   stopScriptRequested,
 } from '../scripts-slice';
+import { selectScriptHistoryState } from '../scripts-selectors';
 import type { ScriptQuickAction } from '../scripts-types';
 
 type ScriptOperationRequest = ReturnType<
@@ -90,9 +91,22 @@ function* runArchiveOperation(
 ): SagaGenerator<void> {
   const [workspaceId, scriptIds, operation] = action.payload;
   const operationDispatch = store.dispatch;
+  const generation = (yield* selectScriptHistoryState.effect(workspaceId)).archiveGeneration ?? 0;
+  function* isCurrentOperation(): SagaGenerator<boolean> {
+    return (
+      operationDispatch === store.dispatch &&
+      generation === ((yield* selectScriptHistoryState.effect(workspaceId)).archiveGeneration ?? 0)
+    );
+  }
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   if (!authority) {
-    yield* put(scriptArchiveFinished(workspaceId, { error: m.error_handling_permission_error() }));
+    yield* put(
+      scriptArchiveFinished(
+        workspaceId,
+        { error: m.error_handling_permission_error() },
+        generation,
+      ),
+    );
     return;
   }
   let reconcile = false;
@@ -110,7 +124,11 @@ function* runArchiveOperation(
       workspaceCleanedUp = true;
       return;
     }
-    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
+    if (
+      !(yield* isCurrentOperation()) ||
+      authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))
+    )
+      return;
     if (!negotiation.supported) throw new Error(m.scripts_history_unsupported_error());
     reconcile = true;
     const outcome = yield* race({
@@ -124,27 +142,42 @@ function* runArchiveOperation(
       reconcile = false;
       return;
     }
-    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
+    if (
+      !(yield* isCurrentOperation()) ||
+      authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))
+    )
+      return;
     if (outcome.result) {
       const result = outcome.result;
       yield* put(
-        scriptArchiveFinished(workspaceId, {
-          changed: 'archived' in result ? result.archived.length : result.restored.length,
-          skipped: result.skipped.length,
-        }),
+        scriptArchiveFinished(
+          workspaceId,
+          {
+            changed: 'archived' in result ? result.archived.length : result.restored.length,
+            skipped: result.skipped.length,
+          },
+          generation,
+        ),
       );
     }
   } catch (error) {
-    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
-    yield* put(scriptArchiveFinished(workspaceId, { error: errorMessage(error) }));
+    if (
+      !(yield* isCurrentOperation()) ||
+      authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))
+    )
+      return;
+    yield* put(scriptArchiveFinished(workspaceId, { error: errorMessage(error) }, generation));
   } finally {
     // A persistence failure can follow earlier per-ID commits. Re-read while this
     // workspace authority is still current; cleanup must not revive its requests.
-    if (!workspaceCleanedUp && operationDispatch === store.dispatch) {
-      if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) {
+    if (!workspaceCleanedUp && (yield* isCurrentOperation())) {
+      if (
+        (yield* cancelled()) ||
+        authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))
+      ) {
         // Drop the result, but release this operation's local busy state. A
         // replacement store owns its own state and must not receive this cleanup.
-        yield* put(scriptArchiveFinished(workspaceId, {}));
+        yield* put(scriptArchiveFinished(workspaceId, {}, generation));
       } else if (reconcile) {
         yield* put(refreshScripts(workspaceId, true));
       }
@@ -154,7 +187,7 @@ function* runArchiveOperation(
 
 export function* scriptsOperationSaga(): SagaGenerator<void> {
   yield* all([
-    takeLeadingInContext(
+    takeLatestInContext(
       [scriptArchiveRequested],
       (action) => action.payload[0],
       runArchiveOperation,

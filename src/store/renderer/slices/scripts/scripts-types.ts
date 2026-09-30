@@ -60,6 +60,7 @@ export type ScriptsWorkspaceState = {
   historyVersion?: number;
   historyLoadedVersion?: number;
   loadError?: string;
+  archiveGeneration?: number;
   archiveOperation?: { pending: boolean; error?: string; changed?: number; skipped?: number };
 };
 

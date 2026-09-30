@@ -199,7 +199,7 @@ describe('script archive operations', () => {
     await settle();
     await settle();
     expect(mocks.archive).toHaveBeenCalledWith(WS, ['one', 'two'], { capabilityVerified: true });
-    expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 1 }));
+    expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 1 }, 0));
     expect(run.actions).toContainEqual(refreshScripts(WS, true));
     run.actions.length = 0;
     mocks.archive.mockRejectedValue(new Error('durable write failed'));
@@ -207,7 +207,7 @@ describe('script archive operations', () => {
     await settle();
     await settle();
     expect(run.actions).toContainEqual(
-      scriptArchiveFinished(WS, { error: 'durable write failed' }),
+      scriptArchiveFinished(WS, { error: 'durable write failed' }, 0),
     );
     expect(run.actions).toContainEqual(refreshScripts(WS, true));
     await stop(run.task);
@@ -220,7 +220,7 @@ describe('script archive operations', () => {
     run.channel.put(scriptArchiveRequested(WS, ['one'], 'restore'));
     await settle();
     await settle();
-    expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 0 }));
+    expect(run.actions).toContainEqual(scriptArchiveFinished(WS, { changed: 1, skipped: 0 }, 0));
     expect(mocks.start).not.toHaveBeenCalled();
     const pending = deferred<{ archived: string[]; skipped: [] }>();
     mocks.archive.mockReturnValue(pending.promise);
@@ -327,6 +327,108 @@ describe('live script mutation admission', () => {
         expect(run.actions.some((action) => action.type === refreshScripts.type)).toBe(false);
       } finally {
         await stop(run.task);
+      }
+    },
+  );
+  it.each(['archive', 'restore'] as const)(
+    'preserves newer %s pending state when replacing a request before or after dispatch',
+    async (operation) => {
+      for (const stage of ['negotiation', 'inFlight'] as const) {
+        const first = deferred<unknown>();
+        const second = deferred<unknown>();
+        let hellos = 0;
+        let mutations = 0;
+        vi.mocked(lifecycleRequest)
+          .mockReset()
+          .mockImplementation(async (method, params) => {
+            if (method === 'client.hello') {
+              hellos++;
+              if (hellos === 1 && stage === 'negotiation') return first.promise as never;
+              return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
+            }
+            mutations++;
+            return (params as { scriptIds: string[] }).scriptIds[0] === 'old'
+              ? (first.promise as never)
+              : (second.promise as never);
+          });
+        const run = start();
+        try {
+          run.dispatch(scriptArchiveRequested(WS, ['old'], operation));
+          await vi.waitFor(() => expect(stage === 'negotiation' ? hellos : mutations).toBe(1));
+          run.state.principal.invalidation++;
+          run.dispatch(scriptArchiveRequested(WS, ['new'], operation));
+          await vi.waitFor(() =>
+            expect(lifecycleRequest).toHaveBeenCalledWith('script.' + operation, {
+              workspaceId: WS,
+              scriptIds: ['new'],
+            }),
+          );
+          expect(run.state.scripts.byWorkspaceId[WS].archiveOperation).toEqual({ pending: true });
+          first.resolve(
+            stage === 'negotiation'
+              ? { server: { capabilities: { scriptLifecycle: 1 } } }
+              : { archived: ['old'], restored: ['old'], skipped: [] },
+          );
+          for (let i = 0; i < 10; i++) await settle();
+          expect(run.state.scripts.byWorkspaceId[WS].archiveOperation).toEqual({ pending: true });
+          expect(mutations).toBe(stage === 'negotiation' ? 1 : 2);
+          second.resolve({ archived: ['new'], restored: ['new'], skipped: [] });
+          await vi.waitFor(() =>
+            expect(run.state.scripts.byWorkspaceId[WS].archiveOperation).toEqual({
+              pending: false,
+              changed: 1,
+              skipped: 0,
+            }),
+          );
+        } finally {
+          await stop(run.task);
+        }
+      }
+    },
+  );
+  it.each(['archive', 'restore'] as const)(
+    'does not publish old %s state or dispatch after store replacement',
+    async (operation) => {
+      for (const stage of ['negotiation', 'inFlight'] as const) {
+        const response = deferred<unknown>();
+        vi.mocked(lifecycleRequest)
+          .mockReset()
+          .mockImplementation(async (method) => {
+            if (method === 'client.hello' && stage === 'inFlight')
+              return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
+            return response.promise as never;
+          });
+        const run = start();
+        try {
+          run.dispatch(scriptArchiveRequested(WS, ['old'], operation));
+          await vi.waitFor(() =>
+            expect(lifecycleRequest).toHaveBeenCalledWith(
+              stage === 'negotiation' ? 'client.hello' : 'script.' + operation,
+              stage === 'negotiation' ? {} : { workspaceId: WS, scriptIds: ['old'] },
+            ),
+          );
+          appStore.dispose();
+          appStore.init();
+          response.resolve(
+            stage === 'negotiation'
+              ? { server: { capabilities: { scriptLifecycle: 1 } } }
+              : { archived: ['old'], restored: ['old'], skipped: [] },
+          );
+          for (let i = 0; i < 10; i++) await settle();
+          expect(
+            vi
+              .mocked(lifecycleRequest)
+              .mock.calls.filter(([method]) => method.startsWith('script.')),
+          ).toHaveLength(stage === 'negotiation' ? 0 : 1);
+          expect(
+            run.actions.filter(
+              (action) =>
+                action.type === scriptArchiveFinished.type || action.type === refreshScripts.type,
+            ),
+          ).toEqual([]);
+        } finally {
+          await stop(run.task);
+        }
       }
     },
   );

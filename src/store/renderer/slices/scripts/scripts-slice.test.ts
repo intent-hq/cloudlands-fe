@@ -290,6 +290,18 @@ describe('scripts selectors', () => {
 });
 
 describe('archive lifecycle reconciliation', () => {
+  it('ignores obsolete completion and cleanup after a newer archive request', () => {
+    let state = scriptsReducer(undefined, scriptArchiveRequested(WS, ['old'], 'archive'));
+    const oldGeneration = state.byWorkspaceId[WS].archiveGeneration;
+    state = scriptsReducer(state, scriptArchiveRequested(WS, ['new'], 'restore'));
+    const currentGeneration = state.byWorkspaceId[WS].archiveGeneration;
+    state = scriptsReducer(state, scriptArchiveFinished(WS, { changed: 1 }, oldGeneration));
+    state = scriptsReducer(state, scriptArchiveFinished(WS, {}, oldGeneration));
+    expect(state.byWorkspaceId[WS].archiveOperation).toEqual({ pending: true });
+    state = scriptsReducer(state, scriptArchiveFinished(WS, { changed: 1 }, currentGeneration));
+    expect(state.byWorkspaceId[WS].archiveOperation).toEqual({ pending: false, changed: 1 });
+  });
+
   it('keeps selected output and direct row handles, without reviving archived rows on runtime events', () => {
     const active = makeScriptEntry({ mode: 'command', purpose: 'oneOff' });
     let scripts = scriptsReducer(undefined, setScriptsData(WS, [active]));

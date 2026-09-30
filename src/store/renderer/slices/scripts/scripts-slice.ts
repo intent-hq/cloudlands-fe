@@ -81,9 +81,13 @@ export const scriptArchiveRequested = createAction<
   [wsId: string, scriptIds: string[], operation: 'archive' | 'restore']
 >('scripts/archiveRequested');
 export const scriptArchiveFinished =
-  createAction<[wsId: string, result: { error?: string; changed?: number; skipped?: number }]>(
-    'scripts/archiveFinished',
-  );
+  createAction<
+    [
+      wsId: string,
+      result: { error?: string; changed?: number; skipped?: number },
+      generation?: number,
+    ]
+  >('scripts/archiveFinished');
 
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts =
@@ -284,10 +288,15 @@ scriptsReducer.with(
 );
 scriptsReducer.with(scriptArchiveRequested, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, archiveOperation: { pending: true } });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    archiveGeneration: (ws.archiveGeneration ?? 0) + 1,
+    archiveOperation: { pending: true },
+  });
 });
-scriptsReducer.with(scriptArchiveFinished, (state, { payload: [wsId, result] }) => {
+scriptsReducer.with(scriptArchiveFinished, (state, { payload: [wsId, result, generation] }) => {
   const ws = getWorkspaceState(state, wsId);
+  if (generation !== undefined && generation !== (ws.archiveGeneration ?? 0)) return state;
   return setWorkspaceState(state, wsId, { ...ws, archiveOperation: { pending: false, ...result } });
 });
 
