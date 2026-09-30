@@ -6928,5 +6928,19 @@
   "presence_status_online": "オンライン",
   "presence_status_offline": "オフライン",
   "presence_status_viewing": "オンライン · このワークスペースを表示中",
-  "presence_person_roleStatus": "{name} · {role} · {status}"
+  "presence_person_roleStatus": "{name} · {role} · {status}",
+  "settings_personalDevices_title": "サインイン中のデバイス",
+  "settings_personalDevices_identity_description": "{host} の {person} · {role}",
+  "settings_personalDevices_pair_label": "自分として別のデバイスをペアリング",
+  "settings_personalDevices_owner_label": "ホスト所有者",
+  "settings_personalDevices_member_label": "ホストメンバー",
+  "settings_personalDevices_guest_label": "ワークスペースのゲスト",
+  "settings_personalDevices_roster_label": "接続中のデバイス",
+  "settings_personalDevices_connected_label": "接続済み",
+  "settings_personalDevices_empty_label": "表示する接続中のデバイスはありません。",
+  "settings_personalDevices_reusable_description": "このリンクとQRコードは、現在のアクセス権で自分のデバイスをペアリングするために再利用できます。他人と共有しないでください。",
+  "settings_personalDevices_pairing_error": "ペアリングできません。接続とアクセス権を確認して再試行してください。",
+  "settings_personalDevices_roster_error": "接続中のデバイスを読み込めませんでした。再試行してください。",
+  "settings_personalDevices_copy_label": "ペアリングリンクをコピー",
+  "settings_personalDevices_copied_label": "リンクをコピーしました"
 }

@@ -6928,5 +6928,19 @@
   "presence_status_online": "En línea",
   "presence_status_offline": "Sin conexión",
   "presence_status_viewing": "En línea · Viendo este espacio de trabajo",
-  "presence_person_roleStatus": "{name} · {role} · {status}"
+  "presence_person_roleStatus": "{name} · {role} · {status}",
+  "settings_personalDevices_title": "Dispositivos de mi cuenta",
+  "settings_personalDevices_identity_description": "{person} en {host} · {role}",
+  "settings_personalDevices_pair_label": "Vincular otro dispositivo como yo",
+  "settings_personalDevices_owner_label": "Propietario del host",
+  "settings_personalDevices_member_label": "Miembro del host",
+  "settings_personalDevices_guest_label": "Invitado del espacio de trabajo",
+  "settings_personalDevices_roster_label": "Dispositivos conectados",
+  "settings_personalDevices_connected_label": "Conectado",
+  "settings_personalDevices_empty_label": "No hay dispositivos conectados que mostrar.",
+  "settings_personalDevices_reusable_description": "Este enlace y código QR se pueden reutilizar para vincular tus dispositivos con tu acceso actual. Mantenlos privados.",
+  "settings_personalDevices_pairing_error": "La vinculación no está disponible. Revisa tu conexión y acceso e inténtalo de nuevo.",
+  "settings_personalDevices_roster_error": "No se pudieron cargar los dispositivos conectados. Inténtalo de nuevo.",
+  "settings_personalDevices_copy_label": "Copiar enlace de vinculación",
+  "settings_personalDevices_copied_label": "Enlace copiado"
 }
