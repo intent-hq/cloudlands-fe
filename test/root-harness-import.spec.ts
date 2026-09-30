@@ -100,7 +100,7 @@ for (const unavailableAfterReload of [false, true]) {
       }
       expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(previousOrigin);
       expect(await page.evaluate(() => Reflect.get(globalThis, '__rootHarnessModuleReady'))).toBe(
-        true,
+        unavailableAfterReload ? undefined : true,
       );
       expect(await page.evaluate(() => Reflect.get(globalThis, 'process').env.NODE_ENV)).toBe(
         'test',
