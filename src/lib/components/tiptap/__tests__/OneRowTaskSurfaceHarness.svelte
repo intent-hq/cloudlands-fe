@@ -4,7 +4,19 @@
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import { AgentStatus, type AgentSession, type Note, type TaskStatus } from '$shared/types';
+  import {
+    AgentStatus,
+    WorkspaceStatus,
+    type AgentSession,
+    type Note,
+    type TaskStatus,
+    type Workspace,
+  } from '$shared/types';
+  import {
+    setWorkspaceEntity,
+    removeWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
   import WorkspaceRouteContextProvider from '$lib/components/workspace/WorkspaceRouteContextProvider.svelte';
@@ -87,6 +99,26 @@
     else store.dispatch(principalContextChanged(null));
     return previous;
   });
+  const fixtureDispatch = store.dispatch;
+  const fixturePrincipal = store.state.principal;
+  // The real assignment gate requires a workspace as well as caller admission.
+  const ownedWorkspace = untrack(() => {
+    if (selectWorkspaceById.select(store.state, workspaceId)) return null;
+    const workspace: Workspace = {
+      id: workspaceId,
+      title: 'One-row tasks',
+      branch: 'main',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatus.Active,
+      myRole: 'owner',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    store.dispatch(setWorkspaceEntity(workspace));
+    return selectWorkspaceById.select(store.state, workspaceId);
+  });
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
   store.dispatch(
@@ -125,15 +157,21 @@
   const editor = { state: { doc: { nodeAt: () => null } }, on: () => {}, off: () => {} } as any;
 
   onDestroy(() => {
+    if (store.dispatch === fixtureDispatch) {
+      if (ownedWorkspace && selectWorkspaceById.select(store.state, workspaceId) === ownedWorkspace)
+        store.dispatch(removeWorkspaceEntity(workspaceId));
+      if (store.state.principal === fixturePrincipal) {
+        store.dispatch(principalContextChanged(previousPrincipal.context));
+        if (previousPrincipal.context && previousPrincipal.snapshot)
+          store.dispatch(
+            principalReceived(
+              { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+              previousPrincipal.snapshot,
+            ),
+          );
+      }
+    }
     dispose();
-    store.dispatch(principalContextChanged(previousPrincipal.context));
-    if (previousPrincipal.context && previousPrincipal.snapshot)
-      store.dispatch(
-        principalReceived(
-          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
-          previousPrincipal.snapshot,
-        ),
-      );
   });
 </script>
 
