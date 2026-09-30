@@ -66,6 +66,46 @@ afterEach(() => {
   cleanup.splice(0).forEach((f) => f());
   windows.clear();
 });
+
+describe('issued execute observation after local command closure', () => {
+  it('retains the original issued execute after local release in the same document', async () => {
+    const h = await harness(),
+      id = await h.acquire();
+    const executing = h.call(channels.EXECUTE, { id, root, command: { prTitle: 'T' } });
+    const original = h.socket.frames.at(-1)!;
+    expect(original).toMatchObject({
+      method: 'accept-changes.execute',
+      params: {
+        workspaceId: root.workspaceId,
+        action: 'create-pr',
+        review: { operationId: 'private', root },
+        prTitle: 'T',
+      },
+    });
+    const release = h.call(channels.RELEASE, { id, root });
+    expect(h.socket.frames.at(-1)).toMatchObject({
+      method: 'accept-changes.release',
+      params: { operationId: 'private', root },
+    });
+    h.socket.reply({ released: true });
+    expect(await release).toMatchObject({ ok: true });
+    h.socket.reply(outcome, original.id);
+    expect(await executing).toEqual({
+      ok: true,
+      result: { current: false, uncertain: false, execute: outcome, reconciliation: null },
+    });
+    expect(await h.call(channels.EXECUTE, { id, root, command: { prTitle: 'T' } })).toMatchObject({
+      ok: false,
+    });
+    expect(await h.call(channels.RECONCILE, { id, root })).toMatchObject({ ok: false });
+    expect(h.socket.frames.map((frame) => frame.method)).toEqual([
+      'client.hello',
+      'accept-changes.prepare',
+      'accept-changes.execute',
+      'accept-changes.release',
+    ]);
+  });
+});
 async function harness(companionCapability: unknown = null) {
   const socket = new Socket(),
     client = new JsonRpcClient({
@@ -116,7 +156,7 @@ async function harness(companionCapability: unknown = null) {
     socket.reply(capture);
     return (await result).result.id as string;
   }
-  return { socket, client, sender, window, event, call, acquire };
+  return { socket, client, sender, window, event, call, acquire, feed, registry };
 }
 describe('native review original window and private operation', () => {
   it('rejects an unbound or forged frame before preparation', async () => {
@@ -328,5 +368,176 @@ describe('same document companion capture through actual main routes', () => {
     h.socket.reply({ released: true });
     expect(await work).toMatchObject({ ok: false });
     expect(await h.call(channels.PREPARE, { companionOf: id, root })).toMatchObject({ ok: false });
+  });
+});
+
+describe('issued execute observation after local command closure', () => {
+  it('retains the distinct child after parent and child release without reacquiring either owner', async () => {
+    const h = await harness(1),
+      parent = await committedParent(h);
+    const captureWork = h.call(channels.PREPARE, { companionOf: parent, root });
+    await vi.waitFor(() =>
+      expect(
+        (h.socket.frames.at(-1)?.params as { review?: { choice?: { kind?: string } } })?.review
+          ?.choice?.kind,
+      ).toBe('afterCommit'),
+    );
+    h.socket.reply(companionCapture(childId));
+    const child = (await captureWork).result.id;
+    expect(child).not.toBe(parent);
+    const pending = h.call(channels.EXECUTE, { id: child, root, command: { prTitle: 'Child' } });
+    const execute = h.socket.frames.at(-1)!;
+    const childRelease = h.call(channels.RELEASE, { id: child, root });
+    h.socket.reply({ released: true });
+    const parentRelease = h.call(channels.RELEASE, { id: parent, root });
+    h.socket.reply({ released: true });
+    await Promise.all([childRelease, parentRelease]);
+    const result = {
+      ...outcome,
+      operationId: childId,
+      reviewExecution: {
+        ...outcome.reviewExecution,
+        requestId: childId,
+        preparation: companionCapture(childId).reviewPreparation,
+      },
+    };
+    h.socket.reply(result, execute.id);
+    expect(await pending).toEqual({
+      ok: true,
+      result: { current: false, uncertain: false, execute: result, reconciliation: null },
+    });
+    const count = h.socket.frames.length;
+    expect(await h.call(channels.PREPARE, { companionOf: parent, root })).toMatchObject({
+      ok: false,
+    });
+    expect(await h.call(channels.RECONCILE, { id: child, root })).toMatchObject({ ok: false });
+    expect(h.socket.frames).toHaveLength(count);
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(2);
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.prepare')).toHaveLength(2);
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.release')).toHaveLength(2);
+  });
+
+  it('cannot obtain observation authority by closing before dispatch or by issuing reconciliation', async () => {
+    const h = await harness(),
+      id = await h.acquire();
+    await h.call(channels.RELEASE, { id, root });
+    h.socket.reply({ released: true });
+    expect(await h.call(channels.EXECUTE, { id, root, command: {} })).toMatchObject({ ok: false });
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(0);
+    const other = await h.acquire();
+    const reconcile = h.call(channels.RECONCILE, { id: other, root });
+    const request = h.socket.frames.at(-1)!;
+    await h.call(channels.RELEASE, { id: other, root });
+    h.socket.reply({ released: true });
+    const { success: _success, steps: _steps, ...result } = outcome;
+    h.socket.reply(result, request.id);
+    expect(await reconcile).toMatchObject({ ok: false });
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.reconcile')).toHaveLength(1);
+  });
+
+  const losses = [
+    'navigation',
+    'frame',
+    'process',
+    'window',
+    'backend ABA',
+    'registry disposal',
+    'backend retirement',
+    'feed disposal',
+    'connection',
+    'identity',
+    'protocol',
+  ] as const;
+  it.each(losses.flatMap((loss) => [false, true].map((afterRelease) => ({ loss, afterRelease }))))(
+    'denies original disclosure on $loss afterRelease=$afterRelease',
+    async ({ loss, afterRelease }) => {
+      const h = await harness(),
+        id = await h.acquire();
+      const pending = h.call(channels.EXECUTE, { id, root, command: { prTitle: 'Original' } });
+      const wire = h.socket.frames.at(-1)!;
+      if (afterRelease) {
+        expect(await h.call(channels.RELEASE, { id, root })).toMatchObject({ ok: true });
+        h.socket.reply({ released: true });
+      }
+      if (loss === 'navigation') h.sender.emit('did-start-navigation', {}, 'new', false, true);
+      else if (loss === 'frame') h.sender.mainFrame = { send: vi.fn() };
+      else if (loss === 'process') h.sender.emit('render-process-gone');
+      else if (loss === 'window') h.window.emit('closed');
+      else if (loss === 'backend ABA') {
+        stampWindowWithBackend(h.window as unknown as BrowserWindow, 'B');
+        stampWindowWithBackend(h.window as unknown as BrowserWindow, 'A');
+      } else if (loss === 'registry disposal') h.registry.dispose();
+      else if (loss === 'backend retirement') h.registry.retireBackend('A');
+      else if (loss === 'feed disposal') h.feed.dispose();
+      else if (loss === 'connection') h.client.dispose();
+      else if (loss === 'identity') {
+        const hello = h.client.request('client.hello', { clientId: 'replacement' });
+        await vi.waitFor(() => expect(h.socket.frames.at(-1)?.method).toBe('client.hello'));
+        h.socket.reply({ clientId: 'replacement', server: { capabilities: { nativeReview: 1 } } });
+        await hello;
+      } else
+        h.socket.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              method: 'accept-changes.retired',
+              params: {
+                sequence: '2',
+                operationIds: ['private'],
+                terminal: false,
+                allRetired: false,
+              },
+            }) + '\n',
+          ),
+        );
+      for (const frame of h.socket.frames.filter((f) => f.method === 'accept-changes.release'))
+        h.socket.reply({ released: true }, frame.id);
+      h.socket.reply(outcome, wire.id);
+      expect(await pending).toMatchObject({ ok: false });
+      expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(1);
+      expect(h.socket.frames.filter((f) => f.method === 'accept-changes.reconcile')).toHaveLength(
+        0,
+      );
+    },
+  );
+
+  it('does not let a foreign frame or equal-root owner consume the original pending observation', async () => {
+    const h = await harness(),
+      id = await h.acquire();
+    const pending = h.call(channels.EXECUTE, { id, root, command: { prTitle: 'Original' } });
+    const wire = h.socket.frames.at(-1)!;
+    await h.call(channels.RELEASE, { id, root });
+    h.socket.reply({ released: true });
+    const preparing = h.call(channels.PREPARE, { input });
+    h.socket.reply(companionCapture(childId));
+    const fresh = (await preparing).result.id;
+    expect(fresh).not.toBe(id);
+    const before = h.socket.frames.length;
+    expect(
+      await h.call(channels.EXECUTE, { id, root, command: {} }, {
+        ...h.event,
+        senderFrame: {},
+      } as IpcMainInvokeEvent),
+    ).toMatchObject({ ok: false });
+    expect(await h.call(channels.RECONCILE, { id, root })).toMatchObject({ ok: false });
+    h.socket.reply(outcome, wire.id);
+    expect(await pending).toMatchObject({ ok: true, result: { current: false, execute: outcome } });
+    expect(h.socket.frames).toHaveLength(before);
+    const next = h.call(channels.EXECUTE, { id: fresh, root, command: { prTitle: 'Fresh' } });
+    const nextWire = h.socket.frames.at(-1)!;
+    expect(nextWire.id).not.toBe(wire.id);
+    h.socket.reply(
+      {
+        ...outcome,
+        operationId: childId,
+        reviewExecution: {
+          ...outcome.reviewExecution,
+          requestId: childId,
+          preparation: companionCapture(childId).reviewPreparation,
+        },
+      },
+      nextWire.id,
+    );
+    expect(await next).toMatchObject({ ok: true });
   });
 });

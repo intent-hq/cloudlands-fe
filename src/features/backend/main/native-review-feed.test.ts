@@ -651,3 +651,215 @@ describe('original commit companion ownership against the actual JsonRpc client'
     expect(h.socket.frames).toHaveLength(count);
   });
 });
+
+describe('issued execute observation entitlement', () => {
+  it('keeps released pending work within the existing bound until original callbacks finish', async () => {
+    const h = await harness();
+    const originals = [];
+    for (let index = 0; index < 32; index += 1) {
+      const id = `bounded-${index}`;
+      const op = await h.acquire(captureReply(id));
+      const ticket = op.retainExecuteObservation()!;
+      const pending = op.confirm(command),
+        request = h.socket.frames.at(-1)!;
+      const release = op.release();
+      h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+      await release;
+      ticket.release();
+      expect(ticket.isLive()).toBe(false);
+      originals.push({ id, pending, request });
+    }
+    const count = h.socket.frames.length;
+    await expect(h.feed.prepare(h.connection, input)).rejects.toThrow();
+    expect(h.socket.frames).toHaveLength(count);
+    const joined = Promise.all(originals.map(({ pending }) => pending));
+    for (const { id, request } of originals) {
+      h.socket.result(request.id, {
+        operationId: id,
+        root,
+        state: 'pending',
+        success: false,
+        steps: [],
+      });
+    }
+    expect((await joined).every((result) => result.current === false && result.uncertain)).toBe(
+      true,
+    );
+    // cleanup registered its allSettled reactions before this join; all original
+    // releases and ticket completions are already fulfilled, so its callbacks run first.
+    const next = h.feed.prepare(h.connection, input);
+    expect(h.socket.frames.at(-1)?.method).toBe('accept-changes.prepare');
+    expect(h.socket.frames).toHaveLength(count + 1);
+    h.socket.result(h.socket.frames.at(-1)!.id, captureReply('after-joined-originals'));
+    const admitted = await next;
+    const release = admitted.release();
+    h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+    await release;
+  });
+
+  it('reserves once before dispatch, holds only the original future and consumes without reopening commands', async () => {
+    const h = await harness(),
+      op = await h.acquire();
+    const ticket = op.retainExecuteObservation()!;
+    expect(ticket).toBeDefined();
+    expect(ticket.isLive()).toBe(false);
+    expect(op.retainExecuteObservation()).toBeUndefined();
+    const pending = op.confirm(command),
+      wire = h.socket.frames.at(-1)!;
+    expect(op.confirm(command)).toBe(pending);
+    expect(ticket.isLive()).toBe(true);
+    const release = op.release();
+    h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+    await release;
+    expect(op.isLive()).toBe(false);
+    expect(ticket.isLive()).toBe(true);
+    h.socket.result(wire.id, executeReply());
+    const result = await pending;
+    expect(result).toMatchObject({ current: false, uncertain: false, execute: executeReply() });
+    expect(ticket.isLive()).toBe(true);
+    ticket.release();
+    ticket.release();
+    expect(ticket.isLive()).toBe(false);
+    expect(op.isObservationLive()).toBe(false);
+    expect(op.retainExecuteObservation()).toBeUndefined();
+    await expect(op.reconcile()).rejects.toThrow();
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(1);
+  });
+
+  it('does not turn an unused or canceled reservation into an observation', async () => {
+    const h = await harness(),
+      op = await h.acquire();
+    const ticket = op.retainExecuteObservation()!;
+    ticket.release();
+    expect(ticket.isLive()).toBe(false);
+    expect(op.retainExecuteObservation()).toBeUndefined();
+    const release = op.release();
+    h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+    await release;
+    await expect(op.confirm(command)).rejects.toThrow();
+    expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(0);
+  });
+
+  const notices = [
+    { name: 'gap', value: { ...retire(), sequence: '2' } },
+    { name: 'malformed', value: { ...retire(), extra: true } },
+    {
+      name: 'terminal',
+      value: { sequence: '1', operationIds: [], terminal: true, allRetired: true },
+    },
+  ];
+  it.each(notices)(
+    'revokes a locally closed original on $name without confusing release with authority loss',
+    async ({ value }) => {
+      const h = await harness(),
+        op = await h.acquire(),
+        ticket = op.retainExecuteObservation()!;
+      const pending = op.confirm(command),
+        wire = h.socket.frames.at(-1)!;
+      const release = op.release();
+      h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+      await release;
+      expect(ticket.isLive()).toBe(true);
+      h.socket.notice(value);
+      expect(ticket.isLive()).toBe(false);
+      h.socket.result(wire.id, executeReply());
+      await pending;
+      expect(ticket.isLive()).toBe(false);
+      ticket.release();
+      expect(h.socket.frames.filter((f) => f.method === 'accept-changes.release')).toHaveLength(1);
+    },
+  );
+
+  it('keeps admission retirement separate from disclosure revocation and retains no new command right', async () => {
+    const h = await harness(),
+      op = await h.acquire(),
+      ticket = op.retainExecuteObservation()!;
+    const pending = op.confirm(command),
+      wire = h.socket.frames.at(-1)!;
+    h.socket.notice(retire());
+    expect(op.isAdmitted()).toBe(false);
+    expect(ticket.isLive()).toBe(true);
+    h.socket.result(wire.id, executeReply());
+    await pending;
+    ticket.release();
+    expect(ticket.isLive()).toBe(false);
+    expect(op.isLive()).toBe(true);
+    expect(op.retainExecuteObservation()).toBeUndefined();
+  });
+
+  const failures = [
+    'rejection',
+    'null',
+    'malformed',
+    'operation',
+    'root',
+    'scope',
+    'pending',
+    'uncertain',
+  ] as const;
+  it.each(failures)(
+    'preserves the original %s observation without manufacturing a settled result',
+    async (kind) => {
+      const h = await harness(),
+        op = await h.acquire(),
+        ticket = op.retainExecuteObservation()!;
+      const pending = op.confirm(command),
+        wire = h.socket.frames.at(-1)!;
+      const release = op.release();
+      h.socket.result(h.socket.frames.at(-1)!.id, { released: true });
+      await release;
+      let result: unknown = executeReply();
+      if (kind === 'null') result = null;
+      else if (kind === 'malformed') result = {};
+      else if (kind === 'operation') result = { ...executeReply(), operationId: 'foreign' };
+      else if (kind === 'root')
+        result = { ...executeReply(), root: { ...root, workspaceId: 'other' } };
+      else if (kind === 'scope') {
+        const original = executeReply();
+        if (!original.reviewExecution) throw new Error('Expected original execution fixture');
+        result = {
+          ...original,
+          reviewExecution: {
+            ...original.reviewExecution,
+            preparation: {
+              ...original.reviewExecution.preparation,
+              scope: { ...original.reviewExecution.preparation.scope, daemonId: 'other' },
+            },
+          },
+        };
+      } else if (kind === 'pending')
+        result = { operationId: 'lease-1', root, state: 'pending', success: false, steps: [] };
+      else if (kind === 'uncertain') {
+        const original = executeReply();
+        result = {
+          ...original,
+          reviewExecution: {
+            ...original.reviewExecution,
+            outcome: { status: 'uncertain', stage: 'create-pr', message: 'original uncertainty' },
+          },
+        };
+      }
+      if (kind === 'rejection')
+        h.socket.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({ id: wire.id, error: { code: -32003, message: 'original rejected' } }) +
+              '\n',
+          ),
+        );
+      else h.socket.result(wire.id, result);
+      const seen = await pending;
+      expect(seen.current).toBe(false);
+      expect(seen.uncertain).toBe(true);
+      if (kind === 'pending' || kind === 'uncertain') expect(seen.execute).toEqual(result);
+      else expect(seen.execute).toBeNull();
+      expect(seen.reconciliation).toBeNull();
+      ticket.release();
+      expect(ticket.isLive()).toBe(false);
+      expect(h.socket.frames.filter((f) => f.method === 'accept-changes.execute')).toHaveLength(1);
+      expect(h.socket.frames.filter((f) => f.method === 'accept-changes.reconcile')).toHaveLength(
+        0,
+      );
+    },
+  );
+});

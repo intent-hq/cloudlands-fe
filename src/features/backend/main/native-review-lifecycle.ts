@@ -59,6 +59,9 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
     completions: Array<Awaited<ReturnType<Routes['backendRequestForCapturedBinding']>>>;
   };
   const entries = new Map<string, Entry>();
+  // Only original in-flight invocations; released commands never re-enter entries.
+  type Observation = NonNullable<ReturnType<NativeReviewLifetime['retainExecuteObservation']>>;
+  const observations = new Map<Entry, Observation>();
   const acquiring = new Map<WebContents, Set<() => void>>();
   const listeners = new Map<WebContents, () => void>();
   let disposed = false;
@@ -78,6 +81,8 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
   }
   function retireSender(sender: WebContents) {
     for (const cancel of acquiring.get(sender) ?? []) cancel();
+    for (const [entry, observation] of observations)
+      if (entry.sender === sender) observation.release();
     for (const [id, entry] of entries) if (entry.sender === sender) drop(id, entry);
   }
   function observe(sender: WebContents) {
@@ -116,10 +121,11 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
     if (disposed || !binding || binding.frame !== event.senderFrame || !client || !connection)
       return failure();
     const pending = [...acquiring.values()].reduce((count, set) => count + set.size, 0);
+    const owned = new Set([...entries.values(), ...observations.keys()]);
     const mine =
-      [...entries.values()].filter((entry) => entry.sender === sender).length +
+      [...owned].filter((entry) => entry.sender === sender).length +
       (acquiring.get(sender)?.size ?? 0);
-    if (pending + entries.size >= 256 || mine >= 32) return failure();
+    if (pending + owned.size >= 256 || mine >= 32) return failure();
     let abandoned = false,
       accepted = false;
     const cancel = () => {
@@ -159,7 +165,7 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
         readRepositoryLifetime: (owner, root) =>
           owner === sender &&
           repositoryRootKey(root) === repositoryRootKey(requestedRoot) &&
-          original.isLive()
+          (original.isLive() || original.isObservationLive())
             ? original.stamp
             : null,
       });
@@ -254,10 +260,14 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
     entry: Entry,
     id: string,
     operation: () => Promise<NativeReviewObservation>,
+    retainExecute = false,
   ) {
     if (entry.inFlight || entry.completions.length >= 65) return failure();
     entry.inFlight = true;
+    let observation: Observation | undefined;
     try {
+      observation = retainExecute ? entry.lifetime.retainExecuteObservation() : undefined;
+      if (observation) observations.set(entry, observation);
       const completed = await entry.routes.backendRequestForCapturedBinding(
         event.sender,
         entry.binding,
@@ -265,7 +275,11 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
       );
       entry.completions.push(completed); // Original settlement retained before UI/sender checks.
       if (
-        entries.get(id) !== entry ||
+        (entries.get(id) !== entry &&
+          (!observation?.isLive() ||
+            disposed ||
+            deps.readBackend(entry.senderBinding.backendId) !== entry.client ||
+            entry.client.getRepositoryConnection() !== entry.connection)) ||
         !sameOwner(entry) ||
         event.senderFrame !== entry.senderBinding.frame
       )
@@ -286,6 +300,8 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
     } catch {
       return failure();
     } finally {
+      observation?.release();
+      observations.delete(entry);
       entry.inFlight = false;
     }
   }
@@ -294,7 +310,13 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
     if (!parsed.success) return failure('INVALID_PARAMS');
     const entry = find(event, parsed.data);
     return entry
-      ? execute(event, entry, parsed.data.id, () => entry.lifetime.confirm(parsed.data.command))
+      ? execute(
+          event,
+          entry,
+          parsed.data.id,
+          () => entry.lifetime.confirm(parsed.data.command),
+          true,
+        )
       : failure();
   });
   ipc.handle(channel.RECONCILE, async (event, payload: unknown) => {
@@ -315,6 +337,8 @@ export function registerNativeReviewHandlers(ipc: Pick<IpcMain, 'handle'>, deps:
   });
   return {
     retireBackend(id: string) {
+      for (const [entry, observation] of observations)
+        if (entry.senderBinding.backendId === id) observation.release();
       for (const [key, entry] of entries)
         if (entry.senderBinding.backendId === id) drop(key, entry);
     },

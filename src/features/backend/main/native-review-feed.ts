@@ -33,6 +33,9 @@ export interface NativeReviewLifetime extends NativeReviewSession {
   readonly stamp: object;
   isLive(): boolean;
   isAdmitted(): boolean;
+  /** Main-private, once-only reservation for the next original execute, never a command lease. */
+  retainExecuteObservation(): { isLive(): boolean; release(): void } | undefined;
+  isObservationLive(): boolean;
   prepareCompanion?(): Promise<NativeReviewLifetime>;
 }
 
@@ -47,6 +50,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
     id: string;
     connection: RepositoryConnection;
     retire(kind: NativeReviewRetirement): void;
+    revokeObservation(): void;
   };
   type Feed = {
     incarnation: object;
@@ -64,7 +68,10 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
       p.abandoned = true;
       p.wake?.();
     }
-    for (const op of [...f.owned]) op.retire('closed');
+    for (const op of [...f.owned]) {
+      op.revokeObservation();
+      op.retire('closed');
+    }
   }
   const unsubscribe = client.onRepositoryConnectionEvent((event) => {
     if (event.type === 'opened') {
@@ -87,7 +94,11 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
           p.abandoned = true;
           p.wake?.();
         }
-      for (const op of [...f.owned]) if (op.connection === event.connection) op.retire('closed');
+      for (const op of [...f.owned])
+        if (op.connection === event.connection) {
+          op.revokeObservation();
+          op.retire('closed');
+        }
       return;
     }
     if (event.incarnation !== f.incarnation) return;
@@ -231,6 +242,19 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
         let releaseTask: Promise<void> | undefined;
         let settledAt: number | undefined;
         let companionTask: Promise<NativeReviewLifetime> | undefined;
+        let observation:
+          | {
+              issued: boolean;
+              released: boolean;
+              revoked: boolean;
+              done: Promise<void>;
+              finish(): void;
+            }
+          | undefined;
+        const isObservationLive = () => {
+          if (observation && !originalNow()) observation.revoked = true;
+          return !!observation?.issued && !observation.released && !observation.revoked;
+        };
         const cleanup = () => {
           if (releaseTask) return releaseTask;
           // Release immediately to stop future stages. The outstanding original completion
@@ -243,6 +267,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
           void Promise.allSettled([
             releaseTask,
             ...(pending ? [pending] : []),
+            ...(observation ? [observation.done] : []),
             ...(childCleanup ? [childCleanup] : []),
           ]).then(() => f.owned.delete(op));
           return releaseTask;
@@ -250,6 +275,9 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
         const op: Owned = {
           id: operationId,
           connection: original,
+          revokeObservation() {
+            if (observation) observation.revoked = true;
+          },
           retire(kind) {
             if (closed || (kind === 'admission' && !admitted)) return;
             admitted = false;
@@ -270,6 +298,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
           },
         };
         const isLive = () => {
+          if (!originalNow()) op.revokeObservation();
           if (!closed && (!originalNow() || released)) op.retire('closed');
           return !closed;
         };
@@ -289,6 +318,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
             finish = resolve;
           });
           pending = task;
+          if (method === 'execute' && observation) observation.issued = true;
           void (async () => {
             try {
               const raw = await client.requestOnCapturedConnection(
@@ -416,6 +446,30 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
           preview: { ...display, root, expiresAfterMs: reviewOperation.expiresAfterMs },
           isLive,
           isAdmitted: current,
+          isObservationLive,
+          retainExecuteObservation() {
+            if (observation || claim !== undefined || pending || !current()) return undefined;
+            let finish!: () => void;
+            const done = new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+            const originalObservation = {
+              issued: false,
+              released: false,
+              revoked: false,
+              done,
+              finish,
+            };
+            observation = originalObservation;
+            return Object.freeze({
+              isLive: isObservationLive,
+              release() {
+                if (originalObservation.released) return;
+                originalObservation.released = true;
+                originalObservation.finish();
+              },
+            });
+          },
           onRetired(listener: (kind: NativeReviewRetirement) => void) {
             if (!current()) listener(closed ? 'closed' : 'admission');
             if (!closed) listeners.add(listener);
@@ -446,7 +500,10 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
               return Promise.reject(unavailable());
             claim = key;
             // Local resource bound for an unobserved outcome, not proof of server completion.
-            retentionTimer = setTimeout(() => op.retire('closed'), 375_000 + 600_000);
+            retentionTimer = setTimeout(() => {
+              op.revokeObservation();
+              op.retire('closed');
+            }, 375_000 + 600_000);
             retentionTimer.unref();
             return observe('execute', selected);
           },
