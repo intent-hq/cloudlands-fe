@@ -5,7 +5,10 @@ import {
   presenceContextReceived,
   presenceWorkspacesReceived,
 } from '$store/renderer/slices/presence/presence-slice';
-import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus, type Workspace } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -89,12 +92,14 @@ describe('workspace member mention search', () => {
     store.dispatch(setLabsMultiplayerEnabled(true));
     admitLegacyPrincipal();
     const p = store.state.principal;
+    store.dispatch(principalContextChanged(p.context));
+    const read = store.state.principal;
     store.dispatch(
       principalReceived(
         {
           context: p.context!,
-          invalidation: p.invalidation,
-          presentationVersion: p.presentationVersion,
+          invalidation: read.invalidation,
+          presentationVersion: read.presentationVersion,
         },
         { ...p.snapshot!, principal: { ...p.snapshot!.principal, id: self } },
       ),
