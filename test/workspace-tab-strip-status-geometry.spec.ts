@@ -292,7 +292,8 @@ async function mountStrip(
       },
     };
     if (panelOpen === undefined || panelWidth === undefined) {
-      target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
+      // Match WindowTitleBar's flex controls: shrinking bounds the scroll viewport.
+      target.style.cssText = `position:relative;display:flex;min-width:0;align-items:center;width:100%;padding:24px;zoom:${zoom};`;
       mount(Strip, { target, props: stripProps });
     } else {
       target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;

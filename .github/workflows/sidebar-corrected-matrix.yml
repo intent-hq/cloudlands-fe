@@ -12,6 +12,9 @@ on:
       - 'scripts/sidebar-request-boundary.test.mjs'
       - 'test/sidebar-request-boundary.*'
       - 'scripts/sidebar-corrected-pair.py'
+      - 'scripts/sidebar-membership.py'
+      - 'scripts/sidebar-membership.test.py'
+      - 'scripts/sidebar-membership-reporter.mjs'
       - '.github/workflows/sidebar-corrected-matrix.yml'
 permissions:
   contents: read
@@ -59,6 +62,7 @@ jobs:
         timeout-minutes: 2
         run: |
           pnpm exec vitest run scripts/vite-harness-cache.test.mjs scripts/sidebar-request-boundary.test.mjs scripts/sidebar-shell-import.test.ts
+          python3 -B scripts/sidebar-membership.test.py
       - name: Cold then unchanged warm cache, retries zero
         timeout-minutes: 23
         run: python3 scripts/sidebar-corrected-pair.py ${{ matrix.workers }} "$RUNNER_TEMP/harness-results"

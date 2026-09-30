@@ -886,8 +886,8 @@
   ></div>
   <!-- Clipped tabs must not carve titlebar no-drag holes. The lead-in keeps
        the flare visible; the right margin reserves the launcher gap on overflow.
-       Flex shrink bounds narrow strips. A percentage max-width would cap a
-       fitting strip against its negative-margin-shrunken parent, toggling overflow. -->
+       Flex shrinking bounds the strip. A percentage max-width against the intrinsic
+       parent feeds the negative margin back into overflow when no launcher exists. -->
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
