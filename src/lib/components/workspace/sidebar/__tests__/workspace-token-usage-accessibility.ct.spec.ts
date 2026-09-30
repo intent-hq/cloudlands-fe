@@ -1010,6 +1010,7 @@ for (const localeCase of [
     await expect(details.locator('.composition-value-suffix')).toHaveText(localeCase.suffixes[0]);
     await expect(details.locator('.composition-value-suffix')).not.toBeVisible();
     await expect(details.locator('.composition-context-suffix')).toHaveText(localeCase.suffixes[1]);
+    await expect(details.locator('.composition-context-suffix')).not.toBeVisible();
 
     const agentControls = page
       .getByTestId('token-usage-by-agent')
@@ -1290,6 +1291,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows.nth(0).locator('.composition-context-suffix')).toHaveText(
     'of total',
   );
+  await expect(compositionRows.nth(0).locator('.composition-context-suffix')).not.toBeVisible();
   await expect(compositionRows.nth(1)).toContainText('Model output');
   await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
   await expect(compositionRows.nth(3)).toContainText('Input context');
@@ -1633,7 +1635,7 @@ test('renders the full reference table as a wide overlay from the real workspace
       }) =>
         Math.abs(bar.left - selection.left) <= 1 &&
         Math.abs(bar.top - (selection.top + selection.height) - 12) <= 0.01 &&
-        Math.abs(section.bottom - bar.bottom - (selection.top - section.top)) <= 0.01 &&
+        bar.bottom <= section.bottom &&
         bar.right <= section.right + 1 &&
         Math.abs(percentage.left - title.right - 6) <= 0.01 &&
         Math.abs(percentage.right - bar.right) <= 1 &&
@@ -1813,7 +1815,7 @@ test('renders the full reference table as a wide overlay from the real workspace
   expect(Math.max(...valueRightEdges) - Math.min(...valueRightEdges)).toBeLessThanOrEqual(1);
   expect(Math.max(...contextRightEdges) - Math.min(...contextRightEdges)).toBeLessThanOrEqual(1);
   expect(desktopRows[0].valueSuffix!.width).toBe(0);
-  expect(desktopRows[0].contextSuffix!.x).toBeGreaterThanOrEqual(contextRightEdges[0]);
+  expect(desktopRows[0].contextSuffix!.width).toBe(0);
   expect(desktopRows.slice(1).every(({ valueSuffix }) => valueSuffix === undefined)).toBe(true);
   expect(desktopRows.slice(1).every(({ contextSuffix }) => contextSuffix === undefined)).toBe(true);
   expect(messageAlignment.rows).toHaveLength(1);

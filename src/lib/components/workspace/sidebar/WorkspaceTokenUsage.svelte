@@ -760,7 +760,7 @@
                   />
                 </dd>
                 {#if row.id === 'cached'}
-                  <dd class="composition-context-suffix text-xs font-normal text-muted-foreground">
+                  <dd class="composition-context-suffix hidden">
                     {m.workspace_tokenUsage_shareSuffix_label()}
                   </dd>
                 {/if}
@@ -801,7 +801,7 @@
           <div class="breakdown-grid grid grid-cols-2 border-t border-border">
             {#if agentRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 py-3"
+                class="breakdown-section min-w-0 px-4 pb-4 pt-3"
                 aria-labelledby={`${detailsId}-agents`}
                 data-testid="token-usage-by-agent"
               >
@@ -937,7 +937,7 @@
 
             {#if modelRows.length > 0}
               <section
-                class="breakdown-section min-w-0 px-4 py-3"
+                class="breakdown-section min-w-0 px-4 pb-4 pt-3"
                 aria-labelledby={`${detailsId}-models`}
                 data-testid="token-usage-by-model"
               >
