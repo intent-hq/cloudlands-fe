@@ -76,7 +76,7 @@ async function prepareSidebarFixture() {
   await titleInput.fill(longTitle);
   await titleInput.press('Enter');
 
-  await page.getByRole('button', { name: 'Add workspace status' }).click();
+  await page.getByRole('button', { name: 'Edit workspace status' }).click();
   const statusInput = page.getByLabel('Workspace status');
   await statusInput.fill(longStatus);
   await statusInput.press('Enter');
@@ -90,14 +90,14 @@ async function prepareSidebarFixture() {
 
 async function setSidebarSections(tabIds: string[]) {
   const target = tabIds.at(-1) ?? 'overview';
-  const expanded = page.locator('[data-sidebar-launcher][aria-expanded="true"]');
+  const expanded = page.locator('[data-sidebar-launcher] button[aria-expanded="true"]');
   if (target === 'overview') {
     if ((await expanded.count()) > 0) await expanded.first().click();
     await expect(expanded).toHaveCount(0);
     return;
   }
 
-  const launcher = page.locator(`[data-sidebar-launcher="${target}"]`);
+  const launcher = page.locator(`[data-sidebar-launcher="${target}"] button[aria-expanded]`);
   if ((await launcher.getAttribute('aria-expanded')) !== 'true') await launcher.click();
   await expect(launcher).toHaveAttribute('aria-expanded', 'true');
   await expect(expanded).toHaveCount(1);
@@ -291,6 +291,28 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
         .locator('[data-message-role="assistant"]')
         .filter({ hasText: 'Editorial conversation ready' }),
     ).toBeVisible({ timeout: 90_000 });
+    await waitForAgentNotStreaming(page, workspaceId, 90_000);
+    // The current sidebar omits empty status messages. Seed a distinct fixture
+    // status through the real daemon, then edit it through the UI below. The
+    // final title/status and reload assertions remain independent outcomes.
+    await page.evaluate(async (id) => {
+      const result = await (window as any).electronAPI.invoke('backend:request', {
+        method: 'workspace.update',
+        params: { workspaceId: id, statusMessage: 'Editorial fixture ready for UI editing.' },
+      });
+      if (
+        !result.ok ||
+        result.result?.workspace?.id !== id ||
+        result.result.workspace.statusMessage !== 'Editorial fixture ready for UI editing.'
+      ) {
+        throw new Error(`Failed to seed owned editorial fixture: ${JSON.stringify(result)}`);
+      }
+    }, workspaceId);
+    // Leave the transient new-workspace shell before testing the settled UI.
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
+      'Editorial fixture ready for UI editing.',
+    );
     await setSidebarCollapsed(false);
     await prepareSidebarFixture();
   });
@@ -392,14 +414,28 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
 
     await setSidebarCollapsed(false);
 
-    let panels = page.locator('[data-panel-id]');
-    await panels.first().locator('button[aria-label="Split panel right"]').click();
+    const panels = page.locator('[data-panel-id]');
+    // The current product uses fixed horizontal columns: vertical split and
+    // split-vertical preset actions deliberately do nothing. Exercise the real
+    // create-column shortcut instead of fabricating retired nested layout state.
+    const firstPanelId = await panels.first().getAttribute('data-panel-id');
+    const createColumn = process.platform === 'darwin' ? 'Meta+Backslash' : 'Control+Backslash';
+    await panels.first().click({ position: { x: 24, y: 96 } });
+    await page.keyboard.press(createColumn);
     await expect(panels).toHaveCount(2);
     await capture('desktop-light-two-horizontal-panels');
-    await panels.nth(1).locator('button[aria-label="Split panel down"]').click();
+    await panels.nth(1).click({ position: { x: 24, y: 96 } });
+    await page.keyboard.press(createColumn);
     await expect(panels).toHaveCount(3);
+    const panelIds = await panels.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('data-panel-id')),
+    );
+    expect(new Set(panelIds).size).toBe(3);
+    expect(panelIds[0]).toBe(firstPanelId);
+    await expect(page.locator('[data-split-gutter="horizontal"]')).toHaveCount(2);
+    await expect(page.locator('[data-split-gutter="vertical"]')).toHaveCount(0);
     await expectEightPixelGutters();
-    await capture('desktop-light-nested-split');
+    await capture('desktop-light-three-horizontal-columns');
 
     await panels.nth(2).click({ position: { x: 24, y: 96 } });
     await expect(panels.nth(2)).toHaveAttribute('data-focused', 'true');
@@ -424,12 +460,12 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
         }),
       );
     }, tabId);
-    await expect(target.getByText('Add to panel')).toBeVisible();
+    await expect(target.locator('[data-panel-drop-destination]')).toBeVisible();
     await capture('desktop-light-drag-over');
     await target.dispatchEvent('dragleave');
 
-    await target.locator('[role="tab"][aria-selected="true"]').click({ button: 'right' });
-    await page.getByRole('button', { name: /^Zoom Panel/ }).click();
+    await target.click({ position: { x: 24, y: 96 } });
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+m' : 'Control+Shift+m');
     await expect(target).toHaveAttribute('data-zoomed', 'true');
     await capture('desktop-light-zoomed-panel');
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+J' : 'Control+J');

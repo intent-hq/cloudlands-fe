@@ -127,7 +127,7 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
       await expect(messages.filter({ hasText: 'CHILD_REQUEST:' })).toBeVisible();
       await expect(messages.filter({ hasText: 'PARENT_ONLY:' })).toHaveCount(0);
       await expect(messages.filter({ hasText: 'PARENT_REQUEST:' })).toHaveCount(0);
-      await expect(page.locator('[role="tab"][aria-selected="true"]')).toContainText('Implementor');
+      await expect(page.getByTestId('pane-stack-selector-trigger')).toContainText('Implementor');
       await expect
         .poll(() => fs.readFile(path.join(workspace.worktreePath, 'child-output.txt'), 'utf8'))
         .toBe('Written by child agent');
