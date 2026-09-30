@@ -15,6 +15,11 @@ test('recovers an actual in-flight fixture import across document replacement', 
     notifyRequest = resolve;
   });
   let fixtureRequests = 0;
+  const requestFailures: { url: string; reason: string | null }[] = [];
+  page.on('requestfailed', (request) => {
+    if (request.url().includes(fixture))
+      requestFailures.push({ url: request.url(), reason: request.failure()?.errorText ?? null });
+  });
   const server = await createSidebarShellServer(info.workerIndex, 'sidebar-import-controls', [
     {
       name: 'hold-first-fixture-request',
@@ -41,14 +46,13 @@ test('recovers an actual in-flight fixture import across document replacement', 
       (error) => error,
     );
     await requested;
-    const aborted = page.waitForEvent('requestfailed', (request) =>
-      request.url().includes(fixture),
-    );
+    const originalDocument = await page.evaluate(() => performance.timeOrigin);
+    expect(fixtureRequests).toBe(1);
+    expect(interrupted?.writableEnded).toBe(false);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    const failedRequest = await aborted;
     interrupted?.destroy();
+    expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(originalDocument);
     expect(await preparation).toBeNull();
-    expect(failedRequest.failure()?.errorText).toBeTruthy();
     expect(fixtureRequests).toBeGreaterThanOrEqual(2);
     expect(await page.evaluate(() => Reflect.get(globalThis, 'process').env.NODE_ENV)).toBe('test');
     expect(
@@ -60,8 +64,11 @@ test('recovers an actual in-flight fixture import across document replacement', 
     await info.attach('import-replacement', {
       body: JSON.stringify({
         fixtureRequests,
-        failure: failedRequest.failure(),
-        url: failedRequest.url(),
+        originalDocument,
+        replacementDocument: await page.evaluate(() => performance.timeOrigin),
+        requestFailures,
+        qualification:
+          'Chromium need not emit requestfailed for a request belonging to a destroyed document.',
       }),
       contentType: 'application/json',
     });

@@ -28,13 +28,10 @@ for (const isolated of [false, true]) {
           await mkdir(dir, { recursive: true });
           await writeFile(
             join(dir, 'package.json'),
-            JSON.stringify({ name, version: '1.0.0', main: 'index.cjs' }),
+            JSON.stringify({ name, version: '1.0.0', type: 'module', main: 'index.js' }),
           );
-          await writeFile(join(dir, 'index.cjs'), `module.exports = { value: '${name}' };`);
-          await writeFile(
-            join(root, `${name}.js`),
-            `import dep from '${name}'; export const value = dep.value;`,
-          );
+          await writeFile(join(dir, 'index.js'), `export const value = '${name}';`);
+          await writeFile(join(root, `${name}.js`), `export { value } from '${name}';`);
         }
         const urls: string[] = [];
         const caches: string[] = [];
@@ -59,11 +56,21 @@ for (const isolated of [false, true]) {
             new URL(response.url()).pathname.endsWith(`/deps/${name}.js`),
           );
           await page.goto(base);
-          expect(
-            await page.evaluate(async (name) => (await import(`/${name}.js`)).value, name),
-          ).toBe(name);
+          const imported = page
+            .evaluate(async (name) => (await import(`/${name}.js`)).value, name)
+            .then(
+              (value) => ({ value, error: null }),
+              (error) => ({ value: null, error: String(error) }),
+            );
           const response = await optimized;
+          const source = await response.text();
+          expect(source.length).toBeLessThan(65_536);
+          await info.attach(`optimized-${name}`, {
+            body: JSON.stringify({ url: response.url(), status: response.status(), source }),
+            contentType: 'application/json',
+          });
           expect(response.status()).toBe(200);
+          expect(await imported).toEqual({ value: name, error: null });
           urls.push(response.url());
         }
         // A fresh HTTP request cannot be satisfied by Chromium's module cache.
