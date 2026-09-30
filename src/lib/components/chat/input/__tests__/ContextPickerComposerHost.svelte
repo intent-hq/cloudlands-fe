@@ -12,7 +12,15 @@
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
-  let { placement = 'left', top = 300 }: { placement?: 'left' | 'right'; top?: number } = $props();
+  let {
+    placement = 'left',
+    top = 300,
+    searchCandidates,
+  }: {
+    placement?: 'left' | 'right';
+    top?: number;
+    searchCandidates?: MentionCandidate[];
+  } = $props();
   let value = $state('');
   let queries = $state<{ query: string; workspaceId?: string }[]>([]);
   const workspace: Workspace = {
@@ -80,7 +88,9 @@
     const originalSearch = system.search;
     system.search = async (query, context) => {
       queries = [...queries, { query, workspaceId: context.workspaceId }];
-      return candidates.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
+      return (searchCandidates ?? candidates).filter((item) =>
+        item.label.toLowerCase().includes(query.toLowerCase()),
+      );
     };
     return () => {
       system.search = originalSearch;
