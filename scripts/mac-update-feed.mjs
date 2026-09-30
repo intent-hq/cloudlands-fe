@@ -11,7 +11,7 @@ const updaterRequire = createRequire(createRequire(import.meta.url).resolve('ele
 const { load, dump, JSON_SCHEMA } = updaterRequire('js-yaml');
 const { valid } = updaterRequire('semver');
 const ARCHITECTURES = ['x64', 'arm64'];
-const PER_BUILD_FIELDS = new Set(['files', 'path', 'sha512', 'sha2', 'releaseDate']);
+const PER_BUILD_FIELDS = new Set(['files', 'path', 'sha512', 'sha2', 'size', 'releaseDate']);
 const USAGE =
   'Usage: node scripts/mac-update-feed.mjs --arm64 <job-dir>/latest-mac.yml --x64 <job-dir>/latest-mac.yml --output <publish-dir>/latest-mac.yml\n' +
   '   or: node scripts/mac-update-feed.mjs --validate <publish-dir>/latest-mac.yml';
@@ -81,10 +81,12 @@ function validateStructure(info, expectedArchitectures) {
       throw new Error(`Ambiguous ${arch} DMG entries`);
     }
   }
-  if (['path', 'sha512', 'sha2'].some((key) => info[key] !== undefined)) {
+  if (['path', 'sha512', 'sha2', 'size'].some((key) => info[key] !== undefined)) {
     const legacy = info.files.find((file) => file.url === info.path && file.url.endsWith('.zip'));
     if (!legacy || info.sha512 !== legacy.sha512)
       throw new Error('Inconsistent legacy path/sha512');
+    if (info.size !== undefined && info.size !== legacy.size)
+      throw new Error('Inconsistent legacy size');
   }
   return info;
 }

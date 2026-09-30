@@ -1,4 +1,5 @@
 // @vitest-environment node
+// @verify-changed-triggers: scripts/mac-update-feed.mjs, package.json, pnpm-lock.yaml
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -169,6 +170,27 @@ describe('Mac update feed assembly', () => {
       info.files[0].sha2 = 'incorrect';
     });
     await expect(mergeMacUpdateFeeds(input)).rejects.toThrow(/sha2/);
+  });
+
+  it('preserves the verified Intel legacy size despite different per-job ZIP sizes', async () => {
+    const input = fixture();
+    for (const path of [input.arm64, input.x64])
+      edit(path, (info) => {
+        info.size = info.files[0].size;
+      });
+    const merged = await mergeMacUpdateFeeds(input);
+    expect(merged.size).toBe(merged.files[0].size);
+  });
+
+  it('rejects legacy size inconsistent with its ZIP', async () => {
+    const input = fixture();
+    edit(input.x64, (info) => {
+      info.size = info.files[0].size + 1;
+    });
+    edit(input.arm64, (info) => {
+      info.size = load(readFileSync(input.x64, 'utf8')).size;
+    });
+    await expect(mergeMacUpdateFeeds(input)).rejects.toThrow(/legacy.*size/);
   });
 
   it.each([
