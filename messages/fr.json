@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "Page {page} du document {name}",
   "settings_providers_fastMode_label": "Mode rapide",
   "settings_providers_fastMode_description": "S’applique dès le prochain tour. L’utilisation et les coûts peuvent augmenter ; la disponibilité dépend de votre modèle et de votre compte.",
-  "settings_providers_fastMode_error": "Impossible d’enregistrer le mode rapide. Votre préférence enregistrée a été restaurée."
+  "settings_providers_fastMode_error": "Impossible d’enregistrer le mode rapide. Votre préférence enregistrée a été restaurée.",
+  "chat_agentCard_menu_moveToBackground_label": "Passer en arrière-plan",
+  "chat_agentCard_menu_moveToForeground_label": "Passer au premier plan",
+  "agent_mutation_setBackgroundFailed_error": "Impossible de changer le mode de l’agent"
 }

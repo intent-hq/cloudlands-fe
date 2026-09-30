@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "{name}，第 {page} 页",
   "settings_providers_fastMode_label": "快速模式",
   "settings_providers_fastMode_description": "从下一轮开始生效。用量和费用可能增加；是否可用取决于模型和账户。",
-  "settings_providers_fastMode_error": "无法保存快速模式。已恢复之前保存的偏好设置。"
+  "settings_providers_fastMode_error": "无法保存快速模式。已恢复之前保存的偏好设置。",
+  "chat_agentCard_menu_moveToBackground_label": "移到后台",
+  "chat_agentCard_menu_moveToForeground_label": "移到前台",
+  "agent_mutation_setBackgroundFailed_error": "无法更改智能体模式"
 }

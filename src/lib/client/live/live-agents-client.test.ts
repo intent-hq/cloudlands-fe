@@ -1003,6 +1003,63 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it.each([true, false])(
+    'persists background=%s and reads it after reloading',
+    async (isBackground) => {
+      let persisted = !isBackground;
+      const row = () => ({
+        id: 'agent-mode',
+        workspaceId: 'ws-mode',
+        name: 'Mode fixture',
+        status: 'active',
+        parentAgentId: 'parent',
+        isBackground: persisted,
+        metadata: { isBackground: !persisted, taskNoteId: 'task-note', createdByAgentId: 'parent' },
+        createdAt: '2026-09-30T00:00:00Z',
+        updatedAt: '2026-09-30T00:00:00Z',
+      });
+      backend.onRequest('agent.update', (params) => {
+        persisted = (params as { changes: { isBackground: boolean } }).changes.isBackground;
+        return { success: true, agent: row() };
+      });
+      backend.onRequest('agent.get', () => ({ agent: row() }));
+      expect(
+        await new LiveAgentsClient().setBackground({
+          agentId: 'agent-mode',
+          workspaceId: 'ws-mode',
+          isBackground,
+        }),
+      ).toEqual({ success: true });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.update',
+        params: {
+          agentId: 'agent-mode',
+          workspaceId: 'ws-mode',
+          changes: { isBackground },
+        },
+      });
+      const reloaded = await new LiveAgentsClient().get('agent-mode', 'ws-mode');
+      expect(reloaded).toMatchObject({
+        isBackground,
+        parentAgentId: 'parent',
+        metadata: { isBackground, taskNoteId: 'task-note', createdByAgentId: 'parent' },
+      });
+    },
+  );
+
+  it('returns a background mode failure from the daemon', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new Error('Forbidden mode change');
+    });
+    expect(
+      await new LiveAgentsClient().setBackground({
+        agentId: 'agent-mode',
+        workspaceId: 'ws-mode',
+        isBackground: true,
+      }),
+    ).toEqual({ success: false, error: 'Forbidden mode change' });
+  });
+
   it('setNotificationsMuted forwards agent.update with the boolean notificationsMuted change (§5.5)', async () => {
     backend.onRequest('agent.update', () => ({ success: true }));
     const client = new LiveAgentsClient();

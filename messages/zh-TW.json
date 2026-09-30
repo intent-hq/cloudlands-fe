@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "{name}，第 {page} 頁",
   "settings_providers_fastMode_label": "快速模式",
   "settings_providers_fastMode_description": "從下一輪開始生效。用量與費用可能增加；是否可用取決於模型和帳戶。",
-  "settings_providers_fastMode_error": "無法儲存快速模式。已還原先前儲存的偏好設定。"
+  "settings_providers_fastMode_error": "無法儲存快速模式。已還原先前儲存的偏好設定。",
+  "chat_agentCard_menu_moveToBackground_label": "移至背景",
+  "chat_agentCard_menu_moveToForeground_label": "移至前景",
+  "agent_mutation_setBackgroundFailed_error": "無法變更代理程式模式"
 }

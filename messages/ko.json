@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "{name}, {page}페이지",
   "settings_providers_fastMode_label": "고속 모드",
   "settings_providers_fastMode_description": "다음 턴부터 적용됩니다. 사용량과 비용이 늘어날 수 있으며, 이용 가능 여부는 모델과 계정에 따라 다릅니다.",
-  "settings_providers_fastMode_error": "고속 모드를 저장하지 못했습니다. 저장된 설정으로 복원했습니다."
+  "settings_providers_fastMode_error": "고속 모드를 저장하지 못했습니다. 저장된 설정으로 복원했습니다.",
+  "chat_agentCard_menu_moveToBackground_label": "백그라운드로 이동",
+  "chat_agentCard_menu_moveToForeground_label": "포그라운드로 이동",
+  "agent_mutation_setBackgroundFailed_error": "에이전트 모드를 변경하지 못했습니다"
 }

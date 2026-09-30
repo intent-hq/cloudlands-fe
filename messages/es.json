@@ -6814,5 +6814,8 @@
   "file_pdf_canvas_ariaLabel": "{name}, página {page}",
   "settings_providers_fastMode_label": "Modo rápido",
   "settings_providers_fastMode_description": "Se aplica a partir del próximo turno. Puede aumentar el uso y el coste; la disponibilidad depende del modelo y la cuenta.",
-  "settings_providers_fastMode_error": "No se pudo guardar el modo rápido. Se ha restaurado la preferencia guardada."
+  "settings_providers_fastMode_error": "No se pudo guardar el modo rápido. Se ha restaurado la preferencia guardada.",
+  "chat_agentCard_menu_moveToBackground_label": "Mover al segundo plano",
+  "chat_agentCard_menu_moveToForeground_label": "Mover al primer plano",
+  "agent_mutation_setBackgroundFailed_error": "No se pudo cambiar el modo del agente"
 }
