@@ -56,12 +56,14 @@ const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 
 // Workspace entity lookup used to relativize absolute paths
+const workspaceRoots = vi.hoisted(() => ({
+  worktreePath: '/repo/root' as string | undefined,
+  path: '/repo/clone',
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
     select: (_state: unknown, wsId: string) =>
-      wsId === 'ws-1'
-        ? ({ id: 'ws-1', worktreePath: '/repo/root' } as unknown as Workspace)
-        : undefined,
+      wsId === 'ws-1' ? ({ id: 'ws-1', ...workspaceRoots } as unknown as Workspace) : undefined,
   },
 }));
 
@@ -345,6 +347,8 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
   const resolvedUrl = (rawHref: string) => new URL(rawHref, window.location.href).href;
 
   beforeEach(() => {
+    workspaceRoots.worktreePath = TEST_WORKTREE_ROOT;
+    workspaceRoots.path = '/repo/clone';
     reduxDispatchMock.mockClear();
     openBrowserPanelMock.mockClear();
     invokeIpcMock.mockClear();
@@ -352,6 +356,99 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     handleIntentLinkMock.mockClear();
     (window as unknown as { electronAPI?: object }).electronAPI = {};
   });
+
+  it.each(['docs/design.md', './docs/design.md', `${TEST_WORKTREE_ROOT}/docs/design.md`])(
+    'opens a direct file target without rawHref: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+      expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['raw href', 'direct target', 'resolved URL'])(
+    'preserves encoded filenames and line locations from %s',
+    async (source) => {
+      const cases = [
+        ['docs/a%20b%23c%3Fd.md', 'docs/a b#c?d.md', undefined],
+        ['docs/100%25.md', 'docs/100%.md', undefined],
+        ['docs/literal%2520.md', 'docs/literal%20.md', undefined],
+        ['docs/design.md%23L42', 'docs/design.md#L42', undefined],
+        ['docs/design.md%3A17', 'docs/design.md:17', undefined],
+        ['docs/100%25.md#L42', 'docs/100%.md', 42],
+        ['docs/100%25.md:17:4', 'docs/100%.md', 17],
+      ] as const;
+      for (const [target, path, line] of cases) {
+        reduxDispatchMock.mockClear();
+        expect(
+          await handleLink(source === 'direct target' ? target : resolvedUrl(target), {
+            workspaceId: TEST_WORKSPACE_ID,
+            ...(source === 'raw href' ? { rawHref: target } : {}),
+          }),
+        ).toBe(true);
+        expect(reduxDispatchMock).toHaveBeenCalledWith(
+          openWorkspaceFile(TEST_WORKSPACE_ID, path, { line, openInAdjacentPanel: false }),
+        );
+      }
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([TEST_WORKTREE_ROOT, `${TEST_WORKTREE_ROOT}/`])(
+    'uses the owning worktree root with optional trailing separator: %s',
+    async (root) => {
+      workspaceRoots.worktreePath = root;
+      const rawHref = `${TEST_WORKTREE_ROOT}/packages/cloudlands-fe/src/app.html`;
+      await handleLink('https://different.example/wrong/path', {
+        workspaceId: TEST_WORKSPACE_ID,
+        rawHref,
+      });
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('falls back to the repository root only when there is no worktree', async () => {
+    workspaceRoots.worktreePath = undefined;
+    await handleLink('/repo/clone/docs/design.md', { workspaceId: TEST_WORKSPACE_ID });
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
+  it.each(['/repo/root-other/docs/design.md', '/repo/clone/docs/design.md'])(
+    'does not reinterpret an outside-worktree absolute target: %s',
+    async (target) => {
+      await handleLink(target, { workspaceId: TEST_WORKSPACE_ID });
+      expect(reduxDispatchMock).not.toHaveBeenCalled();
+      expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', {
+        url: `vscode://file/${target}`,
+      });
+    },
+  );
+
+  it.each(['../outside.md', 'docs/%2e%2e/outside.md', 'docs/%00.md', 'docs/%ZZ.md', './'])(
+    'rejects invalid direct file targets: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(false);
+      expect(reduxDispatchMock).not.toHaveBeenCalled();
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('should route a relative raw href to openWorkspaceFile', async () => {
     const rawHref = 'src/main.rs';
