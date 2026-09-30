@@ -86,8 +86,8 @@ def run(cell):
         assert not env.get(forbidden), forbidden
     env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / 'results.json')
     record(cell + '-start', {'argv': args, 'cwd': str(subject), 'time': now(),
-                           'workers': workers, 'primarySeconds': 900,
-                           'killAfterSeconds': 10, 'outerStepMinutes': 32,
+                           'workers': workers, 'primarySeconds': 600,
+                           'killAfterSeconds': 10, 'outerStepMinutes': 23,
                            'traceQualification': 'Always tracing adds observation overhead.'})
     global ownership_settled, observed_test_exit
     native = None
@@ -171,7 +171,7 @@ def run(cell):
 
     # One anchor before launch, never reset by EOF, parent exit, I/O failure or cleanup.
     start = time.monotonic()
-    primary_deadline = start + 900
+    primary_deadline = start + 600
     ownership_settled = False
     try:
         native = subprocess.Popen(args, cwd=subject, env=env, stdout=subprocess.PIPE,

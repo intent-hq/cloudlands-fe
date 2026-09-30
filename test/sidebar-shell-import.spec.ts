@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { ServerResponse } from 'node:http';
 import { createSidebarShellServer } from './sidebar-shell-server';
 import { prepareSidebarShell } from './sidebar-shell-import';
+import { waitForSidebarRequest } from './sidebar-request-boundary.mjs';
 
 const fixture = '/test/fixtures/SidebarShellBackgroundHost.svelte';
 
@@ -45,7 +46,7 @@ test('recovers an actual in-flight fixture import across document replacement', 
       () => null,
       (error) => error,
     );
-    await requested;
+    await waitForSidebarRequest(requested, preparation, 20_000);
     const originalDocument = await page.evaluate(() => performance.timeOrigin);
     expect(fixtureRequests).toBe(1);
     expect(interrupted?.writableEnded).toBe(false);
