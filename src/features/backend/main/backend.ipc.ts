@@ -41,7 +41,13 @@ import {
   type BackendConnectionConfig,
   type HostCertMismatch,
 } from './backend-connection';
-import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
+import {
+  JsonRpcClient,
+  type ConnectionStatus,
+  type JsonRpcNotification,
+  type JsonRpcRetirement,
+  type JsonRpcRetirementResult,
+} from './json-rpc-client';
 import {
   disposeTransferConnectionsForBackend,
   requestOverTransferConnection,
@@ -354,18 +360,25 @@ export function __resetDaemonBuildLogForTesting(): void {
  * Never called for the local entry: the `DaemonVersionInfo` path owns the
  * local daemon's version.
  */
-function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string): void {
+function captureRemoteDaemonVersion(
+  helloResult: unknown,
+  connectionId: string,
+  parent?: PoolOwner,
+): void {
   const helloBuild = extractDaemonHelloBuildInfo(helloResult);
   if (!helloBuild) return;
-  void connectionsStore
-    .setDaemonVersion(connectionId, helloBuild.version)
-    .then((changed) => (changed ? broadcastConnectionsChanged() : undefined))
-    .catch((error: unknown) => {
-      logger.warn('Failed to capture remote daemon version', {
-        connectionId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
+  void poolWork('remote-version', parent, (owner) =>
+    connectionsStore
+      .setDaemonVersion(connectionId, helloBuild.version)
+      .then((changed) => (changed ? broadcastConnectionsChangedOwned(owner) : undefined))
+      .catch((error: unknown) => {
+        recordPoolError(owner, error);
+        logger.warn('Failed to capture remote daemon version', {
+          connectionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }),
+  );
 }
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
@@ -390,6 +403,255 @@ let selectionRoutes: ReturnType<typeof registerRepositorySelectionHandlers> | un
 const nativeReviewFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createNativeReviewFeed>>();
 let nativeReviewRoutes: ReturnType<typeof registerNativeReviewHandlers> | undefined;
 let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
+
+interface PoolOwner {
+  scope: PoolLifecycle;
+  kind: string;
+  parent?: PoolOwner;
+  client?: JsonRpcClient;
+}
+interface OriginalWorkFence {
+  ready(): boolean;
+  subscribeChanged(wake: () => void): () => void;
+}
+interface PoolRetirementResult {
+  scope: symbol;
+  ownersJoined: boolean;
+  admissionSealed: boolean;
+  outcome: JsonRpcRetirementResult['outcome'];
+  clients: readonly JsonRpcRetirementResult[];
+  excludedOwners: readonly string[];
+  failures: readonly { kind: string; error: unknown }[];
+}
+interface PoolLifecycle {
+  scope: symbol;
+  phase: 'active' | 'stopping' | 'sealed' | 'finished';
+  owners: Set<PoolOwner>;
+  members: Map<JsonRpcClient, { id: string; ticket?: JsonRpcRetirement }>;
+  listeners: Set<() => void>;
+  failures: Array<{ kind: string; error: unknown }>;
+  exclusions: Set<string>;
+  generation: number;
+  fence?: OriginalWorkFence;
+  retirement?: Promise<PoolRetirementResult>;
+}
+let poolLifecycle: PoolLifecycle | undefined;
+let poolOwnershipStarted = false;
+
+function poolChanged(scope = poolLifecycle): void {
+  if (!scope) return;
+  for (const wake of [...scope.listeners]) {
+    try {
+      wake();
+    } catch (error) {
+      scope.failures.push({ kind: 'observer', error });
+    }
+  }
+}
+
+/** Explicit original parents, never an ambient owner spanning an await. */
+function poolWork<T>(
+  kind: string,
+  parent: PoolOwner | undefined,
+  invoke: (owner?: PoolOwner) => T,
+  originalCallback?: JsonRpcClient,
+): T {
+  const scope = poolLifecycle;
+  if (!scope) return invoke();
+  if (
+    (parent && (parent.scope !== scope || !scope.owners.has(parent))) ||
+    (scope.phase !== 'active' &&
+      !parent &&
+      !(scope.phase === 'stopping' && originalCallback && scope.members.has(originalCallback)))
+  ) {
+    const error = new Error('Unowned pool work after retirement began');
+    scope.failures.push({ kind: 'late', error });
+    if (kind === 'getLocalBackendClient') throw error;
+    const rejected = Promise.reject(error);
+    void rejected.catch(() => {});
+    poolChanged(scope);
+    return rejected as T;
+  }
+  const owner: PoolOwner = { scope, kind, parent, client: originalCallback };
+  scope.owners.add(owner);
+  const done = (failure?: { error: unknown }) => {
+    if (failure) scope.failures.push({ kind: 'original', error: failure.error });
+    scope.owners.delete(owner);
+    poolChanged(scope);
+  };
+  let value: T;
+  try {
+    value = invoke(owner);
+  } catch (error) {
+    done({ error });
+    throw error;
+  }
+  if (value instanceof Promise)
+    void value.then(
+      () => done(),
+      (error: unknown) => done({ error }),
+    );
+  else done();
+  return value;
+}
+
+function recordPoolError(owner: PoolOwner | undefined, error: unknown): void {
+  owner?.scope.failures.push({ kind: 'original', error });
+}
+
+function poolAuxiliary(kind: string): void {
+  poolLifecycle?.exclusions.add(kind);
+  poolChanged();
+}
+
+function poolClient(owner: PoolOwner | undefined, client: JsonRpcClient): JsonRpcClient {
+  if (owner) {
+    if (owner.client && owner.client !== client) {
+      owner.scope.failures.push({
+        kind: 'foreign-client',
+        error: new Error('Original pool client changed'),
+      });
+      throw new Error('Original pool client changed');
+    }
+    owner.client = client;
+  }
+  return client;
+}
+
+/** Enroll before handlers or allocation. This joins only the declared main pool owners. */
+export function enrollBackendClientLifecycle() {
+  if (
+    poolLifecycle ||
+    poolOwnershipStarted ||
+    handlersRegistered ||
+    backendClients.size ||
+    backendClientConnects.size
+  )
+    throw new Error('Pool lifecycle requires an unowned empty pool');
+  const scope: PoolLifecycle = {
+    scope: Symbol('backend-pool'),
+    phase: 'active',
+    owners: new Set(),
+    members: new Map(),
+    listeners: new Set(),
+    failures: [],
+    exclusions: new Set(),
+    generation: 0,
+  };
+  poolLifecycle = scope;
+  return Object.freeze({
+    scope: scope.scope,
+    retire(fence: OriginalWorkFence): Promise<PoolRetirementResult> {
+      if (scope.retirement) {
+        if (scope.fence !== fence) throw new Error('Original retirement fence changed');
+        return scope.retirement;
+      }
+      scope.fence = fence;
+      let resolve!: (value: PoolRetirementResult) => void;
+      let reject!: (error: unknown) => void;
+      scope.retirement = new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      scope.phase = 'stopping';
+      const unsubscribers: Array<() => void> = [];
+      let checking = false;
+      let prepared = false;
+      const wake = () => {
+        if (!prepared || checking || scope.phase !== 'stopping') return;
+        checking = true;
+        try {
+          for (const [client, member] of scope.members) {
+            if (!member.ticket) {
+              member.ticket = client.beginRetirement();
+              unsubscribers.push(member.ticket.subscribeChanged(wake));
+            }
+          }
+          if (
+            scope.owners.size ||
+            !fence.ready() ||
+            [...scope.members.values()].some((m) => !m.ticket!.isDrained())
+          )
+            return;
+          for (const member of scope.members.values())
+            for (const kind of member.ticket!.excludedOwners()) scope.exclusions.add(kind);
+          if (scope.exclusions.size)
+            throw new Error('Unjoined auxiliary pool owners: ' + [...scope.exclusions].join(','));
+          // No await, dispatch or teardown between the final fence and ALL admission seals.
+          scope.phase = 'sealed';
+          const sealed = [...scope.members.values()].map((m) => m.ticket!.seal());
+          for (const [client, member] of scope.members) {
+            if (backendClients.get(member.id) === client) backendClients.delete(member.id);
+            connectedProtocolVersions.delete(member.id);
+            clearBackendFailureState(member.id);
+          }
+          void Promise.all(sealed.map((ticket) => ticket.finish())).then((clients) => {
+            scope.phase = 'finished';
+            for (const unsubscribe of unsubscribers) unsubscribe();
+            scope.listeners.delete(wake);
+            const failed = clients.find((client) => client.outcome !== 'clean');
+            const finalClientFailures = [...scope.members.values()].flatMap((m) =>
+              m.ticket!.failures(),
+            );
+            const forced = finalClientFailures.some((f) => f.kind === 'forced');
+            const ownershipFault =
+              scope.failures.some((f) => f.kind !== 'original') ||
+              finalClientFailures.some((f) => ['late', 'unknown', 'close'].includes(f.kind));
+            resolve(
+              Object.freeze({
+                scope: scope.scope,
+                ownersJoined: true,
+                admissionSealed: true,
+                outcome: forced
+                  ? 'forced'
+                  : ownershipFault
+                    ? 'ownership-fault'
+                    : scope.failures.length
+                      ? 'original-failure'
+                      : (failed?.outcome ?? 'clean'),
+                clients,
+                excludedOwners: [...scope.exclusions],
+                failures: [...scope.failures, ...finalClientFailures],
+              }),
+            );
+          }, reject);
+        } catch (error) {
+          scope.failures.push({ kind: 'retirement', error });
+          for (const unsubscribe of unsubscribers) unsubscribe();
+          scope.listeners.delete(wake);
+          reject(error);
+        } finally {
+          checking = false;
+        }
+      };
+      // Stop autonomous client work synchronously before route disposal can issue releases.
+      for (const [client, member] of scope.members) {
+        member.ticket = client.beginRetirement();
+        unsubscribers.push(member.ticket.subscribeChanged(wake));
+      }
+      try {
+        keychainSyncLifecycle?.dispose();
+        if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
+        repositoryRoutes?.dispose();
+        selectionRoutes?.dispose();
+        nativeReviewRoutes?.dispose();
+        for (const client of scope.members.keys()) {
+          repositoryFeeds.get(client)?.dispose();
+          selectionFeeds.get(client)?.dispose();
+          nativeReviewFeeds.get(client)?.dispose();
+        }
+        scope.listeners.add(wake);
+        unsubscribers.push(fence.subscribeChanged(wake));
+        prepared = true;
+        wake();
+      } catch (error) {
+        scope.failures.push({ kind: 'retirement', error });
+        reject(error);
+      }
+      return scope.retirement;
+    },
+  });
+}
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
 export const BACKEND_CLIENT_DISCONNECTED_EVENT = 'backend-client-disconnected';
@@ -468,6 +730,7 @@ backendStatusForwarder.setMaxListeners(50);
 // covers all clients across swaps. 'connecting' is skipped — connectivity has
 // not changed yet at that point (still disconnected).
 backendStatusForwarder.on('status', (_id: string, status: ConnectionStatus) => {
+  if (poolLifecycle && poolLifecycle.phase !== 'active') return;
   if (status === 'connecting') return;
   void broadcastConnectionsChanged().catch(() => {});
 });
@@ -813,10 +1076,23 @@ export function getBackendClientForId(backendId: string): JsonRpcClient {
 export function getLocalBackendClient(): JsonRpcClient {
   const existing = backendClients.get(LOCAL_CONNECTION_ID);
   if (existing) return existing;
+  return getLocalBackendClientOwned();
+}
+
+function getLocalBackendClientOwned(parent?: PoolOwner): JsonRpcClient {
+  const existing = backendClients.get(LOCAL_CONNECTION_ID);
+  if (existing) return existing;
+  return poolWork('getLocalBackendClient', parent, (owner) => getLocalBackendClientOriginal(owner));
+}
+
+function getLocalBackendClientOriginal(owner?: PoolOwner): JsonRpcClient {
+  poolOwnershipStarted = true;
+  const existing = backendClients.get(LOCAL_CONNECTION_ID);
+  if (existing) return existing;
   const config = resolveBackendConfig(process.env, { isDev: !app.isPackaged });
   const instance = createAdditionalBackendClient(LOCAL_CONNECTION_ID, config);
   backendClients.set(LOCAL_CONNECTION_ID, instance);
-  return instance;
+  return poolClient(owner, instance);
 }
 
 /**
@@ -839,14 +1115,28 @@ export function getLocalBackendClient(): JsonRpcClient {
 const backendUpdateRequests = new Map<string, Promise<UpdateBackendResult>>();
 
 function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
-  const pending = backendUpdateRequests.get(id);
-  if (pending) return pending;
-  const request = performBackendUpdate(id).finally(() => backendUpdateRequests.delete(id));
-  backendUpdateRequests.set(id, request);
-  return request;
+  return poolWork('backend-update', undefined, (owner) => {
+    poolAuxiliary('backend-updater');
+    const pending = backendUpdateRequests.get(id);
+    if (pending) return pending;
+    const request = performBackendUpdateOwned(id, owner).finally(() =>
+      backendUpdateRequests.delete(id),
+    );
+    backendUpdateRequests.set(id, request);
+    return request;
+  });
 }
 
-async function performBackendUpdate(id: string): Promise<UpdateBackendResult> {
+function performBackendUpdateOwned(id: string, parent?: PoolOwner): Promise<UpdateBackendResult> {
+  return poolWork('performBackendUpdate', parent, (owner) =>
+    performBackendUpdateOriginal(id, owner),
+  );
+}
+
+async function performBackendUpdateOriginal(
+  id: string,
+  owner?: PoolOwner,
+): Promise<UpdateBackendResult> {
   if (id === LOCAL_CONNECTION_ID) {
     // Same predicate as captureLocalUpdateSupported: only an adopted
     // `external` daemon over UDS is self-updatable. External mode is also set
@@ -887,6 +1177,7 @@ async function performBackendUpdate(id: string): Promise<UpdateBackendResult> {
     pendingDaemonUpdateDrops.delete(id);
     return { ok: true };
   } catch (error) {
+    recordPoolError(owner, error);
     if (error instanceof JsonRpcError && error.rpcCode === -32601) {
       logger.warn('Daemon does not support system.requestUpdate', { id });
       return { ok: false, reason: 'unsupported' };
@@ -915,6 +1206,25 @@ export function getFocusedBackendClient(): JsonRpcClient {
  * decrypted.
  */
 export function connectBackendClient(id: string, tokenOverride?: string): Promise<JsonRpcClient> {
+  return connectBackendClientOwned(id, tokenOverride);
+}
+
+function connectBackendClientOwned(
+  id: string,
+  tokenOverride?: string,
+  parent?: PoolOwner,
+): Promise<JsonRpcClient> {
+  return poolWork('connectBackendClient', parent, (owner) =>
+    connectBackendClientOriginal(id, tokenOverride, owner),
+  );
+}
+
+function connectBackendClientOriginal(
+  id: string,
+  tokenOverride?: string,
+  owner?: PoolOwner,
+): Promise<JsonRpcClient> {
+  poolOwnershipStarted = true;
   const existing = backendClients.get(id);
   if (existing) return Promise.resolve(existing);
   const pending = backendClientConnects.get(id);
@@ -931,7 +1241,7 @@ export function connectBackendClient(id: string, tokenOverride?: string): Promis
       if ((backendCredentialGenerations.get(id) ?? 0) !== generation) continue;
       const instance = createAdditionalBackendClient(id, config, invitedCredential);
       backendClients.set(id, instance);
-      return instance;
+      return poolClient(owner, instance);
     }
   })().finally(() => {
     backendClientConnects.delete(id);
@@ -1037,8 +1347,8 @@ function onGuestCredentialReplaced(id: string): void {
   const hadLiveClient = backendClients.has(id);
   disconnectBackendClient(id);
   if (!hadLiveClient) return;
-  void enqueueConnectionOperation(async () => {
-    const rebuilt = await connectBackendClient(id);
+  void enqueueConnectionOperation(async (owner) => {
+    const rebuilt = await connectBackendClientOwned(id, undefined, owner);
     replayReconnectOnceConnected(id, rebuilt);
   }).catch((error: unknown) => {
     logger.warn('Failed to rebuild guest client after credential replacement', {
@@ -1114,76 +1424,88 @@ function createAdditionalBackendClient(
   let refreshPending = false;
   let refreshAgain = false;
   let hostMembership = false;
-  const refreshInvited = async () => {
-    if (!invitedCredential) return;
-    if (refreshPending) {
-      refreshAgain = true;
-      return;
-    }
-    refreshPending = true;
-    try {
-      do {
-        refreshAgain = false;
-        const generation = guestWorkspaceEvents.generation;
-        const revision = identityRevision;
-        const current = Object.assign(
-          () =>
-            backendClients.get(id) === instance &&
-            guestWorkspaceEvents.generation === generation &&
-            identityRevision === revision,
-          { credential: invitedCredential },
-        );
-        invitedConnectionGuards.delete(id);
-        const principal = await instance.request('principal.me');
-        if (!current()) continue;
-        const snapshot = parsePrincipalSnapshot(latestHello, principal);
-        const role = snapshot && invitedRole(snapshot);
-        if (!snapshot || !role || snapshot.principal.id !== invitedCredential.principalId) continue;
-        if (
-          !(await guestSessionsStore.setPrincipal(
-            id,
-            {
-              login: snapshot.principal.login,
-              identity: snapshot.principal.identity,
-              hostRole: role,
-            },
-            current,
-          )) ||
-          !current()
-        )
-          continue;
-        invitedConnectionGuards.set(id, current);
-        hostMembership = snapshot.capabilities.hostMembership;
-        void captureRemoteHostname(id);
-        void captureRemoteUpdateSupported(id);
-        void hydrateGuestWorkspaces(id);
-        if (
-          guestWorkspaceEvents.subscriptionId === undefined &&
-          !guestWorkspaceEvents.subscribing
-        ) {
-          guestWorkspaceEvents.subscribing = true;
-          const sameTransport = () =>
-            backendClients.get(id) === instance && guestWorkspaceEvents.generation === generation;
-          void subscribeGuestWorkspaceEvents(id, instance, sameTransport, hostMembership).then(
-            (subscriptionId) => {
-              if (
-                guestWorkspaceEvents.generation !== generation ||
-                backendClients.get(id) !== instance
-              )
-                return;
-              guestWorkspaceEvents.subscribing = false;
-              guestWorkspaceEvents.subscriptionId = subscriptionId;
-            },
+  const refreshInvited = (parent?: PoolOwner) =>
+    poolWork('invited-principal', parent, async (owner) => {
+      if (!invitedCredential) return;
+      if (refreshPending) {
+        refreshAgain = true;
+        return;
+      }
+      refreshPending = true;
+      try {
+        do {
+          refreshAgain = false;
+          const generation = guestWorkspaceEvents.generation;
+          const revision = identityRevision;
+          const current = Object.assign(
+            () =>
+              backendClients.get(id) === instance &&
+              guestWorkspaceEvents.generation === generation &&
+              identityRevision === revision,
+            { credential: invitedCredential },
           );
-        }
-      } while (refreshAgain);
-    } catch (error) {
-      logger.warn('Invited principal refresh failed', { code: revokeFailureCode(error) });
-    } finally {
-      refreshPending = false;
-    }
-  };
+          invitedConnectionGuards.delete(id);
+          const principal = await instance.request('principal.me');
+          if (!current()) continue;
+          const snapshot = parsePrincipalSnapshot(latestHello, principal);
+          const role = snapshot && invitedRole(snapshot);
+          if (!snapshot || !role || snapshot.principal.id !== invitedCredential.principalId)
+            continue;
+          if (
+            !(await guestSessionsStore.setPrincipal(
+              id,
+              {
+                login: snapshot.principal.login,
+                identity: snapshot.principal.identity,
+                hostRole: role,
+              },
+              current,
+            )) ||
+            !current()
+          )
+            continue;
+          invitedConnectionGuards.set(id, current);
+          hostMembership = snapshot.capabilities.hostMembership;
+          void captureRemoteHostnameOwned(id, owner);
+          void captureRemoteUpdateSupportedOwned(id, owner);
+          void hydrateGuestWorkspacesOwned(id, owner);
+          if (
+            guestWorkspaceEvents.subscriptionId === undefined &&
+            !guestWorkspaceEvents.subscribing
+          ) {
+            guestWorkspaceEvents.subscribing = true;
+            const sameTransport = () =>
+              backendClients.get(id) === instance && guestWorkspaceEvents.generation === generation;
+            void poolWork('guest-subscription-followup', owner, (child) =>
+              subscribeGuestWorkspaceEventsOwned(
+                id,
+                instance,
+                sameTransport,
+                hostMembership,
+                child,
+              ).then((subscriptionId) => {
+                if (
+                  guestWorkspaceEvents.generation !== generation ||
+                  backendClients.get(id) !== instance
+                )
+                  return;
+                guestWorkspaceEvents.subscribing = false;
+                guestWorkspaceEvents.subscriptionId = subscriptionId;
+              }),
+            );
+          }
+        } while (refreshAgain);
+      } catch (error) {
+        recordPoolError(owner, error);
+        logger.warn('Invited principal refresh failed', { code: revokeFailureCode(error) });
+      } finally {
+        refreshPending = false;
+      }
+    });
   const instance = new JsonRpcClient({
+    ...(poolLifecycle
+      ? { lifecycle: { scope: poolLifecycle.scope, generation: ++poolLifecycle.generation } }
+      : {}),
     config,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
     // half-open socket. `host.status` is the transport-agnostic capability
@@ -1201,92 +1523,98 @@ function createAdditionalBackendClient(
     // host identification (the auxiliary setup/transfer/quit clients stay
     // clientId-only).
     helloParams: async () => ({ ...(await buildMainClientHelloParams()) }),
-    onHelloResult: (result) => {
-      const obj =
-        result && typeof result === 'object'
-          ? (result as { clientId?: unknown; protocolVersion?: unknown })
-          : undefined;
-      const clientId = obj?.clientId;
-      if (typeof clientId === 'string' && clientId.length > 0) {
-        void persistClientId(clientId);
-      }
-      // T15: `protocolVersion` from the handshake feeds the protocol-compat
-      // check — record it for local, compare it against local for a remote,
-      // latched per connection id and broadcast to this backend's windows only.
-      const helloProtocolVersion =
-        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
-      if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
-      else connectedProtocolVersions.delete(id);
-      if (id === LOCAL_CONNECTION_ID) {
-        localHelloObserved = true;
-        // Re-negotiation invalidates any prepared collaboration continuation.
-        localIdentityGeneration++;
-        const hello = result as {
-          server?: { capabilities?: { collaborationIdentity?: unknown } };
-        } | null;
-        localCollaborationIdentitySupported =
-          hello?.server?.capabilities?.collaborationIdentity === 1;
-      }
-      handleHelloProtocolVersion(helloProtocolVersion, meta);
-      // #3649: log each connected daemon's build identity once at INFO, keyed
-      // by connection id so multi-backend setups record every daemon build.
-      logDaemonHelloBuild(result, id);
-      // Pool members capture their remote's daemon version; the id is fixed
-      // at construction so no active-meta guard is needed. Skipped for the
-      // pooled local client — the #3448 refresh below owns local.
-      if (id !== LOCAL_CONNECTION_ID) {
-        captureRemoteDaemonVersion(result, id);
-        if (invitedCredential) {
-          latestHello = result;
-          invitedClientHellos.set(instance, result);
-          identityRevision++;
-          invitedConnectionGuards.delete(id);
-          void refreshInvited();
-        } else {
-          void captureRemoteHostname(id);
-          void captureRemoteUpdateSupported(id);
-        }
-      } else {
-        // #3448: refresh the adopted external daemon's version info from the
-        // live `server.version` on every (re)connect — the startup probe only
-        // latches it once, so a daemon upgrade would otherwise stay stale.
-        // For the handshake hello this runs BEFORE `finishConnect` emits
-        // `connected`, so that broadcast already carries the refreshed info;
-        // the explicit re-broadcast below covers caller-issued hellos while
-        // connected (no status event follows those).
-        const refreshed = computeDaemonVersionRefresh({
-          helloResult: result,
-          isLocalBackend: true,
-          transport: instance.getConfig().transport,
-          connectionMode: getConnectionMode(),
-          pinnedVersion: getPinnedVersion(),
-          current: getDaemonVersionInfo(),
-        });
-        if (refreshed) {
-          setDaemonVersionInfo(refreshed);
-          broadcast(
-            BACKEND.STATUS,
-            {
-              status: instance.getStatus(),
-              transport: formatTransportInfo(
-                instance.getConfig(),
-                getPinnedVersion(),
-                instance.getConnectedVia(),
-              ),
-              reconnectAttempts: instance.getReconnectAttempts(),
-              ...daemonUpdateMarker(id),
-            },
-            id,
-          );
-        }
-        // Capture whether the adopted external local daemon supports
-        // self-update (system.status `updateSupported`), mirroring the
-        // remote capture above. Fire-and-forget/fail-soft; the capture
-        // itself guards on external + UDS and clears otherwise.
-        void captureLocalUpdateSupported();
-        void captureLocalDeviceKind();
-      }
-    },
+    onHelloResult: (result) =>
+      poolWork(
+        'hello-result',
+        undefined,
+        (owner) => {
+          const obj =
+            result && typeof result === 'object'
+              ? (result as { clientId?: unknown; protocolVersion?: unknown })
+              : undefined;
+          const clientId = obj?.clientId;
+          if (typeof clientId === 'string' && clientId.length > 0) {
+            void poolWork('persist-client-id', owner, () => persistClientId(clientId));
+          }
+          // T15: `protocolVersion` from the handshake feeds the protocol-compat
+          // check — record it for local, compare it against local for a remote,
+          // latched per connection id and broadcast to this backend's windows only.
+          const helloProtocolVersion =
+            typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
+          if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
+          else connectedProtocolVersions.delete(id);
+          if (id === LOCAL_CONNECTION_ID) {
+            localHelloObserved = true;
+            // Re-negotiation invalidates any prepared collaboration continuation.
+            localIdentityGeneration++;
+            const hello = result as {
+              server?: { capabilities?: { collaborationIdentity?: unknown } };
+            } | null;
+            localCollaborationIdentitySupported =
+              hello?.server?.capabilities?.collaborationIdentity === 1;
+          }
+          handleHelloProtocolVersion(helloProtocolVersion, meta);
+          // #3649: log each connected daemon's build identity once at INFO, keyed
+          // by connection id so multi-backend setups record every daemon build.
+          logDaemonHelloBuild(result, id);
+          // Pool members capture their remote's daemon version; the id is fixed
+          // at construction so no active-meta guard is needed. Skipped for the
+          // pooled local client — the #3448 refresh below owns local.
+          if (id !== LOCAL_CONNECTION_ID) {
+            captureRemoteDaemonVersion(result, id, owner);
+            if (invitedCredential) {
+              latestHello = result;
+              invitedClientHellos.set(instance, result);
+              identityRevision++;
+              invitedConnectionGuards.delete(id);
+              void refreshInvited(owner);
+            } else {
+              void captureRemoteHostnameOwned(id, owner);
+              void captureRemoteUpdateSupportedOwned(id, owner);
+            }
+          } else {
+            // #3448: refresh the adopted external daemon's version info from the
+            // live `server.version` on every (re)connect — the startup probe only
+            // latches it once, so a daemon upgrade would otherwise stay stale.
+            // For the handshake hello this runs BEFORE `finishConnect` emits
+            // `connected`, so that broadcast already carries the refreshed info;
+            // the explicit re-broadcast below covers caller-issued hellos while
+            // connected (no status event follows those).
+            const refreshed = computeDaemonVersionRefresh({
+              helloResult: result,
+              isLocalBackend: true,
+              transport: instance.getConfig().transport,
+              connectionMode: getConnectionMode(),
+              pinnedVersion: getPinnedVersion(),
+              current: getDaemonVersionInfo(),
+            });
+            if (refreshed) {
+              setDaemonVersionInfo(refreshed);
+              broadcast(
+                BACKEND.STATUS,
+                {
+                  status: instance.getStatus(),
+                  transport: formatTransportInfo(
+                    instance.getConfig(),
+                    getPinnedVersion(),
+                    instance.getConnectedVia(),
+                  ),
+                  reconnectAttempts: instance.getReconnectAttempts(),
+                  ...daemonUpdateMarker(id),
+                },
+                id,
+              );
+            }
+            // Capture whether the adopted external local daemon supports
+            // self-update (system.status `updateSupported`), mirroring the
+            // remote capture above. Fire-and-forget/fail-soft; the capture
+            // itself guards on external + UDS and clears otherwise.
+            void captureLocalUpdateSupportedOwned(owner);
+            void captureLocalDeviceKindOwned(owner);
+          }
+        },
+        instance,
+      ),
   });
   // Subscribe before start/hello. Older test doubles have no private source feed.
   if (typeof instance.onRepositoryConnectionEvent === 'function') {
@@ -1304,6 +1632,7 @@ function createAdditionalBackendClient(
     if (backendClients.get(id) !== instance) return;
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
+    if (poolLifecycle && poolLifecycle.phase !== 'active') return;
     if (backendClients.get(id) !== instance) return;
     if (
       isGuestWorkspaceRefreshEvent(
@@ -1423,16 +1752,23 @@ function createAdditionalBackendClient(
       if (backendClients.get(id) !== instance) return;
       if (invitedCredential && error.statusCode === 401) {
         invitedConnectionGuards.delete(id);
-        void guestSessionsStore
-          .forget(id, invitedCredential)
-          .then(async (removed) => {
-            if (!removed) return;
-            onGuestSessionRemovedBySync(id);
-            await broadcastGuestSessionsChanged();
-          })
-          .catch(() => {
-            logger.warn('Could not persist invited credential removal');
-          });
+        void poolWork(
+          'credential-removal',
+          undefined,
+          (owner) =>
+            guestSessionsStore
+              .forget(id, invitedCredential)
+              .then(async (removed) => {
+                if (!removed) return;
+                onGuestSessionRemovedBySync(id);
+                await broadcastGuestSessionsChangedOwned(owner);
+              })
+              .catch((error: unknown) => {
+                recordPoolError(owner, error);
+                logger.warn('Could not persist invited credential removal');
+              }),
+          instance,
+        );
       }
       if (meta && !authRejectedNotifiedIds.has(meta.id)) {
         authRejectedNotifiedIds.add(meta.id);
@@ -1462,7 +1798,15 @@ function createAdditionalBackendClient(
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
+  poolLifecycle?.members.set(instance, { id });
   instance.start();
+  if (poolLifecycle?.phase === 'stopping') {
+    instance.beginRetirement();
+    repositoryFeeds.get(instance)?.dispose();
+    selectionFeeds.get(instance)?.dispose();
+    nativeReviewFeeds.get(instance)?.dispose();
+    poolChanged();
+  }
   return instance;
 }
 
@@ -1480,6 +1824,7 @@ function createAdditionalBackendClient(
  * even across an arbitrary number of client rebuilds.
  */
 export function onBackendReconnected(handler: () => void, backendId?: string): () => void {
+  poolAuxiliary('external-forwarder');
   // Ensure the local client exists (and is wired into the forwarder) so a
   // reconnect against the default transport actually reaches this handler.
   getLocalBackendClient();
@@ -1497,6 +1842,7 @@ export function onBackendReconnected(handler: () => void, backendId?: string): (
  * Returns a disposer.
  */
 export function onAnyBackendReconnected(handler: (backendId: string) => void): () => void {
+  poolAuxiliary('external-forwarder');
   getLocalBackendClient();
   const listener = (emittingBackendId: string): void => handler(emittingBackendId);
   backendReconnectForwarder.on('reconnected', listener);
@@ -1518,6 +1864,7 @@ export function onBackendNotification(
   handler: (notification: JsonRpcNotification) => void,
   backendId?: string,
 ): () => void {
+  poolAuxiliary('external-forwarder');
   // Ensure the local client exists (and is wired into the forwarder) so
   // notifications on the default transport actually reach this handler.
   getLocalBackendClient();
@@ -1537,6 +1884,7 @@ export function onBackendNotification(
 export function onAnyBackendNotification(
   handler: (backendId: string, notification: JsonRpcNotification) => void,
 ): () => void {
+  poolAuxiliary('external-forwarder');
   getLocalBackendClient();
   const listener = (emittingBackendId: string, notification: JsonRpcNotification): void =>
     handler(emittingBackendId, notification);
@@ -1557,6 +1905,7 @@ export function onBackendStatus(
   handler: (status: ConnectionStatus) => void,
   backendId?: string,
 ): () => void {
+  poolAuxiliary('external-forwarder');
   getLocalBackendClient();
   const listener = (emittingBackendId: string, status: ConnectionStatus): void => {
     if (emittingBackendId === (backendId ?? LOCAL_CONNECTION_ID)) handler(status);
@@ -1576,6 +1925,7 @@ export function onBackendStatus(
 export function onAnyBackendStatus(
   handler: (backendId: string, status: ConnectionStatus) => void,
 ): () => void {
+  poolAuxiliary('external-forwarder');
   getLocalBackendClient();
   const listener = (emittingBackendId: string, status: ConnectionStatus): void =>
     handler(emittingBackendId, status);
@@ -1728,11 +2078,18 @@ function extractHostname(result: unknown): string | null {
  * the connection keeps its `host:port` label. Results that arrive after the
  * backend's client was disposed are discarded (monorepo#2221).
  */
-async function captureRemoteHostname(id: string): Promise<void> {
+
+function captureRemoteHostnameOwned(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('captureRemoteHostname', parent, (owner) =>
+    captureRemoteHostnameOriginal(id, owner),
+  );
+}
+
+async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Promise<void> {
   try {
     // Snapshot this backend's pooled client; the id-keyed pool lookup below
     // protects against a stale capture after the client is disposed.
-    const client = getBackendClientForId(id);
+    const client = poolClient(owner, getBackendClientForId(id));
     const guard = invitedConnectionGuards.get(id);
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
@@ -1745,15 +2102,16 @@ async function captureRemoteHostname(id: string): Promise<void> {
       if (guest) {
         if (!guard?.()) return;
         if (hostname && (await guestSessionsStore.setHostname(id, hostname, guard))) {
-          await broadcastGuestSessionsChanged();
+          await broadcastGuestSessionsChangedOwned(owner);
         }
         return;
       }
       const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
       if (hostname) await connectionsStore.setHostname(id, hostname);
-      if (hostname || kindChanged) await broadcastConnectionsChanged();
+      if (hostname || kindChanged) await broadcastConnectionsChangedOwned(owner);
     }
   } catch (error) {
+    recordPoolError(owner, error);
     logger.warn('Failed to capture remote hostname for connection label', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -1820,11 +2178,20 @@ const guestHydrationReads = new Map<string, number>();
  * record, a *Leave*) also discards it; an edit that lands during the store
  * write itself is queued behind it by the store and wins.
  */
-async function hydrateGuestWorkspaces(id: string): Promise<void> {
+
+function hydrateGuestWorkspacesOwned(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('hydrateGuestWorkspaces', parent, (owner) =>
+    hydrateGuestWorkspacesOriginal(id, owner),
+  );
+}
+
+async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Promise<void> {
   try {
     const guard = invitedConnectionGuards.get(id);
+    const original = owner ? poolClient(owner, getBackendClientForId(id)) : undefined;
     if (!guard?.() || (await guestSessionsStore.findById(id)) === null) return;
-    const client = getBackendClientForId(id);
+    const client = original ?? poolClient(owner, getBackendClientForId(id));
+    if (owner && backendClients.get(id) !== client) return;
     const epoch = guestMembershipEpochs.get(id);
     const read = (guestHydrationReads.get(id) ?? 0) + 1;
     guestHydrationReads.set(id, read);
@@ -1844,9 +2211,10 @@ async function hydrateGuestWorkspaces(id: string): Promise<void> {
       return;
     }
     if (await guestSessionsStore.setWorkspaces(id, refs, stillValid)) {
-      await broadcastGuestSessionsChanged();
+      await broadcastGuestSessionsChangedOwned(owner);
     }
   } catch (error) {
+    recordPoolError(owner, error);
     logger.warn('Failed to hydrate guest workspaces from host', {
       id,
       code: revokeFailureCode(error),
@@ -1869,18 +2237,19 @@ const guestWorkspaceRefreshPending = new Map<string, boolean>();
  * {@link hydrateGuestWorkspaces} directly — its read-generation fence already
  * settles two hellos on one client.
  */
-function requestGuestWorkspaceRefresh(id: string): void {
+function requestGuestWorkspaceRefresh(id: string, parent?: PoolOwner): void {
+  if (poolLifecycle && poolLifecycle.phase !== 'active' && !parent) return;
   if (guestWorkspaceRefreshPending.has(id)) {
     guestWorkspaceRefreshPending.set(id, true);
     return;
   }
-  void (async () => {
+  void poolWork('guest-refresh-loop', parent, async (owner) => {
     do {
       guestWorkspaceRefreshPending.set(id, false);
-      await hydrateGuestWorkspaces(id);
+      await hydrateGuestWorkspacesOwned(id, owner);
     } while (guestWorkspaceRefreshPending.get(id));
     guestWorkspaceRefreshPending.delete(id);
-  })();
+  });
 }
 
 /** Host events that can change a guest's cached `{ id, title }` list. */
@@ -1901,11 +2270,25 @@ const GUEST_WORKSPACE_EVENT_TYPES = ['workspace:updated', 'workspace:deleted'];
  * here would land a second lease on the new socket (`request()` waits across
  * a non-connected status instead of failing).
  */
-async function subscribeGuestWorkspaceEvents(
+
+function subscribeGuestWorkspaceEventsOwned(
   id: string,
   client: JsonRpcClient,
   isCurrent: () => boolean,
   hostMembership = false,
+  parent?: PoolOwner,
+): Promise<string | undefined> {
+  return poolWork('subscribeGuestWorkspaceEvents', parent, (owner) =>
+    subscribeGuestWorkspaceEventsOriginal(id, client, isCurrent, hostMembership, owner),
+  );
+}
+
+async function subscribeGuestWorkspaceEventsOriginal(
+  id: string,
+  client: JsonRpcClient,
+  isCurrent: () => boolean,
+  hostMembership = false,
+  owner?: PoolOwner,
 ): Promise<string | undefined> {
   try {
     if ((await guestSessionsStore.findById(id)) === null) return undefined;
@@ -1924,6 +2307,7 @@ async function subscribeGuestWorkspaceEvents(
     }
     return result.subscriptionId;
   } catch (error) {
+    recordPoolError(owner, error);
     logger.warn('events.subscribe for guest workspace events failed', {
       id,
       code: revokeFailureCode(error),
@@ -1969,7 +2353,14 @@ function isGuestWorkspaceRefreshEvent(
  * clients see when picking a browser target) reflects the learned identity.
  * Remote backends are never re-helloed here — they describe a different host.
  */
-async function captureLocalDeviceKind(): Promise<void> {
+
+function captureLocalDeviceKindOwned(parent?: PoolOwner): Promise<void> {
+  return poolWork('captureLocalDeviceKind', parent, (owner) =>
+    captureLocalDeviceKindOriginal(owner),
+  );
+}
+
+async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> {
   try {
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
@@ -1979,7 +2370,7 @@ async function captureLocalDeviceKind(): Promise<void> {
     if (
       await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
     ) {
-      await broadcastConnectionsChanged();
+      await broadcastConnectionsChangedOwned(owner);
     }
     if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
       // The pooled client merges the persisted identity + capabilities into
@@ -1987,6 +2378,7 @@ async function captureLocalDeviceKind(): Promise<void> {
       await client.request('client.hello', {});
     }
   } catch (error) {
+    recordPoolError(owner, error);
     logger.warn('Failed to capture local device kind', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -2064,11 +2456,18 @@ function extractTcAddress(result: unknown): string | null {
  * backend's client was disposed are discarded (monorepo#2221). Never called
  * for the local entry.
  */
-async function captureRemoteUpdateSupported(id: string): Promise<void> {
+
+function captureRemoteUpdateSupportedOwned(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('captureRemoteUpdateSupported', parent, (owner) =>
+    captureRemoteUpdateSupportedOriginal(id, owner),
+  );
+}
+
+async function captureRemoteUpdateSupportedOriginal(id: string, owner?: PoolOwner): Promise<void> {
   try {
     // Snapshot this backend's pooled client; the id-keyed pool lookup below
     // protects against a stale capture after the client is disposed.
-    const client = getBackendClientForId(id);
+    const client = poolClient(owner, getBackendClientForId(id));
     const guard = invitedConnectionGuards.get(id);
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
@@ -2104,7 +2503,7 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
           ips.length > 0 &&
           backendClients.get(id) === client &&
           (await guestSessionsStore.setHosts(id, ips, guard));
-        if (guestTcChanged || guestHostsChanged) await broadcastGuestSessionsChanged();
+        if (guestTcChanged || guestHostsChanged) await broadcastGuestSessionsChangedOwned(owner);
         return;
       }
       const changed = await connectionsStore.setUpdateSupported(id, supported);
@@ -2117,9 +2516,10 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
         (await connectionsStore.getDetectHosts(id)) &&
         backendClients.get(id) === client &&
         (await connectionsStore.setHosts(id, ips));
-      if (changed || tcChanged || hostsChanged) await broadcastConnectionsChanged();
+      if (changed || tcChanged || hostsChanged) await broadcastConnectionsChangedOwned(owner);
     }
   } catch (error) {
+    recordPoolError(owner, error);
     logger.warn('Failed to capture remote updateSupported flag', {
       id,
       error: error instanceof Error ? error.message : String(error),
@@ -2148,7 +2548,17 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
  * the flag-bearing transport payload (its earlier connected status is emitted
  * before this capture resolves).
  */
-async function captureLocalUpdateSupported(): Promise<void> {
+function captureLocalUpdateSupported(): Promise<void> {
+  return captureLocalUpdateSupportedOwned();
+}
+
+function captureLocalUpdateSupportedOwned(parent?: PoolOwner): Promise<void> {
+  return poolWork('captureLocalUpdateSupported', parent, (owner) =>
+    captureLocalUpdateSupportedOriginal(owner),
+  );
+}
+
+async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<void> {
   try {
     // Snapshot the pooled local client; the pool lookup below protects
     // against a stale capture after the client is disposed/replaced.
@@ -2157,7 +2567,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
     if (getConnectionMode() !== 'external' || client.getConfig().transport !== 'uds') {
       if (getLocalUpdateSupported() !== null) {
         setLocalUpdateSupported(null);
-        await broadcastConnectionsChanged();
+        await broadcastConnectionsChangedOwned(owner);
       }
       return;
     }
@@ -2167,7 +2577,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
     // window carries the previous daemon's flag.
     if (getLocalUpdateSupported() !== null) {
       setLocalUpdateSupported(null);
-      await broadcastConnectionsChanged();
+      await broadcastConnectionsChangedOwned(owner);
     }
     const result = await client.request('system.status');
     const supported = extractUpdateSupported(result);
@@ -2176,7 +2586,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
     if (backendClients.get(LOCAL_CONNECTION_ID) === client) {
       if (getLocalUpdateSupported() !== supported) {
         setLocalUpdateSupported(supported);
-        await broadcastConnectionsChanged();
+        await broadcastConnectionsChangedOwned(owner);
         // The daemon-health saga decides the passive mismatch warning from
         // `backend:status`, whose connected event precedes this capture —
         // push a flag-bearing status so its behind-pin suppression can
@@ -2198,6 +2608,7 @@ async function captureLocalUpdateSupported(): Promise<void> {
       }
     }
   } catch (error) {
+    recordPoolError(owner, error);
     logger.warn('Failed to capture local updateSupported flag', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -2256,12 +2667,17 @@ function extractLocalIps(result: unknown): string[] | null {
  * the remotely-served `localIps` (loopback-filtered) for records with
  * detectHosts on.
  */
-async function refreshRemoteHosts(id: string): Promise<void> {
+
+function refreshRemoteHostsOwned(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('refreshRemoteHosts', parent, (owner) => refreshRemoteHostsOriginal(id, owner));
+}
+
+async function refreshRemoteHostsOriginal(id: string, owner?: PoolOwner): Promise<void> {
   try {
     // Snapshot this backend's pooled client BEFORE the first await: a
     // concurrent disconnect/reconnect replaces the pool entry, and querying
     // the NEW client here would persist another socket's answer.
-    const client = getBackendClientForId(id);
+    const client = poolClient(owner, getBackendClientForId(id));
     // A guest session has no detect-hosts opt-out: the invite envelope's
     // list is always refreshed from the daemon's current interfaces.
     const isGuest = (await guestSessionsStore.findById(id)) !== null;
@@ -2275,9 +2691,10 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     if (backendClients.get(id) === client) {
       if (ips) await connectionsStore.setHosts(id, ips);
       const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
-      if (ips || tcChanged) await broadcastConnectionsChanged();
+      if (ips || tcChanged) await broadcastConnectionsChangedOwned(owner);
     }
   } catch (error) {
+    recordPoolError(owner, error);
     logger.debug('Could not refresh candidate hosts from server.pairingInfo (fail-soft)', {
       id,
       error: error instanceof Error ? error.message : String(error),
@@ -2301,10 +2718,22 @@ async function refreshRemoteHosts(id: string): Promise<void> {
 let cachedLiveSelfFingerprint: string | null = null;
 let liveSelfFingerprintProbe: Promise<string | null> | null = null;
 
-function getLiveSelfFingerprint(timeoutMs?: number): Promise<string | null> {
+function getLiveSelfFingerprintOwned(
+  timeoutMs?: number,
+  parent?: PoolOwner,
+): Promise<string | null> {
+  return poolWork('getLiveSelfFingerprint', parent, (owner) =>
+    getLiveSelfFingerprintOriginal(timeoutMs, owner),
+  );
+}
+
+function getLiveSelfFingerprintOriginal(
+  timeoutMs?: number,
+  owner?: PoolOwner,
+): Promise<string | null> {
   if (cachedLiveSelfFingerprint !== null) return Promise.resolve(cachedLiveSelfFingerprint);
   if (liveSelfFingerprintProbe) return liveSelfFingerprintProbe;
-  const localClient = getLocalBackendClient();
+  const localClient = getLocalBackendClientOwned(owner);
   const probe: Promise<string | null> = localClient
     .request('server.pairingInfo', undefined, { timeoutMs })
     .then(
@@ -2326,9 +2755,12 @@ function getLiveSelfFingerprint(timeoutMs?: number): Promise<string | null> {
           const records = await connectionsStore.list();
           const selfKeys = buildSelfFingerprintKeys(fingerprint);
           if (records.some((c) => isSelfConnectionRecord(c, selfKeys))) {
-            void broadcastConnectionsChanged().catch(() => {});
+            void broadcastConnectionsChangedOwned(owner).catch((error: unknown) => {
+              recordPoolError(owner, error);
+            });
           }
-        } catch {
+        } catch (error) {
+          recordPoolError(owner, error);
           // Ignored — the next listConnections call serves the corrected list.
         }
       }
@@ -2374,16 +2806,35 @@ function isSelfConnectionRecord(
  * is used when available, and the probe's own resolution re-broadcasts the
  * list. Fail-soft: a fingerprint read/probe error hides nothing.
  */
-async function listConnections(
+function listConnections(
   windowBackendId: string = LOCAL_CONNECTION_ID,
+): Promise<ConnectionsListResult> {
+  return listConnectionsOwned(windowBackendId);
+}
+
+function listConnectionsOwned(
+  windowBackendId: string = LOCAL_CONNECTION_ID,
+  parent?: PoolOwner,
+): Promise<ConnectionsListResult> {
+  return poolWork('listConnections', parent, (owner) =>
+    listConnectionsOriginal(windowBackendId, owner),
+  );
+}
+
+async function listConnectionsOriginal(
+  windowBackendId: string = LOCAL_CONNECTION_ID,
+  owner?: PoolOwner,
 ): Promise<ConnectionsListResult> {
   const [connections, activeId, storedFingerprint] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),
-    getStoredSelfFingerprint().catch(() => null),
+    getStoredSelfFingerprint().catch((error: unknown) => {
+      recordPoolError(owner, error);
+      return null;
+    }),
   ]);
   // Kick off (or reuse) the live probe without awaiting it (see above).
-  void getLiveSelfFingerprint();
+  void getLiveSelfFingerprintOwned(undefined, owner);
   const selfKeys = buildSelfFingerprintKeys(storedFingerprint, cachedLiveSelfFingerprint);
   // Replay any sticky protocol mismatch / auth rejection for THIS WINDOW'S
   // backend so a renderer that missed the one-shot broadcast (e.g. a window
@@ -2445,11 +2896,21 @@ async function listConnections(
 }
 
 /** Broadcast the current list + selections, tailored to each recipient window. */
-async function broadcastConnectionsChanged(): Promise<void> {
+function broadcastConnectionsChanged(): Promise<void> {
+  return broadcastConnectionsChangedOwned();
+}
+
+function broadcastConnectionsChangedOwned(parent?: PoolOwner): Promise<void> {
+  return poolWork('broadcastConnectionsChanged', parent, (owner) =>
+    broadcastConnectionsChangedOriginal(owner),
+  );
+}
+
+async function broadcastConnectionsChangedOriginal(owner?: PoolOwner): Promise<void> {
   // Also notify main-process listeners (the Window menu labels entries with
   // connection labels) — renderers get the tailored payload below.
   app.emit('connections-changed');
-  const payload = await listConnections();
+  const payload = await listConnectionsOwned(undefined, owner);
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     const windowBackendId = getBackendIdForWebContents(win.webContents);
@@ -2466,6 +2927,7 @@ async function broadcastConnectionsChanged(): Promise<void> {
     try {
       win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
     } catch (error) {
+      recordPoolError(owner, error);
       logger.warn('Failed to broadcast connections change', {
         windowId: win.id,
         error: error instanceof Error ? error.message : String(error),
@@ -2476,6 +2938,7 @@ async function broadcastConnectionsChanged(): Promise<void> {
 
 /** Push a fresh list after a pooled client's transient status changes. */
 function refreshConnectionsForStatusChange(): void {
+  if (poolLifecycle && poolLifecycle.phase !== 'active') return;
   void broadcastConnectionsChanged().catch((error) => {
     logger.warn('Failed to refresh connection statuses', {
       error: error instanceof Error ? error.message : String(error),
@@ -2488,13 +2951,24 @@ function refreshConnectionsForStatusChange(): void {
  * mutation (invite redeemed, forgotten, hostname captured) or a keychain
  * pull. Fail-soft per window, like {@link broadcastConnectionsChanged}.
  */
-async function broadcastGuestSessionsChanged(): Promise<void> {
+function broadcastGuestSessionsChanged(): Promise<void> {
+  return broadcastGuestSessionsChangedOwned();
+}
+
+function broadcastGuestSessionsChangedOwned(parent?: PoolOwner): Promise<void> {
+  return poolWork('broadcastGuestSessionsChanged', parent, (owner) =>
+    broadcastGuestSessionsChangedOriginal(owner),
+  );
+}
+
+async function broadcastGuestSessionsChangedOriginal(owner?: PoolOwner): Promise<void> {
   const payload = await buildGuestSessionsListResult();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
       win.webContents.send(GUEST_SESSIONS.CHANGED, payload);
     } catch (error) {
+      recordPoolError(owner, error);
       logger.warn('Failed to broadcast guest sessions change', {
         windowId: win.id,
         error: error instanceof Error ? error.message : String(error),
@@ -2547,7 +3021,16 @@ export const GUEST_REVOKE_SELF_TIMEOUT_MS = 5_000;
  * for the window/pool teardown; a dangling principal on an unreachable host is
  * the owner's *Remove* to clean up.
  */
-async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionResult> {
+function leaveGuestSessionLocked(id: string, parent?: PoolOwner): Promise<LeaveGuestSessionResult> {
+  return poolWork('leaveGuestSessionLocked', parent, (owner) =>
+    leaveGuestSessionLockedOriginal(id, owner),
+  );
+}
+async function leaveGuestSessionLockedOriginal(
+  id: string,
+  owner?: PoolOwner,
+): Promise<LeaveGuestSessionResult> {
+  poolAuxiliary('guest-revocation');
   if ((await guestSessionsStore.findById(id)) === null) {
     // Idempotent: a repeated / concurrent leave (another window, a retry after
     // a lost reply) finds the session already gone — that is completion, not
@@ -2569,6 +3052,7 @@ async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionRes
       });
       revoked = true;
     } catch (error) {
+      recordPoolError(owner, error);
       logger.warn('principal.revokeSelf failed before leaving guest session (best-effort)', {
         id,
         code: revokeFailureCode(error),
@@ -2651,10 +3135,21 @@ async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Prom
  * error, and sends nothing. The session itself is kept even at zero
  * workspaces — *Leave host* is the only thing that forgets it.
  */
-async function leaveGuestWorkspaceLocked(
+function leaveGuestWorkspaceLocked(
   id: string,
   workspaceId: string,
+  parent?: PoolOwner,
 ): Promise<LeaveGuestWorkspaceResult> {
+  return poolWork('leaveGuestWorkspaceLocked', parent, (owner) =>
+    leaveGuestWorkspaceLockedOriginal(id, workspaceId, owner),
+  );
+}
+async function leaveGuestWorkspaceLockedOriginal(
+  id: string,
+  workspaceId: string,
+  owner?: PoolOwner,
+): Promise<LeaveGuestWorkspaceResult> {
+  poolAuxiliary('guest-revocation');
   const session = await guestSessionsStore.findById(id);
   if (!session?.workspaces.some((w) => w.id === workspaceId)) {
     return { id, workspaceId, left: false };
@@ -2663,6 +3158,7 @@ async function leaveGuestWorkspaceLocked(
   try {
     left = await requestGuestWorkspaceLeave(id, workspaceId);
   } catch (error) {
+    recordPoolError(owner, error);
     if (!(error instanceof JsonRpcError && error.rpcCode === -32602)) {
       const code = revokeFailureCode(error);
       logger.warn('workspace.members.leave failed; keeping the local record', {
@@ -2692,7 +3188,8 @@ function registerGuestSessionsHandlers(): void {
     GUEST_SESSIONS.LEAVE,
     createValidatedHandler(
       GuestSessionsLeaveSchema,
-      async (_event, { id }) => enqueueConnectionOperation(() => leaveGuestSessionLocked(id)),
+      async (_event, { id }) =>
+        enqueueConnectionOperation((owner) => leaveGuestSessionLocked(id, owner)),
       GUEST_SESSIONS.LEAVE,
     ),
   );
@@ -2701,11 +3198,12 @@ function registerGuestSessionsHandlers(): void {
     createValidatedHandler(
       GuestSessionsLeaveWorkspaceSchema,
       async (_event, { id, workspaceId }) =>
-        enqueueConnectionOperation(() => leaveGuestWorkspaceLocked(id, workspaceId)),
+        enqueueConnectionOperation((owner) => leaveGuestWorkspaceLocked(id, workspaceId, owner)),
       GUEST_SESSIONS.LEAVE_WORKSPACE,
     ),
   );
   guestSessionsStore.onGuestSessionsMutated(() => {
+    if (poolLifecycle && poolLifecycle.phase !== 'active') return;
     void broadcastGuestSessionsChanged();
     keychainSyncLifecycle?.requestReconcile();
   });
@@ -2713,7 +3211,7 @@ function registerGuestSessionsHandlers(): void {
   // the id into `openIds`), connecting or dropping flips its status in the
   // nav block (same forwarder that keeps the connections list's
   // `connectedIds` fresh).
-  backendStatusForwarder.on('status', refreshGuestSessionsForPoolChange);
+  backendStatusForwarder.on('status', (id: string) => refreshGuestSessionsForPoolChange(id));
 }
 
 /**
@@ -2734,6 +3232,7 @@ function registerPresenceHandlers(): void {
     createValidatedHandler(
       PresenceReportSchema,
       async (event, params): Promise<PresenceReportResult> => {
+        poolAuxiliary('presence');
         const { sender } = event;
         if (!presenceTrackedWebContents.has(sender.id)) {
           presenceTrackedWebContents.add(sender.id);
@@ -2758,11 +3257,16 @@ function registerPresenceHandlers(): void {
 }
 
 /** Push a fresh guest list when a pooled client for a guest session id changes. */
-function refreshGuestSessionsForPoolChange(id: string): void {
-  void guestSessionsStore
-    .findById(id)
-    .then((session) => (session ? broadcastGuestSessionsChanged() : undefined))
-    .catch(() => {});
+function refreshGuestSessionsForPoolChange(id: string, parent?: PoolOwner): void {
+  if (poolLifecycle && poolLifecycle.phase !== 'active' && !parent) return;
+  void poolWork('guest-pool-status', parent, (owner) =>
+    guestSessionsStore
+      .findById(id)
+      .then((session) => (session ? broadcastGuestSessionsChangedOwned(owner) : undefined))
+      .catch((error: unknown) => {
+        recordPoolError(owner, error);
+      }),
+  );
 }
 
 /**
@@ -2909,13 +3413,18 @@ let connectionOperationQueue: Promise<void> = Promise.resolve();
  * rejection propagates to the caller but never poisons the queue (the tail
  * swallows it).
  */
-function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
-  const result = connectionOperationQueue.then(fn);
-  connectionOperationQueue = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
+function enqueueConnectionOperation<T>(fn: (owner?: PoolOwner) => Promise<T>): Promise<T> {
+  poolOwnershipStarted = true;
+  return poolWork('connection-queue', undefined, (owner) => {
+    const result = connectionOperationQueue.then(
+      poolLifecycle ? () => fn(owner) : (fn as () => Promise<T>),
+    );
+    connectionOperationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  });
 }
 
 /**
@@ -2942,16 +3451,27 @@ export function openBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
 ): Promise<{ id: string }> {
-  return enqueueConnectionOperation(() => performOpenBackendWindow(id, options));
+  return enqueueConnectionOperation((owner) => performOpenBackendWindowOwned(id, options, owner));
 }
 
-async function performOpenBackendWindow(
+function performOpenBackendWindowOwned(
   id: string,
   options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  parent?: PoolOwner,
+): Promise<{ id: string }> {
+  return poolWork('performOpenBackendWindow', parent, (owner) =>
+    performOpenBackendWindowOriginal(id, options, owner),
+  );
+}
+
+async function performOpenBackendWindowOriginal(
+  id: string,
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  owner?: PoolOwner,
 ): Promise<{ id: string }> {
   if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
   const hadClient = getBackendClientForConnection(id) !== undefined;
-  const target = await connectBackendClient(id);
+  const target = await connectBackendClientOwned(id, undefined, owner);
   try {
     if (id === LOCAL_CONNECTION_ID) {
       // Complete one authenticated request over the pinned transport before
@@ -2969,13 +3489,14 @@ async function performOpenBackendWindow(
       // client eventually reconnects). The candidate-host refresh (#1746)
       // piggybacks on the same post-connect window, equally
       // fire-and-forget/fail-soft.
-      void captureRemoteHostname(id);
-      void refreshRemoteHosts(id);
+      void captureRemoteHostnameOwned(id, owner);
+      void refreshRemoteHostsOwned(id, owner);
     }
     if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
     await windowHooks.openOrFocus?.(id);
     return { id };
   } catch (error) {
+    recordPoolError(owner, error);
     // The always-on local member is never torn down on a failed probe; it
     // lazily rebuilds and main-process services depend on it.
     // A cancelled second open must not disconnect a window already using this client.
@@ -3200,7 +3721,20 @@ export async function openLocalAndSpawn(): Promise<{
  * `connections:unpublish-self` passes `false`: the record is removed but
  * auto-publish offers stay allowed.
  */
-async function forgetConnectionLocked(id: string, latchSuppression: boolean): Promise<void> {
+function forgetConnectionLocked(
+  id: string,
+  latchSuppression: boolean,
+  parent?: PoolOwner,
+): Promise<void> {
+  return poolWork('forgetConnectionLocked', parent, (owner) =>
+    forgetConnectionLockedOriginal(id, latchSuppression, owner),
+  );
+}
+async function forgetConnectionLockedOriginal(
+  id: string,
+  latchSuppression: boolean,
+  owner?: PoolOwner,
+): Promise<void> {
   const wasActive = (await connectionsStore.getActiveId()) === id;
   // The fingerprint match is resolved BEFORE the forget (the record is still
   // readable), but the marker is set only AFTER the forget succeeds —
@@ -3217,6 +3751,7 @@ async function forgetConnectionLocked(id: string, latchSuppression: boolean): Pr
       const targetKey = normalizeFingerprint(target?.fingerprint);
       forgetsSelf = selfFingerprint !== null && targetKey === selfFingerprint;
     } catch (error) {
+      recordPoolError(owner, error);
       logger.warn('Could not evaluate self-entry suppression on forget (fail-soft)', {
         id,
         error: error instanceof Error ? error.message : String(error),
@@ -3235,7 +3770,7 @@ async function forgetConnectionLocked(id: string, latchSuppression: boolean): Pr
   await windowHooks.ensureLocalWindowBeforeClose?.(id);
   await windowHooks.closeForBackend?.(id);
   disconnectBackendClient(id);
-  await broadcastConnectionsChanged();
+  await broadcastConnectionsChangedOwned(owner);
 }
 
 /** Register the backend bridge IPC handlers (idempotent). */
@@ -3315,6 +3850,7 @@ export function registerBackendHandlers(): void {
         // RPCs stay unaffected) — monorepo#2458. The local UDS sidecar keeps
         // the single socket: no uplink to saturate, same-host bandwidth.
         if (shouldUseTransferConnection(method, client.getConfig())) {
+          poolAuxiliary('transfer');
           const result = await requestOverTransferConnection(
             client.getConfig(),
             method,
@@ -3395,14 +3931,23 @@ export function registerBackendHandlers(): void {
     };
   });
 
-  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => performSpawnSidecar());
+  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
+    poolAuxiliary('sidecar');
+    return performSpawnSidecar();
+  });
 
   // Kill-and-restart recovery for an orphaned sidecar (#2444).
-  ipcMain.handle(BACKEND.RESTART_ORPHANED_SIDECAR, async () => performRestartOrphanedSidecar());
+  ipcMain.handle(BACKEND.RESTART_ORPHANED_SIDECAR, async () => {
+    poolAuxiliary('sidecar');
+    return performRestartOrphanedSidecar();
+  });
 
   // Open-only recovery: spawn the sidecar (if needed) AND open/focus the local
   // backend's windows in one main-side action; no window is retargeted.
-  ipcMain.handle(BACKEND.OPEN_LOCAL_AND_SPAWN, async () => openLocalAndSpawn());
+  ipcMain.handle(BACKEND.OPEN_LOCAL_AND_SPAWN, async () => {
+    poolAuxiliary('sidecar');
+    return openLocalAndSpawn();
+  });
 
   // Per-run sidecar log capture: the renderer's daemon-loss dialog offers to
   // show the captured stdout/stderr tail from the last sidecar run. The
@@ -3414,6 +3959,7 @@ export function registerBackendHandlers(): void {
   // channel (same pattern as `sidecarGaveUp`) so the renderer says the
   // app-managed intentd failed to start instead of "connection was lost".
   onSidecarStartupFailed((reason) => {
+    poolAuxiliary('sidecar');
     const instance = getBackendClient();
     broadcast(
       BACKEND.STATUS,
@@ -3438,6 +3984,7 @@ export function registerBackendHandlers(): void {
   // as `reconnected`) so the renderer surfaces the daemon-loss modal instead
   // of the sidecar dying invisibly (#439).
   onSidecarGaveUp((reason) => {
+    poolAuxiliary('sidecar');
     const instance = getBackendClient();
     // Report the client's ACTUAL status: in the probe→spawn TOCTOU race the
     // crash-looping child lost the socket to an external daemon the client
@@ -3472,9 +4019,15 @@ export function registerBackendHandlers(): void {
   // the settings UI stays live (T4). Guest sessions ride the same lifecycle as
   // a secondary pass against their own keychain service.
   keychainSyncLifecycle = initKeychainSyncLifecycle({
-    onRemoteApplied: () => broadcastConnectionsChanged(),
+    onRemoteApplied: () => {
+      poolAuxiliary('keychain-engine');
+      return broadcastConnectionsChanged();
+    },
     guestAdapter: guestSessionsStore.createInvitedSyncAdapter(authenticateInvitedCredential),
-    onGuestRemoteApplied: () => broadcastGuestSessionsChanged(),
+    onGuestRemoteApplied: () => {
+      poolAuxiliary('keychain-engine');
+      return broadcastGuestSessionsChanged();
+    },
     onStatusChanged: (status) => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (win.isDestroyed()) continue;
@@ -3599,10 +4152,15 @@ async function validateConnectionAddress(
 }
 
 /** Rebuild only an already-open client after its durable transport config changed. */
-async function rebuildConnectionClientIfOpen(id: string): Promise<void> {
+function rebuildConnectionClientIfOpen(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('rebuildConnectionClientIfOpen', parent, (owner) =>
+    rebuildConnectionClientIfOpenOriginal(id, owner),
+  );
+}
+async function rebuildConnectionClientIfOpenOriginal(id: string, owner?: PoolOwner): Promise<void> {
   if (!backendClients.has(id)) return;
   disconnectBackendClient(id);
-  await connectBackendClient(id);
+  await connectBackendClientOwned(id, undefined, owner);
 }
 
 /**
@@ -3637,6 +4195,7 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsCaptureFingerprintSchema,
       async (_event, params) => {
+        poolAuxiliary('connection-probe');
         const result = await captureFingerprint(params);
         if (!result.ok) {
           throw new Error(result.error);
@@ -3668,7 +4227,7 @@ function registerConnectionsHandlers(): void {
       ConnectionsAddSchema,
       async (event, params) => {
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
-        return enqueueConnectionOperation(async () => {
+        return enqueueConnectionOperation(async (owner) => {
           const remote = await inspectPersonalCredential({
             ...params,
             hosts: [params.host],
@@ -3685,7 +4244,7 @@ function registerConnectionsHandlers(): void {
               identity: remote.principal.identity,
               hostRole: role,
             });
-            await broadcastGuestSessionsChanged();
+            await broadcastGuestSessionsChangedOwned(owner);
             return {
               connection: { ...invited, isLocal: false },
               switched: false,
@@ -3705,7 +4264,7 @@ function registerConnectionsHandlers(): void {
             // Refresh a live (or active) target's credentials without
             // destroying any windows. The caller opens/focuses it through
             // connections:open.
-            const rebuilt = await connectBackendClient(connection.id);
+            const rebuilt = await connectBackendClientOwned(connection.id, undefined, owner);
             // This backend's windows stay alive across the swap. Replay the
             // reconnect marker exactly as the instance's own `reconnected`
             // handler would — once the fresh socket has connected — so
@@ -3714,7 +4273,7 @@ function registerConnectionsHandlers(): void {
             // (requests queue until then, T8).
             replayReconnectOnceConnected(connection.id, rebuilt);
           }
-          await broadcastConnectionsChanged();
+          await broadcastConnectionsChangedOwned(owner);
           return {
             connection,
             switched: connection.id === activeId,
@@ -3735,10 +4294,10 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsUpdateSchema,
       async (_event, params) =>
-        enqueueConnectionOperation(async () => {
+        enqueueConnectionOperation(async (owner) => {
           if (params.id === LOCAL_CONNECTION_ID) {
             const connection = await connectionsStore.updateMetadata(params.id, params);
-            await broadcastConnectionsChanged();
+            await broadcastConnectionsChangedOwned(owner);
             return { status: 'updated', connection } satisfies UpdateConnectionResult;
           }
           const saved = await getRemoteConnection(params.id);
@@ -3776,9 +4335,9 @@ function registerConnectionsHandlers(): void {
           // detectHosts flip (which clears the detected extras) must rebuild it
           // too — otherwise reconnects keep racing the IPs the user just disabled.
           if (addressChanged || detectHostsChanged) {
-            await rebuildConnectionClientIfOpen(params.id);
+            await rebuildConnectionClientIfOpen(params.id, owner);
           }
-          await broadcastConnectionsChanged();
+          await broadcastConnectionsChangedOwned(owner);
           return { status: 'updated', connection } satisfies UpdateConnectionResult;
         }),
       CONNECTIONS.UPDATE,
@@ -3803,6 +4362,7 @@ function registerConnectionsHandlers(): void {
             const { config } = await buildConfigForConnection(id, secret.token);
             const expectedFingerprint = normalizeTransportFingerprint(config.fingerprint ?? '');
             try {
+              poolAuxiliary('connection-probe');
               await testWssConnection(config);
               return {
                 status: 'success',
@@ -3843,7 +4403,7 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsRotateSecretSchema,
       async (_event, { id, token, confirmedFingerprint }) =>
-        enqueueConnectionOperation(async () => {
+        enqueueConnectionOperation(async (owner) => {
           const connection = await getRemoteConnection(id);
           const validation = await validateConnectionAddress(
             connection,
@@ -3863,8 +4423,8 @@ function registerConnectionsHandlers(): void {
           });
           if (!remote.principal.isAdministrator) throw new Error('Owner credential required');
           const updated = await connectionsStore.replaceSecret(id, token, validation.fingerprint);
-          await rebuildConnectionClientIfOpen(id);
-          await broadcastConnectionsChanged();
+          await rebuildConnectionClientIfOpen(id, owner);
+          await broadcastConnectionsChangedOwned(owner);
           return {
             status: 'updated',
             connection: updated,
@@ -3911,8 +4471,8 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsForgetSchema,
       async (_event, { id }) =>
-        enqueueConnectionOperation(async () => {
-          await forgetConnectionLocked(id, true);
+        enqueueConnectionOperation(async (owner) => {
+          await forgetConnectionLocked(id, true, owner);
           return { id } satisfies ForgetConnectionResult;
         }),
       CONNECTIONS.FORGET,
@@ -4047,12 +4607,17 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
  * still queued, which would then delete the fresh record (PR #1781 review).
  */
 async function publishSelfBackend(): Promise<PublishSelfResult> {
-  return enqueueConnectionOperation(() => performPublishSelfBackend());
+  return enqueueConnectionOperation((owner) => performPublishSelfBackend(owner));
 }
 
 /** The actual publish; only entered from the serialized critical section. */
-async function performPublishSelfBackend(): Promise<PublishSelfResult> {
-  const localClient = getLocalBackendClient();
+function performPublishSelfBackend(parent?: PoolOwner): Promise<PublishSelfResult> {
+  return poolWork('performPublishSelfBackend', parent, (owner) =>
+    performPublishSelfBackendOriginal(owner),
+  );
+}
+async function performPublishSelfBackendOriginal(owner?: PoolOwner): Promise<PublishSelfResult> {
+  const localClient = getLocalBackendClientOwned(owner);
   const info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
   if (!info) {
     throw new Error('publish-self failed: malformed server.pairingInfo result');
@@ -4068,7 +4633,7 @@ async function performPublishSelfBackend(): Promise<PublishSelfResult> {
   const record = await upsertSelfRecord({ ...info, port: info.port }, { syncExcluded: false });
   await setStoredSelfFingerprint(info.certFingerprint);
   await setAutoPublishSuppressed(false);
-  await broadcastConnectionsChanged();
+  await broadcastConnectionsChangedOwned(owner);
   const connection = (await connectionsStore.list()).find((c) => c.id === record.id) ?? record;
   return { connection } satisfies PublishSelfResult;
 }
@@ -4143,15 +4708,19 @@ async function upsertSelfRecord(
  * upsert omits `syncExcluded` so the store preserves a per-backend exclusion
  * — refreshing is not user intent to (re-)publish or to sync.
  */
-async function refreshSelfBackend(): Promise<RefreshSelfResult> {
+function refreshSelfBackend(parent?: PoolOwner): Promise<RefreshSelfResult> {
+  return poolWork('refreshSelfBackend', parent, (owner) => refreshSelfBackendOriginal(owner));
+}
+async function refreshSelfBackendOriginal(owner?: PoolOwner): Promise<RefreshSelfResult> {
   if (await isAutoPublishSuppressed()) {
     return { refreshed: false } satisfies RefreshSelfResult;
   }
-  const localClient = getLocalBackendClient();
+  const localClient = getLocalBackendClientOwned(owner);
   let info: ReturnType<typeof extractSelfPairingInfo>;
   try {
     info = extractSelfPairingInfo(await localClient.request('server.pairingInfo'));
   } catch (error) {
+    recordPoolError(owner, error);
     logger.debug('Could not refresh the self entry from server.pairingInfo (fail-soft)', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -4174,7 +4743,7 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
   }
   await upsertSelfRecord({ ...info, port: info.port });
   await setStoredSelfFingerprint(info.certFingerprint);
-  await broadcastConnectionsChanged();
+  await broadcastConnectionsChangedOwned(owner);
   return { refreshed: true } satisfies RefreshSelfResult;
 }
 
@@ -4189,10 +4758,19 @@ async function refreshSelfBackend(): Promise<RefreshSelfResult> {
  * unreachable (or the app is pinned to a remote), detection falls back to
  * the persisted fingerprint alone.
  */
-async function findSelfRecord(records: ConnectionRecord[]): Promise<ConnectionRecord | undefined> {
+function findSelfRecord(
+  records: ConnectionRecord[],
+  parent?: PoolOwner,
+): Promise<ConnectionRecord | undefined> {
+  return poolWork('findSelfRecord', parent, (owner) => findSelfRecordOriginal(records, owner));
+}
+async function findSelfRecordOriginal(
+  records: ConnectionRecord[],
+  owner?: PoolOwner,
+): Promise<ConnectionRecord | undefined> {
   const [storedFingerprint, liveFingerprint] = await Promise.all([
     getStoredSelfFingerprint(),
-    getLiveSelfFingerprint(),
+    getLiveSelfFingerprintOwned(undefined, owner),
   ]);
   const selfKeys = buildSelfFingerprintKeys(storedFingerprint, liveFingerprint);
   return records.find((c) => isSelfConnectionRecord(c, selfKeys));
@@ -4208,12 +4786,12 @@ async function findSelfRecord(records: ConnectionRecord[]): Promise<ConnectionRe
  * forget cannot interleave (monorepo#2228).
  */
 async function unpublishSelfBackend(): Promise<UnpublishSelfResult> {
-  return enqueueConnectionOperation(async () => {
-    const selfRecord = await findSelfRecord(await connectionsStore.list());
+  return enqueueConnectionOperation(async (owner) => {
+    const selfRecord = await findSelfRecord(await connectionsStore.list(), owner);
     if (!selfRecord) {
       return { removed: false } satisfies UnpublishSelfResult;
     }
-    await forgetConnectionLocked(selfRecord.id, false);
+    await forgetConnectionLocked(selfRecord.id, false, owner);
     return { removed: true } satisfies UnpublishSelfResult;
   });
 }
@@ -4223,12 +4801,15 @@ async function unpublishSelfBackend(): Promise<UnpublishSelfResult> {
  * {@link findSelfRecord}) and whether the persistent "do not auto-publish"
  * marker is set.
  */
-async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
+function getSelfPublishedState(parent?: PoolOwner): Promise<SelfPublishedStateResult> {
+  return poolWork('getSelfPublishedState', parent, (owner) => getSelfPublishedStateOriginal(owner));
+}
+async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPublishedStateResult> {
   const [records, suppressed] = await Promise.all([
     connectionsStore.list(),
     isAutoPublishSuppressed(),
   ]);
-  const selfRecord = await findSelfRecord(records);
+  const selfRecord = await findSelfRecord(records, owner);
   return {
     published: selfRecord !== undefined,
     suppressed,

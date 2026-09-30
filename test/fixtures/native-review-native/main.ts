@@ -138,7 +138,31 @@ export function completionLedger() {
       });
     }
   }
-  return { rows, faults, pending, invoke, join, changed };
+  const subscribeChanged = (listener: () => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+  return { rows, faults, pending, invoke, join, changed, subscribeChanged };
+}
+
+/** The fence observes original acknowledgments; the pool owns its own callback joins. */
+function finalClientPoolJoin(
+  lifecycle: ReturnType<
+    typeof import('../../../src/features/backend/main/backend.ipc').enrollBackendClientLifecycle
+  >,
+  completions: ReturnType<typeof completionLedger>,
+  released: () => boolean,
+) {
+  const fence = {
+    ready: () => {
+      if (completions.faults.length) throw new Error(completions.faults.join('; '));
+      return completions.pending.size === 0 && released();
+    },
+    subscribeChanged: completions.subscribeChanged,
+  };
+  return lifecycle.retire(fence);
 }
 
 const sidebarReads = new Set([
@@ -801,6 +825,9 @@ async function run() {
   });
   await app.whenReady();
   const backend = await import('../../../src/features/backend/main/backend.ipc');
+  const lifecycle = diagnosticOwnership ? backend.enrollBackendClientLifecycle() : undefined;
+  let poolRetirement: ReturnType<typeof finalClientPoolJoin> | undefined;
+  let finalRootsJoined = false;
   const connections = await import('../../../src/features/backend/main/connections-store');
   backend.registerBackendHandlers();
   const clients = new Map<string, ReturnType<typeof backend.getLocalBackendClient>>();
@@ -879,6 +906,77 @@ async function run() {
     throw new Error('Original socket observation missing or invalid');
   await open('host-A', owner.id);
   await open('local-B', 'local');
+  async function quiesceUi(seal = true) {
+    if (!uiMode) throw new Error('UI quiescence requires the actual renderer');
+    const producers = [];
+    for (const [key, window] of windows) {
+      if (window.isDestroyed()) throw new Error('Unobserved renderer disposal');
+      const receipt = await window.webContents.executeJavaScript('window.nativeUiRoute.close()');
+      assertUiTasks(receipt, sidebarMode);
+      producers.push({ key, sender: window.webContents.id, receipt });
+    }
+    if (diagnosticOwnership)
+      statusProducers.record('renderer-roots-joined', { producers: producers.length, seal });
+    if (lifecycle && seal) {
+      finalRootsJoined = true;
+      poolRetirement ??= finalClientPoolJoin(lifecycle, completions, () => {
+        if (sidebarMode && (faults.length || wireBoundaries.some((complete) => !complete())))
+          throw new Error('Incomplete original wire evidence');
+        return finalRootsJoined && pending.size === 0 && disposalComplete(completions.rows);
+      });
+      const retired = await poolRetirement;
+      statusProducers.record('pool-retirement', {
+        ownersJoined: retired.ownersJoined,
+        admissionSealed: retired.admissionSealed,
+        outcome: retired.outcome,
+        exclusions: retired.excludedOwners,
+        clients: retired.clients.map((client) => ({
+          generation: client.identity.generation,
+          ownersJoined: client.ownersJoined,
+          outcome: client.outcome,
+          closes: client.closes.map((close) => ({
+            destroyRequested: close.destroyRequested,
+            closeObserved: close.closeObserved,
+          })),
+          failureKinds: client.failures.map((failure) => failure.kind),
+        })),
+        failureKinds: retired.failures.map((failure) => failure.kind),
+      });
+      if (retired.outcome !== 'clean' || !retired.ownersJoined || !retired.admissionSealed)
+        throw new Error('Original client pool ownership did not complete cleanly');
+    }
+    const joined = await completions.join(
+      () => producers.length === windows.size,
+      () => pending.size === 0 && disposalComplete(completions.rows),
+      seal,
+    );
+    if (sidebarMode && (faults.length || wireBoundaries.some((complete) => !complete())))
+      throw new Error('Incomplete original wire evidence');
+    if (diagnosticOwnership) statusProducers.record('ledger-join-return', { ...joined });
+    return { producers, joined };
+  }
+  let finalQuiescence: ReturnType<typeof quiesceUi> | undefined;
+  async function shutdown() {
+    await Promise.allSettled([...pending]);
+    if (lifecycle) {
+      if (!finalQuiescence) throw new Error('Original renderer quiescence was not started');
+      await finalQuiescence;
+      if (!poolRetirement) throw new Error('Original pool retirement was not started');
+      const retired = await poolRetirement;
+      if (retired.outcome !== 'clean') throw new Error('Original pool retirement failed');
+    } else {
+      if (diagnosticOwnership)
+        statusProducers.record('pool-dispose-enter', { pending: completions.pending.size });
+      backend.disposeAllBackendClients();
+      if (diagnosticOwnership)
+        statusProducers.record('pool-dispose-return', { result: 'void', ownerJoined: false });
+    }
+    for (const window of windows.values()) if (!window.isDestroyed()) window.destroy();
+    await new Promise<void>((resolve, reject) =>
+      http.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+  let finalShutdown: ReturnType<typeof shutdown> | undefined;
   const fixture = {
     ready: true,
     forwarding,
@@ -909,26 +1007,9 @@ async function run() {
     async join() {
       await Promise.allSettled([...pending]);
     },
-    async quiesceUi(seal = true) {
-      if (!uiMode) throw new Error('UI quiescence requires the actual renderer');
-      const producers = [];
-      for (const [key, window] of windows) {
-        if (window.isDestroyed()) throw new Error('Unobserved renderer disposal');
-        const receipt = await window.webContents.executeJavaScript('window.nativeUiRoute.close()');
-        assertUiTasks(receipt, sidebarMode);
-        producers.push({ key, sender: window.webContents.id, receipt });
-      }
-      if (diagnosticOwnership)
-        statusProducers.record('renderer-roots-joined', { producers: producers.length, seal });
-      const joined = await completions.join(
-        () => producers.length === windows.size,
-        () => pending.size === 0 && disposalComplete(completions.rows),
-        seal,
-      );
-      if (sidebarMode && (faults.length || wireBoundaries.some((complete) => !complete())))
-        throw new Error('Incomplete original wire evidence');
-      if (diagnosticOwnership) statusProducers.record('ledger-join-return', { ...joined });
-      return { producers, joined };
+    quiesceUi(seal = true) {
+      if (!lifecycle || !seal) return quiesceUi(seal);
+      return (finalQuiescence ??= quiesceUi(seal));
     },
     async role(role: 'owner' | 'member' | 'guest') {
       backend.disconnectBackendClient(backendIds.get('host-A')!);
@@ -970,17 +1051,9 @@ async function run() {
         { workspaceId: ready.hosts[0].workspaceId, ...(cancel ? {} : { undoDelayMs: 30000 }) },
       );
     },
-    async shutdown() {
-      await Promise.allSettled([...pending]);
-      if (diagnosticOwnership)
-        statusProducers.record('pool-dispose-enter', { pending: completions.pending.size });
-      backend.disposeAllBackendClients();
-      if (diagnosticOwnership)
-        statusProducers.record('pool-dispose-return', { result: 'void', ownerJoined: false });
-      for (const window of windows.values()) if (!window.isDestroyed()) window.destroy();
-      await new Promise<void>((resolve, reject) =>
-        http.close((error) => (error ? reject(error) : resolve())),
-      );
+    shutdown() {
+      if (!lifecycle) return shutdown();
+      return (finalShutdown ??= shutdown());
     },
   };
   Object.assign(globalThis, { nativeReviewFixture: fixture });

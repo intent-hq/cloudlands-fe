@@ -81,6 +81,8 @@ interface PendingRequest {
 }
 
 export interface JsonRpcClientOptions {
+  /** Main-private opt-in ownership. No wire or renderer authority is conveyed. */
+  lifecycle?: Readonly<{ scope: symbol; generation: number }>;
   config?: BackendConnectionConfig;
   socketFactory?: (config: BackendConnectionConfig) => Duplex;
   requestTimeoutMs?: number;
@@ -127,6 +129,29 @@ const HELLO_METHOD = 'client.hello';
 // queued request for the full request timeout.
 const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
 
+type RetirementFailure = {
+  owner: object | null;
+  kind: 'original' | 'transport' | 'forced' | 'late' | 'unknown' | 'close';
+  error: unknown;
+};
+type RetirementIdentity = Readonly<{ scope: symbol; instance: symbol; generation: number }>;
+export interface JsonRpcRetirementResult {
+  identity: RetirementIdentity;
+  ownersJoined: boolean;
+  admissionSealed: boolean;
+  outcome: 'clean' | 'original-failure' | 'forced' | 'ownership-fault';
+  closes: readonly { incarnation: object; destroyRequested: boolean; closeObserved: boolean }[];
+  failures: readonly RetirementFailure[];
+}
+export interface JsonRpcRetirement {
+  readonly identity: RetirementIdentity;
+  subscribeChanged(wake: () => void): () => void;
+  isDrained(): boolean;
+  excludedOwners(): readonly string[];
+  failures(): readonly RetirementFailure[];
+  seal(): { finish(): Promise<JsonRpcRetirementResult> };
+}
+
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
  * `reconnected` (void — fires when a successful connect follows an earlier
@@ -137,6 +162,21 @@ const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
  * informative only, never treated as a connection failure).
  */
 export class JsonRpcClient extends EventEmitter {
+  private connectionOwner?: object;
+  private readonly lifecycle?: {
+    identity: RetirementIdentity;
+    stopping: boolean;
+    sealed: boolean;
+    finishing: boolean;
+    active: Set<object>;
+    listeners: Set<() => void>;
+    failures: RetirementFailure[];
+    exclusions: Set<string>;
+    closes: Map<Duplex, { incarnation: object; destroyRequested: boolean; closeObserved: boolean }>;
+    ticket?: JsonRpcRetirement;
+    finish?: Promise<JsonRpcRetirementResult>;
+  };
+
   private readonly config: BackendConnectionConfig;
   private readonly socketFactory: (config: BackendConnectionConfig) => Duplex;
   private readonly requestTimeoutMs: number;
@@ -186,6 +226,19 @@ export class JsonRpcClient extends EventEmitter {
 
   constructor(options: JsonRpcClientOptions = {}) {
     super();
+    if (options.lifecycle) {
+      this.lifecycle = {
+        identity: Object.freeze({ ...options.lifecycle, instance: Symbol('JsonRpcClient') }),
+        stopping: false,
+        sealed: false,
+        finishing: false,
+        active: new Set(),
+        listeners: new Set(),
+        failures: [],
+        exclusions: new Set(),
+        closes: new Map(),
+      };
+    }
     this.config = options.config ?? resolveBackendConfig();
     this.socketFactory = options.socketFactory ?? createBackendSocket;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -203,6 +256,140 @@ export class JsonRpcClient extends EventEmitter {
     this.helloParams = options.helloParams;
     this.onHelloResult = options.onHelloResult;
     this.currentReconnectDelay = this.reconnectDelayMs;
+  }
+
+  /** Stop autonomous producers now; sealing is a separate synchronous admission boundary. */
+  beginRetirement(): JsonRpcRetirement {
+    const owned = this.lifecycle;
+    if (!owned) throw new Error('Client lifecycle was not enrolled');
+    if (owned.ticket) return owned.ticket;
+    owned.stopping = true;
+    this.clearReconnect();
+    this.stopHeartbeat();
+    const drained = () =>
+      owned.active.size === 0 &&
+      this.pending.size === 0 &&
+      this.connectWaiters.length === 0 &&
+      this.status !== 'connecting';
+    const sealed = { finish: () => this.finishRetirement() };
+    owned.ticket = Object.freeze({
+      identity: owned.identity,
+      subscribeChanged: (wake: () => void) => {
+        owned.listeners.add(wake);
+        return () => {
+          owned.listeners.delete(wake);
+        };
+      },
+      isDrained: drained,
+      excludedOwners: () => [...owned.exclusions],
+      failures: () => [...owned.failures],
+      seal: () => {
+        if (owned.sealed) return sealed;
+        if (!drained()) throw new Error('Original client owners have not joined');
+        // Pure state change: a pool seals ALL members before the first destroy callback.
+        owned.sealed = true;
+        return sealed;
+      },
+    });
+    return owned.ticket;
+  }
+
+  private lifecycleChanged(): void {
+    const owned = this.lifecycle;
+    if (!owned) return;
+    for (const wake of [...owned.listeners]) {
+      try {
+        wake();
+      } catch (error) {
+        owned.failures.push({ owner: null, kind: 'unknown', error });
+      }
+    }
+  }
+
+  /** Observe the original result, never substitute a chained Promise for its caller. */
+  private own<T>(kind: string, invoke: () => T): T {
+    const owned = this.lifecycle;
+    if (!owned) return invoke();
+    const owner = Object.freeze({ kind });
+    owned.active.add(owner);
+    const done = (error?: { value: unknown }) => {
+      if (error) owned.failures.push({ owner, kind: 'original', error: error.value });
+      owned.active.delete(owner);
+      this.lifecycleChanged();
+    };
+    let result: T;
+    try {
+      result = invoke();
+    } catch (error) {
+      done({ value: error });
+      throw error;
+    }
+    if (result instanceof Promise) {
+      void result.then(
+        () => done(),
+        (error: unknown) => done({ value: error }),
+      );
+    } else done();
+    return result;
+  }
+
+  private refuseSealed(): Error | undefined {
+    if (!this.lifecycle?.sealed) return undefined;
+    const error = new Error('Request after client admission sealed');
+    this.lifecycle.failures.push({ owner: null, kind: 'late', error });
+    this.lifecycleChanged();
+    return error;
+  }
+
+  private finishRetirement(): Promise<JsonRpcRetirementResult> {
+    const owned = this.lifecycle!;
+    if (owned.finish) return owned.finish;
+    if (!owned.sealed) throw new Error('Client admission is not sealed');
+    let resolve!: (result: JsonRpcRetirementResult) => void;
+    owned.finish = new Promise((complete) => {
+      resolve = complete;
+    });
+    let teardownReturned = false;
+    const complete = () => {
+      if (
+        !teardownReturned ||
+        owned.active.size ||
+        this.pending.size ||
+        this.connectWaiters.length ||
+        [...owned.closes.values()].some((row) => !row.closeObserved)
+      )
+        return;
+      owned.listeners.delete(complete);
+      const failures = [...owned.failures];
+      resolve(
+        Object.freeze({
+          identity: owned.identity,
+          ownersJoined: true,
+          admissionSealed: owned.sealed,
+          outcome: failures.some((f) => f.kind === 'forced')
+            ? 'forced'
+            : failures.some((f) => ['late', 'unknown', 'close'].includes(f.kind))
+              ? 'ownership-fault'
+              : failures.length
+                ? 'original-failure'
+                : 'clean',
+          closes: [...owned.closes.values()].map((row) => Object.freeze({ ...row })),
+          failures,
+        }),
+      );
+    };
+    owned.listeners.add(complete);
+    owned.finishing = true;
+    try {
+      this.dispose();
+    } catch (error) {
+      owned.failures.push({ owner: null, kind: 'close', error });
+    } finally {
+      owned.finishing = false;
+      teardownReturned = true;
+    }
+    complete();
+    return owned.finish;
   }
 
   /** Current connection status. */
@@ -243,6 +430,19 @@ export class JsonRpcClient extends EventEmitter {
 
   /** Send now on exactly the captured connection; never reconnect, queue or rebind. */
   requestOnCapturedConnection<T = unknown>(
+    captured: object,
+    method: string,
+    params?: unknown,
+    options?: { timeoutMs?: number },
+  ): Promise<T> {
+    const refused = this.refuseSealed();
+    if (refused) return Promise.reject(refused);
+    return this.own('captured-request', () =>
+      this.requestOnCapturedConnectionOriginal<T>(captured, method, params, options),
+    );
+  }
+
+  private requestOnCapturedConnectionOriginal<T = unknown>(
     connection: object,
     method: string,
     params?: unknown,
@@ -346,6 +546,8 @@ export class JsonRpcClient extends EventEmitter {
    * that trigger them) cannot collapse the slow cadence back into a loop.
    */
   start(): void {
+    if (this.refuseSealed()) return;
+    if (this.lifecycle?.stopping) return;
     if (this.disposed) return;
     if (this.socket || this.status === 'connecting' || this.reconnectTimer) return;
     if (this.isInConnectionLimitCooldown()) return;
@@ -359,6 +561,14 @@ export class JsonRpcClient extends EventEmitter {
   /** Tear down the client: close the socket, clear timers, reject pending. */
   dispose(): void {
     if (this.disposed) return;
+    if (this.lifecycle && !this.lifecycle.finishing) {
+      this.lifecycle.stopping = true;
+      this.lifecycle.failures.push({
+        owner: null,
+        kind: 'forced',
+        error: new Error('Legacy disposal'),
+      });
+    }
     this.disposed = true;
     this.clearReconnect();
     this.stopHeartbeat();
@@ -368,6 +578,8 @@ export class JsonRpcClient extends EventEmitter {
     this.repositoryObservers.clear();
     this.setStatus('disconnected');
     this.removeAllListeners();
+    this.finishConnectionOwner();
+    this.lifecycleChanged();
   }
 
   /**
@@ -407,6 +619,18 @@ export class JsonRpcClient extends EventEmitter {
    * ready-to-time-out timer).
    */
   request<T = unknown>(
+    method: string,
+    params?: unknown,
+    options?: { timeoutMs?: number },
+  ): Promise<T> {
+    if (method === 'host.execStream' || method.startsWith('host.execStream.'))
+      this.lifecycle?.exclusions.add('host-exec');
+    const refused = this.refuseSealed();
+    if (refused) return Promise.reject(refused);
+    return this.own('request', () => this.requestOriginal<T>(method, params, options));
+  }
+
+  private requestOriginal<T = unknown>(
     method: string,
     params?: unknown,
     options?: { timeoutMs?: number },
@@ -472,7 +696,7 @@ export class JsonRpcClient extends EventEmitter {
     const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
     if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
       return result;
-    this.onHelloResult?.(result);
+    this.own('hello-result', () => this.onHelloResult?.(result));
     this.confirmHello(attempt, result);
     return result;
   }
@@ -496,6 +720,8 @@ export class JsonRpcClient extends EventEmitter {
         new ConnectionLimitError(this.connectionLimitRetryAfterMs ?? undefined),
       );
     }
+    if (this.lifecycle?.stopping && this.status !== 'connecting')
+      return Promise.reject(new Error('Original transport unavailable during retirement'));
     this.start();
     return new Promise<void>((resolve, reject) => {
       this.connectWaiters.push({ resolve, reject });
@@ -503,6 +729,11 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private connect(): void {
+    if (this.lifecycle?.stopping) return;
+    if (this.lifecycle) {
+      this.connectionOwner = Object.freeze({ kind: 'connect' });
+      this.lifecycle.active.add(this.connectionOwner);
+    }
     this.clearReconnect();
     this.setStatus('connecting');
     let socket: Duplex;
@@ -515,6 +746,16 @@ export class JsonRpcClient extends EventEmitter {
     this.socket = socket;
     const incarnation = Object.freeze({});
     this.socketIncarnation = incarnation;
+    if (this.lifecycle) {
+      const row = { incarnation, destroyRequested: false, closeObserved: false };
+      this.lifecycle.closes.set(socket, row);
+      socket.once('close', () => {
+        row.closeObserved = true;
+        // The original failure handler owns an unsolicited close. It must
+        // record that failure before this event can advertise readiness.
+        if (row.destroyRequested) this.lifecycleChanged();
+      });
+    }
     this.repositoryConnection = null;
     this.emitRepositoryEvent({ type: 'opened', incarnation });
     const current = () => this.socket === socket && this.socketIncarnation === incarnation;
@@ -549,7 +790,7 @@ export class JsonRpcClient extends EventEmitter {
     // `events.subscribe`) and the `reconnected` replay signal must never run
     // against an anonymous connection.
     if (this.helloParams || this.onHelloResult) {
-      void this.performHelloHandshake(this.socket);
+      void this.own('handshake', () => this.performHelloHandshake(this.socket));
       return;
     }
     this.finishConnect();
@@ -566,9 +807,14 @@ export class JsonRpcClient extends EventEmitter {
         Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS),
       );
       if (this.disposed || this.socket !== socket || this.helloAttempt !== attempt) return;
-      this.onHelloResult?.(result);
+      this.own('hello-result', () => this.onHelloResult?.(result));
       this.confirmHello(attempt, result);
     } catch (error) {
+      this.lifecycle?.failures.push({
+        owner: this.connectionOwner ?? null,
+        kind: 'original',
+        error,
+      });
       // The socket died mid-handshake: onConnectionFailure already tore it
       // down and scheduled a reconnect — do not report this socket connected.
       if (this.disposed || this.socket !== socket) return;
@@ -600,10 +846,22 @@ export class JsonRpcClient extends EventEmitter {
     // reconnect marker as a follow-up signal. Consumers replay subscriptions
     // and refresh coarse state in this handler; see RESUB-1.
     if (wasReconnect) this.emit('reconnected');
+    this.finishConnectionOwner();
+  }
+
+  private finishConnectionOwner(): void {
+    if (this.connectionOwner) this.lifecycle?.active.delete(this.connectionOwner);
+    this.connectionOwner = undefined;
+    this.lifecycleChanged();
   }
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
+    this.lifecycle?.failures.push({
+      owner: this.connectionOwner ?? null,
+      kind: 'transport',
+      error,
+    });
     this.retireRepositorySocket();
     this.hasConnectionFailed = true;
     this.emitError(error);
@@ -625,6 +883,7 @@ export class JsonRpcClient extends EventEmitter {
     // switch) build a fresh client; a later request() still triggers a single
     // on-demand connect via ensureConnected().
     if (error instanceof AuthRejectedError) {
+      this.finishConnectionOwner();
       logger.warn('Backend rejected authentication; automatic reconnect halted', {
         target: describeBackendConfig(this.config),
         statusCode: error.statusCode,
@@ -642,6 +901,7 @@ export class JsonRpcClient extends EventEmitter {
       this.currentReconnectDelay = Math.max(this.currentReconnectDelay, error.retryAfterMs);
     }
     this.scheduleReconnect();
+    this.finishConnectionOwner();
   }
 
   private onData(chunk: Buffer | string, incarnation: object): void {
@@ -719,19 +979,24 @@ export class JsonRpcClient extends EventEmitter {
       this.sendReverseError(id, -32601, `Method not found: ${method}`);
       return;
     }
-    Promise.resolve()
-      .then(() => handler(params))
-      .then(
-        (result) => this.sendReverseResult(id, result),
-        (error: unknown) => {
-          if (error instanceof ReverseRpcHandlerError) {
-            this.sendReverseError(id, error.code, error.message, error.data);
-            return;
-          }
-          const message = error instanceof Error ? error.message : String(error);
-          this.sendReverseError(id, -32603, message);
-        },
-      );
+    this.lifecycle?.exclusions.add('reverse-handler');
+    if (this.refuseSealed()) return;
+    void this.own('reverse-handler', () =>
+      Promise.resolve()
+        .then(() => handler(params))
+        .then(
+          (result) => this.sendReverseResult(id, result),
+          (error: unknown) => {
+            this.lifecycle?.failures.push({ owner: null, kind: 'original', error });
+            if (error instanceof ReverseRpcHandlerError) {
+              this.sendReverseError(id, error.code, error.message, error.data);
+              return;
+            }
+            const message = error instanceof Error ? error.message : String(error);
+            this.sendReverseError(id, -32603, message);
+          },
+        ),
+    );
   }
 
   private sendReverseResult(id: number | string, result: unknown): void {
@@ -755,17 +1020,18 @@ export class JsonRpcClient extends EventEmitter {
     try {
       this.socket?.write(payload);
     } catch (error) {
+      this.lifecycle?.failures.push({ owner: null, kind: 'transport', error });
       this.emitError(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
   private scheduleReconnect(): void {
-    if (this.disposed || this.reconnectTimer) return;
+    if (this.lifecycle?.stopping || this.disposed || this.reconnectTimer) return;
     const delay = this.currentReconnectDelay;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.currentReconnectDelay = Math.min(delay * 2, this.maxReconnectDelayMs);
-      if (!this.disposed) {
+      if (!this.disposed && !this.lifecycle?.stopping) {
         // Count the retry BEFORE connecting so the 'connecting' status
         // broadcast carries the up-to-date attempt number (#1750).
         this.reconnectAttempts += 1;
@@ -782,38 +1048,44 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private startHeartbeat(): void {
-    if (this.heartbeatIntervalMs <= 0) return;
+    if (this.lifecycle?.stopping || this.heartbeatIntervalMs <= 0) return;
     this.stopHeartbeat();
     this.heartbeatInFlight = false;
     this.consecutiveHealthCheckFailures = 0;
     this.heartbeatTimer = setInterval(() => {
+      if (this.lifecycle?.stopping) return;
       this.emit('heartbeat');
       if (!this.healthCheck || this.heartbeatInFlight) return;
 
       const socket = this.socket;
       this.heartbeatInFlight = true;
-      this.healthCheck()
-        .then(() => {
-          if (this.disposed || this.socket !== socket) return;
-          this.consecutiveHealthCheckFailures = 0;
-        })
-        .catch((error) => {
-          if (this.disposed || this.socket !== socket) return;
-          this.consecutiveHealthCheckFailures += 1;
-          const connectionError = error instanceof Error ? error : new Error(String(error));
-          if (this.consecutiveHealthCheckFailures >= this.healthCheckFailureThreshold) {
-            this.onConnectionFailure(connectionError);
-            return;
-          }
-          logger.warn('Backend health check failed; waiting for confirmation before reconnecting', {
-            failures: this.consecutiveHealthCheckFailures,
-            threshold: this.healthCheckFailureThreshold,
-            error: connectionError.message,
-          });
-        })
-        .finally(() => {
-          if (this.socket === socket) this.heartbeatInFlight = false;
-        });
+      void this.own('health-chain', () =>
+        this.own('health-result', () => this.healthCheck!())
+          .then(() => {
+            if (this.disposed || this.socket !== socket) return;
+            this.consecutiveHealthCheckFailures = 0;
+          })
+          .catch((error) => {
+            if (this.disposed || this.socket !== socket) return;
+            this.consecutiveHealthCheckFailures += 1;
+            const connectionError = error instanceof Error ? error : new Error(String(error));
+            if (this.consecutiveHealthCheckFailures >= this.healthCheckFailureThreshold) {
+              this.onConnectionFailure(connectionError);
+              return;
+            }
+            logger.warn(
+              'Backend health check failed; waiting for confirmation before reconnecting',
+              {
+                failures: this.consecutiveHealthCheckFailures,
+                threshold: this.healthCheckFailureThreshold,
+                error: connectionError.message,
+              },
+            );
+          })
+          .finally(() => {
+            if (this.socket === socket) this.heartbeatInFlight = false;
+          }),
+      );
     }, this.heartbeatIntervalMs);
   }
 
@@ -835,10 +1107,24 @@ export class JsonRpcClient extends EventEmitter {
     // Drop any partially-decoded multi-byte sequence so a reconnect starts clean.
     this.decoder = new StringDecoder('utf8');
     socket.removeAllListeners();
+    const close = this.lifecycle?.closes.get(socket);
+    if (close) {
+      close.destroyRequested = true;
+      if (!close.closeObserved)
+        socket.once('close', () => {
+          close.closeObserved = true;
+          this.lifecycleChanged();
+        });
+      socket.on('error', (error) => {
+        this.lifecycle?.failures.push({ owner: null, kind: 'close', error });
+        this.lifecycleChanged();
+      });
+    }
     try {
       socket.destroy();
-    } catch {
-      // ignore teardown errors
+    } catch (error) {
+      this.lifecycle?.failures.push({ owner: null, kind: 'close', error });
+      // Ordinary disposal keeps its existing best-effort teardown.
     }
   }
 
