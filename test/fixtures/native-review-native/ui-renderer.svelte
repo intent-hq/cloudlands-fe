@@ -46,17 +46,47 @@
     store.dispatch(loadGitStatus(id, true));
     store.dispatch(refreshRequested(id, true));
   });
-  export async function dismiss() {
+
+  let sidebarInstance: SidebarChangesPanel | undefined;
+  let dismissal: Promise<void> | null = null;
+  let retirement: ReturnType<SidebarChangesPanel['observeNativeRetirement']> | null = null;
+  async function dismissStandalone() {
     visible = false;
     await tick();
   }
-  onDestroy(context.dispose);
+  export function dismiss(): Promise<void> {
+    if (!sidebar) return dismissStandalone();
+    if (dismissal) return dismissal;
+    const original = sidebarInstance;
+    if (!original)
+      return (dismissal = Promise.reject(new Error('Original sidebar instance missing')));
+    try {
+      retirement = original.observeNativeRetirement();
+    } catch (error) {
+      return (dismissal = Promise.reject(error));
+    }
+    const captured = retirement;
+    visible = false;
+    dismissal = Promise.all([tick(), captured.completion])
+      .then(() => {})
+      .finally(() => {
+        captured.release();
+        if (retirement === captured) retirement = null;
+      });
+    return dismissal;
+  }
+  onDestroy(() => {
+    retirement?.cancel(new Error('Original fixture lifetime ended during dismissal'));
+    retirement?.release();
+    retirement = null;
+    context.dispose();
+  });
 </script>
 
 <div class="native-fixture" data-ui-role={$role ?? 'unavailable'}>
   {#if visible && $principal && $workspaces.length === 1}
     {#if sidebar}
-      <SidebarChangesPanel workspaceId={String($workspaces[0].id)} />
+      <SidebarChangesPanel workspaceId={String($workspaces[0].id)} bind:this={sidebarInstance} />
     {:else}
       <PullRequestCreator
         workspaceId={WorkspaceId($workspaces[0].id)}

@@ -294,6 +294,11 @@
   let mergeDrawerOpen = $state(false);
   let mergePanelRef: MergePanel | undefined = $state(undefined);
   let prSectionRef: PRSection | undefined = $state(undefined);
+  export function observeNativeRetirement() {
+    const original = prSectionRef;
+    if (!original) throw new Error('Original PRSection instance missing');
+    return original.observeNativeRetirement();
+  }
   // Post-merge state — read from Redux via selector
   const isMergedToTrunk = $derived($postMergeState$.isMergedToTrunk);
   const mergeHeadSha = $derived($postMergeState$.mergeHeadSha);

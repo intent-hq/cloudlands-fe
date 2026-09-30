@@ -3,14 +3,142 @@
   import {
     selectRepositoryContextForDemand,
     selectNativeReviewForOwner,
+    selectNativeReviewOccupancy,
   } from '$store/renderer/slices/repository-context/repository-context-selectors';
-  import { executionScopeKey, repositoryTargetKey } from '$shared/types/repository-context';
+  import {
+    executionScopeKey,
+    repositoryTargetKey,
+    repositoryRootKey,
+  } from '$shared/types/repository-context';
   import type { RepositoryContextDemand } from '$store/renderer/slices/repository-context/repository-context-types';
   import type {
     NativeReviewOwner,
     NativeReviewObservation,
   } from '$shared/types/native-review-operation';
   import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
+
+  type NativeLifetimeSnapshot = Readonly<{
+    parent: NativeReviewOwner | null;
+    child: NativeReviewOwner | null;
+    demand: RepositoryContextDemand | null;
+    host: NativeReviewOwner['hostContext'];
+  }>;
+  type NativeRetirementSubscription = Readonly<{
+    instance: symbol;
+    completion: Promise<void>;
+    cancel: (reason: unknown) => void;
+    release: () => void;
+  }>;
+
+  // This observer owns no command capability. Its promise is completed only by
+  // the original component's normal cleanup and destruction paths.
+  function createNativeRetirement(
+    instance: symbol,
+    read: () => NativeLifetimeSnapshot,
+    isClosed: (owner: NativeReviewOwner) => boolean,
+  ) {
+    const copyOwner = (owner: NativeReviewOwner | null) =>
+      owner ? Object.freeze({ ...owner, root: Object.freeze({ ...owner.root }) }) : null;
+    const initial = read();
+    const captured: NativeLifetimeSnapshot = Object.freeze({
+      parent: copyOwner(initial.parent),
+      child: copyOwner(initial.child),
+      demand: initial.demand ? Object.freeze({ ...initial.demand }) : null,
+      host: initial.host,
+    });
+    let resolve!: () => void;
+    let reject!: (reason: unknown) => void;
+    let active = true;
+    let settled = false;
+    let demandEnded = captured.demand === null;
+    const completion = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    // The original promise remains rejected; observing it cannot interrupt cleanup.
+    void completion.catch(() => {});
+    function fail(reason: unknown) {
+      if (!active || settled) return;
+      settled = true;
+      reject(reason);
+    }
+    function observe(run: () => void) {
+      if (!active || settled) return;
+      try {
+        run();
+      } catch (error) {
+        fail(error);
+      }
+    }
+    const sameOwner = (a: NativeReviewOwner | null, b: NativeReviewOwner | null) =>
+      a === null
+        ? b === null
+        : b !== null &&
+          a.attemptId === b.attemptId &&
+          a.admission === b.admission &&
+          a.hostContext === b.hostContext &&
+          repositoryRootKey(a.root) === repositoryRootKey(b.root);
+    function acknowledge(original: NativeLifetimeSnapshot) {
+      for (const key of ['parent', 'child'] as const) {
+        if (original[key] !== null && !sameOwner(original[key], captured[key]))
+          throw new Error('Native retirement owner changed');
+      }
+      if (original.demand) {
+        if (
+          !captured.demand ||
+          original.demand.workspaceId !== captured.demand.workspaceId ||
+          original.demand.demandId !== captured.demand.demandId ||
+          original.demand.admission !== captured.demand.admission ||
+          original.host !== captured.host
+        )
+          throw new Error('Native retirement demand changed');
+        demandEnded = true;
+      }
+    }
+    const subscription: NativeRetirementSubscription = Object.freeze({
+      instance,
+      completion,
+      cancel: fail,
+      release() {
+        fail(new Error('Native retirement observation released before completion'));
+        active = false;
+      },
+    });
+    return {
+      subscription,
+      cleanup<T>(originalCleanup: () => T): T {
+        let original: NativeLifetimeSnapshot | undefined;
+        observe(() => {
+          original = read();
+        });
+        let result: T;
+        try {
+          result = originalCleanup();
+        } catch (error) {
+          fail(error);
+          throw error;
+        }
+        observe(() => {
+          if (original) acknowledge(original);
+        });
+        return result;
+      },
+      destroyed() {
+        observe(() => {
+          const remaining = read();
+          if (remaining.parent || remaining.child || remaining.demand)
+            throw new Error('Native retirement left component owners');
+          if (
+            !demandEnded ||
+            [captured.parent, captured.child].some((owner) => owner && !isClosed(owner))
+          )
+            throw new Error('Native retirement lacks original closure');
+          settled = true;
+          resolve();
+        });
+      },
+    };
+  }
 
   const selectNativeRead = store.createSelector((state, demand: RepositoryContextDemand | null) => {
     const view = demand ? selectRepositoryContextForDemand.select(state, demand) : null;
@@ -441,6 +569,43 @@
       nativeCommitResult.reviewExecution.gitReceipts[0].stage === 'commit',
   );
 
+  const nativeInstance = Symbol('PRSection native lifetime');
+  let nativeDestroyed = false;
+  let nativeRetirement: ReturnType<typeof createNativeRetirement> | null = null;
+  function readNativeLifetime(): NativeLifetimeSnapshot {
+    return {
+      parent: nativeIntent?.owner ?? null,
+      child: nativeChild,
+      demand: nativeDemand,
+      host: nativeDemandHost,
+    };
+  }
+  export function observeNativeRetirement(): NativeRetirementSubscription {
+    if (nativeDestroyed) throw new Error('Original native component already destroyed');
+    nativeRetirement ??= createNativeRetirement(nativeInstance, readNativeLifetime, (owner) => {
+      const row = selectNativeReviewOccupancy.select(appStore.state, owner.attemptId);
+      return (
+        !!row &&
+        row.status === 'closed' &&
+        row.owner.admission === owner.admission &&
+        row.owner.hostContext === owner.hostContext &&
+        repositoryRootKey(row.owner.root) === repositoryRootKey(owner.root)
+      );
+    });
+    const original = nativeRetirement;
+    return Object.freeze({
+      ...original.subscription,
+      release() {
+        original.subscription.release();
+        if (nativeRetirement === original) nativeRetirement = null;
+      },
+    });
+  }
+  function closeNative() {
+    if (!nativeRetirement) return closeNativeOriginal();
+    return nativeRetirement.cleanup(closeNativeOriginal);
+  }
+
   function endNativeOwners() {
     const parent = nativeIntent?.owner,
       child = nativeChild;
@@ -454,7 +619,7 @@
     if (child) appStore.dispatch(nativeReviewEditEnded(child));
     if (parent) appStore.dispatch(nativeReviewEditEnded(parent));
   }
-  function closeNative() {
+  function closeNativeOriginal() {
     endNativeOwners();
     const original = nativeDemand;
     nativeDemand = null;
@@ -708,7 +873,15 @@
   $effect(() => {
     if ($nativeParentView?.observation || $nativeChildView?.observation) nativeChecking = null;
   });
-  onDestroy(closeNative);
+  onDestroy(() => {
+    nativeDestroyed = true;
+    try {
+      closeNative();
+      nativeRetirement?.destroyed();
+    } finally {
+      nativeRetirement = null;
+    }
+  });
 
   // Auto-close PR drawer when nothing to show
   $effect(() => {
