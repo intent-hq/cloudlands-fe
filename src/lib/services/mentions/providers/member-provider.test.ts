@@ -1,3 +1,11 @@
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
+import {
+  presenceContextReceived,
+  presenceWorkspacesReceived,
+} from '$store/renderer/slices/presence/presence-slice';
+import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus, type Workspace } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -77,8 +85,29 @@ describe('workspace member mention search', () => {
     } as Workspace;
   }
 
+  function admit(self = 'owner-id') {
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    admitLegacyPrincipal();
+    const p = store.state.principal;
+    store.dispatch(
+      principalReceived(
+        {
+          context: p.context!,
+          invalidation: p.invalidation,
+          presentationVersion: p.presentationVersion,
+        },
+        { ...p.snapshot!, principal: { ...p.snapshot!.principal, id: self } },
+      ),
+    );
+  }
+
   function seed(members = [owner, collaborator, another], self: string | null = 'owner-id') {
+    admit(self ?? 'owner-id');
     store.dispatch(replaceWorkspaceList([workspace()]));
+    store.dispatch(
+      presenceContextReceived(selectPresenceContext.select(store.state)!, self ?? 'owner-id'),
+    );
+    store.dispatch(presenceWorkspacesReceived(['ws-1', 'ws-2']));
     store.dispatch(presenceMembersReceived('ws-1', members));
     store.dispatch(presenceOwnPrincipalReceived(self));
   }
@@ -375,12 +404,11 @@ describe('workspace member mention search', () => {
       if (method === 'presence.snapshot') return { workspaceId: 'ws-1', members: [] };
       return { files: [], terminals: [], scripts: [] };
     });
-    cancelSaga = store.runSaga(presenceSaga);
     store.dispatch(daemonEventsSubscribed());
+    admit();
+    cancelSaga = store.runSaga(presenceSaga);
     await vi.advanceTimersByTimeAsync(0);
-    expect(mocks.request.mock.calls.filter(([method]) => method === 'principal.me')).toEqual([
-      ['principal.me', {}],
-    ]);
+    expect(mocks.request.mock.calls.filter(([method]) => method === 'principal.me')).toEqual([]);
     expect(
       mocks.request.mock.calls.filter(([method]) => method === 'workspace.members.list'),
     ).toEqual([['workspace.members.list', { workspaceId: 'ws-1' }]]);
