@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
+  cpSync,
+  renameSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -37,7 +39,7 @@ interface Matrix {
 }
 interface Job {
   steps: Step[];
-  strategy?: { matrix: { include: Matrix[] } };
+  strategy?: { matrix: { include: Matrix[] } | string };
   env?: Record<string, string>;
 }
 interface Workflow {
@@ -57,6 +59,7 @@ function temp() {
   mkdirSync(join(dir, 'bin'));
   mkdirSync(join(dir, 'scripts'));
   for (const file of [
+    'package-mac.mjs',
     'assemble-release-assets.mjs',
     'mac-update-feed.mjs',
     'validate-release-asset-names.mjs',
@@ -204,7 +207,16 @@ describe('release artifact assembly through the publish workflow', () => {
 describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (name) => {
   it('uses native runner and sidecar targets and invokes packaging for each CPU', () => {
     const job = workflow(name).jobs['build-macos'];
-    const matrix = job.strategy!.matrix.include;
+    const configured = job.strategy!.matrix;
+    const matrix: Matrix[] = (
+      typeof configured === 'string'
+        ? JSON.parse(
+            render(configured, {
+              'fromJSON(needs.resolve.outputs.macos_matrix)': releasePlan(temp()).matrix,
+            }),
+          )
+        : configured
+    ).include;
     expect(matrix.map((m) => [m.arch, m.runner, m.intentd_target])).toEqual([
       ['arm64', 'macos-15-xlarge', 'aarch64-apple-darwin'],
       ['x64', 'macos-15-large', 'x86_64-apple-darwin'],
@@ -481,4 +493,146 @@ describe('manual Mac summary reports verified and uploaded results', () => {
       }
     },
   );
+});
+
+// Historical v2.191.0 has neither the native wrapper nor the verifier/assembler.
+// Read the current workflow's actual conditions against that checkout capability.
+function releaseStepEnabled(s: Step, dual: boolean) {
+  if (!s.if) return true;
+  const expression = s.if.replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim();
+  const match = /^needs\.resolve\.outputs\.dual_macos (==|!=) 'true'$/.exec(expression);
+  if (!match) throw new Error(`Unexpected release condition: ${s.if}`);
+  return match[1] === '==' ? dual : !dual;
+}
+
+it('does not call absent Mac verification tooling when rebuilding an ARM-only tag', () => {
+  const dir = temp();
+  legacyCheckout(dir);
+  const dual = releasePlan(dir).dual_macos === 'true';
+  const verify = step('release-alpha', 'build-macos', 'Verify packaged Mac build');
+  const result = shell(
+    dir,
+    releaseStepEnabled(verify, dual) ? render(verify.run!, { 'matrix.arch': 'arm64' }) : ':',
+  );
+  expect(result.status, result.stderr).toBe(0);
+});
+
+it('rebuilds an ARM-only tag without invoking the new dual-CPU assembler or dependency install', () => {
+  const dir = temp();
+  legacyCheckout(dir);
+  const dual = releasePlan(dir).dual_macos === 'true';
+  const assembleStep = step('release-alpha', 'publish', 'Assemble release assets');
+  const result = shell(dir, releaseStepEnabled(assembleStep, dual) ? assembleStep.run! : ':', {
+    VERSION: '2.191.0',
+  });
+  expect(result.status, result.stderr).toBe(0);
+  expect(
+    releaseStepEnabled(
+      step('release-alpha', 'publish', 'Install feed assembly dependencies'),
+      false,
+    ),
+  ).toBe(false);
+});
+
+const nativeReleaseTools = [
+  'package-mac.mjs',
+  'verify-macos-build.sh',
+  'assemble-release-assets.mjs',
+];
+function legacyCheckout(dir: string) {
+  for (const file of nativeReleaseTools) rmSync(join(dir, 'scripts', file));
+}
+function releasePlan(dir: string) {
+  const output = join(dir, 'release-plan');
+  const result = shell(dir, step('release-alpha', 'resolve', 'Select Mac release targets').run!, {
+    GITHUB_OUTPUT: output,
+  });
+  if (result.status !== 0) throw new Error(result.stdout + result.stderr);
+  return Object.fromEntries(
+    readFileSync(output, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const split = line.indexOf('=');
+        return [line.slice(0, split), line.slice(split + 1)];
+      }),
+  );
+}
+
+describe('release tag capability routing', () => {
+  it.each([false, true])('assembles the correct artifacts for dual-CPU tag=%s', (modern) => {
+    const dir = temp();
+    if (!modern) legacyCheckout(dir);
+    const plan = releasePlan(dir);
+    expect(plan.dual_macos).toBe(String(modern));
+    const configured = workflow('release-alpha').jobs['build-macos'].strategy!.matrix;
+    const matrix =
+      typeof configured === 'string'
+        ? JSON.parse(
+            render(configured, { 'fromJSON(needs.resolve.outputs.macos_matrix)': plan.matrix }),
+          )
+        : configured;
+    expect(matrix.include.map((m: Matrix) => m.arch)).toEqual(
+      modern ? ['arm64', 'x64'] : ['arm64'],
+    );
+
+    const source = fixtures(dir);
+    if (!modern) rmSync(join(source, 'release-macos-x64'), { recursive: true });
+    const artifacts = join(dir, 'actions-artifacts');
+    renameSync(source, artifacts);
+    const downloads = workflow('release-alpha').jobs.publish.steps.filter(
+      (s) => s.uses?.startsWith('actions/download-artifact@') && releaseStepEnabled(s, modern),
+    );
+    expect(downloads).toHaveLength(1);
+    const download = downloads[0].with!;
+    const destination = join(dir, String(download.path));
+    mkdirSync(destination);
+    for (const name of readdirSync(artifacts)) {
+      const target = download['merge-multiple'] === true ? destination : join(destination, name);
+      cpSync(join(artifacts, name), target, { recursive: true });
+    }
+    const assembleStep = step('release-alpha', 'publish', 'Assemble release assets');
+    if (releaseStepEnabled(assembleStep, modern)) {
+      const result = shell(dir, assembleStep.run!, { VERSION: '1.2.3' });
+      expect(result.status, result.stderr).toBe(0);
+    }
+    const verified = shell(
+      dir,
+      step('release-alpha', 'publish', 'Verify collected release assets').run!,
+    );
+    expect(verified.status, verified.stderr).toBe(0);
+    const feed = load(readFileSync(join(dir, 'dist-electron/latest-mac.yml'), 'utf8'));
+    expect(
+      feed.files
+        .filter((f: { url: string }) => f.url.endsWith('.zip'))
+        .map((f: { url: string }) => f.url),
+    ).toEqual(
+      modern
+        ? ['Intent-1.2.3-x64-mac.zip', 'Intent-1.2.3-arm64-mac.zip']
+        : ['Intent-1.2.3-arm64-mac.zip'],
+    );
+    expect(
+      releaseStepEnabled(step('release-alpha', 'build-macos', 'Verify packaged Mac build'), modern),
+    ).toBe(modern);
+    expect(
+      releaseStepEnabled(
+        step('release-alpha', 'publish', 'Install feed assembly dependencies'),
+        modern,
+      ),
+    ).toBe(modern);
+    const summary = shell(dir, step('release-alpha', 'publish', 'Post summary').run!, {
+      VERSION: '1.2.3',
+      GITHUB_STEP_SUMMARY: join(dir, 'summary'),
+    });
+    expect(summary.status, summary.stderr).toBe(0);
+    const markdown = readFileSync(join(dir, 'summary'), 'utf8');
+    expect(markdown).toContain('/Intent-1.2.3-arm64.dmg');
+    if (modern) expect(markdown).toContain('/Intent-1.2.3-x64.dmg');
+    else expect(markdown).not.toContain('Intel Mac');
+  });
+  it.each(nativeReleaseTools)('fails closed when modern tag is missing %s', (missing) => {
+    const dir = temp();
+    rmSync(join(dir, 'scripts', missing));
+    expect(() => releasePlan(dir)).toThrow('Incomplete native Mac release tooling');
+  });
 });

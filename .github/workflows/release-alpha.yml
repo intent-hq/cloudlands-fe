@@ -38,6 +38,8 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
+      dual_macos: ${{ steps.macos.outputs.dual_macos }}
+      macos_matrix: ${{ steps.macos.outputs.matrix }}
 
     steps:
       # Tags are created by release-please when its Release PR merges; this resolves
@@ -106,6 +108,31 @@ jobs:
           fi
           echo "Tag v${VERSION} matches package.json version"
 
+      # workflow_dispatch uses the workflow from the selected ref, but builds
+      # the requested tag. Tags predating native Intel support retain their
+      # original ARM-only tools and single-feed publication path.
+      - name: Select Mac release targets
+        id: macos
+        run: |
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
+          TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
+          FOUND=0
+          for TOOL in "${TOOLS[@]}"; do
+            if [ -f "$TOOL" ]; then FOUND=$((FOUND + 1)); fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "dual_macos=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[$ARM]}" >> "$GITHUB_OUTPUT"
+            echo "Historical ARM-only tag: retaining its packaging and update feed."
+          elif [ "$FOUND" -eq "${#TOOLS[@]}" ]; then
+            echo "dual_macos=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[$ARM,$INTEL]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Incomplete native Mac release tooling in the requested tag"
+            exit 1
+          fi
+
       - name: Check for duplicate release
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -136,16 +163,7 @@ jobs:
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            label: Apple Silicon
-            runner: macos-15-xlarge
-            intentd_target: aarch64-apple-darwin
-          - arch: x64
-            label: Intel
-            runner: macos-15-large
-            intentd_target: x86_64-apple-darwin
+      matrix: ${{ fromJSON(needs.resolve.outputs.macos_matrix) }}
     runs-on: ${{ matrix.runner }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
@@ -341,6 +359,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify packaged Mac build
+        if: needs.resolve.outputs.dual_macos == 'true'
         run: bash scripts/verify-macos-build.sh "${{ matrix.arch }}" "true"
 
       - name: List built artifacts
@@ -723,6 +742,7 @@ jobs:
       # Feed assembly uses the updater's locked YAML and semver dependencies.
       # Ignore install hooks: publishing never rebuilds native app dependencies.
       - name: Setup pnpm
+        if: needs.resolve.outputs.dual_macos == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
@@ -733,6 +753,7 @@ jobs:
           node-version: '22'
 
       - name: Install feed assembly dependencies
+        if: needs.resolve.outputs.dual_macos == 'true'
         run: pnpm install --frozen-lockfile --prod --ignore-scripts
 
       - name: Read pinned intentd version
@@ -747,13 +768,23 @@ jobs:
           echo "Pinned intentd version: ${INTENTD_VERSION}"
 
       - name: Download platform release assets
+        if: needs.resolve.outputs.dual_macos == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: release-downloads
           merge-multiple: false
 
+      - name: Download legacy platform release assets
+        if: needs.resolve.outputs.dual_macos != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist-electron
+          merge-multiple: true
+
       - name: Assemble release assets
+        if: needs.resolve.outputs.dual_macos == 'true'
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
         run: node scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
@@ -1105,7 +1136,9 @@ jobs:
             echo ""
             echo "### Download URLs"
             echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_ARM64"))"
-            echo "- [Intel Mac (DMG)]($ALPHA_URL/$(encode "$DMG_X64"))"
+            if [ -n "$DMG_X64" ]; then
+              echo "- [Intel Mac (DMG)]($ALPHA_URL/$(encode "$DMG_X64"))"
+            fi
             echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
             echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
             echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"
