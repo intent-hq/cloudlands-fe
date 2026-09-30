@@ -1432,7 +1432,7 @@
     return sessionModelId !== localModelId;
   });
 
-  const isSelectedModelUnavailable = $derived.by(() => {
+  const isSelectedModelMissingAfterLoad = $derived.by(() => {
     if (isGuestLocked) return false;
     // Settings-derived: does not wait for catalog loads or availability probes.
     if (isSelectedModelProviderDisabled) return true;
@@ -1443,6 +1443,20 @@
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;
     return isSelectedModelMissingFromCatalog;
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (!isSelectedModelMissingAfterLoad) return false;
+    if (isSelectedModelProviderDisabled) return true;
+    const provider = selectedModelGateProviderId;
+    const catalog = $providerCatalogs$[provider];
+    const request = $providerRequests$[provider];
+    // A failed probe or a degraded/last-good list cannot establish removal.
+    // Keep the user's model and effort until this provider has a fresh result.
+    if (!catalog || catalog.stale || catalog.warning) return false;
+    if (request?.error || request?.status === 'loading' || request?.status === 'cancelled')
+      return false;
+    return true;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -1837,13 +1851,15 @@
     if (isGuestLocked) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
-    if (!isSelectedModelUnavailable) return;
+    if (!isSelectedModelMissingAfterLoad) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
 
     const currentProvider = selectedModelGateProviderId;
 
     // Try same-provider fallback first
-    const fallbackOption = findFallbackOption(currentProvider);
+    const fallbackOption = isSelectedModelUnavailable
+      ? findFallbackOption(currentProvider)
+      : undefined;
     if (fallbackOption) {
       logger.info('Workspace initializer: falling back to same-provider model', {
         unavailableModel: localModel,
