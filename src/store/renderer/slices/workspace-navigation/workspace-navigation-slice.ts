@@ -348,6 +348,8 @@ export const openWorkspaceFile = createAction<
     filePath: string,
     options?: {
       line?: number;
+      gitRootId?: string;
+      gitRootPath?: string;
       /** Preserve a parsed path verbatim; omitted/false retains legacy line-suffix parsing. */
       filePathIsLiteral?: boolean;
       openInAdjacentPanel?: boolean;

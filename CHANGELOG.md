@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.194.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.193.0...v2.194.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* search note bodies across workspaces in command palette ([#3055](https://github.com/intent-hq/cloudlands-fe/issues/3055)) ([6a9acaf](https://github.com/intent-hq/cloudlands-fe/commit/6a9acaff8c99616a3338b2052824f1b8d578b549))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.129 ([#3061](https://github.com/intent-hq/cloudlands-fe/issues/3061)) ([a0f0822](https://github.com/intent-hq/cloudlands-fe/commit/a0f0822a349b1fbe31b8187ec187b37efab1c1ed))
+* bump intentd sidecar to v0.9.130 ([#3063](https://github.com/intent-hq/cloudlands-fe/issues/3063)) ([b751605](https://github.com/intent-hq/cloudlands-fe/commit/b7516052ad07864ecd9fc10ef5e4cc35eefe8484))
+* recognize finite inline actionChannel consumers ([#3060](https://github.com/intent-hq/cloudlands-fe/issues/3060)) ([2fcc4c3](https://github.com/intent-hq/cloudlands-fe/commit/2fcc4c364e506d336fa473f4aba8074b4dfccf57))
+
 ## [2.193.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.192.1...v2.193.0) (2026-10-01)
 
 

@@ -889,6 +889,47 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
     return { client, sockets, onHelloResult };
   }
 
+  // protocol-version-ok: connection-generation compatibility fixtures.
+  it.each(['file.read', 'file.readChunk'])(
+    'rejects scoped %s on the actual reconnected socket after a daemon downgrade',
+    async (method) => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeHelloClient();
+      client.start();
+      sockets[0].open();
+      await vi.advanceTimersByTimeAsync(1);
+      let hello = JSON.parse(sockets[0].writes[0]);
+      sockets[0].receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { protocolVersion: '11.1' } })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      const params = { workspaceId: 'ws', path: 'same.txt', gitRootId: 'root-a' };
+      const first = client.request(method, params);
+      const read = JSON.parse(sockets[0].writes.at(-1)!);
+      sockets[0].receive(`${JSON.stringify({ jsonrpc: '2.0', id: read.id, result: 'root' })}\n`);
+      expect(await first).toBe('root');
+      sockets[0].emit('close');
+      await vi.advanceTimersByTimeAsync(100);
+      const second = client.request(method, params).catch((error) => error);
+      sockets[1].open();
+      await vi.advanceTimersByTimeAsync(1);
+      hello = JSON.parse(sockets[1].writes[0]);
+      sockets[1].receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { protocolVersion: '11.0' } })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      const next = JSON.parse(sockets[1].writes.at(-1)!);
+      if (next.method === method)
+        sockets[1].receive(
+          `${JSON.stringify({ jsonrpc: '2.0', id: next.id, result: 'WRONG PRIMARY' })}\n`,
+        );
+      const result = await second;
+      client.dispose();
+      expect(result).toBeInstanceOf(Error);
+      expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+    },
+  );
+
   it('sends client.hello with the persisted clientId as the FIRST frame on connect, before scoped work', async () => {
     const { client, sockets, onHelloResult } = makeHelloClient();
     client.start();

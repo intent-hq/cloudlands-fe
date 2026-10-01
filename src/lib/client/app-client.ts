@@ -55,7 +55,7 @@ import type {
   ScriptWithState,
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
-import type { ScriptCategory, ScriptMode } from '$features/scripts/types';
+import type { ScriptCategory, ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
@@ -1300,7 +1300,11 @@ export interface SettingsClient {
 
 export interface FilesClient {
   list(workspaceId: string): Promise<FileContentEntry[]>;
-  read(workspaceId: string, path: string): Promise<FileContentEntry | null>;
+  read(
+    workspaceId: string,
+    path: string,
+    options?: { gitRootId: string },
+  ): Promise<FileContentEntry | null>;
   /** Root node of the workspace file tree, or `null` when no tree is available. */
   explorerTree(workspaceId: string): Promise<FileNode | null>;
   /**
@@ -1835,6 +1839,8 @@ export interface CommentsClient {
 
 /** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
 export interface ScriptCreateInput {
+  /** Omit to use the daemon default; existing IDs retain their stored purpose. */
+  purpose?: ScriptPurpose;
   name: string;
   command: string;
   mode: ScriptMode;
