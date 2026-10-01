@@ -308,6 +308,7 @@ describe('snapshot races and admission', () => {
           subscriptionGeneration: change === 'subscription' ? 2 : 1,
         },
       });
+      next.workspace.loadedBackendId = next.connections.windowBackendId;
       if (change === 'principal') next.principal.snapshot!.principal.id = 'another';
       f.update(next);
       old.resolve({ requests: [prompt] });
@@ -329,8 +330,30 @@ describe('snapshot races and admission', () => {
     expect(f.dispatch).not.toHaveBeenCalled();
   });
 
+  it('takes one fresh snapshot for a new management grant, but not equivalent workspace updates', async () => {
+    request.mockResolvedValueOnce({ requests: [] }).mockResolvedValue({ requests: [prompt] });
+    const f = recoveryFixture();
+    authorizeRole(f, 'guest', false);
+    f.start();
+    await settle();
+    expect(f.dispatch).not.toHaveBeenCalled();
+    authorizeRole(f, 'guest', true);
+    await settle();
+    expect(request.mock.calls).toEqual([
+      ['agent.pendingPermissions', {}],
+      ['agent.pendingPermissions', {}],
+    ]);
+    expect(f.dispatch).toHaveBeenCalledExactlyOnceWith(
+      setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
+    );
+    authorizeRole(f, 'guest', true);
+    discover(f, 'a2');
+    await settle();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('discards a snapshot prompt denied by current workspace rights instead of caching it for a later grant', async () => {
-    request.mockResolvedValue({ requests: [prompt] });
+    request.mockResolvedValueOnce({ requests: [prompt] }).mockResolvedValue({ requests: [] });
     const f = recoveryFixture();
     authorizeRole(f, 'guest', false);
     f.start();
@@ -338,7 +361,7 @@ describe('snapshot races and admission', () => {
     authorizeRole(f, 'guest', true);
     await settle();
     expect(f.dispatch).not.toHaveBeenCalled();
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it('does not retry failed reads on discovery, but retries after resubscription', async () => {

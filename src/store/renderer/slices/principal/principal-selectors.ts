@@ -10,6 +10,7 @@ export const selectPrincipalConnectionContext = store.createSelector((state): st
     !state.connections?.hasReceivedList ||
     state.daemonHealth?.health === 'down' ||
     !state.workspaceEvents?.subscriptionGeneration ||
+    state.workspaceEvents.subscriptionPending === true ||
     state.connections.authRejected?.id === state.connections.windowBackendId
   )
     return null;
