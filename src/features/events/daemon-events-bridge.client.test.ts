@@ -13992,7 +13992,9 @@ it.each([
       expect(appStore.state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers).toEqual(
         firstDisabled ? { [server.id]: true } : {},
       );
-      expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]).toBeUndefined();
+      expect(appStore.state.providerCatalog.byWorkspaceId?.[workspaceId]?.mcpServers).toEqual([
+        server,
+      ]);
       emitToggle(!firstDisabled);
       await flush();
       release({ providers: [] });

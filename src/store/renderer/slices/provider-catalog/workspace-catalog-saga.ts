@@ -37,22 +37,27 @@ function* readCatalog(action: CatalogAction) {
   const [workspaceId] = action.payload;
   const epoch = yield* selectWorkspaceCatalogEpoch.effect();
   try {
-    const [catalog, settings, specialists, discovery, auth, mcpServers] = yield* call(async () =>
-      Promise.all([
-        appClient.providers.catalog(workspaceId),
-        appClient.settings.list(workspaceId),
-        appClient.specialists.list(undefined, workspaceId),
-        backendRequest<{
-          providers: Array<{
-            id: string;
-            installed: boolean;
-            gatedOff?: string | null;
-            hasNpxFallback?: boolean;
-          }>;
-        }>('host.providerDiscovery', { workspaceId }),
-        getProviderAuthVerdicts({ workspaceId }),
-        appClient.settings.getMcpServers(workspaceId),
-      ]),
+    const [catalog, settings, specialistCatalog, discovery, auth, mcpServers] = yield* call(
+      async () =>
+        Promise.all([
+          appClient.providers.catalog(workspaceId),
+          appClient.settings.list(workspaceId),
+          appClient.specialists.listCatalog
+            ? appClient.specialists.listCatalog(undefined, workspaceId, { includeProject: true })
+            : appClient.specialists
+                .list(undefined, workspaceId)
+                .then((specialists) => ({ specialists, importDiagnostics: undefined })),
+          backendRequest<{
+            providers: Array<{
+              id: string;
+              installed: boolean;
+              gatedOff?: string | null;
+              hasNpxFallback?: boolean;
+            }>;
+          }>('host.providerDiscovery', { workspaceId }),
+          getProviderAuthVerdicts({ workspaceId }),
+          appClient.settings.getMcpServers(workspaceId),
+        ]),
     );
     // Discovery's Claude adapter probe does not replace its CLI prerequisite.
     const claude = discovery.providers.find((provider) => provider.id === 'claude-code');
@@ -73,7 +78,8 @@ function* readCatalog(action: CatalogAction) {
         {
           catalog,
           settings,
-          specialists,
+          specialists: specialistCatalog.specialists,
+          importDiagnostics: specialistCatalog.importDiagnostics,
           mcpServers: mcpServers.map(copyServerForState),
           mcpStatuses,
           readiness: Object.fromEntries(
@@ -114,6 +120,7 @@ function* watchInvalidations() {
       if (
         type === 'settings:changed' ||
         type === 'specialists:changed' ||
+        type === 'skills:changed' ||
         type === 'provider:auth-changed' ||
         type?.startsWith('mcp.servers:') ||
         (type === 'workspace:updated' &&

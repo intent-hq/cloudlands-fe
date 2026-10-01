@@ -3,8 +3,8 @@ name: Manual Signed Build
 # Dispatch-only workflow that builds any branch/ref (e.g. a large PR branch)
 # for a selectable set of platforms and uploads the installers as short-lived
 # workflow artifacts. Nothing here publishes to intent-hq/cloudlands-releases
-# and no auto-updater manifest (latest*.yml) is uploaded anywhere — artifacts
-# are for manual install/testing only.
+# or updates a live feed. Windows feed/blockmap files are included only in
+# workflow artifacts for verification; builds are for manual install/testing.
 #
 # The build legs are copied wholesale from release-alpha.yml, including the
 # workaround comments (they encode incident fixes: monorepo#1074/#1282/#1340);
@@ -17,12 +17,10 @@ name: Manual Signed Build
 #     never version-equal to a real release
 #   - one minimal artifact per installer kind (manual-macos-dmg-<arch>,
 #     manual-windows-exe, manual-linux-{appimage,deb}-<arch>) so downloading
-#     one installer never pulls the rest; no mac .zip archive and no
-#     .blockmap files (both are auto-updater material, dead weight in manual
-#     builds); 7-day retention
-#   - the Windows leg gains integrated DigiCert signing (release-alpha's
-#     Windows leg is still unsigned; the signing steps come from
-#     intent-manual-windows-build.yml)
+#     one platform never pulls the rest; no mac .zip archive; 7-day retention
+#   - the Windows artifact also includes the portable, feed, blockmap and report
+#   - the Windows leg uses explicit Azure signing configuration plus the shared
+#     verifier (release-alpha remains unsigned)
 #   - an optional intentd_ref input: empty (default) fetches the pinned
 #     intentd release exactly like release-alpha.yml; non-empty builds the
 #     intentd sidecar from source at that intent-hq/intentd git ref
@@ -50,7 +48,7 @@ on:
           - full
           - fixture-correction
       build_windows:
-        description: 'Build Windows (x64 NSIS installer)'
+        description: 'Build Windows (x64 NSIS installer + portable)'
         required: false
         type: boolean
         default: false
@@ -60,7 +58,7 @@ on:
         type: boolean
         default: false
       sign:
-        description: 'Sign the builds (macOS Developer ID + notarization, Windows DigiCert). Off = unsigned builds.'
+        description: 'Sign the builds (macOS Developer ID + notarization, Windows Azure Artifact Signing). Off = unsigned builds.'
         required: false
         type: boolean
         default: true
@@ -528,10 +526,9 @@ jobs:
           rm -f "$RUNNER_TEMP/certificate.p12"
           rm -f "$RUNNER_TEMP/keychain-helper.provisionprofile"
 
-  # Copied from release-alpha.yml build-windows, plus the integrated DigiCert
-  # signing steps from intent-manual-windows-build.yml gated on the `sign`
-  # input (release-alpha's Windows leg is still unsigned; integrated signing
-  # there is a tracked follow-up).
+  # Manual Windows builds use the shared Azure configuration and artifact verifier.
+  # The Windows leg is opt-in and respects sign; release-alpha remains unsigned.
+  # Native install/update acceptance and production enablement remain separate.
   build-windows:
     if: ${{ inputs.build_windows }}
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
@@ -680,53 +677,6 @@ jobs:
           cp intentd-src/target/release/intentd.exe resources/sidecar/intentd.exe
           ls -l resources/sidecar/intentd.exe
 
-      # ── DigiCert signing setup (official action; pattern from ────────────
-      # ── intent-manual-windows-build.yml, gated on the `sign` input) ──────
-      - name: Check integrated signing configuration
-        id: integrated_signing
-        if: ${{ inputs.sign }}
-        shell: bash
-        run: |
-          missing=""
-          for name in INTENT_WINDOWS_SM_HOST INTENT_WINDOWS_SM_KEYPAIR_ALIAS INTENT_WINDOWS_SM_API_KEY INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              missing="${missing:+$missing, }${name}"
-            fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Signing requested but missing: $missing"
-            exit 1
-          fi
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-        env:
-          INTENT_WINDOWS_SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
-          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
-          INTENT_WINDOWS_SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
-          INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
-
-      # The decoded cert lives in the per-run temp dir; a D: scratch drive
-      # (used by an older GH-hosted variant of this job) isn't guaranteed on
-      # every runner image.
-      - name: Decode DigiCert client certificate
-        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
-        shell: bash
-        env:
-          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
-        run: |
-          echo "$INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
-
-      - name: Setup DigiCert Software Trust Manager
-        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
-        uses: digicert/code-signing-software-trust-action@v1
-        with:
-          simple-signing-mode: true
-        env:
-          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
-          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
-
       # Drop build output left by a previous run so the artifact upload
       # can't pick up stale files (no-op on this ephemeral hosted runner;
       # kept for parity with the macOS and Linux jobs).
@@ -777,18 +727,34 @@ jobs:
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing env (pattern: intent-manual-windows-build.yml). Emptied
-          # when sign=false — the gate step is skipped, and
-          # scripts/windows-sign.cjs skips silently — mirroring how the macOS
-          # leg gates its signing env on inputs.sign.
-          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
-          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ inputs.sign && vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS || '' }}
-          SM_HOST: ${{ inputs.sign && vars.INTENT_WINDOWS_SM_HOST || '' }}
-          SM_API_KEY: ${{ inputs.sign && secrets.INTENT_WINDOWS_SM_API_KEY || '' }}
-          SM_CLIENT_CERT_FILE: ${{ inputs.sign && format('{0}\Certificate_pkcs12.p12', runner.temp) || '' }}
-          SM_CLIENT_CERT_PASSWORD: ${{ inputs.sign && secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD || '' }}
+          # Credentials are available only to an explicitly signed packaging step.
+          INTENT_WINDOWS_SIGNING_MODE: ${{ inputs.sign && 'azure' || 'unsigned' }}
+          INTENT_WINDOWS_AZURE_ENDPOINT: ${{ inputs.sign && vars.INTENT_WINDOWS_AZURE_ENDPOINT || '' }}
+          INTENT_WINDOWS_AZURE_ACCOUNT_NAME: ${{ inputs.sign && vars.INTENT_WINDOWS_AZURE_ACCOUNT_NAME || '' }}
+          INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME: ${{ inputs.sign && vars.INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_NAME: ${{ inputs.sign && vars.INTENT_WINDOWS_PUBLISHER_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_SUBJECT: ${{ inputs.sign && vars.INTENT_WINDOWS_PUBLISHER_SUBJECT || '' }}
+          AZURE_TENANT_ID: ${{ inputs.sign && vars.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ inputs.sign && vars.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ inputs.sign && secrets.AZURE_CLIENT_SECRET || '' }}
         run: |
-          pnpm run dist:win
+          node -e "require('./scripts/windows-builder.cjs')()"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm run dist:win --config scripts/windows-builder.cjs --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify Windows artifacts
+        id: verify_windows
+        shell: powershell
+        env:
+          INTENT_WINDOWS_SIGNING_MODE: ${{ inputs.sign && 'azure' || 'unsigned' }}
+          INTENT_WINDOWS_AZURE_ENDPOINT: ${{ inputs.sign && vars.INTENT_WINDOWS_AZURE_ENDPOINT || '' }}
+          INTENT_WINDOWS_AZURE_ACCOUNT_NAME: ${{ inputs.sign && vars.INTENT_WINDOWS_AZURE_ACCOUNT_NAME || '' }}
+          INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME: ${{ inputs.sign && vars.INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_NAME: ${{ inputs.sign && vars.INTENT_WINDOWS_PUBLISHER_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_SUBJECT: ${{ inputs.sign && vars.INTENT_WINDOWS_PUBLISHER_SUBJECT || '' }}
+        run: |
+          node scripts/verify-windows-artifacts.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: List built artifacts
@@ -801,14 +767,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: manual-windows-exe
-          # NSIS installer only — the .exe.blockmap exists solely for the
-          # auto-updater feed, which manual builds never publish (no
-          # latest.yml leaves this workflow), so it is dead weight here.
-          # *Setup*.exe, not *.exe: electron-builder.yml also declares the
-          # portable:x64 win target, whose exe would otherwise match too —
-          # only the NSIS installer (default artifactName contains "Setup")
-          # belongs in this artifact.
-          path: dist-electron/*Setup*.exe
+          # Reviewable local artifacts only; no release/feed publication.
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.exe.blockmap
+            dist-electron/*.yml
+            !dist-electron/builder-*.yml
+            dist-electron/windows-verification.json
           retention-days: 7
           if-no-files-found: error
 
@@ -822,10 +787,12 @@ jobs:
             echo ""
             if [ "${{ steps.build.outcome }}" != "success" ]; then
               echo "❌ Build failed."
-            elif [ "${{ steps.integrated_signing.outputs.enabled }}" != "true" ]; then
+            elif [ "${{ steps.verify_windows.outcome }}" != "success" ]; then
+              echo "❌ Artifact verification failed."
+            elif [ "${{ inputs.sign }}" != "true" ]; then
               echo "⚠️ Unsigned build completed (sign=false)."
             else
-              echo "✅ Signed build completed (DigiCert Authenticode)."
+              echo "✅ Azure artifact checks passed; native install/update acceptance pending."
             fi
             echo ""
             if [ -n "$INTENTD_REF" ]; then
@@ -840,7 +807,7 @@ jobs:
               echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
             fi
             echo ""
-            echo "Artifacts (manual-windows-exe):"
+            echo "Artifacts (manual-windows-exe): installer, portable, blockmap, feed and verification report"
             find dist-electron -maxdepth 1 -type f -name "*Setup*.exe" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
         env:
