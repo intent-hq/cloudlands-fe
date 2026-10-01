@@ -54,7 +54,12 @@
 {:else if state === 'dismiss-questions'}
   <DismissQuestionsConfirmDialog open />
 {:else if state === 'retire'}
-  <RetireAgentModal open agentName="Design system implementor" onRetire={async () => {}} />
+  <RetireAgentModal
+    open
+    agentName="Design system implementor"
+    workspaceId="agent-decisions-preview"
+    agentId="preview-agent"
+  />
 {:else if state.startsWith('handoff')}
   <ReplaceAgentModal open agentName="Design system implementor" specialist="implementor" />
 {:else}

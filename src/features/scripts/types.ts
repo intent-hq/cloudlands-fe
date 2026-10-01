@@ -13,7 +13,7 @@
 export type ScriptMode = 'service' | 'command';
 
 export type ScriptArchiveFilter = 'active' | 'archived' | 'all';
-type ScriptPurpose = 'saved' | 'oneOff';
+export type ScriptPurpose = 'saved' | 'oneOff';
 interface ScriptLastRun {
   outcome: 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   exitCode?: number;
