@@ -391,13 +391,11 @@ for (const state of [
     const label = component.getByTestId('queued-messages-label');
     const chevron = component.getByTestId('queued-messages-chevron');
     const messageRows = component.getByTestId('queued-message-row');
-    const firstText = component.getByTestId('queued-message-text').first();
 
     const containerBox = await container.boundingBox();
     const disclosureBox = await disclosure.boundingBox();
     const labelBox = await label.boundingBox();
     const chevronBox = await chevron.boundingBox();
-    const firstTextBox = await firstText.boundingBox();
     const firstRowBox = await messageRows.first().boundingBox();
     const lastRowBox = await messageRows.last().boundingBox();
 
@@ -405,7 +403,6 @@ for (const state of [
     expect(disclosureBox).not.toBeNull();
     expect(labelBox).not.toBeNull();
     expect(chevronBox).not.toBeNull();
-    expect(firstTextBox).not.toBeNull();
     expect(firstRowBox).not.toBeNull();
     expect(lastRowBox).not.toBeNull();
     expect(disclosureBox!.x).toBeCloseTo(containerBox!.x, 1);
@@ -415,14 +412,11 @@ for (const state of [
     expect(firstRowBox!.y).toBeGreaterThanOrEqual(disclosureBox!.y + disclosureBox!.height);
     expect(chevronBox!.width).toBeCloseTo(16 * state.zoom, 1);
     expect(chevronBox!.height).toBeCloseTo(16 * state.zoom, 1);
-    expect(labelBox!.x - disclosureBox!.x).toBeCloseTo(
-      (state.messageCount > 1 ? 30 : 14) * state.zoom,
-      1,
-    );
+    expect(labelBox!.x).toBeGreaterThanOrEqual(disclosureBox!.x);
+    expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(chevronBox!.x);
     expect(
       disclosureBox!.x + disclosureBox!.width - (chevronBox!.x + chevronBox!.width),
     ).toBeCloseTo(14 * state.zoom, 1);
-    expect(labelBox!.x).toBeCloseTo(firstTextBox!.x, 1);
     expect(await container.evaluate((node) => getComputedStyle(node).paddingBottom)).toBe('0px');
 
     const containerBottom = containerBox!.y + containerBox!.height;

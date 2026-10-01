@@ -19,8 +19,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
-  import ArrowsMergeIcon from 'phosphor-svelte/lib/ArrowsMergeIcon';
-  import PauseIcon from 'phosphor-svelte/lib/PauseIcon';
   import { tick } from 'svelte';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
@@ -616,14 +614,6 @@
   {/if}
 {/snippet}
 
-{#snippet batchIcon()}
-  {#if lastReadyIndex === -1}
-    <PauseIcon size={16} weight="regular" aria-hidden="true" />
-  {:else}
-    <ArrowsMergeIcon size={16} weight="regular" class="rotate-180" aria-hidden="true" />
-  {/if}
-{/snippet}
-
 {#if messages.length > 0}
   <div
     class="queued-messages-surface relative z-20 border-b border-border bg-transparent"
@@ -635,10 +625,9 @@
       type="button"
       variant="plain"
       size="compact"
-      leadingIcon={hasBatch ? batchIcon : undefined}
-      class="type-caption relative flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent {hasBatch
-        ? 'pl-2! pr-3.5! gap-1.5'
-        : 'px-3.5!'} py-0 text-left text-subtle {expanded ? 'pt-1!' : ''}"
+      class="type-caption relative flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent px-3.5! py-0 text-left text-subtle {expanded
+        ? 'pt-1!'
+        : ''}"
       aria-expanded={expanded}
       aria-controls={contentId}
       title={headerLabel}
