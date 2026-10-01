@@ -167,26 +167,45 @@ async function sampleChange(
     async (element, { source, index, resizeWidth, interrupt }) => {
       const read = new Function(`return (${source})`)() as typeof geometry;
       const samples = [read(element)];
-      element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
-      if (resizeWidth) {
-        const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
-        host.style.width = `${resizeWidth}px`;
-      }
-      const start = performance.now();
-      do {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        // ResizeObserver runs after rAF. Sample the resulting paint, not a forced
-        // layout read before the browser has delivered the new lane width.
-        if (resizeWidth) await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        samples.push(read(element));
-        if (interrupt && samples.length === 3) {
-          element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[2].click();
-          element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].click();
+      let frameSample = samples[0];
+      // Register after the renderer's observer. Its synchronous refit must be included
+      // in the same frame, before paint, rather than measured later in a timer task.
+      const observer = resizeWidth
+        ? new ResizeObserver(() => {
+            frameSample = read(element);
+          })
+        : undefined;
+      observer?.observe(element.querySelector('.diagram-scroll-container')!);
+      try {
+        element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
+        if (resizeWidth) {
+          const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
+          host.style.width = `${resizeWidth}px`;
         }
-      } while (
-        (!samples.at(-1)!.settled || samples.length < 4) &&
-        performance.now() - start < 4_000
-      );
+        const start = performance.now();
+        do {
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => {
+              if (resizeWidth) frameSample = read(element);
+              resolve();
+            }),
+          );
+          // Deliver the frame after ResizeObserver has updated it. Remeasuring in
+          // this task can advance the catalog's 0.01ms ancestor width transition
+          // between paints, before the renderer receives that new lane width.
+          if (resizeWidth) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          samples.push(resizeWidth ? frameSample : read(element));
+          if (interrupt && samples.length === 3) {
+            element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[2].click();
+            element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].click();
+          }
+        } while (
+          (!samples.at(-1)!.settled || samples.length < 4) &&
+          performance.now() - start < 4_000
+        );
+      } finally {
+        observer?.disconnect();
+      }
       return samples;
     },
     { source: geometry.toString(), index, resizeWidth, interrupt },
@@ -409,4 +428,34 @@ test('walkthrough repeated resizing keeps painted content contained', async ({
       expect(final.labels).toEqual(states[index].edges);
     }
   }
+});
+
+// A cached source frame must not hide a defect introduced by the interaction.
+test('resize sampling detects painted overflow and control movement', async ({
+  page,
+}, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  await root.evaluate((element) => {
+    element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].addEventListener(
+      'click',
+      () => {
+        const node = element.querySelector<SVGElement>('[data-node-id="redux"]')!;
+        const controls = element.querySelector<HTMLElement>('.state-navigation')!;
+        node.style.translate = '200px 0';
+        controls.style.translate = '0 12px';
+      },
+      { once: true },
+    );
+  });
+  const samples = await sampleChange(root, 0, 662);
+  await testInfo.attach('painted-defect-control', {
+    body: JSON.stringify(samples, null, 2),
+    contentType: 'application/json',
+  });
+  expect(samples[0].overflow).toBeLessThanOrEqual(1);
+  expect(Math.max(...samples.map((sample) => sample.overflow))).toBeGreaterThan(1);
+  const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+  expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
+  expect(samples.at(-1)!.overflow).toBeGreaterThan(1);
+  await root.screenshot({ path: testInfo.outputPath('painted-defect-control.png') });
 });
