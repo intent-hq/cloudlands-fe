@@ -4,6 +4,17 @@ vi.mock(
   async () =>
     (await import('../../../../test/mocks/backend-transport.mock')).mockBackendTransportModule,
 );
+const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('$lib/electron-bridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
+  invoke: ipc.invoke,
+}));
+import { providerAvailabilitySaga } from '../agent-availability/sagas/provider-availability-saga';
+import {
+  checkSingleProviderRequested,
+  checkAllProvidersRequested,
+} from '../agent-availability/agent-availability-slice';
+import { selectContextModelProviderIds } from './workspace-catalog-selectors';
 import {
   installMockBackend,
   resetMockBackend,
@@ -26,9 +37,11 @@ describe('workspace catalog host probes through live clients', () => {
   let backend: MockBackendHandle;
   let dispose: () => void;
   let cancel: () => void;
+  let cancelAvailability: () => void;
   const probes = () => backend.requests.filter((r) => r.method === 'host.findBinary');
   beforeEach(() => {
     vi.useFakeTimers();
+    ipc.invoke.mockReset();
     resetMockBackend();
     backend = installMockBackend();
     backend.onRequest('providers.catalog', () => ({ providers: [] }));
@@ -42,8 +55,10 @@ describe('workspace catalog host probes through live clients', () => {
     backend.onRequest('host.findBinary', () => ({ available: true, path: '/bin/claude' }));
     dispose = store.init();
     cancel = store.runSaga(workspaceCatalogSaga);
+    cancelAvailability = store.runSaga(providerAvailabilitySaga);
   });
   afterEach(() => {
+    cancelAvailability();
     cancel();
     dispose();
     resetMockBackend();
@@ -125,6 +140,101 @@ describe('workspace catalog host probes through live clients', () => {
     expect(calls).toBe(3);
     expect(store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available).toBe(
       false,
+    );
+  });
+
+  it.each(['single', 'all'] as const)(
+    'refreshes workspace readiness after an explicit %s provider recheck',
+    async (kind) => {
+      backend.onRequest('providers.catalog', () => ({
+        providers: [
+          {
+            id: 'claude-code',
+            displayName: 'Claude',
+            shortName: 'Claude',
+            command: 'claude',
+            canBeDisabled: false,
+            visible: true,
+          },
+        ],
+      }));
+      let installed = false;
+      backend.onRequest('host.findBinary', () => ({ available: installed }));
+      ipc.invoke.mockImplementation(async (channel: string) => ({
+        success: true,
+        data:
+          channel === 'providers:get-availability'
+            ? { hiddenProviders: [], providers: {}, hasAnyProvider: true }
+            : { available: installed },
+      }));
+      store.dispatch(workspaceMounted(WS));
+      await settle();
+      expect(selectContextModelProviderIds.select(store.state, WS)).toEqual([]);
+      installed = true;
+      store.dispatch(
+        kind === 'single'
+          ? checkSingleProviderRequested('claude-code')
+          : checkAllProvidersRequested(),
+      );
+      await settle();
+      expect(store.state.agentAvailability.providerStatusMap['claude-code'].available).toBe(true);
+      store.dispatch(ensureWorkspaceCatalogRequested(WS));
+      store.dispatch(ensureWorkspaceCatalogRequested(WS));
+      await settle();
+      expect(selectContextModelProviderIds.select(store.state, WS)).toEqual(['claude-code']);
+      expect(probes()).toHaveLength(2);
+      store.dispatch(ensureWorkspaceCatalogRequested(WS));
+      await settle();
+      expect(probes()).toHaveLength(2);
+    },
+  );
+
+  it('does not refresh workspace catalogs for failed or superseded provider checks', async () => {
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    ipc.invoke.mockRejectedValueOnce(new Error('provider probe failed'));
+    store.dispatch(checkSingleProviderRequested('claude-code'));
+    await settle();
+    store.dispatch(ensureWorkspaceCatalogRequested(WS));
+    await settle();
+    expect(probes()).toHaveLength(1);
+    let release!: (value: { success: boolean; data: { available: boolean } }) => void;
+    const stale = new Promise((resolve) => {
+      release = resolve;
+    });
+    ipc.invoke
+      .mockReturnValueOnce(stale)
+      .mockResolvedValueOnce({ success: true, data: { available: true } });
+    store.dispatch(checkSingleProviderRequested('claude-code'));
+    store.dispatch(checkSingleProviderRequested('claude-code'));
+    await settle();
+    expect(probes()).toHaveLength(2);
+    release({ success: true, data: { available: false } });
+    await settle();
+    expect(probes()).toHaveLength(2);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available).toBe(
+      true,
+    );
+  });
+
+  it('retains a provider recheck invalidation while a workspace catalog read is pending', async () => {
+    let release!: (value: { available: boolean }) => void;
+    const old = new Promise<{ available: boolean }>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    backend.onRequest('host.findBinary', () => (++calls === 1 ? old : { available: true }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    ipc.invoke.mockResolvedValue({ success: true, data: { available: true } });
+    store.dispatch(checkSingleProviderRequested('claude-code'));
+    await settle();
+    store.dispatch(ensureWorkspaceCatalogRequested(WS));
+    release({ available: false });
+    await settle();
+    expect(probes()).toHaveLength(2);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available).toBe(
+      true,
     );
   });
 

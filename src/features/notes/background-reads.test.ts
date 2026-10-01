@@ -372,6 +372,57 @@ describe('background reads through the real store, sagas, clients and event brid
     },
   );
 
+  it.each(['empty', 'failed'] as const)(
+    'retains event invalidation when view demand joins an %s confirmation',
+    async (outcome) => {
+      store.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            workspaceId: WS,
+            name: AGENT,
+            status: AgentStatus.Pending,
+            messages: [],
+            createdAt: '2026-01-01',
+            updatedAt: '2026-01-01',
+          } as AgentSession,
+        ]),
+      );
+      store.dispatch(setSubscriptionSnapshot(WS, AGENT, { ...empty(), waitingState: 'waiting' }));
+      store.dispatch(requestSubscriptionFetch(WS, AGENT));
+      await settle();
+      const confirmation = deferred<ReturnType<typeof empty>>();
+      backend.onRequest('agent.getSubscriptions', () => confirmation.promise);
+      await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
+      store.dispatch(markAgentAsViewed(AGENT));
+      event('agent:subscriptions-changed', { agentId: AGENT });
+      store.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
+      store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
+      backend.onRequest('agent.getSubscriptions', () => ({
+        ...empty(),
+        subscriptions: [
+          {
+            id: 'event-watch',
+            agentId: 'child',
+            eventTypes: [],
+            actorIds: [],
+            createdAt: '2026-01-01',
+            description: '',
+          },
+        ],
+      }));
+      if (outcome === 'empty') confirmation.resolve(empty());
+      else confirmation.reject(new Error('confirmation failed'));
+      await settle();
+      expect(reads('agent.getSubscriptions')).toHaveLength(3);
+      expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)]).toMatchObject({
+        subscriptions: [{ id: 'event-watch' }],
+        waitingState: 'waiting',
+        snapshotStatus: 'ready',
+      });
+    },
+  );
+
   it('retains an event invalidation when mount demand arrives during a pending subscription read', async () => {
     // Seed tracking, then hold an authoritative event refresh.
     store.dispatch(requestSubscriptionFetch(WS, AGENT, true));

@@ -1,4 +1,5 @@
 import { eventChannel, buffers } from 'redux-saga';
+import { createChannelFromSelector } from '@themislib/themis/saga';
 import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import {
@@ -24,9 +25,11 @@ import {
 } from './provider-catalog-slice';
 import {
   selectWorkspaceCatalogEpoch,
+  selectSettledProviderReadiness,
   selectWorkspaceCatalogFresh,
 } from './workspace-catalog-selectors';
 
+import { selectProviderStatusMap } from '../agent-availability/agent-availability-selectors';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import { copyServerForState } from '../mcp-settings/mcp-settings-normalization';
 
@@ -127,6 +130,30 @@ function* ensureCatalog(
   yield* put(workspaceCatalogRequested(workspaceId));
 }
 
+function* refreshMountedCatalogs(resetIdentity = false) {
+  yield* put(workspaceCatalogInvalidated(resetIdentity));
+  const mounted = yield* selectMountedWorkspaceIds.effect();
+  // Invalidating the generation abandons all old responses, so refresh all mounted contexts.
+  for (const workspaceId of mounted) yield* put(workspaceCatalogRequested(workspaceId));
+}
+
+/** Settings rechecks can observe external CLI installation without a daemon event. */
+function* watchProviderReadiness() {
+  const channel = yield* createChannelFromSelector(selectSettledProviderReadiness);
+  let previous = yield* selectProviderStatusMap.effect();
+  try {
+    while (true) {
+      const { payload } = yield* take(channel);
+      // A failed or rejected stale check preserves the accepted status map.
+      if (payload === null || payload === previous) continue;
+      previous = payload;
+      yield* refreshMountedCatalogs();
+    }
+  } finally {
+    channel.close();
+  }
+}
+
 function* watchInvalidations() {
   let connectionChanged = false;
   const channel = eventChannel<true>((emit) => {
@@ -164,10 +191,7 @@ function* watchInvalidations() {
       yield* take(channel);
       const resetIdentity = connectionChanged;
       connectionChanged = false;
-      yield* put(workspaceCatalogInvalidated(resetIdentity));
-      const mounted = yield* selectMountedWorkspaceIds.effect();
-      // Invalidating the generation abandons all old responses, so refresh all mounted contexts.
-      for (const workspaceId of mounted) yield* put(workspaceCatalogRequested(workspaceId));
+      yield* refreshMountedCatalogs(resetIdentity);
     }
   } finally {
     channel.close();
@@ -188,4 +212,5 @@ export function* workspaceCatalogSaga() {
   yield* takeEvery(ensureWorkspaceCatalogRequested, ensureCatalog, pending);
   yield* takeEvery(workspaceMounted, onMount);
   yield* fork(watchInvalidations);
+  yield* fork(watchProviderReadiness);
 }

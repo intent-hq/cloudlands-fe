@@ -7,6 +7,7 @@ import {
 import {
   selectHasCheckedOnce,
   selectProviderStatusMap,
+  selectIsAnyProviderLoading,
 } from '../agent-availability/agent-availability-selectors';
 import { store } from '../../store';
 import type { Specialist } from '$lib/constants/specialists';
@@ -19,6 +20,11 @@ import {
   selectQuotaRetryProviderIds,
 } from '../provider-settings/provider-settings-selectors';
 import { selectProviderCatalogEntries } from './provider-catalog-selectors';
+
+/** A settled provider sweep invalidates workspace readiness once, not once per provider. */
+export const selectSettledProviderReadiness = store.createSelector((state) =>
+  selectIsAnyProviderLoading.select(state) ? null : selectProviderStatusMap.select(state),
+);
 
 export const selectWorkspaceCatalogEpoch = store.createSelector(
   (state): number => state.providerCatalog?.workspaceEpoch ?? 0,
