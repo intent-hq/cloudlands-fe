@@ -222,7 +222,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     mockDaemon({
       diffs: [{ path: 'src/a.ts', hunks: [HUNK] }],
       showFiles: { ':0:src/a.ts': 'old a' },
-      files: { '/workspace/packages/sub/src/a.ts': 'new a' },
+      files: { 'src/a.ts': 'new a' },
     });
 
     const promise = batchedGitDiff('ws-1', false, '/workspace/packages/sub/src/a.ts', {
@@ -245,8 +245,39 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
     expect(mockedRequest).toHaveBeenCalledWith('file.read', {
       workspaceId: 'ws-1',
-      path: '/workspace/packages/sub/src/a.ts',
+      path: 'src/a.ts',
+      gitRootId: 'root-9',
     });
+  });
+
+  it.each([false, true])('isolates external-root diff contents (staged=%s)', async (staged) => {
+    mockedRequest.mockImplementation(async (method, params) => {
+      const p = params as { gitRootId?: string; path?: string; ref?: string };
+      if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile')
+        return { content: p.ref === 'HEAD' || !staged ? 'EXTERNAL ORIGINAL' : 'EXTERNAL STAGED' };
+      if (method === 'file.read') {
+        if (p.gitRootId === 'external-root' && p.path === 'tracked.txt') return 'EXTERNAL MODIFIED';
+        return 'WRONG PRIMARY';
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const pending = batchedGitDiff('external-diff', staged, '/external/repo/tracked.txt', {
+      gitRootId: 'external-root',
+      gitRootPath: '/external/repo',
+    });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({
+      oldContent: 'EXTERNAL ORIGINAL',
+      newContent: staged ? 'EXTERNAL STAGED' : 'EXTERNAL MODIFIED',
+    });
+    if (!staged)
+      expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'external-diff',
+        path: 'tracked.txt',
+        gitRootId: 'external-root',
+      });
+    else expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
   });
 
   it('keeps every diff and file read on explicit workspace B when active workspace is A', async () => {

@@ -232,9 +232,14 @@ function toDaemonDiffChunks(result: unknown): DiffChunk[] {
 async function readWorkingTreeContent(
   workspaceId: string,
   filePath: string,
+  gitRootId?: string,
 ): Promise<ShowFileResponse> {
   try {
-    const result = await backendRequest<unknown>('file.read', { workspaceId, path: filePath });
+    const result = await backendRequest<unknown>('file.read', {
+      workspaceId,
+      path: filePath,
+      ...(gitRootId ? { gitRootId } : {}),
+    });
     const content =
       typeof result === 'string'
         ? result
@@ -296,7 +301,10 @@ async function enrichChunkContents(
       ? dedupedShowFile(workspaceId, ':0', chunk.file, showOptions)
       : readWorkingTreeContent(
           workspaceId,
-          gitRootPath ? `${gitRootPath.replace(/\/$/, '')}/${chunk.file}` : chunk.file,
+          !gitRootId && gitRootPath
+            ? `${gitRootPath.replace(/\/$/, '')}/${chunk.file}`
+            : chunk.file,
+          gitRootId,
         ),
   ]);
   if (oldRes.success) chunk.oldContent = oldRes.data ?? '';

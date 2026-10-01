@@ -1,3 +1,5 @@
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { fileContentKey } from '$features/file/utils/file-content-key';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
@@ -6,6 +8,8 @@ import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { gitReducer, initialState } from '$store/renderer/slices/git/git-slice';
 import { gitConsumerReadSaga } from '$store/renderer/slices/git/sagas/git-consumer-read-saga';
 import { store as appStore } from '$store/renderer/store';
+
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 
 let gitState = initialState;
 let readTask: Task;
@@ -302,6 +306,45 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
       workspaceId: 'ws-1',
       path: '/repo/src/app.ts',
     });
+  });
+
+  it('renders external tracked contents and scopes fallback/cache reads to that root', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'tracked.txt',
+      oldContent: 'old',
+      newContent: '',
+    });
+    testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'EXTERNAL ORIGINAL' });
+    vi.mocked(backendRequest).mockResolvedValue('EXTERNAL MODIFIED');
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: '/external/repo/tracked.txt', relativePath: 'tracked.txt' }),
+        workspaceId: 'ws-1',
+        gitRootId: 'external-root',
+        gitRootPath: '/external/repo',
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('new-content').textContent).toBe('EXTERNAL MODIFIED'),
+    );
+    expect(screen.getByTestId('old-content').textContent).toBe('EXTERNAL ORIGINAL');
+    expect(backendRequest).toHaveBeenCalledWith('file.read', {
+      workspaceId: 'ws-1',
+      path: 'tracked.txt',
+      gitRootId: 'external-root',
+    });
+    expect(testState.invokeMock).not.toHaveBeenCalled();
+    expect(testState.dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'files/loadFileContentRequested',
+        payload: [
+          'ws-1',
+          fileContentKey('/external/repo/tracked.txt', 'external-root'),
+          '/external/repo/tracked.txt',
+          { gitRoot: { id: 'external-root', relativePath: 'tracked.txt' } },
+        ],
+      }),
+    );
   });
 
   it('passes secondary-root identity and path to working-tree diff reads', async () => {

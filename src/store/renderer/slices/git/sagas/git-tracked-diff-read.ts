@@ -1,6 +1,7 @@
 import { call, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   batchedGitBranchBaseDiff,
   batchedGitDiff,
@@ -100,8 +101,18 @@ export function* readTrackedDiff(
       const after = yield* call(dedupedShowFile, workspaceId, ':0', filePath, options);
       if (!allowed()) return result;
       result.newContent = after.success ? (after.data ?? '') : '';
-    } else if (request.workspacePath || filePath.startsWith('/')) {
+    } else if (gitRootId || request.workspacePath || filePath.startsWith('/')) {
       try {
+        if (gitRootId) {
+          const content = yield* call(backendRequest<string | { content?: string }>, 'file.read', {
+            workspaceId,
+            path: filePath,
+            gitRootId,
+          });
+          if (!allowed()) return result;
+          result.newContent = typeof content === 'string' ? content : (content?.content ?? '');
+          return result;
+        }
         const response = yield* call(invoke<FileReadResponse>, 'file:read', {
           workspaceId,
           path: filePath.startsWith('/') ? filePath : `${request.workspacePath}/${filePath}`,
