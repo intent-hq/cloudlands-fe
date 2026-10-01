@@ -83,7 +83,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get() }),
+    state: () => ({ agents: mockState.agents.get(), agentMutationUi: { byWorkspaceId: {} } }),
     dispatch: mockState.dispatch,
   });
 });
