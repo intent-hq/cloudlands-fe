@@ -566,6 +566,15 @@ describe('CommandPalette new actions', () => {
     }
   });
 
+  it('opens Dev Console through the native bridge from the command palette', async () => {
+    const nativeInvoke = vi.spyOn(window.electronAPI, 'invoke').mockResolvedValue({ windowId: 42 });
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Dev Console' } });
+    await fireEvent.click(await screen.findByRole('button', { name: /Dev Console/ }));
+    expect(nativeInvoke).toHaveBeenCalledWith('dev-console:open', {});
+    nativeInvoke.mockRestore();
+  });
+
   it('exposes composer commands with their keyboard hints', async () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
     const input = screen.getByRole('textbox');

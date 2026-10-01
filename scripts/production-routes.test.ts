@@ -73,6 +73,7 @@ describe('production route graph', () => {
       '+error.svelte',
       '+layout.svelte',
       '+layout.ts',
+      'dev-console/+page.svelte',
       'hud/+layout.svelte',
       'hud/+page.svelte',
     ]);

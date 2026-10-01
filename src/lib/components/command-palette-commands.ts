@@ -157,6 +157,14 @@ export const COMMAND_PALETTE_COMMANDS = [
     shortcut: '⇧⌘A',
   },
   {
+    id: 'open-dev-console',
+    get label() {
+      return m.devConsole_title_label();
+    },
+    icon: faTerminal,
+    shortcut: '',
+  },
+  {
     id: 'open-hud',
     get label() {
       return m.lib_commandPalette_openHud_command();

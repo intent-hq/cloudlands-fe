@@ -9,6 +9,14 @@
  */
 
 export const IPC_CHANNELS = {
+  DEV_CONSOLE: {
+    OPEN: 'dev-console:open',
+    CONNECT: 'dev-console:connect',
+    READ: 'dev-console:read',
+    RECORD: 'dev-console:record',
+    CLEAR: 'dev-console:clear',
+    SELECT: 'dev-console:select',
+  },
   // Workspace Management
   WORKSPACE: {
     LIST: 'workspace:list',
@@ -1219,6 +1227,7 @@ export const EVENT_CHANNELS = [
   'token-usage:changed',
   // Live backend transport (main → renderer): daemon JSON-RPC notifications
   // and connection-status changes pushed from the main-process client.
+  'dev-console:changed',
   'backend:notification',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)
