@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { expectDrawingReachable } from './diagram-scroll-reachability';
+import { isDiagramPresentationReady } from './diagram-presentation-readiness';
 
 const baseUrl = process.env.UI_PREVIEW_BASE_URL;
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running preview server.');
@@ -25,15 +26,7 @@ async function openNotes(page: Page, width = 960, motion = 'reduced') {
 
 async function settled(root: Locator) {
   await expect(root).toHaveAttribute('data-diagram-settled', 'true', { timeout: 30_000 });
-  await expect
-    .poll(() =>
-      root.evaluate((element) =>
-        element
-          .closest('[data-diagram-presentation]')
-          ?.getAttribute('data-diagram-presentation-settled'),
-      ),
-    )
-    .toBe('true');
+  await expect.poll(() => root.evaluate(isDiagramPresentationReady)).toBe(true);
 }
 
 async function position(host: Locator, diagram: number, top: number) {
