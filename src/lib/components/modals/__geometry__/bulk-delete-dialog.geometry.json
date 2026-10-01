@@ -1,0 +1,57 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "archived": {
+    "548": {
+      "probes": {
+        "[role=\"dialog\"], [data-slot=\"dialog-body\"], [role=\"list\"]": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 224,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 392,
+          "x": 78,
+          "y": 191
+        },
+        "data-dialog-content": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 466,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 440,
+          "x": 54,
+          "y": 25
+        },
+        "data-slot=dialog-body": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 362,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 24,
+          "paddingRight": 24,
+          "width": 440,
+          "x": 54,
+          "y": 73
+        }
+      },
+      "root": {
+        "height": 516,
+        "width": 548
+      }
+    }
+  }
+}
