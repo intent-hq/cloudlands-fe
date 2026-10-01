@@ -30,6 +30,7 @@ let sequence = 0;
 let agentId: string;
 let backend: MockBackendHandle;
 let stopReadSaga: (() => void) | undefined;
+let disposeStore: (() => void) | undefined;
 const workspace = () => ({ id: WorkspaceId('tiny-owl'), title: 'Chat workspace' }) as Workspace;
 const session = (): AgentSession => ({
   id: AgentId(agentId),
@@ -52,7 +53,7 @@ describe('inline agent avatar reads', () => {
         disconnect() {}
       },
     );
-    appStore.init();
+    disposeStore = appStore.init();
     agentId = `avatar-read-${++sequence}`;
     backend = installMockBackend();
     const live = new LiveAgentsClient();
@@ -74,6 +75,7 @@ describe('inline agent avatar reads', () => {
     cleanup();
     stopReadSaga?.();
     appStore.dispatch(removeSession(agentId));
+    disposeStore?.();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     resetMockBackend();
@@ -93,6 +95,32 @@ describe('inline agent avatar reads', () => {
     }
     expect(backend.requests).toEqual([]);
     expect(avatar.getAttribute('aria-label')).toContain('Known agent');
+  });
+
+  it('loads the same agent identity in a fresh renderer on another backend', async () => {
+    appStore.dispatch(bulkUpsertSessions([session()]));
+    const first = render(InlineAgentAvatar, {
+      props: { agentId, workspace: workspace(), onclick: vi.fn() },
+    });
+    expect(backend.requests).toEqual([]);
+    first.unmount();
+    stopReadSaga?.();
+    const connections = { ...appStore.state.connections, windowBackendId: 'remote-backend' };
+    disposeStore?.();
+    // Backend identity is fixed per window. A new renderer owns a fresh store,
+    // even when the backend exposes the same workspace and agent IDs.
+    disposeStore = appStore.init({ connections });
+    expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    stopReadSaga = appStore.runSaga(agentReadSaga);
+    render(InlineAgentAvatar, {
+      props: { agentId, workspace: workspace(), onclick: vi.fn() },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('button').getAttribute('aria-label')).toContain('Fetched agent'),
+    );
+    expect(backend.requests).toEqual([
+      { method: 'agent.get', params: { agentId, workspaceId: 'tiny-owl' } },
+    ]);
   });
 
   it('loads a missing preview once and reuses it after a workspace list refresh', async () => {

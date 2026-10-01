@@ -472,13 +472,8 @@
 
   // Keep transcript group in sync only while the palette is visible.
   $effect(() => {
-    if (!isOpen) {
-      transcriptQuery.clear();
-      return;
-    }
+    if (!isOpen) return transcriptQuery.clear();
     const term = parsedQuery.searchTerm;
-    const wsId = workspaceId;
-    const wsItems = $workspaceItems || [];
 
     // Skip in Go to Line mode and when there is no search term to match
     if ((searchQuery || '').trimStart().startsWith(':') || !term) {
@@ -486,7 +481,7 @@
       return;
     }
 
-    transcriptQuery.query(term, wsId, wsItems);
+    transcriptQuery.query(term, workspaceId, $workspaceItems || []);
 
     return () => transcriptQuery.cancel();
   });
