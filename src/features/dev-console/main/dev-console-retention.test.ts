@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/features/backend/main/json-rpc-client.ts, src/features/dev-console/main/dev-console-capture.ts
 // @vitest-environment node
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
