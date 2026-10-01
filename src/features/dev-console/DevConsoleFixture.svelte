@@ -2,10 +2,11 @@
   import { Button } from '$lib/components/ui/button';
   import { untrack } from 'svelte';
   import DevConsoleShell from './DevConsoleShell.svelte';
-  import { createTrafficFixture } from './traffic-fixture';
+  import { createTrafficFixture, type PayloadScenario } from './traffic-fixture';
   import * as m from '$shared/paraglide/messages.js';
-  let { count = 240 }: { count?: number } = $props();
-  const fixture = untrack(() => createTrafficFixture(count));
+  let { count = 240, scenario = 'traffic' }: { count?: number; scenario?: PayloadScenario } =
+    $props();
+  const fixture = untrack(() => createTrafficFixture(count, scenario));
 </script>
 
 <div class="fixture">
@@ -16,6 +17,12 @@
     class="fixture-control"
     onclick={() => fixture.append(300)}>{m.devConsole_append_label()}</Button
   >
+  {#if scenario === 'nested'}
+    <!-- i18n-ignore (Synthetic browser-test fixture control.) -->
+    <Button size="compact" variant="ghost" onclick={() => fixture.reply()}
+      >Deliver fixture reply</Button
+    >
+  {/if}
 </div>
 <DevConsoleShell connect={fixture.connect} />
 
