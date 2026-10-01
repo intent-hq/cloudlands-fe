@@ -24,6 +24,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
+  import { createNoteQuery, type NoteQueryUpdate } from '$lib/utils/palette-note-search';
+  import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -52,10 +54,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import {
-    openWorkspaceBrowser,
-    openWorkspaceNote,
-  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceBrowser } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
     commandPaletteNewFileRequested,
     openAgentTabRequested,
@@ -171,10 +170,8 @@
   let isLoadingFiles = $state(false);
   let activeFilter: PaletteFilter | null = $state(null); // Filter by type
 
-  // Derived: parse search query for filter prefix (uses extracted pure function)
   let parsedQuery = $derived(parseQueryFilter(searchQuery));
 
-  // Go to Line mode: detect when query starts with ':'
   let isGoToLineMode = $derived(searchQuery.trimStart().startsWith(':'));
   let goToLineNumber = $derived.by(() => {
     if (!isGoToLineMode) return null;
@@ -182,7 +179,6 @@
     return Number.isNaN(num) ? null : num;
   });
 
-  // Update activeFilter when parsed query changes
   $effect(() => {
     activeFilter = parsedQuery.filter;
   });
@@ -194,7 +190,6 @@
   // RAF handle for deferred result computation
   let resultComputeRaf: number | null = null;
 
-  // Workspace objects state
   let agents: WorkspaceObject[] = $derived.by(() => {
     if (!workspaceId) return [];
 
@@ -225,11 +220,13 @@
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   });
   let notes: WorkspaceObject[] = $derived.by(() => {
+    if (!workspaceId) return [];
     const activeNotes = $allNotes$.filter((n) => !n.isArchived);
-
     return activeNotes
       .map((n) => ({
-        id: n.id,
+        id: JSON.stringify([workspaceId, n.id]),
+        noteId: n.id,
+        workspaceId,
         type: 'note' as const,
         label: n.title,
         description: n.tags?.join(', '),
@@ -306,10 +303,6 @@
     }
   }
 
-  // MRU, formatRelativeTime, buildNoteBreadcrumbs, fuzzyScore, parseQueryFilter,
-  // FILTER_PREFIXES, and WorkspaceObject types are now imported from
-  // '$store/renderer/slices/command-palette/command-palette-utils'
-
   // Load workspace objects when the workspace changes. Terminal metadata
   // titles are localized at read time; a runtime language switch remounts the
   // palette via the root +layout.svelte {#key $resolvedLocale$} block, which
@@ -357,9 +350,6 @@
     });
   });
 
-  // fuzzyScore is now imported from command-palette-utils
-
-  // Grouped results state (only files need async loading)
   let groupFiles: any[] = $state([]);
 
   // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
@@ -406,7 +396,6 @@
     }
   }
 
-  // Debounce constant
   const FILE_QUERY_DEBOUNCE_MS = 150;
 
   // Keep file group in sync with current query/workspace (debounced)
@@ -466,7 +455,6 @@
     }, FILE_QUERY_DEBOUNCE_MS);
 
     return () => {
-      // Cleanup: cancel pending timeout
       if (fileQueryTimeout) {
         clearTimeout(fileQueryTimeout);
         fileQueryTimeout = null;
@@ -502,9 +490,43 @@
     return () => transcriptQuery.cancel();
   });
 
-  // computeResults is now imported from command-palette-results.
-  // This wrapper bridges component state to the pure function's input interface.
-  function buildResults(q: string, files: any[], messages: any[]) {
+  // Global indexed note results complement local fuzzy title/tag discovery.
+  let noteResults = $state<NoteQueryUpdate>({
+    items: [],
+    loading: false,
+    capability: 'unknown',
+    fallback: true,
+  });
+  const noteQuery = createNoteQuery((update) => {
+    untrack(() => {
+      noteResults = update;
+    });
+  });
+  const indexedNotes = $derived(
+    noteResults.items
+      .filter((item) => !item.isArchived)
+      .map((item) => ({
+        ...item,
+        workspaceName: item.workspaceName || item.workspaceId,
+        icon: faFileAlt,
+        _time: formatRelativeTime(item.updatedAt),
+      })),
+  );
+  $effect(() => {
+    if (!isOpen) {
+      noteQuery.close();
+      return;
+    }
+    const term = parsedQuery.searchTerm;
+    if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'note')) {
+      noteQuery.clear();
+      return;
+    }
+    noteQuery.query(term, workspaceId, $workspaceItems || []);
+    // Cleanup also invalidates in-flight responses on unmount.
+    return () => noteQuery.cancel();
+  });
+  function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
       .sort(compareWorkspaceActivityDisplayTimeDesc)
@@ -522,13 +544,13 @@
           _activityTime: activityTime,
         };
       });
-
     return computeResults({
       query: q,
       activeFilter,
       workspaceId,
       agents,
       notes,
+      indexedNotes: remoteNotes,
       changes,
       terminals,
       browserUrls,
@@ -539,14 +561,12 @@
       messages,
     });
   }
-
   // PERF: Debounce timer for rapid typing
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   const SEARCH_DEBOUNCE_MS = 16; // ~1 frame, prevents excessive RAF calls during fast typing
 
   // Recompute flat results - debounced and deferred via RAF to not block typing
   $effect(() => {
-    // Use the parsed search term (with prefix stripped)
     const q = parsedQuery.searchTerm;
     // Skip result computation in Go to Line mode
     if ((searchQuery || '').trimStart().startsWith(':')) {
@@ -568,10 +588,13 @@
     commands;
     const files = groupFiles;
     const messages = groupMessages;
-    // Track activeFilter to trigger recomputation when it changes
+    const remoteNotes = indexedNotes;
+    // Local-note updates and workspace switches must refresh local fallback/browsing too.
+    notes;
+    workspaceId;
+    recentItems;
     activeFilter;
 
-    // Cancel any pending computation
     if (resultComputeRaf !== null) {
       cancelAnimationFrame(resultComputeRaf);
       resultComputeRaf = null;
@@ -586,7 +609,7 @@
       searchDebounceTimer = null;
       resultComputeRaf = requestAnimationFrame(() => {
         resultComputeRaf = null;
-        const flat = buildResults(q, files, messages);
+        const flat = buildResults(q, files, messages, remoteNotes);
         // Use untrack for all state updates to avoid effect loops
         untrack(() => {
           searchResults = flat;
@@ -615,7 +638,6 @@
     };
   });
 
-  // MRU utilities for files
   function getMRUMap(): Map<string, number> {
     return new Map(Object.entries($paletteFileMru$));
   }
@@ -688,7 +710,6 @@
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      // Handle Go to Line mode
       if (isGoToLineMode) {
         if (goToLineNumber != null && goToLineNumber > 0) {
           dispatchWindowEvent('workspace:go-to-line', { line: goToLineNumber });
@@ -713,13 +734,10 @@
     }
   }
 
-  function selectItem(item: any, options?: { openInAdjacentPanel?: boolean }) {
+  async function selectItem(item: any, options?: { openInAdjacentPanel?: boolean }) {
     if (!item) return;
-    // Skip group labels
     if (item._groupLabel) return;
-
     const openInAdjacentPanel = options?.openInAdjacentPanel ?? false;
-
     // Handle "show more" button - insert the appropriate prefix
     if (item._showMore) {
       const prefix = Object.keys(FILTER_PREFIXES).find(
@@ -732,16 +750,12 @@
       }
       return;
     }
-
     let shouldClose = true;
-
-    // Handle workspace objects
     if (item.type) {
       // Transcript rows are not MRU-tracked ('message' is not a PaletteMruEntryType)
-      if (item.type !== 'message') {
+      if (item.type !== 'message' && item.type !== 'note') {
         appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
       }
-
       switch (item.type) {
         case 'message':
           void openMessage({
@@ -759,9 +773,14 @@
           }
           break;
         case 'note':
-          if (workspaceId) {
-            appStore.dispatch(openWorkspaceNote(workspaceId, item.id, { openInAdjacentPanel }));
-          }
+          if (
+            !(await openPaletteNote(
+              item.workspaceId ?? workspaceId,
+              item.noteId ?? item.id,
+              openInAdjacentPanel,
+            ))
+          )
+            return;
           break;
         case 'change':
           if (item.path) {
@@ -801,10 +820,8 @@
       const close = handleCommand(item.id);
       if (close === false) shouldClose = false;
     }
-
     if (shouldClose) onClose?.();
   }
-
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
@@ -894,7 +911,6 @@
 
   $effect(() => {
     if (isOpen && inputRef) {
-      // Focus input when palette opens
       queueMicrotask(() => inputRef?.focus());
     }
   });
@@ -937,7 +953,6 @@
 </script>
 
 {#if isOpen}
-  <!-- Backdrop -->
   <div
     class="fixed inset-0 z-50 bg-black/15 cursor-pointer"
     role="button"
@@ -955,7 +970,6 @@
 {/if}
 
 {#if isOpen}
-  <!-- Command Palette -->
   <div
     class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[560px] z-50"
     role="dialog"
@@ -970,7 +984,6 @@
       role="document"
       tabindex="-1"
     >
-      <!-- Search Input -->
       <div class="flex shrink-0 items-center gap-2 px-3 py-2">
         <Fa icon={faSearch} class="size-4 shrink-0 text-muted-foreground" />
 
@@ -998,10 +1011,8 @@
         <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
       </div>
 
-      <!-- Divider -->
       <div class="h-px shrink-0 bg-border"></div>
 
-      <!-- Go to Line mode -->
       {#if isGoToLineMode}
         <div class="min-h-0 max-h-[480px] overflow-y-auto p-1">
           <div class="px-3 py-2">
@@ -1027,8 +1038,7 @@
             {/if}
           </div>
         </div>
-        <!-- Results -->
-      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages}
+      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || noteResults.loading}
         <div
           bind:this={resultsRef}
           class="min-h-0 max-h-[480px] overflow-y-auto p-1"
@@ -1036,12 +1046,9 @@
         >
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
             {#if item._borderAbove}
-              <!-- Border above section -->
               <div class="my-1.5 h-px bg-border"></div>
             {:else if item._newActionsRow}
-              <!-- New Actions Row (horizontal pills) - no label -->
               <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5">
-                <!-- Left side: workspace-specific actions -->
                 <div class="flex flex-wrap gap-2">
                   {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
                     <Button
@@ -1059,7 +1066,6 @@
                   {/each}
                 </div>
 
-                <!-- Right side: New Workspace -->
                 {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
                   <Button
                     variant="outline"
@@ -1076,7 +1082,6 @@
                 {/each}
               </div>
             {:else if item._groupLabel}
-              <!-- Group Label with shortcut key -->
               <div class="px-2 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
                 <div class="flex items-center justify-between type-caption text-muted-foreground">
                   <span>{item._groupLabel}</span>
@@ -1086,7 +1091,6 @@
                 </div>
               </div>
             {:else if item._showMore}
-              <!-- Show More Button -->
               <ActionRow
                 data-palette-index={index}
                 selected={selectedIndex === index}
@@ -1099,7 +1103,6 @@
                 {/snippet}
               </ActionRow>
             {:else if !item._newAction}
-              <!-- Regular Item -->
               {#snippet rowDescription()}
                 <span class="block truncate">
                   {#if item.type === 'note' && item.breadcrumbs}
@@ -1154,8 +1157,7 @@
             {/if}
           {/each}
 
-          <!-- Loading skeletons for files/transcripts -->
-          {#if (isLoadingFiles && workspaceId) || isLoadingMessages}
+          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || noteResults.loading}
             {#each [0, 1, 2] as i}
               <div class="w-full px-3 h-[32px] flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
@@ -1164,7 +1166,7 @@
             {/each}
           {/if}
         </div>
-      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages}
+      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !noteResults.loading}
         <div class="px-3 py-6 text-center">
           <p class="text-[13px] text-subtle">
             {m.lib_commandPalette_noResults_message({ query: searchQuery })}
@@ -1176,7 +1178,6 @@
         </div>
       {/if}
 
-      <!-- Footer -->
       <div class="h-px shrink-0 bg-border"></div>
       <div
         class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2 type-caption text-muted-foreground"
