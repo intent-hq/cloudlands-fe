@@ -25,8 +25,15 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { compile as compileTailwind } from 'tailwindcss';
 import type { Workspace } from '$shared/types';
+import type { StoreState } from '$store/renderer/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectPrincipalAdmissionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { invalidateCowIsolationSetting } from '../initializer/cow-isolation-setting';
+
+const fixture = vi.hoisted(() => ({ state: null as StoreState | null }));
 
 const mocks = vi.hoisted(() => ({
   runShrinkWorkspaceAction: vi.fn().mockResolvedValue(undefined),
@@ -55,15 +62,21 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-// The isolation-mode resolver falls back to a store snapshot for the
-// machine's `cowSupported` capability; stub the store seam it reads.
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    get state() {
-      return {};
+// Use the real selector construction against an admitted fixture snapshot;
+// administrative settings reads require the current Owner, not a saved row.
+vi.mock('$store/renderer/store', async () => {
+  const { Store } = await import('@augmentcode/themis/svelte-store');
+  const selectorStore = new Store();
+  return {
+    store: {
+      createSelector: selectorStore.createSelector.bind(selectorStore),
+      get state() {
+        if (!fixture.state) throw new Error('Checkout fixture admission is not initialized');
+        return fixture.state;
+      },
     },
-  },
-}));
+  };
+});
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: { select: mocks.selectWorkspaceItems },
@@ -133,6 +146,7 @@ async function attachRenderedTailwind(root: Element): Promise<HTMLStyleElement> 
   const compiler = await compileTailwind('@import "tailwindcss/theme.css"; @tailwind utilities;', {
     base: '/',
     loadStylesheet: async (id) => ({
+      path: require.resolve(id),
       base: '/',
       content: readFileSync(require.resolve(id), 'utf8'),
     }),
@@ -192,6 +206,17 @@ warmImport(() => import('../CheckoutModePill.svelte'));
 
 describe('CheckoutModePill', () => {
   beforeEach(() => {
+    const state = withLegacyPrincipal({
+      connections: { windowBackendId: 'local' },
+      workspace: {
+        ...workspaceInitialState,
+        hasLoaded: true,
+        loadedBackendId: 'local',
+        workspaces: createCollection('id', [baseWorkspace]),
+      },
+    });
+    state.workspace.loadedPrincipalContext = selectPrincipalAdmissionContext.select(state);
+    fixture.state = state;
     mocks.runShrinkWorkspaceAction.mockClear();
     mocks.diskUsage.mockReset();
     mocks.diskUsage.mockResolvedValue({ diskUsage, refreshing: false });
