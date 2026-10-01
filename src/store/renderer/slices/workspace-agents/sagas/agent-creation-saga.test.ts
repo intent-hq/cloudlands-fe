@@ -64,8 +64,6 @@ import { agentCreationSaga } from './agent-creation-saga';
 import {
   workspaceAgentsReducer,
   clearAgentCreationOutcome,
-  localPlacementRequested,
-  placementChoiceAnswered,
   emptyWorkspaceAgentState,
 } from '../workspace-agents-slice';
 import { selectAgentCreationOutcome } from '../workspace-agents-selectors';
@@ -240,7 +238,7 @@ describe('agentCreationSaga', () => {
     };
   }
 
-  it('settles coalesced creation outcomes while the local placement chooser remains available', async () => {
+  it('settles coalesced creation outcomes without a placement interruption', async () => {
     let resolve!: (value: unknown) => void;
     mocks.createAgent.mockImplementation(
       () =>
@@ -261,20 +259,9 @@ describe('agentCreationSaga', () => {
     await settle();
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     expect(owner.outcome()).toMatchObject({ status: 'pending', seq: first.seq });
-    const localChoice = localPlacementRequested({ agentNodes: true, localNodeIsolation: true });
-    owner.dispatch(localChoice);
-    const shown = owner.dispatched.find(
-      (action) => action.type === 'workspaceAgents/placementChoiceShown',
-    );
-    expect(shown?.payload[0]?.id).toBeTruthy();
-    owner.dispatch(
-      placementChoiceAnswered(shown!.payload[0].id, {
-        target: 'local',
-        checkout: 'isolated',
-      }),
-    );
-    await expect(localChoice.promise).resolves.toEqual({ target: 'local', checkout: 'isolated' });
-    expect(owner.outcome()).toMatchObject({ status: 'pending', seq: first.seq });
+    expect(
+      owner.dispatched.some((action) => action.type === 'workspaceAgents/placementChoiceShown'),
+    ).toBe(false);
     resolve({ success: true, agent: session() });
     await expect(Promise.all([first.promise, second.promise])).resolves.toEqual([
       session(),

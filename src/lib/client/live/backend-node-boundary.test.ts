@@ -14,9 +14,6 @@ vi.mock('./backend-transport-factory', () => ({
 vi.mock('$store/renderer/store', () => ({
   store: { state: fixture.state, dispatch: fixture.choose },
 }));
-vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
-  localPlacementRequested: (caps: unknown) => caps,
-}));
 import { setLocale } from '$shared/paraglide/runtime.js';
 afterEach(() => setLocale('en', { reload: false }));
 import { backendRequest } from './backend-transport';
@@ -186,20 +183,15 @@ describe('renderer final wire boundary', () => {
     await expect(creation).rejects.toThrow(message);
     expect(fixture.request).toHaveBeenCalledTimes(1);
   });
-  it('uses the explicit local answer for an unresolved launch', async () => {
-    fixture.choose.mockResolvedValue({ target: 'local', checkout: 'worktree' });
-    await backendRequest('agent.delegate', { workspaceId: 'ws', taskNoteId: 'task' });
-    expect(fixture.choose).toHaveBeenCalledOnce();
-    expect(fixture.request).toHaveBeenLastCalledWith(
-      'agent.delegate',
-      {
-        workspaceId: 'ws',
-        taskNoteId: 'task',
-        placement: { target: 'local', checkout: 'worktree' },
-      },
-      undefined,
-    );
-  });
+  it.each(['agent.create', 'agent.delegate', 'agent.wakeOrCreate'])(
+    'sends omitted placement without dispatching a choice for %s',
+    async (method) => {
+      const input = { workspaceId: 'ws', taskNoteId: 'task' };
+      await expect(backendRequest(method, input)).resolves.toEqual({ ok: true });
+      expect(fixture.choose).not.toHaveBeenCalled();
+      expect(fixture.request).toHaveBeenLastCalledWith(method, input, undefined);
+    },
+  );
   it('preserves management of existing remote agents with Labs off', async () => {
     await backendRequest('agent.stop', { agentId: 'remote' });
     await backendRequest('hub.discard', {

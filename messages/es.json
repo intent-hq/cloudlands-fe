@@ -6975,12 +6975,6 @@
   "devConsole_unknown_label": "Desconocido",
   "devConsole_events_label": "Eventos",
   "files_secondaryRoot_unsupported_error": "Este daemon no puede leer archivos de raíces Git secundarias. Actualízalo y vuelve a conectarte.",
-  "agent_placement_label": "Ubicación de nuevos agentes",
-  "agent_placement_shared": "Copia local compartida",
-  "agent_placement_worktree": "Árbol de trabajo local",
-  "agent_placement_isolated": "Copia local aislada",
-  "agent_placement_remote": "Copia remota aislada",
-  "agent_placement_default": "Usar ubicación predeterminada",
   "agent_placement_unavailable": "La ejecución en nodos no está disponible en este daemon.",
   "agent_placement_labsRequired": "Activa los agentes remotos en Labs antes de iniciar trabajo remoto.",
   "agent_hub_merge": "Fusionar punto de control",
@@ -6990,11 +6984,8 @@
   "agent_hub_checkpointRequired": "Se necesita un punto de control correcto antes de fusionar.",
   "agent_hub_merged": "Punto de control fusionado.",
   "agent_hub_blocked": "La fusión requiere atención: {detail}",
-  "agent_placement_chooseLocal": "Elige dónde ejecutar este agente",
-  "agent_placement_chooseLocalDescription": "Los agentes remotos están desactivados en Labs. Elige una copia de trabajo local para este inicio o cancela para cambiar los ajustes de Labs. Los agentes remotos existentes siguen disponibles.",
-  "agent_placement_cancelled": "Inicio del agente cancelado.",
-  "agent_placement_retiredIsolation": "El aislamiento CoW por agente ya no está disponible. Elige la ubicación del nodo.",
+  "agent_placement_retiredIsolation": "El aislamiento CoW por agente ya no está disponible.",
   "agent_placement_incompatibleIsolation": "La ubicación no se puede combinar con el aislamiento anterior.",
   "agent_placement_specialistUnavailable": "El especialista seleccionado no está disponible. Vuelve a seleccionar un especialista.",
-  "agent_placement_backendChanged": "El backend cambió mientras seleccionabas la ubicación del agente. Inténtalo de nuevo."
+  "agent_placement_backendChanged": "El backend cambió mientras se preparaba la solicitud. Inténtalo de nuevo."
 }

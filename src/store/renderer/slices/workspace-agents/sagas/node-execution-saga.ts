@@ -1,32 +1,15 @@
-import {
-  all,
-  call,
-  put,
-  takeLeading,
-  takeLatest,
-  actionChannel,
-  take,
-  fork,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { all, call, put, takeLeading, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { NodeExecutionClient } from '$features/agent/services/node-execution';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { appClient } from '$lib/client';
 import { store } from '$store/renderer/store';
 import { notify } from '$lib/components/patterns/notify';
 import { confirm } from '$lib/components/patterns/confirm';
 import { m } from '$shared/paraglide/messages.js';
-import { WorkspaceId } from '$shared/types/branded-ids';
 import { selectLabsRemoteAgentsEnabled } from '../../user-preferences/user-preferences-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
-import { updateWorkspaceEntity } from '../../workspace/workspace-slice';
 import {
-  localPlacementRequested,
-  placementChoiceShown,
-  placementChoiceAnswered,
   nodeCapabilitiesRequested,
   nodeCapabilitiesReceived,
-  agentPlacementSaveRequested,
   agentHubActionRequested,
   nodeOperationBusyChanged,
 } from '../workspace-agents-slice';
@@ -43,32 +26,6 @@ function* loadCapabilities(): SagaGenerator<void> {
     yield* put(
       nodeCapabilitiesReceived(generation, { agentNodes: false, localNodeIsolation: false }),
     );
-  }
-}
-function* savePlacement({
-  payload: [workspaceId, placement],
-}: ReturnType<typeof agentPlacementSaveRequested>): SagaGenerator<void> {
-  yield* put(nodeOperationBusyChanged(true));
-  try {
-    const checked = yield* call([client, client.preparePlacement], placement);
-    const result = yield* call([appClient.workspaces, appClient.workspaces.update], {
-      id: WorkspaceId(workspaceId),
-      defaultAgentPlacement: checked,
-    });
-    if (!result.success) throw new Error(result.error ?? m.agent_placement_unavailable());
-    if (result.workspace)
-      yield* put(
-        updateWorkspaceEntity(workspaceId, {
-          defaultAgentPlacement: result.workspace.defaultAgentPlacement,
-        }),
-      );
-  } catch (error) {
-    yield* call(
-      notify.error,
-      error instanceof Error ? error.message : m.agent_placement_unavailable(),
-    );
-  } finally {
-    yield* put(nodeOperationBusyChanged(false));
   }
 }
 function* manageHub({
@@ -119,35 +76,9 @@ function* manageHub({
     yield* put(nodeOperationBusyChanged(false));
   }
 }
-/** Queue launch prompts so concurrent creations cannot steal each other's answer. */
-function* chooseLocalPlacements(): SagaGenerator<void> {
-  const channel = yield* actionChannel(localPlacementRequested);
-  try {
-    while (true) {
-      const action = yield* take(channel);
-      const id = crypto.randomUUID();
-      try {
-        yield* put(placementChoiceShown({ id, capabilities: action.payload[0] }));
-        let answer = yield* take(placementChoiceAnswered);
-        while (answer.payload[0] !== id) answer = yield* take(placementChoiceAnswered);
-        const [, placement] = answer.payload;
-        if (!placement) throw new Error(m.agent_placement_cancelled());
-        yield* put(action.success(placement));
-      } catch (error) {
-        yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
-      } finally {
-        yield* put(placementChoiceShown(undefined));
-      }
-    }
-  } finally {
-    channel.close();
-  }
-}
 export function* nodeExecutionSaga(): SagaGenerator<void> {
   yield* all([
-    fork(chooseLocalPlacements),
     takeLatest(nodeCapabilitiesRequested, loadCapabilities),
-    takeLeading(agentPlacementSaveRequested, savePlacement),
     takeLeading(agentHubActionRequested, manageHub),
   ]);
 }

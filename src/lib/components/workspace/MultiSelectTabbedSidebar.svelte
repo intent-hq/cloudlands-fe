@@ -83,7 +83,6 @@
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import WorkspaceAgentPlacement from '$features/agent/components/WorkspaceAgentPlacement.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import ExpandableFileSearch from './sidebar/ExpandableFileSearch.svelte';
   import { FilesPanel, SidebarChangesPanel, isChildNote, isSpecNote } from './sidebar';
@@ -1011,9 +1010,6 @@
                   class="sidebar-expanded-content flex min-h-0 flex-1 flex-col"
                   data-sidebar-expanded-content
                 >
-                  {#if tabId === 'agents' && (onCreateAgent || onCreateAgentWithSpecialist)}
-                    <WorkspaceAgentPlacement {workspaceId} />
-                  {/if}
                   <!-- Panel header/description -->
                   {#if tab && !tab.hideHeader}
                     <div class="px-4 pb-1 pt-4">

@@ -6975,12 +6975,6 @@
   "devConsole_unknown_label": "未知",
   "devConsole_events_label": "事件清單",
   "files_secondaryRoot_unsupported_error": "此守護程序無法讀取次要 Git 根目錄中的檔案。請更新後重新連線。",
-  "agent_placement_label": "新代理程式的執行位置",
-  "agent_placement_shared": "本機共用簽出",
-  "agent_placement_worktree": "本機工作樹",
-  "agent_placement_isolated": "本機隔離簽出",
-  "agent_placement_remote": "遠端隔離簽出",
-  "agent_placement_default": "使用預設位置",
   "agent_placement_unavailable": "此常駐程式不支援節點執行。",
   "agent_placement_labsRequired": "開始遠端工作前，請在 Labs 中啟用遠端代理程式。",
   "agent_hub_merge": "合併檢查點",
@@ -6990,11 +6984,8 @@
   "agent_hub_checkpointRequired": "合併前需要成功的檢查點。",
   "agent_hub_merged": "已合併檢查點。",
   "agent_hub_blocked": "合併需要處理：{detail}",
-  "agent_placement_chooseLocal": "選擇此代理的執行位置",
-  "agent_placement_chooseLocalDescription": "Labs 中的遠端代理已關閉。請選擇本次啟動使用的本機簽出副本，或取消以變更 Labs 設定。現有遠端代理仍可使用。",
-  "agent_placement_cancelled": "已取消啟動代理。",
-  "agent_placement_retiredIsolation": "已停止支援個別代理的 CoW 隔離。請選擇節點部署位置。",
+  "agent_placement_retiredIsolation": "已停止支援個別代理的 CoW 隔離。",
   "agent_placement_incompatibleIsolation": "部署位置不能與舊版隔離設定同時使用。",
   "agent_placement_specialistUnavailable": "所選專家無法使用。請重新選擇專家。",
-  "agent_placement_backendChanged": "選擇代理部署位置時後端發生了變化。請重試。"
+  "agent_placement_backendChanged": "準備請求時後端發生了變化。請重試。"
 }

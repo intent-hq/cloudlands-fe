@@ -1546,12 +1546,14 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     cleanup();
     mocks.agents = [makeAgent('agent-1')];
     mocks.selectedTabs = ['agents'];
-    const agents = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const agents = render(Sidebar, { props: { workspaceId: 'ws-1', onCreateAgent: vi.fn() } });
     const agentsCard = agents.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
     expect(within(agentsCard).queryByText(agentsDescription)).toBeNull();
     expect(within(agentsCard).queryByText(shellDescription)).toBeNull();
     // The initializer's orchestration mode copy belongs to the picker, not the sidebar.
     expect(agents.queryByText(orchestrationLabel)).toBeNull();
     expect(agents.queryByLabelText(orchestrationLabel)).toBeNull();
+    expect(agents.queryByRole('combobox', { name: 'New agent placement' })).toBeNull();
+    expect(agents.queryByText('Remote isolated checkout')).toBeNull();
   });
 });

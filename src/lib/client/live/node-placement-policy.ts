@@ -1,13 +1,9 @@
-import { AgentPlacementSchema, type AgentPlacement } from '$shared/types/agent-node';
-import {
-  NodeExecutionClient,
-  type NodeCapabilities,
-} from '$features/agent/services/node-execution';
+import { AgentPlacementSchema } from '$shared/types/agent-node';
+import { NodeExecutionClient } from '$features/agent/services/node-execution';
 import { m } from '$shared/paraglide/messages.js';
 
 type Request = (method: string, params?: unknown) => Promise<unknown>;
 type Params = Record<string, unknown>;
-type ChooseLocal = (capabilities: NodeCapabilities) => Promise<AgentPlacement>;
 function object(value: unknown): Params {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Params) : {};
 }
@@ -25,29 +21,12 @@ export function needsPlacementPolicy(method: string, params: unknown): boolean {
   );
 }
 
-/** Final synchronous completeness check, including an on→off change after preflight. */
-export function needsLocalPlacement(method: string, input: unknown): boolean {
-  if (method === 'workspace.update') return false;
-  const params = object(input);
-  const key = nestedKey(method);
-  if (key === 'initialAgent' && !params[key]) return false;
-  const creation = key ? object(params[key]) : params;
-  if (Array.isArray(creation.tasks))
-    return creation.tasks.some(
-      (task) => object(object(task).placement ?? creation.placement).target !== 'local',
-    );
-  return object(creation.placement).target !== 'local';
-}
-
 /** Whole-object precedence: task > call > selected specialist > workspace. */
 export async function prepareNodeRequest(
   method: string,
   input: unknown,
   request: Request,
   remoteEnabled: () => boolean,
-  chooseLocal: ChooseLocal = async () => {
-    throw new Error(m.agent_placement_chooseLocal());
-  },
 ): Promise<unknown> {
   const params = object(input);
   if (method === 'agent.delegate' && Array.isArray(params.tasks)) {
@@ -60,7 +39,6 @@ export async function prepareNodeRequest(
           { ...params, tasks: undefined, ...entry },
           request,
           remoteEnabled,
-          chooseLocal,
         ),
       );
       tasks.push({ ...entry, ...(resolved.placement ? { placement: resolved.placement } : {}) });
@@ -126,12 +104,9 @@ export async function prepareNodeRequest(
     if (placement != null) throw new Error(m.agent_placement_unavailable());
     return input;
   }
-  let checked = placement == null ? undefined : AgentPlacementSchema.parse(placement);
-  if (!remoteEnabled() && checked?.target !== 'local') {
-    checked = AgentPlacementSchema.parse(await chooseLocal(capabilities));
-    if (checked.target !== 'local') throw new Error(m.agent_placement_chooseLocal());
-    readDefaults = true;
-  }
+  const checked = placement == null ? undefined : AgentPlacementSchema.parse(placement);
+  if (!remoteEnabled() && checked?.target === 'remote')
+    throw new Error(m.agent_placement_labsRequired());
   if (readDefaults) capabilities = await client.capabilities();
   if (
     !capabilities.agentNodes ||
@@ -140,12 +115,10 @@ export async function prepareNodeRequest(
       !capabilities.localNodeIsolation)
   )
     throw new Error(m.agent_placement_unavailable());
-  // Reapply the off rule after capability/default/dialog awaits without changing inherited choices silently.
-  if (!remoteEnabled() && checked?.target !== 'local') {
-    checked = AgentPlacementSchema.parse(await chooseLocal(capabilities));
-    if (checked.target !== 'local') throw new Error(m.agent_placement_chooseLocal());
-    checked = await client.preparePlacement(checked);
-  }
+  // Omitted placement follows the documented head default, without a human launch prompt.
+  // Known remote intent remains explicit and must never be converted to a local fallback.
+  if (!remoteEnabled() && checked?.target === 'remote')
+    throw new Error(m.agent_placement_labsRequired());
   if (!checked) return input;
   if (creation.isolation !== undefined) throw new Error(m.agent_placement_incompatibleIsolation());
   const resolved = { ...creation, placement: checked };

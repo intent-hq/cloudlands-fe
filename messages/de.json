@@ -6975,12 +6975,6 @@
   "devConsole_unknown_label": "Unbekannt",
   "devConsole_events_label": "Ereignisse",
   "files_secondaryRoot_unsupported_error": "Dieser Daemon kann keine Dateien aus sekundären Git-Verzeichnissen lesen. Aktualisieren Sie ihn und verbinden Sie sich erneut.",
-  "agent_placement_label": "Platzierung neuer Agenten",
-  "agent_placement_shared": "Lokale gemeinsame Arbeitskopie",
-  "agent_placement_worktree": "Lokaler Arbeitsbaum",
-  "agent_placement_isolated": "Lokale isolierte Arbeitskopie",
-  "agent_placement_remote": "Entfernte isolierte Arbeitskopie",
-  "agent_placement_default": "Standardplatzierung verwenden",
   "agent_placement_unavailable": "Knotenausführung ist auf diesem Daemon nicht verfügbar.",
   "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten.",
   "agent_hub_merge": "Prüfpunkt zusammenführen",
@@ -6990,11 +6984,8 @@
   "agent_hub_checkpointRequired": "Vor dem Zusammenführen ist ein erfolgreicher Prüfpunkt erforderlich.",
   "agent_hub_merged": "Prüfpunkt zusammengeführt.",
   "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
-  "agent_placement_chooseLocal": "Ausführungsort für diesen Agenten wählen",
-  "agent_placement_chooseLocalDescription": "Remote-Agenten sind in Labs deaktiviert. Wähle einen lokalen Checkout für diesen Start oder brich ab, um die Labs-Einstellungen zu ändern. Bestehende Remote-Agenten bleiben verfügbar.",
-  "agent_placement_cancelled": "Agentenstart abgebrochen.",
-  "agent_placement_retiredIsolation": "CoW-Isolation für einzelne Agenten wird nicht mehr unterstützt. Wähle eine Knotenplatzierung.",
+  "agent_placement_retiredIsolation": "CoW-Isolation für einzelne Agenten wird nicht mehr unterstützt.",
   "agent_placement_incompatibleIsolation": "Die Platzierung kann nicht mit der bisherigen Isolation kombiniert werden.",
   "agent_placement_specialistUnavailable": "Der ausgewählte Spezialist ist nicht verfügbar. Wähle erneut einen Spezialisten aus.",
-  "agent_placement_backendChanged": "Das Backend hat sich während der Auswahl der Agentenplatzierung geändert. Versuche es erneut."
+  "agent_placement_backendChanged": "Das Backend hat sich während der Vorbereitung der Anfrage geändert. Versuche es erneut."
 }

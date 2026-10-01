@@ -1,4 +1,3 @@
-import type { AgentPlacement } from '$shared/types/agent-node';
 import type { NodeCapabilities } from '$features/agent/services/node-execution';
 import type {
   AgentSession,
@@ -135,7 +134,6 @@ export type LazyAgentListBin = Exclude<AgentListBin, 'topLevel'>;
 export interface WorkspaceAgentsState {
   nodeSupport?: { generation: number; capabilities: NodeCapabilities };
   nodeOperationBusy?: boolean;
-  placementChoice?: { id: string; capabilities: NodeCapabilities };
   creationOutcomes?: Collection<AgentCreationOutcome, 'id'>;
   /** Connection-scoped read-through capability, invalidated by daemon reconnects. */
   retirementSupport?: { connectionGeneration: number; supported: boolean };
@@ -301,24 +299,10 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   isLoadingBackgroundAgents: false,
 };
 
-export const localPlacementRequested = createAsyncAction<
-  [capabilities: NodeCapabilities],
-  AgentPlacement
->('workspaceAgents/localPlacement', 'workspaceAgents/localPlacementRequested');
-export const placementChoiceShown = createAction<[choice: WorkspaceAgentsState['placementChoice']]>(
-  'workspaceAgents/placementChoiceShown',
-);
-export const placementChoiceAnswered = createAction<[id: string, placement: AgentPlacement | null]>(
-  'workspaceAgents/placementChoiceAnswered',
-);
-
 export const nodeCapabilitiesRequested = createAction('workspaceAgents/nodeCapabilitiesRequested');
 export const nodeCapabilitiesReceived = createAction<
   [generation: number, capabilities: NodeCapabilities]
 >('workspaceAgents/nodeCapabilitiesReceived');
-export const agentPlacementSaveRequested = createAction<
-  [workspaceId: string, placement: AgentPlacement]
->('workspaceAgents/agentPlacementSaveRequested');
 export const agentHubActionRequested = createAction<
   [workspaceId: string, agentId: string, action: 'merge' | 'discard']
 >('workspaceAgents/agentHubActionRequested');
@@ -672,10 +656,7 @@ export const restoreRetiredAgentRequested = createAsyncAction<
 >('workspaceAgents/restoreRetiredAgent', 'workspaceAgents/restoreRetiredAgentRequested');
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
-workspaceAgentsReducer.with(placementChoiceShown, (state, { payload: [placementChoice] }) => ({
-  ...state,
-  placementChoice,
-}));
+
 workspaceAgentsReducer.with(
   nodeCapabilitiesReceived,
   (state, { payload: [generation, capabilities] }) => ({

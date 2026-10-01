@@ -13,7 +13,6 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   assertRemoteRequestEnabled,
   needsPlacementPolicy,
-  needsLocalPlacement,
   prepareNodeRequest,
 } from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
@@ -50,34 +49,14 @@ export async function backendRequest<T = unknown>(
         )
           throw new Error(m.agent_placement_backendChanged());
       };
-      let agentNodes = false;
       const request = async (name: string, data?: unknown): Promise<unknown> => {
         checkConnection();
         const result = await transport.request(name, data);
         checkConnection();
-        if (name === 'client.hello')
-          agentNodes =
-            (result as { server?: { capabilities?: { agentNodes?: unknown } } })?.server
-              ?.capabilities?.agentNodes === 1;
         return result;
       };
-      do {
-        params = await prepareNodeRequest(
-          method,
-          params,
-          request,
-          remoteEnabled,
-          async (capabilities) => {
-            const { localPlacementRequested } =
-              await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
-            checkConnection();
-            const placement = await store.dispatch(localPlacementRequested(capabilities));
-            checkConnection();
-            return placement;
-          },
-        );
-        checkConnection();
-      } while (agentNodes && !remoteEnabled() && needsLocalPlacement(method, params));
+      params = await prepareNodeRequest(method, params, request, remoteEnabled);
+      checkConnection();
       assertRemoteRequestEnabled(method, params, remoteEnabled());
     }
     return await transport.request<T>(method, params, options);

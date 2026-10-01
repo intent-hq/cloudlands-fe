@@ -100,36 +100,17 @@ describe('creation boundary policy', () => {
     ).rejects.toThrow();
     expect(request).not.toHaveBeenCalled();
   });
-  it('does not guess a task-resolved specialist while Labs is off', async () => {
+  it('leaves task-only delegation to the documented head defaults', async () => {
+    const input = { workspaceId: 'ws', taskNoteId: 'task' };
     await expect(
-      prepareNodeRequest(
-        'agent.delegate',
-        { workspaceId: 'ws', taskNoteId: 'task' },
-        fixture(),
-        () => false,
-      ),
-    ).rejects.toThrow();
+      prepareNodeRequest('agent.delegate', input, fixture(), () => false),
+    ).resolves.toEqual(input);
   });
   it('keeps ordinary creation compatible with an older daemon', async () => {
     const input = { workspaceId: 'ws' };
     const request = vi.fn(async () => ({ server: { capabilities: {} } }));
     expect(await prepareNodeRequest('agent.create', input, request, () => false)).toBe(input);
   });
-  it.each(['agent.create', 'agent.delegate'])(
-    'requires an explicit choice without defaults: %s',
-    async (method) => {
-      const choose = vi.fn(async () => ({ target: 'local', checkout: 'worktree' }) as const);
-      const result = await prepareNodeRequest(
-        method,
-        { workspaceId: 'ws', taskNoteId: 'task' },
-        fixture(),
-        () => false,
-        choose,
-      );
-      expect(choose).toHaveBeenCalledOnce();
-      expect(result).toMatchObject({ placement: { target: 'local', checkout: 'worktree' } });
-    },
-  );
   it('task-only delegation uses the workspace default without guessing a specialist', async () => {
     const request = fixture({ target: 'local', checkout: 'isolated' });
     expect(
@@ -142,22 +123,19 @@ describe('creation boundary policy', () => {
     ).toMatchObject({ placement: { target: 'local', checkout: 'isolated' } });
     expect(request.mock.calls.some(([method]) => method === 'specialist.get')).toBe(false);
   });
-  it('remote specialist requires an explicit local answer, with no field merging', async () => {
-    const choose = vi.fn(async () => ({ target: 'local', checkout: 'isolated' }) as const);
+  it('rejects a remote specialist with Labs off without replacing its isolation', async () => {
     const request = fixture(
       { target: 'local', checkout: 'shared' },
       { target: 'remote', checkout: 'isolated', exclusive: true, nodeId: 'n' },
     );
-    expect(
-      await prepareNodeRequest(
+    await expect(
+      prepareNodeRequest(
         'agent.create',
         { workspaceId: 'ws', specialist: 'builder' },
         request,
         () => false,
-        choose,
       ),
-    ).toMatchObject({ placement: { target: 'local', checkout: 'isolated' } });
-    expect(choose).toHaveBeenCalledOnce();
+    ).rejects.toThrow(/Labs/);
   });
   it('does not silently continue with an unknown selected specialist', async () => {
     const request = fixture();
@@ -181,28 +159,27 @@ describe('creation boundary policy', () => {
     ).toMatchObject({ placement: { target: 'local', checkout: 'isolated' } });
     expect(calls).toBe(2);
   });
-  it('reapplies local selection when Labs turns off during default reads', async () => {
-    let enabled = true;
-    const request = fixture();
-    request.mockImplementation(async (method) => {
-      if (method === 'workspace.get') {
-        enabled = false;
-        return { workspace: {} };
-      }
-      return { server: { capabilities } };
-    });
-    const choose = vi.fn(async () => ({ target: 'local', checkout: 'shared' }) as const);
-    expect(
-      await prepareNodeRequest(
+  it.each([undefined, { target: 'remote', checkout: 'isolated' }])(
+    'rechecks Labs after default reads without prompting: %s',
+    async (placement) => {
+      let enabled = true;
+      const request = vi.fn(async (method: string) => {
+        if (method === 'workspace.get') {
+          enabled = false;
+          return { workspace: { defaultAgentPlacement: placement } };
+        }
+        return { server: { capabilities } };
+      });
+      const result = prepareNodeRequest(
         'agent.create',
         { workspaceId: 'ws' },
         request,
         () => enabled,
-        choose,
-      ),
-    ).toMatchObject({ placement: { target: 'local', checkout: 'shared' } });
-    expect(choose).toHaveBeenCalledOnce();
-  });
+      );
+      if (placement) await expect(result).rejects.toThrow(/Labs/);
+      else await expect(result).resolves.toEqual({ workspaceId: 'ws' });
+    },
+  );
   it('lets Labs-on unresolved placement use the documented inherited path', async () => {
     const input = { workspaceId: 'ws' };
     expect(await prepareNodeRequest('agent.create', input, fixture(), () => true)).toBe(input);
@@ -231,41 +208,28 @@ describe('creation boundary policy', () => {
       tasks: [{ taskNoteId: 'task', placement: { target: 'local', checkout: 'worktree' } }],
     });
   });
-  it('wakeOrCreate pins only its new branch and leaves wake identity unchanged', async () => {
-    const choose = vi.fn(async () => ({ target: 'local', checkout: 'worktree' }) as const);
-    const result = await prepareNodeRequest(
-      'agent.wakeOrCreate',
-      { workspaceId: 'ws', name: 'existing-remote', create: { name: 'new' } },
-      fixture(),
-      () => false,
-      choose,
-    );
-    expect(result).toEqual({
-      workspaceId: 'ws',
-      name: 'existing-remote',
-      create: { name: 'new', placement: { target: 'local', checkout: 'worktree' } },
-    });
+  it('wakeOrCreate preserves the new branch default and wake identity without prompting', async () => {
+    const input = { workspaceId: 'ws', name: 'existing-remote', create: { name: 'new' } };
+    await expect(
+      prepareNodeRequest('agent.wakeOrCreate', input, fixture(), () => false),
+    ).resolves.toEqual(input);
   });
-  it('rechecks capability after the local choice dialog', async () => {
-    const request = fixture();
-    const choose = vi.fn(async () => {
-      request.mockResolvedValue({ server: { capabilities: { agentNodes: 1 } } });
-      return { target: 'local', checkout: 'isolated' } as const;
+  it('rechecks capability after reading a local isolated default', async () => {
+    let calls = 0;
+    const request = vi.fn(async (method: string) => {
+      if (method === 'workspace.get')
+        return { workspace: { defaultAgentPlacement: { target: 'local', checkout: 'isolated' } } };
+      return { server: { capabilities: ++calls === 1 ? capabilities : { agentNodes: 1 } } };
     });
     await expect(
-      prepareNodeRequest('agent.create', {}, request, () => false, choose),
-    ).rejects.toThrow();
+      prepareNodeRequest('agent.create', { workspaceId: 'ws' }, request, () => false),
+    ).rejects.toThrow(/unavailable/);
   });
-  it('guards wakeOrCreate creation even when the optional create object is absent', async () => {
-    const choose = vi.fn(async () => ({ target: 'local', checkout: 'worktree' }) as const);
+  it('does not insert an absent wakeOrCreate creation branch', async () => {
     const input = { taskNoteId: 'task', contextMessage: 'Continue' };
-    expect(
-      await prepareNodeRequest('agent.wakeOrCreate', input, fixture(), () => false, choose),
-    ).toEqual({
-      ...input,
-      create: { placement: { target: 'local', checkout: 'worktree' } },
-    });
-    expect(choose).toHaveBeenCalledOnce();
+    await expect(
+      prepareNodeRequest('agent.wakeOrCreate', input, fixture(), () => false),
+    ).resolves.toEqual(input);
   });
   it('resolves a supplied project path instead of the conflicting user specialist', async () => {
     const request = vi.fn(async (method: string, params?: unknown) => {

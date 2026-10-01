@@ -6975,12 +6975,6 @@
   "devConsole_unknown_label": "Unknown",
   "devConsole_events_label": "Events",
   "files_secondaryRoot_unsupported_error": "This daemon cannot read files from secondary Git roots. Update it and reconnect.",
-  "agent_placement_label": "New agent placement",
-  "agent_placement_shared": "Local shared checkout",
-  "agent_placement_worktree": "Local worktree",
-  "agent_placement_isolated": "Local isolated checkout",
-  "agent_placement_remote": "Remote isolated checkout",
-  "agent_placement_default": "Use default placement",
   "agent_placement_unavailable": "Node execution is unavailable on this daemon.",
   "agent_placement_labsRequired": "Enable Remote agents in Labs before starting remote work.",
   "agent_hub_merge": "Merge checkpoint",
@@ -6990,11 +6984,8 @@
   "agent_hub_checkpointRequired": "A successful checkpoint is required before merging.",
   "agent_hub_merged": "Checkpoint merged.",
   "agent_hub_blocked": "Merge needs attention: {detail}",
-  "agent_placement_chooseLocal": "Choose where to run this agent",
-  "agent_placement_chooseLocalDescription": "Remote agents is off in Labs. Choose a local checkout for this launch, or cancel to change Labs settings. Existing remote agents stay available.",
-  "agent_placement_cancelled": "Agent launch cancelled.",
-  "agent_placement_retiredIsolation": "Per-agent CoW isolation is retired. Choose node placement.",
+  "agent_placement_retiredIsolation": "Per-agent CoW isolation is retired.",
   "agent_placement_incompatibleIsolation": "Placement cannot be combined with legacy isolation.",
   "agent_placement_specialistUnavailable": "The selected specialist is unavailable. Select a specialist again.",
-  "agent_placement_backendChanged": "Backend changed while selecting agent placement. Try again."
+  "agent_placement_backendChanged": "Backend changed while preparing the request. Try again."
 }

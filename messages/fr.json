@@ -6975,12 +6975,6 @@
   "devConsole_unknown_label": "Inconnu",
   "devConsole_events_label": "Événements",
   "files_secondaryRoot_unsupported_error": "Ce daemon ne peut pas lire les fichiers des racines Git secondaires. Mettez-le à jour et reconnectez-vous.",
-  "agent_placement_label": "Emplacement des nouveaux agents",
-  "agent_placement_shared": "Copie locale partagée",
-  "agent_placement_worktree": "Arbre de travail local",
-  "agent_placement_isolated": "Copie locale isolée",
-  "agent_placement_remote": "Copie distante isolée",
-  "agent_placement_default": "Utiliser l’emplacement par défaut",
   "agent_placement_unavailable": "L’exécution sur nœud est indisponible sur ce daemon.",
   "agent_placement_labsRequired": "Activez les agents distants dans Labs avant de lancer un travail distant.",
   "agent_hub_merge": "Fusionner le point de contrôle",
@@ -6990,11 +6984,8 @@
   "agent_hub_checkpointRequired": "Un point de contrôle réussi est nécessaire avant la fusion.",
   "agent_hub_merged": "Point de contrôle fusionné.",
   "agent_hub_blocked": "La fusion nécessite votre attention : {detail}",
-  "agent_placement_chooseLocal": "Choisir où exécuter cet agent",
-  "agent_placement_chooseLocalDescription": "Les agents distants sont désactivés dans Labs. Choisissez une copie de travail locale pour ce lancement, ou annulez pour modifier les paramètres Labs. Les agents distants existants restent disponibles.",
-  "agent_placement_cancelled": "Lancement de l’agent annulé.",
-  "agent_placement_retiredIsolation": "L’isolation CoW par agent n’est plus disponible. Choisissez un placement sur un nœud.",
+  "agent_placement_retiredIsolation": "L’isolation CoW par agent n’est plus disponible.",
   "agent_placement_incompatibleIsolation": "Le placement ne peut pas être combiné avec l’ancien mode d’isolation.",
   "agent_placement_specialistUnavailable": "Le spécialiste sélectionné est indisponible. Sélectionnez à nouveau un spécialiste.",
-  "agent_placement_backendChanged": "Le backend a changé pendant la sélection du placement de l’agent. Réessayez."
+  "agent_placement_backendChanged": "Le backend a changé pendant la préparation de la requête. Réessayez."
 }

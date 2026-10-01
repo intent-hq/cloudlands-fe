@@ -6975,12 +6975,6 @@
   "devConsole_unknown_label": "不明",
   "devConsole_events_label": "イベント一覧",
   "files_secondaryRoot_unsupported_error": "このデーモンは追加の Git ルートからファイルを読み取れません。更新して再接続してください。",
-  "agent_placement_label": "新しいエージェントの配置",
-  "agent_placement_shared": "ローカル共有チェックアウト",
-  "agent_placement_worktree": "ローカル作業ツリー",
-  "agent_placement_isolated": "ローカル分離チェックアウト",
-  "agent_placement_remote": "リモート分離チェックアウト",
-  "agent_placement_default": "既定の配置を使用",
   "agent_placement_unavailable": "このデーモンではノード実行を利用できません。",
   "agent_placement_labsRequired": "リモート作業を開始する前に Labs でリモートエージェントを有効にしてください。",
   "agent_hub_merge": "チェックポイントをマージ",
@@ -6990,11 +6984,8 @@
   "agent_hub_checkpointRequired": "マージするには正常なチェックポイントが必要です。",
   "agent_hub_merged": "チェックポイントをマージしました。",
   "agent_hub_blocked": "マージの確認が必要です：{detail}",
-  "agent_placement_chooseLocal": "このエージェントの実行場所を選択",
-  "agent_placement_chooseLocalDescription": "Labs でリモートエージェントが無効になっています。今回の起動に使うローカルチェックアウトを選択するか、キャンセルして Labs の設定を変更してください。既存のリモートエージェントは引き続き利用できます。",
-  "agent_placement_cancelled": "エージェントの起動をキャンセルしました。",
-  "agent_placement_retiredIsolation": "エージェントごとのCoW分離は廃止されました。ノードの配置を選択してください。",
+  "agent_placement_retiredIsolation": "エージェントごとのCoW分離は廃止されました。",
   "agent_placement_incompatibleIsolation": "配置と従来の分離設定を併用することはできません。",
   "agent_placement_specialistUnavailable": "選択したスペシャリストは利用できません。スペシャリストを選択し直してください。",
-  "agent_placement_backendChanged": "エージェントの配置を選択中にバックエンドが変更されました。もう一度お試しください。"
+  "agent_placement_backendChanged": "リクエストの準備中にバックエンドが変更されました。もう一度お試しください。"
 }

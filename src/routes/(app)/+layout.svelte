@@ -52,7 +52,6 @@
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
-  import AgentPlacementHost from '$features/agent/components/AgentPlacementHost.svelte';
   import { ConfirmHost } from '$lib/components/patterns/confirm';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
@@ -1049,7 +1048,6 @@
 
   <Toast />
   <ConfirmHost />
-  <AgentPlacementHost />
 
   <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
   <NodeVersionToast />
