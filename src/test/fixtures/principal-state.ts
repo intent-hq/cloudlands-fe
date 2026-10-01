@@ -26,6 +26,7 @@ export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'ow
     workspaceEvents: {
       ...workspaceEvents,
       ...state.workspaceEvents,
+      subscriptionPending: false,
       subscriptionGeneration: state.workspaceEvents?.subscriptionGeneration || 1,
     },
     userPreferences: { ...userPreferences, labsMultiplayerEnabled: true, ...state.userPreferences },

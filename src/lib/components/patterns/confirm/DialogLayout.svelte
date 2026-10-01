@@ -47,7 +47,8 @@
         ? 'pb-5'
         : 'pb-6'}"
     >
-      <div class="grid min-w-0 gap-4">
+      <!-- Keep long content from giving the implicit grid column a min-content width. -->
+      <div class="grid min-w-0 grid-cols-1 gap-4">
         {@render children?.()}
         {#if error}<InputMessage tone="error">{error}</InputMessage>{/if}
       </div>
