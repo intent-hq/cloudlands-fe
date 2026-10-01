@@ -19,6 +19,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
+  import ArrowsMergeIcon from 'phosphor-svelte/lib/ArrowsMergeIcon';
+  import PauseIcon from 'phosphor-svelte/lib/PauseIcon';
   import { tick } from 'svelte';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
@@ -101,6 +103,11 @@
   let expanded = $state(true);
   let previousMessageCount = $state(0);
   const contentId = $derived(`queued-messages-content-${messages[0]?.id ?? 'empty'}`);
+  const hasBatch = $derived(messages.length > 1);
+  const lastReadyIndex = $derived(
+    messages.findLastIndex((message) => !message.editing && message.id !== editingId),
+  );
+  const rowInset = $derived(hasBatch ? 'pl-7.5! pr-2!' : COMPOSER_INSET_CLASS);
   const rowElements = new Map<string, HTMLElement>();
   let sendStates = $state<Record<string, 'sending' | QueuedMessageSendOutcome | undefined>>({});
   let sendErrors = $state<Record<string, string | undefined>>({});
@@ -604,6 +611,14 @@
   {/if}
 {/snippet}
 
+{#snippet batchIcon()}
+  {#if lastReadyIndex === -1}
+    <PauseIcon size={16} weight="regular" aria-hidden="true" />
+  {:else}
+    <ArrowsMergeIcon size={16} weight="regular" class="rotate-180" aria-hidden="true" />
+  {/if}
+{/snippet}
+
 {#if messages.length > 0}
   <div
     class="queued-messages-surface relative z-20 border-b border-border bg-transparent"
@@ -615,12 +630,12 @@
       type="button"
       variant="plain"
       size="compact"
-      class="type-caption flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent px-3.5! py-0 text-left text-subtle {expanded
-        ? 'pt-1!'
-        : ''}"
+      leadingIcon={hasBatch ? batchIcon : undefined}
+      class="type-caption relative flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent {hasBatch
+        ? 'pl-2! pr-3.5! gap-1.5'
+        : 'px-3.5!'} py-0 text-left text-subtle {expanded ? 'pt-1!' : ''}"
       aria-expanded={expanded}
       aria-controls={contentId}
-      aria-describedby={`${contentId}-delivery`}
       data-testid="queued-messages-disclosure"
       onclick={() => (expanded = !expanded)}
     >
@@ -643,14 +658,6 @@
       </span>
     </Button>
 
-    <p
-      id={`${contentId}-delivery`}
-      class="type-caption px-3.5 pb-1 text-subtle"
-      data-testid="queued-messages-delivery"
-    >
-      {m.chat_queuedMessages_batchDelivery_description()}
-    </p>
-
     {#if expanded}
       <div
         id={contentId}
@@ -658,10 +665,11 @@
         transition:safeDisclosureTransition={{ tier: 'moderate' }}
       >
         <div class="flex flex-col">
-          {#each messages as message (message.id)}
+          {#each messages as message, index (message.id)}
             {@const sending = sendStates[message.id] === 'sending'}
+            {@const held = message.editing || editingId === message.id}
             <div
-              class="group relative type-caption flex min-h-(--control-height-compact) select-none items-center gap-2 rounded-(--radius-medium) bg-transparent {COMPOSER_INSET_CLASS} font-normal! text-muted-foreground {message.editing
+              class="group relative type-caption flex min-h-(--control-height-compact) select-none items-center gap-2 rounded-(--radius-medium) bg-transparent {rowInset} font-normal! text-muted-foreground {message.editing
                 ? 'opacity-60'
                 : ''}"
               data-testid="queued-message-row"
@@ -671,6 +679,21 @@
               transition:queuedMessageRowTransition
               title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
             >
+              {#if hasBatch && lastReadyIndex >= index}
+                <span
+                  class="pointer-events-none absolute left-4 top-0 border-l border-border {index ===
+                  lastReadyIndex
+                    ? 'h-1/2'
+                    : 'h-full'}"
+                  aria-hidden="true"
+                ></span>
+                {#if !held}
+                  <span
+                    class="pointer-events-none absolute left-4 top-1/2 w-1.5 border-t border-border"
+                    aria-hidden="true"
+                  ></span>
+                {/if}
+              {/if}
               {#if editingId === message.id}
                 <!-- Edit mode -->
                 <div
@@ -844,7 +867,7 @@
             </div>
             {#if sendErrors[message.id] || sendStates[message.id] === 'queued' || sendStates[message.id] === 'quarantined'}
               <div
-                class="type-caption {COMPOSER_INSET_CLASS} text-warning-ink"
+                class="type-caption {rowInset} text-warning-ink"
                 role={sendErrors[message.id] ? 'alert' : 'status'}
               >
                 {sendErrors[message.id] ??

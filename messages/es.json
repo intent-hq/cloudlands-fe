@@ -2441,7 +2441,6 @@
   "chat_thinkingBlock_reasoning_label": "Razonamiento",
   "chat_queuedMessages_header_one": "1 mensaje en cola",
   "chat_queuedMessages_header_many": "{count} mensajes en cola",
-  "chat_queuedMessages_batchDelivery_description": "Los mensajes listos se envían juntos en un solo turno.",
   "chat_queuedMessages_heldForEditing_title": "Retenido para edición",
   "chat_queuedMessages_save_tooltip": "Guardar",
   "chat_queuedMessages_cancel_tooltip": "Cancelar",

@@ -2441,7 +2441,6 @@
   "chat_thinkingBlock_reasoning_label": "推理",
   "chat_queuedMessages_header_one": "1 則已排隊訊息",
   "chat_queuedMessages_header_many": "{count} 則已排隊訊息",
-  "chat_queuedMessages_batchDelivery_description": "準備就緒的訊息會在同一回合中一起傳送。",
   "chat_queuedMessages_heldForEditing_title": "已暫留以供編輯",
   "chat_queuedMessages_save_tooltip": "儲存",
   "chat_queuedMessages_cancel_tooltip": "取消",

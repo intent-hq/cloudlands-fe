@@ -6,6 +6,7 @@
   interface Props {
     messageCount?: number;
     heldCount?: number;
+    heldStart?: number;
     retry?: boolean;
     disabled?: boolean;
     longContent?: boolean;
@@ -20,6 +21,7 @@
       single: { props: { messageCount: 1 } },
       multiple: { props: { messageCount: 3 } },
       'held-for-editing': { props: { messageCount: 3, heldCount: 1 } },
+      'held-in-middle': { props: { messageCount: 3, heldCount: 1, heldStart: 1 } },
       'all-held': { props: { messageCount: 2, heldCount: 2 } },
       retry: { props: { messageCount: 2, retry: true } },
       disabled: { props: { messageCount: 3, disabled: true } },
@@ -32,6 +34,7 @@
   let {
     messageCount = 3,
     heldCount = 0,
+    heldStart = 0,
     retry = false,
     disabled = false,
     longContent = false,
@@ -49,7 +52,7 @@
           ][i],
       queuedAt: '2026-09-16T12:00:00.000Z',
       position: i,
-      editing: i < heldCount,
+      editing: i >= heldStart && i < heldStart + heldCount,
       requeuedAfterFailure: retry && i === 0,
     }));
   });

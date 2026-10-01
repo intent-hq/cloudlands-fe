@@ -2441,7 +2441,6 @@
   "chat_thinkingBlock_reasoning_label": "Reasoning",
   "chat_queuedMessages_header_one": "1 queued message",
   "chat_queuedMessages_header_many": "{count} queued messages",
-  "chat_queuedMessages_batchDelivery_description": "Ready messages send together in one turn.",
   "chat_queuedMessages_heldForEditing_title": "Held for editing",
   "chat_queuedMessages_save_tooltip": "Save",
   "chat_queuedMessages_cancel_tooltip": "Cancel",
