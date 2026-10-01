@@ -114,6 +114,40 @@ test('Dev Console keeps selected payload and counters separate at native minimum
     })
     .toBeLessThanOrEqual(0);
   await expect(page.locator('footer')).toBeInViewport({ ratio: 1 });
+  const readable = await page.locator('pre').evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      let top = Math.max(0, rect.top),
+        bottom = Math.min(innerHeight, rect.bottom);
+      for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        if (getComputedStyle(ancestor).overflowY !== 'visible') {
+          const bounds = ancestor.getBoundingClientRect();
+          top = Math.max(top, bounds.top);
+          bottom = Math.min(bottom, bounds.bottom);
+        }
+      }
+      const style = getComputedStyle(element);
+      return (
+        (bottom - top - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) /
+        parseFloat(style.lineHeight)
+      );
+    }),
+  );
+  expect(readable).toHaveLength(2);
+  for (const lines of readable) expect(lines).toBeGreaterThanOrEqual(2);
+  await page.locator('pre').first().focus();
+  await page.keyboard.press('PageDown');
+  await expect
+    .poll(() =>
+      page
+        .locator('pre')
+        .first()
+        .evaluate((element) => element.scrollTop),
+    )
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => page.locator('.details').evaluate((element) => element.scrollTop))
+    .toBe(0);
   await page.getByRole('button', { name: 'Copy payload' }).first().click();
   await page.getByRole('button', { name: 'Close details' }).click();
   await expect(page.locator('pre')).toHaveCount(0);

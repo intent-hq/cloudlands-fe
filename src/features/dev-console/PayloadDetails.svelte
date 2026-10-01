@@ -193,4 +193,23 @@
     height: 13px;
     padding: 0;
   }
+  @media (max-height: 500px) {
+    .details {
+      flex: 0 0 calc(100% - 78px);
+      min-height: 0;
+      max-height: none;
+    }
+    header,
+    .payload-heading {
+      padding-block: 2px;
+      flex-shrink: 0;
+    }
+    .capture {
+      padding-block: 2px;
+      flex-shrink: 0;
+    }
+    pre {
+      min-height: 0;
+    }
+  }
 </style>

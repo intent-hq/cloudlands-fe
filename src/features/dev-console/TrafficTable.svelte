@@ -194,6 +194,11 @@
     display: flex;
     flex-direction: column;
   }
+  @media (max-height: 500px) {
+    .traffic-table {
+      min-height: 78px;
+    }
+  }
   .follow {
     display: flex;
     align-items: center;
