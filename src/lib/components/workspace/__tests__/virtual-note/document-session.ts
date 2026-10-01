@@ -147,7 +147,13 @@ export class DocumentSession {
           let accepted = true;
           if (current.command === 'undo' || current.command === 'redo')
             await this.history(current.command === 'redo');
-          else if (/^(move|extend)(Forward|Backward)$/.test(current.command)) {
+          else if (current.command === 'insertParagraph') {
+            // Enter is a keymap transaction, not a browser beforeinput operation.
+            // Replay that same keymap after context arrives, with the saved timestamp.
+            const view = this.editor.view;
+            const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+            accepted = !!view.someProp('handleKeyDown', (handler) => handler(view, event));
+          } else if (/^(move|extend)(Forward|Backward)$/.test(current.command)) {
             const selection = window.getSelection()!;
             selection.modify(
               current.command.startsWith('extend') ? 'extend' : 'move',
@@ -362,6 +368,19 @@ export class DocumentSession {
             },
           },
           handleKeyDown: (_view, event) => {
+            if (
+              this.service.pendingInputs &&
+              !this.replayingInput &&
+              event.key === 'Enter' &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey
+            ) {
+              event.preventDefault();
+              this.deferInput('insertParagraph');
+              return true;
+            }
             if (
               !event.ctrlKey &&
               !event.metaKey &&

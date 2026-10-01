@@ -191,3 +191,29 @@ it('rebases pending input bookmarks atomically without losing the unacknowledged
   service.apply({ from: 0, to: 0, insert: 'new ' });
   expect(service.readInput().selection).toMatchObject({ anchor: 11, head: 11, revision: 2 });
 });
+
+it('admits Enter before the native keymap while an edge deletion is awaiting context', async () => {
+  const service = new SourceJournal(() => 'repeated café 🌍 text repeated. '.repeat(2048), 1);
+  const session = new DocumentSession(service, document.createElement('div'));
+  let release = () => {};
+  try {
+    await session.show(0);
+    session.delayFetch = () => new Promise<void>((resolve) => (release = resolve));
+    session.editor!.commands.setTextSelection(session.projection!.pmAt(4096));
+    await Promise.resolve();
+    const view = session.editor!.view;
+    const key = (key: string) =>
+      view.someProp('handleKeyDown', (handler) =>
+        handler(view, new KeyboardEvent('keydown', { key, cancelable: true })),
+      );
+    expect(key('Delete')).toBe(true);
+    expect(key('Enter')).toBe(true);
+    expect(service.pendingInputs).toBe(2);
+    expect(session.error).toBe('');
+    expect(service.depth).toBe(0);
+  } finally {
+    session.destroy();
+    session.delayFetch = undefined;
+    release();
+  }
+});
