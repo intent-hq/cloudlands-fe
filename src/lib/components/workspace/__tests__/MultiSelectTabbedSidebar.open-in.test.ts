@@ -281,9 +281,6 @@ vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../ui/__tests__/mocks/button.svelte')).default,
 }));
 
-vi.mock('../CreateAgentSection.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
 vi.mock('../WorkspaceAgentsList.svelte', async () => ({
   default: (await import('./mocks/WorkspaceAgentsList.svelte')).default,
 }));
