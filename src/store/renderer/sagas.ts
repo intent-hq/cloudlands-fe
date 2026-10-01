@@ -1,3 +1,4 @@
+import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
@@ -216,6 +217,7 @@ export const sagas = [
   releaseNotesSaga,
   browserPersistenceSaga,
   browserClientsSaga,
+  personalDevicesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

@@ -6974,5 +6974,19 @@
   "devConsole_removeChoice_label": "停用完整擷取",
   "devConsole_unknown_label": "未知",
   "devConsole_events_label": "事件清單",
-  "files_secondaryRoot_unsupported_error": "此守護程序無法讀取次要 Git 根目錄中的檔案。請更新後重新連線。"
+  "files_secondaryRoot_unsupported_error": "此守護程序無法讀取次要 Git 根目錄中的檔案。請更新後重新連線。",
+  "settings_personalDevices_title": "已登入的裝置",
+  "settings_personalDevices_identity_description": "{host} 上的 {person} · {role}",
+  "settings_personalDevices_pair_label": "以我的身分配對另一台裝置",
+  "settings_personalDevices_owner_label": "主機擁有者",
+  "settings_personalDevices_member_label": "主機成員",
+  "settings_personalDevices_guest_label": "工作區訪客",
+  "settings_personalDevices_roster_label": "已連線的裝置",
+  "settings_personalDevices_connected_label": "已連線",
+  "settings_personalDevices_empty_label": "沒有可顯示的已連線裝置。",
+  "settings_personalDevices_reusable_description": "此連結和 QR 碼可重複使用，以目前的存取權限配對您的裝置。請勿分享給他人。",
+  "settings_personalDevices_pairing_error": "暫時無法配對。請檢查連線和存取權限，然後重試。",
+  "settings_personalDevices_roster_error": "無法載入已連線的裝置。請重試。",
+  "settings_personalDevices_copy_label": "複製配對連結",
+  "settings_personalDevices_copied_label": "連結已複製"
 }

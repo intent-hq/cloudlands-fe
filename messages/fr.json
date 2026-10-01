@@ -6974,5 +6974,19 @@
   "devConsole_removeChoice_label": "Désactiver la capture complète",
   "devConsole_unknown_label": "Inconnu",
   "devConsole_events_label": "Événements",
-  "files_secondaryRoot_unsupported_error": "Ce daemon ne peut pas lire les fichiers des racines Git secondaires. Mettez-le à jour et reconnectez-vous."
+  "files_secondaryRoot_unsupported_error": "Ce daemon ne peut pas lire les fichiers des racines Git secondaires. Mettez-le à jour et reconnectez-vous.",
+  "settings_personalDevices_title": "Appareils connectés à votre compte",
+  "settings_personalDevices_identity_description": "{person} sur {host} · {role}",
+  "settings_personalDevices_pair_label": "Associer un autre appareil à mon compte",
+  "settings_personalDevices_owner_label": "Propriétaire de l’hôte",
+  "settings_personalDevices_member_label": "Membre de l’hôte",
+  "settings_personalDevices_guest_label": "Invité de l’espace de travail",
+  "settings_personalDevices_roster_label": "Appareils en ligne",
+  "settings_personalDevices_connected_label": "En ligne",
+  "settings_personalDevices_empty_label": "Aucun appareil connecté à afficher.",
+  "settings_personalDevices_reusable_description": "Ce lien et ce code QR sont réutilisables pour associer vos appareils avec vos droits actuels. Gardez-les privés.",
+  "settings_personalDevices_pairing_error": "Association indisponible. Vérifiez votre connexion et vos droits, puis réessayez.",
+  "settings_personalDevices_roster_error": "Impossible de charger les appareils connectés. Réessayez.",
+  "settings_personalDevices_copy_label": "Copier le lien d’association",
+  "settings_personalDevices_copied_label": "Lien copié"
 }

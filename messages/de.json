@@ -6974,5 +6974,19 @@
   "devConsole_removeChoice_label": "Vollständige Erfassung deaktivieren",
   "devConsole_unknown_label": "Unbekannt",
   "devConsole_events_label": "Ereignisse",
-  "files_secondaryRoot_unsupported_error": "Dieser Daemon kann keine Dateien aus sekundären Git-Verzeichnissen lesen. Aktualisieren Sie ihn und verbinden Sie sich erneut."
+  "files_secondaryRoot_unsupported_error": "Dieser Daemon kann keine Dateien aus sekundären Git-Verzeichnissen lesen. Aktualisieren Sie ihn und verbinden Sie sich erneut.",
+  "settings_personalDevices_title": "Angemeldete Geräte",
+  "settings_personalDevices_identity_description": "{person} auf {host} · {role}",
+  "settings_personalDevices_pair_label": "Weiteres Gerät als ich koppeln",
+  "settings_personalDevices_owner_label": "Host-Eigentümer",
+  "settings_personalDevices_member_label": "Host-Mitglied",
+  "settings_personalDevices_guest_label": "Arbeitsbereichsgast",
+  "settings_personalDevices_roster_label": "Verbundene Geräte",
+  "settings_personalDevices_connected_label": "Verbunden",
+  "settings_personalDevices_empty_label": "Keine verbundenen Geräte vorhanden.",
+  "settings_personalDevices_reusable_description": "Dieser Link und QR-Code können wiederverwendet werden, um Ihre Geräte mit Ihren aktuellen Zugriffsrechten zu koppeln. Halten Sie sie geheim.",
+  "settings_personalDevices_pairing_error": "Kopplung nicht verfügbar. Prüfen Sie Verbindung und Zugriffsrechte und versuchen Sie es erneut.",
+  "settings_personalDevices_roster_error": "Verbundene Geräte konnten nicht geladen werden. Versuchen Sie es erneut.",
+  "settings_personalDevices_copy_label": "Kopplungslink kopieren",
+  "settings_personalDevices_copied_label": "Link kopiert"
 }

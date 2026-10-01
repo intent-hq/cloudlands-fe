@@ -4503,6 +4503,8 @@ describe('per-window backend IPC routing', () => {
   });
 
   it.each([
+    ['pairing.getSelfInfo', undefined],
+    ['client.list', undefined],
     ['host.executionContext', {}],
     ['providers.catalog', {}],
     ['models.list', { providerId: 'claude-code' }],
@@ -4662,6 +4664,43 @@ describe('guest-sessions:* IPC handlers', () => {
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
     guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
   }
+
+  it.each(['member', 'guest'] as const)(
+    'keeps personal Devices reads on the admitted %s connection, including refusal',
+    async (role) => {
+      installGuest();
+      rpc.principal = async () => ({
+        id: GUEST.principalId,
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+        hostRole: role,
+        hostMembershipRevision: 1,
+      });
+      installWindow(GUEST.id);
+      const { mod } = await loadModule();
+      const local = mod.getBackendClient();
+      const remote = await mod.connectBackendClient(GUEST.id);
+      mod.registerBackendHandlers();
+      const sender = BrowserWindow.getAllWindows()[0].webContents;
+      const request = findHandler('backend:request')!;
+      vi.mocked(local.request).mockClear();
+      vi.mocked(remote.request).mockClear();
+      for (const method of ['pairing.getSelfInfo', 'client.list']) {
+        await request({ sender }, { method });
+        expect(remote.request).toHaveBeenCalledWith(method, undefined, { timeoutMs: undefined });
+      }
+      vi.mocked(remote.request).mockRejectedValueOnce(new Error('access-revoked'));
+      await expect(request({ sender }, { method: 'pairing.getSelfInfo' })).resolves.toMatchObject({
+        ok: false,
+      });
+      expect(local.request).not.toHaveBeenCalled();
+      expect(vi.mocked(remote.request).mock.calls.map(([method]) => method)).not.toContain(
+        'server.pairingInfo',
+      );
+    },
+  );
 
   it('guest-sessions:list distinguishes no pooled client, open-disconnected and open-connected', async () => {
     installGuest();

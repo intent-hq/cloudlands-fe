@@ -145,6 +145,7 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
 import { isHostMembershipChange } from '$shared/types/principal';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
   hostMembershipChanged,
   principalIdentityChanged,
@@ -3330,21 +3331,30 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  */
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
+  if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
   const identity = data?.identity;
-  if (identity === null) {
-    appStore.dispatch(identityChanged(null));
-    return;
+  let triple: PrincipalIdentity | null = null;
+  if (identity !== null) {
+    if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return;
+    const { provider, host, externalUserId } = identity as Record<string, unknown>;
+    if (
+      (provider !== 'github' && provider !== 'gitlab') ||
+      typeof host !== 'string' ||
+      !host.trim() ||
+      typeof externalUserId !== 'string' ||
+      !externalUserId.trim()
+    )
+      return;
+    triple = { provider, host, externalUserId };
   }
-  if (!identity || typeof identity !== 'object') return;
-  const { provider, host, externalUserId } = identity as Record<string, unknown>;
+  const principal = appStore.state.principal;
   if (
-    (provider !== 'github' && provider !== 'gitlab') ||
-    typeof host !== 'string' ||
-    typeof externalUserId !== 'string'
-  ) {
-    return;
-  }
-  const triple: PrincipalIdentity = { provider, host, externalUserId };
+    principal?.context &&
+    principal.context === selectPrincipalConnectionContext.select(appStore.state) &&
+    principal.boundPrincipalId === data.principalId
+  )
+    appStore.dispatch(principalIdentityChanged(data.principalId));
+  // Keep the legacy primary-identity mirror and its profile refresh, including unlink.
   appStore.dispatch(identityChanged(triple));
 }
 
@@ -3701,7 +3711,7 @@ export function routeDaemonEventsNotification(
 
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
-  if (type === 'client:connected' || type === 'client:disconnected') {
+  if (type === 'client:connected' || type === 'client:disconnected' || type === 'client:updated') {
     handleClientTransitionEvent(event);
     return;
   }
@@ -3713,12 +3723,6 @@ export function routeDaemonEventsNotification(
   if (type === 'host:members-changed') {
     const data = (event as { data?: unknown }).data;
     if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
-    return;
-  }
-  if (type === 'principal:identity-changed') {
-    const data = (event as { data?: { principalId?: unknown } }).data;
-    if (typeof data?.principalId === 'string')
-      appStore.dispatch(principalIdentityChanged(data.principalId));
     return;
   }
 
@@ -4358,6 +4362,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // change events (`{ tab, changes? }`, patched into the browser-clients
   // mirror). The `workspace:updated` subscription above already carries the
   // `browserClientId` pin delta.
+  'client:updated',
   'client:connected',
   'client:disconnected',
   'browser:tab-opened',
@@ -4377,7 +4382,6 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'presence:changed',
   'host:members-changed',
   'host:execution-context-changed',
-  'principal:identity-changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
