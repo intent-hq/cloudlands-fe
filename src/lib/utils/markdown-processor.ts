@@ -285,18 +285,40 @@ export function escapeHtmlTags(content: string): string {
       new RegExp(`${prefix}(\\d+)__`, 'g'),
       (_match, index) => protectedSources[parseInt(index, 10)],
     );
-  let processedContent = content;
+  // Shield each complete top-level fence before looking for inline delimiters.
+  // Scan both marker types together so a marker inside code cannot hide later prose.
+  const openingFence = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n/gm;
+  const chunks: string[] = [];
+  let consumed = 0;
+  for (let opening = openingFence.exec(content); opening; opening = openingFence.exec(content)) {
+    const marker = opening[1];
+    if (marker[0] === '`' && opening[2].includes('`')) continue;
+    const closingFence = new RegExp(
+      `^ {0,3}${marker[0]}{${marker.length},}[ \\t]*\\r?(?=\\n|$)`,
+      'gm',
+    );
+    closingFence.lastIndex = openingFence.lastIndex;
+    const closing = closingFence.exec(content);
+    const end = closing ? closing.index + closing[0].length : content.length;
+    chunks.push(content.slice(consumed, opening.index), protect(content.slice(opening.index, end)));
+    consumed = end;
+    openingFence.lastIndex = end;
+  }
+  chunks.push(content.slice(consumed));
+  let processedContent = chunks.join('');
 
   // Extract fenced code blocks first (they can contain backticks)
   // Match: ```lang\ncode\n``` or ```\ncode\n```
   processedContent = processedContent.replace(/```[\s\S]*?```/g, (match) => {
-    return protect(match);
+    return protect(restore(match));
   });
 
   // Extract inline code (single backticks)
   // Match: `code` but not `` (empty)
+  // A long fence can leave inline delimiters around an earlier protected source.
+  // Flatten it before shielding so the final restore remains a single pass.
   processedContent = processedContent.replace(/`([^`]+)`/g, (match) => {
-    return protect(match);
+    return protect(restore(match));
   });
 
   // Math must reach its tokenizer byte-for-byte in both literal and rendered modes.
