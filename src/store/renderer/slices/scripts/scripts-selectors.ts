@@ -109,16 +109,13 @@ export const selectWorkspaceScriptRuntime = store.createSelector(
 export const selectAllWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => Object.values(getWs(state, wsId).scripts),
 );
-export const selectScriptHistoryState = store.createSelector((state, wsId: string) =>
-  getWs(state, wsId),
-);
 
-/** Rows in the active or archived lists; retained output-only rows stay outside the manager. */
-export const selectScriptManagerEntries = store.createSelector(
+/** Definitions in mounted output viewers, including rows no longer in the active list. */
+export const selectViewedScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    if (!ws.lifecycleSupported || !ws.activeScriptIds) return Object.values(ws.scripts);
-    const ids = [...ws.activeScriptIds, ...(ws.archivedScriptIds ?? [])];
-    return ids.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+    return [
+      ...new Set(Object.values(ws.retainedOutputs ?? {}).map((output) => output.scriptId)),
+    ].flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
   },
 );

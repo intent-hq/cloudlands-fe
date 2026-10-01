@@ -18,23 +18,36 @@ import { selectScriptById } from '../scripts-selectors';
 import {
   removeScript,
   scriptOutputRequested,
+  scriptOutputDefinitionReceived,
   scriptOutputReleased,
   scriptOutputSnapshotReceived,
 } from '../scripts-slice';
 
-function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGenerator<void> {
+type DefinitionReads = Map<
+  string,
+  {
+    dispatch: typeof store.dispatch;
+    promise: Promise<Awaited<ReturnType<typeof appClient.scripts.list>>>;
+  }
+>;
+
+function* readOutput(
+  reads: DefinitionReads,
+  action: ReturnType<typeof scriptOutputRequested>,
+): SagaGenerator<void> {
   const [workspaceId, scriptId, viewerId] = action.payload;
   const dispatch = store.dispatch;
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
-  const script = yield* selectScriptById.effect(workspaceId, scriptId);
-  if (!authority || !script) return;
+  let script = yield* selectScriptById.effect(workspaceId, scriptId);
+  if (!authority) return;
+  const definitionKey = JSON.stringify([workspaceId, authority]);
   const runtimeKey = (value: typeof script) =>
     JSON.stringify([
       value?.runtime?.status,
       value?.runtime?.startedAt,
       value?.runtime?.restartCount,
     ]);
-  const run = runtimeKey(script);
+  let run = runtimeKey(script);
   const cleanup = (event: { type: string; payload?: unknown }) => {
     const payload = event.payload;
     if (!Array.isArray(payload) || payload[0] !== workspaceId) return false;
@@ -51,11 +64,33 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     return (
       dispatch === store.dispatch &&
       authority === (yield* selectWorkspaceActionContext.effect(workspaceId)) &&
-      run === runtimeKey(yield* selectScriptById.effect(workspaceId, scriptId))
+      (!script || run === runtimeKey(yield* selectScriptById.effect(workspaceId, scriptId)))
     );
   }
   function* hydrate(): SagaGenerator<void> {
     if (!(yield* isCurrent())) return;
+    if (!script) {
+      // There is no definition-by-ID endpoint. Only mounted viewers missing a
+      // definition read the complete list; concurrent viewers share one request.
+      let pending = reads.get(definitionKey);
+      if (!pending || pending.dispatch !== dispatch) {
+        const promise = appClient.scripts.list(workspaceId, { archive: 'all' });
+        pending = { dispatch, promise };
+        reads.set(definitionKey, pending);
+        const clear = () => {
+          if (reads.get(definitionKey) === pending) reads.delete(definitionKey);
+        };
+        void promise.then(clear, clear);
+      }
+      const entries = yield* call(() => pending.promise);
+      if (!(yield* isCurrent())) return;
+      const definition = entries.find((entry) => entry.id === scriptId);
+      if (definition) {
+        yield* put(scriptOutputDefinitionReceived(workspaceId, definition, viewerId));
+        script = yield* selectScriptById.effect(workspaceId, scriptId);
+        run = runtimeKey(script);
+      }
+    }
     const output = yield* call(
       [appClient.scripts, appClient.scripts.output],
       workspaceId,
@@ -73,7 +108,9 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
   ]);
   function* waitForCleanup(): SagaGenerator<void> {
     while (true) {
-      if (cleanup(yield* take(releases))) {
+      const event = yield* take(releases);
+      if (cleanup(event)) {
+        if (event.type !== scriptOutputReleased.type) reads.delete(definitionKey);
         yield* put(scriptOutputReleased(workspaceId, scriptId, viewerId));
         return;
       }
@@ -91,5 +128,6 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
 }
 
 export function* scriptsOutputSaga(): SagaGenerator<void> {
-  yield* takeEvery(scriptOutputRequested, readOutput);
+  const reads: DefinitionReads = new Map();
+  yield* takeEvery(scriptOutputRequested, readOutput, reads);
 }

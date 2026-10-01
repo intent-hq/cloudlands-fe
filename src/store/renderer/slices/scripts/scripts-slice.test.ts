@@ -1,14 +1,9 @@
 import { terminalsReducer, selectScript, openTerminalOverlay } from '../terminals/terminals-slice';
-import { setScriptListState, scriptArchiveRequested, scriptArchiveFinished } from './scripts-slice';
-import {
-  selectAllWorkspaceScriptEntries,
-  selectScriptHistoryState,
-  selectScriptManagerEntries,
-} from './scripts-selectors';
+import { setScriptListState } from './scripts-slice';
+import { selectAllWorkspaceScriptEntries } from './scripts-selectors';
 import { describe, expect, it } from 'vitest';
 import {
   setActiveScriptsData,
-  setArchivedScriptsData,
   removeScript,
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
@@ -290,18 +285,6 @@ describe('scripts selectors', () => {
 });
 
 describe('archive lifecycle reconciliation', () => {
-  it('ignores obsolete completion and cleanup after a newer archive request', () => {
-    let state = scriptsReducer(undefined, scriptArchiveRequested(WS, ['old'], 'archive'));
-    const oldGeneration = state.byWorkspaceId[WS].archiveGeneration;
-    state = scriptsReducer(state, scriptArchiveRequested(WS, ['new'], 'restore'));
-    const currentGeneration = state.byWorkspaceId[WS].archiveGeneration;
-    state = scriptsReducer(state, scriptArchiveFinished(WS, { changed: 1 }, oldGeneration));
-    state = scriptsReducer(state, scriptArchiveFinished(WS, {}, oldGeneration));
-    expect(state.byWorkspaceId[WS].archiveOperation).toEqual({ pending: true });
-    state = scriptsReducer(state, scriptArchiveFinished(WS, { changed: 1 }, currentGeneration));
-    expect(state.byWorkspaceId[WS].archiveOperation).toEqual({ pending: false, changed: 1 });
-  });
-
   it('keeps selected output and direct row handles, without reviving archived rows on runtime events', () => {
     const active = makeScriptEntry({ mode: 'command', purpose: 'oneOff' });
     let scripts = scriptsReducer(undefined, setScriptsData(WS, [active]));
@@ -322,10 +305,6 @@ describe('archive lifecycle reconciliation', () => {
     terminals = terminalsReducer(terminals, activeRefresh);
     expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toEqual([]);
     expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
-    expect(selectScriptManagerEntries.select({ scripts } as never, WS)).toEqual([]);
-    const refresh = setArchivedScriptsData(WS, [archived], 0);
-    scripts = scriptsReducer(scripts, refresh);
-    terminals = terminalsReducer(terminals, refresh);
     scripts = scriptsReducer(
       scripts,
       updateRuntimeState(WS, active.id, { status: 'exited', exitCode: 2 }),
@@ -334,7 +313,7 @@ describe('archive lifecycle reconciliation', () => {
     expect(selectWorkspaceScriptEntries.select(root, WS)).toEqual([]);
     const legacy = scriptsReducer(scripts, setScriptListState(WS, false, undefined, false));
     expect(selectWorkspaceScriptEntries.select({ scripts: legacy } as never, WS)).toHaveLength(1);
-    expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].lastRun?.outcome).toBe('failed');
+    expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].runtime.exitCode).toBe(2);
     expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe(
       'retained output',
     );
@@ -346,33 +325,24 @@ describe('archive lifecycle reconciliation', () => {
     );
     expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
     expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks).toHaveLength(1);
-    expect(scripts.byWorkspaceId[WS].archivedScriptIds).toEqual([]);
     const remove = removeScript(WS, active.id);
     scripts = scriptsReducer(scripts, remove);
     terminals = terminalsReducer(terminals, remove);
     expect(terminals.workspaces[WS].selectedScriptId).toBeNull();
     expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toEqual([]);
   });
-  it('preserves records on read errors and isolates loading/mutation results by workspace', () => {
+  it('preserves records and isolates list errors by workspace', () => {
     const script = makeScriptEntry();
     let state = scriptsReducer(undefined, setScriptsData(WS, [script]));
     state = scriptsReducer(state, setScriptListState(WS, true, undefined, true));
     state = scriptsReducer(state, setScriptListState(WS, false, 'offline'));
-    state = scriptsReducer(state, scriptArchiveRequested('other', ['id'], 'archive'));
-    state = scriptsReducer(state, scriptArchiveFinished('other', { changed: 1, skipped: 2 }));
-    expect(selectScriptHistoryState.select({ scripts: state } as never, WS)).toMatchObject({
+    state = scriptsReducer(state, setScriptListState('other', true));
+    expect(state.byWorkspaceId[WS]).toMatchObject({
       loadError: 'offline',
       loading: false,
       lifecycleSupported: true,
     });
     expect(state.byWorkspaceId[WS].scripts[script.id]).toEqual(script);
-    expect(state.byWorkspaceId[WS].archiveOperation).toBeUndefined();
-    expect(state.byWorkspaceId.other.archiveOperation).toEqual({
-      pending: false,
-      changed: 1,
-      skipped: 2,
-    });
-    state = scriptsReducer(state, clearScriptOperations('other'));
-    expect(state.byWorkspaceId.other.archiveOperation).toBeUndefined();
+    expect(state.byWorkspaceId.other).toMatchObject({ loading: true, loadError: undefined });
   });
 });

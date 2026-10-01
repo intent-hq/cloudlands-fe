@@ -55,18 +55,6 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
       return () => {};
     },
   }),
-  selectScriptManagerEntries: () => ({
-    subscribe: (run: (value: never[]) => void) => {
-      run([]);
-      return () => {};
-    },
-  }),
-  selectScriptHistoryState: () => ({
-    subscribe: (run: (value: object) => void) => {
-      run({});
-      return () => {};
-    },
-  }),
   selectWorkspaceScriptEntries: workspaceReadable(
     (workspaceId) => mocks.scripts[workspaceId] ?? [],
   ),
@@ -255,6 +243,15 @@ describe('WorkspaceShellList development script controls', () => {
         payload: [WS, 'script-1', 'panel'],
       });
     });
+  });
+
+  it('opens script output without exposing history or cleanup controls', async () => {
+    mocks.scripts[WS] = [script('saved', 'Saved build', 'idle')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Idle Saved build' }));
+    expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ scriptId: 'saved' }));
+    expect(screen.queryByRole('button', { name: /History and cleanup/ })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('renders truthful empty shell states', () => {
