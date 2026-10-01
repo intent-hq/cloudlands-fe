@@ -9,7 +9,6 @@ import {
   mapSelection,
   mapPoint,
   type Selection,
-  type Change,
   type Splice,
 } from './source-journal';
 import { SourceProjection } from './source-projection';
@@ -36,6 +35,9 @@ export class DocumentSession {
   private prevTime = 0;
   private prevComposition: number | undefined;
   private prevRange?: [number, number];
+  private pendingFetch?: Promise<void>;
+  private pendingNavigation?: (accepted: boolean) => void;
+  private rollbackState?: EditorState;
   delayFetch?: () => Promise<void>;
   constructor(
     readonly service: SourceJournal,
@@ -43,6 +45,8 @@ export class DocumentSession {
     private changed = () => {},
   ) {}
   private project(source: string, start: number) {
+    if (bytes(source) > LIMITS.active)
+      throw new Error('Proof projection exceeds experiment budget');
     this.parsedBytes += bytes(source);
     this.maxParsedBytes = Math.max(this.maxParsedBytes, bytes(source));
     return new SourceProjection(source, start);
@@ -68,7 +72,7 @@ export class DocumentSession {
       if (bytes(source) > LIMITS.active)
         throw new Error('Proof projection exceeds experiment budget');
     }
-    this.inFlightBytes = bytes(source);
+    this.inFlightBytes += bytes(source);
     this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
     return { source, from, endId };
   }
@@ -80,9 +84,28 @@ export class DocumentSession {
     }
     const ticket = ++this.navigation;
     const revision = this.service.revision;
-    const window = this.readWindow(id);
-    if (this.delayFetch) await this.delayFetch();
-    this.inFlightBytes = 0;
+    // One shared pending request, with latest navigation winning before any payload is captured.
+    if (this.delayFetch) {
+      this.pendingNavigation?.(false);
+      const ready = new Promise<boolean>((resolve) => {
+        this.pendingNavigation = resolve;
+      });
+      this.pendingFetch ??= this.delayFetch().then(
+        () => {
+          this.pendingFetch = undefined;
+          const resolve = this.pendingNavigation;
+          this.pendingNavigation = undefined;
+          resolve?.(true);
+        },
+        (error) => {
+          this.pendingFetch = undefined;
+          this.error = String(error);
+          this.pendingNavigation?.(false);
+          this.pendingNavigation = undefined;
+        },
+      );
+      if (!(await ready)) return false;
+    }
     if (
       ticket !== this.navigation ||
       revision !== this.service.revision ||
@@ -92,113 +115,129 @@ export class DocumentSession {
       this.changed();
       return false;
     }
-    this.editor?.destroy();
-    if (this.editor) this.destroyed++;
-    this.active = id;
-    this.endId = window.endId;
-    this.projection = this.project(window.source, window.from);
-    const decorations = (state: EditorState) => {
-      const p = this.projection!;
-      const result = this.service.annotations(
-        p.start,
-        p.start + p.source.length,
-        this.service.revision,
-        this.service.generation,
-      );
-      return DecorationSet.create(
-        state.doc,
-        result.items.flatMap((a) => {
-          const from = p.pmAt(Math.max(a.from, p.start)),
-            to = p.pmAt(Math.min(a.to, p.start + p.source.length), -1);
-          return from < to ? [Decoration.inline(from, to, { 'data-proof-comment': a.id })] : [];
-        }),
-      );
-    };
-    const annotations = Extension.create({
-      name: 'sourceAnchoredProof',
-      addProseMirrorPlugins() {
-        return [new Plugin({ props: { decorations } })];
-      },
-    });
-    const config = createEditorConfig({
-      element: this.host,
-      content: '',
-      editable: true,
-      useMarkdown: true,
-      enableComments: false,
-      enableMentions: false,
-      onUpdate: () => {},
-    });
-    this.suppress = true;
-    this.editor = new Editor({
-      ...config,
-      content: this.projection.content,
-      extensions: [
-        ...config.extensions.map((ext) =>
-          ext.name === 'starterKit' ? ext.configure({ ...ext.options, undoRedo: false }) : ext,
-        ),
-        annotations,
-      ],
-      onUpdate: () => {},
-      onSelectionUpdate: () => {},
-      onTransaction: ({ transaction, appendedTransactions }) =>
-        this.accept([transaction, ...(appendedTransactions ?? [])]),
-      editorProps: {
-        ...config.editorProps,
-        handleKeyDown: (_view, event) => {
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-            event.preventDefault();
-            void this.history(event.shiftKey);
-            return true;
-          }
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-            event.preventDefault();
-            this.selectAll();
-            return true;
-          }
-          const p = this.projection!;
-          const globalRange =
-            this.selection.anchor < p.start ||
-            this.selection.head < p.start ||
-            this.selection.anchor > p.start + p.source.length ||
-            this.selection.head > p.start + p.source.length;
-          if (
-            globalRange &&
-            event.shiftKey &&
-            (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
-          ) {
-            event.preventDefault();
-            this.selection.head = Math.max(
-              0,
-              Math.min(
-                this.service.length,
-                this.selection.head + (event.key === 'ArrowLeft' ? -1 : 1),
-              ),
-            );
-            this.suppress = true;
-            this.renderSelection();
-            this.suppress = false;
-            this.changed();
-            return true;
-          }
-          return false;
+    const window = this.readWindow(id);
+    try {
+      this.editor?.destroy();
+      if (this.editor) this.destroyed++;
+      this.active = id;
+      this.endId = window.endId;
+      this.projection = this.project(window.source, window.from);
+      const decorations = (state: EditorState) => {
+        const p = this.projection!;
+        const result = this.service.annotations(
+          p.start,
+          p.start + p.source.length,
+          this.service.revision,
+          this.service.generation,
+        );
+        return DecorationSet.create(
+          state.doc,
+          result.items.flatMap((a) => {
+            const from = p.pmAt(Math.max(a.from, p.start)),
+              to = p.pmAt(Math.min(a.to, p.start + p.source.length), -1);
+            return from < to ? [Decoration.inline(from, to, { 'data-proof-comment': a.id })] : [];
+          }),
+        );
+      };
+      const annotations = Extension.create({
+        name: 'sourceAnchoredProof',
+        addProseMirrorPlugins() {
+          return [new Plugin({ props: { decorations } })];
         },
-      },
-    });
-    this.created++;
-    if (
-      !restore &&
-      (this.selection.head < window.from ||
-        this.selection.head > window.from + window.source.length)
-    ) {
-      // Navigation changes the viewport, not the durable document selection.
-      this.editor.commands.setTextSelection(1);
-    } else this.renderSelection();
-    this.suppress = false;
-    this.editor.view.focus();
-    this.error = '';
-    this.changed();
-    return true;
+      });
+      const config = createEditorConfig({
+        element: this.host,
+        content: '',
+        editable: true,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: false,
+        onUpdate: () => {},
+      });
+      this.suppress = true;
+      this.editor = new Editor({
+        ...config,
+        content: this.projection.content,
+        extensions: [
+          ...config.extensions.map((ext) =>
+            ext.name === 'starterKit' ? ext.configure({ ...ext.options, undoRedo: false }) : ext,
+          ),
+          annotations,
+        ],
+        onUpdate: () => {},
+        onSelectionUpdate: () => {},
+        onTransaction: ({ transaction, appendedTransactions }) =>
+          this.accept([transaction, ...(appendedTransactions ?? [])]),
+        editorProps: {
+          ...config.editorProps,
+          handleKeyDown: (_view, event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+              event.preventDefault();
+              void this.history(event.shiftKey);
+              return true;
+            }
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+              event.preventDefault();
+              this.selectAll();
+              return true;
+            }
+            const p = this.projection!;
+            const globalRange =
+              this.selection.anchor < p.start ||
+              this.selection.head < p.start ||
+              this.selection.anchor > p.start + p.source.length ||
+              this.selection.head > p.start + p.source.length;
+            if (
+              globalRange &&
+              event.shiftKey &&
+              (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+            ) {
+              event.preventDefault();
+              this.selection.head = Math.max(
+                0,
+                Math.min(
+                  this.service.length,
+                  this.selection.head + (event.key === 'ArrowLeft' ? -1 : 1),
+                ),
+              );
+              this.suppress = true;
+              this.renderSelection();
+              this.suppress = false;
+              this.changed();
+              return true;
+            }
+            return false;
+          },
+        },
+      });
+      const dispatch = this.editor.view.props.dispatchTransaction!;
+      this.editor.view.setProps({
+        dispatchTransaction: (tr) => {
+          this.rollbackState = this.editor!.state;
+          try {
+            dispatch.call(this.editor!.view, tr);
+          } finally {
+            this.rollbackState = undefined;
+          }
+        },
+      });
+      this.created++;
+      if (
+        !restore &&
+        (this.selection.head < window.from ||
+          this.selection.head > window.from + window.source.length)
+      ) {
+        // Navigation changes the viewport, not the durable document selection.
+        this.editor.commands.setTextSelection(1);
+      } else this.renderSelection();
+      this.suppress = false;
+      this.editor.view.focus();
+      this.error = '';
+      this.changed();
+      return true;
+    } finally {
+      this.inFlightBytes -= bytes(window.source);
+    }
   }
   private renderSelection() {
     const p = this.projection!,
@@ -236,77 +275,97 @@ export class DocumentSession {
   }
   private accept(transactions: Transaction[]) {
     if (this.suppress) return;
+    const old = {
+      projection: this.projection,
+      selection: this.selection,
+      prevTime: this.prevTime,
+      prevComposition: this.prevComposition,
+      prevRange: this.prevRange,
+      acceptedRoots: this.acceptedRoots,
+      acceptedAppended: this.acceptedAppended,
+    };
     try {
-      for (let index = 0; index < transactions.length; index++) {
-        const tr = transactions[index];
-        if (!tr.docChanged) {
-          if (tr.selectionSet) this.selection = this.fromPM(tr.selection);
-          continue;
-        }
-        if (index) this.acceptedAppended++;
-        else this.acceptedRoots++;
-        const before = this.fromPM(
-          TextSelection.fromJSON(
-            tr.before,
-            tr.before === this.editor?.state.doc
-              ? this.editor.state.selection.toJSON()
-              : {
-                  type: 'text',
-                  anchor: this.projection!.pmAt(this.selection.anchor),
-                  head: this.projection!.pmAt(this.selection.head),
-                },
-          ),
-        );
-        let adjacent = false;
-        tr.mapping.maps[0]?.forEach((from, to) => {
-          const start = this.projection!.sourceAt(from),
-            end = this.projection!.sourceAt(to);
-          if (this.prevRange && start <= this.prevRange[1] && end >= this.prevRange[0])
-            adjacent = true;
-        });
-        const anchorsBefore = structuredClone(this.service.anchors);
-        const changes: Change[] = [];
-        const oldStart = this.projection!.start;
-        for (let n = 0; n < tr.steps.length; n++) {
-          for (const splice of this.projection!.translate(tr.steps[n], tr.docs[n]))
-            changes.push(this.service.apply(splice));
-          this.projection = this.project(
-            this.service.slice(oldStart, this.service.start(this.endId)),
-            oldStart,
-          );
-        }
-        const after = this.fromPM(tr.selection);
-        const composition = tr.getMeta('composition');
-        const group =
-          this.prevTime !== 0 &&
-          (index > 0 ||
-            (composition !== undefined && composition === this.prevComposition) ||
-            (tr.time - this.prevTime <= 500 && !!adjacent));
-        this.service.record(
-          {
-            changes,
-            before,
-            after,
-            anchorsBefore,
-            anchorsAfter: structuredClone(this.service.anchors),
-          },
-          group,
-        );
-        this.prevRange = undefined;
-        for (let m = tr.mapping.maps.length - 1; m >= 0 && !this.prevRange; m--) {
-          tr.mapping.maps[m].forEach((_from, _to, from, to) => {
-            this.prevRange = [this.projection!.sourceAt(from), this.projection!.sourceAt(to)];
+      this.service.atomic(() => {
+        for (let index = 0; index < transactions.length; index++) {
+          const tr = transactions[index];
+          if (!tr.docChanged) {
+            if (tr.selectionSet) this.selection = this.fromPM(tr.selection);
+            continue;
+          }
+          let nodes = 0;
+          tr.doc.descendants(() => {
+            nodes++;
           });
+          if (nodes > LIMITS.nodes) throw new Error('Proof projection exceeds node budget');
+          if (index) this.acceptedAppended++;
+          else this.acceptedRoots++;
+          const before = { ...this.selection };
+          let adjacent = false;
+          tr.mapping.maps[0]?.forEach((from, to) => {
+            const start = this.projection!.sourceAt(from),
+              end = this.projection!.sourceAt(to);
+            if (this.prevRange && start <= this.prevRange[1] && end >= this.prevRange[0])
+              adjacent = true;
+          });
+          const anchorsBefore = structuredClone(this.service.anchors);
+          const history =
+            tr.getMeta('addToHistory') !== false &&
+            transactions[0].getMeta('addToHistory') !== false;
+          this.service.beginChanges();
+          const oldStart = this.projection!.start;
+          for (let n = 0; n < tr.steps.length; n++) {
+            for (const splice of this.projection!.translate(tr.steps[n], tr.docs[n])) {
+              this.service.stage(splice, history);
+              if (!history && this.prevRange)
+                this.prevRange = [
+                  mapPoint(this.prevRange[0], splice),
+                  mapPoint(this.prevRange[1], splice),
+                ];
+            }
+            this.projection = this.project(
+              this.service.slice(oldStart, this.service.start(this.endId)),
+              oldStart,
+            );
+          }
+          const after = this.fromPM(tr.selection);
+          const composition = tr.getMeta('composition');
+          const group =
+            this.prevTime !== 0 &&
+            (index > 0 ||
+              (composition !== undefined && composition === this.prevComposition) ||
+              (tr.time - this.prevTime <= 500 && !!adjacent));
+          if (history)
+            this.service.record(
+              {
+                changes: [],
+                before,
+                after,
+                anchorsBefore,
+                anchorsAfter: structuredClone(this.service.anchors),
+              },
+              group,
+            );
+          if (history) {
+            this.prevRange = undefined;
+            for (let m = tr.mapping.maps.length - 1; m >= 0 && !this.prevRange; m--) {
+              tr.mapping.maps[m].forEach((_from, _to, from, to) => {
+                this.prevRange = [this.projection!.sourceAt(from), this.projection!.sourceAt(to)];
+              });
+            }
+            this.prevTime = tr.time;
+            if (composition !== undefined) this.prevComposition = composition;
+          }
+          this.selection = after;
+          this.cache.clear();
         }
-        this.prevTime = tr.time;
-        if (composition !== undefined) this.prevComposition = composition;
-        this.selection = after;
-        this.cache.clear();
-      }
+      });
+      this.error = '';
       // Decoration props requery source anchors after all accepted appended transactions.
       this.editor?.view.setProps({});
       this.changed();
     } catch (error) {
+      Object.assign(this, old);
+      if (this.rollbackState) this.editor!.view.updateState(this.rollbackState);
       this.error = String(error);
       this.changed();
     }
@@ -315,16 +374,18 @@ export class DocumentSession {
     const index = redo ? this.service.cursor : this.service.cursor - 1;
     if (index < 0 || index >= this.service.depth) return false;
     const event = this.service.event(index);
-    this.service.bookmark(index, redo ? 'before' : 'after', this.selection);
-    for (const change of this.service.changes(index, !redo))
-      this.service.apply(
-        redo
-          ? change
-          : { from: change.from, to: change.from + change.insert.length, insert: change.removed },
-      );
-    this.service.anchors = structuredClone(redo ? event.anchorsAfter : event.anchorsBefore);
+    this.service.atomic(() => {
+      this.service.bookmark(index, redo ? 'before' : 'after', this.selection);
+      for (const change of this.service.changes(index, !redo))
+        this.service.apply(
+          redo
+            ? change
+            : { from: change.from, to: change.from + change.insert.length, insert: change.removed },
+        );
+      this.service.anchors = structuredClone(redo ? event.anchorsAfter : event.anchorsBefore);
+      this.service.cursor += redo ? 1 : -1;
+    });
     this.selection = { ...(redo ? event.after : event.before), revision: this.service.revision };
-    this.service.cursor += redo ? 1 : -1;
     this.prevTime = 0;
     this.cache.clear();
     await this.show(
@@ -349,37 +410,38 @@ export class DocumentSession {
       anchorsBefore = structuredClone(this.service.anchors);
     const from = Math.min(before.anchor, before.head),
       to = Math.max(before.anchor, before.head);
-    const change = this.service.apply({ from, to, insert });
-    this.selection = {
-      anchor: from + insert.length,
-      head: from + insert.length,
-      affinity: 1,
-      revision: this.service.revision,
-    };
-    this.service.record(
-      {
-        changes: [change],
-        before,
-        after: this.selection,
-        anchorsBefore,
-        anchorsAfter: structuredClone(this.service.anchors),
-      },
-      false,
-    );
+    const after = this.service.atomic(() => {
+      this.service.beginChanges();
+      this.service.stage({ from, to, insert });
+      const after: Selection = {
+        anchor: from + insert.length,
+        head: from + insert.length,
+        affinity: 1,
+        revision: this.service.revision,
+      };
+      this.service.record(
+        {
+          changes: [],
+          before,
+          after,
+          anchorsBefore,
+          anchorsAfter: structuredClone(this.service.anchors),
+        },
+        false,
+      );
+      return after;
+    });
+    this.selection = after;
     this.prevTime = 0;
     this.cache.clear();
     await this.show(this.service.locate(from).id, true);
   }
   remote(splice: Splice) {
-    // This narrow proof conservatively rejects overlap with any retained local history.
-    for (let i = 0; i < this.service.cursor; i++)
-      for (const change of this.service.changes(i)) {
-        if (splice.from < change.from + change.insert.length && splice.to > change.from)
-          throw new Error('Conflict: retained draft and journal');
-      }
     const oldStart = this.projection!.start;
-    this.service.apply(splice);
-    this.service.rebase(splice);
+    this.service.atomic(() => {
+      this.service.apply(splice);
+      this.service.rebase(splice);
+    });
     this.selection = mapSelection(this.selection, splice, this.service.revision);
     if (this.prevRange)
       this.prevRange = [mapPoint(this.prevRange[0], splice), mapPoint(this.prevRange[1], splice)];
@@ -414,6 +476,9 @@ export class DocumentSession {
     return {
       pluginStateFields: pluginStates.length,
       pluginStatePayloadBytes: bytes(pluginPayload),
+      tokenProvenancePayloadBytes: bytes(JSON.stringify(this.projection?.tokens ?? [])),
+      pendingWindowRequests: Number(!!this.pendingFetch),
+      pendingNavigationRequests: Number(!!this.pendingNavigation),
       markProvenancePayloadBytes: bytes(JSON.stringify(this.projection?.marks ?? [])),
       active: this.active,
       error: this.error,
@@ -453,6 +518,8 @@ export class DocumentSession {
   }
   destroy() {
     this.navigation++;
+    this.pendingNavigation?.(false);
+    this.pendingNavigation = undefined;
     this.editor?.destroy();
     if (this.editor) this.destroyed++;
     this.editor = undefined;

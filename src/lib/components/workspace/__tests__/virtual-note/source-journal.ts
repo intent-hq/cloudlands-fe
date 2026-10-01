@@ -45,6 +45,8 @@ export class SourceJournal {
   private persisted = new Map<number, string>();
   private receipts = new Map<string, { payload: string; revision: number }>();
   private events: Array<{ meta: Omit<Event, 'changes'>; pages: string[] }> = [];
+  private stagedPages: string[] = [];
+  maxBackingAdmissionBytes = 0;
   private baseLengths: number[];
   cursor = 0;
   readonly logs: { method: string; from: number; bytes: number }[] = [];
@@ -203,7 +205,8 @@ export class SourceJournal {
     return structuredClone(this.events[index].meta);
   }
   bookmark(index: number, key: 'before' | 'after', selection: Selection) {
-    this.events[index].meta[key] = { ...selection };
+    const event = this.events[index];
+    this.events[index] = { ...event, meta: { ...event.meta, [key]: { ...selection } } };
   }
   *changes(index: number, reverse = false): Generator<Change> {
     const pages = this.events[index].pages;
@@ -214,47 +217,163 @@ export class SourceJournal {
       yield JSON.parse(page);
     }
   }
-  record(event: Event, group: boolean) {
-    this.events.splice(this.cursor);
-    const pages = event.changes.map((change) => JSON.stringify(change));
-    if (pages.some((page) => bytes(page) > LIMITS.journalPage))
-      throw new Error('Journal change exceeds page budget');
-    const { changes: _changes, ...meta } = event;
-    const previous = group && this.cursor ? this.events[this.cursor - 1] : undefined;
-    if (previous) {
-      previous.pages.push(...pages);
-      previous.meta.after = meta.after;
-      previous.meta.anchorsAfter = meta.anchorsAfter;
-    } else {
-      this.events.push({ meta, pages });
-      this.cursor++;
-    }
-    if (this.events.length > 120) {
-      this.events.splice(0, this.events.length - 100);
-      this.cursor = this.events.length;
+  /** Fake backing-store transaction. Copy-on-write records keep rollback independent of page count. */
+  atomic<T>(run: () => T): T {
+    const regions = new Map(this.regions),
+      events = this.events.slice();
+    const state = {
+      revision: this.revision,
+      cursor: this.cursor,
+      anchors: this.anchors,
+      draftWrites: this.draftWrites,
+      maxSpliceBytes: this.maxSpliceBytes,
+      logs: this.logs.slice(),
+      stagedPages: this.stagedPages,
+    };
+    try {
+      return run();
+    } catch (error) {
+      this.stagedPages = state.stagedPages;
+      this.regions = regions;
+      this.events = events;
+      this.revision = state.revision;
+      this.cursor = state.cursor;
+      this.anchors = state.anchors;
+      this.draftWrites = state.draftWrites;
+      this.maxSpliceBytes = state.maxSpliceBytes;
+      this.logs.splice(0, this.logs.length, ...state.logs);
+      throw error;
     }
   }
+  private pages(change: Change): string[] {
+    const encoded = JSON.stringify(change);
+    if (bytes(encoded) <= LIMITS.journalPage) return [encoded];
+    const chunks = (text: string) => {
+      const result: string[] = [];
+      for (let from = 0; from < text.length;) {
+        let to = Math.min(from + 512, text.length);
+        if (to < text.length && /[\uD800-\uDBFF]/.test(text[to - 1])) to--;
+        result.push(text.slice(from, to));
+        from = to;
+      }
+      return result;
+    };
+    const pages: string[] = [];
+    for (const removed of chunks(change.removed))
+      pages.push(
+        JSON.stringify({
+          from: change.from,
+          to: change.from + removed.length,
+          insert: '',
+          removed,
+        }),
+      );
+    let from = change.from;
+    for (const insert of chunks(change.insert)) {
+      pages.push(JSON.stringify({ from, to: from, insert, removed: '' }));
+      from += insert.length;
+    }
+    if (pages.some((p) => bytes(p) > LIMITS.journalPage))
+      throw new Error('Journal page exceeds budget');
+    return pages;
+  }
+  beginChanges() {
+    this.stagedPages = [];
+  }
+  /** Admission and inverse paging live in the mock backing service, not a renderer change array. */
+  stage(splice: Splice, history = true) {
+    const change = { ...splice, removed: this.slice(splice.from, splice.to) };
+    this.maxBackingAdmissionBytes = Math.max(
+      this.maxBackingAdmissionBytes,
+      bytes(JSON.stringify(change)),
+    );
+    const pages = this.pages(change);
+    for (const page of pages) {
+      const bounded: Change = JSON.parse(page);
+      this.apply(bounded);
+      if (!history) this.rebase(bounded);
+    }
+    if (history) this.stagedPages.push(...pages);
+  }
+  record(event: Event, group: boolean) {
+    // Admission precedes mutation, including truncating the redo branch.
+    const pages = [...this.stagedPages, ...event.changes.flatMap((change) => this.pages(change))];
+    const { changes: _changes, ...meta } = event;
+    const events = this.events.slice(0, this.cursor);
+    const previous = group && this.cursor ? events[this.cursor - 1] : undefined;
+    if (previous)
+      events[this.cursor - 1] = {
+        pages: [...previous.pages, ...pages],
+        meta: { ...previous.meta, after: meta.after, anchorsAfter: meta.anchorsAfter },
+      };
+    else events.push({ meta, pages });
+    if (events.length > 120) events.splice(0, events.length - 100);
+    this.events = events;
+    this.cursor = events.length;
+    this.stagedPages = [];
+  }
+  /** Carry the remote operation backwards through undo and forwards through redo coordinates. */
   rebase(splice: Splice) {
-    const anchors = (entries: Anchor[]) =>
+    const events = this.events.slice();
+    const inverse = (c: Change): Splice => ({
+      from: c.from,
+      to: c.from + c.insert.length,
+      insert: c.removed,
+    });
+    const mapSplice = (s: Splice, through: Splice): Splice => ({
+      ...s,
+      from: mapPoint(s.from, through, 1),
+      to: mapPoint(s.to, through, s.from === s.to ? 1 : -1),
+    });
+    const anchors = (entries: Anchor[], through: Splice) =>
       entries.map((a) => ({
         ...a,
-        from: mapPoint(a.from, splice),
-        to: mapPoint(a.to, splice, -1),
+        from: mapPoint(a.from, through),
+        to: mapPoint(a.to, through, -1),
       }));
-    for (const event of this.events) {
-      event.meta.before = mapSelection(event.meta.before, splice, this.revision);
-      event.meta.after = mapSelection(event.meta.after, splice, this.revision);
-      event.meta.anchorsBefore = anchors(event.meta.anchorsBefore);
-      event.meta.anchorsAfter = anchors(event.meta.anchorsAfter);
-      event.pages = event.pages.map((page) => {
-        const change: Change = JSON.parse(page);
-        return JSON.stringify({
-          ...change,
-          from: mapPoint(change.from, splice),
-          to: mapPoint(change.to, splice),
-        });
-      });
+    const meta = (e: Omit<Event, 'changes'>, before: Splice, after: Splice) => ({
+      before: mapSelection(e.before, before, this.revision),
+      after: mapSelection(e.after, after, this.revision),
+      anchorsBefore: anchors(e.anchorsBefore, before),
+      anchorsAfter: anchors(e.anchorsAfter, after),
+    });
+    let remote = splice;
+    for (let i = this.cursor - 1; i >= 0; i--) {
+      const event = this.events[i],
+        after = remote,
+        pages = new Array<string>(event.pages.length);
+      for (let n = event.pages.length - 1; n >= 0; n--) {
+        const c: Change = JSON.parse(event.pages[n]),
+          inv = inverse(c);
+        if (remote.from < inv.to && remote.to > inv.from)
+          throw new Error('Conflict: retained draft and journal');
+        const before = mapSplice(remote, inv);
+        pages[n] = JSON.stringify(mapSplice(c, before));
+        remote = before;
+      }
+      events[i] = {
+        pages: pages.flatMap((page) => this.pages(JSON.parse(page))),
+        meta: meta(event.meta, remote, after),
+      };
     }
+    remote = splice;
+    for (let i = this.cursor; i < this.events.length; i++) {
+      const event = this.events[i],
+        before = remote,
+        pages: string[] = [];
+      for (const page of event.pages) {
+        const c: Change = JSON.parse(page);
+        if (remote.from < c.to && remote.to > c.from)
+          throw new Error('Conflict: retained redo and journal');
+        pages.push(JSON.stringify(mapSplice(c, remote)));
+        remote = mapSplice(remote, c);
+      }
+      events[i] = {
+        pages: pages.flatMap((page) => this.pages(JSON.parse(page))),
+        meta: meta(event.meta, before, remote),
+      };
+    }
+    this.events = events;
   }
   get depth() {
     return this.events.length;
@@ -263,6 +382,8 @@ export class SourceJournal {
     return {
       draftWrites: this.draftWrites,
       maxSpliceBytes: this.maxSpliceBytes,
+      backingStagedJournalBytes: this.stagedPages.reduce((n, p) => n + bytes(p), 0),
+      maxBackingAdmissionBytes: this.maxBackingAdmissionBytes,
       backingSourceBytes: [...this.regions.values()].reduce((n, s) => n + bytes(s), 0),
       backingSavedBytes: [...this.persisted.values()].reduce((n, s) => n + bytes(s), 0),
       backingJournalBytes: this.events.reduce(

@@ -192,3 +192,157 @@ it('invalid source intervals cannot corrupt a draft', () => {
   expect(store.region(0)).toBe(fixture(0));
   expect(store.revision).toBe(1);
 });
+
+// Review regressions: expectations are independently specified source and PM results.
+describe('source conservation after every accepted edit', () => {
+  for (const kind of ['literal', 'bold-end', 'partial-bold', 'bold-link', 'bold-split'])
+    it(`persists and reloads ${kind}`, () => {
+      let source =
+        kind === 'bold-link'
+          ? '[link](https://example.test)\n\n'
+          : '**Region** café 🌍 repeated repeated\n\n';
+      let doc = schema.nodeFromJSON(new SourceProjection(source).content);
+      const edit = (run: (t: Transform) => Transform) => {
+        const t = run(new Transform(doc));
+        for (let i = 0; i < t.steps.length; i++) {
+          const p = new SourceProjection(source);
+          for (const s of p.translate(t.steps[i], t.docs[i]))
+            source = source.slice(0, s.from) + s.insert + source.slice(s.to);
+        }
+        doc = t.doc;
+        expect(schema.nodeFromJSON(new SourceProjection(source).content).toJSON()).toEqual(
+          doc.toJSON(),
+        );
+      };
+      if (kind === 'literal') {
+        let pos = 1;
+        for (const c of 'a**b**c ') edit((t) => t.insert(pos++, schema.text(c)));
+        expect(source).toBe('a\\*\\*b\\*\\*c **Region** café 🌍 repeated repeated\n\n');
+      } else if (kind === 'bold-end') {
+        edit((t) => t.insert(7, schema.text('Z', [schema.marks.bold.create()])));
+        expect(source).toBe('**RegionZ** café 🌍 repeated repeated\n\n');
+      } else if (kind === 'partial-bold') {
+        edit((t) => t.removeMark(3, 5, schema.marks.bold));
+        expect(source).toBe('**Re**gi**on** café 🌍 repeated repeated\n\n');
+      } else if (kind === 'bold-link') {
+        edit((t) => t.addMark(1, 5, schema.marks.bold.create()));
+        expect(source).toBe('[**link**](https://example.test)\n\n');
+      } else {
+        edit((t) => t.split(4));
+        expect(source).toBe('**Reg**\n\n**ion** café 🌍 repeated repeated\n\n');
+      }
+    });
+});
+
+it('rebases each historical coordinate through intervening local edits and the redo branch', () => {
+  const store = new SourceJournal();
+  for (const [pos, value] of [
+    [10, 'A'],
+    [0, 'BBBBB'],
+  ] as const) {
+    store.apply(event(pos, value).changes[0]);
+    store.record(event(pos, value), false);
+  }
+  const remote = { from: 12, to: 12, insert: 'R' };
+  store.apply(remote);
+  store.rebase(remote);
+  for (let i = 1; i >= 0; i--) {
+    for (const c of store.changes(i, true))
+      store.apply({ from: c.from, to: c.from + c.insert.length, insert: c.removed });
+    store.cursor--;
+  }
+  expect(store.region(0)).toBe(
+    'Region R0000 — café 🌍. repeated repeated [link](https://example.test).\n\n',
+  );
+  for (let i = 0; i < 2; i++) {
+    for (const c of store.changes(i)) store.apply(c);
+    store.cursor++;
+  }
+  expect(store.region(0)).toBe(
+    'BBBBBRegion R000A0 — café 🌍. repeated repeated [link](https://example.test).\n\n',
+  );
+});
+
+it('pages a large replacement inverse as one undoable event', () => {
+  const store = new SourceJournal(() => 'x'.repeat(3000) + '\n\n', 1);
+  const change = store.apply({ from: 0, to: 3000, insert: 'y'.repeat(3000) });
+  store.record({ ...event(0), changes: [change] }, false);
+  for (const c of store.changes(0, true))
+    store.apply({ from: c.from, to: c.from + c.insert.length, insert: c.removed });
+  expect(store.region(0)).toBe('x'.repeat(3000) + '\n\n');
+  for (const c of store.changes(0)) store.apply(c);
+  expect(store.region(0)).toBe('y'.repeat(3000) + '\n\n');
+  expect(store.stats.maxJournalRead).toBeLessThanOrEqual(LIMITS.journalPage);
+});
+
+it('keeps redo history and source unchanged when admission fails', () => {
+  const store = new SourceJournal();
+  const change = store.apply({ from: 0, to: 0, insert: 'A' });
+  store.record({ ...event(0, 'A'), changes: [change] }, false);
+  store.apply({ from: 0, to: 1, insert: '' });
+  store.cursor = 0;
+  const revision = store.revision,
+    anchors = structuredClone(store.anchors);
+  expect(() =>
+    store.atomic(() => {
+      const change = store.apply({ from: 2, to: 2, insert: 'X' });
+      store.record({ ...event(2), changes: [change] }, false);
+      throw new Error('injected storage failure');
+    }),
+  ).toThrow('injected storage failure');
+  expect(store.region(0)).toBe(fixture(0));
+  expect(store.revision).toBe(revision);
+  expect(store.anchors).toEqual(anchors);
+  expect(store.cursor).toBe(0);
+  expect(store.depth).toBe(1);
+  for (const c of store.changes(0)) store.apply(c);
+  expect(store.region(0)).toBe('A' + fixture(0));
+});
+
+it('maps a remote operation through both the undo and redo chains', () => {
+  const store = new SourceJournal();
+  for (const [from, insert] of [
+    [10, 'A'],
+    [0, 'BBBBB'],
+  ] as const) {
+    const c = store.apply({ from, to: from, insert });
+    store.record({ ...event(from, insert), changes: [c] }, false);
+  }
+  for (const c of store.changes(1, true))
+    store.apply({ from: c.from, to: c.from + c.insert.length, insert: c.removed });
+  store.cursor--;
+  const remote = { from: 7, to: 7, insert: 'R' };
+  store.atomic(() => {
+    store.apply(remote);
+    store.rebase(remote);
+  });
+  for (const c of store.changes(1)) store.apply(c);
+  store.cursor++;
+  expect(store.region(0)).toBe(
+    'BBBBBRegion R000A0 — café 🌍. repeated repeated [link](https://example.test).\n\n',
+  );
+  for (let i = 1; i >= 0; i--) {
+    for (const c of store.changes(i, true))
+      store.apply({ from: c.from, to: c.from + c.insert.length, insert: c.removed });
+    store.cursor--;
+  }
+  expect(store.region(0)).toBe(
+    'Region R0000 — café 🌍. repeated repeated [link](https://example.test).\n\n',
+  );
+});
+
+it('admits source and inverse pages within budget without retaining a renderer change array', () => {
+  const store = new SourceJournal(() => 'x'.repeat(7000) + '\n\n', 1);
+  store.atomic(() => {
+    store.beginChanges();
+    store.stage({ from: 0, to: 7000, insert: 'y'.repeat(7000) });
+    store.record({ ...event(0), changes: [] }, false);
+  });
+  expect(store.depth).toBe(1);
+  expect(store.stats.backingStagedJournalBytes).toBe(0);
+  expect(store.maxSpliceBytes).toBeLessThanOrEqual(LIMITS.request);
+  for (const c of store.changes(0, true))
+    store.apply({ from: c.from, to: c.from + c.insert.length, insert: c.removed });
+  expect(store.region(0)).toBe('x'.repeat(7000) + '\n\n');
+  expect(store.maxJournalRead).toBeLessThanOrEqual(LIMITS.journalPage);
+});
