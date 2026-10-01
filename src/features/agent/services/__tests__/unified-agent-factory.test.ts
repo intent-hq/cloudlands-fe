@@ -9,6 +9,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { UnifiedAgentFactory, type UnifiedAgentConfig } from '../agent-factory';
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
+import { agentCircuitBreaker } from '$shared/services/agent-circuit-breaker';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const { mockStoreDispatch, backendRequestMock, mockStoreState } = vi.hoisted(() => ({
   mockStoreDispatch: vi.fn(),
@@ -87,6 +89,8 @@ describe('UnifiedAgentFactory', () => {
   let mockWorkspace: Workspace;
 
   beforeEach(() => {
+    agentCircuitBreaker.removeWorkspace('workspace-123');
+    agentCircuitBreaker.removeWorkspace('other-workspace');
     factory = UnifiedAgentFactory.getInstance();
     backendRequestMock.mockReset();
     backendRequestMock.mockResolvedValue({ success: true, queued: false, messageId: 'm-1' });
@@ -114,6 +118,116 @@ describe('UnifiedAgentFactory', () => {
   });
 
   describe('createAgent', () => {
+    it('does not publish or send after creation acknowledges on a superseded connection', async () => {
+      let resolve!: (value: unknown) => void;
+      agentsApi.create.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      mockStoreState.current = withLegacyPrincipal(mockStoreState.current) as unknown as Record<
+        string,
+        unknown
+      >;
+      const config: UnifiedAgentConfig = {
+        workspaceId: mockWorkspace.id,
+        name: 'Old connection',
+        initialMessage: 'Do not send on the new host',
+      };
+      const pending = factory.createAgent(mockWorkspace, config, 'resource');
+      const joined = factory.createAgent(mockWorkspace, config, 'resource');
+      expect(joined).toBe(pending);
+      await vi.waitFor(() => expect(agentsApi.create).toHaveBeenCalledTimes(1));
+      mockStoreState.current = withLegacyPrincipal({
+        ...mockStoreState.current,
+        connections: { windowBackendId: 'new-host' },
+      }) as unknown as Record<string, unknown>;
+      const fresh = factory.createAgent(
+        mockWorkspace,
+        { ...config, initialMessage: undefined },
+        'resource',
+      );
+      expect(fresh).not.toBe(pending);
+      await expect(fresh).resolves.toMatchObject({ success: true });
+      mockStoreDispatch.mockClear();
+      resolve({ id: 'agent-stale', workspaceId: mockWorkspace.id, name: 'Old connection' });
+      await expect(pending).resolves.toMatchObject({ success: false });
+      await expect(joined).resolves.toMatchObject({ success: false });
+      expect(mockStoreDispatch).not.toHaveBeenCalled();
+      expect(backendRequestMock).not.toHaveBeenCalled();
+    });
+
+    it('does not clear a new backend session streaming flag when an old initial send fails', async () => {
+      let reject!: (error: Error) => void;
+      backendRequestMock.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, fail) => {
+            reject = fail;
+          }),
+      );
+      mockStoreState.current = withLegacyPrincipal(mockStoreState.current) as unknown as Record<
+        string,
+        unknown
+      >;
+      await factory.createAgent(mockWorkspace, {
+        workspaceId: mockWorkspace.id,
+        name: 'Sender',
+        initialMessage: 'Start',
+      });
+      await vi.waitFor(() => expect(backendRequestMock).toHaveBeenCalledTimes(1));
+      mockStoreState.current = withLegacyPrincipal({
+        ...mockStoreState.current,
+        connections: { windowBackendId: 'new-host' },
+      }) as unknown as Record<string, unknown>;
+      mockStoreDispatch.mockClear();
+      reject(new Error('old send failed'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(mockStoreDispatch).not.toHaveBeenCalled();
+    });
+    it('shares one transport-lifetime creation per workspace/resource and permits retry after settlement', async () => {
+      let resolve!: (value: unknown) => void;
+      agentsApi.create.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const config: UnifiedAgentConfig = { workspaceId: mockWorkspace.id, name: 'Shared' };
+      const first = factory.createAgent(mockWorkspace, config, 'chief-thread');
+      const second = factory.createAgent(mockWorkspace, config, 'chief-thread');
+      expect(second).toBe(first);
+      await vi.waitFor(() => expect(agentsApi.create).toHaveBeenCalledTimes(1));
+      resolve({ id: 'agent-shared', provider: 'host-provider', model: 'host-model' });
+      const [a, b] = await Promise.all([first, second]);
+      expect(a.agent).toMatchObject({
+        id: 'agent-shared',
+        provider: 'host-provider',
+        model: 'host-model',
+      });
+      expect(b).toBe(a);
+      await factory.createAgent(mockWorkspace, config, 'chief-thread');
+      expect(agentsApi.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not coalesce different workspaces or resources and releases failed creations', async () => {
+      agentsApi.create.mockRejectedValueOnce(new Error('refused'));
+      const config: UnifiedAgentConfig = { workspaceId: mockWorkspace.id, name: 'Retry' };
+      const failed = await factory.createAgent(mockWorkspace, config, 'resource');
+      expect(failed.success).toBe(false);
+      const results = await Promise.all([
+        factory.createAgent(mockWorkspace, config, 'resource'),
+        factory.createAgent(mockWorkspace, config, 'other-resource'),
+        factory.createAgent(
+          { ...mockWorkspace, id: 'other-workspace' as Workspace['id'] },
+          config,
+          'resource',
+        ),
+      ]);
+      expect(results.every((result) => result.success)).toBe(true);
+      expect(agentsApi.create).toHaveBeenCalledTimes(4);
+    });
     it('should create an agent with valid configuration', async () => {
       const config: UnifiedAgentConfig = {
         name: 'Test Agent',
@@ -480,6 +594,55 @@ describe('UnifiedAgentFactory', () => {
       });
     });
   });
+
+  it('leaves specialist provider selection to the host instead of forcing the window default', async () => {
+    mockStoreState.current = {
+      ...mockStoreState.current,
+      model: { defaultProviderId: 'auggie' },
+      agentAvailability: { hasCheckedOnce: false, providerStatusMap: {} },
+    };
+    agentsApi.create.mockResolvedValueOnce({
+      id: 'agent-specialist-selected',
+      workspaceId: mockWorkspace.id,
+      name: 'Reviewer',
+      provider: 'codex',
+      model: 'host-review-model',
+      status: 'Idle',
+      messages: [],
+    });
+    const result = await factory.createAgent(mockWorkspace, {
+      name: 'Reviewer',
+      workspaceId: mockWorkspace.id as any,
+      metadata: { specialist: 'verifier' },
+    });
+    expect(result.success).toBe(true);
+    expect(agentsApi.create.mock.calls.at(-1)?.[0]).toMatchObject({ specialist: 'verifier' });
+    expect(agentsApi.create.mock.calls.at(-1)?.[0].provider).toBeUndefined();
+    expect(result.agent?.provider).toBe('codex');
+    expect(result.agent?.model).toBe('host-review-model');
+  });
+
+  it.each([undefined, 2, 3])(
+    'retains only the daemon-acknowledged assistant prompt marker (%s)',
+    async (chiefPromptVersion) => {
+      agentsApi.create.mockResolvedValueOnce({
+        id: 'agent-chief-acknowledged',
+        workspaceId: mockWorkspace.id,
+        name: 'Assistant',
+        provider: 'host-provider',
+        model: 'host-model',
+        metadata: { chiefPromptVersion },
+      });
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Assistant',
+        workspaceId: mockWorkspace.id,
+        metadata: { specialist: 'chief-of-staff', chiefPromptVersion: 3 },
+      });
+      expect(result.success).toBe(true);
+      expect(result.agent?.metadata?.chiefPromptVersion).toBe(chiefPromptVersion);
+      expect(result.agent).toMatchObject({ provider: 'host-provider', model: 'host-model' });
+    },
+  );
 
   describe('active-provider availability guard (D1-B)', () => {
     it('fails closed for implicit Antigravity when readiness lookup cannot resolve', async () => {

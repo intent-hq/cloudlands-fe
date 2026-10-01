@@ -32,7 +32,7 @@ import {
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -456,9 +456,7 @@ function* removeHostedMember(
     // The daemon's `workspace:updated` delta bumps `memberCount`, which
     // refetches the roster; a direct refetch keeps the list right even when
     // the count is unchanged (e.g. the member was already gone).
-    const refetch = loadHostedRosterRequested(workspaceId);
-    refetch.promise.catch(() => {});
-    yield* put(refetch);
+    yield* put(loadHostedRosterRequested(workspaceId));
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
@@ -632,9 +630,7 @@ function* removeAllHostedGuests(
       outcome = { failure: new HostedRosterOperationError('cancelled') };
       return;
     }
-    const refetch = loadHostedRosterRequested(workspaceId);
-    refetch.promise.catch(() => {});
-    yield* put(refetch);
+    yield* put(loadHostedRosterRequested(workspaceId));
     outcome = { result };
   } catch (error) {
     const failure = toHostedRosterFailure(error);
@@ -701,9 +697,7 @@ function* refetchRostersOnMemberCountChange(
     if (!current.has(workspaceId)) seen.delete(workspaceId);
   }
   for (const workspaceId of stale) {
-    const request = loadHostedRosterRequested(workspaceId);
-    request.promise.catch(() => {});
-    yield* put(request);
+    yield* put(loadHostedRosterRequested(workspaceId));
   }
 }
 
@@ -800,7 +794,7 @@ function* tearDownOnGuestAuthRejection(
       cleanups.push([workspaceId, agentId]);
     }
     yield* put(destroyOwnedTabsForWorkspace(workspaceId));
-    yield* put(workspaceDeleted(workspaceId, [...agentIds]));
+    yield* put(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
     try {
       yield* call(closeWorkspaceTabAndNavigateAway, workspaceId);
     } catch (error) {
@@ -837,9 +831,8 @@ function* watchActions(): SagaGenerator<void> {
 
 export function* guestSessionsSaga(): SagaGenerator<void> {
   if (!getApi()) {
-    // Outside Electron there is no main to ask and nothing can be joined as a
-    // guest: settle the window's identity (`selectWindowIdentitySettled`) as
-    // owner instead of leaving it a boot-time unknown forever.
+    // Outside Electron there is no local session registry to ask. Mark that
+    // storage read unavailable; principal.me independently resolves authority.
     yield* put(guestSessionsListUnavailable());
     return;
   }
@@ -855,10 +848,7 @@ export function* guestSessionsSaga(): SagaGenerator<void> {
     },
   );
   const initial = loadGuestSessionsRequested();
-  // Nobody awaits the boot hydration: a failed invoke settles the store
-  // (`guestSessionsListUnavailable`) and must not surface as an unhandled
-  // rejection.
-  initial.promise.catch(() => {});
+  // A failed boot hydration is surfaced through `guestSessionsListUnavailable`.
   try {
     yield* call(hydrate, initial);
     yield* all([join(eventTask), join(actionsTask), join(rosterTask)]);

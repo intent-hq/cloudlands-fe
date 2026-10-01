@@ -24,6 +24,9 @@
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { openCollaborationSignIn } from '$features/collaboration-auth/renderer/collaboration-auth.client';
+  const multiplayer$ = selectLabsMultiplayerEnabled();
   import { formatGuestSessionAddress, formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
   import type { GuestSessionRecord, GuestWorkspaceRef } from '$shared/types/guest-sessions';
@@ -98,9 +101,7 @@
 
   function leaveHost(session: GuestSessionRecord | null) {
     if (!session) return;
-    const action = leaveGuestSessionRequested(session.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 
   /**
@@ -132,9 +133,7 @@
 
   function leaveWorkspace(target: LeaveWorkspaceTarget | null) {
     if (!target) return;
-    const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(leaveGuestWorkspaceRequested(target.session.id, target.workspace.id));
   }
 
   function removeAllFailureLines(report: HostedSweepReport): string[] {
@@ -157,9 +156,7 @@
   }
 
   function removeAllGuests(workspaceId: string) {
-    const action = removeAllHostedGuestsRequested(workspaceId);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(removeAllHostedGuestsRequested(workspaceId));
   }
 </script>
 
@@ -172,6 +169,10 @@
       {m.settings_guestSessions_description()}
     </p>
   </div>
+
+  {#if $multiplayer$}
+    <Button onclick={openCollaborationSignIn}>{m.collaborationAuth_title()}</Button>
+  {/if}
 
   {#if !$isCollaboratorOnly$}
     <div data-testid="guest-sessions-hosting">

@@ -1,12 +1,13 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { LocalRepoOption } from '$features/onboarding/utils/local-repo-options';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   removeItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 export type KnownReposState = {
   repos: Collection<KnownRepo, 'path'>;
@@ -90,3 +91,5 @@ knownReposReducer.with(removeRepo, (state, { payload: [repoPath] }) => {
     repos,
   };
 });
+
+knownReposReducer.with(hostExecutionConnectionChanged, () => initialState);

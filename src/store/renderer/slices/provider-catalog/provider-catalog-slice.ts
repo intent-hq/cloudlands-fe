@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * Provider Catalog Slice
  *
@@ -8,11 +9,20 @@
  * backend reconnect (the daemon binary — and therefore the registry — may
  * have changed across a restart).
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  workspaceUnmounted,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { removeWorkspaceEntity } from '../workspace/workspace-slice';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
-import type { ProviderCatalogEntry, ProviderCatalogState } from './provider-catalog-types';
+import type {
+  ProviderCatalogEntry,
+  ProviderCatalogState,
+  WorkspaceCatalogSnapshot,
+} from './provider-catalog-types';
 
 export const initialState: ProviderCatalogState = {
   providers: createCollection<ProviderCatalogEntry, 'id'>('id'),
@@ -33,3 +43,66 @@ providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] 
   providers: createCollection<ProviderCatalogEntry, 'id'>('id', catalog.providers),
   loaded: true,
 }));
+
+providerCatalogReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...initialState,
+  workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
+}));
+export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
+  'providerCatalog/workspaceCatalogRequested',
+);
+export const workspaceCatalogReceived = createAction<
+  [workspaceId: string, snapshot: WorkspaceCatalogSnapshot, epoch: number]
+>('providerCatalog/workspaceCatalogReceived');
+export const workspaceCatalogInvalidated = createAction<[connectionChanged?: boolean]>(
+  'providerCatalog/workspaceCatalogInvalidated',
+);
+providerCatalogReducer.with(
+  workspaceCatalogReceived,
+  (state, { payload: [workspaceId, snapshot, epoch] }) =>
+    epoch !== (state.workspaceEpoch ?? 0)
+      ? state
+      : {
+          ...state,
+          byWorkspaceId: { ...state.byWorkspaceId, [workspaceId]: snapshot },
+          mcpServerNamesByWorkspaceId: {
+            ...state.mcpServerNamesByWorkspaceId,
+            [workspaceId]: Object.fromEntries(
+              (snapshot.mcpServers ?? []).flatMap((server) =>
+                server.id ? [[server.id, server.name]] : [],
+              ),
+            ),
+          },
+        },
+);
+providerCatalogReducer.with(
+  workspaceCatalogInvalidated,
+  (state, { payload: [connectionChanged] }) => ({
+    ...state,
+    // Keep the last successful snapshot during a refresh; a changed connection
+    // must discard it so data from another daemon cannot leak into this one.
+    byWorkspaceId: connectionChanged ? {} : state.byWorkspaceId,
+    mcpServerNamesByWorkspaceId: connectionChanged ? {} : state.mcpServerNamesByWorkspaceId,
+    workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
+  }),
+);
+
+function clearWorkspaceCatalog(
+  state: ProviderCatalogState,
+  workspaceId: string,
+): ProviderCatalogState {
+  const { [workspaceId]: _removed, ...byWorkspaceId } = state.byWorkspaceId ?? {};
+  const { [workspaceId]: _removedNames, ...mcpServerNamesByWorkspaceId } =
+    state.mcpServerNamesByWorkspaceId ?? {};
+  return { ...state, byWorkspaceId, mcpServerNamesByWorkspaceId };
+}
+providerCatalogReducer.with(workspaceUnmounted, (state, { payload: [id] }) =>
+  clearWorkspaceCatalog(state, id),
+);
+providerCatalogReducer.with(workspaceDeleted, (state, { payload: [id] }) =>
+  clearWorkspaceCatalog(state, id),
+);
+
+providerCatalogReducer.with(removeWorkspaceEntity, (state, { payload: [id] }) =>
+  clearWorkspaceCatalog(state, id),
+);

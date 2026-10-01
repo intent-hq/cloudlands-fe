@@ -16,7 +16,7 @@ import {
   clearGithubUserSearch,
   searchGithubUsers,
 } from '$store/renderer/slices/github-user-search/github-user-search-slice';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { githubUserSearchSaga, USER_SEARCH_DEBOUNCE_MS } from './github-user-search-saga';
 
 type Fn = ReturnType<typeof vi.fn>;
@@ -60,6 +60,44 @@ describe('githubUserSearchSaga (fake seam, real store)', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('keeps identical user queries tied to their workspace and ignores late A results', async () => {
+    let resolveA!: (result: ReturnType<typeof ok>) => void;
+    searchApi.searchUsers.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveA = resolve;
+        }),
+    );
+    appStore.dispatch(searchGithubUsers('same', 'a'));
+    await vi.advanceTimersByTimeAsync(USER_SEARCH_DEBOUNCE_MS);
+    expect(searchApi.searchUsers).toHaveBeenLastCalledWith('same', 'a');
+    searchApi.searchUsers.mockResolvedValueOnce(ok(wireUser('user-b', 1)));
+    appStore.dispatch(searchGithubUsers('same', 'b'));
+    await vi.advanceTimersByTimeAsync(USER_SEARCH_DEBOUNCE_MS);
+    resolveA(ok(wireUser('user-a', 1)));
+    await flush();
+    expect(searchApi.searchUsers).toHaveBeenLastCalledWith('same', 'b');
+    expect(state().workspaceId).toBe('b');
+    expect(getItems(state().results).map((user) => user.login)).toEqual(['user-b']);
+  });
+
+  it('does not resurrect results after the dialog clears a pending query', async () => {
+    let resolve!: (result: ReturnType<typeof ok>) => void;
+    searchApi.searchUsers.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    appStore.dispatch(searchGithubUsers('same', 'a'));
+    await vi.advanceTimersByTimeAsync(USER_SEARCH_DEBOUNCE_MS);
+    appStore.dispatch(clearGithubUserSearch());
+    resolve(ok(wireUser('late', 1)));
+    await flush();
+    expect(getItems(state().results)).toEqual([]);
+    expect(state().lastQuery).toBe('');
   });
 
   it('debounces and coalesces rapid keystrokes into one call', async () => {

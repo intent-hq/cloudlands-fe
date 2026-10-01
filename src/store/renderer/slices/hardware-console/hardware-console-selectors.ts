@@ -2,7 +2,7 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { buildLegacyReasoningEffortModelId } from '$features/agent/utils/legacy-reasoning-effort';
 import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
 import { selectCurrentWorkspaceTabId } from '../tab-state/tab-state-selectors';
-import { selectActiveAgentId } from '../workspace-agents/workspace-agents-selectors';
+import { selectActiveTab } from '../panel-layout/panel-layout-selectors';
 import { selectAgentProvider } from '../agent-session/agent-session-selectors';
 import { selectAgentModelEffortLevels, selectSelectedModel } from '../model/model-selectors';
 import type { EncoderEffortTarget } from './hardware-console-types';
@@ -168,7 +168,7 @@ export const selectEncoderAgentIdentity = store.createSelector(
   },
 );
 
-/** Same selected workspace/agent convention as the hardware action keys. */
+/** Target the conversation selected in the focused panel, as the chat controls do. */
 export const selectEncoderEffortTarget = store.createSelector(
   (state): EncoderEffortTarget | null => {
     const hardware = state.hardwareConsole;
@@ -182,8 +182,12 @@ export const selectEncoderEffortTarget = store.createSelector(
     const workspaceId = selectCurrentWorkspaceTabId.select(state);
     if (!workspaceId || workspaceId === CHIEF_WORKSPACE_ID) return null;
     if (selectIsWorkspaceCollaborator.select(state, workspaceId)) return null;
-    const agentId = selectActiveAgentId.select(state, workspaceId);
-    return agentId ? selectEncoderAgentIdentity.select(state, workspaceId, agentId) : null;
+    // Conversation tab clicks update panelLayout, not workspaceAgents.activeAgentId.
+    // Falling back to that loader-owned field can silently edit another conversation.
+    const tab = selectActiveTab.select(state, workspaceId);
+    if (tab?.type !== 'agent' || !tab.agentId) return null;
+    if (tab.workspaceId && tab.workspaceId !== workspaceId) return null;
+    return selectEncoderAgentIdentity.select(state, workspaceId, tab.agentId);
   },
 );
 

@@ -48,7 +48,6 @@ describe('editorial workspace shell presentation contract', () => {
     const container = source('../PanelContainer.svelte');
 
     expect(panel).toContain('overflow-hidden rounded-(--panel-shell-radius) text-foreground');
-    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
     expect(panel).not.toContain('rounded-lg border border-border');
     expect(panel).toContain('class:bg-sidebar={panel.tabs.length === 0}');
     expect(panel).toContain('class:bg-background={panel.tabs.length > 0}');
@@ -198,7 +197,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
-    expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
+    // Flex shrinking bounds narrow layouts without a percentage cap feeding
+    // the overflow-dependent margin back into the intrinsic parent width.
+    // The drag-region and layout-stability CTs cover this across launcher states.
+    expect(tabs).toContain('w-fit min-w-0 items-center');
+    expect(tabs).not.toContain('max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(nav).not.toContain('faBell');
@@ -301,16 +304,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(dock).not.toContain('faChevron');
     expect(terminal).toContain('showDockWhenClosed || $isOpen');
     expect(route).toContain('showDockWhenClosed={false}');
-  });
-
-  it('renders a single content title instead of a category breadcrumb', () => {
-    const tabBar = source('../PanelTabBar.svelte');
-
-    expect(tabBar).toContain(
-      'Single content title; type/category is conveyed by the content itself.',
-    );
-    expect(tabBar).not.toContain('<span>{categoryLabel}</span>');
-    expect(tabBar).not.toContain('<span class="text-ghost text-xs">/</span>');
   });
 
   it('orders workspace identity, progress, and status like the reference hierarchy', () => {

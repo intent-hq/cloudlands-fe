@@ -61,6 +61,7 @@
   import { store as appStore } from '$store/renderer/store';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { getNoteTooltip } from '$features/notes/utils/note-tooltip';
 
   type PaneOpenEvent = MouseEvent | KeyboardEvent;
 
@@ -492,6 +493,7 @@
           <div
             role="listitem"
             data-note-id={note.id}
+            title={getNoteTooltip(getNoteTitle(note), note.metadata?.task?.status)}
             draggable={isDraggable}
             ondragstart={(e) => handleDragStart(e, note)}
             ondragover={(e) => handleDragOver(e, note)}

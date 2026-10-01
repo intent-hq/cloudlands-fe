@@ -66,6 +66,16 @@ const FORMAT_EXTENSIONS = new Set([
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 // This suite executes the full required scan with the checked-in baseline.
 const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
+// Its final test executes the checker against the real repository catalogs.
+const LOCALE_COMPLETENESS_SUITE = 'scripts/check-i18n-completeness.test.ts';
+const LOCALE_COMPLETENESS_INPUTS = new Set([
+  'project.inlang/settings.json',
+  'scripts/i18n-equal-allowlist.json',
+  'scripts/check-i18n-completeness.mjs',
+  LOCALE_COMPLETENESS_SUITE,
+  'package.json',
+  'pnpm-lock.yaml',
+]);
 // Mirrors the runner-owned excludes in vitest.config.ts /
 // tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
 // mirrored: `isCtSpec` and playwright-ct.config.ts both read
@@ -624,7 +634,7 @@ export function createVerificationPlan(files, options = {}) {
   );
   const uiInvariants = files.some(isRendererSource);
   const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
-    (suite) => !directUnit.includes(suite),
+    (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
   );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
@@ -700,25 +710,35 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
-  // Selected test coverage is only equivalent if the inventory suite can run.
-  const translationCovered =
+  // Selected test coverage is only equivalent if the real-repository test can run.
+  const suiteCovered = (requiredSuite) =>
     vitestExclude.complete &&
     (fullUnit ||
       [...directUnit, ...declaredUnit].some(
-        (suite) =>
-          suite === TRANSLATION_INVENTORY_SUITE ||
-          TRANSLATION_INVENTORY_SUITE.startsWith(`${suite}/`),
+        (suite) => suite === requiredSuite || requiredSuite.startsWith(`${suite}/`),
       )) &&
-    globSync(TRANSLATION_INVENTORY_SUITE, {
+    globSync(requiredSuite, {
       cwd: root,
       ignore: vitestExclude.patterns,
       nodir: true,
     }).length > 0;
-  if (files.some(isEnforcedFile) && !translationCovered)
+  if (files.some(isEnforcedFile) && !suiteCovered(TRANSLATION_INVENTORY_SUITE))
     checks.push(
       command('i18n-strings', 'Translation strings (required inventory scan)', [
         'run',
         'lint:i18n-strings',
+      ]),
+    );
+  if (
+    files.some(
+      (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
+    ) &&
+    !suiteCovered(LOCALE_COMPLETENESS_SUITE)
+  )
+    checks.push(
+      command('i18n-completeness', 'Locale catalog completeness', [
+        'run',
+        'lint:i18n-completeness',
       ]),
     );
   if (deadCode)

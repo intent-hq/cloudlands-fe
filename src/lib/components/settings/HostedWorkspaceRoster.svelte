@@ -67,15 +67,11 @@
 
   function removeMember(member: WorkspaceMember | null) {
     if (!member) return;
-    const action = removeHostedMemberRequested(workspace.id, member.principalId);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(removeHostedMemberRequested(workspace.id, member.principalId));
   }
 
   onMount(() => {
-    const action = loadHostedRosterRequested(workspace.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(loadHostedRosterRequested(workspace.id));
   });
 </script>
 

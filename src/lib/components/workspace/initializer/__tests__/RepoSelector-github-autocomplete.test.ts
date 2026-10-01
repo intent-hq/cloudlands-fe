@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -11,10 +12,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (v: T) => void) {
       run(getter());
-      return () => {};
+      const notify = () => run(getter());
+      listeners.add(notify);
+      return () => {
+        listeners.delete(notify);
+      };
     },
   });
   const selector = <T>(getter: () => T) => {
@@ -23,6 +29,8 @@ const mocks = vi.hoisted(() => {
   };
   return {
     selector,
+    state: {} as Record<string, unknown>,
+    listeners,
     dispatch: vi.fn(),
     isAuthenticated: true,
     reposLoaded: true,
@@ -43,7 +51,16 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => mocks.state,
+    dispatch: (action) => {
+      mocks.dispatch(action);
+      if (action.type === 'wi/recent') {
+        mocks.recentRepos = action.payload;
+        for (const notify of mocks.listeners) notify();
+      }
+    },
+  });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
@@ -78,6 +95,8 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerDismissedRecentRepoKeys: mocks.selector(() => ({})),
+  selectWorkspaceInitializerHydrated: mocks.selector(() => true),
   selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
   selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
   selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
@@ -151,6 +170,10 @@ async function openGithubTab(props: Record<string, unknown> = {}) {
   const input = screen.getByPlaceholderText('owner/repo') as HTMLInputElement;
   return { ...rendered, input };
 }
+
+beforeEach(() => {
+  mocks.state = withLegacyPrincipal({});
+});
 
 describe('RepoSelector "Pick a repo" autocomplete', () => {
   beforeEach(() => {
@@ -379,6 +402,21 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await fireEvent.click(screen.getByText('Try again'));
 
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'githubRepos/load' });
+  });
+
+  it('a member browses host repositories without initializing or replacing repository accounts', async () => {
+    const state = withLegacyPrincipal({});
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    mocks.state = state;
+    mocks.isAuthenticated = false;
+    mocks.reposLoaded = false;
+    await openGithubTab();
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'githubRepos/load' });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({ type: 'githubAuth/initialize' });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({ type: 'githubAuth/start' });
+    expect(screen.queryByText('Sign in with GitHub to see repository suggestions')).toBeNull();
   });
 
   it('signed out: shows the connect hint, dispatches no repo load or search, and still confirms typed input', async () => {

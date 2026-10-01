@@ -1,4 +1,11 @@
 <script lang="ts">
+  import {
+    selectWorkspaceCreationVisible,
+    selectPrincipalActionContext,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
+  const currentHostRole$ = selectHostRole();
   /* eslint-disable max-lines */
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
@@ -42,6 +49,7 @@
     selectWorkspaceInitializerLastSubmittedAgent,
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
+    selectWorkspaceInitializerDefaultParentPath,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
@@ -318,6 +326,9 @@
   export async function applyPrefill() {
     const prefillData = sessionStorage.getItem(PREFILL_KEY);
     if (prefillData) {
+      submissionGeneration++;
+      pendingFirstMessage = null;
+      pullContinuation = null;
       try {
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
@@ -458,10 +469,11 @@
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
   const recentRepos$ = selectWorkspaceInitializerRecentRepos();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
 
   const savedState = $compactFormState$;
-  const lastSubmittedAgent = $lastSubmittedAgent$;
+  const savedAgentSettings = savedState ?? $lastSubmittedAgent$;
 
   // Form state - initialize from saved state if available
   let repoPath = $state(savedState?.repoPath ?? '');
@@ -496,21 +508,17 @@
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
-      : lastSubmittedAgent?.selectedSpecialist !== undefined
-        ? lastSubmittedAgent.selectedSpecialist
+      : savedAgentSettings?.selectedSpecialist !== undefined
+        ? savedAgentSettings.selectedSpecialist
         : defaultSingleAgentSpecialist,
   );
-  // Validate saved model against current provider - stale models from a different provider
-  // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
-  // since they won't exist in the current model list and cause a flash of the wrong model.
+  // Restore agent settings as one record so an absent/cleared override cannot
+  // fall through to a stale last-submitted effort for a different model.
   // A persisted bare model id is attributed to the provider persisted alongside it;
   // only a legacy pre-triple compound id carries its own prefix.
-  const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
-  const restoredModelProvider =
-    savedState?.selectedModel !== undefined
-      ? savedState?.selectedProvider
-      : lastSubmittedAgent?.selectedProvider;
-  const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
+  const restoredModel = savedAgentSettings?.selectedModel;
+  const restoredModelProvider = savedAgentSettings?.selectedProvider;
+  const currentProviderAtInit = restoredModelProvider || $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
     !restoredModel ||
     (splitLegacyCompoundId(restoredModel).providerId ??
@@ -522,20 +530,14 @@
   );
   // Track if user explicitly overrode the model (vs using specialist default)
   let modelWasOverridden = $state<boolean>(
-    isModelForCurrentProvider
-      ? (savedState?.modelWasOverridden ?? lastSubmittedAgent?.modelWasOverridden ?? false)
-      : false,
+    isModelForCurrentProvider ? (savedAgentSettings?.modelWasOverridden ?? false) : false,
   );
   let selectedReasoningEffort = $state<string | undefined>(
-    isModelForCurrentProvider
-      ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
-      : undefined,
+    isModelForCurrentProvider ? savedAgentSettings?.selectedReasoningEffort : undefined,
   );
   // Track if team mode is selected (the orchestrator specialist coordinates).
   // Defaults to single-agent mode on first launch; a remembered choice wins.
-  let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? false,
-  );
+  let isTeamMode = $state<boolean>(savedAgentSettings?.isTeamMode ?? false);
 
   function resetUnavailableSpecialist(): void {
     selectedSpecialist = isTeamMode
@@ -543,11 +545,9 @@
       : null;
   }
   // Track which provider the user selected for the initial agent
-  // Priority: active provider store takes precedence since it's the user's
-  // explicit choice, else the settings-derived effective default. '' when
-  // neither has resolved (honestly unselected — never a fabricated auggie);
-  // the $effect below adopts the provider once settings hydration lands.
-  let selectedProvider = $state<string>($activeProviderId$ || $defaultProviderId$);
+  // Keep the remembered provider/model pair; otherwise inherit Settings.
+  // The effect below adopts a default after Settings hydration when unselected.
+  let selectedProvider = $state<string>(currentProviderAtInit);
   let prefillTitle = $state('');
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()
@@ -638,12 +638,13 @@
   // hydration (the applyAgentSettings re-application below) must not
   // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
   let modelPickedThisSession = $state(false);
+  let effortPickedThisSession = $state(false);
 
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
-    if (!settings) return;
+    if (!settings || modelPickedThisSession || effortPickedThisSession) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
-    if (modelPickedThisSession) return;
+    selectedProvider = settings.selectedProvider ?? selectedProvider;
     const model = settings.selectedModel;
     // A persisted bare model id belongs to the provider persisted with it;
     // only a legacy pre-triple compound id carries its own prefix.
@@ -651,7 +652,7 @@
       !!model &&
       (splitLegacyCompoundId(model).providerId ??
         settings.selectedProvider ??
-        $defaultProviderId$) === ($activeProviderId$ || $defaultProviderId$);
+        $defaultProviderId$) === selectedProvider;
     if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
@@ -672,7 +673,7 @@
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     // Keep the provider paired with an in-session pick: restoring a different
     // provider would trip the picker's provider-mismatch effect and clear it.
-    if (!modelPickedThisSession) {
+    if (!modelPickedThisSession && !effortPickedThisSession) {
       selectedProvider = formState.selectedProvider ?? selectedProvider;
     }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
@@ -690,8 +691,9 @@
 
   $effect(() => {
     if (!$workspaceInitializerHydrated$ || didApplyHydratedCompactState) return;
-    if ($compactFormState$ && !repoPath) {
-      applyCompactFormState($compactFormState$);
+    if ($compactFormState$) {
+      if (!repoPath) applyCompactFormState($compactFormState$);
+      else applyAgentSettings($compactFormState$);
     } else if ($lastSubmittedAgent$) {
       applyAgentSettings($lastSubmittedAgent$);
     }
@@ -709,6 +711,7 @@
       currentRepoPath: repoPath,
       hasLastSelectedRepo: !!lastSelectedRepo,
       recentRepos,
+      canCreateMember: $currentHostRole$ === 'member' && $canCreateWorkspace$,
     });
 
     if (hydrationAction === 'wait') return;
@@ -719,6 +722,17 @@
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
       applyLastSelectedRepo(mapRecentRepoToSelection(recentRepos[0]));
+    } else if (hydrationAction === 'create-member-default') {
+      // Ordinary editable New selection, under the member's local default.
+      // Workspace and agent IDs still come only from the daemon's create reply.
+      const parent = $defaultParentPath$ || '~/Developer';
+      const separator = parent.includes('\\') ? '\\' : '/';
+      applyLastSelectedRepo({
+        path: `${parent.replace(/[\\/]+$/, '')}${separator}workspace-${crypto.randomUUID()}`,
+        type: 'local',
+        isNewRepo: true,
+        isValidPath: true,
+      });
     }
   });
 
@@ -789,9 +803,10 @@
 
   // Save form state through Redux whenever it changes. Persistence is handled by the saga.
   $effect(() => {
-    if (!$workspaceInitializerHydrated$) return;
+    if (!$workspaceInitializerHydrated$ && !modelPickedThisSession && !effortPickedThisSession)
+      return;
     // Only save if there's meaningful state to preserve
-    if (repoPath || selectedSpecialist || selectedModel) {
+    if (repoPath || selectedSpecialist || selectedModel || selectedReasoningEffort !== undefined) {
       const formState = {
         repoPath,
         repoType,
@@ -818,12 +833,18 @@
 
   // When the active provider changes externally (e.g. user switches in settings),
   // update the form's selected provider and clear the stale model selection.
+  let previousActiveProvider = $activeProviderId$;
   $effect(() => {
     const newProviderId = $activeProviderId$;
     const currentProvider = untrack(() => selectedProvider);
-    if (newProviderId && newProviderId !== currentProvider) {
+    if (
+      newProviderId &&
+      newProviderId !== currentProvider &&
+      (!currentProvider || (previousActiveProvider && newProviderId !== previousActiveProvider))
+    ) {
       selectedProvider = newProviderId;
     }
+    previousActiveProvider = newProviderId;
   });
 
   // A specialist can disappear while this form is closed. Only discard a
@@ -861,7 +882,7 @@
     (async () => {
       try {
         const result =
-          typeof window !== 'undefined' && window.electronAPI
+          $currentHostRole$ === 'owner' && typeof window !== 'undefined' && window.electronAPI
             ? await invoke<any>('system:check-git')
             : undefined;
         if (result?.success && result.data) {
@@ -1471,7 +1492,8 @@
   // daemon-confirmed missing git (false) or a still-pending probe (null) gates.
   // A failed/placing attachment pill also blocks (retry or remove to proceed).
   const isValid = $derived(
-    (gitAvailable === true || gitAvailable === 'unknown') &&
+    $canCreateWorkspace$ &&
+      (gitAvailable === true || gitAvailable === 'unknown') &&
       !!repoPath &&
       isValidPath &&
       (isNewRepo || !!branch || repoType === 'remote') &&
@@ -1687,18 +1709,54 @@
     return parts.join('\n');
   }
 
+  let submissionGeneration = 0;
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+    submissionGeneration++;
+  });
+
+  let pullContinuation: (() => boolean) | null = null;
+
   async function handleSubmit() {
-    if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
-    // Attachments still placing or failed block the create: a failed pill
-    // must be retried or removed first (no silent drop, no base64 fallback).
-    if (hasBlockingAttachments(contextItems)) return;
-    // A previous submit already created the workspace but attachment
-    // placement failed — resume that flow instead of creating again.
+    await submitWorkspace();
+  }
+
+  async function submitWorkspace(continuation?: () => boolean) {
+    if (continuation && !continuation()) return;
     if (pendingFirstMessage) {
-      await retryPendingFirstMessage();
+      if (pendingFirstMessage.current()) await retryPendingFirstMessage();
       return;
     }
-
+    const admission = selectPrincipalActionContext.select(appStore.state);
+    if (
+      admission === null ||
+      !selectWorkspaceCreationVisible.select(appStore.state) ||
+      !isValid ||
+      isCreating ||
+      isEnhancing ||
+      isProcessingImages ||
+      hasBlockingAttachments(contextItems)
+    )
+      return;
+    const generation = continuation ? submissionGeneration : ++submissionGeneration;
+    const dispatch = appStore.dispatch;
+    const current =
+      continuation ??
+      (() => {
+        try {
+          return (
+            mounted &&
+            generation === submissionGeneration &&
+            appStore.dispatch === dispatch &&
+            admission === selectPrincipalActionContext.select(appStore.state) &&
+            selectWorkspaceCreationVisible.select(appStore.state)
+          );
+        } catch {
+          return false;
+        }
+      });
+    pullContinuation = null;
     isCreating = true;
     error = null;
 
@@ -1725,6 +1783,7 @@
       // path the destination won't exist until after cloning
       if (repoType === 'github' && githubUrl) {
         const repoValidation = await validateRepoPath(githubUrl, false);
+        if (!current()) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
         // Note: We don't validate the parent directory here because:
         // 1. The backend will create it if it doesn't exist (using mkdir with recursive: true)
@@ -1733,6 +1792,7 @@
         // Skip local path validation for remote repos - the path is on the remote server,
         // not the local machine. The connection test already verified the repo exists.
         const repoValidation = await validateRepoPath(repoPath, isNewRepo);
+        if (!current()) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
       }
 
@@ -1762,8 +1822,10 @@
             typeof window !== 'undefined' && window.electronAPI
               ? await appClient.git.pull(repoPath, branch)
               : undefined;
+          if (!current()) return;
           if (!pullResult?.success) {
             pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
+            pullContinuation = current;
             showPullConflictDialog = true;
             isPulling = false;
             isCreating = false;
@@ -1775,8 +1837,10 @@
             branch,
           });
         } catch (err) {
+          if (!current()) return;
           pullError =
             err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
+          pullContinuation = current;
           showPullConflictDialog = true;
           isPulling = false;
           isCreating = false;
@@ -1926,8 +1990,10 @@
         if (mention.type === 'terminal') {
           try {
             const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
+            if (!current()) return;
             const wsId = (mention.meta?.workspaceId as string) || '';
             const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
+            if (!current()) return;
             if (bufferContent) {
               const contextRef: Record<string, any> = {
                 type: 'terminal',
@@ -1947,7 +2013,9 @@
           try {
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
+            if (!current()) return;
             const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+            if (!current()) return;
             const scriptId = mention.id;
             const wsId = (mention.meta?.workspaceId as string) || null;
             const state = appStore.state;
@@ -2064,6 +2132,11 @@
       const initialAgent = {
         name: agentName,
         model: resolvedModel,
+        // Omission inherits the daemon's defaults; blank explicitly clears.
+        // Persist with creation so prompt/attachment turns cannot race an update.
+        ...(selectedReasoningEffort !== undefined
+          ? { reasoningEffort: selectedReasoningEffort }
+          : {}),
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
         behaviorPrompt: resolvedBehaviorPrompt, // Pass to IPC for workspace creation
         prompt: hasStagedFiles ? undefined : initialPrompt.trim() || undefined,
@@ -2082,6 +2155,7 @@
         },
       };
 
+      if (!current()) return;
       // Save branch per repo for persistence - ensures branch is remembered even if user
       // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
       if (debugConfig.get('enableFormPersistence') && repoPath && baseBranch && !isNewRepo) {
@@ -2099,6 +2173,7 @@
       // setup-script decision below sees the committed `.intent/config.json`
       // instead of racing the probe (monorepo#1862).
       await setupScriptProbeScheduler.settled();
+      if (!current()) return;
 
       // The shown script is what runs: send it as-is, EXCEPT the unedited
       // repo-config script — the daemon persists an explicit setupScript into
@@ -2114,6 +2189,7 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
+      if (!current()) return;
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
@@ -2135,6 +2211,7 @@
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (!current()) return;
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
       const workspace = result.data.workspace;
@@ -2142,31 +2219,12 @@
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
 
-      // workspace.create does not accept reasoningEffort on initialAgent. Apply
-      // an explicit user pick to the daemon-minted session through agent.update;
-      // omitting this mutation preserves the daemon's normal resolution chain.
-      if (selectedReasoningEffort && initialAgentId) {
-        try {
-          const effortResult = await appClient.agents.setReasoningEffort({
-            agentId: initialAgentId,
-            workspaceId: workspace.id,
-            reasoningEffort: selectedReasoningEffort,
-          });
-          if (!effortResult.success) {
-            logger.warn('Failed to set reasoning effort on initial agent', {
-              error: effortResult.error,
-            });
-          }
-        } catch (effortError) {
-          logger.warn('Failed to set reasoning effort on initial agent', { error: effortError });
-        }
-      }
-
       // Clear reused-ID state before installing the authoritative first-frame
       // layout. The panel seed owns the initial agent identity; legacy
       // navigation stays an empty shell so drawer migration cannot compete.
       try {
         const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        if (!current()) return;
         getPanelLayoutManager(workspace.id).clearLayout();
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
@@ -2174,11 +2232,13 @@
       try {
         const { workspaceStorageManager } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (!current()) return;
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
       }
 
+      if (!current()) return;
       appStore.dispatch(setWorkspaceEntity(workspace));
       if (initialAgentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
@@ -2213,6 +2273,7 @@
       // this flow — the created workspace itself is never rolled back.
       if (hasStagedFiles) {
         pendingFirstMessage = {
+          current,
           workspaceId: workspace.id,
           agentId: initialAgentId,
           content: initialPrompt.trim(),
@@ -2225,6 +2286,7 @@
           return;
         }
       }
+      if (!current()) return;
 
       // Register a picked repo as a path-less GitHub recent so re-picking it
       // prefills the tab (keyed by the owner/repo shorthand, no local path).
@@ -2290,10 +2352,13 @@
       );
 
       // Clear before navigation can unmount the form and flush its draft.
-      clearForm();
+      clearForm(true);
+      if (!current()) return;
       await goto(`/workspace/${workspace.id}`);
+      if (!current()) return;
       oncreate?.();
     } catch (err) {
+      if (!current()) return;
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2305,15 +2370,22 @@
             : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
-      isCreating = false;
+      if (mounted && generation === submissionGeneration) {
+        isCreating = false;
+        activeCreateProgressId = null;
+      }
       // The create settled (success, failure, or early return) — drop the
       // transient progress entry so the slice never accumulates stale ids.
-      activeCreateProgressId = null;
-      appStore.dispatch(clearWorkspaceCreateProgress(createProgressId));
+      // Dispatch belongs to the captured Redux instance, never a replacement store.
+      dispatch(clearWorkspaceCreateProgress(createProgressId));
     }
   }
 
-  function clearForm() {
+  function clearForm(preserveSubmission = false) {
+    if (!preserveSubmission) {
+      submissionGeneration++;
+      pendingFirstMessage = null;
+    }
     // Note: NOT resetting the repo selection (repoPath, repoType, githubUrl,
     // branch, isNewRepo, isValidPath, scope) — it is preserved so the next
     // new-workspace form re-opens on the same repo (intent-hq/monorepo#2148).
@@ -2344,7 +2416,7 @@
     // Immediately clear the persisted daemon draft (drafts.clear under the
     // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
     clearNewWorkspaceDraft(appClient.drafts);
-    // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
+    // Keep selectedSpecialist, selectedModel, modelWasOverridden, selectedReasoningEffort, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
     showSetupScript = false;
@@ -2661,7 +2733,9 @@
   // the first-message send) failed: the workspace exists, the modal stays
   // open with failed pills, and the create button resumes this flow instead
   // of creating a second workspace.
-  let pendingFirstMessage = $state<HeldFirstMessage | null>(null);
+  let pendingFirstMessage = $state.raw<(HeldFirstMessage & { current: () => boolean }) | null>(
+    null,
+  );
 
   /**
    * Place all staged attachments into the created workspace (sourcePath-only,
@@ -2674,8 +2748,17 @@
   async function placeAndSendFirstMessage(): Promise<boolean> {
     const pending = pendingFirstMessage;
     if (!pending) return true;
+    const current = pending.current;
+    if (!current()) return false;
 
-    const redemption = await redeemStagedAttachments(pending.workspaceId, contextItems);
+    const redemption = await redeemStagedAttachments(
+      pending.workspaceId,
+      contextItems,
+      undefined,
+      undefined,
+      current,
+    );
+    if (!current()) return false;
     contextItems = redemption.items;
     if (redemption.failedCount > 0) {
       error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
@@ -2687,7 +2770,20 @@
     // Electron's structured clone rejects outright — passing it through
     // verbatim made every staged-attachment first send fail before reaching
     // the daemon (monorepo#2576).
-    const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
+    const sendResult = await sendHeldFirstMessage(
+      {
+        workspaceId: pending.workspaceId,
+        agentId: pending.agentId,
+        content: pending.content,
+        imageBlocks: pending.imageBlocks,
+        contextReferences: pending.contextReferences,
+      },
+      redemption.fileBlocks,
+      undefined,
+      undefined,
+      current,
+    );
+    if (!current()) return false;
     if (!sendResult.sent) {
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,
@@ -2702,7 +2798,7 @@
         : m.workspace_compactInitializer_firstMessageSendFailed_error();
       return false;
     }
-    pendingFirstMessage = null;
+    if (pendingFirstMessage === pending) pendingFirstMessage = null;
     return true;
   }
 
@@ -2713,17 +2809,17 @@
    */
   async function retryPendingFirstMessage(): Promise<void> {
     const pending = pendingFirstMessage;
-    if (!pending) return;
+    if (!pending || !pending.current()) return;
     isCreating = true;
     error = null;
     try {
       const sent = await placeAndSendFirstMessage();
-      if (!sent) return;
-      clearForm();
+      if (!sent || !pending.current()) return;
+      clearForm(true);
       await goto(`/workspace/${pending.workspaceId}`);
-      oncreate?.();
+      if (pending.current()) oncreate?.();
     } finally {
-      isCreating = false;
+      if (pending.current()) isCreating = false;
     }
   }
 
@@ -2738,6 +2834,7 @@
     const item = contextItems.find((i) => i.id === id);
     if (!item) return;
     if (pendingFirstMessage) {
+      if (!pendingFirstMessage.current()) return;
       // Workspace exists: reset this pill to staged and re-run the flow.
       contextItems = contextItems.map((i) =>
         i.id === id ? { ...i, placementStatus: undefined } : i,
@@ -3406,6 +3503,7 @@
               if (model) modelPickedThisSession = true;
             }}
             bind:selectedReasoningEffort
+            onReasoningEffortChange={() => (effortPickedThisSession = true)}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider
@@ -3443,6 +3541,9 @@
   {repoPath}
   branchName={branch}
   onCreateWorkspace={(options) => {
+    const continuation = pullContinuation;
+    if (!continuation?.()) return;
+    pullContinuation = null;
     // Proceed with workspace creation without pulling - user will resolve conflicts in workspace
     shouldPullBeforeCreate = false;
     showPullConflictDialog = false;
@@ -3485,9 +3586,12 @@
       richTextarea?.setContent(getResolutionPrompt(options.errorType));
     }
 
-    handleSubmit();
+    submitWorkspace(continuation);
   }}
   onCancel={() => {
+    submissionGeneration++;
+    pendingFirstMessage = null;
+    pullContinuation = null;
     showPullConflictDialog = false;
     pullError = null;
   }}

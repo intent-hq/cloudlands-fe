@@ -67,6 +67,22 @@ describe('workspaces-link-handler', () => {
     // These tests were removed because they test functionality that doesn't exist.
 
     describe('file links', () => {
+      it.each([
+        ['docs/design.md%23L42', 'docs/design.md#L42', undefined],
+        ['docs/design.md%3A17', 'docs/design.md:17', undefined],
+        ['docs/design.md%23L42#L9', 'docs/design.md#L42', 9],
+        ['docs/design.md%3A17:9', 'docs/design.md:17', 9],
+        ['docs/design.md%3A17#L9', 'docs/design.md:17', 9],
+        ['docs/literal%2523L42', 'docs/literal%23L42', undefined],
+        ['docs/design.md:17:4', 'docs/design.md', 17],
+      ])('parses only unescaped location syntax in %s', (target, resourceId, line) => {
+        for (const prefix of ['intent://local/file/', 'intent://local/workspace-abc-123/file/']) {
+          const result = parseIntentLink(prefix + target);
+          expect(result).toMatchObject({ type: 'file', valid: true, resourceId });
+          expect(result.line).toBe(line);
+        }
+      });
+
       it('should parse short format file links', () => {
         const result = parseIntentLink('intent://local/file/README.md');
         expect(result.valid).toBe(true);

@@ -10,7 +10,7 @@ import {
   selectProviderModelEffortLevels,
   selectSelectedModel,
 } from './model-selectors';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ModelState } from './model-types';
 import type { ProviderSettingsState } from '../provider-settings/provider-settings-slice';
@@ -34,6 +34,36 @@ function mockState(
       ...model,
     },
     providerSettings: { ...providerSettingsInitialState, ...settings },
+    providerCatalog: {
+      providers: createCollection('id'),
+      loaded: false,
+      byWorkspaceId: {
+        'ws-1': {
+          catalog: { providers: [] },
+          settings: [
+            {
+              path: 'model.defaultProvider',
+              value: model.defaultProviderId ?? activeProviderId ?? 'auggie',
+            },
+            { path: 'model.providerDefaults', value: model.providerModels ?? {} },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    },
+    providerModels: {
+      byProviderId: {},
+      clearEpoch: 0,
+      byWorkspaceId: {
+        'ws-1': {
+          [model.availableModelsProviderId ?? activeProviderId ?? 'auggie']: {
+            models: Object.values(model.availableModels?.map ?? {}),
+            fetchedAt: '2026-09-28T00:00:00Z',
+          },
+        },
+      },
+    },
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap: {},
@@ -406,9 +436,42 @@ describe('selectProviderModelEffortLevels', () => {
 });
 
 describe('selectAgentModelEffortLevels', () => {
+  it('inherits defaults from its own workspace instead of direct settings', () => {
+    const state = mockState({ defaultProviderId: 'auggie', providerModels: { auggie: 'local' } });
+    state.providerCatalog = {
+      providers: createCollection('id'),
+      loaded: false,
+      byWorkspaceId: {
+        A: {
+          catalog: { providers: [] },
+          settings: [
+            { path: 'model.defaultProvider', value: 'codex' },
+            { path: 'model.providerDefaults', value: { codex: 'remote' } },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    } as StoreState['providerCatalog'];
+    state.providerModels.byWorkspaceId = {
+      A: {
+        codex: {
+          models: [{ value: 'remote', label: 'Remote', effortLevels: ['high'] }],
+          fetchedAt: '2026-09-28T00:00:00Z',
+        },
+      },
+    };
+    state.agentSessions = {
+      byAgentId: { a: { id: 'a', workspaceId: 'A' } },
+      agentIdsByWorkspace: {},
+    } as unknown as StoreState['agentSessions'];
+    expect(selectAgentModelEffortLevels.select(state, 'a')).toEqual(['high']);
+  });
+
   it('resolves effort levels from the agent session model', () => {
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -434,6 +497,7 @@ describe('selectAgentModelEffortLevels', () => {
     const base = mockState({
       defaultProviderId,
       providerModels: { auggie: 'gpt5.6-sol' },
+      availableModelsProviderId: 'auggie',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         {
           value: 'gpt5.6-sol',
@@ -465,6 +529,7 @@ describe('selectAgentModelEffortLevels', () => {
     // row carries its own (possibly stale) static effortLevels.
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -498,6 +563,7 @@ describe('selectAgentModelEffortLevels', () => {
     // on what the session discovered at open.
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'claude-code:opus', label: 'Claude Opus' },
       ]),
@@ -528,6 +594,7 @@ describe('selectAgentModelEffortLevels', () => {
   it('falls back to the catalog when the session effortLevels are absent or empty', () => {
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -552,3 +619,45 @@ describe('selectAgentModelEffortLevels', () => {
     expect(selectAgentModelEffortLevels.select(state, 'empty')).toEqual(['low', 'high']);
   });
 });
+
+it.each(['acp', 'default', 'augment'])(
+  'normalizes inherited %s against each workspace catalog',
+  (alias) => {
+    const state = mockState();
+    const scoped = (provider: string) => ({
+      catalog: { providers: [{ id: provider, legacyAliases: [alias] }] },
+      settings: [
+        { path: 'model.defaultProvider', value: provider },
+        { path: 'model.providerDefaults', value: { [provider]: 'same-model' } },
+      ],
+      specialists: [],
+      readiness: {},
+    });
+    state.providerCatalog.byWorkspaceId = {
+      A: scoped('auggie'),
+      B: scoped('codex'),
+    } as unknown as NonNullable<StoreState['providerCatalog']['byWorkspaceId']>;
+    state.providerModels.byWorkspaceId = {
+      A: {
+        auggie: {
+          models: [{ value: 'same-model', label: 'A', effortLevels: ['low', 'high'] }],
+          fetchedAt: 'now',
+        },
+      },
+      B: {
+        codex: {
+          models: [{ value: 'same-model', label: 'B', effortLevels: ['medium', 'max'] }],
+          fetchedAt: 'now',
+        },
+      },
+    };
+    state.agentSessions = {
+      byAgentId: {
+        a: { id: 'a', workspaceId: 'A', provider: alias, model: null },
+        b: { id: 'b', workspaceId: 'B', provider: alias, model: null },
+      },
+    } as unknown as StoreState['agentSessions'];
+    expect(selectAgentModelEffortLevels.select(state, 'a')).toEqual(['low', 'high']);
+    expect(selectAgentModelEffortLevels.select(state, 'b')).toEqual(['medium', 'max']);
+  },
+);

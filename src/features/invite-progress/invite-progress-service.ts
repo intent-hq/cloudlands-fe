@@ -23,6 +23,7 @@
 import { Logger } from '$shared/logger';
 import { electronAPI } from '$lib/client/live/backend-transport';
 import { INVITE_PROGRESS_CHANNELS } from '$shared/ipc/channels';
+import { syncCollaborationPolicy } from '../collaboration-auth/renderer/collaboration-auth.client';
 import type {
   InviteProgressAckPayload,
   InviteProgressDismissPayload,
@@ -44,6 +45,7 @@ export interface InviteProgressHandlers {
 }
 
 let activeRequestId: string | null = null;
+let retryable = false;
 let handlers: InviteProgressHandlers | null = null;
 
 function isProgressPayload(payload: unknown): payload is InviteProgressShowPayload {
@@ -51,7 +53,9 @@ function isProgressPayload(payload: unknown): payload is InviteProgressShowPaylo
   return (
     !!candidate &&
     typeof candidate.requestId === 'string' &&
-    (candidate.phase === 'connecting' || candidate.phase === 'opening')
+    (candidate.phase === 'admission' ||
+      candidate.phase === 'connecting' ||
+      candidate.phase === 'opening')
   );
 }
 
@@ -78,6 +82,7 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       return;
     }
     activeRequestId = payload.requestId;
+    retryable = payload.phase === 'admission';
     // Ack immediately: main only waits a short window for it before giving up
     // on the dialog. Never gate it on the modal rendering.
     const ack: InviteProgressAckPayload = { requestId: payload.requestId };
@@ -103,6 +108,7 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       return;
     }
     if (activeRequestId === null || payload.requestId !== activeRequestId) return;
+    retryable = payload.phase === 'admission';
     logger.info('Invite-progress request updated', {
       requestId: payload.requestId,
       phase: payload.phase,
@@ -119,6 +125,8 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
   });
 
   logger.info('Invite-progress service installed');
+  // Listeners now exist: main can replay an original admission dialog missed during startup.
+  void syncCollaborationPolicy().catch(() => {});
 
   return () => {
     api.offById(INVITE_PROGRESS_CHANNELS.SHOW, showListenerId);
@@ -148,4 +156,14 @@ export function cancelInviteProgress(): void {
       requestId,
     });
   });
+}
+
+/** Retry only after publishing the original renderer's current flags; never enable them here. */
+export async function retryInviteProgress(): Promise<void> {
+  const api = electronAPI();
+  const requestId = activeRequestId;
+  if (!api || !requestId || !retryable) return;
+  if (!(await syncCollaborationPolicy())) return;
+  if (activeRequestId !== requestId || !retryable) return;
+  await api.invoke(INVITE_PROGRESS_CHANNELS.RESPONSE, { requestId, action: 'retry' });
 }

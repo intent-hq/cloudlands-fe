@@ -6,6 +6,11 @@
   import { store } from '$store/renderer/store';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+  import { admitLegacyPrincipal } from '../../src/test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { setThemeName } from '$store/renderer/slices/theme/theme-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -44,10 +49,10 @@
   const initiallyHasPullRequest = hasPullRequest;
   const workspaceId = 'launcher-paint-test';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
-  // No sagas run here, so settle the window's guest/owner identity the way
-  // guestSessionsSaga does outside Electron; otherwise the fail-closed
-  // `selectIsWorkspaceCollaborator` (#2652) reads the window as collaborator
-  // and withholds the Browser and Shell compact cards this suite drives.
+  // This isolated fixture has no principal hydration saga. Model an admitted
+  // legacy owner; an unavailable guest list alone does not establish authority.
+  const previousPrincipal = store.state.principal;
+  admitLegacyPrincipal();
   store.dispatch(guestSessionsListUnavailable());
   const timestamp = '2026-08-13T16:51:00.000Z';
   const agents = Array.from({ length: initialAgentCount }, (_, index) => ({
@@ -145,7 +150,17 @@
   // svelte-ignore state_referenced_locally - each test host applies its initial mode once
   store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [selectedTab]));
   $effect(() => store.dispatch(setThemeName(theme)));
-  onDestroy(disposeStore);
+  onDestroy(() => {
+    store.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      store.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+    disposeStore();
+  });
 </script>
 
 <div data-sidebar-launcher-host style="width: {width}px; height: {height}px; zoom: {zoom};">

@@ -43,6 +43,7 @@ function makeWindow() {
   const send = vi.fn();
   const goneListeners = new Map<string, (() => void)[]>();
   const webContents = {
+    id: 41,
     isDestroyed: () => false,
     send,
     once: vi.fn((event: string, listener: () => void) => {
@@ -103,7 +104,7 @@ describe('showInviteProgress — renderer round-trip', () => {
 
     expect(send).toHaveBeenCalledWith('invite-progress:show', PAYLOAD);
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
 
     expect(await settled(handle.cancelled)).toBe(false);
     expect(dismissesSent(send)).toEqual([]);
@@ -113,8 +114,11 @@ describe('showInviteProgress — renderer round-trip', () => {
     const { window, send } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
 
     await expect(handle.cancelled).resolves.toBeUndefined();
     // Cancel does not close the dialog by itself; the caller dismisses.
@@ -127,7 +131,7 @@ describe('showInviteProgress — renderer round-trip', () => {
     const { window, send } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
 
     handle.update('opening', { workspaceTitle: 'Shared workspace' });
     expect(sentOn<InviteProgressUpdatePayload>(send, 'invite-progress:update')).toEqual([
@@ -139,7 +143,7 @@ describe('showInviteProgress — renderer round-trip', () => {
     const { window, send } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
 
     handle.dismiss();
     handle.dismiss();
@@ -147,7 +151,10 @@ describe('showInviteProgress — renderer round-trip', () => {
     expect(dismissesSent(send)).toEqual([{ requestId: PAYLOAD.requestId }]);
     expect(sentOn(send, 'invite-progress:update')).toEqual([]);
 
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
     expect(await settled(handle.cancelled)).toBe(false);
   });
 
@@ -155,12 +162,15 @@ describe('showInviteProgress — renderer round-trip', () => {
     const { window } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: 'stale' });
-    await handlers.response({}, { requestId: 'stale', action: 'cancel' });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: 'stale' });
+    await handlers.response({ sender: { id: 41 } }, { requestId: 'stale', action: 'cancel' });
     expect(await settled(handle.cancelled)).toBe(false);
 
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
     await expect(handle.cancelled).resolves.toBeUndefined();
   });
 
@@ -172,9 +182,12 @@ describe('showInviteProgress — renderer round-trip', () => {
       { getParentWindow: () => window },
     );
     const handlers = await getHandlers();
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
     expect(await settled(first.cancelled)).toBe(false);
-    await handlers.response({}, { requestId: 'req-2', action: 'cancel' });
+    await handlers.response({ sender: { id: 41 } }, { requestId: 'req-2', action: 'cancel' });
     await expect(second.cancelled).resolves.toBeUndefined();
   });
 });
@@ -185,7 +198,10 @@ describe('showInviteProgress — no renderer, no progress UI', () => {
     const { window, send } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
     await vi.advanceTimersByTimeAsync(3_000);
     await expect(handle.cancelled).resolves.toBeUndefined();
     expect(dismissesSent(send)).toEqual([]);
@@ -199,7 +215,10 @@ describe('showInviteProgress — no renderer, no progress UI', () => {
     expect(dismissesSent(send)).toEqual([{ requestId: PAYLOAD.requestId }]);
 
     const handlers = await getHandlers();
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
     expect(await settled(handle.cancelled)).toBe(false);
     handle.update('opening');
     handle.dismiss();
@@ -212,7 +231,7 @@ describe('showInviteProgress — no renderer, no progress UI', () => {
     const { window, send } = makeWindow();
     showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
     await vi.advanceTimersByTimeAsync(3_000);
     expect(dismissesSent(send)).toEqual([]);
   });
@@ -244,7 +263,10 @@ describe('showInviteProgress — no renderer, no progress UI', () => {
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     emitRendererGone('destroyed');
     const handlers = await getHandlers();
-    await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
     expect(await settled(handle.cancelled)).toBe(false);
     handle.dismiss();
     expect(dismissesSent(send)).toEqual([]);
@@ -254,7 +276,7 @@ describe('showInviteProgress — no renderer, no progress UI', () => {
     const { window, send, emitRendererGone } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
-    await handlers.ack({}, { requestId: PAYLOAD.requestId });
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
     emitRendererGone('did-navigate');
     handle.update('opening');
     handle.dismiss();

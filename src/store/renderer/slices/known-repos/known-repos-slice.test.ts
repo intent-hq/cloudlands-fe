@@ -1,6 +1,7 @@
 import type { KnownRepo } from '$shared/types/known-repo';
 import { describe, expect, it } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import {
   initialState,
   knownReposReducer,
@@ -11,7 +12,6 @@ import {
   localRepoDiscoveryFailed,
   resetLocalRepoDiscovery,
 } from './known-repos-slice';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mockRepo = (path: string, name = 'intent'): KnownRepo => ({
   path,
@@ -67,6 +67,43 @@ describe('knownReposReducer', () => {
     expect(completed.loaded).toBe(false);
     expect(knownReposReducer(completed, resetLocalRepoDiscovery())).toEqual(initialState);
   });
+
+  it.each(['remote', null])(
+    'clears hydrated repos and discovery suggestions when the host connection becomes %s',
+    (connection) => {
+      const hydrated = knownReposReducer(initialState, setRepos([mockRepo('/repo/intent')]));
+      const started = knownReposReducer(hydrated, localRepoDiscoveryStarted('local'));
+      const completed = knownReposReducer(
+        started,
+        localRepoDiscoverySucceeded('local', [{ path: '/home/dev/app', name: 'app' }]),
+      );
+
+      const reset = knownReposReducer(completed, hostExecutionConnectionChanged(connection));
+
+      expect(getItems(reset.repos)).toEqual([]);
+      expect(reset.loaded).toBe(false);
+      expect(reset.discovery.backendId).toBeNull();
+      expect(reset.discovery.status).toBe('idle');
+      expect(getItems(reset.discovery.repos)).toEqual([]);
+    },
+  );
+
+  it.each(['remote', null])(
+    'ignores late discovery success and failure after the host connection becomes %s',
+    (connection) => {
+      const started = knownReposReducer(initialState, localRepoDiscoveryStarted('local'));
+      const reset = knownReposReducer(started, hostExecutionConnectionChanged(connection));
+
+      expect(reset.discovery.status).toBe('idle');
+      expect(
+        knownReposReducer(
+          reset,
+          localRepoDiscoverySucceeded('local', [{ path: '/home/dev/stale', name: 'stale' }]),
+        ),
+      ).toBe(reset);
+      expect(knownReposReducer(reset, localRepoDiscoveryFailed('local'))).toBe(reset);
+    },
+  );
 
   it('settles failures and rejects stale success/failure after a backend change or reset', () => {
     const started = knownReposReducer(initialState, localRepoDiscoveryStarted('remote'));

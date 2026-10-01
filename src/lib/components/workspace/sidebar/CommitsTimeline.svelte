@@ -4,19 +4,9 @@
    * CommitsTimeline - Commits section of the sidebar changes panel
    * Shows commit list, expand/collapse, inline edit, push/undo, context menu, older commits, base commit.
    */
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import type { UndoCommitMetadata } from '$features/accept-changes/types';
-  import { gitCache } from '$features/git/git-cache';
-  import { gitClient } from '$features/git/git.client';
   import { handleLink } from '$features/navigation/link-handler';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import {
-    ChangeStage,
-    type CommitFile,
-    type CommitInfo,
-    type TrackedChange,
-  } from '$features/file-tracking/types';
-  import { appClient } from '$lib/client';
+  import { type CommitFile, type CommitInfo } from '$features/file-tracking/types';
   import {
     selectFileTrackingCommits as selectFtCommits,
     selectFileTrackingBoundarySha as selectFtBoundarySha,
@@ -28,19 +18,24 @@
     refreshRequested,
     loadOlderCommitsRequested,
   } from '$store/renderer/slices/changes/changes-slice';
-  import { loadGitStatus, setGitOperationFlag } from '$store/renderer/slices/git/git-slice';
+  import {
+    gitReadRequested,
+    releaseGitRead,
+    openGitCommitFileRequested,
+  } from '$store/renderer/slices/git/git-slice';
+  import { gitWriteRequested } from '$store/renderer/slices/git/git-write-slice';
+  import { prWorkflowRequested } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+  import { undoAcceptRequested } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
+  import { selectAcceptOperationPending } from '$store/renderer/slices/accept-workflow/accept-workflow-selectors';
   import {
     selectPostMergeState,
     selectGitOperationFlags,
+    selectGitCommitDetailsFiles,
   } from '$store/renderer/slices/git/git-selectors';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
-  import {
-    addTerminal,
-    openTerminalOverlay,
-  } from '$store/renderer/slices/terminals/terminals-slice';
 
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
@@ -56,10 +51,7 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger } from '$lib/i18n/format';
-  import { invoke } from '$lib/electron-bridge';
   import { logger } from '$lib/utils/client-logger';
-  import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
     faArrowUpFromBracket,
@@ -70,25 +62,19 @@
     faFlag,
     faRotateLeft,
   } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
   import TimelineSection from './TimelineSection.svelte';
+  import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
-    openWorkspaceCommitChangeset,
-    openWorkspaceDiff,
-  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import {
-    getCommitsToUndoCount,
-    getLocalCommitsToUndoCount,
     getPushTooltip as getPushTooltipUtil,
     getUndoTooltip as getUndoTooltipUtil,
     getUndoCommitTooltip as getUndoCommitTooltipUtil,
     canAmendCommit as canAmendCommitUtil,
   } from './sidebar-changes-utils';
   import { store as appStore } from '$store/renderer/store';
-  import { posixSingleQuote } from '$shared/utils/posix-single-quote';
 
   interface Props {
     workspaceId: string;
@@ -96,9 +82,10 @@
     activeFileStaged?: boolean | null;
     pullRequestCount?: number;
     /** Owner-only controls (push / undo via `accept-changes.execute`, amend
-     * via `system.executeCommand`, base-commit context menu via
-     * `workspace.update`) render only when true. */
+     * via `system.executeCommand`) render only when true. */
     isOwner?: boolean;
+    /** Independent scoped workspace.update gate for base fields only. */
+    canUpdateBaseCommit?: boolean;
   }
 
   let {
@@ -107,6 +94,7 @@
     activeFileStaged = null,
     pullRequestCount = 0,
     isOwner = true,
+    canUpdateBaseCommit = isOwner,
   }: Props = $props();
 
   // Redux selectors at component init
@@ -122,6 +110,8 @@
   const ftLoadingOlderCommits$ = selectFtLoadingOlderCommits(workspaceIdStore);
   const postMergeState$ = selectPostMergeState(workspaceIdStore);
   const gitOps$ = selectGitOperationFlags(workspaceIdStore);
+  const commitFiles$ = selectGitCommitDetailsFiles(workspaceIdStore);
+  const undoPending$ = selectAcceptOperationPending(workspaceIdStore, 'undo');
 
   // Derived state from Redux
   const allCommits = $derived($ftCommits$ ?? []);
@@ -135,60 +125,49 @@
 
   // Local component state
   let expandedCommits = $state<Set<string>>(new Set());
-  // Lazily-fetched per-file data keyed by commit hash: the list payload is
-  // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
-  // PROTOCOL §5.19), so files are fetched via `git.commitDetails` (§5.6) on
-  // first expand. `null` marks an in-flight fetch (no file rows yet); it is
-  // cleared on failure so a later expand retries. Reset on workspace switch so
-  // the cache doesn't grow unbounded or leak across workspaces.
-  let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  const readConsumerPrefix = `timeline:${crypto.randomUUID()}`;
+  const readRequests = new Map<string, { workspaceId: string; requestId: string }>();
+  function releaseCommitReads() {
+    for (const [hash, request] of readRequests)
+      appStore.dispatch(
+        releaseGitRead(request.workspaceId, `${readConsumerPrefix}:${hash}`, request.requestId),
+      );
+    readRequests.clear();
+  }
+  onDestroy(releaseCommitReads);
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below tracks later changes
   let cacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== cacheWorkspaceId) {
       cacheWorkspaceId = workspaceId;
-      commitFileCache = {};
+      releaseCommitReads();
       expandedCommits = new Set();
     }
   });
 
   function getCommitFiles(commit: CommitInfo): CommitFile[] {
-    return commit.files ?? commitFileCache[commit.hash] ?? [];
-  }
-
-  function clearCommitFileMarker(hash: string) {
-    if (commitFileCache[hash] === null) {
-      const { [hash]: _, ...rest } = commitFileCache;
-      commitFileCache = rest;
-    }
-  }
-
-  async function fetchCommitFiles(hash: string): Promise<CommitFile[]> {
-    const cached = commitFileCache[hash];
-    if (cached) return cached;
-    // `commitDetails` folds transport errors to `null`; the row simply shows
-    // no files on failure and a later expand retries (the in-flight marker is
-    // cleared on both failure paths).
-    const result = await appClient.git.commitDetails(workspaceId, hash);
-    if (!result) {
-      clearCommitFileMarker(hash);
-      return [];
-    }
-    const files: CommitFile[] =
-      result.fileDetails.length > 0
-        ? result.fileDetails
-        : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
-    commitFileCache = { ...commitFileCache, [hash]: files };
-    return files;
+    return commit.files ?? $commitFiles$[commit.hash] ?? [];
   }
 
   function fetchCommitFilesIfNeeded(commit: CommitInfo) {
-    if (commit.files || commitFileCache[commit.hash] !== undefined || !workspaceId) return;
-    commitFileCache = { ...commitFileCache, [commit.hash]: null };
-    fetchCommitFiles(commit.hash).catch((error) => {
-      logger.error('Failed to fetch commit details', { hash: commit.hash, error });
-      clearCommitFileMarker(commit.hash);
-    });
+    if (commit.files || $commitFiles$[commit.hash] !== undefined || !workspaceId) return;
+    const previous = readRequests.get(commit.hash);
+    if (previous)
+      appStore.dispatch(
+        releaseGitRead(
+          previous.workspaceId,
+          `${readConsumerPrefix}:${commit.hash}`,
+          previous.requestId,
+        ),
+      );
+    const requestId = crypto.randomUUID();
+    readRequests.set(commit.hash, { workspaceId, requestId });
+    appStore.dispatch(
+      gitReadRequested(workspaceId, `${readConsumerPrefix}:${commit.hash}`, requestId, {
+        kind: 'commitDetails',
+        commitHash: commit.hash,
+      }),
+    );
   }
   let commitEdit = $state<{
     hash: string | null;
@@ -206,7 +185,7 @@
   $effect(() => {
     if (
       commitContextMenu &&
-      (!isOwner ||
+      (!canUpdateBaseCommit ||
         commitContextMenu.workspaceId !== workspaceId ||
         ![...allCommits, ...olderCommits].some(
           (commit) => commit.hash === commitContextMenu?.commitHash,
@@ -239,7 +218,7 @@
 
   // Context menu handlers
   function handleCommitContextMenu(e: MouseEvent | KeyboardEvent, commitHash: string) {
-    if (!isOwner) return;
+    if (!canUpdateBaseCommit) return;
     const position = getSidebarContextPosition(e);
     if (!position) return;
     const row = e.currentTarget as HTMLElement;
@@ -295,7 +274,7 @@
   }
 
   async function handleSetBaseCommit(commitHash: string) {
-    if (!$workspace) return;
+    if (!canUpdateBaseCommit || !$workspace) return;
     try {
       const result = await persistWorkspaceChanges({ baseCommitSha: commitHash });
       if (result.ok) {
@@ -312,7 +291,7 @@
   }
 
   async function handleClearBaseCommit() {
-    if (!$workspace) return;
+    if (!canUpdateBaseCommit || !$workspace) return;
     try {
       const result = await persistWorkspaceChanges({ baseCommitSha: '' });
       if (result.ok) {
@@ -341,74 +320,21 @@
     commitEdit.inputRef?.select();
   }
 
-  async function saveCommitEdit() {
+  function saveCommitEdit() {
     const gitPath = $workspace?.worktreePath || $workspace?.repositoryPath;
-    if (commitEdit.hash && commitEdit.value.trim() && workspaceId && gitPath) {
+    if (isOwner && commitEdit.hash && commitEdit.value.trim() && workspaceId && gitPath) {
       const trimmed = commitEdit.value.trim();
       const commit = allCommits.find((c) => c.hash === commitEdit.hash);
       if (commit && trimmed !== commit.message) {
-        try {
-          const wasPushed = commit.isPushed;
-          // Single-quote the message so the shell takes it literally — double-quote
-          // escaping left backticks live for command substitution (monorepo#579).
-          // Caveat: POSIX-only; a cmd.exe daemon host does not honor single quotes
-          // (same accepted limitation as the host-bridge-seeder cwd fallback).
-          const result = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
-            command: `git commit --amend -m ${posixSingleQuote(trimmed)}`,
+        appStore.dispatch(
+          gitWriteRequested(workspaceId, crypto.randomUUID(), {
+            kind: 'amend',
+            message: trimmed,
             cwd: gitPath,
-            workspaceId,
-          })) as { success: boolean; error?: string };
-
-          if (!result.success) {
-            throw new Error(result.error || 'Failed to amend commit');
-          }
-
-          if (wasPushed) {
-            let pushResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
-              command: 'git push --force-with-lease',
-              cwd: gitPath,
-              workspaceId,
-            })) as { success: boolean; error?: string; data?: { stderr?: string } };
-
-            if (
-              !pushResult.success &&
-              pushResult.data?.stderr?.includes('has no upstream branch')
-            ) {
-              const branchResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
-                command: 'git rev-parse --abbrev-ref HEAD',
-                cwd: gitPath,
-                workspaceId,
-              })) as { success: boolean; data?: { stdout?: string } };
-
-              if (branchResult.success && branchResult.data?.stdout) {
-                const branchName = branchResult.data.stdout.trim();
-                pushResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
-                  command: `git push --force-with-lease --set-upstream origin ${branchName}`,
-                  cwd: gitPath,
-                  workspaceId,
-                })) as { success: boolean; error?: string; data?: { stderr?: string } };
-              }
-            }
-
-            if (!pushResult.success) {
-              throw new Error(pushResult.error || 'Failed to push amended commit');
-            }
-          }
-
-          gitCache.invalidate(`git-status-${workspaceId}`);
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-          ]);
-          notify.success(
-            wasPushed
-              ? m.workspace_commitsTimeline_messageUpdatedPushed_label()
-              : m.workspace_commitsTimeline_messageUpdated_label(),
-          );
-        } catch (error) {
-          logger.error('[saveCommitEdit] Failed to amend commit message', { error });
-          notify.error(m.workspace_commitsTimeline_messageUpdateFailed_error());
-        }
+            wasPushed: commit.isPushed,
+            source: 'timeline',
+          }),
+        );
       }
     }
     cancelCommitEdit();
@@ -452,7 +378,7 @@
     expandedCommits = newSet;
   }
 
-  async function handleCommitFileClick(filePath: string, commitHash: string) {
+  function handleCommitFileClick(filePath: string, commitHash: string) {
     logger.info('[handleCommitFileClick] File clicked in commit', { filePath, commitHash });
     const commit =
       allCommits.find((c) => c.hash === commitHash) ??
@@ -460,55 +386,15 @@
     if (commit && workspaceId) {
       const file = getCommitFiles(commit).find((f) => f.path === filePath);
       if (file) {
-        try {
-          logger.info('[handleCommitFileClick] Fetching content from commit', {
+        appStore.dispatch(
+          openGitCommitFileRequested(
+            workspaceId,
+            commitHash,
             filePath,
-            commitHash,
-          });
-          // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
-          // errors fold to { ok: false } inside the git client.
-          const [newContentResult, oldContentResult] = await Promise.all([
-            gitClient.showFile(workspaceId as WorkspaceId, filePath, commitHash),
-            gitClient.showFile(workspaceId as WorkspaceId, filePath, `${commitHash}^`),
-          ]);
-
-          const newContent = newContentResult.ok ? newContentResult.data : '';
-          const oldContent = oldContentResult.ok ? oldContentResult.data : '';
-
-          logger.info('[handleCommitFileClick] Content fetched', {
-            filePath,
-            commitHash,
-            newContentLength: newContent.length,
-            oldContentLength: oldContent.length,
-          });
-
-          const change: TrackedChange = {
-            id: `commit-${commitHash}-${filePath}`,
-            file: filePath,
-            relativePath: filePath,
-            status: 'modified' as const,
-            stage: ChangeStage.Committed,
-            commitHash,
-            stats: { additions: file.additions || 0, deletions: file.deletions || 0 },
-            content: { oldContent, newContent, diff: '' },
-            attribution: { timestamp: Date.now() },
-          };
-
-          logger.info('[handleCommitFileClick] Dispatching workspace:open-diff event', {
-            changeId: change.id,
-            stage: change.stage,
-            commitHash: change.commitHash,
-          });
-
-          appStore.dispatch(
-            openWorkspaceDiff(workspaceId, change, {
-              changeId: change.id,
-              filePath,
-            }),
-          );
-        } catch (error) {
-          logger.error('Failed to load commit diff', { filePath, commitHash, error });
-        }
+            file.additions,
+            file.deletions,
+          ),
+        );
       }
     }
   }
@@ -530,220 +416,49 @@
   }
 
   // Push/undo tooltip helpers
-  function getCommitsToUndoCount_(commitIndex: number): number {
-    return getCommitsToUndoCount(allCommits, commitIndex);
-  }
   function getPushTooltip(commitIndex: number): string {
     return getPushTooltipUtil(allCommits, commitIndex, pullRequestCount > 0, $workspace?.branch);
   }
   function getUndoTooltip(commitIndex: number): string {
     return getUndoTooltipUtil(allCommits, commitIndex, $workspace?.branch);
   }
-  function getLocalCommitsToUndoCount_(commitIndex: number): number {
-    return getLocalCommitsToUndoCount(allCommits, commitIndex);
-  }
   function getUndoCommitTooltip(commitIndex: number): string {
     return getUndoCommitTooltipUtil(allCommits, commitIndex);
   }
 
-  async function openPullTerminal() {
-    if (!workspaceId) return;
-    const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
-    if (!worktreePath) {
-      notify.error(m.workspace_commitsTimeline_noSpacePath_error());
-      return;
-    }
-    try {
-      const remoteBranch = $workspace?.branch || 'HEAD';
-      const pullCommand = `git pull --rebase origin ${remoteBranch}`;
-      const terminalTitle = m.workspace_commitsTimeline_pullFromOrigin_label({
-        branch: remoteBranch,
-      });
-      const result = await invoke<any>('terminal:createWithCommand', {
-        workspaceId,
-        command: pullCommand,
-        cwd: worktreePath,
-        title: terminalTitle,
-      });
-      if (result.ok && result.terminalId) {
-        appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
-        appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
-        notify.success(m.workspace_commitsTimeline_pullStarted_label(), {
-          description: m.workspace_commitsTimeline_pullStarted_description(),
-          action: {
-            label: m.workspace_commitsTimeline_refresh_label(),
-            onClick: async () => {
-              gitCache.invalidate(`git-status-${workspaceId}`);
-              await Promise.all([
-                Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-                appStore.dispatch(refreshRequested(workspaceId, true)),
-              ]);
-              notify.success(m.workspace_commitsTimeline_statusRefreshed_label());
-            },
-          },
-          duration: 30000,
-        });
-      } else {
-        notify.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
-      }
-    } catch (error) {
-      logger.error('Failed to open pull terminal', error as Error);
-      notify.error(m.workspace_commitsTimeline_openTerminalFailed_error());
-    }
-  }
-
-  async function handlePushCommits(commitIndex: number) {
-    if (!workspaceId) return;
+  function handlePushCommits(commitIndex: number) {
+    if (!workspaceId || !isOwner) return;
     const commit = allCommits[commitIndex];
     undoState.commitHash = commit.hash;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
-    try {
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
+    appStore.dispatch(
+      prWorkflowRequested(workspaceId, {
+        kind: 'push',
         targetBranch: $workspace?.branch,
         upToCommitHash: commit.hash,
-      });
-      if (result.success) {
-        gitCache.invalidate(`git-status-${workspaceId}`);
-        try {
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-          ]);
-        } catch {
-          /* Refresh failed but push succeeded */
-        }
-      } else {
-        const errorMsg = result.error || m.workspace_prSection_pushFailed_error();
-        // i18n-ignore (matching backend error strings)
-        if (errorMsg.includes('Pull the latest changes') || errorMsg.includes('behind')) {
-          notify.error(m.workspace_commitsTimeline_remoteHasNewCommits_error(), {
-            description: m.workspace_commitsTimeline_pullBeforePush_description(),
-            action: {
-              label: m.workspace_commitsTimeline_pullInTerminal_label(),
-              onClick: () => openPullTerminal(),
-            },
-            duration: 10000,
-          });
-        } else {
-          notify.error(errorMsg);
-        }
-      }
-    } catch {
-      notify.error(m.workspace_prSection_pushCommitsFailed_error());
-    } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
-      undoState.commitHash = null;
-    }
-  }
-
-  async function handleUndoPush(commitIndex: number) {
-    if (!workspaceId) return;
-    const commit = allCommits[commitIndex];
-    const commitCount = getCommitsToUndoCount_(commitIndex);
-    const nextCommitIndex = commitIndex + 1;
-    let resetToHash: string;
-    if (nextCommitIndex < allCommits.length) {
-      resetToHash = allCommits[nextCommitIndex].hash;
-    } else {
-      if ($workspace?.baseCommitSha) {
-        resetToHash = $workspace.baseCommitSha;
-      } else {
-        notify.error(m.workspace_commitsTimeline_cannotUndo_error());
-        return;
-      }
-    }
-    undoState.commitHash = commit.hash;
-    undoState.undoing = true;
-    try {
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'undo-push', {
-        upToCommitHash: resetToHash,
-      });
-      if (result.success) {
-        notify.warning(
-          commitCount === 1
-            ? m.workspace_commitsTimeline_removedFromRemote_one()
-            : m.workspace_commitsTimeline_removedFromRemote_many({
-                count: formatInteger(commitCount),
-              }),
-        );
-        gitCache.invalidate(`git-status-${workspaceId}`);
-        await Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId, true)),
-        ]);
-      } else {
-        notify.error(result.error || m.workspace_commitsTimeline_undoPushFailed_error());
-      }
-    } catch {
-      notify.error(m.workspace_commitsTimeline_undoPushFailed_error());
-    } finally {
-      undoState.undoing = false;
-      undoState.commitHash = null;
-    }
-  }
-
-  async function handleUndoCommit(commitIndex: number) {
-    if (!workspaceId) return;
-    const commit = allCommits[commitIndex];
-    const commitCount = getLocalCommitsToUndoCount_(commitIndex);
-    const nextCommitIndex = commitIndex + 1;
-    let resetToHash: string;
-    if (nextCommitIndex < allCommits.length) {
-      resetToHash = allCommits[nextCommitIndex].hash;
-    } else {
-      if ($workspace?.baseCommitSha) {
-        resetToHash = $workspace.baseCommitSha;
-      } else {
-        notify.error(m.workspace_commitsTimeline_cannotUndo_error());
-        return;
-      }
-    }
-    undoState.commitHash = commit.hash;
-    undoState.undoingCommit = true;
-    // The commit list is metadata-only, so resolve the touched file paths
-    // (attribution restore inputs) via git.commitDetails at undo time — a
-    // bounded fetch over just the commits being undone.
-    const commitsToUndo = allCommits.slice(0, commitIndex + 1).filter((c) => !c.isPushed);
-    const undoCommitsMetadata: UndoCommitMetadata[] = await Promise.all(
-      commitsToUndo.map(async (c) => ({
-        hash: c.hash,
-        agentId: c.agentId,
-        linkedNoteId: c.linkedNoteId,
-        files: c.files
-          ? c.files.map((f) => f.path)
-          : await fetchCommitFiles(c.hash).then(
-              (files) => files.map((f) => f.path),
-              () => [],
-            ),
-      })),
+      }),
     );
-    try {
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'undo-commit', {
-        upToCommitHash: resetToHash,
-        undoCommitsMetadata,
-      });
-      if (result.success) {
-        notify.warning(
-          commitCount === 1
-            ? m.workspace_commitsTimeline_commitsUndone_one()
-            : m.workspace_commitsTimeline_commitsUndone_many({
-                count: formatInteger(commitCount),
-              }),
-        );
-        gitCache.invalidate(`git-status-${workspaceId}`);
-        await Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId, true)),
-        ]);
-      } else {
-        notify.error(result.error || m.workspace_commitsTimeline_undoCommitFailed_error());
-      }
-    } catch {
-      notify.error(m.workspace_commitsTimeline_undoCommitFailed_error());
-    } finally {
-      undoState.undoingCommit = false;
-      undoState.commitHash = null;
-    }
+  }
+
+  function handleUndoPush(commitIndex: number) {
+    if (!workspaceId || !isOwner) return;
+    undoState.commitHash = allCommits[commitIndex].hash;
+    appStore.dispatch(
+      undoAcceptRequested(workspaceId, {
+        action: 'undo-push',
+        commitHash: allCommits[commitIndex].hash,
+      }),
+    );
+  }
+
+  function handleUndoCommit(commitIndex: number) {
+    if (!workspaceId || !isOwner) return;
+    undoState.commitHash = allCommits[commitIndex].hash;
+    appStore.dispatch(
+      undoAcceptRequested(workspaceId, {
+        action: 'undo-commit',
+        commitHash: allCommits[commitIndex].hash,
+      }),
+    );
   }
 </script>
 
@@ -766,7 +481,8 @@
             <div class="flex-1 h-px bg-border"></div>
           </div>
         {/if}
-        {@const isOperatingOnThis = undoState.commitHash === commit.hash}
+        {@const isOperatingOnThis =
+          undoState.commitHash === commit.hash && (isPushing || $undoPending$)}
         {@const isExpanded = expandedCommits.has(commit.hash)}
         {@const commitFiles = getCommitFiles(commit)}
         {@const files = commitFiles.map((f) => ({
@@ -897,11 +613,11 @@
                       size="icon-xs"
                       data-testid="commit-undo-push-button"
                       onclick={() => handleUndoPush(index)}
-                      disabled={isPushing || undoState.undoing}
+                      disabled={isPushing || $undoPending$}
                       tooltip={getUndoTooltip(index)}
                       tooltipSide="top"
                     >
-                      {#if isOperatingOnThis && undoState.undoing}
+                      {#if isOperatingOnThis && $undoPending$}
                         <IntentMarkLoader size={12} class="text-subtle" />
                       {:else}
                         <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
@@ -918,11 +634,11 @@
                     'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
                   data-testid="commit-undo-button"
                   onclick={() => handleUndoCommit(index)}
-                  disabled={isPushing || undoState.undoing || undoState.undoingCommit}
+                  disabled={isPushing || $undoPending$}
                   tooltip={getUndoCommitTooltip(index)}
                   tooltipSide="top"
                 >
-                  {#if isOperatingOnThis && undoState.undoingCommit}
+                  {#if isOperatingOnThis && $undoPending$}
                     <IntentMarkLoader size={12} class="text-subtle" />
                   {:else}
                     <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
@@ -937,7 +653,7 @@
                       'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
                     data-testid="commit-push-button"
                     onclick={() => handlePushCommits(index)}
-                    disabled={isPushing || undoState.undoing || undoState.undoingCommit}
+                    disabled={isPushing || $undoPending$}
                     tooltip={getPushTooltip(index)}
                     tooltipSide="top"
                   >
@@ -965,11 +681,7 @@
                   {file}
                   muted={true}
                   active={activeFilePath === file.path && activeFileStaged === null}
-                  onFileClick={(filePath) => {
-                    handleCommitFileClick(filePath, commit.hash).catch((error) => {
-                      logger.error('Error in handleCommitFileClick', { error });
-                    });
-                  }}
+                  onFileClick={(filePath) => handleCommitFileClick(filePath, commit.hash)}
                   onOpenFile={handleOpenFile}
                 />
               {/each}
@@ -1093,11 +805,7 @@
                   {file}
                   muted={true}
                   active={activeFilePath === file.path && activeFileStaged === null}
-                  onFileClick={(filePath) => {
-                    handleCommitFileClick(filePath, commit.hash).catch((error) => {
-                      logger.error('Error in handleCommitFileClick', { error });
-                    });
-                  }}
+                  onFileClick={(filePath) => handleCommitFileClick(filePath, commit.hash)}
                   onOpenFile={handleOpenFile}
                 />
               {/each}

@@ -106,14 +106,14 @@
   .month-card {
     width: 360px;
     height: 640px;
-    background: hsl(250 11% 8%);
-    border: 1px solid hsl(256 6% 24%);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-radius: 16px;
-    color: hsl(0 0% 97%);
+    color: hsl(var(--card-foreground));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--surface-shadow-3);
     box-sizing: border-box;
   }
 
@@ -134,12 +134,12 @@
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
   }
 
   .corner {
     font-size: 12px;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .mono {
@@ -147,7 +147,7 @@
   }
 
   .rule {
-    border-top: 1px dashed hsl(256 6% 26%);
+    border-top: 1px dashed hsl(var(--border));
   }
 
   .hero {
@@ -157,7 +157,7 @@
   .hero-label {
     font-size: 12px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
     margin-bottom: 7px;
   }
 
@@ -171,7 +171,7 @@
   .hero-sub {
     margin-top: 12px;
     font-size: 14px;
-    color: hsl(257 9% 72%);
+    color: hsl(var(--muted-foreground));
   }
 
   .chart-block {
@@ -183,7 +183,7 @@
     justify-content: flex-end;
     gap: 14px;
     font-size: 11px;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
     margin-bottom: 10px;
   }
 
@@ -200,36 +200,36 @@
   }
 
   .swatch-in {
-    background: hsl(240 12% 30%);
+    background: hsl(var(--muted-foreground));
   }
 
   .swatch-out {
-    background: hsl(158 100% 34%);
+    background: hsl(var(--success));
   }
 
   .swatch-thought {
-    background: hsl(38 90% 50%);
+    background: hsl(var(--info));
   }
 
   .chart {
     position: relative;
     height: 144px;
     margin-left: 40px;
-    border-bottom: 1px solid hsl(256 6% 26%);
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .gridline {
     position: absolute;
     left: 0;
     right: 0;
-    border-top: 1px solid hsl(256 6% 18%);
+    border-top: 1px solid hsl(var(--border));
   }
 
   .grid-label {
     position: absolute;
     left: -40px;
     font-size: 10px; /* a11y-ignore: 10px grid label per design handoff */
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .bars {
@@ -249,24 +249,24 @@
   }
 
   .bar-thought {
-    background: hsl(38 90% 50%);
+    background: hsl(var(--info));
   }
 
   .bar-out {
-    background: hsl(158 100% 34%);
+    background: hsl(var(--success));
   }
 
   .bar-in {
     flex: 1;
-    background: hsl(240 12% 30%);
+    background: hsl(var(--muted-foreground));
   }
 
   .bar-in-best {
-    background: hsl(240 12% 40%);
+    background: hsl(var(--foreground));
   }
 
   .seg-stub {
-    background: hsl(240 12% 16%);
+    background: hsl(var(--muted));
   }
 
   .axis {
@@ -274,7 +274,7 @@
     margin-top: 7px;
     margin-left: 40px;
     font-size: 11px;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .axis span {
@@ -283,7 +283,7 @@
   }
 
   .axis-best {
-    color: hsl(158 100% 38%);
+    color: hsl(var(--primary-ink));
   }
 
   .stat-grid {
@@ -296,7 +296,7 @@
   .stat-label {
     font-size: 11px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .stat-value {
@@ -305,7 +305,7 @@
   }
 
   .stat-delta {
-    color: hsl(160 84% 39%);
+    color: hsl(var(--primary-ink));
   }
 
   .footer-wrap {
@@ -313,8 +313,8 @@
   }
 
   .footer {
-    background: hsl(158 100% 30%);
-    color: hsl(0 0% 100%);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
     display: flex;
     align-items: center;
     justify-content: space-between;

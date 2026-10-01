@@ -14,9 +14,7 @@
     error = null;
 
     try {
-      const request = claudeLoginRequested();
-      appStore.dispatch(request);
-      await request.promise;
+      await appStore.dispatch(claudeLoginRequested());
     } catch (cause) {
       error = cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error();
     } finally {

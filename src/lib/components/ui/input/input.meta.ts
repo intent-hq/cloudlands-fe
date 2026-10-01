@@ -10,6 +10,8 @@ export const inputMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
+    'src/features/dev-console/TrafficInspector.svelte',
     'src/features/layout/components/content-header/ContentHeader.svelte',
     'src/features/onboarding/messages/DirectoryPickerView.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',
@@ -23,6 +25,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
     'src/lib/components/CommandPalette.svelte',
+    'src/lib/components/GitLabConnectForm.svelte',
     'src/lib/components/browser/BrowserViewerTabHeader.svelte',
     'src/lib/components/browser/BrowserViewportDialog.svelte',
     'src/lib/components/browser/EmbeddedBrowser.svelte',

@@ -1,4 +1,4 @@
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { type Workspace } from '$shared/types';
 import { store } from '../../store';
@@ -24,6 +24,10 @@ export const selectMountedBrowserTabLeases = store.createSelector((state) => {
 
 export const selectBrowserTabRecoveryRequests = store.createSelector((state) => {
   return state.tabState.browserTabRecoveryRequests;
+});
+
+export const selectBrowserTabNavigations = store.createSelector((state) => {
+  return state.tabState.browserTabNavigations;
 });
 
 /**

@@ -1,9 +1,10 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -26,6 +27,7 @@ import { providerModelsLoaded } from '../../provider-models/provider-models-slic
 import { selectModel } from '../model-slice';
 import { selectSelectedModel } from '../model-selectors';
 import { modelSelectionSaga } from './model-selection-saga';
+import { providerSettingsSaga } from '../../provider-settings/sagas/provider-settings-saga';
 import { modelReloadSaga } from './model-reload-saga';
 import { settingsHydrationSaga } from '../../settings-events/sagas/settings-hydration-saga';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
@@ -34,6 +36,11 @@ import { loadModelsOnBootWorker } from './model-boot-saga';
 import type { AppSettingChange } from '$lib/client/app-client';
 
 const request = vi.mocked(backendRequest);
+const bootWorkerContext = () => ({
+  dispatch: store.dispatch,
+  getState: () => store.state,
+  context: { reduxStore: { getState: () => store.state, subscribe: () => () => {} } },
+});
 const matchMediaImplementation = vi.mocked(window.matchMedia).getMockImplementation()!;
 beforeEach(() => {
   vi.mocked(window.matchMedia).mockImplementation(matchMediaImplementation);
@@ -80,6 +87,7 @@ for (const legacyEmptyKey of [true, false]) {
   describe(`default model durability, empty provider key ${legacyEmptyKey}`, () => {
     it('keeps the selected model after a delayed cross-provider catalog reload and settings hydration', async () => {
       dispose = store.init();
+      admitLegacyPrincipal();
       store.dispatch(
         providerCatalogLoaded({
           providers: ['auggie', 'codex', 'grok', 'opencode', 'pi'].map((id) => ({
@@ -141,18 +149,36 @@ for (const legacyEmptyKey of [true, false]) {
         }
         throw new Error(`Unexpected request ${method}`);
       });
-      tasks.push(
-        runSaga({ channel, dispatch, getState: () => store.state }, settingsHydrationSaga),
-      );
+      cancelSagas.push(store.runSaga(settingsHydrationSaga));
       await Promise.resolve();
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelSelectionSaga));
-      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelReloadSaga));
+      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, providerSettingsSaga));
+      tasks.push(
+        runSaga(
+          {
+            channel,
+            dispatch,
+            getState: () => store.state,
+            context: {
+              reduxStore: {
+                getState: () => store.state,
+                subscribe: (listener: () => void) => {
+                  const stream = store.getStoreStateStream();
+                  stream.onValue(listener);
+                  return () => stream.offValue(listener);
+                },
+              },
+            },
+          },
+          modelReloadSaga,
+        ),
+      );
       // The action emitted by the Settings ModelPicker's updateGlobalDefault path.
       dispatch(selectModel('grok4.5', 'grok'));
       await vi.waitFor(() => expect(releaseCatalog).toBeTypeOf('function'));
       expect(pair()).toEqual({ provider: 'grok', model: 'grok4.5' });
       expect(request).toHaveBeenCalledWith('settings.update', {
-        changes: [
+        changes: expect.arrayContaining([
           { path: 'model.defaultProvider', value: 'grok' },
           {
             path: 'model.providerDefaults',
@@ -163,7 +189,7 @@ for (const legacyEmptyKey of [true, false]) {
               grok: 'grok4.5',
             },
           },
-        ],
+        ]),
       });
       dispatch(settingsChangesReceived(initialSnapshot, 0));
       expect(pair()).toEqual({ provider: 'grok', model: 'grok4.5' });
@@ -189,6 +215,7 @@ for (const legacyEmptyKey of [true, false]) {
 
     it('keeps the persisted Codex default after boot catalog loading', async () => {
       dispose = store.init();
+      admitLegacyPrincipal();
       applySettingsChanges([
         { path: 'model.defaultProvider', value: 'codex' },
         {
@@ -201,10 +228,7 @@ for (const legacyEmptyKey of [true, false]) {
         },
       ]);
       request.mockImplementation(async (_method, params) => catalogReply(params));
-      await runSaga(
-        { dispatch: store.dispatch, getState: () => store.state },
-        loadModelsOnBootWorker,
-      ).toPromise();
+      await runSaga(bootWorkerContext(), loadModelsOnBootWorker).toPromise();
       expect(store.state.model.providerModels.codex).toBe('gpt-6-astra');
       expect(selectSelectedModel.select(store.state)).toBe('gpt-6-astra');
       render(DefaultAgentModelSettings, { context: new Map([['redux-store-context', { store }]]) });
@@ -216,6 +240,7 @@ for (const legacyEmptyKey of [true, false]) {
 
 it('keeps a Grok choice made through the real Settings dropdown after the reload returns', async () => {
   dispose = store.init();
+  admitLegacyPrincipal();
   store.dispatch(
     providerCatalogLoaded({
       providers: ['auggie', 'codex', 'grok'].map((id) => ({
@@ -277,7 +302,11 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
   });
   cancelSagas.push(store.runSaga(settingsHydrationSaga));
   await Promise.resolve();
-  cancelSagas.push(store.runSaga(modelSelectionSaga), store.runSaga(modelReloadSaga));
+  cancelSagas.push(
+    store.runSaga(modelSelectionSaga),
+    store.runSaga(providerSettingsSaga),
+    store.runSaga(modelReloadSaga),
+  );
   try {
     const view = render(DefaultAgentModelSettings, {
       context: new Map([['redux-store-context', { store }]]),
@@ -314,6 +343,7 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
       grok: 'grok4.5',
     });
     store.dispatch(backendReconnected());
+    admitLegacyPrincipal();
     await vi.waitFor(() => expect(request).toHaveBeenCalledWith('settings.list'));
     await tick();
     expect(screen.getByRole('button', { name: /Grok 4.5/ })).toBeTruthy();
@@ -324,6 +354,7 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
 
 it('rehydrates a fresh renderer from the saved Grok pair before boot catalog loading', async () => {
   dispose = store.init();
+  admitLegacyPrincipal();
   // Serialized shape persisted by the selection path and retained in the
   // independently captured daemon restart evidence. No optimistic state.
   const saved = JSON.stringify([
@@ -346,10 +377,7 @@ it('rehydrates a fresh renderer from the saved Grok pair before boot catalog loa
   ).toPromise();
   expect(store.state.model.pendingProviderModels).toEqual({});
   expect(selectSelectedModel.select(store.state)).toBe('grok4.5');
-  await runSaga(
-    { dispatch: store.dispatch, getState: () => store.state },
-    loadModelsOnBootWorker,
-  ).toPromise();
+  await runSaga(bootWorkerContext(), loadModelsOnBootWorker).toPromise();
   store.dispatch(
     providerCatalogLoaded({
       providers: [
@@ -385,15 +413,13 @@ it.each([
   ['foreign', { ...auggieCatalog, providerId: 'auggie' }],
 ])('keeps the explicit choice through a %s catalog', async (_name, reply) => {
   dispose = store.init();
+  admitLegacyPrincipal();
   applySettingsChanges([
     { path: 'model.defaultProvider', value: 'grok' },
     { path: 'model.providerDefaults', value: { grok: 'grok4.5', auggie: 'gpt6-astra' } },
   ]);
   request.mockResolvedValue(reply);
-  await runSaga(
-    { dispatch: store.dispatch, getState: () => store.state },
-    loadModelsOnBootWorker,
-  ).toPromise();
+  await runSaga(bootWorkerContext(), loadModelsOnBootWorker).toPromise();
   expect(selectSelectedModel.select(store.state)).toBe('grok4.5');
   expect(store.state.model.defaultProviderId).toBe('grok');
   expect(

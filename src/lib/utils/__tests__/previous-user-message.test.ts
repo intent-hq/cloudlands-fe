@@ -13,7 +13,7 @@ import {
 // content carried in contentBlocks (canonical `text` field).
 function msg(
   id: string,
-  role: 'user' | 'assistant',
+  role: AgentMessage['role'],
   text: string,
   metadata?: MessageMetadata,
 ): AgentMessage {
@@ -378,6 +378,35 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
 });
 
 describe('findPreviousUserMessage', () => {
+  it('selects relative to the clicked assistant across automated rows and later prompts', () => {
+    const messages = [
+      msg('u1', 'user', 'first prompt'),
+      msg('a1', 'assistant', 'first reply'),
+      msg('q1', 'user', 'wizard answer', { type: 'question_answers' }),
+      msg('system', 'system', 'system notice'),
+      msg('system-user', 'user', 'system wake', { source: 'system' }),
+      msg('hook', 'user', 'hook update', { type: 'hook_wake' }),
+      msg('monitor', 'user', 'PR update', { type: 'pr_monitor_wake' }),
+      msg('agent', 'user', 'sibling update', { fromAgentId: 'agent-9' }),
+      msg('legacy', 'user', '[WORKSPACE EVENTS] legacy update'),
+      msg('a2', 'assistant', 'second reply'),
+      msg('u3', 'user', 'later prompt'),
+      msg('a3', 'assistant', 'latest reply'),
+    ];
+    expect(findPreviousUserMessage(messages, 'a1')?.id).toBe('u1');
+    expect(findPreviousUserMessage(messages, 'a2')?.id).toBe('q1');
+    expect(findPreviousUserMessage(messages, 'a3')?.id).toBe('u3');
+  });
+
+  it('returns no target for an assistant preceded only by automated messages', () => {
+    const messages = [
+      msg('wake', 'user', 'hook update', { type: 'hook_wake' }),
+      msg('reply', 'assistant', 'background reply'),
+      msg('human', 'user', 'later prompt'),
+    ];
+    expect(findPreviousUserMessage(messages, 'reply')).toBeNull();
+  });
+
   it('skips a wake row between two user messages', () => {
     const messages = [
       msg('u1', 'user', 'first question'),

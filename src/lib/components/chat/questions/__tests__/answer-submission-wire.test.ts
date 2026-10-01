@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Agent Q&A answer-submission wire tests (spec "Wire contract"):
  *
@@ -195,6 +196,7 @@ const daemonPendingAgent = {
 function workspace(): Workspace {
   return {
     id: WS,
+    myRole: 'owner',
     title: 'intent',
     branch: 'main',
     status: 'active',
@@ -222,8 +224,10 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     stopAgentMutationSaga?.();
     stopChatSendSaga = undefined;
     stopAgentMutationSaga = undefined;
+    appStore.dispose();
   });
   beforeEach(() => {
+    admitLegacyPrincipal();
     backendRequestMock.mockReset();
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === 'agent.get') return { agent: daemonPendingAgent };
@@ -402,6 +406,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
 
     const queueCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.queueMessage')!;
     expect(queueCall[1]).toEqual({
+      workspaceId: WS,
       agentId: AGENT,
       content: `Q: ${SINGLE.question}\nA: OS keychain`,
       messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },

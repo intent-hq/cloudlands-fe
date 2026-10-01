@@ -46,9 +46,12 @@ interface ProviderModelCatalog {
 async function listProviderModels(
   client: JsonRpcClient,
   providerId: string,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; workspaceId?: string } = {},
 ): Promise<ProviderModelCatalog> {
-  const params: { providerId: string; forceRefresh?: boolean } = { providerId };
+  const params: { providerId: string; forceRefresh?: boolean; workspaceId?: string } = {
+    providerId,
+  };
+  if (options.workspaceId) params.workspaceId = options.workspaceId;
   if (options.forceRefresh === true) {
     params.forceRefresh = true;
   }
@@ -94,13 +97,14 @@ export interface GetModelsEnvelope {
  */
 export async function getProviderModelsEnvelope(
   providerId: string,
-  params?: { forceRefresh?: boolean },
+  params?: { forceRefresh?: boolean; workspaceId?: string },
   event?: Electron.IpcMainInvokeEvent,
 ): Promise<GetModelsEnvelope> {
   try {
     const { client } = getBackendClientForIpcEvent(event);
     const catalog = await listProviderModels(client, providerId, {
       forceRefresh: params?.forceRefresh === true,
+      workspaceId: params?.workspaceId,
     });
     const envelope: GetModelsEnvelope = { success: true, data: catalog.models };
     if (catalog.warning) envelope.warning = catalog.warning;

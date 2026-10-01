@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ respondPermission: vi.fn() }));
 vi.mock('$lib/client', () => ({
@@ -17,6 +17,8 @@ import {
   selectPermissionOption,
   type PermissionRequest,
 } from '../permission-slice';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { permissionResponseSaga } from './permission-response-saga';
 
 const settle = async () => {
@@ -35,6 +37,7 @@ function request(
   return {
     requestId,
     sessionId: 'agent-1',
+    workspaceId: 'ws-1',
     title: 'Run command',
     description: 'desc',
     options,
@@ -44,15 +47,34 @@ function request(
 
 function harness(requests: PermissionRequest[] = [request('request-1')]) {
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
   let permission = requests.reduce(
     (state, item) => permissionReducer(state, permissionRequestReceived(item)),
     initialState,
   );
   const dispatch = vi.fn((action) => {
     permission = permissionReducer(permission, action);
+    for (const listener of listeners) listener();
   });
+  const reduxStore = {
+    getState: () =>
+      withLegacyPrincipal({
+        permission,
+        agentSessions: { byAgentId: {} },
+        workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'owner' }]) },
+      }),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ permission }) },
+    {
+      channel,
+      dispatch,
+      getState: reduxStore.getState,
+      context: { reduxStore },
+    },
     permissionResponseSaga,
   );
   return {
@@ -82,10 +104,10 @@ describe('permissionResponseSaga', () => {
     await settle();
 
     expect(mocks.respondPermission.mock.calls).toEqual([
-      ['request-1', { outcome: 'selected', optionId: 'allow-custom' }],
-      ['request-1', { outcome: 'selected', optionId: 'deny-custom' }],
-      ['request-1', { outcome: 'cancelled' }],
-      ['request-1', { outcome: 'selected', optionId: 'allow-always' }],
+      ['request-1', { outcome: 'selected', optionId: 'allow-custom' }, 'ws-1'],
+      ['request-1', { outcome: 'selected', optionId: 'deny-custom' }, 'ws-1'],
+      ['request-1', { outcome: 'cancelled' }, 'ws-1'],
+      ['request-1', { outcome: 'selected', optionId: 'allow-always' }, 'ws-1'],
     ]);
     expect(resolvers).toHaveLength(4);
     expect(run.hasRequest('request-1')).toBe(true);
@@ -118,10 +140,10 @@ describe('permissionResponseSaga', () => {
     await settle();
 
     expect(mocks.respondPermission.mock.calls).toEqual([
-      ['approve-first', { outcome: 'selected', optionId: 'first-destructive' }],
-      ['approve-empty', { outcome: 'selected', optionId: 'allow_once' }],
-      ['deny-last', { outcome: 'selected', optionId: 'last-safe' }],
-      ['deny-empty', { outcome: 'selected', optionId: 'reject_once' }],
+      ['approve-first', { outcome: 'selected', optionId: 'first-destructive' }, 'ws-1'],
+      ['approve-empty', { outcome: 'selected', optionId: 'allow_once' }, 'ws-1'],
+      ['deny-last', { outcome: 'selected', optionId: 'last-safe' }, 'ws-1'],
+      ['deny-empty', { outcome: 'selected', optionId: 'reject_once' }, 'ws-1'],
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -133,10 +155,14 @@ describe('permissionResponseSaga', () => {
     run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
     await settle();
 
-    expect(mocks.respondPermission).toHaveBeenCalledWith('request-1', {
-      outcome: 'selected',
-      optionId: 'allow-custom',
-    });
+    expect(mocks.respondPermission).toHaveBeenCalledWith(
+      'request-1',
+      {
+        outcome: 'selected',
+        optionId: 'allow-custom',
+      },
+      'ws-1',
+    );
     expect(run.hasRequest('request-1')).toBe(false);
     expect(
       run.dispatch.mock.calls.filter(

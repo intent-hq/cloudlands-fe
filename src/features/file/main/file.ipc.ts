@@ -12,7 +12,7 @@ import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, getBackendClientForIpcEvent } from '../../backend/main/backend.ipc';
 import {
   isBinaryExtension,
   detectBinaryContent,
@@ -1139,11 +1139,15 @@ export function setupFileIPC() {
     createSafeValidatedHandler(
       FileDownloadAttachmentSchema,
       async (
-        _,
+        event,
         validated,
       ): Promise<IpcResponse<FileIpc.DownloadAttachmentResponse> & { canceled?: boolean }> => {
         const { workspaceId, path: sourcePath, fileName } = validated;
         try {
+          // Bind the source before the native dialog yields: changing the
+          // window's connection must never retarget this download.
+          const { backendId, client } = getBackendClientForIpcEvent(event);
+          const config = client.getConfig();
           const { filePath, canceled } = await dialog.showSaveDialog({
             defaultPath: fileName,
           });
@@ -1155,43 +1159,46 @@ export function setupFileIPC() {
           // never truncates or partially overwrites the chosen destination.
           const randomSuffix = Math.random().toString(36).substring(2, 8);
           const tempPath = `${filePath}.${Date.now()}-${randomSuffix}.tmp`;
-          const client = getBackendClient();
           try {
-            if (shouldUseTransferConnection('file.readChunk', client.getConfig())) {
-              await withTransferConnection(client.getConfig(), async (connection) => {
-                const handle = await fs.open(tempPath, 'w');
-                try {
-                  let offset = 0;
-                  for (;;) {
-                    const chunk = await connection.request<FileIpc.ReadChunkResponse>(
-                      'file.readChunk',
-                      { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
-                    );
-                    // PROTOCOL §5.9 guarantees content decodes to bytesRead
-                    // bytes; fail loudly rather than reassemble a corrupt
-                    // file if they ever diverge.
-                    const buffer = Buffer.from(chunk.content, 'base64');
-                    if (buffer.length !== chunk.bytesRead) {
-                      throw new Error(
-                        `file.readChunk content/bytesRead mismatch (${buffer.length} vs ${chunk.bytesRead})`,
+            if (shouldUseTransferConnection('file.readChunk', config)) {
+              await withTransferConnection(
+                config,
+                async (connection) => {
+                  const handle = await fs.open(tempPath, 'w');
+                  try {
+                    let offset = 0;
+                    for (;;) {
+                      const chunk = await connection.request<FileIpc.ReadChunkResponse>(
+                        'file.readChunk',
+                        { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
                       );
-                    }
-                    if (buffer.length > 0) {
-                      // FileHandle.write() may complete a short write; loop
-                      // until the whole chunk is on disk.
-                      let written = 0;
-                      while (written < buffer.length) {
-                        const { bytesWritten } = await handle.write(buffer, written);
-                        written += bytesWritten;
+                      // PROTOCOL §5.9 guarantees content decodes to bytesRead
+                      // bytes; fail loudly rather than reassemble a corrupt
+                      // file if they ever diverge.
+                      const buffer = Buffer.from(chunk.content, 'base64');
+                      if (buffer.length !== chunk.bytesRead) {
+                        throw new Error(
+                          `file.readChunk content/bytesRead mismatch (${buffer.length} vs ${chunk.bytesRead})`,
+                        );
                       }
-                      offset += buffer.length;
+                      if (buffer.length > 0) {
+                        // FileHandle.write() may complete a short write; loop
+                        // until the whole chunk is on disk.
+                        let written = 0;
+                        while (written < buffer.length) {
+                          const { bytesWritten } = await handle.write(buffer, written);
+                          written += bytesWritten;
+                        }
+                        offset += buffer.length;
+                      }
+                      if (buffer.length < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
                     }
-                    if (buffer.length < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
+                  } finally {
+                    await handle.close();
                   }
-                } finally {
-                  await handle.close();
-                }
-              });
+                },
+                backendId,
+              );
             } else {
               // Same root resolution the daemon's file ops use: the worktree
               // when one exists, else the workspace path.

@@ -40,6 +40,10 @@
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import RenderedNotePreview from './RenderedNotePreview.svelte';
+  import {
+    joinNotePresence,
+    type RemoteNoteViewer,
+  } from '$features/notes/note-presence/note-presence-service';
   import NotePresenceAvatarStack from '$features/notes/note-presence/NotePresenceAvatarStack.svelte';
   import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -265,23 +269,34 @@
   // Other people's presence is only possible in a shared workspace.
   const showPresenceStack = $derived(($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId);
 
+  let presenceViewers = $state<RemoteNoteViewer[]>([]);
+
+  // Viewing presence belongs to the visible tab, including raw/preview mode.
+  // The lazy menu only renders this roster; the rich editor shares the lease.
+  $effect(() => {
+    if (!isActive || !showPresenceStack || !tab.noteId) return;
+    const session = joinNotePresence(workspaceId, tab.noteId);
+    presenceViewers = session.getViewers();
+    const off = session.subscribe((next) => {
+      presenceViewers = next;
+    });
+    return () => {
+      off();
+      session.release();
+      presenceViewers = [];
+    };
+  });
+
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({
-      primary: showPresenceStack ? notePrimaryActions : undefined,
       display: noteDisplayActions,
       actions: noteActions,
       destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
     });
   });
 </script>
-
-{#snippet notePrimaryActions()}
-  {#if tab.noteId}
-    <NotePresenceAvatarStack {workspaceId} noteId={tab.noteId} />
-  {/if}
-{/snippet}
 
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
@@ -290,6 +305,9 @@
 {/snippet}
 
 {#snippet noteActions()}
+  {#if showPresenceStack && tab.noteId}
+    <NotePresenceAvatarStack viewers={presenceViewers} embedded />
+  {/if}
   <Menu.CommandItem
     icon={noteCopyFeedback ? faCheck : faCopy}
     label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}

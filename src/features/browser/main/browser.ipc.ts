@@ -276,8 +276,8 @@ function getBrowserTunnelProvider(
           return null;
         }
       },
-      // Read per tunnel (re)connect: CREDIT is sent only to a daemon whose
-      // hello protocolVersion advertises CREDIT support (intent-hq/intent#5482).
+      // Read before granting credit so a late reconnect hello can enable CREDIT
+      // once its protocolVersion confirms support (intent-hq/intent#5972).
       getProtocolVersion: () => getConnectedDaemonProtocolVersion(backendContext.backendId),
     });
     tunnelManagers.set(backendContext.client, tunnelManager);

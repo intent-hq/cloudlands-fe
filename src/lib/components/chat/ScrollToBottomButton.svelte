@@ -7,22 +7,24 @@
   interface Props {
     onclick: () => void;
     disabled?: boolean;
+    floating?: boolean;
   }
 
-  let { onclick, disabled = false }: Props = $props();
+  let { onclick, disabled = false, floating = false }: Props = $props();
   const label = $derived(m.chat_chatPanel_scrollToBottom_tooltip());
 </script>
 
 <Button
-  variant="ghost-light"
-  size="icon-sm"
-  data-testid="chat-scroll-to-bottom-button"
+  variant={floating ? 'outline' : 'ghost-light'}
+  size={floating ? 'icon' : 'icon-sm'}
+  class={floating ? 'rounded-full bg-background shadow-(--elevation-raised)' : undefined}
+  data-testid={floating ? 'chat-floating-scroll-to-bottom-button' : 'chat-scroll-to-bottom-button'}
   {onclick}
   {disabled}
   data-icon-size={CHAT_ICON_SIZE.compact}
   aria-label={label}
   tooltip={label}
-  tooltipSide="bottom"
+  tooltipSide={floating ? 'top' : 'bottom'}
   tooltipDelayDuration={300}
 >
   <ArrowDownIcon

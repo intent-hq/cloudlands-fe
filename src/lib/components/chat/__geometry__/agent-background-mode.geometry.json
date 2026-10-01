@@ -1,0 +1,29 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "foreground": {
+    "420": {
+      "probes": {
+        "data-testid=agent-mode-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 178,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 228,
+        "width": 420
+      }
+    }
+  }
+}

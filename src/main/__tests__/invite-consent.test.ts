@@ -259,7 +259,7 @@ describe('showInviteConsent — fallback to the native dialog', () => {
     expect(dismissesSent(send)).toEqual([]);
   });
 
-  it('a renderer crash after open silences the request without settling the wait', async () => {
+  it('a renderer crash after open cancels later UI work without undoing a committed grant', async () => {
     const { window, send, emitRendererGone } = makeWindow();
     const prompt = showInviteConsent(PAYLOAD, { getParentWindow: () => window });
     const handlers = await getHandlers();
@@ -272,7 +272,7 @@ describe('showInviteConsent — fallback to the native dialog', () => {
     emitRendererGone('render-process-gone');
     await handlers.response({}, { requestId: PAYLOAD.requestId, action: 'cancel' });
     await Promise.resolve();
-    expect(cancelled).toBe(false);
+    expect(cancelled).toBe(true);
     prompt.dismiss('joined');
     expect(dismissesSent(send)).toEqual([]);
   });

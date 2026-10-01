@@ -1,6 +1,8 @@
+import { store } from '../../../store';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   archive: vi.fn(),
@@ -12,14 +14,14 @@ const mocks = vi.hoisted(() => ({
   navigateToRoute: vi.fn(),
   getActiveWorkNames: vi.fn(),
   invoke: vi.fn(),
-  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
 }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
   workspaceClient: {
     archive: mocks.archive,
     unarchive: mocks.unarchive,
-    delete: mocks.deleteWorkspace,
-    cancelDelete: mocks.cancelDelete,
+    delete: (...args: unknown[]) => mocks.deleteWorkspace(...args.slice(0, 2)),
+    cancelDelete: (id: string) => mocks.cancelDelete(id),
     create: mocks.create,
   },
 }));
@@ -41,10 +43,7 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
 import type { Specialist } from '$lib/constants/specialists';
 import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
-import {
-  initialState as proposalLifecycleInitialState,
-  proposalLifecycleReducer,
-} from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import { initialState as proposalLifecycleInitialState } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   initialState as workspaceInitialState,
@@ -154,29 +153,21 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   let workspaceState = workspaceInitialState;
   for (const item of seed)
     workspaceState = workspaceReducer(workspaceState, setWorkspaceEntity(item));
-  let operations = operationsInitialState;
-  let proposalLifecycle = proposalLifecycleInitialState;
+  const operations = operationsInitialState;
+  const proposalLifecycle = proposalLifecycleInitialState;
   const specialists = { ...specialistsInitialState, bundledSpecialists };
-  const dispatch = vi.fn((action) => {
-    workspaceState = workspaceReducer(workspaceState, action);
-    operations = workspaceOperationsReducer(operations, action);
-    proposalLifecycle = proposalLifecycleReducer(proposalLifecycle, action);
-    return action;
-  });
-  const task = runSaga(
-    {
-      channel,
-      dispatch,
-      getState: () => ({
-        workspace: workspaceState,
-        workspaceOperations: operations,
-        proposalLifecycle,
-        specialists,
-        githubAuth: githubAuthInitialState,
-      }),
-    },
-    workspaceOperationsSaga,
+  store.dispose();
+  store.init(
+    withLegacyPrincipal({
+      workspace: workspaceState,
+      workspaceOperations: operations,
+      proposalLifecycle,
+      specialists,
+      githubAuth: githubAuthInitialState,
+    }),
   );
+  const dispatch = vi.fn((action) => store.dispatch(action));
+  const task = runSaga({ channel, dispatch, getState: () => store.state }, workspaceOperationsSaga);
   const send = (action: Parameters<typeof workspaceOperationsReducer>[1]) => {
     dispatch(action);
     channel.put(action);
@@ -186,11 +177,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
     dispatch,
     send,
     task,
-    state: () => ({
-      workspace: workspaceState,
-      workspaceOperations: operations,
-      proposalLifecycle,
-    }),
+    state: () => store.state,
   };
 }
 
@@ -200,7 +187,10 @@ describe('workspaceOperationsSaga', () => {
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    store.dispose();
+    vi.useRealTimers();
+  });
 
   it('uses the exact archive wire call and reports a failed result without updating state', async () => {
     mocks.archive
@@ -845,7 +835,11 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.navigate.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([
+      ['ws-1', undefined],
+      ['ws-2', undefined],
+      ['ws-3', undefined],
+    ]);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
     expect(mocks.notify.success).toHaveBeenCalledTimes(1);
     expect(mocks.notify.info).toHaveBeenCalledTimes(1);
@@ -876,7 +870,7 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1', undefined]]);
     expect(mocks.notify.success).toHaveBeenCalledWith('Permanently deleted 1 workspace');
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     run.task.cancel();
@@ -931,11 +925,14 @@ describe('workspaceOperationsSaga', () => {
     run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-2'], groupLabel: 'Overlapping group' }));
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1', undefined]]);
 
     resolveFirst({ ok: true, data: undefined });
     await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([
+      ['ws-1', undefined],
+      ['ws-2', undefined],
+    ]);
     resolveSecond({ ok: true, data: undefined });
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);

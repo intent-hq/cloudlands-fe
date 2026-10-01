@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
 import {
   useEncoderEffortHarness,
   mocks,
@@ -20,7 +21,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { getItem, updateItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, updateItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareDeviceModel } from '../../input/types';
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
@@ -33,6 +34,10 @@ import {
   consoleOwnerChanged,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  clearPanelLayout,
+  setActiveTab,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { encoderPreferenceSaga } from '$store/renderer/slices/hardware-console/sagas/encoder-preference-saga';
 import { selectEncoderEffortFeedback } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
 import { ENCODER_HUD_HIDE_MS } from '../encoder-service';
@@ -179,7 +184,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       request.mockImplementationOnce(() => first.promise);
       device.turn();
       device.turn();
-      if (change === 'agent') state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+      if (change === 'agent') mocks.dispatch(setActiveTab('ws-1', 'agent-2', 'chat'));
       if (change === 'workspace') state.tabState.currentTabId = 'ws-2';
       if (change === 'model')
         mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'ultra' }));
@@ -628,7 +633,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     const first = deferred<unknown>();
     request.mockImplementationOnce(() => first.promise);
     device.turn();
-    state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+    mocks.dispatch(setActiveTab('ws-1', 'agent-2', 'chat'));
     publish();
     device.turn();
     first.resolve(reply());
@@ -656,12 +661,12 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     const device = manager();
     if (context === 'no-workspace') state.tabState.currentTabId = null;
     if (context === 'chief') state.tabState.currentTabId = CHIEF_WORKSPACE_ID;
-    if (context === 'no-agent') state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = null;
+    if (context === 'no-agent') mocks.dispatch(clearPanelLayout('ws-1'));
     if (context === 'missing-session') delete state.agentSessions.byAgentId['agent-1'];
     if (context === 'other-workspace')
       state.agentSessions.byAgentId['agent-1'].workspaceId = 'ws-2';
     if (context === 'unsupported') state.agentSessions.byAgentId['agent-1'].model = 'no-effort';
-    if (context === 'guest-boot') state.guestSessions.hasReceivedList = false;
+    if (context === 'guest-boot') state.principal = principalInitialState;
     if (context === 'collaborator')
       state.workspace.workspaces = updateItem(state.workspace.workspaces, {
         ...getItem(state.workspace.workspaces, 'ws-1')!,
@@ -884,7 +889,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       } else if (edit === 'model')
         mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'minimal' }));
       else {
-        state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+        mocks.dispatch(setActiveTab('ws-1', 'agent-2', 'chat'));
         publish();
         device.turn();
       }
@@ -973,7 +978,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       } else if (edit === 'independent') {
         mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
       } else {
-        state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+        mocks.dispatch(setActiveTab('ws-1', 'agent-2', 'chat'));
         publish();
         expect(await applyReasoningEffort('agent-2', 'ws-1', 'high', null)).toBe(true);
       }

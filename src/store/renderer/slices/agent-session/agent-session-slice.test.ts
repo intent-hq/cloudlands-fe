@@ -6,7 +6,7 @@ import {
   type QueuedMessage,
 } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
-import type { AgentSessionState } from './agent-session-types';
+import type { AgentSessionState, StoredAgentSession } from './agent-session-types';
 import type { StoreState } from '../../types';
 import {
   agentQueueReducer,
@@ -15,6 +15,7 @@ import {
 } from '../agent-queue/agent-queue-slice';
 import {
   agentSessionReducer,
+  setAgentBackgroundPending,
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
@@ -270,6 +271,25 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).toBe(state);
     });
+
+    it.each([
+      ['wire upsert', upsertSession],
+      ['stored restore', (session: StoredAgentSession) => restoreStoredSessions([session])],
+    ] as const)(
+      'tracks retirement-only changes through %s without losing no-op identity',
+      (_, action) => {
+        let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+        expect(state.agentIdsByWorkspace['ws-1']).toContain('a1');
+        for (const retiredAt of ['2026-09-28T09:00:00Z', '2026-09-28T10:00:00Z', undefined]) {
+          const before = state;
+          state = agentSessionReducer(state, action({ ...state.byAgentId['a1'], retiredAt }));
+          expect(state).not.toBe(before);
+          expect(state.byAgentId['a1'].retiredAt).toBe(retiredAt);
+          expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
+          expect(agentSessionReducer(state, action({ ...state.byAgentId['a1'] }))).toBe(state);
+        }
+      },
+    );
 
     it('keeps the no-op guard bounded to message count and last message ID', () => {
       const messages = [makeUniqueMessage('m1'), makeUniqueMessage('m2')];
@@ -682,6 +702,38 @@ describe('agent-session-slice reducer', () => {
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].metadata?.completionReport).toBe('Done — tests pass, PR ready.');
     });
+
+    it.each([false, true])(
+      'refreshes chief prompt identity with listProjection=%s without losing no-op reuse',
+      (listProjection) => {
+        const snapshot = (chiefPromptVersion?: number) =>
+          makeSession('a1', '__chief__', {
+            metadata: {
+              specialist: 'chief-of-staff',
+              ...(chiefPromptVersion !== undefined ? { chiefPromptVersion } : {}),
+            },
+          });
+        let state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([snapshot()], { listProjection }),
+        );
+        for (const version of [3, 2, 3, undefined]) {
+          const refreshed = agentSessionReducer(
+            state,
+            bulkUpsertSessions([snapshot(version)], { listProjection }),
+          );
+          expect(refreshed).not.toBe(state);
+          expect(refreshed.byAgentId.a1.metadata?.chiefPromptVersion).toBe(version);
+          expect(
+            agentSessionReducer(
+              refreshed,
+              bulkUpsertSessions([snapshot(version)], { listProjection }),
+            ),
+          ).toBe(refreshed);
+          state = refreshed;
+        }
+      },
+    );
 
     it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
       const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
@@ -7304,5 +7356,38 @@ describe('FE-owned session fields survive an agent.get refetch (FE_OWNED_FIELD_P
         expect(readField(state, key), key).toBeUndefined();
       }
     });
+  });
+});
+
+it('does not carry frontend fields or old workspace indexes across an opaque agent ID rebind', () => {
+  let state = agentSessionReducer(
+    initialState,
+    bulkUpsertSessions([makeSession('shared-origin', 'workspace-a')]),
+  );
+  state = agentSessionReducer(
+    state,
+    updateSession('shared-origin', {
+      liveTurnOpen: true,
+      metadata: { pendingQuestionsMessageId: 'a-marker' },
+    }),
+  );
+  state = agentSessionReducer(
+    state,
+    bulkUpsertSessions([makeSession('shared-origin', 'workspace-b')]),
+  );
+  expect(state.byAgentId['shared-origin'].workspaceId).toBe('workspace-b');
+  expect(state.byAgentId['shared-origin'].liveTurnOpen).not.toBe(true);
+  expect(state.byAgentId['shared-origin'].metadata?.pendingQuestionsMessageId).toBeUndefined();
+  expect(state.agentIdsByWorkspace['workspace-a'] ?? []).not.toContain('shared-origin');
+});
+
+describe('background mode request state', () => {
+  it('tracks independent agents and clears only the settled request', () => {
+    let state = agentSessionReducer(initialState, setAgentBackgroundPending('a', true));
+    state = agentSessionReducer(state, setAgentBackgroundPending('b', true));
+    expect(state.backgroundModePending).toEqual({ a: true, b: true });
+    state = agentSessionReducer(state, setAgentBackgroundPending('a', false));
+    expect(state.backgroundModePending).toEqual({ b: true });
+    expect(state.byAgentId).toEqual({});
   });
 });

@@ -1,7 +1,7 @@
 import type { QueuedMessage } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   agentQueueReducer,
   clearAgentQueue,
@@ -305,4 +305,20 @@ describe('agent queue selectors', () => {
       'queued-1',
     ]);
   });
+});
+
+it('drops the prior workspace queue and tombstones on rebind', () => {
+  let state = agentQueueReducer(
+    initialState,
+    replaceAgentQueue(AGENT_ID, [message('shared-row', 0)], 'workspace-a'),
+  );
+  state = agentQueueReducer(state, removeQueuedMessageFromAgentQueue(AGENT_ID, 'shared-row'));
+  state = agentQueueReducer(state, hydrateAgentQueueRequested(AGENT_ID, 'workspace-b'));
+  expect(state.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([]);
+  state = agentQueueReducer(
+    state,
+    replaceAgentQueue(AGENT_ID, [message('shared-row', 0)], 'workspace-b'),
+  );
+  expect(getItems(state.byAgentId[AGENT_ID].messages).map((m) => m.id)).toEqual(['shared-row']);
+  expect(state.byAgentId[AGENT_ID].workspaceId).toBe('workspace-b');
 });

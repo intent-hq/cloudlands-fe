@@ -2,6 +2,92 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import ContextPickerComposerHost from './ContextPickerComposerHost.svelte';
 
+const crowdedResults = Array.from({ length: 8 }, (_, index) => ({
+  id: `long-result-${index}`,
+  type: 'file' as const,
+  label: `3-${index}-context-picker-result-with-a-long-descriptive-filename.ts`,
+  subtitle: `packages/frontend/src/features/context-picker/results/group-${index}/deeply-nested-directory/file.ts`,
+  uri: `file:///fixture/long-result-${index}.ts`,
+}));
+
+for (const scenario of [
+  { name: 'narrow keyboard access', width: 320, keyboard: true },
+  { name: 'wide path click target', width: 1000, keyboard: false },
+]) {
+  test(`context result readability: ${scenario.name}`, async ({ mount, page }, info) => {
+    await page.setViewportSize({ width: scenario.width, height: 800 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(ContextPickerComposerHost, { props: { searchCandidates: crowdedResults } });
+    await page.getByTestId('prompt-actions-trigger').click();
+    await page.getByRole('menuitem', { name: /Add Context/ }).hover();
+    const picker = page.getByRole('dialog', { name: /Select context panels/i });
+    const search = picker.getByRole('combobox');
+    await search.fill('3');
+    const results = picker.getByRole('option');
+    await expect(results).toHaveCount(crowdedResults.length);
+    await page.evaluate(() => document.fonts.ready);
+    await expectGutters(picker, page);
+
+    const geometry = await results.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const text = node.querySelector('div')!;
+        const title = text.children[0] as HTMLElement;
+        const path = text.children[1] as HTMLElement;
+        return {
+          row: node.getBoundingClientRect().toJSON(),
+          title: title.getBoundingClientRect().toJSON(),
+          path: path.getBoundingClientRect().toJSON(),
+          titleLineHeight: parseFloat(getComputedStyle(title).lineHeight),
+          pathLineHeight: parseFloat(getComputedStyle(path).lineHeight),
+          scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth,
+        };
+      }),
+    );
+    for (const [index, bounds] of geometry.entries()) {
+      expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth);
+      expect(bounds.title.height).toBeGreaterThanOrEqual(bounds.titleLineHeight);
+      expect(bounds.path.height).toBeGreaterThanOrEqual(bounds.pathLineHeight);
+      expect(bounds.path.y).toBeGreaterThanOrEqual(bounds.title.bottom);
+      expect(bounds.title.y).toBeGreaterThanOrEqual(bounds.row.y);
+      expect(bounds.path.bottom).toBeLessThanOrEqual(bounds.row.bottom);
+      expect(bounds.path.right).toBeLessThanOrEqual(bounds.row.right);
+      if (index > 0) expect(bounds.row.y).toBeGreaterThanOrEqual(geometry[index - 1].row.bottom);
+    }
+    await info.attach('long-result-geometry', {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    });
+    await info.attach('long-result-rows', {
+      body: await page.screenshot({ path: `.demo-artifacts/context-picker-${scenario.width}.png` }),
+      contentType: 'image/png',
+    });
+
+    const chosenIndex = scenario.keyboard ? crowdedResults.length - 1 : 1;
+    const chosen = crowdedResults[chosenIndex];
+    const option = results.nth(chosenIndex);
+    if (scenario.keyboard) {
+      // Wrapping to the final result must scroll it into view without moving input focus.
+      await search.press('ArrowUp');
+      await expect(search).toBeFocused();
+      await expect(search).toHaveAttribute(
+        'aria-activedescendant',
+        (await option.getAttribute('id'))!,
+      );
+      await expect(option).toHaveAttribute('aria-selected', 'true');
+      await expect(option).toBeInViewport({ ratio: 1 });
+      await search.press('Enter');
+    } else {
+      // The secondary path is part of the same usable click target as the filename.
+      await option.getByText(chosen.subtitle, { exact: true }).click();
+    }
+    await expect(picker.getByRole('checkbox', { name: chosen.label })).toBeChecked();
+    await expect(search).toHaveValue('');
+    await expect(search).toBeFocused();
+    await expect(page.getByRole('menu')).toBeVisible();
+  });
+}
+
 async function expectGutters(surface: Locator, page: Page) {
   await expect(surface).toBeVisible();
   const viewport = page.viewportSize()!;

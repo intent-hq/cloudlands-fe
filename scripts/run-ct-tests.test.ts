@@ -747,10 +747,9 @@ describe('forwardSignalsToChild', () => {
 });
 
 describe('collectNonFontOsDeps', () => {
-  const dryRunLine =
-    'sudo -- sh -c "apt-get update&& apt-get install -y --no-install-recommends libnss3 fonts-liberation xvfb"\n';
+  const dryRunLine = 'Missing system dependencies (3):\n  libnss3\n  fonts-liberation\n  xvfb\n';
 
-  it('runs install-deps --dry-run with the CT-aligned CLI and returns the non-font packages', () => {
+  it('runs install-deps --dry-run with the pinned supplier and returns missing non-font packages', () => {
     const calls: unknown[][] = [];
     const { dryRun, packages } = collectNonFontOsDeps({
       cliPath: '/ct/cli.js',
@@ -758,7 +757,7 @@ describe('collectNonFontOsDeps', () => {
       cwd: '/repo',
       spawnSyncImpl: ((...args: unknown[]) => {
         calls.push(args);
-        return { status: 0, stdout: dryRunLine };
+        return { status: 1, stdout: dryRunLine };
       }) as never,
     });
     expect(calls).toHaveLength(1);
@@ -788,7 +787,7 @@ describe('collectNonFontOsDeps', () => {
           stdout: 'apt-get install -y --no-install-recommends libc6\nlibmissing\n',
         })) as never,
       }),
-    ).toThrow(/unexpected extra install-deps/);
+    ).toThrow(/Unexpected install-deps/);
   });
 });
 

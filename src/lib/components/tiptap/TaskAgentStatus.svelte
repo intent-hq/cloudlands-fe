@@ -99,9 +99,9 @@
           agentId,
           workspaceId: currentWorkspace.id,
         });
-        const restoreAction = restoreAgentSessionRequested(currentWorkspace.id, agentId);
-        appStore.dispatch(restoreAction);
-        const loadedSession = await restoreAction.promise;
+        const loadedSession = await appStore.dispatch(
+          restoreAgentSessionRequested(currentWorkspace.id, agentId),
+        );
         if (loadedSession) {
           agentFound = true;
           // Clear from failed cache if it was there

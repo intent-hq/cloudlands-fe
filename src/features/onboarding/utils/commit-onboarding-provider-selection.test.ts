@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
+vi.mock('$lib/client', () => ({ appClient: { settings: { update: vi.fn(async () => []) } } }));
+const tasks: Task[] = [];
+afterEach(() => {
+  for (const task of tasks.splice(0)) task.cancel();
+});
 import type { StoreState } from '$store/renderer/types';
 import {
   agentAvailabilityReducer,
@@ -29,10 +36,7 @@ import {
   selectIsProviderEnabled,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
-import {
-  commitOnboardingProviderSelection,
-  type CommitOnboardingProviderSelectionAction,
-} from './commit-onboarding-provider-selection';
+import { commitOnboardingProviderSelection } from './commit-onboarding-provider-selection';
 import { resolveOnboardingSelectedProvider } from './resolve-onboarding-selected-provider';
 
 describe('commitOnboardingProviderSelection', () => {
@@ -167,10 +171,13 @@ describe('no-click welcome-step advance regression (empty enabled set on step 4)
     expect(selectedProviderId).toBe('claude-code');
 
     // Advance (button or ⌘↵ — both call the same commit path).
-    const apply = (action: CommitOnboardingProviderSelectionAction) => {
+    const channel = stdChannel();
+    const apply = (action: { type: string }) => {
       settings = providerSettingsReducer(settings, action);
       model = modelReducer(model, action);
+      channel.put(action);
     };
+    tasks.push(runSaga({ channel, dispatch: apply, getState: buildState }, providerSettingsSaga));
     const committed = commitOnboardingProviderSelection({
       selectedProviderId,
       activeProviderId: selectActiveProviderId.select(state),

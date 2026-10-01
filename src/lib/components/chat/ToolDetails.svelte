@@ -23,6 +23,7 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { formatDate, formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -45,6 +46,7 @@
     /** The tool is classified as a terminal command (gates the terminal-style pending view). */
     isTerminal?: boolean;
     workspaceId?: string;
+    agentId?: string;
     suppressOkOnlyResult?: boolean;
   }
 
@@ -56,6 +58,7 @@
     pending = false,
     isTerminal = false,
     workspaceId,
+    agentId,
     suppressOkOnlyResult = false,
   }: Props = $props();
 
@@ -351,7 +354,12 @@
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    if (!workspaceId || !parsedResult?.filePath) return;
+                    if (
+                      !workspaceId ||
+                      !parsedResult?.filePath ||
+                      !canOpenAgentPath(appStore.state, agentId)
+                    )
+                      return;
                     appStore.dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
@@ -394,7 +402,12 @@
                   const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                   const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                   const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                  if (!workspaceId || !parsedResult?.filePath) return;
+                  if (
+                    !workspaceId ||
+                    !parsedResult?.filePath ||
+                    !canOpenAgentPath(appStore.state, agentId)
+                  )
+                    return;
                   appStore.dispatch(
                     openWorkspaceFile(workspaceId, parsedResult.filePath, {
                       openInAdjacentPanel,
@@ -532,7 +545,12 @@
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    if (!workspaceId || !parsedResult?.filePath) return;
+                    if (
+                      !workspaceId ||
+                      !parsedResult?.filePath ||
+                      !canOpenAgentPath(appStore.state, agentId)
+                    )
+                      return;
                     appStore.dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,

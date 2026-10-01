@@ -65,8 +65,12 @@ import {
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from '$shared/ipc/channels';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store as appStore } from '$store/renderer/store';
+import {
+  selectHostRole,
+  selectPrincipalConnectionContext,
+} from '../slices/principal/principal-selectors';
 import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
@@ -80,6 +84,7 @@ import {
 } from '$shared/provider-auth-status';
 import {
   NPX_ONLY_PATH_OVERRIDE_PROVIDERS,
+  PROVIDER_AVAILABILITY_KEY_TO_ID,
   type NpxStatus,
   type ProviderAvailabilityResult,
   type ProviderStatus,
@@ -184,6 +189,20 @@ function withAuth(
  * still degrade to unknown via `getAuthVerdicts()`).
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
+  if (selectHostRole.select(appStore.state) === 'member') {
+    const [discovery, auth] = await Promise.all([fetchProviderDiscovery(), getAuthVerdicts()]);
+    const statuses = Object.fromEntries(
+      Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
+        key,
+        withAuth(memberProviderStatus(discovery, id), auth[id]),
+      ]),
+    ) as ProviderAvailabilityResult['providers'];
+    return {
+      providers: statuses,
+      hasAnyProvider: Object.values(statuses).some((status) => status.available),
+      hiddenProviders: discovery.providers.filter((row) => row.gatedOff).map((row) => row.id),
+    };
+  }
   const [auggieCheck, toolsResult, authVerdicts, discovery, mock] = await Promise.all([
     checkAuggie(),
     backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
@@ -295,6 +314,31 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
 
 type ProviderDiscoverySnapshot = { providers: ProviderDiscoveryEntry[] };
 
+function memberProviderStatus(
+  discovery: ProviderDiscoverySnapshot,
+  providerId: string,
+): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === providerId);
+  return { available: row?.installed === true && !row.gatedOff };
+}
+
+/** Every legacy IPC caller shares the admitted window's authority and reply fence. */
+async function readProviderStatus<T>(read: () => Promise<T>): Promise<T> {
+  const role = selectHostRole.select(appStore.state);
+  const connection = selectPrincipalConnectionContext.select(appStore.state);
+  if (!connection || (role !== 'owner' && role !== 'member')) {
+    throw new Error('Provider discovery requires an admitted host owner or member');
+  }
+  const result = await read();
+  if (
+    connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+    role !== selectHostRole.select(appStore.state)
+  ) {
+    throw new Error('Provider discovery connection changed');
+  }
+  return result;
+}
+
 function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
   return backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
 }
@@ -361,6 +405,11 @@ async function checkMockProvider(): Promise<ProviderStatus> {
 async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
+
+  if (selectHostRole.select(appStore.state) === 'member') {
+    const status = memberProviderStatus(await fetchProviderDiscovery(), providerId);
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
 
   if (providerId === 'antigravity') {
     const status = await checkAntigravityAvailability();
@@ -449,7 +498,7 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
 
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
   try {
-    return { success: true, data: await getProviderAvailability() };
+    return { success: true, data: await readProviderStatus(getProviderAvailability) };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -459,6 +508,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
 interface ProviderDiscoveryEntry {
   id: string;
   installed: boolean;
+  gatedOff?: string;
   resolvedPath?: string | null;
   npxOnly?: boolean;
   npxPackage?: string;
@@ -520,7 +570,11 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
     };
   }
   try {
-    return { success: true, providerId, data: await checkSingleProvider(providerId, force) };
+    return {
+      success: true,
+      providerId,
+      data: await readProviderStatus(() => checkSingleProvider(providerId, force)),
+    };
   } catch (error) {
     return {
       success: false,
@@ -547,8 +601,13 @@ const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
 
 for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS)) {
   registerMockIpcHandler(channel, async () => {
-    const found = await backendRequest<HostCheckResult>('host.findBinary', {
-      name: PROVIDER_BINARIES[providerId],
+    const found = await readProviderStatus(async () => {
+      if (selectHostRole.select(appStore.state) === 'member') {
+        return memberProviderStatus(await fetchProviderDiscovery(), providerId);
+      }
+      return backendRequest<HostCheckResult>('host.findBinary', {
+        name: PROVIDER_BINARIES[providerId],
+      });
     });
     return { success: true, available: found?.available === true };
   });

@@ -16,6 +16,7 @@ vi.mock('$features/backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestSpy }),
 }));
 
+import { generateCompleteIntentSlug } from '$features/workspace/main/intent-slug-generator';
 import { BACKGROUND_REQUEST_TIMEOUT_MS } from '$shared/config/background-model';
 import { makeBackgroundRequest } from '../background-request.service';
 
@@ -111,5 +112,42 @@ describe('makeBackgroundRequest (PROTOCOL §5.32 agent.completeOnce)', () => {
     const result = await makeBackgroundRequest({ prompt: 'p' });
 
     expect(result).toEqual({ success: true, content: '' });
+  });
+});
+
+describe('quick-action request routing', () => {
+  it('forwards explicit effort and type without consulting cached settings', async () => {
+    requestSpy.mockResolvedValue({ text: 'done' });
+    expect(
+      await makeBackgroundRequest({ prompt: 'p', type: 'fast', reasoningEffort: 'high' }),
+    ).toEqual({ success: true, content: 'done' });
+    expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
+      prompt: 'p',
+      type: 'fast',
+      reasoningEffort: 'high',
+      timeoutMs: BACKGROUND_REQUEST_TIMEOUT_MS,
+    });
+  });
+  it('leaves saved effort fallback to the daemon for a typed explicit model', async () => {
+    requestSpy.mockResolvedValue({ text: 'done' });
+    await makeBackgroundRequest({ prompt: 'p', type: 'commit', model: 'codex:test' });
+    expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
+      prompt: 'p',
+      type: 'commit',
+      model: 'codex:test',
+      timeoutMs: BACKGROUND_REQUEST_TIMEOUT_MS,
+    });
+  });
+});
+
+it('routes real workspace naming through Quick tasks, leaving model and effort fallback to the daemon', async () => {
+  requestSpy.mockReset().mockResolvedValue({ text: '{"slug":"dark-mode"}' });
+  expect(await generateCompleteIntentSlug('Add dark mode')).toBe('dark-mode');
+  expect(requestSpy).toHaveBeenCalledTimes(1);
+  expect(requestSpy).toHaveBeenCalledWith('agent.completeOnce', {
+    prompt: expect.any(String),
+    systemPrompt: expect.any(String),
+    timeoutMs: 5000,
+    type: 'fast',
   });
 });

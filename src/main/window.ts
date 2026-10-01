@@ -1,3 +1,4 @@
+import { isDevConsoleRoute } from '../shared/dev-console-route';
 import path from 'path';
 import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -31,7 +32,13 @@ const logger = new Logger('Main');
 // Backend stamping lives in the dependency-light window-backend.ts (so
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
-import { HUD_ROUTE_PREFIX, registerHudWindow } from './hud-window';
+import {
+  findExistingHudWindow,
+  HUD_ROUTE_PREFIX,
+  isHudWindow,
+  isTrackedHudWindow,
+  registerHudWindow,
+} from './hud-window';
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
@@ -389,6 +396,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
+      if (isDevConsoleRoute(new URL(url).pathname)) return false;
       return true;
     })
     .map((w: BrowserWindowType) => {
@@ -585,7 +593,9 @@ export function isValidWindowSession(s: unknown): s is WindowSession {
 export function loadWindowSessions(backendId: string): WindowSession[] | null {
   try {
     if (closedBackendSessions.has(backendId)) return null;
-    const valid = readSessionsMap()[backendId];
+    const valid = readSessionsMap()[backendId]?.filter(
+      (session) => !isDevConsoleRoute(session.route),
+    );
     if (valid && valid.length > 0) {
       // Cap per backend to guard against a corrupted sessions file.
       const capped = valid.slice(0, MAX_SESSIONS_PER_BACKEND);
@@ -704,8 +714,21 @@ export async function restoreWindowsForBackend(toBackendId: string): Promise<voi
       backendId: toBackendId,
       count: savedSessions.length,
     });
+    const firstAppSession = savedSessions.findIndex(
+      (session) => !session.route.startsWith(HUD_ROUTE_PREFIX),
+    );
     for (let i = 0; i < savedSessions.length; i++) {
-      await createWindowForSession(savedSessions[i], i === 0, toBackendId);
+      // Switching backends can restore app sessions while its HUD is already open.
+      if (
+        savedSessions[i].route.startsWith(HUD_ROUTE_PREFIX) &&
+        findExistingHudWindow(toBackendId)
+      ) {
+        continue;
+      }
+      await createWindowForSession(savedSessions[i], i === firstAppSession, toBackendId);
+    }
+    if (firstAppSession === -1) {
+      await createWindow(toBackendId);
     }
   } else {
     logger.info('No saved sessions for backend; opening a fresh window', {
@@ -776,20 +799,27 @@ export async function restoreAllBackendWindowSessions(
   return restoredAny;
 }
 
-/** Focus a live window for a backend, or add that backend's saved/fresh windows. */
+/** Focus the first app window for a backend, restoring saved/fresh windows if needed. */
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
-  const existing = BrowserWindow.getAllWindows().find(
-    (window) =>
-      !window.isDestroyed() && getBackendIdForWebContents(window.webContents) === backendId,
-  );
+  const findAppWindow = () =>
+    BrowserWindow.getAllWindows().find(
+      (window) =>
+        !window.isDestroyed() &&
+        getBackendIdForWebContents(window.webContents) === backendId &&
+        !isTrackedHudWindow(window) &&
+        !isHudWindow(window),
+    );
+  let existing = findAppWindow();
+  if (!existing) {
+    await restoreWindowsForBackend(backendId);
+    existing = findAppWindow();
+  }
   if (existing) {
     if (existing.isMinimized()) existing.restore();
     existing.show();
     existing.focus();
     setMainWindow(existing);
-    return;
   }
-  await restoreWindowsForBackend(backendId);
 }
 
 /** Ensure closing one backend cannot destroy the app's final live window. */

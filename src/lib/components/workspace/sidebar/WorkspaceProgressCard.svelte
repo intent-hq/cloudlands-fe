@@ -63,7 +63,6 @@
     selectAcceptChangesStatusLoading,
   } from '$store/renderer/slices/git/git-selectors';
   import FlameGraph from './FlameGraph.svelte';
-  import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
   import {
     requestArchiveWorkspace,
@@ -96,7 +95,7 @@
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
-    presencePersonName,
+    presencePersonNameWithForge,
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
@@ -469,7 +468,8 @@
     const wsId = $workspace?.id ? String($workspace.id) : undefined;
     const share = shareAction?.onClick ?? null;
     return (person: PresenceCircle): PresenceCircleAction => {
-      const name = presencePersonName(person);
+      // The hover names the person's forge too: "Ada · @ada on GitHub · on Coordinator".
+      const name = presencePersonNameWithForge(person);
       const target = targets[person.principalId];
       if (target?.kind === 'agent') {
         const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
@@ -1230,11 +1230,6 @@
           </div>
         {/if} -->
       </div>
-    {/if}
-
-    <!-- Token usage row (renders nothing until data is available) -->
-    {#if workspaceId}
-      <WorkspaceTokenUsage {workspaceId} />
     {/if}
 
     <!-- Status follows identity and progress so it reads as the current update. -->

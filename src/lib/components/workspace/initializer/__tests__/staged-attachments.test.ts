@@ -70,10 +70,17 @@ describe('redeemStagedAttachments', () => {
 
     const result = await redeemStagedAttachments('ws-1', [stagedItem()], place);
 
-    expect(place).toHaveBeenCalledWith('ws-1', 'notes.txt', {
-      sourcePath: '/home/user/notes.txt',
-      mimeType: 'text/plain',
-    });
+    expect(place).toHaveBeenCalledWith(
+      'ws-1',
+      'notes.txt',
+      {
+        sourcePath: '/home/user/notes.txt',
+        mimeType: 'text/plain',
+      },
+      undefined,
+      undefined,
+      expect.any(Function),
+    );
     expect(result.failedCount).toBe(0);
     expect(result.items[0].placementStatus).toBe('placed');
     expect(result.items[0].attachmentId).toBe('att-uuid-1');
@@ -187,11 +194,18 @@ describe('redeemStagedAttachments', () => {
       const result = await redeemStagedAttachments('ws-1', [stagedItem()], place, mintKey);
 
       expect(mintKey).toHaveBeenCalledTimes(1);
-      expect(place).toHaveBeenCalledWith('ws-1', 'notes.txt', {
-        sourcePath: '/home/user/notes.txt',
-        mimeType: 'text/plain',
-        idempotencyKey: KEY,
-      });
+      expect(place).toHaveBeenCalledWith(
+        'ws-1',
+        'notes.txt',
+        {
+          sourcePath: '/home/user/notes.txt',
+          mimeType: 'text/plain',
+          idempotencyKey: KEY,
+        },
+        undefined,
+        undefined,
+        expect.any(Function),
+      );
       expect(result.items[0].placementIdempotencyKey).toBe(KEY);
     });
 
@@ -208,11 +222,18 @@ describe('redeemStagedAttachments', () => {
       await redeemStagedAttachments('ws-1', first.items, place, retryMint);
 
       expect(retryMint).not.toHaveBeenCalled();
-      expect(place).toHaveBeenLastCalledWith('ws-1', 'notes.txt', {
-        sourcePath: '/home/user/notes.txt',
-        mimeType: 'text/plain',
-        idempotencyKey: KEY,
-      });
+      expect(place).toHaveBeenLastCalledWith(
+        'ws-1',
+        'notes.txt',
+        {
+          sourcePath: '/home/user/notes.txt',
+          mimeType: 'text/plain',
+          idempotencyKey: KEY,
+        },
+        undefined,
+        undefined,
+        expect.any(Function),
+      );
     });
 
     it('sends no key and stores none against a daemon without keyed placement (behavior unchanged)', async () => {
@@ -473,16 +494,21 @@ describe('sendHeldFirstMessage', () => {
       );
 
       expect(attempt2).toEqual({ sent: true });
-      expect(toReferences).toHaveBeenCalledWith('ws-1', [
-        { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
-        {
-          type: 'image',
-          data: 'ZGVm',
-          mimeType: 'image/png',
-          placementIdempotencyKey: KEY,
-          placementFileName: 'image-2.png',
-        },
-      ]);
+      expect(toReferences).toHaveBeenCalledWith(
+        'ws-1',
+        [
+          { type: 'image', attachmentId: 'att-first', mimeType: 'image/png' },
+          {
+            type: 'image',
+            data: 'ZGVm',
+            mimeType: 'image/png',
+            placementIdempotencyKey: KEY,
+            placementFileName: 'image-2.png',
+          },
+        ],
+        undefined,
+        expect.any(Function),
+      );
       expect(request).toHaveBeenCalledWith(
         'agent.sendMessage',
         expect.objectContaining({
@@ -517,9 +543,12 @@ describe('sendHeldFirstMessage', () => {
 
       expect(attempt2).toEqual({ sent: true });
       // No inline data reaches the placer on the retry.
-      expect(toReferences).toHaveBeenCalledWith('ws-1', [
-        { type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' },
-      ]);
+      expect(toReferences).toHaveBeenCalledWith(
+        'ws-1',
+        [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
+        undefined,
+        expect.any(Function),
+      );
       expect(request).toHaveBeenCalledWith(
         'agent.sendMessage',
         expect.objectContaining({

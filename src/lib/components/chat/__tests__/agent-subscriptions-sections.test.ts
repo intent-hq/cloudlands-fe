@@ -64,6 +64,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentDetailHydrated: () => makeReadable(false),
+  selectAgentBackgroundPending: () => makeReadable(false),
   selectAgentPreview: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
       makeDerivedReadable(agentId, (id) => {
@@ -1216,7 +1217,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-stop'));
     await flush();
-    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'agent-a' }]);
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'agent-a', workspaceId: 'ws-waiting-actions-shot' },
+    ]);
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-cancel'));
     await flush();
     expect(backendRequestSpy.mock.calls).toContainEqual([
@@ -1562,7 +1566,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-b')).getByTestId('one-shot-stop'));
     await flush();
-    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'agent-b' }]);
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'agent-b', workspaceId: 'ws-waiting-actions-group' },
+    ]);
     await fireEvent.click(within(agentRow('agent-b')).getByTestId('one-shot-cancel'));
     await flush();
     expect(backendRequestSpy.mock.calls).toContainEqual([

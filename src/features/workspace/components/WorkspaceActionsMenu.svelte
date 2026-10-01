@@ -30,7 +30,7 @@
 <script lang="ts">
   import type { IconWeight } from 'phosphor-svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
+  import { openGitXcodeRequested } from '$store/renderer/slices/git/git-slice';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -69,6 +69,7 @@
     onClose?: () => void;
     showDeleteOption?: boolean;
     showArchiveOption?: boolean;
+    showPathCopy?: boolean;
     showFileNameCopy?: boolean;
     showFileActions?: boolean;
     workspaceFolderPath?: string;
@@ -94,6 +95,7 @@
     onClose = undefined,
     showDeleteOption = true,
     showArchiveOption = false,
+    showPathCopy = true,
     showFileNameCopy = false,
     showFileActions = true,
     workspaceFolderPath = '',
@@ -304,22 +306,16 @@
       return;
     }
     try {
-      // Fetch changed files to help find the right Xcode project in monorepos.
-      // Daemon-backed read (`git.status`, PROTOCOL §5.6) via the appClient seam.
-      let changedFiles: string[] = [];
       if (workspaceId && resolvedFolderPath) {
-        try {
-          const status = await appClient.git.status(workspaceId);
-          if (status?.files) {
-            changedFiles = status.files.map((f) => f.path);
-            logger.info('[WorkspaceActionsMenu] Found changed files for Xcode', {
-              count: changedFiles.length,
-            });
-          }
-        } catch (err) {
-          // Non-fatal - we can still open Xcode without changed files
-          logger.debug('[WorkspaceActionsMenu] Could not get changed files for Xcode', err);
-        }
+        appStore.dispatch(
+          openGitXcodeRequested(
+            workspaceId,
+            resolvedFolderPath,
+            isDirectory ? undefined : resolvedPath,
+          ),
+        );
+        onClose?.();
+        return;
       }
 
       // If we have a resolved folder path, open the workspace folder with the file
@@ -332,13 +328,11 @@
         pathToOpen = {
           folder: resolvedFolderPath,
           file: resolvedPath,
-          changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
         };
       } else if (resolvedFolderPath) {
         // For directories, just open the workspace folder with changed files for smart detection
         pathToOpen = {
           folder: resolvedFolderPath,
-          changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
         };
       }
 
@@ -632,17 +626,18 @@
           ],
         });
       }
-      result.push({
-        id: 'copy-absolute-path',
-        label: m.ui_workspaceActions_copyAbsolutePath_label(),
-        icon: faCopy,
-        disabled: !resolvedPath,
-        dividerBefore: result.length > 0,
-        onClick: () => {
-          void copyAbsolutePath();
-        },
-      });
-      if (!isWorkspaceRoot)
+      if (showPathCopy)
+        result.push({
+          id: 'copy-absolute-path',
+          label: m.ui_workspaceActions_copyAbsolutePath_label(),
+          icon: faCopy,
+          disabled: !resolvedPath,
+          dividerBefore: result.length > 0,
+          onClick: () => {
+            void copyAbsolutePath();
+          },
+        });
+      if (showPathCopy && !isWorkspaceRoot)
         result.push({
           id: 'copy-relative-path',
           label: m.ui_workspaceActions_copyRelativePath_label(),

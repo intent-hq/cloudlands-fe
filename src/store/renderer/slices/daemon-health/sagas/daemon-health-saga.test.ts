@@ -158,7 +158,7 @@ describe('daemonHealthSaga', () => {
     vi.unstubAllGlobals();
   });
 
-  it('installs status first, applies snapshot before buffered pushes, polls immediately, and toasts once', async () => {
+  it('installs status first, lets a newer push supersede the held snapshot, polls and toasts once', async () => {
     let resolveStatus!: (value: unknown) => void;
     invoke.mockImplementation((channel: string) => {
       if (channel === BACKEND.GET_STATUS) {
@@ -183,15 +183,6 @@ describe('daemonHealthSaga', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(statusActions(dispatched)).toEqual([
-      connectionStatusChanged(
-        'connected',
-        {
-          mode: 'external-uds',
-          versionMismatch: true,
-          daemonVersion: '2.0.0',
-        },
-        { sidecarGaveUp: undefined, sidecarStartupFailed: undefined, reason: undefined },
-      ),
       connectionStatusChanged(
         'disconnected',
         {

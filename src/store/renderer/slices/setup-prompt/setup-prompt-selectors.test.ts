@@ -1,9 +1,10 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * Setup Prompt Selectors Tests
  */
 
 import { describe, it, expect } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
@@ -45,7 +46,7 @@ function stateWith(opts: {
   providerStatusMap?: Record<string, { available: boolean; authenticated?: boolean }>;
 }): StoreState {
   const workspaceIds = opts.workspaceIds ?? [];
-  return {
+  return withLegacyPrincipal({
     connections: {
       ...connectionsInitialState,
       connections: createCollection<ConnectionRecord, 'id'>('id', [LOCAL, REMOTE]),
@@ -63,7 +64,7 @@ function stateWith(opts: {
     agentAvailability: {
       providerStatusMap: opts.providerStatusMap ?? {},
     },
-  } as unknown as StoreState;
+  } as unknown as StoreState);
 }
 
 describe('selectSetupEvaluation / selectActiveSetupEvaluation', () => {
@@ -201,5 +202,21 @@ describe('selectBackendSetupGate', () => {
       providerStatusMap: { auggie: { available: true, authenticated: false } },
     });
     expect(selectBackendSetupGate.select(notReady)).toBe('pending');
+  });
+});
+
+describe('empty host member admission', () => {
+  it('does not redirect an admitted member to repository/provider setup', () => {
+    const state = stateWith({
+      setupPrompt: {
+        evaluation: { connectionId: LOCAL_CONNECTION_ID, isLocal: true, setupNeeded: true },
+      },
+    });
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    expect(selectBackendSetupGate.select(state)).toBe('none');
+    expect(selectShowRemoteSetupPrompt.select(state)).toBe(false);
+    state.principal.status = 'loading';
+    expect(selectBackendSetupGate.select(state)).toBe('pending');
   });
 });

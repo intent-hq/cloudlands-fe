@@ -9,6 +9,11 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import {
     bulkUpsertSessions,
     updateSession,
@@ -84,9 +89,12 @@
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
-  const disposeStore = untrack(() => initializeStore)
+  const ownsStore = untrack(() => initializeStore);
+  const previousPrincipal = store.state.principal;
+  const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  if (ownsStore) admitLegacyPrincipal();
   const session = {
     id: agentId,
     workspaceId,
@@ -353,7 +361,18 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
-  onDestroy(disposeStore);
+  onDestroy(() => {
+    disposeStore();
+    if (!ownsStore) return;
+    store.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      store.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+  });
 </script>
 
 <section style:zoom data-testid="chat-panel-composer-host">

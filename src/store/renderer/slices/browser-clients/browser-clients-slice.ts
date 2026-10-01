@@ -12,8 +12,8 @@
  * decisions are made here; the daemon owns them.
  */
 
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
@@ -23,6 +23,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { BrowserClientsState } from './browser-clients-types';
 import {
+  createAuthenticatedClientCollection,
   createLiveClientCollection,
   emptyWorkspaceBrowserClientsState,
   initialState,
@@ -36,12 +37,12 @@ export { initialState } from './browser-clients-types';
 // ---------------------------------------------------------------------------
 
 /** Learn this connection's own clientId and read the live client list. */
-export const hydrateBrowserClientsRequested = createAction(
+export const hydrateBrowserClientsRequested = createAction<[workspaceId?: string]>(
   'browserClients/hydrateBrowserClientsRequested',
 );
 
 /** Re-read `client.list` (bridge: `client:connected` / `client:disconnected`). */
-export const refreshLiveClientsRequested = createAction(
+export const refreshLiveClientsRequested = createAction<[workspaceId?: string]>(
   'browserClients/refreshLiveClientsRequested',
 );
 
@@ -83,7 +84,17 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
   'browserClients/ownClientIdReceived',
 );
 
-export const liveClientsReceived = createAction<[clients: LiveClient[]]>(
+export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
+
+export const authenticatedClientsCleared = createAction<[context: string]>(
+  'browserClients/authenticatedClientsCleared',
+);
+
+export const authenticatedClientsReceived = createAction<[context: string, clients: LiveClient[]]>(
+  'browserClients/authenticatedClientsReceived',
+);
+
+export const liveClientsReceived = createAction<[clients: LiveClient[], workspaceId?: string]>(
   'browserClients/liveClientsReceived',
 );
 
@@ -117,14 +128,59 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 );
 
 export const browserClientsReducer = createReducer<BrowserClientsState>(initialState);
+browserClientsReducer.with(authenticatedClientsCleared, (state, { payload: [context] }) =>
+  state.authenticatedContext !== context
+    ? state
+    : {
+        ...state,
+        authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
+        liveClients: createLiveClientCollection(),
+        liveClientsLoaded: false,
+      },
+);
+
+browserClientsReducer.with(
+  authenticatedClientsReceived,
+  (state, { payload: [context, clients] }) => ({
+    ...state,
+    authenticatedContext: context,
+    authenticatedClients: createAuthenticatedClientCollection(clients),
+    liveClients: createLiveClientCollection(clients),
+    liveClientsLoaded: true,
+  }),
+);
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
   state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
 );
-browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients] }) => ({
+browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   ...state,
-  liveClients: createLiveClientCollection(clients),
-  liveClientsLoaded: true,
+  liveClients: createLiveClientCollection(),
+  liveClientsLoaded: false,
+  authenticatedContext: null,
+  authenticatedClients: createAuthenticatedClientCollection(),
+  byWorkspaceId: Object.fromEntries(
+    Object.entries(state.byWorkspaceId).map(([id, entry]) => [
+      id,
+      { ...entry, liveClients: createLiveClientCollection(), liveClientsLoaded: false },
+    ]),
+  ),
 }));
+browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, workspaceId] }) =>
+  workspaceId
+    ? setWorkspaceState(state, workspaceId, {
+        ...getWorkspaceState(state, workspaceId),
+        liveClients: createLiveClientCollection(clients),
+        liveClientsLoaded: true,
+      })
+    : {
+        ...state,
+        authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
+        liveClients: createLiveClientCollection(clients),
+        liveClientsLoaded: true,
+      },
+);
 browserClientsReducer.with(
   workspaceBrowserClientReceived,
   (state, { payload: [wsId, browserClient] }) =>

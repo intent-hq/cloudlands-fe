@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    selectContextSpecialists,
+    selectContextSelectedModel,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   /**
    * Agent Tab Type Component
    *
@@ -12,9 +16,11 @@
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { subscribeToAgent } from '$features/agent/browser';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
+  import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import { presencePersonLabel } from '$features/presence/components/presence-person';
 
   import {
     selectHidesAgentLifecycleActions,
@@ -30,16 +36,11 @@
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
-  import { Tooltip } from '$lib/components/ui/tooltip';
-  import Fa from 'svelte-fa';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
-  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
-    selectSpecialistName,
-    selectSpecialists,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
-  import {
+    faBoxArchive,
     faBell,
     faBellSlash,
     faCheck,
@@ -51,6 +52,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
+  import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { agentDelegationParentOf } from '$shared/utils/agent-scope';
@@ -58,10 +60,16 @@
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
-    deleteAgentWithUndoRequested,
+    agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    agentMutationUiConsumed,
+    agentMutationUiReleased,
+    agentMutationUiRequested,
+  } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
 
   const logger = createLogger('AgentTabType');
 
@@ -71,6 +79,24 @@
 
   const workspaceIdStore = writable('');
   const agentIdStore = writable('');
+  const mutationConsumerId = crypto.randomUUID();
+  const mutation$ = selectAgentMutationUi(workspaceIdStore, mutationConsumerId);
+  $effect(() => {
+    const wsId = workspaceId;
+    void tab.agentId;
+    return () => appStore.dispatch(agentMutationUiReleased(wsId, mutationConsumerId));
+  });
+  $effect(() => {
+    const outcome = $mutation$;
+    if (
+      !outcome ||
+      outcome.workspaceId !== workspaceId ||
+      outcome.status === 'pending' ||
+      outcome.agentId !== tab.agentId
+    )
+      return;
+    appStore.dispatch(agentMutationUiConsumed(workspaceId, mutationConsumerId, outcome.requestId));
+  });
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -83,12 +109,12 @@
   // `agent.delete` is refused (-32003) for a collaborator connection: the
   // menu item is withheld rather than disabled.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
-  const defaultModel = selectSelectedModel();
+  const defaultModel = selectContextSelectedModel(workspaceIdStore);
   // Other people whose focus is this chat (multiplayer w5 presence circles).
   const presencePeople$ = selectAgentPresencePeople(workspaceIdStore, agentIdStore);
 
   // Reactive store subscription for specialist names
-  const specialists$ = selectSpecialists();
+  const specialists$ = selectContextSpecialists(workspaceIdStore);
 
   // Check if this agent is the initial workspace agent (created during onboarding)
   const initialAgentId$ = selectInitialAgentId(workspaceIdStore);
@@ -159,6 +185,13 @@
   // top-level, non-background, not retired. Mirrors the AgentCard context menu.
   const canReplaceAgent = $derived(isReplaceAgentEligible($agent$));
   let replaceAgentModalOpen = $state(false);
+  let retireAgentModalOpen = $state(false);
+  const retirementSupported$ = selectAgentRetirementSupported();
+  const connectionGeneration$ = selectDaemonConnectionGeneration();
+  $effect(() => {
+    $connectionGeneration$;
+    void appStore.dispatch(agentRetirementSupportRequested());
+  });
 
   // Raw specialist id (not the display name) — interpolated into the built
   // hand-off instruction's `ws.agent.create` call shape.
@@ -185,7 +218,11 @@
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
   let agentCopyTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let isAgentDeleting = $state(false);
+  const isAgentDeleting = $derived(
+    $mutation$?.agentId === tab.agentId &&
+      $mutation$?.operation.kind === 'delete' &&
+      $mutation$.status === 'pending',
+  );
   let chatPanelRef = $state<{
     scrollToBottom: () => void;
     navigateToUserMessage: (messageId: string) => Promise<boolean>;
@@ -229,34 +266,28 @@
     }
   }
 
-  async function handleToggleNotificationsMuted() {
+  function handleToggleNotificationsMuted() {
     if (!tab.agentId) return;
-    const action = setAgentNotificationsMutedRequested(
-      workspaceId,
-      tab.agentId,
-      !isNotificationsMuted,
+    // The saga owns the failure toast and rollback.
+    appStore.dispatch(
+      setAgentNotificationsMutedRequested(workspaceId, tab.agentId, !isNotificationsMuted),
     );
-    appStore.dispatch(action);
-    // The saga surfaces the failure toast and rolls back; swallow here so a
-    // daemon rejection never becomes an unhandled rejection.
-    await action.promise.catch(() => {});
   }
 
-  async function handleDeleteAgent() {
+  function handleDeleteAgent() {
     if (!tab.agentId || isAgentDeleting || $hidesAgentLifecycleActions$) return;
     const agentIdToDelete = tab.agentId;
     const agentName = agentSession?.name || tab.title || '';
-    isAgentDeleting = true;
-    try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
-      const action = deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      logger.error('Failed to delete agent', error);
-    } finally {
-      isAgentDeleting = false;
-    }
+    appStore.dispatch(closeTab(workspaceId, tab.id));
+    appStore.dispatch(
+      agentMutationUiRequested(
+        workspaceId,
+        mutationConsumerId,
+        crypto.randomUUID(),
+        agentIdToDelete,
+        { kind: 'delete', name: agentName },
+      ),
+    );
   }
 
   // Register header state and actions
@@ -269,58 +300,20 @@
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
     untrack(() => {
       headerContext.registerActions({
-        primary: agentPrimaryActions,
         display: agentDisplayActions,
         actions: agentActions,
+        additional: agentAdditionalActions,
       });
       headerContext.registerState({ subtitle });
     });
   });
 </script>
 
-{#snippet agentPrimaryActions()}
-  <div class="flex min-w-0 items-center gap-0.5">
-    <PresenceAvatarStack people={$presencePeople$} size={18} class="mr-1" />
-    {#if isNotificationsMuted}
-      <Tooltip content={m.chat_agentCard_notificationsMuted_tooltip()} side="bottom">
-        <span
-          class="inline-flex shrink-0 items-center text-subtle"
-          role="img"
-          aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
-          data-testid="agent-tab-muted-indicator"
-        >
-          <Fa icon={faBellSlash} class="h-3! w-3!" />
-        </span>
-      </Tooltip>
-    {/if}
-    <TaskProgressControl tasks={taskProgressItems} presentation="checklist" />
-    {#if tab.agentId}
-      <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
-    {/if}
-    <ChatMessageNavigator
-      messages={chatNavigationState.userMessages}
-      isAtBottom={chatNavigationState.isAtBottom}
-      isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
-      onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
-      onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
-      onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
-    />
-  </div>
-{/snippet}
-
 {#snippet agentDisplayActions()}
   <AgentViewSettingsDropdown embedded />
 {/snippet}
 
 {#snippet agentActions()}
-  {#if agentTaskNoteId}
-    <Menu.CommandItem
-      icon={faNote}
-      iconWeight="regular"
-      label={m.layout_agentTab_goToTaskNote_tooltip()}
-      onclick={(event) => handleGoToTaskNote(event)}
-    />
-  {/if}
   <Menu.CommandItem
     icon={agentCopyFeedback ? faCheck : faCopy}
     iconWeight="regular"
@@ -328,22 +321,20 @@
     onclick={handleCopyAgentConversation}
     disabled={agentMessages.length === 0}
   />
-  {#if $agent$}
-    <Menu.CommandItem
-      icon={isNotificationsMuted ? faBell : faBellSlash}
-      iconWeight="regular"
-      label={isNotificationsMuted
-        ? m.chat_agentCard_menu_unmuteNotifications_label()
-        : m.chat_agentCard_menu_muteNotifications_label()}
-      onclick={handleToggleNotificationsMuted}
-    />
-  {/if}
   {#if canReplaceAgent}
     <Menu.CommandItem
       icon={faRightLeft}
       iconWeight="regular"
       label={m.layout_agentTab_replaceAgent_tooltip()}
       onclick={() => (replaceAgentModalOpen = true)}
+    />
+  {/if}
+  {#if $retirementSupported$ && $agent$ && !$agent$.retiredAt}
+    <Menu.CommandItem
+      icon={faBoxArchive}
+      iconWeight="regular"
+      label={m.modals_retireAgent_confirm_label()}
+      onclick={() => (retireAgentModalOpen = true)}
     />
   {/if}
   {#if !$hidesAgentLifecycleActions$}
@@ -354,6 +345,44 @@
       onclick={handleDeleteAgent}
       disabled={isAgentDeleting}
       destructive
+    />
+  {/if}
+{/snippet}
+
+{#snippet agentAdditionalActions()}
+  {#each $presencePeople$ as person (person.principalId)}
+    <Menu.CommandItem icon={faUserTie} label={presencePersonLabel(person)} disabled />
+  {/each}
+  <TaskProgressControl tasks={taskProgressItems} embedded />
+  {#if tab.agentId}
+    <BrowserTabsMenu {workspaceId} agentId={tab.agentId} embedded />
+  {/if}
+  <ChatMessageNavigator
+    embedded
+    messages={chatNavigationState.userMessages}
+    isAtBottom={chatNavigationState.isAtBottom}
+    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
+    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
+    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
+  />
+
+  {#if agentTaskNoteId}
+    <Menu.CommandItem
+      icon={faNote}
+      iconWeight="regular"
+      label={m.layout_agentTab_goToTaskNote_tooltip()}
+      onclick={(event) => handleGoToTaskNote(event)}
+    />
+  {/if}
+  {#if $agent$}
+    <Menu.CommandItem
+      icon={isNotificationsMuted ? faBell : faBellSlash}
+      iconWeight="regular"
+      label={isNotificationsMuted
+        ? m.chat_agentCard_menu_unmuteNotifications_label()
+        : m.chat_agentCard_menu_muteNotifications_label()}
+      onclick={handleToggleNotificationsMuted}
     />
   {/if}
   {#if agentSpecialistName || harnessVersion}
@@ -382,6 +411,15 @@
     bind:open={harnessModalOpen}
     version={harnessVersion}
     features={harnessFeatures}
+  />
+{/if}
+
+{#if retireAgentModalOpen && tab.agentId}
+  <RetireAgentModal
+    bind:open={retireAgentModalOpen}
+    agentName={agentSession?.name || tab.title || ''}
+    {workspaceId}
+    agentId={tab.agentId}
   />
 {/if}
 

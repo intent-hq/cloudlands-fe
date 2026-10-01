@@ -5,6 +5,7 @@
 // Re-export stripMarkdownFormatting from shared utils
 export { stripMarkdownFormatting } from '$shared/utils-client';
 import { stripInternalDeliveryNotes } from './user-message-presentation';
+import { memberMentionsToText } from '$lib/utils/member-mention-token';
 
 /**
  * Strip `<group:Name>` and `</group>` (or `</group:Name>` / `</group:>`) tags
@@ -78,7 +79,7 @@ export function getLastMeaningfulLine(text: string): string {
  * Shared by the AgentCard footer preview and the HUD card agent line.
  */
 export function stripUserMessagePrefixes(text: string): string {
-  return stripInternalDeliveryNotes(text)
+  return memberMentionsToText(stripInternalDeliveryNotes(text))
     .replace(/^(\[.*?\]\s*)+/, '')
     .replace(/@context\[[^\]]*\]/g, '')
     .trim();

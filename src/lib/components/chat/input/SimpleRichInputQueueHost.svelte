@@ -1,4 +1,11 @@
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
+  import { store } from '$store/renderer/store';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import SimpleRichInput from './SimpleRichInput.svelte';
   import QueuedMessageList from '../QueuedMessageList.svelte';
 
@@ -7,6 +14,23 @@
     queueCount = 12,
     width = 360,
   }: { streaming?: boolean; queueCount?: number; width?: number } = $props();
+  const fixtureDispatch = store.dispatch;
+  const previousPrincipal = untrack(() => store.state.principal);
+  // This fixture sends a new message without an existing workspace.
+  untrack(() => admitLegacyPrincipal());
+  const fixturePrincipal = untrack(() => store.state.principal);
+  onDestroy(() => {
+    if (store.dispatch !== fixtureDispatch || store.state.principal !== fixturePrincipal) return;
+    store.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      store.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+  });
+
   let value = $state('');
   let lastAction = $state('');
   const messages = $derived(

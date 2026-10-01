@@ -1,3 +1,12 @@
+import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
+import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
+import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
+import {
+  claimAgentReadOwnership,
+  isAgentReadWorkspaceCurrent,
+} from '$features/agent/agent-read-ownership';
+import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -135,6 +144,12 @@
  * daemon-events-saga owns two subscriptions on the socket: the global
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
+import { isHostMembershipChange } from '$shared/types/principal';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import {
+  hostMembershipChanged,
+  principalIdentityChanged,
+} from '$store/renderer/slices/principal/principal-slice';
 import { m } from '$shared/paraglide/messages.js';
 import type {
   AgentSession,
@@ -255,7 +270,7 @@ import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
-import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import { safeParseTokenUsage } from '$features/token-usage/token-usage-schema';
 import { hydrateContextItems } from '$store/renderer/slices/context/context-slice';
 import type { ContextItem } from '$features/context/types';
 import {
@@ -266,6 +281,7 @@ import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-ass
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import {
   appendScriptOutput,
+  removeScript,
   refreshScripts,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
@@ -279,6 +295,9 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
+import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import { identityChanged } from '$store/renderer/slices/identity/identity-slice';
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
   browserTabClosed,
@@ -339,7 +358,7 @@ interface StreamState {
 const streamsByAgent = new Map<string, StreamState>();
 
 /**
- * Per-agent turn tracking for the push-applied preview digest: the last
+ * Per-workspace/agent turn tracking for the push-applied preview digest: the last
  * `agent:stream:activity` / `agent:stream:end` messageId seen. When an
  * activity ping arrives for a NEW messageId (a new turn), the previous turn's
  * `session.digest` and `lastToolUse` are cleared before the ping's own fields
@@ -356,7 +375,7 @@ const streamsByAgent = new Map<string, StreamState>();
 const previewTurnMessageIdByAgent = new Map<string, string>();
 
 /**
- * Per-agent messageId of the last turn whose terminal `agent:stream:end` was
+ * Per-workspace/agent messageId of the last turn whose terminal `agent:stream:end` was
  * applied. An activity ping is self-sufficient evidence of a live turn (it
  * opens the sticky `liveTurnOpen` bit so a never-hydrated delegated agent's
  * footer preview goes live without an `agent:status-changed` edge), but a
@@ -393,18 +412,21 @@ const lastAppliedRetireTransitionByAgent = new Map<string, 'retired' | 'restored
  * fetch after it settles. `ensureAgentSession` never rejects, so the chain
  * always advances.
  */
+let agentRefreshGeneration = 0;
 const agentSessionRefreshInFlight = new Set<string>();
 const agentSessionRefreshFollowUpWanted = new Set<string>();
-function refreshAgentSessionCoalesced(agentId: string): void {
-  if (agentSessionRefreshInFlight.has(agentId)) {
-    agentSessionRefreshFollowUpWanted.add(agentId);
+function refreshAgentSessionCoalesced(agentId: string, workspaceId?: string): void {
+  const generation = agentRefreshGeneration;
+  const key = JSON.stringify([generation, workspaceId ?? null, agentId]);
+  if (agentSessionRefreshInFlight.has(key)) {
+    agentSessionRefreshFollowUpWanted.add(key);
     return;
   }
-  agentSessionRefreshInFlight.add(agentId);
-  void ensureAgentSession(agentId).then(() => {
-    agentSessionRefreshInFlight.delete(agentId);
-    if (agentSessionRefreshFollowUpWanted.delete(agentId)) {
-      refreshAgentSessionCoalesced(agentId);
+  agentSessionRefreshInFlight.add(key);
+  void ensureAgentSession(agentId, workspaceId).then(() => {
+    agentSessionRefreshInFlight.delete(key);
+    if (agentSessionRefreshFollowUpWanted.delete(key) && generation === agentRefreshGeneration) {
+      refreshAgentSessionCoalesced(agentId, workspaceId);
     }
   });
 }
@@ -673,18 +695,41 @@ function applyStreamPreviewFields(
  * silently dropped rather than just deferred. `ensureAgentSession` is async
  * (it fetches + hydrates the store), so `apply` runs immediately when the
  * session is already known, otherwise it is deferred until hydration settles
- * — `ensureAgentSession` coalesces concurrent calls per agent via its
- * in-flight map and the daemon throttles activity to ≤1/s, so this cannot
- * stampede, and it never rejects (errors are swallowed/logged), so `apply`
- * always runs even after a failed fetch (a still-unknown session then makes
- * the deferred writes no-ops, same as today).
+ * — `ensureAgentSession` coalesces concurrent calls per read owner. A preview
+ * must still belong to that workspace and read lifetime when it is applied:
+ * hydration can settle after another workspace replaces the row, or after a
+ * newer read takes ownership without having published its replacement yet.
+ * A failed fetch leaves no session to update.
  */
-function withHydratedSession(agentId: string, apply: () => void): void {
-  if (appStore.state.agentSessions?.byAgentId[agentId]) {
+function withHydratedSession(
+  agentId: string,
+  workspaceId: string | undefined,
+  apply: () => void,
+): void {
+  const session = appStore.state.agentSessions?.byAgentId[agentId];
+  if (
+    (workspaceId !== undefined && session && session.workspaceId !== workspaceId) ||
+    !isAgentReadWorkspaceCurrent(agentId, workspaceId)
+  ) {
+    return;
+  }
+  if (session) {
     apply();
     return;
   }
-  void ensureAgentSession(agentId).then(apply);
+  const generation = agentRefreshGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  void ensureAgentSession(agentId, workspaceId).then(() => {
+    const hydrated = appStore.state.agentSessions?.byAgentId[agentId];
+    if (
+      generation === agentRefreshGeneration &&
+      ownership.isCurrent() &&
+      hydrated &&
+      (workspaceId === undefined || hydrated.workspaceId === workspaceId)
+    ) {
+      apply();
+    }
+  });
 }
 
 /**
@@ -725,7 +770,8 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // `lastToolUse.status: "running"` that `isAgentRunningState` reads as
   // active evidence) and, for an older turn, masquerade as a new turn and
   // clear the current digest.
-  const endedMessageId = previewTurnEndedMessageIdByAgent.get(agentId);
+  const previewKey = JSON.stringify([workspaceId, agentId]);
+  const endedMessageId = previewTurnEndedMessageIdByAgent.get(previewKey);
   if (endedMessageId !== undefined && messageId <= endedMessageId) {
     return;
   }
@@ -749,9 +795,9 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // the next turn starts. The map write itself is synchronous bookkeeping
   // (no store dependency) — only the resulting agent-session dispatches below
   // wait on hydration.
-  const isNewTurn = previewTurnMessageIdByAgent.get(agentId) !== messageId;
+  const isNewTurn = previewTurnMessageIdByAgent.get(previewKey) !== messageId;
   if (isNewTurn) {
-    previewTurnMessageIdByAgent.set(agentId, messageId);
+    previewTurnMessageIdByAgent.set(previewKey, messageId);
   }
   // The ping itself proves a turn is in flight (the daemon only emits it
   // mid-turn), so open the sticky `liveTurnOpen` bit — the same one the
@@ -761,13 +807,13 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // live even while pings stream in. `updatedAt` is daemon-owned and left
   // untouched. (Ended-turn stragglers never reach here — dropped above.)
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
-  withHydratedSession(agentId, () => {
+  withHydratedSession(agentId, event.workspaceId, () => {
     // Re-check at execution time: `withHydratedSession` defers this callback
     // across an async hydration fetch when the session isn't known yet, and
     // the turn's terminal `agent:stream:end` may stamp the ended-turn map
     // (synchronously) in that window — a then-stale ping must not re-open
     // the liveness the terminal fold just closed.
-    const endedAtDispatch = previewTurnEndedMessageIdByAgent.get(agentId);
+    const endedAtDispatch = previewTurnEndedMessageIdByAgent.get(previewKey);
     if (endedAtDispatch !== undefined && messageId <= endedAtDispatch) {
       return;
     }
@@ -1123,18 +1169,19 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // writes and let the newer turn's own state stand; an unstamped/older
   // (falsy-comparison) terminal or one with no messageId still applies
   // (matches pre-existing behavior for daemons that omit messageId).
-  const trackedMessageId = previewTurnMessageIdByAgent.get(agentId);
+  const previewKey = JSON.stringify([workspaceId, agentId]);
+  const trackedMessageId = previewTurnMessageIdByAgent.get(previewKey);
   const isStaleTerminalForPreview =
     messageId !== undefined && trackedMessageId !== undefined && messageId < trackedMessageId;
   if (!isStaleTerminalForPreview) {
     if (messageId !== undefined) {
-      previewTurnMessageIdByAgent.set(agentId, messageId);
+      previewTurnMessageIdByAgent.set(previewKey, messageId);
       // Record the ended turn so a straggler same-turn (or older-turn)
       // activity ping cannot re-open the sticky liveTurnOpen bit the
       // terminal choreography closes — see handleStreamActivityEvent.
-      previewTurnEndedMessageIdByAgent.set(agentId, messageId);
+      previewTurnEndedMessageIdByAgent.set(previewKey, messageId);
     }
-    withHydratedSession(agentId, () => {
+    withHydratedSession(agentId, event.workspaceId, () => {
       applyStreamPreviewFields(
         agentId,
         typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
@@ -1223,7 +1270,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
-  const error = data?.error;
+  const error = hostExecutionAuthorizationMessage(data?.executionAuthorization) ?? data?.error;
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
@@ -1338,7 +1385,7 @@ function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): vo
   const countThisCreate = !scopeCountedCreatedAgentIds.has(agentId);
   scopeCountedCreatedAgentIds.add(agentId);
   const baselineGeneration = scopeCountsGenerationOf(workspaceId);
-  void ensureAgentSession(agentId).then(() => {
+  void ensureAgentSession(agentId, workspaceId).then(() => {
     if (!countThisCreate) return;
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session || session.retiredAt) return;
@@ -1474,15 +1521,22 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
     // in another workspace, and invalidate any toast still loading its imports.
     void dismissAgentAttentionToast(agentId);
   }
+  const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
   if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
-    notePendingQuestionMarkerProjection(agentId);
+    notePendingQuestionMarkerProjection(agentId, event.workspaceId);
   }
-  void refreshAgentSessionAfterEvent(agentId);
+  if (isAgentReadWorkspaceCurrent(agentId, event.workspaceId))
+    void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
   // open modal listing this agent re-checks agent.listInterrupted (debounced;
-  // no-op when the modal is closed or the agent is not listed).
-  notifyInterruptedAgentUpdated(agentId);
+  // no-op when the modal is closed or the agent is not listed). Startup
+  // recovery failures additionally discover retryable rows after reservation release.
+  notifyInterruptedAgentUpdated(
+    agentId,
+    (event.type as string) === 'agent:updated' && data.startupRecoveryFailed === true,
+  );
 }
 
 /**
@@ -1570,7 +1624,7 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
     updates.lastUserMessage =
       typeof data.lastUserMessage === 'string' ? data.lastUserMessage : undefined;
   }
-  withHydratedSession(agentId, () => {
+  withHydratedSession(agentId, event.workspaceId, () => {
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session) return;
     appStore.dispatch(
@@ -1605,10 +1659,13 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
-  appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
+  const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
+  if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[], event.workspaceId));
   // Mark the snapshot so an in-flight hydrate fetch that started before this
   // event discards its (now stale) response instead of overwriting it.
-  noteAgentQueueEventSnapshotApplied(agentId);
+  noteAgentQueueEventSnapshotApplied(agentId, event.workspaceId);
 }
 
 /**
@@ -1697,9 +1754,10 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
     typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
       ? dataWorkspaceId
       : workspaceIdOf(event);
-  const tokenUsage = data.tokenUsage;
-  if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
-  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+  if (!workspaceId) return;
+  const tokenUsage = safeParseTokenUsage(data.tokenUsage);
+  if (!tokenUsage) return;
+  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage));
 }
 
 /**
@@ -1886,6 +1944,7 @@ function handlePermissionRequestEvent(event: WorkspaceEvent): void {
   const timestamp = data.timestamp;
   const request: PermissionRequest = {
     requestId,
+    ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
     sessionId,
     title,
     description: typeof description === 'string' || description === null ? description : undefined,
@@ -2304,7 +2363,7 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
 }
 
 async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
-  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as {
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
   };
@@ -2367,7 +2426,7 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     // setWorkspaceEntity so future events can merge into it. Re-read the
     // store here (not at trigger time) so the trailing fetch sees the
     // current entity state.
-    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const current = getItem(state.workspace.workspaces as never, workspaceId as never);
     if (current) {
@@ -2400,7 +2459,7 @@ async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
 ): Promise<void> {
-  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
     { activity?: 'idle' | 'agent_running' } | undefined;
@@ -2684,7 +2743,7 @@ function handleWorkspaceMembershipRemoved(
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
   for (const agentId of ownerAgentIds) {
     void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
       logger.warn('Failed to clear main-process registrations for unshared workspace tabs', {
@@ -2710,7 +2769,7 @@ function handleWorkspaceMembershipRemoved(
  * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
  * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
  * agent-driven toggles) mirror the per-workspace state without a follow-up
- * `mcp.servers.list` read. The slice keys the map by server *name*, so the
+ * `mcp.servers.list` read. The slice keys the map by server identity, so the
  * daemon id resolves via the current server list; an unresolvable id is
  * dropped (the sidebar's mount hydrate converges the state later).
  */
@@ -2721,10 +2780,9 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
   if (typeof serverId !== 'string' || !serverId || typeof workspaceDisabled !== 'boolean') {
     return;
   }
-  const servers = appStore.state.mcpSettings.servers;
-  const match = servers.find((s) => s.id === serverId);
-  if (!match) return;
-  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, match.name, workspaceDisabled));
+  const name = selectWorkspaceMcpServerName.select(appStore.state, workspaceId, serverId);
+  if (name === undefined) return;
+  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, serverId, workspaceDisabled));
 }
 
 /**
@@ -2748,7 +2806,7 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
   // whole panel-layout entry (destroying the pinned webviews), so main's
   // CDP/ownership registrations must be collected first (monorepo#2857).
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'deleted'));
   for (const agentId of ownerAgentIds) {
     void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
       logger.warn('Failed to clear main-process registrations for deleted workspace tabs', {
@@ -2845,7 +2903,7 @@ function handleWorkspaceCreatedEvent(workspaceId: string): void {
   const hasLocalState =
     agentIds.length > 0 || state.workspaceAgents?.byWorkspaceId[workspaceId] !== undefined;
   if (!hasLocalState) return;
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'replaced'));
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
 }
 
@@ -2904,9 +2962,11 @@ function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId:
   });
   const existing = workspaceDeleteTombstoneTimers.get(workspaceId);
   if (existing) clearTimeout(existing);
+  const expire = captureDeletionExpiry(workspaceId);
   const timer = setTimeout(() => {
-    workspaceDeleteTombstoneTimers.delete(workspaceId);
-    appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
+    if (workspaceDeleteTombstoneTimers.get(workspaceId) === timer)
+      workspaceDeleteTombstoneTimers.delete(workspaceId);
+    expire();
   }, tombstoneClearDelayMs(data?.deleteAt));
   workspaceDeleteTombstoneTimers.set(workspaceId, timer);
 }
@@ -3005,10 +3065,10 @@ function registerAgentDeleteTombstone(
  * Restore the soft-hidden session from the registry snapshot when one exists
  * (instant, mirrors the undo saga's `restoreHiddenSession`), then refetch the
  * canonical agent list — this also covers a window that filtered the pending
- * row out of a wire response before ever holding a snapshot. In the
- * originating window the undo saga restores its own snapshot; the registry
- * entry is already gone by the time this event lands, so only the reconcile
- * refetch runs there.
+ * row out of a wire response before ever holding a snapshot. This event or
+ * the originating undo saga may observe cancellation first; whichever still
+ * owns the registry entry restores the snapshot. If the saga was first,
+ * only the reconcile refetch runs here.
  */
 function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -3211,10 +3271,10 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
  * `"stopped" | "starting" | "running" | "error"` (PROTOCOL §5.22). No
  * `workspaceId` envelope: the MCP-servers surface is global, so this handler
  * runs before the workspace-id gate in `handleNotification`. Resolve the
- * daemon-assigned `serverId` back to a server `name` via the current
- * `mcpSettings.servers` list (`fromWireMcpConfig` carries `id` through), then
+ * daemon-assigned `serverId` via the current `mcpSettings.servers` list
+ * (`fromWireMcpConfig` carries `id` through), then
  * dispatch `setServerStatus` plus `setServerErrorMessage` /
- * `clearServerErrorMessage` keyed by name — the slice keys everything by name.
+ * `clearServerErrorMessage` keyed by server identity.
  * The daemon-state → badge mapping is the shared `mapDaemonMcpState` from
  * mcp-settings-normalization (also used by the load saga's status fetch).
  */
@@ -3238,6 +3298,64 @@ function handleGitHubAuthChangedEvent(event: WorkspaceEvent): void {
   ) {
     appStore.dispatch(githubAuthChanged(status));
   }
+}
+
+/**
+ * `sourceControl:auth-changed` carries `data = { provider, host, status }` on
+ * every forge-auth transition. GitHub transitions still arrive as
+ * `github:auth-changed` (handled above), so only the GitLab provider is routed
+ * here — never a token or code.
+ */
+function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (data?.provider !== 'gitlab') return;
+  const status = data.status;
+  if (
+    status === 'authorized' ||
+    status === 'expired' ||
+    status === 'denied' ||
+    status === 'error' ||
+    status === 'revoked'
+  ) {
+    appStore.dispatch(
+      gitlabAuthChanged(status, typeof data.host === 'string' ? data.host : undefined),
+    );
+  }
+}
+
+/**
+ * `principal:identity-changed` carries `data = { principalId, identity | null }`
+ * when the host's primary principal is re-keyed onto another forge (an
+ * explicit `identity.provider` change) or unlinked. Global; the identity slice
+ * follows the new triple's provider.
+ */
+function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
+  const identity = data?.identity;
+  let triple: PrincipalIdentity | null = null;
+  if (identity !== null) {
+    if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return;
+    const { provider, host, externalUserId } = identity as Record<string, unknown>;
+    if (
+      (provider !== 'github' && provider !== 'gitlab') ||
+      typeof host !== 'string' ||
+      !host.trim() ||
+      typeof externalUserId !== 'string' ||
+      !externalUserId.trim()
+    )
+      return;
+    triple = { provider, host, externalUserId };
+  }
+  const principal = appStore.state.principal;
+  if (
+    principal?.context &&
+    principal.context === selectPrincipalConnectionContext.select(appStore.state) &&
+    principal.boundPrincipalId === data.principalId
+  )
+    appStore.dispatch(principalIdentityChanged(data.principalId));
+  // Keep the legacy primary-identity mirror and its profile refresh, including unlink.
+  appStore.dispatch(identityChanged(triple));
 }
 
 /**
@@ -3295,7 +3413,7 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const mapped = mapDaemonMcpState(status.state);
   if (mapped === null) return;
 
-  // Resolve serverId → name via the local server list. When the FE has not
+  // Resolve serverId via the local server list. When the FE has not
   // yet loaded `mcp.servers.list` (e.g. the settings panel was never opened)
   // or when the daemon emits for an id the FE never mirrored, drop the
   // update — the next `refreshMcpServers` will pick up the current state.
@@ -3303,16 +3421,16 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const match = servers.find((s) => s.id === serverId);
   if (!match) return;
 
-  appStore.dispatch(setServerStatus(match.name, mapped));
+  appStore.dispatch(setServerStatus(getMcpServerKey(match), mapped));
   const lastError = status.lastError;
   if (
     (mapped === 'error' || mapped === 'auth_required') &&
     typeof lastError === 'string' &&
     lastError.length > 0
   ) {
-    appStore.dispatch(setServerErrorMessage(match.name, lastError));
+    appStore.dispatch(setServerErrorMessage(getMcpServerKey(match), lastError));
   } else {
-    appStore.dispatch(clearServerErrorMessage(match.name));
+    appStore.dispatch(clearServerErrorMessage(getMcpServerKey(match)));
   }
 }
 
@@ -3582,11 +3700,29 @@ export function routeDaemonEventsNotification(
     handleGitHubAuthChangedEvent(event);
     return;
   }
+  if (type === 'sourceControl:auth-changed') {
+    handleSourceControlAuthChangedEvent(event);
+    return;
+  }
+  if (type === 'principal:identity-changed') {
+    handlePrincipalIdentityChangedEvent(event);
+    return;
+  }
 
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
-  if (type === 'client:connected' || type === 'client:disconnected') {
+  if (type === 'client:connected' || type === 'client:disconnected' || type === 'client:updated') {
     handleClientTransitionEvent(event);
+    return;
+  }
+
+  if (type === 'host:execution-context-changed') {
+    appStore.dispatch(hostExecutionInvalidated());
+    return;
+  }
+  if (type === 'host:members-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
     return;
   }
 
@@ -3725,7 +3861,8 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     if (typeof agentId === 'string' && agentId.length > 0) {
-      void refreshAgentSessionAfterEvent(agentId);
+      if (isAgentReadWorkspaceCurrent(agentId, event.workspaceId))
+        void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
     } else {
       appStore.dispatch(hydrateAgentsRequested(workspaceId));
     }
@@ -4009,6 +4146,10 @@ export function routeDaemonEventsNotification(
   // canonical list refetch, output feeds the live buffer, and state mirrors
   // the recomputed runtime into the scripts slice.
   if (type === 'script:changed') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    if (data?.action === 'removed' && typeof data.scriptId === 'string') {
+      appStore.dispatch(removeScript(workspaceId, data.scriptId));
+    }
     appStore.dispatch(refreshScripts(workspaceId));
     // fall through so the activity timeline records the mutation
   }
@@ -4097,7 +4238,7 @@ export function routeDaemonEventsNotification(
   if (type === 'agent:message' && !daemonEmitsLastMessage) {
     const { agentId, role } = event.data ?? {};
     if (typeof agentId === 'string' && (role === 'assistant' || role === 'user')) {
-      refreshAgentSessionCoalesced(agentId);
+      refreshAgentSessionCoalesced(agentId, event.workspaceId);
     }
   }
   // Process-queue events (§6.5): agent:process:queued sets the hint,
@@ -4145,6 +4286,7 @@ export function routeDaemonEventsNotification(
  */
 export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'agent:*',
+  'hub:checkpoint',
   // `file:*` is deliberately ABSENT: system-actor watcher bursts from every
   // open workspace would otherwise reach every window. The daemon-events-saga
   // carries file events on a separate subscription scoped to the active
@@ -4209,11 +4351,18 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
   'github:auth-changed',
+  // `sourceControl:auth-changed` — provider-generic forge-auth transitions
+  // (`{ provider, host, status }`); routes the GitLab connect UX.
+  'sourceControl:auth-changed',
+  // `principal:identity-changed` — the host's identity forge was re-keyed
+  // (`{ principalId, identity | null }`); global, folded into the identity slice.
+  'principal:identity-changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients
   // mirror). The `workspace:updated` subscription above already carries the
   // `browserClientId` pin delta.
+  'client:updated',
   'client:connected',
   'client:disconnected',
   'browser:tab-opened',
@@ -4231,16 +4380,29 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // presence slice. Workspace-scoped on the daemon side, so the membership
   // gate narrows it like any other row.
   'presence:changed',
+  'host:members-changed',
+  'host:execution-context-changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
   activeWorkspaceId: string | null,
 ): Promise<void> {
+  agentRefreshGeneration += 1;
+  agentSessionRefreshInFlight.clear();
+  agentSessionRefreshFollowUpWanted.clear();
   const state = appStore.state as {
+    scripts?: { byWorkspaceId: Record<string, unknown> };
     workspaceAgents?: {
       byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
     };
   };
+  // Recover missed active-list changes on reconnect for workspaces holding scripts.
+  for (const workspaceId of new Set([
+    ...Object.keys(state.scripts?.byWorkspaceId ?? {}),
+    ...(activeWorkspaceId ? [activeWorkspaceId] : []),
+  ])) {
+    appStore.dispatch(refreshScripts(workspaceId));
+  }
   if (activeWorkspaceId) {
     appStore.dispatch(hydrateAgentsRequested(activeWorkspaceId));
     const activeAgentId =
@@ -4253,7 +4415,7 @@ export async function refreshDaemonEventsAfterReconnect(
       // every reconnect. Queue rows drained while the connection was down
       // never re-emit `agent:queue:updated`; reconcile the mirror from
       // `agent.getQueue` (monorepo#1749).
-      void hydrateAgentQueue(activeAgentId);
+      void hydrateAgentQueue(activeAgentId, activeWorkspaceId);
     }
   }
   // Sharing rows converge via live `workspace:updated` membership deltas
@@ -4340,6 +4502,7 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 }
 
 export function disposeDaemonEventsRoutingState(): void {
+  agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
   previewTurnEndedMessageIdByAgent.clear();

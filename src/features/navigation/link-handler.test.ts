@@ -1,5 +1,11 @@
+import { showLinkTooltip } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
+import {
+  handleLink,
+  createGlobalLinkClickHandler,
+  createLinkClickHandler,
+  createLinkTooltipHandler,
+} from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
@@ -11,7 +17,8 @@ const TEST_WORKTREE_ROOT = '/repo/root';
 
 const handleIntentLinkMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 // Mock the dynamic imports used by handleLink
-vi.mock('$lib/utils/workspaces-link-handler', () => ({
+vi.mock('$lib/utils/workspaces-link-handler', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/workspaces-link-handler')>()),
   handleIntentLink: handleIntentLinkMock,
 }));
 
@@ -49,12 +56,14 @@ const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 
 // Workspace entity lookup used to relativize absolute paths
+const workspaceRoots = vi.hoisted(() => ({
+  worktreePath: '/repo/root' as string | undefined,
+  path: '/repo/clone',
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
     select: (_state: unknown, wsId: string) =>
-      wsId === 'ws-1'
-        ? ({ id: 'ws-1', worktreePath: '/repo/root' } as unknown as Workspace)
-        : undefined,
+      wsId === 'ws-1' ? ({ id: 'ws-1', ...workspaceRoots } as unknown as Workspace) : undefined,
   },
 }));
 
@@ -338,6 +347,8 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
   const resolvedUrl = (rawHref: string) => new URL(rawHref, window.location.href).href;
 
   beforeEach(() => {
+    workspaceRoots.worktreePath = TEST_WORKTREE_ROOT;
+    workspaceRoots.path = '/repo/clone';
     reduxDispatchMock.mockClear();
     openBrowserPanelMock.mockClear();
     invokeIpcMock.mockClear();
@@ -345,6 +356,164 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     handleIntentLinkMock.mockClear();
     (window as unknown as { electronAPI?: object }).electronAPI = {};
   });
+
+  it.each(['docs/design.md', './docs/design.md', `${TEST_WORKTREE_ROOT}/docs/design.md`])(
+    'opens a direct file target without rawHref: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          filePathIsLiteral: true,
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+      expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'HTTPS://example.com/docs',
+    'Https://example.com/docs',
+    'MAILTO:user@example.com',
+    'custom.scheme:resource',
+    'CUSTOM.SCHEME:resource',
+    'custom.scheme:resource.txt:17',
+    'x://example.com/docs',
+    'X://example.com/docs',
+    '//example.com/docs',
+    '#heading',
+  ])('keeps non-file targets external with or without a workspace: %s', async (target) => {
+    expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+    expect(await handleLink(target, {})).toBe(true);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledTimes(2);
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(1, 'shell:openExternal', { url: target });
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(2, 'shell:openExternal', { url: target });
+  });
+
+  it.each(['c:/repo/root', 'C:/repo/root', 'c:\\repo\\root', 'C:\\repo\\root'])(
+    'recognizes drive-letter paths without confusing them with URL schemes: %s',
+    async (root) => {
+      workspaceRoots.worktreePath = root;
+      const separator = root.includes('\\') ? '\\' : '/';
+      const target = `${root}${separator}docs${separator}design.md`;
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID, rawHref: target })).toBe(
+        true,
+      );
+      expect(reduxDispatchMock).toHaveBeenCalledTimes(2);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          filePathIsLiteral: true,
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['readme.md:17', 'readme.md:17:4', 'readme.md#L17'])(
+    'recognizes a bare filename with a supported line suffix: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'readme.md', {
+          filePathIsLiteral: true,
+          line: 17,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['raw href', 'direct target', 'resolved URL'])(
+    'preserves encoded filenames and line locations from %s',
+    async (source) => {
+      const cases = [
+        ['docs/a%20b%23c%3Fd.md', 'docs/a b#c?d.md', undefined],
+        ['docs/100%25.md', 'docs/100%.md', undefined],
+        ['docs/literal%2520.md', 'docs/literal%20.md', undefined],
+        ['docs/design.md%23L42', 'docs/design.md#L42', undefined],
+        ['docs/design.md%3A17', 'docs/design.md:17', undefined],
+        ['docs/100%25.md#L42', 'docs/100%.md', 42],
+        ['docs/100%25.md:17:4', 'docs/100%.md', 17],
+      ] as const;
+      for (const [target, path, line] of cases) {
+        reduxDispatchMock.mockClear();
+        expect(
+          await handleLink(source === 'direct target' ? target : resolvedUrl(target), {
+            workspaceId: TEST_WORKSPACE_ID,
+            ...(source === 'raw href' ? { rawHref: target } : {}),
+          }),
+        ).toBe(true);
+        expect(reduxDispatchMock).toHaveBeenCalledWith(
+          openWorkspaceFile(TEST_WORKSPACE_ID, path, {
+            filePathIsLiteral: true,
+            line,
+            openInAdjacentPanel: false,
+          }),
+        );
+      }
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([TEST_WORKTREE_ROOT, `${TEST_WORKTREE_ROOT}/`])(
+    'uses the owning worktree root with optional trailing separator: %s',
+    async (root) => {
+      workspaceRoots.worktreePath = root;
+      const rawHref = `${TEST_WORKTREE_ROOT}/packages/cloudlands-fe/src/app.html`;
+      await handleLink('https://different.example/wrong/path', {
+        workspaceId: TEST_WORKSPACE_ID,
+        rawHref,
+      });
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+          filePathIsLiteral: true,
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('falls back to the repository root only when there is no worktree', async () => {
+    workspaceRoots.worktreePath = undefined;
+    await handleLink('/repo/clone/docs/design.md', { workspaceId: TEST_WORKSPACE_ID });
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+        filePathIsLiteral: true,
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
+  it.each(['/repo/root-other/docs/design.md', '/repo/clone/docs/design.md'])(
+    'does not reinterpret an outside-worktree absolute target: %s',
+    async (target) => {
+      await handleLink(target, { workspaceId: TEST_WORKSPACE_ID });
+      expect(reduxDispatchMock).not.toHaveBeenCalled();
+      expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', {
+        url: `vscode://file/${target}`,
+      });
+    },
+  );
+
+  it.each(['../outside.md', 'docs/%2e%2e/outside.md', 'docs/%00.md', 'docs/%ZZ.md', './'])(
+    'rejects invalid direct file targets: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(false);
+      expect(reduxDispatchMock).not.toHaveBeenCalled();
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('should route a relative raw href to openWorkspaceFile', async () => {
     const rawHref = 'src/main.rs';
@@ -356,6 +525,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -373,6 +543,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/lib.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -390,6 +561,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       1,
       openWorkspaceFile(TEST_WORKSPACE_ID, relative, {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -397,6 +569,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       2,
       openWorkspaceFile(TEST_WORKSPACE_ID, relative, {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -409,6 +582,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
 
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -468,6 +642,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -485,6 +660,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: 42,
         openInAdjacentPanel: false,
       }),
@@ -501,6 +677,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: 17,
         openInAdjacentPanel: false,
       }),
@@ -518,6 +695,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: true,
       }),
@@ -548,6 +726,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       2,
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/scoped.ts', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-chat',
@@ -656,6 +835,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     });
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -923,4 +1103,15 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
     expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
   });
+});
+
+it('captures the hovered workspace before its tooltip module resolves', async () => {
+  const { container, anchor } = buildContainerWithLink('https://github.com/org/repo/pull/1');
+  container.dataset.workspaceId = 'a';
+  const cleanup = createLinkTooltipHandler(container);
+  anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  container.dataset.workspaceId = 'b';
+  await vi.waitFor(() => expect(showLinkTooltip).toHaveBeenCalledWith(anchor, anchor.href, 'a'));
+  cleanup();
+  container.remove();
 });

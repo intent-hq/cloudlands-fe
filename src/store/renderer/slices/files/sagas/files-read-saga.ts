@@ -26,14 +26,20 @@ type ReadResult =
   | { kind: 'failure'; message: string; candidates?: string[] }
   | { kind: 'retarget'; path: string };
 
-function* loadFileContentWorker(workspaceId: string, path: string): SagaGenerator<ReadResult> {
+function* loadFileContentWorker(
+  workspaceId: string,
+  path: string,
+  gitRoot?: { id: string; relativePath: string },
+): SagaGenerator<ReadResult> {
   try {
     const entry: Awaited<ReturnType<typeof appClient.files.read>> = yield* call(
       [appClient.files, appClient.files.read],
-      workspaceId,
-      path,
+      ...(gitRoot
+        ? ([workspaceId, gitRoot.relativePath, { gitRootId: gitRoot.id }] as const)
+        : ([workspaceId, path] as const)),
     );
     if (!entry) {
+      if (gitRoot) return { kind: 'failure', message: m.files_read_notFound_error() };
       // Not found at the workspace root — the path may be submodule- or
       // worktree-relative (see monorepo#2059). Attempt suffix resolution.
       // Candidates never include the requested path itself (the helper
@@ -94,26 +100,31 @@ function* readWithPermit(
   generation: number,
   workspaceId: string,
   path: string,
+  gitRoot?: { id: string; relativePath: string },
 ): SagaGenerator<ReadResult | undefined> {
   let acquired = false;
   try {
     const admission = yield* race({
       permit: take(permits),
-      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+      cleanup: take(matchesReadCleanup(workspaceId, path)),
     });
     if (admission.cleanup) {
-      clearWorkspaceGenerations(generations, workspaceId);
+      if (admission.cleanup.type === workspaceUnmounted.type)
+        clearWorkspaceGenerations(generations, workspaceId);
+      else generations.delete(key);
       return undefined;
     }
     acquired = true;
     if (generations.get(key) !== generation) return undefined;
 
     const read = yield* race({
-      result: call(loadFileContentWorker, workspaceId, path),
-      cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+      result: call(loadFileContentWorker, workspaceId, path, gitRoot),
+      cleanup: take(matchesReadCleanup(workspaceId, path)),
     });
     if (read.cleanup) {
-      clearWorkspaceGenerations(generations, workspaceId);
+      if (read.cleanup.type === workspaceUnmounted.type)
+        clearWorkspaceGenerations(generations, workspaceId);
+      else generations.delete(key);
       return undefined;
     }
     return read.result;
@@ -133,11 +144,12 @@ function clearWorkspaceGenerations(generations: Map<string, number>, workspaceId
   }
 }
 
-function matchesWorkspaceCleanup(workspaceId: string) {
+function matchesReadCleanup(workspaceId: string, path: string) {
   return (action: { type: string; payload?: unknown }) =>
-    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
-    action.payload[0] === workspaceId;
+    action.payload[0] === workspaceId &&
+    (action.type === workspaceUnmounted.type ||
+      (action.type === removeFileContentEntry.type && action.payload[1] === path));
 }
 
 function registerReadGeneration(
@@ -172,6 +184,7 @@ function* loadFileContentRequestWorker(
     generation,
     workspaceId,
     path,
+    action.payload[3]?.gitRoot,
   );
   if (!result || generations.get(key) !== generation) return;
 

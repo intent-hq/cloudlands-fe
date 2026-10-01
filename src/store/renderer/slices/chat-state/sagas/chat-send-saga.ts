@@ -1,3 +1,5 @@
+import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
+import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
   call,
   cancelled,
@@ -183,6 +185,7 @@ function* sendQueuedNow(
   wsId: string,
   messageId: string,
 ): SagaGenerator<QueuedMessageSendOutcome> {
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   const result = yield* call([appClient.agents, appClient.agents.sendQueuedNow], {
     agentId,
     workspaceId: wsId,
@@ -195,7 +198,7 @@ function* sendQueuedNow(
   // daemon's queue events reconcile it; never remove then resend on the FE.
   if (result.quarantined) return 'quarantined';
   if (result.queued) return 'queued';
-  if (typeof result.turnId === 'string') {
+  if ((yield* mutationIsCurrent(agentId, ownership)) && typeof result.turnId === 'string') {
     yield* put(chatQueueProcessingReceived(agentId, result.turnId));
   }
   return 'delivered';
@@ -219,6 +222,13 @@ function* handleSendQueuedNow(action: SendQueuedNowAction): SagaGenerator<void> 
   }
 }
 
+function* mutationIsCurrent(
+  agentId: string,
+  ownership: ReturnType<typeof captureAgentMutationOwnership>,
+): SagaGenerator<boolean> {
+  return ownership.isCurrent(yield* selectAgentSessionWorkspaceId.effect(agentId));
+}
+
 function* dispatchToLifecycle(
   agentId: string,
   wsId: string,
@@ -227,6 +237,8 @@ function* dispatchToLifecycle(
   options: LifecycleSendOptions,
   skipQueueCheck: boolean,
 ): SagaGenerator<void> {
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
+  if (!(yield* mutationIsCurrent(agentId, ownership))) return;
   const workspace =
     wsId === CHIEF_WORKSPACE_ID
       ? createChiefVirtualWorkspace()
@@ -256,6 +268,7 @@ function* dispatchToLifecycle(
         imageBlocks: yield* call(toImageReferenceBlocks, wsId, imageBlocks),
       };
     } catch (error) {
+      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
       yield* put(
         chatLastAttemptedMessageSet(
           agentId,
@@ -270,13 +283,16 @@ function* dispatchToLifecycle(
     }
   }
 
+  if (!(yield* mutationIsCurrent(agentId, ownership))) return;
   yield* call(hydrateBeforeSend, agentId, wsId);
+  if (!(yield* mutationIsCurrent(agentId, ownership))) return;
   const recordedAttempt = buildRecordedAttempt(content, options);
   const isResponding = yield* selectAgentIsResponding.effect(agentId);
   if (!skipQueueCheck && isResponding) {
     yield* put(clearChatDraft(wsId, agentId));
     try {
       const queueOptions = {
+        workspaceId: wsId,
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
         ...(options.messageMetadata !== undefined
@@ -288,11 +304,14 @@ function* dispatchToLifecycle(
       // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
-      const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
-      const result =
-        Object.keys(queueOptions).length > 0
-          ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, queueOptions)
-          : yield* call([appClient.agents, appClient.agents.queue], agentId, content);
+      const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
+      const result = yield* call(
+        [appClient.agents, appClient.agents.queue],
+        agentId,
+        content,
+        queueOptions,
+      );
+      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
       if (!result.success) {
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
@@ -311,12 +330,15 @@ function* dispatchToLifecycle(
         // snapshot (including the shrunk-after-drain one) is at least as
         // fresh as this echo, so seeding over it would re-add a just-drained
         // row (monorepo#2481).
-        if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
-          const existing = yield* selectAgentQueueMessages.effect(agentId);
+        if (
+          (yield* mutationIsCurrent(agentId, ownership)) &&
+          getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend
+        ) {
+          const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
           if (!existing.some((message) => message.id === queuedMessage.id)) {
-            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
+            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage], wsId));
           }
-        } else {
+        } else if (yield* mutationIsCurrent(agentId, ownership)) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
             { agentId, queuedMessageId: queuedMessage.id },
@@ -330,13 +352,14 @@ function* dispatchToLifecycle(
           // Swallowed on failure — the enqueue itself succeeded, so a hydrate
           // error must not surface as chatSendFailed; the service leaves the
           // prior mirror intact on error.
-          yield* call(() => hydrateAgentQueue(agentId).catch(() => undefined));
+          yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {
         yield* call(renameChiefThreadIfPlaceholder, agentId, content);
       }
     } catch (error) {
+      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
       const message = error instanceof Error ? error.message : String(error);
       yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
       yield* put(chatSendFailed(agentId, m.agent_chatSend_queueFailed_error({ error: message })));
@@ -349,8 +372,10 @@ function* dispatchToLifecycle(
   yield* put(clearChatDraft(wsId, agentId));
   try {
     yield* call(sendAgentMessage, agentId, content, workspace, options);
-    if (wsId === CHIEF_WORKSPACE_ID) yield* call(renameChiefThreadIfPlaceholder, agentId);
+    if ((yield* mutationIsCurrent(agentId, ownership)) && wsId === CHIEF_WORKSPACE_ID)
+      yield* call(renameChiefThreadIfPlaceholder, agentId);
   } catch (error) {
+    if (!(yield* mutationIsCurrent(agentId, ownership))) return;
     yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
   }
 }
@@ -359,9 +384,11 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
   const { agentId, payload } = action.payload;
   if (!agentId || !payload.wsId) return;
   if (payload.queuedMessageId) {
+    const ownership = captureAgentMutationOwnership(agentId, payload.wsId);
     try {
       yield* call(sendQueuedNow, agentId, payload.wsId, payload.queuedMessageId);
     } catch (error) {
+      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
       yield* put(chatLastAttemptedMessageSet(agentId, null));
       yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
     }
@@ -395,6 +422,7 @@ function* handleRemove(action: RemoveAction): SagaGenerator<void> {
       [appClient.agents, appClient.agents.removeQueued],
       agentId,
       messageId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
     if (!result.success)
       logger.warn('Queue removal failed; keeping optimistic removal', {
@@ -415,7 +443,11 @@ function* handleRemove(action: RemoveAction): SagaGenerator<void> {
 function* performStop(agentId: string): SagaGenerator<void> {
   yield* put(chatStopInitiated(agentId));
   try {
-    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    const result = yield* call(
+      [appClient.agents, appClient.agents.stop],
+      agentId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
+    );
     if (!result.success)
       logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
   } finally {
@@ -572,7 +604,9 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
   try {
     let models: AuggieModel[] = [];
     try {
-      const catalog = yield* call(getModelsForProviderForLoadingState, providerId);
+      const catalog = yield* call(getModelsForProviderForLoadingState, providerId, {
+        workspaceId: wsId,
+      });
       models = catalog.models;
     } catch (error) {
       logger.warn('Provider retry aborted; model catalog fetch failed', {
@@ -649,11 +683,9 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
     // setModel has by then moved the session to a different provider, and
     // `model.value` would be sent against the wrong live provider. Calling
     // here keeps switch + redrive atomic per handler. `retryLastMessage`
-    // settles the synthetic action itself and never throws; nothing awaits
-    // its promise, so swallow the rejection a failed (self-reporting) retry
-    // would otherwise raise as unhandled.
+    // settles the synthetic action itself and reports retry failures; this
+    // handler only awaits the inline worker, not its request promise.
     const redrive = agentSessionRetryWithModelRequested(agentId, wsId, model.value);
-    void redrive.promise.catch(() => undefined);
     yield* call(retryLastMessage, redrive, model.value);
     yield* put(action.success(undefined as void));
     settled = true;

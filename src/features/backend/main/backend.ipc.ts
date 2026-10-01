@@ -35,9 +35,11 @@ import {
   normalizeFingerprint as normalizeTransportFingerprint,
   PinMismatchError,
   resolveBackendConfig,
+  testWssConnection,
   type BackendConnectionConfig,
   type HostCertMismatch,
 } from './backend-connection';
+import { devConsoleCapture } from '../../dev-console/main/dev-console-service';
 import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
 import {
   disposeTransferConnectionsForBackend,
@@ -77,6 +79,13 @@ import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
+import {
+  authenticateInvitedCredential,
+  inspectPersonalCredential,
+  invitedRole,
+} from './invited-principal';
+import { parsePrincipalSnapshot } from '../../../shared/types/principal';
+import { captureCollaborationPolicy } from '../../collaboration-auth/main/collaboration-auth.ipc';
 import type {
   GuestSessionsListResult,
   GuestWorkspaceRef,
@@ -128,7 +137,7 @@ import type {
   UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
-import { compareProtocolMajor } from './protocol-compat';
+import { compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
@@ -176,6 +185,27 @@ const connectedProtocolVersions = new Map<string, string>();
 // until then the sidecar's startup probe may seed the local version, after
 // that the hello result is the only source (a null/absent hello stays null).
 let localHelloObserved = false;
+let localIdentityGeneration = 0;
+let localCollaborationIdentitySupported = false;
+
+/** Identity auth is local even while the requesting renderer uses a shared host. */
+export function captureLocalIdentityConnection() {
+  const client = getLocalBackendClient();
+  const generation = localIdentityGeneration;
+  return {
+    supported: localCollaborationIdentitySupported,
+    gitlabSupported: protocolVersionAtLeast(
+      getConnectedDaemonProtocolVersion(LOCAL_CONNECTION_ID),
+      10,
+      8,
+    ),
+    current: () =>
+      generation === localIdentityGeneration &&
+      backendClients.get(LOCAL_CONNECTION_ID) === client &&
+      client.getStatus() === 'connected',
+    request: <T>(method: string, params: object) => client.request<T>(method, params),
+  };
+}
 
 /**
  * The `client.hello` `protocolVersion` of the daemon currently connected
@@ -333,6 +363,7 @@ function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string):
     });
 }
 const backendClients = new Map<string, JsonRpcClient>();
+const captureRegistrations = new Map<string, () => void>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 /**
  * Per-id credential generation, bumped whenever the durable credential for
@@ -876,13 +907,13 @@ export function connectBackendClient(id: string, tokenOverride?: string): Promis
   const connecting = (async () => {
     for (;;) {
       const generation = backendCredentialGenerations.get(id) ?? 0;
-      const { config } = await buildConfigForConnection(id, tokenOverride);
+      const { config, invitedCredential } = await buildConfigForConnection(id, tokenOverride);
       const raced = backendClients.get(id);
       if (raced) return raced;
       // The credential was replaced while this config was being read: the
       // config is superseded, so read it again rather than pooling it.
       if ((backendCredentialGenerations.get(id) ?? 0) !== generation) continue;
-      const instance = createAdditionalBackendClient(id, config);
+      const instance = createAdditionalBackendClient(id, config, invitedCredential);
       backendClients.set(id, instance);
       return instance;
     }
@@ -898,6 +929,13 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   backendClients.delete(id);
+  captureRegistrations.get(id)?.();
+  captureRegistrations.delete(id);
+  invitedConnectionGuards.delete(id);
+  if (id === LOCAL_CONNECTION_ID) {
+    localIdentityGeneration++;
+    localCollaborationIdentitySupported = false;
+  }
   connectedDaemonVersions.delete(id);
   connectedProtocolVersions.delete(id);
   // A user-driven dispose ends any update-caused outage as far as the UI is
@@ -1019,7 +1057,18 @@ function onGuestSessionRemovedBySync(id: string): void {
 guestSessionsStore.onGuestSessionRemovedBySync(onGuestSessionRemovedBySync);
 
 /** Build a pool member and route its renderer events by connection id. */
-function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
+const invitedConnectionGuards = new Map<string, guestSessionsStore.InvitedCommitGuard>();
+const invitedClientCredentials = new WeakMap<
+  JsonRpcClient,
+  guestSessionsStore.InvitedCredentialLease
+>();
+const invitedClientHellos = new WeakMap<JsonRpcClient, unknown>();
+
+function createAdditionalBackendClient(
+  id: string,
+  config: BackendConnectionConfig,
+  invitedCredential?: guestSessionsStore.InvitedCredentialLease,
+): JsonRpcClient {
   // A fresh pool member starts with clean cert/auth/protocol-mismatch guards
   // for its backend — its own connect + `client.hello` re-detects any failure.
   clearBackendFailureState(id);
@@ -1040,6 +1089,80 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     subscriptionId: string | undefined;
     subscribing: boolean;
   } = { generation: 0, subscriptionId: undefined, subscribing: false };
+  let latestHello: unknown;
+  let identityRevision = 0;
+  let refreshPending = false;
+  let refreshAgain = false;
+  let hostMembership = false;
+  const refreshInvited = async () => {
+    if (!invitedCredential) return;
+    if (refreshPending) {
+      refreshAgain = true;
+      return;
+    }
+    refreshPending = true;
+    try {
+      do {
+        refreshAgain = false;
+        const generation = guestWorkspaceEvents.generation;
+        const revision = identityRevision;
+        const current = Object.assign(
+          () =>
+            backendClients.get(id) === instance &&
+            guestWorkspaceEvents.generation === generation &&
+            identityRevision === revision,
+          { credential: invitedCredential },
+        );
+        invitedConnectionGuards.delete(id);
+        const principal = await instance.request('principal.me');
+        if (!current()) continue;
+        const snapshot = parsePrincipalSnapshot(latestHello, principal);
+        const role = snapshot && invitedRole(snapshot);
+        if (!snapshot || !role || snapshot.principal.id !== invitedCredential.principalId) continue;
+        if (
+          !(await guestSessionsStore.setPrincipal(
+            id,
+            {
+              login: snapshot.principal.login,
+              identity: snapshot.principal.identity,
+              hostRole: role,
+            },
+            current,
+          )) ||
+          !current()
+        )
+          continue;
+        invitedConnectionGuards.set(id, current);
+        hostMembership = snapshot.capabilities.hostMembership;
+        void captureRemoteHostname(id);
+        void captureRemoteUpdateSupported(id);
+        void hydrateGuestWorkspaces(id);
+        if (
+          guestWorkspaceEvents.subscriptionId === undefined &&
+          !guestWorkspaceEvents.subscribing
+        ) {
+          guestWorkspaceEvents.subscribing = true;
+          const sameTransport = () =>
+            backendClients.get(id) === instance && guestWorkspaceEvents.generation === generation;
+          void subscribeGuestWorkspaceEvents(id, instance, sameTransport, hostMembership).then(
+            (subscriptionId) => {
+              if (
+                guestWorkspaceEvents.generation !== generation ||
+                backendClients.get(id) !== instance
+              )
+                return;
+              guestWorkspaceEvents.subscribing = false;
+              guestWorkspaceEvents.subscriptionId = subscriptionId;
+            },
+          );
+        }
+      } while (refreshAgain);
+    } catch (error) {
+      logger.warn('Invited principal refresh failed', { code: revokeFailureCode(error) });
+    } finally {
+      refreshPending = false;
+    }
+  };
   const instance = new JsonRpcClient({
     config,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
@@ -1074,7 +1197,16 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
       if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
       else connectedProtocolVersions.delete(id);
-      if (id === LOCAL_CONNECTION_ID) localHelloObserved = true;
+      if (id === LOCAL_CONNECTION_ID) {
+        localHelloObserved = true;
+        // Re-negotiation invalidates any prepared collaboration continuation.
+        localIdentityGeneration++;
+        const hello = result as {
+          server?: { capabilities?: { collaborationIdentity?: unknown } };
+        } | null;
+        localCollaborationIdentitySupported =
+          hello?.server?.capabilities?.collaborationIdentity === 1;
+      }
       handleHelloProtocolVersion(helloProtocolVersion, meta);
       // #3649: log each connected daemon's build identity once at INFO, keyed
       // by connection id so multi-backend setups record every daemon build.
@@ -1084,33 +1216,16 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       // pooled local client — the #3448 refresh below owns local.
       if (id !== LOCAL_CONNECTION_ID) {
         captureRemoteDaemonVersion(result, id);
-        // Re-capture the remote's hostname on every (re)connect hello — not
-        // just the explicit open path — so a backend machine rename
-        // propagates on the next reconnect. Fire-and-forget/fail-soft like
-        // the version capture; the store dedupes the unchanged common case.
-        void captureRemoteHostname(id);
-        // A guest session's joined-workspace cache refreshes from the host on
-        // the same (re)connect window, and the host's workspace events keep it
-        // fresh between hellos; both are no-ops for paired (owner) backends.
-        void hydrateGuestWorkspaces(id);
-        if (
-          guestWorkspaceEvents.subscriptionId === undefined &&
-          !guestWorkspaceEvents.subscribing
-        ) {
-          const generation = guestWorkspaceEvents.generation;
-          const isCurrent = () =>
-            guestWorkspaceEvents.generation === generation && backendClients.get(id) === instance;
-          guestWorkspaceEvents.subscribing = true;
-          void subscribeGuestWorkspaceEvents(id, instance, isCurrent).then((subscriptionId) => {
-            if (!isCurrent()) return;
-            guestWorkspaceEvents.subscribing = false;
-            guestWorkspaceEvents.subscriptionId = subscriptionId;
-          });
+        if (invitedCredential) {
+          latestHello = result;
+          invitedClientHellos.set(instance, result);
+          identityRevision++;
+          invitedConnectionGuards.delete(id);
+          void refreshInvited();
+        } else {
+          void captureRemoteHostname(id);
+          void captureRemoteUpdateSupported(id);
         }
-        // Capture whether the daemon supports self-update (system.status
-        // `updateSupported`) so the renderer can gate the Update affordance.
-        // Fire-and-forget/fail-soft like the captures above.
-        void captureRemoteUpdateSupported(id);
       } else {
         // #3448: refresh the adopted external daemon's version info from the
         // live `server.version` on every (re)connect — the startup probe only
@@ -1154,16 +1269,36 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
+    if (backendClients.get(id) !== instance) return;
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
-    if (isGuestWorkspaceRefreshEvent(notification, guestWorkspaceEvents.subscriptionId)) {
-      requestGuestWorkspaceRefresh(id);
+    if (backendClients.get(id) !== instance) return;
+    if (
+      isGuestWorkspaceRefreshEvent(
+        notification,
+        guestWorkspaceEvents.subscriptionId,
+        hostMembership,
+      )
+    ) {
+      const type = (notification.params as { event?: { type?: string } })?.event?.type;
+      if (type === 'host:members-changed') {
+        identityRevision++;
+        invitedConnectionGuards.delete(id);
+        void refreshInvited();
+      } else requestGuestWorkspaceRefresh(id);
     }
   });
   instance.on('status', (status: ConnectionStatus) => {
+    if (backendClients.get(id) !== instance) return;
     if (status !== 'connected') {
+      if (id === LOCAL_CONNECTION_ID) {
+        localIdentityGeneration++;
+        localCollaborationIdentitySupported = false;
+      }
       connectedDaemonVersions.delete(id);
       connectedProtocolVersions.delete(id);
+      invitedConnectionGuards.delete(id);
+      identityRevision++;
       guestWorkspaceEvents.generation += 1;
       guestWorkspaceEvents.subscriptionId = undefined;
       guestWorkspaceEvents.subscribing = false;
@@ -1189,6 +1324,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     refreshConnectionsForStatusChange();
   });
   instance.on('reconnected', () => {
+    if (backendClients.get(id) !== instance) return;
     notePendingDaemonUpdateStatus(id, 'connected');
     broadcast(
       BACKEND.STATUS,
@@ -1215,6 +1351,7 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     if (meta) recordCertWarning(meta, info);
   });
   instance.on('error', (error: Error) => {
+    if (backendClients.get(id) !== instance) return;
     // Same non-transient failure handling as the primary client (see
     // getBackendClient's `error` handler), latched per connection id and
     // broadcast to this backend's windows only.
@@ -1251,6 +1388,20 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       return;
     }
     if (error instanceof AuthRejectedError) {
+      if (backendClients.get(id) !== instance) return;
+      if (invitedCredential && error.statusCode === 401) {
+        invitedConnectionGuards.delete(id);
+        void guestSessionsStore
+          .forget(id, invitedCredential)
+          .then(async (removed) => {
+            if (!removed) return;
+            onGuestSessionRemovedBySync(id);
+            await broadcastGuestSessionsChanged();
+          })
+          .catch(() => {
+            logger.warn('Could not persist invited credential removal');
+          });
+      }
       if (meta && !authRejectedNotifiedIds.has(meta.id)) {
         authRejectedNotifiedIds.add(meta.id);
         const payload: ConnectionAuthRejectedEvent = {
@@ -1278,6 +1429,8 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
+  if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
+  captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   instance.start();
   return instance;
 }
@@ -1549,14 +1702,18 @@ async function captureRemoteHostname(id: string): Promise<void> {
     // Snapshot this backend's pooled client; the id-keyed pool lookup below
     // protects against a stale capture after the client is disposed.
     const client = getBackendClientForId(id);
+    const guard = invitedConnectionGuards.get(id);
+    const guest = await guestSessionsStore.findById(id);
+    if (guest && !guard?.()) return;
     const result = await client.request('host.status');
     const hostname = extractHostname(result);
     const deviceKind = extractDeviceKind(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
-      if ((await guestSessionsStore.findById(id)) !== null) {
-        if (hostname && (await guestSessionsStore.setHostname(id, hostname))) {
+      if (guest) {
+        if (!guard?.()) return;
+        if (hostname && (await guestSessionsStore.setHostname(id, hostname, guard))) {
           await broadcastGuestSessionsChanged();
         }
         return;
@@ -1634,15 +1791,20 @@ const guestHydrationReads = new Map<string, number>();
  */
 async function hydrateGuestWorkspaces(id: string): Promise<void> {
   try {
-    if ((await guestSessionsStore.findById(id)) === null) return;
+    const guard = invitedConnectionGuards.get(id);
+    if (!guard?.() || (await guestSessionsStore.findById(id)) === null) return;
     const client = getBackendClientForId(id);
     const epoch = guestMembershipEpochs.get(id);
     const read = (guestHydrationReads.get(id) ?? 0) + 1;
     guestHydrationReads.set(id, read);
-    const stillValid = () =>
-      backendClients.get(id) === client &&
-      guestHydrationReads.get(id) === read &&
-      guestMembershipEpochs.get(id) === epoch;
+    const stillValid = Object.assign(
+      () =>
+        guard() &&
+        backendClients.get(id) === client &&
+        guestHydrationReads.get(id) === read &&
+        guestMembershipEpochs.get(id) === epoch,
+      { credential: guard.credential },
+    );
     const result = await client.request('workspace.list');
     if (!stillValid()) return;
     const refs = extractWorkspaceRefs(result);
@@ -1712,12 +1874,15 @@ async function subscribeGuestWorkspaceEvents(
   id: string,
   client: JsonRpcClient,
   isCurrent: () => boolean,
+  hostMembership = false,
 ): Promise<string | undefined> {
   try {
     if ((await guestSessionsStore.findById(id)) === null) return undefined;
     if (!isCurrent()) return undefined;
     const result = (await client.request('events.subscribe', {
-      eventTypes: GUEST_WORKSPACE_EVENT_TYPES,
+      eventTypes: hostMembership
+        ? [...GUEST_WORKSPACE_EVENT_TYPES, 'workspace:created', 'host:members-changed']
+        : GUEST_WORKSPACE_EVENT_TYPES,
     })) as { subscriptionId?: unknown } | undefined;
     if (!isCurrent()) return undefined;
     if (typeof result?.subscriptionId !== 'string' || !result.subscriptionId) {
@@ -1747,12 +1912,15 @@ async function subscribeGuestWorkspaceEvents(
 function isGuestWorkspaceRefreshEvent(
   notification: JsonRpcNotification,
   subscriptionId: string | undefined,
+  hostMembership = false,
 ): boolean {
   if (subscriptionId === undefined || notification.method !== 'events.event') return false;
   const params = notification.params as
     { subscriptionId?: unknown; event?: { type?: unknown; data?: unknown } } | undefined;
   if (params?.subscriptionId !== subscriptionId) return false;
   const type = params.event?.type;
+  if (hostMembership && (type === 'workspace:created' || type === 'host:members-changed'))
+    return true;
   if (type === 'workspace:deleted') return true;
   if (type !== 'workspace:updated') return false;
   const changes = (params.event?.data as { changes?: unknown } | undefined)?.changes as
@@ -1870,6 +2038,9 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     // Snapshot this backend's pooled client; the id-keyed pool lookup below
     // protects against a stale capture after the client is disposed.
     const client = getBackendClientForId(id);
+    const guard = invitedConnectionGuards.get(id);
+    const guest = await guestSessionsStore.findById(id);
+    if (guest && !guard?.()) return;
     const result = await client.request('system.status');
     const supported =
       result &&
@@ -1891,12 +2062,17 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
       // envelope so later reconnects and keychain sync carry current routes.
       // Guests never gate an Update affordance, so `updateSupported` is not
       // recorded for them.
-      if ((await guestSessionsStore.findById(id)) !== null) {
-        const guestTcChanged = await guestSessionsStore.setTcAddress(id, tcAddress);
+      if (guest) {
+        if (!guard?.()) return;
+        const rawTc = (result as { tcAddress?: unknown } | null)?.tcAddress;
+        const guestTcChanged =
+          (rawTc === null || (typeof rawTc === 'string' && rawTc.length > 0)) &&
+          (await guestSessionsStore.setTcAddress(id, rawTc, guard));
         const guestHostsChanged =
+          guest.detectHosts !== false &&
           ips.length > 0 &&
           backendClients.get(id) === client &&
-          (await guestSessionsStore.setHosts(id, ips));
+          (await guestSessionsStore.setHosts(id, ips, guard));
         if (guestTcChanged || guestHostsChanged) await broadcastGuestSessionsChanged();
         return;
       }
@@ -2058,18 +2234,14 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     // A guest session has no detect-hosts opt-out: the invite envelope's
     // list is always refreshed from the daemon's current interfaces.
     const isGuest = (await guestSessionsStore.findById(id)) !== null;
+    // Invited routes come from authenticated system.status, never owner-only pairingInfo.
+    if (isGuest) return;
     if (!isGuest && !(await connectionsStore.getDetectHosts(id))) return;
     const result = await client.request('server.pairingInfo');
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
-      if (isGuest) {
-        const hostsChanged = ips ? await guestSessionsStore.setHosts(id, ips) : false;
-        const tcChanged = await guestSessionsStore.setTcAddress(id, extractTcAddress(result));
-        if (hostsChanged || tcChanged) await broadcastGuestSessionsChanged();
-        return;
-      }
       if (ips) await connectionsStore.setHosts(id, ips);
       const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
       if (ips || tcChanged) await broadcastConnectionsChanged();
@@ -2597,6 +2769,7 @@ export async function resolveBackendRecord(id: string): Promise<{
   fingerprint: string;
   tcAddress: string | null;
   getToken: () => Promise<string | null>;
+  invitedIdentity?: { principalId: string; pairedAt: number };
 } | null> {
   if (id === LOCAL_CONNECTION_ID) return null;
   const owner = (await connectionsStore.list()).find((c) => c.id === id && !c.isLocal);
@@ -2616,6 +2789,10 @@ export async function resolveBackendRecord(id: string): Promise<{
   if (!guest) return null;
   return {
     kind: 'guest',
+    invitedIdentity: {
+      principalId: guest.principalId,
+      pairedAt: guest.pairedAt ?? guest.updatedAt,
+    },
     id,
     host: guest.host,
     hosts: guest.hosts.length ? guest.hosts : [guest.host],
@@ -2631,6 +2808,7 @@ export async function buildConfigForConnection(
   tokenOverride?: string,
 ): Promise<{
   config: BackendConnectionConfig;
+  invitedCredential?: guestSessionsStore.InvitedCredentialLease;
   meta: { id: string; host: string; port: number } | null;
 }> {
   if (id === LOCAL_CONNECTION_ID) {
@@ -2666,6 +2844,7 @@ export async function buildConfigForConnection(
       fingerprint: record.fingerprint,
       tcAddress: record.tcAddress ?? undefined,
     },
+    ...(record.invitedIdentity ? { invitedCredential: { ...record.invitedIdentity, token } } : {}),
     meta: { id, host: record.host, port: record.port },
   };
 }
@@ -2730,15 +2909,17 @@ function enqueueConnectionOperation<T>(fn: () => Promise<T>): Promise<T> {
  */
 export function openBackendWindow(
   id: string,
-  options?: { probeTimeoutMs?: number },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
 ): Promise<{ id: string }> {
   return enqueueConnectionOperation(() => performOpenBackendWindow(id, options));
 }
 
 async function performOpenBackendWindow(
   id: string,
-  options?: { probeTimeoutMs?: number },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
 ): Promise<{ id: string }> {
+  if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
+  const hadClient = getBackendClientForConnection(id) !== undefined;
   const target = await connectBackendClient(id);
   try {
     if (id === LOCAL_CONNECTION_ID) {
@@ -2760,12 +2941,14 @@ async function performOpenBackendWindow(
       void captureRemoteHostname(id);
       void refreshRemoteHosts(id);
     }
+    if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
     await windowHooks.openOrFocus?.(id);
     return { id };
   } catch (error) {
     // The always-on local member is never torn down on a failed probe; it
     // lazily rebuilds and main-process services depend on it.
-    if (id !== LOCAL_CONNECTION_ID) disconnectBackendClient(id);
+    // A cancelled second open must not disconnect a window already using this client.
+    if (id !== LOCAL_CONNECTION_ID && !hadClient) disconnectBackendClient(id);
     throw error;
   }
 }
@@ -3065,6 +3248,12 @@ export function registerBackendHandlers(): void {
           return { ok: true, result };
         }
         const result = await client.request(method, payload?.params, { timeoutMs });
+        const expected = invitedClientCredentials.get(client);
+        if (expected && method === 'principal.me') {
+          const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
+          if (!snapshot || snapshot.principal.id !== expected.principalId || !invitedRole(snapshot))
+            throw new Error('Invited principal unavailable');
+        }
         return { ok: true, result };
       } catch (error) {
         return { ok: false, error: toErrorPayload(error) };
@@ -3084,17 +3273,20 @@ export function registerBackendHandlers(): void {
     }
   });
 
-  ipcMain.handle(BACKEND.UNSUBSCRIBE, async (event, params: { subscriptionId?: string }) => {
-    try {
-      const result = await getBackendClientForIpcEvent(event).client.request(
-        'events.unsubscribe',
-        params,
-      );
-      return { ok: true, result };
-    } catch (error) {
-      return { ok: false, error: toErrorPayload(error) };
-    }
-  });
+  ipcMain.handle(
+    BACKEND.UNSUBSCRIBE,
+    async (event, params: { subscriptionId?: string; workspaceId?: string }) => {
+      try {
+        const result = await getBackendClientForIpcEvent(event).client.request(
+          'events.unsubscribe',
+          params,
+        );
+        return { ok: true, result };
+      } catch (error) {
+        return { ok: false, error: toErrorPayload(error) };
+      }
+    },
+  );
 
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);
@@ -3207,12 +3399,7 @@ export function registerBackendHandlers(): void {
   // a secondary pass against their own keychain service.
   keychainSyncLifecycle = initKeychainSyncLifecycle({
     onRemoteApplied: () => broadcastConnectionsChanged(),
-    guestAdapter: {
-      list: () => guestSessionsStore.listSyncRecords(),
-      async applyRemote(_account, record) {
-        await guestSessionsStore.applyRemoteSyncRecord(record);
-      },
-    },
+    guestAdapter: guestSessionsStore.createInvitedSyncAdapter(authenticateInvitedCredential),
     onGuestRemoteApplied: () => broadcastGuestSessionsChanged(),
     onStatusChanged: (status) => {
       for (const win of BrowserWindow.getAllWindows()) {
@@ -3405,8 +3592,33 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.ADD,
     createValidatedHandler(
       ConnectionsAddSchema,
-      async (_event, params) =>
-        enqueueConnectionOperation(async () => {
+      async (event, params) => {
+        const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
+        return enqueueConnectionOperation(async () => {
+          const remote = await inspectPersonalCredential({
+            ...params,
+            hosts: [params.host],
+            tcAddress: params.tcAddress ?? null,
+          });
+          const role = invitedRole(remote);
+          if (role) {
+            if (!allowed(remote.principal.identity?.provider))
+              throw new Error('Multiplayer is unavailable');
+            const invited = await guestSessionsStore.add({
+              ...params,
+              principalId: remote.principal.id,
+              login: remote.principal.login,
+              identity: remote.principal.identity,
+              hostRole: role,
+            });
+            await broadcastGuestSessionsChanged();
+            return {
+              connection: { ...invited, isLocal: false },
+              switched: false,
+            } satisfies AddConnectionResult;
+          }
+          if (!remote.principal.isAdministrator)
+            throw new Error('Personal credential identity unavailable');
           const connection = await connectionsStore.add(params);
           const activeId = await connectionsStore.getActiveId();
           // Open-only model: the persisted activeId no longer tracks which
@@ -3433,7 +3645,8 @@ function registerConnectionsHandlers(): void {
             connection,
             switched: connection.id === activeId,
           } satisfies AddConnectionResult;
-        }),
+        });
+      },
       CONNECTIONS.ADD,
     ),
   );
@@ -3498,7 +3711,8 @@ function registerConnectionsHandlers(): void {
     ),
   );
 
-  // Probe unsaved address values with a write-only override or the saved secret.
+  // Test saved routes unless the form specifies a different address, which
+  // must be validated explicitly. Use a write-only override or the saved secret.
   // This intentionally has no store mutation and no window hook.
   ipcMain.handle(
     CONNECTIONS.TEST,
@@ -3511,6 +3725,37 @@ function registerConnectionsHandlers(): void {
             ? ({ status: 'success', token } as const)
             : await loadSavedConnectionSecret(id);
           if (secret.status === 'secret-unavailable') return secret;
+          if (host === connection.host && port === connection.port) {
+            const { config } = await buildConfigForConnection(id, secret.token);
+            const expectedFingerprint = normalizeTransportFingerprint(config.fingerprint ?? '');
+            try {
+              await testWssConnection(config);
+              return {
+                status: 'success',
+                fingerprint: expectedFingerprint,
+              } satisfies TestConnectionResult;
+            } catch (error) {
+              if (error instanceof PinMismatchError) {
+                return error.actual
+                  ? {
+                      status: 'fingerprint-confirmation-required',
+                      expectedFingerprint,
+                      actualFingerprint: error.actual,
+                    }
+                  : { status: 'failed', reason: 'no-certificate' };
+              }
+              if (error instanceof AuthRejectedError) {
+                return { status: 'authentication-rejected', statusCode: error.statusCode };
+              }
+              return {
+                status: 'failed',
+                reason:
+                  error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT'
+                    ? 'timeout'
+                    : 'connect-failed',
+              } satisfies TestConnectionResult;
+            }
+          }
           return validateConnectionAddress(connection, host, port, secret.token);
         }),
       CONNECTIONS.TEST,
@@ -3534,6 +3779,15 @@ function registerConnectionsHandlers(): void {
             confirmedFingerprint,
           );
           if (validation.status !== 'success') return validation;
+          const remote = await inspectPersonalCredential({
+            host: connection.host,
+            hosts: connection.hosts ?? [connection.host],
+            port: connection.port,
+            fingerprint: validation.fingerprint,
+            token,
+            tcAddress: connection.tcAddress ?? null,
+          });
+          if (!remote.principal.isAdministrator) throw new Error('Owner credential required');
           const updated = await connectionsStore.replaceSecret(id, token, validation.fingerprint);
           await rebuildConnectionClientIfOpen(id);
           await broadcastConnectionsChanged();
@@ -3555,9 +3809,13 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.OPEN,
     createValidatedHandler(
       ConnectionsOpenSchema,
-      async (_event, { id }) => {
+      async (event, { id }) => {
+        const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
+        const invited = (await guestSessionsStore.findById(id)) !== null;
+        const mayOpen = () => allowed() && !event.sender.isDestroyed();
+        if (invited && !mayOpen()) throw new Error('Multiplayer is unavailable');
         try {
-          const opened = await openBackendWindow(id);
+          const opened = await openBackendWindow(id, invited ? { mayOpen } : undefined);
           return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
         } catch (error) {
           if (error instanceof ConnectionSecretUnavailableError) {
@@ -3908,6 +4166,12 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 export function disposeAllBackendClients(): void {
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
+    captureRegistrations.get(id)?.();
+    captureRegistrations.delete(id);
+    if (id === LOCAL_CONNECTION_ID) {
+      localIdentityGeneration++;
+      localCollaborationIdentitySupported = false;
+    }
     connectedProtocolVersions.delete(id);
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);

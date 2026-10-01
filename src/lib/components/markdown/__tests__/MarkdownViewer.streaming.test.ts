@@ -160,3 +160,26 @@ describe('streaming Markdown scheduling', () => {
     expect(processMarkdown.mock.calls.map(([content]) => content)).toEqual(['first']);
   });
 });
+
+describe('pending Markdown media provenance', () => {
+  for (const isStreaming of [false, true]) {
+    it(`checks current file authority after processing (streaming=${isStreaming})`, async () => {
+      const pending = deferred();
+      processMarkdown.mockImplementationOnce(() => pending.promise);
+      let local = true;
+      const view = render(MarkdownViewer, {
+        content: '![preview](intent://local/file/output.png)',
+        isStreaming,
+        canOpenFile: () => local,
+      });
+      await settle();
+      pending.resolve(
+        '<img src="workspace-file://workspace/output.png" alt="preview"><video src="workspace-file://workspace/output.mp4"></video>',
+      );
+      local = false;
+      await settle();
+      expect(view.container.querySelectorAll('[src^="workspace-file:"]')).toHaveLength(0);
+      expect(view.container.querySelector('[data-testid="media-unavailable"]')).not.toBeNull();
+    });
+  }
+});

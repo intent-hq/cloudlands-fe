@@ -1,4 +1,4 @@
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 
 import { startLongTaskWatchdog } from './long-task-watchdog';
 import { startAllAppSagas } from './sagas';

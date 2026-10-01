@@ -9,6 +9,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ userPreferences: { labsMultiplayerEnabled: true, labsGitLabEnabled: false } }),
+  });
+});
 vi.mock('$shared/logger', () => ({
   Logger: class MockLogger {
     info = loggerMocks.info;
@@ -17,7 +24,12 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
-import { cancelInviteProgress, installInviteProgressService } from '../invite-progress-service';
+import {
+  cancelInviteProgress,
+  retryInviteProgress,
+  installInviteProgressService,
+} from '../invite-progress-service';
+import { COLLABORATION_AUTH } from '../../collaboration-auth/types';
 import { INVITE_PROGRESS_CHANNELS } from '$shared/ipc/channels';
 import type { InviteProgressShowPayload } from '$shared/ipc/invite-progress';
 
@@ -50,7 +62,7 @@ describe('invite-progress-service', () => {
 
   beforeEach(() => {
     invoke = (window as any).electronAPI.invoke;
-    invoke.mockClear();
+    invoke.mockReset().mockResolvedValue({ ok: true });
     loggerMocks.warn.mockClear();
     loggerMocks.error.mockClear();
     // Drain handlers registered by previous installs (test-setup persists them).
@@ -61,6 +73,7 @@ describe('invite-progress-service', () => {
     onUpdate = vi.fn();
     onDismiss = vi.fn();
     dispose = installInviteProgressService({ onShow, onUpdate, onDismiss });
+    invoke.mockClear();
     return () => dispose();
   });
 
@@ -72,6 +85,63 @@ describe('invite-progress-service', () => {
     });
     expect(onShow).toHaveBeenCalledExactlyOnceWith(SHOW_PAYLOAD);
   });
+
+  it('announces readiness only after listeners can show and acknowledge a replay', () => {
+    dispose();
+    invoke.mockImplementation(async (channel) => {
+      if (channel === COLLABORATION_AUTH.POLICY)
+        emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+      return { ok: true };
+    });
+    dispose = installInviteProgressService({ onShow, onUpdate, onDismiss });
+    expect(onShow).toHaveBeenCalledWith({ ...SHOW_PAYLOAD, phase: 'admission' });
+    expect(invoke).toHaveBeenCalledWith(INVITE_PROGRESS_CHANNELS.ACK, {
+      requestId: SHOW_PAYLOAD.requestId,
+    });
+  });
+
+  it('publishes renderer policy before explicitly retrying the same invitation', async () => {
+    invoke.mockResolvedValue({ ok: true });
+    emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+    invoke.mockClear();
+    await retryInviteProgress();
+    expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+      COLLABORATION_AUTH.POLICY,
+      INVITE_PROGRESS_CHANNELS.RESPONSE,
+    ]);
+    expect(invoke).toHaveBeenLastCalledWith(INVITE_PROGRESS_CHANNELS.RESPONSE, {
+      requestId: SHOW_PAYLOAD.requestId,
+      action: 'retry',
+    });
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it.each(['cancel', 'replacement', 'policy-failure'] as const)(
+    'does not retry after %s while policy publication is pending',
+    async (mode) => {
+      emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+      const pending = Promise.withResolvers<{ ok: boolean }>();
+      invoke.mockImplementation((channel: string) =>
+        channel === COLLABORATION_AUTH.POLICY ? pending.promise : Promise.resolve({ ok: true }),
+      );
+      const retrying = retryInviteProgress();
+      if (mode === 'cancel') cancelInviteProgress();
+      if (mode === 'replacement')
+        emit(INVITE_PROGRESS_CHANNELS.SHOW, {
+          ...SHOW_PAYLOAD,
+          requestId: 'new',
+          phase: 'admission',
+        });
+      pending.resolve({ ok: mode !== 'policy-failure' });
+      await retrying;
+      expect(
+        invoke.mock.calls.filter(
+          ([channel, input]) =>
+            channel === INVITE_PROGRESS_CHANNELS.RESPONSE && (input as any).action === 'retry',
+        ),
+      ).toEqual([]);
+    },
+  );
 
   it('forwards an update for the active request without acking again', () => {
     emit(INVITE_PROGRESS_CHANNELS.SHOW, SHOW_PAYLOAD);

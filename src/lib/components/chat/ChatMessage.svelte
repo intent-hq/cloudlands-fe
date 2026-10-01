@@ -7,8 +7,14 @@
     faClipboard,
     faSquare,
     faCircleExclamation,
+    faUser,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import {
+    memberMentionLabel,
+    memberMentionSubtitle,
+    parseMemberMention,
+  } from '$lib/utils/member-mention-token';
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -19,10 +25,12 @@
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeDisclosureTransition } from './disclosure-motion';
@@ -83,6 +91,7 @@
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -115,7 +124,7 @@
   }
 
   function openChatFile(path: string, event?: MouseEvent, line?: number) {
-    if (readOnly) return;
+    if (readOnly || !canOpenAgentPath(appStore.state, agentId)) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
@@ -174,6 +183,7 @@
     | {
         type: 'mention';
         mentionType: string;
+        description?: string;
         label: string;
         id: string;
         identifier?: string;
@@ -229,6 +239,7 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Keeps an edited virtualized turn materialized until edit mode closes. */
     onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
@@ -268,6 +279,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    previousMessageLoading = false,
     onEditStateChange,
     isSticky = false,
     onStickyClick,
@@ -325,6 +337,7 @@
   );
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
+  let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
@@ -612,7 +625,21 @@
       const fullMatch = match.fullMatch; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
       const captured = match.captured; // e.g., "context[linear|AU-123|Title]" or "note/spec"
 
-      if (captured.startsWith('context[')) {
+      if (captured.startsWith('member[')) {
+        const member = parseMemberMention(fullMatch);
+        if (member) {
+          segments.push({
+            type: 'mention',
+            mentionType: 'member',
+            label: memberMentionLabel(member.label),
+            description: memberMentionSubtitle(member),
+            id: member.id,
+            icon: faUser,
+          });
+        } else {
+          segments.push({ type: 'text', content: fullMatch });
+        }
+      } else if (captured.startsWith('context[')) {
         // Context mention: @context[provider|identifier|title] or @context[base64JSON]
         const inner = captured.slice(8, -1); // Remove "context[" and "]"
 
@@ -1435,6 +1462,11 @@
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
+{:else if effortChangeNotice}
+  <EffortChangeNotice
+    notice={effortChangeNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if autoUnarchivedNotice}
@@ -1508,6 +1540,7 @@
               onCopy={handleCopy}
               requestId={backendSessionId ?? undefined}
               {onScrollToPrevious}
+              {previousMessageLoading}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
               {queueInfo}
@@ -1687,7 +1720,8 @@
                       type="button"
                       variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={segment.path ||
+                      title={segment.description ||
+                        segment.path ||
                         segment.noteId ||
                         (segment.identifier
                           ? `${segment.identifier}: ${segment.label}`
@@ -1880,6 +1914,8 @@
           <MessageActions
             role="assistant"
             {onRegenerate}
+            {onScrollToPrevious}
+            {previousMessageLoading}
             {onFork}
             {onVote}
             onCopy={handleCopy}
