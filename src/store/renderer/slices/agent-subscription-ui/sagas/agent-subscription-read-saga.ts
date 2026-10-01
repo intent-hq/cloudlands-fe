@@ -295,11 +295,17 @@ function* refreshWorkspaceSubscriptionsWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
 ) {
-  const [wsId] = action.payload;
+  const [wsId, changedAgentId] = action.payload;
   if (!wsId) return;
-  const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
+  // Pending initial reads are demanded contexts even before Redux has a snapshot.
+  const agentIds = new Set(yield* selectTrackedAgentIds.effect(wsId));
+  for (const context of coordinator.contexts.values()) {
+    if (context.wsId === wsId) agentIds.add(context.agentId);
+  }
   for (const agentId of agentIds) {
-    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+    if (!changedAgentId || changedAgentId === agentId) {
+      yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+    }
   }
 }
 

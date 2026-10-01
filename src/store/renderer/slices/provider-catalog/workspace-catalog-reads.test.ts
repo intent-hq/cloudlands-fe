@@ -74,6 +74,60 @@ describe('workspace catalog host probes through live clients', () => {
     expect(probes()).toHaveLength(5);
   });
 
+  it.each(['event', 'explicit'] as const)(
+    'retries stale cached readiness on mount after a failed %s refresh',
+    async (trigger) => {
+      store.dispatch(workspaceMounted(WS));
+      await settle();
+      expect(
+        store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available,
+      ).toBe(true);
+      backend.onRequest('providers.catalog', () => {
+        throw new Error('temporary failure');
+      });
+      if (trigger === 'event') backend.pushEvent({ type: 'settings:changed', data: {} });
+      else store.dispatch(workspaceCatalogRequested(WS));
+      await settle();
+      expect(
+        store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available,
+      ).toBe(true);
+      backend.onRequest('providers.catalog', () => ({ providers: [] }));
+      backend.onRequest('host.findBinary', () => ({ available: false }));
+      store.dispatch(ensureWorkspaceCatalogRequested(WS));
+      await settle();
+      expect(
+        store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available,
+      ).toBe(false);
+      expect(probes()).toHaveLength(2);
+    },
+  );
+
+  it('retries when the trailing refresh fails after an older pending snapshot succeeds', async () => {
+    let release!: (value: { providers: [] }) => void;
+    const first = new Promise<{ providers: [] }>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    backend.onRequest('providers.catalog', () => {
+      calls++;
+      if (calls === 1) return first;
+      if (calls === 2) throw new Error('trailing refresh failed');
+      return { providers: [] };
+    });
+    store.dispatch(workspaceMounted(WS));
+    store.dispatch(workspaceCatalogRequested(WS));
+    release({ providers: [] });
+    await settle();
+    expect(calls).toBe(2);
+    backend.onRequest('host.findBinary', () => ({ available: false }));
+    store.dispatch(ensureWorkspaceCatalogRequested(WS));
+    await settle();
+    expect(calls).toBe(3);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available).toBe(
+      false,
+    );
+  });
+
   it('shares catalog demand across same-workspace mounts while preserving explicit refresh and reconnect', async () => {
     store.dispatch(workspaceMounted(WS));
     store.dispatch(workspaceMounted(WS));

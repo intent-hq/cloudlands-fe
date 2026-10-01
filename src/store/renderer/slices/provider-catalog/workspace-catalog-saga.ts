@@ -17,13 +17,14 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   workspaceCatalogRequested,
+  workspaceCatalogReadStarted,
   ensureWorkspaceCatalogRequested,
   workspaceCatalogReceived,
   workspaceCatalogInvalidated,
 } from './provider-catalog-slice';
 import {
   selectWorkspaceCatalogEpoch,
-  selectContextReadinessLoaded,
+  selectWorkspaceCatalogFresh,
 } from './workspace-catalog-selectors';
 
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
@@ -42,6 +43,7 @@ function* readCatalog(pending: Set<string>, action: CatalogAction) {
   const epoch = yield* selectWorkspaceCatalogEpoch.effect();
   pending.add(workspaceId);
   try {
+    yield* put(workspaceCatalogReadStarted(workspaceId));
     const [catalog, settings, specialistCatalog, discovery, auth, mcpServers] = yield* call(
       async () =>
         Promise.all([
@@ -121,7 +123,7 @@ function* ensureCatalog(
 ) {
   const [workspaceId] = action.payload;
   if (!workspaceId || pending.has(workspaceId)) return;
-  if (yield* selectContextReadinessLoaded.effect(workspaceId)) return;
+  if (yield* selectWorkspaceCatalogFresh.effect(workspaceId)) return;
   yield* put(workspaceCatalogRequested(workspaceId));
 }
 

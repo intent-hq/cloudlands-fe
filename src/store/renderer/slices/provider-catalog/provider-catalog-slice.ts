@@ -55,12 +55,21 @@ export const ensureWorkspaceCatalogRequested = createAction<[workspaceId: string
 export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
   'providerCatalog/workspaceCatalogRequested',
 );
+/** Each admitted read needs a new successful snapshot, including trailing refreshes. */
+export const workspaceCatalogReadStarted = createAction<[workspaceId: string]>(
+  'providerCatalog/workspaceCatalogReadStarted',
+);
 export const workspaceCatalogReceived = createAction<
   [workspaceId: string, snapshot: WorkspaceCatalogSnapshot, epoch: number]
 >('providerCatalog/workspaceCatalogReceived');
 export const workspaceCatalogInvalidated = createAction<[connectionChanged?: boolean]>(
   'providerCatalog/workspaceCatalogInvalidated',
 );
+providerCatalogReducer.with(workspaceCatalogReadStarted, (state, { payload: [workspaceId] }) => {
+  const { [workspaceId]: _removed, ...workspaceSnapshotEpochs } =
+    state.workspaceSnapshotEpochs ?? {};
+  return { ...state, workspaceSnapshotEpochs };
+});
 providerCatalogReducer.with(
   workspaceCatalogReceived,
   (state, { payload: [workspaceId, snapshot, epoch] }) =>
@@ -69,6 +78,7 @@ providerCatalogReducer.with(
       : {
           ...state,
           byWorkspaceId: { ...state.byWorkspaceId, [workspaceId]: snapshot },
+          workspaceSnapshotEpochs: { ...state.workspaceSnapshotEpochs, [workspaceId]: epoch },
           mcpServerNamesByWorkspaceId: {
             ...state.mcpServerNamesByWorkspaceId,
             [workspaceId]: Object.fromEntries(
@@ -98,7 +108,9 @@ function clearWorkspaceCatalog(
   const { [workspaceId]: _removed, ...byWorkspaceId } = state.byWorkspaceId ?? {};
   const { [workspaceId]: _removedNames, ...mcpServerNamesByWorkspaceId } =
     state.mcpServerNamesByWorkspaceId ?? {};
-  return { ...state, byWorkspaceId, mcpServerNamesByWorkspaceId };
+  const { [workspaceId]: _removedEpoch, ...workspaceSnapshotEpochs } =
+    state.workspaceSnapshotEpochs ?? {};
+  return { ...state, byWorkspaceId, mcpServerNamesByWorkspaceId, workspaceSnapshotEpochs };
 }
 providerCatalogReducer.with(workspaceUnmounted, (state, { payload: [id] }) =>
   clearWorkspaceCatalog(state, id),

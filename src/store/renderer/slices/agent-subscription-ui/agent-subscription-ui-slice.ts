@@ -109,9 +109,9 @@ export const cancelAgentSubscriptionsRequested = createAsyncAction<
 );
 
 /** Refresh every subscription entry currently tracked for a workspace. */
-export const refreshWorkspaceSubscriptionEntriesRequested = createAction<[workspaceId: string]>(
-  'agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested',
-);
+export const refreshWorkspaceSubscriptionEntriesRequested = createAction<
+  [workspaceId: string, agentId?: string]
+>('agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested');
 
 // ---------------------------------------------------------------------------
 // Reducer

@@ -26,6 +26,12 @@ export const selectWorkspaceCatalogEpoch = store.createSelector(
 const selectWorkspaceCatalog = store.createSelector((state, workspaceId?: string) =>
   workspaceId ? state.providerCatalog?.byWorkspaceId?.[workspaceId] : undefined,
 );
+export const selectWorkspaceCatalogFresh = store.createSelector(
+  (state, workspaceId: string): boolean =>
+    !!selectWorkspaceCatalog.select(state, workspaceId) &&
+    state.providerCatalog.workspaceSnapshotEpochs?.[workspaceId] ===
+      selectWorkspaceCatalogEpoch.select(state),
+);
 export const selectContextProviderEntries = store.createSelector((state, workspaceId?: string) =>
   workspaceId
     ? (selectWorkspaceCatalog.select(state, workspaceId)?.catalog.providers ?? [])

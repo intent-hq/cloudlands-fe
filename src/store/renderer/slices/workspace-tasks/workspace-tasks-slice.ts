@@ -13,6 +13,7 @@ import {
   setWorkspaceEntity,
 } from '../workspace/workspace-slice';
 import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 export type { WorkspaceTasksState, WorkspaceTasksWorkspaceState };
 
@@ -45,6 +46,11 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 /** Saga trigger: fetch the canonical task list for a workspace. */
 export const loadWorkspaceTasksRequested = createAction<[workspaceId: string]>(
   'workspaceTasks/loadWorkspaceTasksRequested',
+);
+
+/** Record actual read admission, including the first ensure-only load. */
+export const workspaceTasksReadStarted = createAction<[workspaceId: string]>(
+  'workspaceTasks/workspaceTasksReadStarted',
 );
 
 /**
@@ -93,6 +99,11 @@ workspaceTasksReducer.with(loadWorkspaceTasksRequested, (state, { payload: [work
     error: null,
   });
 });
+workspaceTasksReducer.with(workspaceTasksReadStarted, (state, { payload: [workspaceId] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  if (ws.loading && ws.error === null) return state;
+  return setWorkspaceState(state, workspaceId, { ...ws, loading: true, error: null });
+});
 workspaceTasksReducer.with(
   loadWorkspaceTasksSucceeded,
   (state, { payload: [workspaceId, tasks, stats] }) => {
@@ -131,6 +142,11 @@ workspaceTasksReducer.with(
     });
   },
 );
+// Unmount cancels the owning saga read; release its loading state for future demand.
+workspaceTasksReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+  const ws = state.byWorkspaceId[workspaceId];
+  return ws?.loading ? setWorkspaceState(state, workspaceId, { ...ws, loading: false }) : state;
+});
 workspaceTasksReducer.with(clearWorkspaceTasks, (state, { payload: [workspaceId] }) =>
   clearWorkspaceState(state, workspaceId),
 );
