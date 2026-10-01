@@ -60,12 +60,16 @@
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
-    deleteAgentWithUndoRequested,
-    retireAgentRequested,
     agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    agentMutationUiConsumed,
+    agentMutationUiReleased,
+    agentMutationUiRequested,
+  } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
 
   const logger = createLogger('AgentTabType');
 
@@ -75,6 +79,24 @@
 
   const workspaceIdStore = writable('');
   const agentIdStore = writable('');
+  const mutationConsumerId = crypto.randomUUID();
+  const mutation$ = selectAgentMutationUi(workspaceIdStore, mutationConsumerId);
+  $effect(() => {
+    const wsId = workspaceId;
+    void tab.agentId;
+    return () => appStore.dispatch(agentMutationUiReleased(wsId, mutationConsumerId));
+  });
+  $effect(() => {
+    const outcome = $mutation$;
+    if (
+      !outcome ||
+      outcome.workspaceId !== workspaceId ||
+      outcome.status === 'pending' ||
+      outcome.agentId !== tab.agentId
+    )
+      return;
+    appStore.dispatch(agentMutationUiConsumed(workspaceId, mutationConsumerId, outcome.requestId));
+  });
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -196,7 +218,11 @@
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
   let agentCopyTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let isAgentDeleting = $state(false);
+  const isAgentDeleting = $derived(
+    $mutation$?.agentId === tab.agentId &&
+      $mutation$?.operation.kind === 'delete' &&
+      $mutation$.status === 'pending',
+  );
   let chatPanelRef = $state<{
     scrollToBottom: () => void;
     navigateToUserMessage: (messageId: string) => Promise<boolean>;
@@ -248,21 +274,20 @@
     );
   }
 
-  async function handleDeleteAgent() {
+  function handleDeleteAgent() {
     if (!tab.agentId || isAgentDeleting || $hidesAgentLifecycleActions$) return;
     const agentIdToDelete = tab.agentId;
     const agentName = agentSession?.name || tab.title || '';
-    isAgentDeleting = true;
-    try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
-      await appStore.dispatch(
-        deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName),
-      );
-    } catch (error) {
-      logger.error('Failed to delete agent', error);
-    } finally {
-      isAgentDeleting = false;
-    }
+    appStore.dispatch(closeTab(workspaceId, tab.id));
+    appStore.dispatch(
+      agentMutationUiRequested(
+        workspaceId,
+        mutationConsumerId,
+        crypto.randomUUID(),
+        agentIdToDelete,
+        { kind: 'delete', name: agentName },
+      ),
+    );
   }
 
   // Register header state and actions
@@ -393,7 +418,8 @@
   <RetireAgentModal
     bind:open={retireAgentModalOpen}
     agentName={agentSession?.name || tab.title || ''}
-    onRetire={() => appStore.dispatch(retireAgentRequested(workspaceId, tab.agentId!))}
+    {workspaceId}
+    agentId={tab.agentId}
   />
 {/if}
 

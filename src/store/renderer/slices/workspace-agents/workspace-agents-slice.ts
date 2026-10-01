@@ -13,6 +13,14 @@ import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import {
+  upsertItem,
+  createCollection,
+  getItem,
+  removeItem,
+  type Collection,
+} from '@themislib/themis/utils/collections/collection-utils';
+import type { AgentCreationConsumer, AgentCreationOutcome } from './workspace-agents-types';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
@@ -128,6 +136,7 @@ export interface WorkspaceAgentsState {
   nodeSupport?: { generation: number; capabilities: NodeCapabilities };
   nodeOperationBusy?: boolean;
   placementChoice?: { id: string; capabilities: NodeCapabilities };
+  creationOutcomes?: Collection<AgentCreationOutcome, 'id'>;
   /** Connection-scoped read-through capability, invalidated by daemon reconnects. */
   retirementSupport?: { connectionGeneration: number; supported: boolean };
   byWorkspaceId: Record<string, WorkspaceAgentState>;
@@ -144,6 +153,10 @@ export interface BackendActiveStreamPayload {
 }
 
 export interface AgentCreationRequestOptions {
+  consumer?: AgentCreationConsumer;
+  /** Background task graduation keeps selection and error presentation with its caller. */
+  activateAgent?: boolean;
+  notifyOnError?: boolean;
   openAgent?: boolean;
   openInAdjacentPanel?: boolean;
   panelId?: string;
@@ -317,7 +330,7 @@ export const initialState: WorkspaceAgentsState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState } =
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceAgentState);
 
 export const setAgents = createAction<[wsId: string, agents: AgentSession[]]>(
@@ -477,6 +490,12 @@ export const createAgentFromConfigRequested = createAsyncAction<
   [wsId: string, config: UnifiedAgentConfig, options?: AgentCreationRequestOptions],
   AgentSession
 >('workspaceAgents/createAgentFromConfig', 'workspaceAgents/createAgentFromConfigRequested');
+export const agentCreationFinished = createAction<[outcome: AgentCreationOutcome]>(
+  'workspaceAgents/agentCreationFinished',
+);
+export const clearAgentCreationOutcome = createAction<[consumerId: string, seq?: number]>(
+  'workspaceAgents/clearAgentCreationOutcome',
+);
 export const forkAgentRequested = createAction<[wsId: string, request: ForkAgentRequest]>(
   'workspaceAgents/forkAgentRequested',
 );
@@ -668,6 +687,49 @@ workspaceAgentsReducer.with(nodeOperationBusyChanged, (state, { payload: [busy] 
   ...state,
   nodeOperationBusy: busy,
 }));
+workspaceAgentsReducer.with(createAgentFromConfigRequested, (state, action) => {
+  const request = action as ReturnType<typeof createAgentFromConfigRequested>;
+  const [workspaceId, , options] = action.payload;
+  if (!options?.consumer) return state;
+  const { id, resourceId } = options.consumer;
+  return {
+    ...state,
+    creationOutcomes: upsertItem(
+      state.creationOutcomes ?? createCollection<AgentCreationOutcome, 'id'>('id'),
+      {
+        id,
+        resourceId,
+        workspaceId,
+        seq: request.seq,
+        status: 'pending',
+        agentId: undefined,
+        error: undefined,
+        completedAt: undefined,
+      },
+    ),
+  };
+});
+workspaceAgentsReducer.with(agentCreationFinished, (state, { payload: [outcome] }) => {
+  const outcomes = state.creationOutcomes;
+  if (!outcomes) return state;
+  const current = getItem(outcomes, outcome.id);
+  if (
+    !current ||
+    current.status !== 'pending' ||
+    current.seq !== outcome.seq ||
+    current.workspaceId !== outcome.workspaceId ||
+    current.resourceId !== outcome.resourceId
+  )
+    return state;
+  return { ...state, creationOutcomes: upsertItem(outcomes, outcome) };
+});
+workspaceAgentsReducer.with(clearAgentCreationOutcome, (state, { payload: [id, seq] }) => {
+  const outcomes = state.creationOutcomes;
+  if (!outcomes) return state;
+  const current = getItem(outcomes, id);
+  if (!current || (seq !== undefined && current.seq !== seq)) return state;
+  return { ...state, creationOutcomes: removeItem(outcomes, id) };
+});
 workspaceAgentsReducer.with(
   agentRetirementSupportReceived,
   (state, { payload: [connectionGeneration, supported] }) => ({
@@ -1046,14 +1108,22 @@ workspaceAgentsReducer.with(
     });
   },
 );
-workspaceAgentsReducer.with(removeWorkspaceAgentState, (state, { payload: [wsId] }) => {
-  if (!state.byWorkspaceId[wsId]) return state;
-  return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
-});
-workspaceAgentsReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
-  if (!state.byWorkspaceId[wsId]) return state;
-  return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
-});
+function clearWorkspaceAgents(state: WorkspaceAgentsState, wsId: string): WorkspaceAgentsState {
+  const next = clearWorkspaceState(state, wsId);
+  if (!next.creationOutcomes) return next;
+  const creationOutcomes = next.creationOutcomes.ids.reduce(
+    (outcomes, id) =>
+      getItem(outcomes, id)?.workspaceId === wsId ? removeItem(outcomes, id) : outcomes,
+    next.creationOutcomes,
+  );
+  return creationOutcomes === next.creationOutcomes ? next : { ...next, creationOutcomes };
+}
+workspaceAgentsReducer.with(removeWorkspaceAgentState, (state, { payload: [wsId] }) =>
+  clearWorkspaceAgents(state, wsId),
+);
+workspaceAgentsReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
+  clearWorkspaceAgents(state, wsId),
+);
 // --------------------------------------------------------------------------
 // AgentService serializable state (6a migration)
 // --------------------------------------------------------------------------

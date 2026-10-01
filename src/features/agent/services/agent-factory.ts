@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -92,6 +93,7 @@ const AGENT_FACTORY_HMR_KEY = '__agentFactory_hmr';
 
 export class UnifiedAgentFactory {
   private static instance: UnifiedAgentFactory;
+  private pendingCreations = new Map<string, Promise<CreateAgentResult>>();
 
   private constructor() {}
 
@@ -127,7 +129,31 @@ export class UnifiedAgentFactory {
    * This is the ONLY public creation method. All creation paths go through here.
    * Consolidates: createAgent, createInitialAgent, createContextualAgent
    */
-  async createAgent(workspace: Workspace, config: UnifiedAgentConfig): Promise<CreateAgentResult> {
+  createAgent(
+    workspace: Workspace,
+    config: UnifiedAgentConfig,
+    creationKey?: string,
+  ): Promise<CreateAgentResult> {
+    if (!creationKey) return this.createAgentOnce(workspace, config);
+    const key = JSON.stringify([
+      isBackend ? null : selectPrincipalActionContext.select(appStore.state),
+      workspace.id,
+      creationKey,
+    ]);
+    const pending = this.pendingCreations.get(key);
+    if (pending) return pending;
+    const creation = this.createAgentOnce(workspace, config).finally(() => {
+      if (this.pendingCreations.get(key) === creation) this.pendingCreations.delete(key);
+    });
+    this.pendingCreations.set(key, creation);
+    return creation;
+  }
+
+  private async createAgentOnce(
+    workspace: Workspace,
+    config: UnifiedAgentConfig,
+  ): Promise<CreateAgentResult> {
+    const principalContext = isBackend ? null : selectPrincipalActionContext.select(appStore.state);
     const startTime = Date.now();
     const metrics = {
       validationTime: 0,
@@ -418,6 +444,9 @@ export class UnifiedAgentFactory {
       // no longer occur.
       if (!isBackend) {
         const backendStart = Date.now();
+        if (selectPrincipalActionContext.select(appStore.state) !== principalContext) {
+          return { success: false, error: m.agent_creation_createFailed_error() };
+        }
 
         const backendResult = await this.createInBackend(
           agent,
@@ -430,6 +459,11 @@ export class UnifiedAgentFactory {
           normalized.placement,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
+        // A late acknowledgement belongs to the original connection, not the
+        // newly admitted backend. Do not publish its session or send its prompt.
+        if (selectPrincipalActionContext.select(appStore.state) !== principalContext) {
+          return { success: false, error: m.agent_creation_createFailed_error() };
+        }
 
         if (!backendResult.success) {
           logger.error('Backend agent creation failed', {
@@ -597,6 +631,7 @@ export class UnifiedAgentFactory {
           normalized.contextReferences,
           normalized.imageBlocks,
           initialUserAppMessageId,
+          principalContext,
         ).catch((error) => {
           logger.error('Failed to send initial message', error);
         });
@@ -815,6 +850,7 @@ export class UnifiedAgentFactory {
       attachmentId?: string;
     }>,
     userAppMessageId?: string,
+    principalContext: string | null = null,
   ): Promise<void> {
     logger.info('sendInitialMessage called', {
       agentId: agent?.id,
@@ -860,11 +896,13 @@ export class UnifiedAgentFactory {
         if (imageBlocks?.length && agent.workspaceId !== CHIEF_WORKSPACE_ID) {
           const { toImageReferenceBlocks } =
             await import('$lib/components/chat/input/image-attachment-placement');
+          if (selectPrincipalActionContext.select(appStore.state) !== principalContext) return;
           wireImageBlocks = await toImageReferenceBlocks(
             agent.workspaceId,
             imageBlocks as import('$lib/components/chat/input/image-attachment-placement').WireImageBlock[],
           );
         }
+        if (selectPrincipalActionContext.select(appStore.state) !== principalContext) return;
         // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
         // the BackendTransport seam. Streaming/terminal state arrives via the
         // daemon events bridge (events.subscribe → Redux); legacy-only fields
@@ -888,7 +926,7 @@ export class UnifiedAgentFactory {
         messageLength: message?.length,
       });
       // Mark streaming as failed (only in frontend)
-      if (!isBackend) {
+      if (!isBackend && selectPrincipalActionContext.select(appStore.state) === principalContext) {
         const store = appStore;
         if (store) {
           store.dispatch(setAgentStreaming(agent.id, false));

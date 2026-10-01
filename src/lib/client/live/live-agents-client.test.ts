@@ -2695,7 +2695,7 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
     unsubscribe();
   });
 
-  // Deletion-flow convergence (soft-hide-then-commit, agent-mutation-service):
+  // Deletion-flow convergence (soft-hide-then-commit, agent-mutation-saga):
   // after the committed `agent.delete` succeeds the daemon emits
   // `agent:deleted`, which the typed channel delivers as a `removedIds` delta
   // — the hidden session reconciles away directly.

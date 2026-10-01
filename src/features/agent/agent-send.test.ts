@@ -5,7 +5,7 @@ import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
  * firehose accumulator removal (monorepo#1127).
  *
  * Drives the REAL `sendMessage()` against the REAL configured store and REAL
- * mutation middleware — only `backend-transport.backendRequest` is mocked,
+ * mutation saga — only `backend-transport.backendRequest` is mocked,
  * returning PROTOCOL.md §5.5-shaped daemon payloads captured from a live
  * daemon (a fresh `pending` agent projection with no acpSessionId).
  *
