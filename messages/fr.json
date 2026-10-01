@@ -2440,7 +2440,7 @@
   "chat_thinkingBlock_thinking_label": "Réflexion...",
   "chat_thinkingBlock_reasoning_label": "Raisonnement",
   "chat_queuedMessages_header_one": "1 message sera envoyé quand l'agent sera inactif",
-  "chat_queuedMessages_sendingWhenIdle_label": "Envoi dès que l’agent est libre",
+  "chat_queuedMessages_sendingWhenIdle_label": "En attente d’envoi dès que l’agent est libre",
   "chat_queuedMessages_clearAll_label": "Tout effacer",
   "chat_queuedMessages_clearAll_ariaLabel": "Effacer tous les messages en attente",
   "chat_queuedMessages_sendAll_label": "Tout envoyer",

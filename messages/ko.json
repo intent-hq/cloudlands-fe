@@ -2440,7 +2440,7 @@
   "chat_thinkingBlock_thinking_label": "생각 중...",
   "chat_thinkingBlock_reasoning_label": "추론",
   "chat_queuedMessages_header_one": "에이전트가 대기 상태가 되면 메시지 1개를 보냅니다",
-  "chat_queuedMessages_sendingWhenIdle_label": "대기 상태가 되면 전송",
+  "chat_queuedMessages_sendingWhenIdle_label": "대기 상태가 되면 전송하도록 예약됨",
   "chat_queuedMessages_clearAll_label": "모두 지우기",
   "chat_queuedMessages_clearAll_ariaLabel": "대기 중인 메시지 모두 지우기",
   "chat_queuedMessages_sendAll_label": "모두 전송",

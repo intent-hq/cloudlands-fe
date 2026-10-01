@@ -2440,7 +2440,7 @@
   "chat_thinkingBlock_thinking_label": "思考中...",
   "chat_thinkingBlock_reasoning_label": "推論",
   "chat_queuedMessages_header_one": "エージェントが待機状態になると、1 件のメッセージを送信します",
-  "chat_queuedMessages_sendingWhenIdle_label": "待機状態になったら送信",
+  "chat_queuedMessages_sendingWhenIdle_label": "待機時の送信待ち",
   "chat_queuedMessages_clearAll_label": "すべて削除",
   "chat_queuedMessages_clearAll_ariaLabel": "待機中のメッセージをすべて削除",
   "chat_queuedMessages_sendAll_label": "すべて送信",

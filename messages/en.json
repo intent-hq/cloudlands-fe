@@ -2440,7 +2440,7 @@
   "chat_thinkingBlock_thinking_label": "Thinking...",
   "chat_thinkingBlock_reasoning_label": "Reasoning",
   "chat_queuedMessages_header_one": "1 message will send when idle",
-  "chat_queuedMessages_sendingWhenIdle_label": "Sending when idle",
+  "chat_queuedMessages_sendingWhenIdle_label": "Queued to send when idle",
   "chat_queuedMessages_clearAll_label": "Clear all",
   "chat_queuedMessages_clearAll_ariaLabel": "Clear all queued messages",
   "chat_queuedMessages_sendAll_label": "Send all",

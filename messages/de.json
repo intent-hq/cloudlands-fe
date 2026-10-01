@@ -2440,7 +2440,7 @@
   "chat_thinkingBlock_thinking_label": "Denken...",
   "chat_thinkingBlock_reasoning_label": "Schlussfolgern",
   "chat_queuedMessages_header_one": "1 Nachricht wird gesendet, sobald der Agent frei ist",
-  "chat_queuedMessages_sendingWhenIdle_label": "Wird bei Leerlauf gesendet",
+  "chat_queuedMessages_sendingWhenIdle_label": "Zum Senden vorgemerkt, sobald der Agent frei ist",
   "chat_queuedMessages_clearAll_label": "Alle entfernen",
   "chat_queuedMessages_clearAll_ariaLabel": "Alle Nachrichten aus der Warteschlange entfernen",
   "chat_queuedMessages_sendAll_label": "Alle senden",

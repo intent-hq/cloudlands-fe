@@ -705,6 +705,7 @@
 {#if messages.length > 0}
   <div
     class="queued-messages-surface relative z-20 mt-auto w-full min-w-0 rounded-xl bg-sidebar p-1.5"
+    class:pt-0={expanded}
     data-testid="queued-messages-container"
     transition:safeDisclosureTransition|global={{ tier: 'moderate' }}
   >
@@ -1030,7 +1031,7 @@
   }
 
   .queued-messages-viewport {
-    max-height: max(48px, calc(var(--queued-messages-max-height, 50vh) - 44px));
+    max-height: max(48px, calc(var(--queued-messages-max-height, 50vh) - 38px));
   }
 
   @container queued-messages (max-width: 280px) {

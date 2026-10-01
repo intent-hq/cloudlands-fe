@@ -2440,7 +2440,7 @@
   "chat_thinkingBlock_thinking_label": "思考中…",
   "chat_thinkingBlock_reasoning_label": "推理",
   "chat_queuedMessages_header_one": "代理程式閒置時將傳送 1 則訊息",
-  "chat_queuedMessages_sendingWhenIdle_label": "閒置時傳送",
+  "chat_queuedMessages_sendingWhenIdle_label": "已排入佇列，閒置時傳送",
   "chat_queuedMessages_clearAll_label": "全部清除",
   "chat_queuedMessages_clearAll_ariaLabel": "清除所有排隊訊息",
   "chat_queuedMessages_sendAll_label": "全部傳送",
