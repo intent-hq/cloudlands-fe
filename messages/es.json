@@ -3450,6 +3450,7 @@
   "tiptap_taskItem_assignToAgent_tooltip": "Asignar a un agente",
   "tiptap_taskItem_convertToTaskNote_tooltip": "Convertir en nota de tarea",
   "tiptap_taskItem_waitsOn_label": "Espera a {count}",
+  "tiptap_taskItem_afterPrevious_label": "Después de la anterior",
   "tiptap_taskItem_waitsOnList_label": "Esperando a",
   "tiptap_taskItem_conflicts_label": "Conflictos {count}",
   "tiptap_taskItem_conflictsList_label": "Puede entrar en conflicto con",

@@ -3450,6 +3450,7 @@
   "tiptap_taskItem_assignToAgent_tooltip": "Agenten zuweisen",
   "tiptap_taskItem_convertToTaskNote_tooltip": "In Aufgabennotiz umwandeln",
   "tiptap_taskItem_waitsOn_label": "Wartet auf {count}",
+  "tiptap_taskItem_afterPrevious_label": "Nach vorheriger Aufgabe",
   "tiptap_taskItem_waitsOnList_label": "Wartet auf",
   "tiptap_taskItem_conflicts_label": "Konflikte {count}",
   "tiptap_taskItem_conflictsList_label": "Möglicher Konflikt mit",

@@ -4,6 +4,17 @@ import { classifyAgentScope } from '$shared/utils/agent-scope';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+
+export const selectAgentCreationOutcome = store.createSelector(
+  (state, consumerId: string, workspaceId: string, resourceId: string) => {
+    const outcomes = state.workspaceAgents.creationOutcomes;
+    const outcome = outcomes ? getItem(outcomes, consumerId) : undefined;
+    return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+      ? outcome
+      : undefined;
+  },
+);
 
 export const selectAgentRetirementSupported = store.createSelector((state) => {
   const support = state.workspaceAgents.retirementSupport;

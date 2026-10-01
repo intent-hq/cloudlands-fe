@@ -154,7 +154,17 @@
     textContent: 'Optimistic delegated task',
     content: { forEach: () => {} },
   } as any;
-  const editor = { state: { doc: { nodeAt: () => null } }, on: () => {}, off: () => {} } as any;
+  const editor = {
+    state: {
+      doc: {
+        nodeAt: () => null,
+        content: { size: 0 },
+        resolve: () => ({ parent: { type: { name: 'doc' } } }),
+      },
+    },
+    on: () => {},
+    off: () => {},
+  } as any;
 
   onDestroy(() => {
     if (store.dispatch === fixtureDispatch) {
