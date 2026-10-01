@@ -28,7 +28,7 @@ for (const direction of ['forward', 'backward'] as const)
     await mount(Pair);
     await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
     if (direction === 'backward') await root(page).evaluate((el) => (el as Host).proof.seek(4096));
-    const initial = await root(page).evaluate((el) => (el as Host).proof.created);
+    const initial = await root(page).evaluate((el) => (el as Host).proof.projection!.start);
     const start = direction === 'forward' ? 3582 : 2562;
     for (const side of ['native', 'bounded']) {
       await selectSource(page, side, start);
@@ -37,7 +37,9 @@ for (const direction of ['forward', 'backward'] as const)
       await settled(page);
     }
     await sameSaved(page);
-    expect(await root(page).evaluate((el) => (el as Host).proof.created)).toBeGreaterThan(initial);
+    expect(await root(page).evaluate((el) => (el as Host).proof.projection!.start)).not.toBe(
+      initial,
+    );
     expect(await logical(page, 'bounded')).toEqual({
       anchor: start,
       head: start + (direction === 'forward' ? 8 : -8),
@@ -94,3 +96,24 @@ for (const key of ['Backspace', 'Delete', 'Enter'] as const)
       );
     }
   });
+
+test('rapid keyboard selections retain every endpoint through repeated continuation changes', async ({
+  mount,
+  page,
+}) => {
+  await mount(Pair);
+  await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await root(page).evaluate((el) => (el as Host).proof.seek(4096));
+    for (const side of ['native', 'bounded']) {
+      await selectSource(page, side, 2562);
+      for (let i = 0; i < 8; i++) await page.keyboard.press('Shift+ArrowLeft');
+      await settled(page);
+      expect(await logical(page, side), side).toEqual({ anchor: 2562, head: 2554 });
+    }
+    expect(await root(page).evaluate((el) => (el as Host).proof.projection!.start)).toBeLessThan(
+      2048,
+    );
+  }
+  await sameSaved(page);
+});

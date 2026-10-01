@@ -112,6 +112,15 @@ export class SourceJournal {
     this.logs.push({ method, from, bytes: size });
     if (this.logs.length > LIMITS.log) this.logs.shift();
   }
+  /** A bounded backing byte-length probe retains the accepted small-window behavior. */
+  fitsWindow(from: number, to: number) {
+    const result = to - from <= LIMITS.active && bytes(this.slice(from, to)) <= LIMITS.active;
+    this.contextReads++;
+    const size = bytes(JSON.stringify(result));
+    this.maxContextPayloadBytes = Math.max(this.maxContextPayloadBytes, size);
+    this.log('window-fit', from, size);
+    return result;
+  }
   /** Mock backing index: one boolean response, at most two inspected UTF-16 units. */
   splitsSurrogate(position: number) {
     const pair = this.slice(Math.max(0, position - 1), Math.min(this.length, position + 1));

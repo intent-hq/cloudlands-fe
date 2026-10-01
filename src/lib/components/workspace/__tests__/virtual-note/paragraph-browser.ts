@@ -7,7 +7,7 @@ export type Host = HTMLElement & {
   native: Editor;
   parseSource: (source: string) => Promise<{ html: string; doc: JSONContent }>;
 };
-export async function state(page: Page, side: string) {
+async function state(page: Page, side: string) {
   return page
     .getByTestId(side)
     .getByTestId('proof')

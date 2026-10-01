@@ -118,7 +118,7 @@ export class DocumentSession {
     queueMicrotask(() => {
       this.continuationQueued = false;
       if (!this.editor || this.editor.view.composing) return;
-      void this.show(this.active, true, this.selection.head, this.pointerSelecting);
+      void this.show(this.active, true, this.selection.head, true);
     });
   }
   async show(id: number, restore = false, position?: number, preserveView = false) {
@@ -167,7 +167,7 @@ export class DocumentSession {
     try {
       const next = this.project(window.source, window.from);
       if (preserveView && this.editor) {
-        // Keep Chromium's active mouse gesture attached to the same view/DOM node.
+        // Keep Chromium's active keyboard or mouse gesture on the same focused view.
         // Only the bounded projection is replaced; durable source/history are untouched.
         const editor = this.editor;
         const before = editor.view.coordsAtPos(editor.state.selection.head).top;

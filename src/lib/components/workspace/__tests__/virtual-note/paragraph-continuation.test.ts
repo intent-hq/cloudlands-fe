@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { DocumentSession } from './document-session';
-import { SourceJournal } from './source-journal';
+import { SourceJournal, fixture } from './source-journal';
 
 for (const repeats of [2048, 32768])
   it(`opens one ${repeats}-repeat Unicode paragraph without whole-paragraph hydration`, async () => {
@@ -123,6 +123,23 @@ it('late seek cannot overwrite a newer native selection or accepted input', asyn
     await session.history();
     expect(service.region(0)).toBe(source);
     expect(session.selection).toMatchObject({ anchor: selected.anchor, head: selected.head });
+  } finally {
+    session.destroy();
+  }
+});
+
+it('retains the complete fitting paragraph window through 5000-byte paste undo and redo', async () => {
+  const service = new SourceJournal(fixture, 2);
+  const session = new DocumentSession(service, document.createElement('div'));
+  try {
+    await session.show(0);
+    session.editor!.commands.insertContent('x'.repeat(5000));
+    const edited = session.editor!.getJSON();
+    await session.history();
+    await session.history(true);
+    expect(session.editor!.getJSON()).toEqual(edited);
+    expect(session.projection!.source).toBe('x'.repeat(5000) + fixture(0) + fixture(1));
+    expect(session.snapshot().activeBytes).toBeLessThanOrEqual(16384);
   } finally {
     session.destroy();
   }
