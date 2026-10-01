@@ -403,7 +403,6 @@ describe('lifecycleReadSaga', () => {
         .filter((action) => action.type === 'workspace/bulkUpdateWorkspaceEntities')
         .map((action) => (action.payload[0] as { payload: unknown[] }[])[0]!.payload);
       expect(merged).toEqual([
-        [WS, { memberCount: 2, openInviteCount: 1 }],
         [WS, { memberCount: 1, openInviteCount: 0 }],
         ['ws-other', { memberCount: 1, openInviteCount: 0 }],
       ]);

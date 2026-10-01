@@ -329,20 +329,35 @@ function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
 }
 
 /**
- * Targeted `workspace.get` (§5.1) that merges only the membership summary
+ * Targeted `workspace.get` (§5.1) that merges membership rights and summary
  * onto the stored row. Invite create / revoke deltas carry no counts, and
  * the archive teardown's per-member `memberCount` frames say nothing about
  * the invites it revoked, so the row is re-derived from the daemon instead
  * of patched client-side. Never a per-workspace fan-out: one read per
  * delta-bearing workspace, coalesced by the watcher.
  */
-function* refreshMembershipSummary(workspaceId: string): SagaGenerator<void> {
+function* refreshMembershipSummary(
+  workspaceId: string,
+  isLatest: () => boolean,
+): SagaGenerator<void> {
+  const context = yield* selectPrincipalActionContext.effect();
+  const previous = yield* selectWorkspaceById.effect(workspaceId);
   const workspace: Awaited<ReturnType<typeof appClient.workspaces.get>> = yield* call(
     [appClient.workspaces, appClient.workspaces.get],
     workspaceId,
   );
-  if (!workspace) return;
+  if (!workspace || !isLatest() || context !== (yield* selectPrincipalActionContext.effect()))
+    return;
+  const current = yield* selectWorkspaceById.effect(workspaceId);
+  // Another authoritative hydration must not be overwritten by an older read.
+  if (current?.canManage !== previous?.canManage || current?.myRole !== previous?.myRole) return;
   const changes: Partial<Workspace> = {};
+  if (context !== null) {
+    if (typeof workspace.canManage === 'boolean') changes.canManage = workspace.canManage;
+    if (workspace.myRole === 'owner' || workspace.myRole === 'collaborator') {
+      changes.myRole = workspace.myRole;
+    }
+  }
   if (typeof workspace.memberCount === 'number' && Number.isFinite(workspace.memberCount)) {
     changes.memberCount = workspace.memberCount;
   }
@@ -1347,15 +1362,25 @@ function* tokenUsageWorker(
 
 function* membershipSummaryWorker(
   scheduler: WorkspaceReadScheduler,
+  revisions: Map<string, symbol>,
   action: ReturnType<typeof refreshWorkspaceMembershipRequested>,
 ) {
-  yield* runWorkspaceRead(
-    scheduler,
-    'membership',
-    action.payload[0],
-    refreshMembershipSummary,
-    false,
-  );
+  const workspaceId = action.payload[0];
+  const revision = revisions.get(workspaceId);
+  const isLatest = () => revisions.get(workspaceId) === revision;
+  try {
+    yield* runWorkspaceRead(
+      scheduler,
+      'membership',
+      workspaceId,
+      function* (id) {
+        yield* refreshMembershipSummary(id, isLatest);
+      },
+      false,
+    );
+  } finally {
+    if (isLatest()) revisions.delete(workspaceId);
+  }
 }
 
 function* taskAgentLinksWorker(
@@ -1533,6 +1558,7 @@ function* consoleOwnerReconcileWorker(action: ReturnType<typeof consoleOwnerChan
 }
 
 export function* lifecycleReadSaga(): SagaGenerator<void> {
+  const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
   const pendingForcedTaskReads = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
@@ -1570,12 +1596,18 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // Roster / invite deltas arrive in bursts (archive teardown emits one
       // frame per removed member plus one per revoked invite): single-flight
       // per workspace with one trailing re-read so the row converges on the
-      // post-burst summary.
+      // post-burst summary. Invalidate the older reply immediately: applying
+      // stale rights before the trailing read could briefly restore management.
       takeSingleFlightInContext(
         refreshWorkspaceMembershipRequested,
-        (action) => action.payload[0],
+        (action) => {
+          const workspaceId = action.payload[0];
+          membershipRevisions.set(workspaceId, Symbol());
+          return workspaceId;
+        },
         membershipSummaryWorker,
         scheduler,
+        membershipRevisions,
       ),
       takeLatestByContext(
         initContextForWorkspace,

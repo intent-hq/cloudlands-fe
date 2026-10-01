@@ -37,11 +37,17 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
 }));
 
 import { createTestAgent } from '../../../../../test/factories/agent.factory';
-import { upsertSession } from '../../agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { store } from '../../../store';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { replaceWorkspaceList, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import { lifecycleReadSaga } from '../../workspace-lifecycle/sagas/lifecycle-read-saga';
+import {
+  selectWorkspaceById,
+  selectWorkspacePermissionContext,
+} from '../../workspace/workspace-selectors';
+import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
 import { principalSaga } from '../../principal/sagas/principal-saga';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { daemonEventsSaga } from '../../workspace-events/sagas/daemon-events-saga';
@@ -65,20 +71,34 @@ function deferred<T>() {
 const settle = () => vi.advanceTimersByTimeAsync(0);
 const reads = () =>
   wire.request.mock.calls.filter(([method]) => method === 'agent.pendingPermissions');
-function hydrateWorkspace() {
-  store.dispatch(replaceWorkspaceList([{ id: WorkspaceId('ws'), myRole: 'owner' } as Workspace]));
+function hydrateWorkspace(canManage = true) {
+  store.dispatch(
+    replaceWorkspaceList([
+      {
+        id: WorkspaceId('test-workspace'),
+        myRole: canManage ? 'owner' : 'collaborator',
+        canManage,
+      } as Workspace,
+    ]),
+  );
   store.dispatch(
     setWorkspaceHasLoaded(true, 'local', selectPrincipalActionContext.select(store.state)),
   );
+  store.dispatch(
+    bulkUpsertSessions([
+      createTestAgent({ id: AgentId('a1'), workspaceId: WorkspaceId('test-workspace') }),
+    ]),
+  );
 }
+let eventId = 0;
 function event(type: string, data: Record<string, unknown>) {
   wire.notification!({
     method: 'events.event',
     params: {
       subscriptionId: 'sub-new',
       event: {
-        id: `event-${type}`,
-        workspaceId: 'ws',
+        id: `event-${++eventId}-${type}`,
+        workspaceId: 'test-workspace',
         type,
         timestamp: '2026-10-01T00:00:00Z',
         actor: { type: 'agent', id: 'a1' },
@@ -114,15 +134,14 @@ describe('permission recovery subscription boundary', () => {
       connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
     );
     store.dispatch(connectionStatusChanged('connected'));
-    store.dispatch(
-      upsertSession(createTestAgent({ id: AgentId('a1'), workspaceId: WorkspaceId('ws') })),
-    );
+  });
+  function boot() {
     cancel.push(
       store.runSaga(principalSaga),
       store.runSaga(permissionRecoverySaga),
       store.runSaga(daemonEventsSaga),
     );
-  });
+  }
   afterEach(() => {
     cancel
       .splice(0)
@@ -133,6 +152,7 @@ describe('permission recovery subscription boundary', () => {
   });
 
   it('waits for the new subscribe ack after disconnected then connected, and live boundary events win', async () => {
+    boot();
     await settle();
     hydrateWorkspace();
     await settle();
@@ -182,4 +202,95 @@ describe('permission recovery subscription boundary', () => {
     expect(getItems(store.state.permission.requests)).toEqual([]);
     expect(reads()).toHaveLength(1);
   });
+  async function bootGuest() {
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    wire.subscribe.mockResolvedValue({ subscriptionId: 'sub-new' });
+    wire.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { hostMembership: 1 } } };
+      if (method === 'principal.me')
+        return {
+          id: 'guest',
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: false,
+          hostRole: 'guest',
+          hostMembershipRevision: 0,
+        };
+      if (method === 'agent.pendingPermissions') return { requests: [] };
+      throw new Error(`Unexpected method ${method}`);
+    });
+    boot();
+    await settle();
+    hydrateWorkspace(false);
+    await settle();
+    cancel.push(store.runSaga(lifecycleReadSaga));
+    wire.request.mockClear();
+  }
+
+  it('recovers once after a real membership event grants management, with quiet equivalent deltas', async () => {
+    await bootGuest();
+    wire.request.mockImplementation(async (method) => {
+      if (method === 'workspace.get')
+        return { workspace: { id: 'test-workspace', canManage: true, myRole: 'owner' } };
+      if (method === 'agent.pendingPermissions') return { requests: [prompt] };
+      throw new Error(`Unexpected method ${method}`);
+    });
+    event('workspace:updated', { changes: { members: true } });
+    await settle();
+    expect(wire.request).toHaveBeenCalledWith('workspace.get', { workspaceId: 'test-workspace' });
+    expect(selectWorkspaceById.select(store.state, 'test-workspace')).toMatchObject({
+      canManage: true,
+      myRole: 'owner',
+    });
+    expect(reads()).toEqual([['agent.pendingPermissions', {}]]);
+    expect(store.state.agentSessions.byAgentId.a1?.workspaceId).toBe('test-workspace');
+    expect(selectWorkspacePermissionContext.select(store.state, 'test-workspace')).not.toBeNull();
+    expect(getItems(store.state.permission.requests)).toMatchObject([prompt]);
+    event('workspace:updated', { changes: { members: true } });
+    await settle();
+    event('workspace:updated', { changes: { title: 'Renamed' } });
+    await settle();
+    expect(reads()).toHaveLength(1);
+  });
+
+  it.each(['newer membership event', 'disconnect', 'capability hydration'] as const)(
+    'discards a delayed grant after %s',
+    async (change) => {
+      await bootGuest();
+      if (change === 'capability hydration') {
+        hydrateWorkspace(true);
+        await settle();
+        wire.request.mockClear();
+      }
+      const reply = deferred<{ workspace: { id: string; canManage: boolean; myRole: string } }>();
+      wire.request.mockImplementation(async (method) => {
+        if (method === 'workspace.get') return reply.promise;
+        if (method === 'agent.pendingPermissions') return { requests: [prompt] };
+        throw new Error(`Unexpected method ${method}`);
+      });
+      event('workspace:updated', { changes: { members: true } });
+      await settle();
+      if (change === 'disconnect') store.dispatch(connectionStatusChanged('disconnected'));
+      else if (change === 'capability hydration') {
+        hydrateWorkspace(false);
+        await settle();
+        wire.request.mockClear();
+      } else event('workspace:updated', { changes: { members: true } });
+      wire.request.mockImplementation(async (method) => {
+        if (method === 'workspace.get')
+          return { workspace: { id: 'test-workspace', canManage: false, myRole: 'collaborator' } };
+        if (method === 'agent.pendingPermissions') return { requests: [prompt] };
+        throw new Error(`Unexpected method ${method}`);
+      });
+      reply.resolve({ workspace: { id: 'test-workspace', canManage: true, myRole: 'owner' } });
+      await settle();
+      expect(selectWorkspaceById.select(store.state, 'test-workspace')).toMatchObject({
+        canManage: false,
+        myRole: 'collaborator',
+      });
+      expect(reads()).toEqual([]);
+      expect(getItems(store.state.permission.requests)).toEqual([]);
+    },
+  );
 });
