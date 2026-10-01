@@ -112,17 +112,21 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
       agentId,
     });
     const mapped = mapResult(fresh);
-    if (mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0) {
-      yield* put(
-        setSubscriptionSnapshot(wsId, agentId, {
-          ...mapped,
-          waitingState: 'waiting',
-        }),
-      );
-      return;
-    }
+    const hasData = mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0;
+    // A view arriving during this read joins it, including an authoritative empty response.
+    yield* put(
+      setSubscriptionSnapshot(wsId, agentId, {
+        ...mapped,
+        waitingState: hasData ? 'waiting' : 'idle',
+      }),
+    );
+    if (hasData) return;
   } catch {
-    // The empty snapshot was already authoritative; reset after a failed confirmation read.
+    // Keep the prior empty snapshot for background cleanup, but a joined view
+    // must settle as failed rather than remaining loading or claiming freshness.
+    if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'loading') {
+      yield* put(subscriptionSnapshotFetchFailed(wsId, agentId));
+    }
   }
   yield* put(resetSubscriptionUI(wsId, agentId));
 }

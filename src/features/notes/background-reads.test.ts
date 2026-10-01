@@ -27,10 +27,14 @@ import {
 } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { workspaceReconnectSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
-import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
+import {
+  agentSubscriptionReadSaga,
+  COMPLETED_DISPLAY_DURATION_MS,
+} from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import {
   requestSubscriptionFetch,
   refreshWorkspaceSubscriptionEntriesRequested,
+  setSubscriptionSnapshot,
   makeKey,
 } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { initializeChatRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -49,10 +53,12 @@ const settle = () => vi.advanceTimersByTimeAsync(0);
 const empty = () => ({ subscriptions: [], delegationGroups: [], agentStatuses: {} });
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe('background reads through the real store, sagas, clients and event bridge', () => {
@@ -313,6 +319,58 @@ describe('background reads through the real store, sagas, clients and event brid
       { workspaceId: WS, agentId: AGENT },
     ]);
   });
+
+  it.each(['empty', 'failed'] as const)(
+    'settles switch-back demand during an %s completion confirmation',
+    async (outcome) => {
+      store.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            workspaceId: WS,
+            name: AGENT,
+            status: AgentStatus.Pending,
+            messages: [],
+            createdAt: '2026-01-01',
+            updatedAt: '2026-01-01',
+          } as AgentSession,
+        ]),
+      );
+      store.dispatch(setSubscriptionSnapshot(WS, AGENT, { ...empty(), waitingState: 'waiting' }));
+      store.dispatch(requestSubscriptionFetch(WS, AGENT));
+      await settle();
+      expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].waitingState).toBe(
+        'completed',
+      );
+      const confirmation = deferred<ReturnType<typeof empty>>();
+      backend.onRequest('agent.getSubscriptions', () => confirmation.promise);
+      await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
+      expect(reads('agent.getSubscriptions')).toHaveLength(2);
+      store.dispatch(markAgentAsViewed(AGENT));
+      store.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
+      store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
+      expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].snapshotStatus).toBe(
+        'loading',
+      );
+      if (outcome === 'empty') confirmation.resolve(empty());
+      else confirmation.reject(new Error('confirmation failed'));
+      await settle();
+      expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)]).toMatchObject({
+        waitingState: 'idle',
+        snapshotStatus: outcome === 'empty' ? 'ready' : 'failed',
+      });
+      expect(reads('agent.getSubscriptions')).toHaveLength(2);
+      if (outcome === 'failed') {
+        backend.onRequest('agent.getSubscriptions', empty);
+        store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
+        await settle();
+        expect(reads('agent.getSubscriptions')).toHaveLength(3);
+        expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].snapshotStatus).toBe(
+          'ready',
+        );
+      }
+    },
+  );
 
   it('retains an event invalidation when mount demand arrives during a pending subscription read', async () => {
     // Seed tracking, then hold an authoritative event refresh.
