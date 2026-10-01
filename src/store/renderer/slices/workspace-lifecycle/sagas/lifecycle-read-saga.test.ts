@@ -103,6 +103,8 @@ import {
 } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
+  workspaceTasksReadStarted,
+  loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
 } from '../../workspace-tasks/workspace-tasks-slice';
 import {
@@ -617,7 +619,9 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await settle();
@@ -646,6 +650,8 @@ describe('lifecycleReadSaga', () => {
     resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(OTHER),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
     ]);
@@ -674,7 +680,9 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await stop(run.task);
@@ -700,6 +708,7 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
     ]);
     await stop(run.task);
@@ -725,6 +734,9 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      loadWorkspaceTasksFailed(WS, 'Error: offline'),
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
 
@@ -757,12 +769,14 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(ensureWorkspaceTasksLoaded(WS));
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
+    expect(run.actions).toEqual([workspaceTasksReadStarted(WS)]);
 
     run.channel.put(loadWorkspaceTasksRequested(WS));
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await stop(run.task);
@@ -799,7 +813,10 @@ describe('lifecycleReadSaga', () => {
     resolvers[WS][1]({ tasks: [], stats: { total: 3 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(OTHER),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
     ]);
@@ -827,6 +844,8 @@ describe('lifecycleReadSaga', () => {
     resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(OTHER),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
     ]);
@@ -857,8 +876,11 @@ describe('lifecycleReadSaga', () => {
     resolvers[2]({ tasks: [], stats: { total: 3 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 2 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
     ]);
     await stop(run.task);

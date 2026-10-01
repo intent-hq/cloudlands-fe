@@ -192,7 +192,7 @@
     const nextKey = `${workspaceId}::${agentId}`;
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
-    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
+    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId, true)));
   });
 
   let lastTaskWorkspaceId: string | null = null;

@@ -151,6 +151,8 @@ import {
 } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
+  workspaceTasksReadStarted,
+  loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
 } from '../../workspace-tasks/workspace-tasks-slice';
@@ -306,11 +308,17 @@ function* refreshTasks(workspaceId: string, guarded: boolean): SagaGenerator<voi
     const initialized = yield* selectWorkspaceTasksInitialized.effect(workspaceId);
     if (loading || initialized) return;
   }
-  const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(
-    [appClient.tasks, appClient.tasks.list],
-    workspaceId,
-  );
-  yield* put(loadWorkspaceTasksSucceeded(workspaceId, result.tasks, result.stats));
+  yield* put(workspaceTasksReadStarted(workspaceId));
+  try {
+    const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(
+      [appClient.tasks, appClient.tasks.list],
+      workspaceId,
+    );
+    yield* put(loadWorkspaceTasksSucceeded(workspaceId, result.tasks, result.stats));
+  } catch (error) {
+    yield* put(loadWorkspaceTasksFailed(workspaceId, String(error)));
+    throw error;
+  }
 }
 
 function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
