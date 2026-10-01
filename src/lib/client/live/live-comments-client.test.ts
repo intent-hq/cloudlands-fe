@@ -745,6 +745,26 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
 describe('qualified comment wire projections', () => {
   afterEach(() => vi.clearAllMocks());
   const identity = { provider: 'github', host: 'github.com', externalUserId: '42' };
+  it('never forwards output creator fields through live add or respond', async () => {
+    mockedRequest.mockResolvedValue({ ok: true });
+    const client = new LiveCommentsClient();
+    const extras = { authorPrincipalId: 'not-authority', authorIdentity: identity };
+    const add = {
+      workspaceId: 'ws-1',
+      searchContext: 'context',
+      commentTarget: 'context',
+      comment: 'body',
+      ...extras,
+    };
+    const reply = { workspaceId: 'ws-1', commentId: 'parent', comment: 'reply', ...extras };
+    await client.add('note-1', add);
+    await client.respond('note-1', reply);
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    for (const [, params] of mockedRequest.mock.calls) {
+      expect(params).not.toHaveProperty('authorPrincipalId');
+      expect(params).not.toHaveProperty('authorIdentity');
+    }
+  });
   it('keeps safe output fields and omits invalid identities without borrowing a label identity', async () => {
     const rows = [
       {
@@ -758,6 +778,7 @@ describe('qualified comment wire projections', () => {
         id: 'imported',
         author: 'same',
         authorType: 'user',
+        authorPrincipalId: null,
         authorIdentity: { ...identity, provider: 'gitlab', host: 'gitlab.example' },
       },
       ...[

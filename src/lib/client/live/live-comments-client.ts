@@ -1,3 +1,7 @@
+import {
+  projectCommentAttribution,
+  projectLatestCommentAuthor,
+} from '$features/comments/comment-attribution';
 /**
  * Live comments domain backed by the intentd daemon.
  *
@@ -86,6 +90,7 @@ function normalizeComment(
   const reactions = normalizeReactions(raw.reactions);
 
   const base = {
+    ...projectCommentAttribution(raw),
     id,
     threadId: String(raw.threadId ?? id),
     noteId: String(raw.noteId ?? noteId),
@@ -149,7 +154,13 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
         // Trivial fallback when `includeComments` was not honored: the
         // thread summary itself becomes a head-comment proxy (threadId,
         // status, timestamps) so the renderer at least sees the thread.
-        out.push(normalizeComment(thread as Record<string, unknown>, noteId, workspaceId));
+        out.push(
+          normalizeComment(
+            { ...thread, ...projectLatestCommentAuthor(thread as Record<string, unknown>) },
+            noteId,
+            workspaceId,
+          ),
+        );
       }
     }
     return out;

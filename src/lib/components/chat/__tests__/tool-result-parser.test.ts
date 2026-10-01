@@ -1110,6 +1110,7 @@ describe('tool-result-parser', () => {
           status: 'open',
           commentCount: 2,
           latestAuthor: 'Clement',
+          latestAuthorType: 'user',
           lastActivity: '2026-08-17T02:00:00Z',
         },
       ]);
@@ -1186,6 +1187,35 @@ describe('tool-result-parser', () => {
 });
 
 describe('latest comment creator attribution', () => {
+  it('preserves a qualified identity-only latest author in TOON', () => {
+    const toon = [
+      'threads[1]:',
+      '  - threadId: t',
+      '    latestCommentAuthor: same',
+      '    latestCommentAuthorType: user',
+      '    latestCommentAuthorIdentity:',
+      '      provider: gitlab',
+      '      host: gitlab.example',
+      '      externalUserId: "42"',
+      'totalComments: 1',
+    ].join('\n');
+    const result = parseToolResult(
+      'workspace_api_workspace-mcp',
+      { code: 'return await ws.comment.list("spec")' },
+      toon,
+    );
+    expect(result.commentThreads?.[0]).toMatchObject({
+      latestAuthor: 'same',
+      latestAuthorType: 'user',
+      latestAuthorIdentity: {
+        provider: 'gitlab',
+        host: 'gitlab.example',
+        externalUserId: '42',
+      },
+    });
+    expect(result.commentThreads?.[0]).not.toHaveProperty('latestAuthorPrincipalId');
+  });
+
   it('keeps the selected latest identity, never the root or another reply', () => {
     const identity = { provider: 'gitlab', host: 'gitlab.example', externalUserId: '42' };
     const result = parseToolResult(

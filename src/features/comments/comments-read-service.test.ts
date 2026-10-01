@@ -104,6 +104,25 @@ describe('commentsReadService (fake seam, real store)', () => {
         authorIdentity: identity,
       }),
     );
+    // A later canonical content edit still belongs to its original creator.
+    commentsListMock.mockResolvedValueOnce([
+      {
+        ...base,
+        content: 'edited by another human',
+        author: 'canonical',
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+      } as CommentV2,
+    ]);
+    applyCommentFromEvent('ws-1', 'spec', 'added');
+    await vi.waitFor(() =>
+      expect(appStore.state.comments.commentsById.map['creator-row']).toMatchObject({
+        content: 'edited by another human',
+        author: 'canonical',
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+      }),
+    );
     commentsListMock.mockResolvedValueOnce([{ ...base, author: 'legacy', authorType: 'agent' }]);
     applyCommentFromEvent('ws-1', 'spec', 'resolved');
     await vi.waitFor(() =>
