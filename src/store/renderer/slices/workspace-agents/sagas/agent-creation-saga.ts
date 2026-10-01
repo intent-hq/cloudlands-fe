@@ -101,9 +101,16 @@ async function showCreationError(error: unknown): Promise<void> {
   try {
     const { notify } = await import('$lib/components/patterns/notify');
     notify.error(m.agent_creation_createFailed_error(), {
-      description: isProviderModelMismatch(error)
-        ? m.agent_creation_providerModelMismatch_description()
-        : m.agent_creation_failed_description(),
+      description:
+        error instanceof Error &&
+        (error as Error & { rpcCode?: number }).rpcCode === -32602 &&
+        /^Claude agent .+ (?:uses settings Intent cannot apply:|requires skills that are unavailable:)/.test(
+          error.message,
+        )
+          ? error.message
+          : isProviderModelMismatch(error)
+            ? m.agent_creation_providerModelMismatch_description()
+            : m.agent_creation_failed_description(),
     });
   } catch (toastError) {
     logger.error('Failed to surface agent creation error', toastError);

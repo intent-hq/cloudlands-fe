@@ -6951,5 +6951,17 @@
   "terminal_scriptOutput_retained_description": "一時的な出力のスナップショットです。上限は10,000行です。ライブ出力は別に表示されます。",
   "terminal_scriptOutput_retainedLoading_label": "保持された出力を読み込み中…",
   "terminal_scriptOutput_retainedUnavailable_label": "保持された出力は利用できません。",
-  "terminal_scriptOutput_live_label": "ライブ出力"
+  "terminal_scriptOutput_live_label": "ライブ出力",
+  "settings_aiBehavior_importedClaude_title": "Claude Code からインポート",
+  "settings_aiBehavior_importedClaude_readOnly": "Intent では読み取り専用です。変更するには元のファイルを開いてください。",
+  "settings_aiBehavior_importedClaude_unsupported": "次の設定はサポートされていないため、Intent で起動できません：{fields}。起動する前に元のファイルを開き、これらの設定を削除または調整してください。",
+  "settings_aiBehavior_importNotices": "Claude エージェントのインポート通知",
+  "settings_aiBehavior_importInvalid": "無効なエージェント定義",
+  "settings_aiBehavior_importUnreadable": "エージェントファイルを読み取れません",
+  "settings_aiBehavior_importBrokenLink": "ファイルリンクが切れています",
+  "settings_aiBehavior_importTooLarge": "エージェントファイルが大きすぎます",
+  "settings_aiBehavior_importShadowed": "別の定義が優先されます",
+  "settings_aiBehavior_importScanLimit": "検出上限に達しました",
+  "settings_aiBehavior_importMissingSkills": "このカタログには必要なスキルがありません：{skills}。このエージェントを起動するワークスペースで利用可能にする必要があります。そのワークスペースで復元またはインストールするか、元のエージェントファイルを更新してください。",
+  "settings_aiBehavior_importDetails": "詳細"
 }

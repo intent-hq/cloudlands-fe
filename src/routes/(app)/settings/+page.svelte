@@ -511,6 +511,7 @@
 
 {#snippet agentsNavigation()}
   <AIBehaviorSidebar
+    workspaceId={settingsWorkspaceId ?? undefined}
     activeView={aiBehaviorView}
     onSelect={selectAiBehaviorView}
     isActive={activeTab === 'specialists'}

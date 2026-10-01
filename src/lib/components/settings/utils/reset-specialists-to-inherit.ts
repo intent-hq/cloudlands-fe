@@ -30,7 +30,7 @@ export interface ResetToInheritPayloads {
 
 /** True when any file specialist pins an explicit model. */
 export function hasExplicitModelPin(fileSpecialists: FileSpecialist[]): boolean {
-  return fileSpecialists.some((s) => !!s.model);
+  return fileSpecialists.some((s) => !s.importedFrom && !!s.model);
 }
 
 /**
@@ -49,7 +49,7 @@ export function buildResetToInheritPayloads(
   const saves: FileSpecialistWritePayload[] = [];
   const deletes: FileSpecialistReference[] = [];
   for (const fileSpec of fileSpecialists) {
-    if (!fileSpec.model) continue;
+    if (fileSpec.importedFrom || !fileSpec.model) continue;
     let workspacePath: string | undefined;
     if (fileSpec.source === 'project') {
       workspacePath = getWorkspacePath();

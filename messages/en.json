@@ -6951,5 +6951,17 @@
   "terminal_scriptOutput_retained_description": "Snapshot of temporary output, limited to 10,000 lines. Live output is shown separately.",
   "terminal_scriptOutput_retainedLoading_label": "Loading retained output…",
   "terminal_scriptOutput_retainedUnavailable_label": "Retained output is unavailable.",
-  "terminal_scriptOutput_live_label": "Live output"
+  "terminal_scriptOutput_live_label": "Live output",
+  "settings_aiBehavior_importedClaude_title": "Imported from Claude Code",
+  "settings_aiBehavior_importedClaude_readOnly": "Read-only in Intent. Open the original file to make changes.",
+  "settings_aiBehavior_importedClaude_unsupported": "Cannot launch in Intent because these settings are unsupported: {fields}. Open the original file and remove or adapt these settings before launching.",
+  "settings_aiBehavior_importNotices": "Claude agent import notices",
+  "settings_aiBehavior_importInvalid": "Invalid agent definition",
+  "settings_aiBehavior_importUnreadable": "Cannot read agent file",
+  "settings_aiBehavior_importBrokenLink": "Broken file link",
+  "settings_aiBehavior_importTooLarge": "Agent file is too large",
+  "settings_aiBehavior_importShadowed": "Another definition takes precedence",
+  "settings_aiBehavior_importScanLimit": "Discovery limit reached",
+  "settings_aiBehavior_importMissingSkills": "Required skills are absent from this catalog: {skills}. They must be available in the workspace where you launch this agent. Restore or install them there, or update the original agent file.",
+  "settings_aiBehavior_importDetails": "Details"
 }
