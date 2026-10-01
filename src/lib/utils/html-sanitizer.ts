@@ -366,6 +366,7 @@ export function sanitizeMarkdownHTML(
         'title',
         'dir',
         'lang', // Global attributes from "*"
+        'start', // Ordered lists retain their source starting number
         'href',
         'target',
         'rel', // Link attributes from "a"
