@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockProcessMarkdownToHTML = vi.hoisted(() =>
   vi.fn(async (content: string) => `<p>${content}</p>`),
@@ -24,7 +24,7 @@ vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
   selectCommentById: { select: vi.fn(() => null) },
 }));
 
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { cleanup, render, fireEvent, waitFor } from '@testing-library/svelte';
 import UnifiedCommentThread from '../UnifiedCommentThread.svelte';
 import ResponsiveCommentThread from '../ResponsiveCommentThread.svelte';
 import TooltipWrapper from './TooltipWrapper.svelte';
@@ -276,6 +276,54 @@ describe('UnifiedCommentThread', () => {
 });
 
 describe('qualified comment author presentation', () => {
+  let previousResizeObserver: PropertyDescriptor | undefined;
+  const observers = new Set<AttributionResizeObserver>();
+
+  // Follow the local observer fixtures used by ScrollArea and panel ownership tests.
+  // These cases select a display mode explicitly; no resize geometry is synthesized.
+  class AttributionResizeObserver {
+    readonly targets = new Set<Element>();
+
+    constructor() {
+      observers.add(this);
+    }
+
+    observe(target: Element) {
+      this.targets.add(target);
+    }
+
+    unobserve(target: Element) {
+      this.targets.delete(target);
+    }
+
+    disconnect() {
+      this.targets.clear();
+      observers.delete(this);
+    }
+  }
+
+  beforeEach(() => {
+    previousResizeObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: AttributionResizeObserver,
+    });
+  });
+
+  afterEach(() => {
+    try {
+      cleanup();
+    } finally {
+      for (const observer of observers) observer.disconnect();
+      if (previousResizeObserver) {
+        Object.defineProperty(globalThis, 'ResizeObserver', previousResizeObserver);
+      } else {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver');
+      }
+    }
+  });
+
   it.each(['full', 'compact', 'icon'] as const)(
     'distinguishes identical labels in %s mode without requiring a local principal',
     async (displayMode) => {
