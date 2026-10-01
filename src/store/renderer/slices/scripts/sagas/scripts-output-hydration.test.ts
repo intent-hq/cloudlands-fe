@@ -11,9 +11,12 @@ vi.mock('$lib/client', async () => {
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: {} }));
 import { store } from '../../../store';
 import { scriptsOperationSaga } from './scripts-operation-saga';
+import { lifecycleReadSaga } from '../../workspace-lifecycle/sagas/lifecycle-read-saga';
+import { selectScriptEntries, selectWorkspaceScriptEntries } from '../scripts-selectors';
 import {
   scriptsReducer,
   setScriptsData,
+  refreshScripts,
   appendScriptOutput,
   removeScript,
   updateRuntimeState,
@@ -40,9 +43,10 @@ function deferred<T>() {
   const promise = new Promise<T>((r) => (resolve = r));
   return { promise, resolve };
 }
-function start(seedDefinition = true) {
+function start(seedDefinition = true, includeLifecycle = false) {
   const channel = stdChannel();
   const state = withLegacyPrincipal({
+    tabState: { currentTabId: WS },
     workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
     scripts: scriptsReducer(undefined, { type: '@@init' }),
   });
@@ -70,6 +74,8 @@ function start(seedDefinition = true) {
     channel.put(a);
   };
   tasks.push(runSaga({ channel, dispatch, getState: () => state }, scriptsOperationSaga));
+  if (includeLifecycle)
+    tasks.push(runSaga({ channel, dispatch, getState: () => state }, lifecycleReadSaga));
   const text = () =>
     state.scripts.byWorkspaceId[WS]?.outputBuffers[ID]?.chunks.map((c) => c.text).join('') ?? '';
   const retained = (viewerId = 'viewer-1') =>
@@ -89,6 +95,85 @@ afterEach(async () => {
   store.dispose();
 });
 describe('retained script output hydration', () => {
+  it.each([
+    {
+      status: 'exited' as const,
+      startedAt: 'earlier',
+      stoppedAt: 'now',
+      exitCode: 1,
+      restartCount: 0,
+    },
+    { status: 'running' as const, startedAt: 'new run', restartCount: 1 },
+  ])('preserves a $status event arriving before a demand-loaded definition', async (runtime) => {
+    const all = deferred<{ scripts: unknown[] }>();
+    const run = start(false, true);
+    transport.request.mockImplementation(async (method, params) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list')
+        return (params as { archive: string }).archive === 'all' ? all.promise : { scripts: [] };
+      if (method === 'script.status') return runtime;
+      if (method === 'script.output') return 'current output';
+      throw new Error('Unexpected method ' + method);
+    });
+    run.dispatch(request());
+    await settle();
+    run.dispatch(updateRuntimeState(WS, ID, runtime));
+    run.dispatch(refreshScripts(WS));
+    await settle();
+    expect(run.state.scripts.byWorkspaceId[WS].activeScriptIds).toEqual([]);
+    all.resolve({
+      scripts: [
+        {
+          id: ID,
+          workspaceId: WS,
+          name: 'One-off output',
+          command: 'false',
+          mode: 'command',
+          purpose: 'oneOff',
+          source: 'user',
+          createdAt: '2026-09-30T00:00:00Z',
+          runtime: { status: 'running', startedAt: 'earlier', restartCount: 0 },
+        },
+      ],
+    });
+    await settle();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[ID].runtime).toMatchObject(runtime);
+    expect(run.retained()?.text).toBe('current output');
+    expect(transport.request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([
+      ['script.list', { workspaceId: WS, archive: 'all' }],
+      ['script.list', { workspaceId: WS, archive: 'active' }],
+    ]);
+  });
+
+  it('keeps recovered output out of initial membership until an authoritative list includes it', async () => {
+    const definition = {
+      id: ID,
+      workspaceId: WS,
+      name: 'Retired command',
+      command: 'false',
+      mode: 'command' as const,
+      source: 'user' as const,
+      createdAt: '2026-09-30T00:00:00Z',
+      archivedAt: '2026-09-30T00:01:00Z',
+      runtime: { status: 'exited' as const, exitCode: 1, restartCount: 0 },
+    };
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list') return { scripts: [definition] };
+      return 'retained output';
+    });
+    const run = start(false);
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()?.text).toBe('retained output');
+    expect(selectWorkspaceScriptEntries.select(run.state as never, WS)).toEqual([]);
+    expect(selectScriptEntries.select(run.state as never, WS)).toEqual([]);
+    const saved = { ...definition, id: 'saved', archivedAt: undefined };
+    run.dispatch(setScriptsData(WS, [saved]));
+    expect(selectWorkspaceScriptEntries.select(run.state as never, WS)).toEqual([saved]);
+    expect(selectScriptEntries.select(run.state as never, WS)).toEqual([saved]);
+  });
+
   it('recovers only mounted archived output definitions and coalesces concurrent reads', async () => {
     const list = deferred<{ scripts: unknown[] }>();
     const run = start(false);
@@ -141,6 +226,7 @@ describe('retained script output hydration', () => {
       const run = start(false);
       run.dispatch(request());
       await settle();
+      run.dispatch(updateRuntimeState(WS, ID, { status: 'exited', exitCode: 1 }));
       if (kind === 'viewer') run.dispatch(release());
       if (kind === 'workspace') run.dispatch(workspaceUnmounted(WS));
       if (kind === 'removed') run.dispatch(removeScript(WS, ID));

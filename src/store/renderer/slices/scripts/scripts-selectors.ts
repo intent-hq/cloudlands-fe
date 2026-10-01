@@ -22,11 +22,11 @@ export const selectScriptsInitialized = store.createSelector(
   },
 );
 
-/** Normal list: archived entries are hidden only after capability negotiation. */
+/** Normal list membership excludes definitions recovered only for output viewers. */
 export const selectScriptEntries = store.createSelector(
   (state, wsId: string | null): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    if (ws.lifecycleSupported && ws.activeScriptIds) {
+    if (ws.activeScriptIds) {
       return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
     }
     return Object.values(ws.scripts).filter(
@@ -84,7 +84,7 @@ export const selectWorkspaceScriptsInitialized = store.createSelector(
 export const selectWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    if (ws.lifecycleSupported && ws.activeScriptIds) {
+    if (ws.activeScriptIds) {
       return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
     }
     return Object.values(ws.scripts).filter(

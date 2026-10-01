@@ -21,6 +21,7 @@ import {
   scriptOutputDefinitionReceived,
   scriptOutputReleased,
   scriptOutputSnapshotReceived,
+  updateRuntimeState,
 } from '../scripts-slice';
 
 type DefinitionReads = Map<
@@ -48,6 +49,7 @@ function* readOutput(
       value?.runtime?.restartCount,
     ]);
   let run = runtimeKey(script);
+  let pendingRuntime: ReturnType<typeof updateRuntimeState>['payload']['partial'] = {};
   const cleanup = (event: { type: string; payload?: unknown }) => {
     const payload = event.payload;
     if (!Array.isArray(payload) || payload[0] !== workspaceId) return false;
@@ -86,7 +88,15 @@ function* readOutput(
       if (!(yield* isCurrent())) return;
       const definition = entries.find((entry) => entry.id === scriptId);
       if (definition) {
-        yield* put(scriptOutputDefinitionReceived(workspaceId, definition, viewerId));
+        // State events can precede the missing definition. Keep their newer
+        // runtime instead of reviving the run captured by the list snapshot.
+        yield* put(
+          scriptOutputDefinitionReceived(
+            workspaceId,
+            { ...definition, runtime: { ...definition.runtime, ...pendingRuntime } },
+            viewerId,
+          ),
+        );
         script = yield* selectScriptById.effect(workspaceId, scriptId);
         run = runtimeKey(script);
       }
@@ -105,10 +115,21 @@ function* readOutput(
     workspaceUnmounted,
     workspaceDeleted,
     removeScript,
+    updateRuntimeState,
   ]);
   function* waitForCleanup(): SagaGenerator<void> {
     while (true) {
       const event = yield* take(releases);
+      if (event.type === updateRuntimeState.type) {
+        const {
+          wsId,
+          scriptId: id,
+          partial,
+        } = (event as ReturnType<typeof updateRuntimeState>).payload;
+        if (!script && wsId === workspaceId && id === scriptId) {
+          pendingRuntime = { ...pendingRuntime, ...partial };
+        }
+      }
       if (cleanup(event)) {
         if (event.type !== scriptOutputReleased.type) reads.delete(definitionKey);
         yield* put(scriptOutputReleased(workspaceId, scriptId, viewerId));

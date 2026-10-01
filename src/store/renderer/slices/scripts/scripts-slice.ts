@@ -269,6 +269,8 @@ scriptsReducer.with(
     return setWorkspaceState(state, wsId, {
       ...ws,
       scripts: { ...ws.scripts, [script.id]: script },
+      // A viewer's recovered definition is not an authoritative list member.
+      activeScriptIds: ws.activeScriptIds ?? Object.keys(ws.scripts),
     });
   },
 );

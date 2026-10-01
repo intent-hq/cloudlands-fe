@@ -312,7 +312,11 @@ describe('archive lifecycle reconciliation', () => {
     const root = { scripts } as never;
     expect(selectWorkspaceScriptEntries.select(root, WS)).toEqual([]);
     const legacy = scriptsReducer(scripts, setScriptListState(WS, false, undefined, false));
-    expect(selectWorkspaceScriptEntries.select({ scripts: legacy } as never, WS)).toHaveLength(1);
+    expect(selectWorkspaceScriptEntries.select({ scripts: legacy } as never, WS)).toEqual([]);
+    const legacyList = scriptsReducer(legacy, setScriptsData(WS, [active]));
+    expect(selectWorkspaceScriptEntries.select({ scripts: legacyList } as never, WS)).toEqual([
+      active,
+    ]);
     expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].runtime.exitCode).toBe(2);
     expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe(
       'retained output',
