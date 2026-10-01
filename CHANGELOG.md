@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.195.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.194.0...v2.195.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* add session-scoped RPC Dev Console ([#3064](https://github.com/intent-hq/cloudlands-fe/issues/3064)) ([d5bf188](https://github.com/intent-hq/cloudlands-fe/commit/d5bf188f8d94416d65ce6a76fca31e4f63e0f14f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.131 ([#3069](https://github.com/intent-hq/cloudlands-fe/issues/3069)) ([84bccf2](https://github.com/intent-hq/cloudlands-fe/commit/84bccf2ce46cc0c7a08890b5670b863c2e1214fd))
+* bump intentd sidecar to v0.9.132 ([#3071](https://github.com/intent-hq/cloudlands-fe/issues/3071)) ([0dcf4eb](https://github.com/intent-hq/cloudlands-fe/commit/0dcf4ebfb283c2bb44eaf5b887f046edc77d6f9d))
+* open untracked files from secondary Git roots ([#3066](https://github.com/intent-hq/cloudlands-fe/issues/3066)) ([2ca43eb](https://github.com/intent-hq/cloudlands-fe/commit/2ca43ebbc7792f938412cef5d5b4624b3fada1c9))
+
 ## [2.194.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.193.0...v2.194.0) (2026-10-01)
 
 

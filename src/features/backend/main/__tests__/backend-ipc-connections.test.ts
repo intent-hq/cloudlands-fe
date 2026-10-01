@@ -3179,45 +3179,48 @@ describe('self-publish IPC', () => {
     };
   }
 
-  it('connections:publish-self builds the record from pairingInfo and upserts it (token stays in main)', async () => {
-    installPairingInfo();
-    store.add.mockResolvedValue(SELF_RECORD);
-    const send = installWindow();
-    const { mod } = await loadModule();
-    mod.registerBackendHandlers();
-    const handler = findHandler('connections:publish-self')!;
+  it.each([5181, 5183])(
+    'connections:publish-self builds the record from pairingInfo at port %i (token stays in main)',
+    async (port) => {
+      installPairingInfo({ port });
+      store.add.mockResolvedValue(SELF_RECORD);
+      const send = installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:publish-self')!;
 
-    const result = (await handler({}, undefined)) as { connection: { id: string } };
+      const result = (await handler({}, undefined)) as { connection: { id: string } };
 
-    // Record per spec Mechanics: label = hostname (pretty preferred), host =
-    // first local IP, port = bound wsApi port, fingerprint + token from
-    // pairingInfo, detectHosts on. The token goes to the store only. Publishing
-    // is explicit user intent to sync, so the exclusion flag is force-cleared.
-    expect(store.add).toHaveBeenCalledWith({
-      label: "Clement's Mac Studio",
-      host: '192.168.1.10',
-      port: 5181,
-      fingerprint: '11:22:33:44',
-      token: 'a'.repeat(64),
-      detectedDeviceKind: 'macStudio',
-      detectHosts: true,
-      syncExcluded: false,
-    });
-    // All local IPs persist as candidate hosts; the hostname persists too.
-    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
-    expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
-    expect(store.add).toHaveBeenCalledWith(
-      expect.objectContaining({ detectedDeviceKind: 'macStudio' }),
-    );
-    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', 'macStudio');
-    // Self fingerprint persisted (normalized) + suppression marker cleared.
-    expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
-    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
-    // Returned record is token-free (the store's shape) and the list rebroadcast.
-    expect(result.connection.id).toBe('self-1');
-    expect(result.connection).not.toHaveProperty('token');
-    expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
-  });
+      // Record per spec Mechanics: label = hostname (pretty preferred), host =
+      // first local IP, port = bound wsApi port, fingerprint + token from
+      // pairingInfo, detectHosts on. The token goes to the store only. Publishing
+      // is explicit user intent to sync, so the exclusion flag is force-cleared.
+      expect(store.add).toHaveBeenCalledWith({
+        label: "Clement's Mac Studio",
+        host: '192.168.1.10',
+        port,
+        fingerprint: '11:22:33:44',
+        token: 'a'.repeat(64),
+        detectedDeviceKind: 'macStudio',
+        detectHosts: true,
+        syncExcluded: false,
+      });
+      // All local IPs persist as candidate hosts; the hostname persists too.
+      expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
+      expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
+      expect(store.add).toHaveBeenCalledWith(
+        expect.objectContaining({ detectedDeviceKind: 'macStudio' }),
+      );
+      expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', 'macStudio');
+      // Self fingerprint persisted (normalized) + suppression marker cleared.
+      expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
+      expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+      // Returned record is token-free (the store's shape) and the list rebroadcast.
+      expect(result.connection.id).toBe('self-1');
+      expect(result.connection).not.toHaveProperty('token');
+      expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+    },
+  );
 
   it('connections:publish-self rejects override-only device kinds from pairingInfo', async () => {
     installPairingInfo({ deviceKind: 'robot' });
@@ -4500,6 +4503,8 @@ describe('per-window backend IPC routing', () => {
   });
 
   it.each([
+    ['pairing.getSelfInfo', undefined],
+    ['client.list', undefined],
     ['host.executionContext', {}],
     ['providers.catalog', {}],
     ['models.list', { providerId: 'claude-code' }],
@@ -4659,6 +4664,43 @@ describe('guest-sessions:* IPC handlers', () => {
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
     guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
   }
+
+  it.each(['member', 'guest'] as const)(
+    'keeps personal Devices reads on the admitted %s connection, including refusal',
+    async (role) => {
+      installGuest();
+      rpc.principal = async () => ({
+        id: GUEST.principalId,
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+        hostRole: role,
+        hostMembershipRevision: 1,
+      });
+      installWindow(GUEST.id);
+      const { mod } = await loadModule();
+      const local = mod.getBackendClient();
+      const remote = await mod.connectBackendClient(GUEST.id);
+      mod.registerBackendHandlers();
+      const sender = BrowserWindow.getAllWindows()[0].webContents;
+      const request = findHandler('backend:request')!;
+      vi.mocked(local.request).mockClear();
+      vi.mocked(remote.request).mockClear();
+      for (const method of ['pairing.getSelfInfo', 'client.list']) {
+        await request({ sender }, { method });
+        expect(remote.request).toHaveBeenCalledWith(method, undefined, { timeoutMs: undefined });
+      }
+      vi.mocked(remote.request).mockRejectedValueOnce(new Error('access-revoked'));
+      await expect(request({ sender }, { method: 'pairing.getSelfInfo' })).resolves.toMatchObject({
+        ok: false,
+      });
+      expect(local.request).not.toHaveBeenCalled();
+      expect(vi.mocked(remote.request).mock.calls.map(([method]) => method)).not.toContain(
+        'server.pairingInfo',
+      );
+    },
+  );
 
   it('guest-sessions:list distinguishes no pooled client, open-disconnected and open-connected', async () => {
     installGuest();
