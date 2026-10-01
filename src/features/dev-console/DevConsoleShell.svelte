@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { Screen, ScreenHeader, ScreenBody } from '$lib/components/patterns/screen';
   import { Store } from '@themislib/themis/svelte-store';
   import {
     devConsoleReducer,
@@ -30,8 +31,12 @@
   });
 </script>
 
-<main data-dev-console-ready={$state$.update !== null}>
-  <h1>{m.devConsole_title_label()}</h1>
-  {#if $state$.error}<p role="alert">{$state$.error}</p>{/if}
-  {#if $state$.update}<p>{$state$.update.backendId}</p>{/if}
-</main>
+<Screen role="main" data-dev-console-ready={$state$.update !== null}>
+  <ScreenHeader>
+    {#snippet title()}<h1>{m.devConsole_title_label()}</h1>{/snippet}
+  </ScreenHeader>
+  <ScreenBody>
+    {#if $state$.error}<p role="alert">{$state$.error}</p>{/if}
+    {#if $state$.update}<p>{$state$.update.backendId}</p>{/if}
+  </ScreenBody>
+</Screen>
