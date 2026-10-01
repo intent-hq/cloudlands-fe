@@ -26,6 +26,7 @@ vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
 
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import UnifiedCommentThread from '../UnifiedCommentThread.svelte';
+import ResponsiveCommentThread from '../ResponsiveCommentThread.svelte';
 import TooltipWrapper from './TooltipWrapper.svelte';
 
 describe('UnifiedCommentThread', () => {
@@ -272,4 +273,47 @@ describe('UnifiedCommentThread', () => {
     lineClamp = container.querySelector('.line-clamp-2');
     expect(lineClamp).toBeTruthy();
   });
+});
+
+describe('qualified comment author presentation', () => {
+  it.each(['full', 'compact', 'icon'] as const)(
+    'distinguishes identical labels in %s mode without requiring a local principal',
+    async (displayMode) => {
+      const people = [
+        { provider: 'github', host: 'github.com', externalUserId: '42' },
+        { provider: 'gitlab', host: 'gitlab.com', externalUserId: '42' },
+        { provider: 'gitlab', host: 'other.example', externalUserId: '42' },
+        { provider: 'gitlab', host: 'other.example', externalUserId: '43' },
+      ];
+      const labels: string[] = [];
+      for (const [index, authorIdentity] of people.entries()) {
+        const comment = {
+          id: `c-${index}`,
+          author: 'same',
+          authorType: 'user',
+          authorIdentity,
+          content: 'body',
+          type: 'comment',
+          createdAt: '2026-01-01T00:00:00Z',
+        };
+        const view = render(TooltipWrapper, {
+          props: {
+            component: ResponsiveCommentThread,
+            props: { comment, displayMode, workspace: { id: 'ws' } },
+          },
+        });
+        await waitFor(() =>
+          expect(view.container.querySelector('[data-comment-author]')).not.toBeNull(),
+        );
+        const label =
+          view.container.querySelector('[data-comment-author]')?.getAttribute('aria-label') ?? '';
+        expect(label).toContain('same');
+        expect(label).toContain(authorIdentity.host);
+        expect(label).toContain(authorIdentity.externalUserId);
+        labels.push(label);
+        view.unmount();
+      }
+      expect(new Set(labels).size).toBe(4);
+    },
+  );
 });
