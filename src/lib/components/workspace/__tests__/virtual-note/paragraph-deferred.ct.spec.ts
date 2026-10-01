@@ -99,6 +99,7 @@ async function sameSplit(page: Page, expected: string) {
           .slice(
             position(proof.projection!.start),
             position(proof.projection!.start + proof.projection!.source.length),
+            true,
           )
           .content.toJSON(),
       },
