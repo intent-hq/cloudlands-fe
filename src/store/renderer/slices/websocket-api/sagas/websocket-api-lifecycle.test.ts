@@ -135,6 +135,85 @@ afterEach(() => {
 });
 
 describe('API production-owner lifecycle', () => {
+  it.each([5181, 5183])(
+    'enables without pinning the displayed default and uses daemon-selected port %i',
+    async (selectedPort) => {
+      settings['server.wsApi.enabled'] = false;
+      const backend = mocks.backend.getMockImplementation()!;
+      mocks.backend.mockImplementation(
+        (method: string, params?: { changes: AppSettingChange[] }) => {
+          if (method === 'settings.update') {
+            for (const change of params?.changes ?? [])
+              settings[change.path] = change.value as boolean | number | string[];
+            // Model the daemon assigning and persisting a port before acknowledging enable.
+            if (settings['server.wsApi.enabled']) settings['server.wsApi.port'] = selectedPort;
+          }
+          return backend(method, params);
+        },
+      );
+
+      const onEnabled = vi.fn();
+      render(WebSocketApiSettings, { expanded: true, onEnabled });
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+      );
+      const input = (await screen.findByRole('spinbutton', {
+        name: m.settings_wsApi_port_label(),
+      })) as HTMLInputElement;
+      await waitFor(() => {
+        expect(input.disabled).toBe(false);
+        expect(input.value).toBe('5181');
+      });
+      const toggle = screen.getByRole('switch');
+      await fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(onEnabled).toHaveBeenCalledTimes(1);
+        expect(input.disabled).toBe(false);
+        expect(input.value).toBe(String(selectedPort));
+        expect(toggle.getAttribute('aria-checked')).toBe('true');
+      });
+      expect(mocks.backend.mock.calls.filter(([method]) => method === 'settings.update')).toEqual([
+        ['settings.update', { changes: [{ path: 'server.wsApi.enabled', value: true }] }],
+      ]);
+      expect(mocks.backend).toHaveBeenCalledWith('server.pairingInfo', undefined, undefined);
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.settings_wsApi_shareLink_label() }),
+      );
+      await vi.waitFor(() => expect(mocks.clipboard).toHaveBeenCalledTimes(1));
+      expect(new URL(mocks.clipboard.mock.calls[0][0]).searchParams.get('port')).toBe(
+        String(selectedPort),
+      );
+      await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }));
+      await screen.findByRole('img', { name: m.settings_wsApi_qrImageAlt() });
+      expect(new URL(mocks.qr.mock.calls[0][0]).searchParams.get('port')).toBe(
+        String(selectedPort),
+      );
+      await fireEvent.keyDown(document, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+      // Subsequent toggles carry no port mutation and retain the persisted selection.
+      await fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(mocks.ipc).toHaveBeenCalledWith('connections:unpublish-self');
+        expect(toggle.getAttribute('aria-checked')).toBe('false');
+        expect(input.disabled).toBe(false);
+      });
+      await fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(onEnabled).toHaveBeenCalledTimes(2);
+        expect(toggle.getAttribute('aria-checked')).toBe('true');
+        expect(input.disabled).toBe(false);
+        expect(input.value).toBe(String(selectedPort));
+      });
+      expect(mocks.backend.mock.calls.filter(([method]) => method === 'settings.update')).toEqual([
+        ['settings.update', { changes: [{ path: 'server.wsApi.enabled', value: true }] }],
+        ['settings.update', { changes: [{ path: 'server.wsApi.enabled', value: false }] }],
+        ['settings.update', { changes: [{ path: 'server.wsApi.enabled', value: true }] }],
+      ]);
+    },
+  );
+
   const mutations: {
     name: string;
     intent: WebSocketApiIntent;

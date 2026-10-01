@@ -13,6 +13,7 @@ const {
   backendRequestMock,
   workspaceItemsState,
   sessionSessions,
+  localNotes,
   reduxDispatchMock,
   browserRecentUrls,
   createSelectorReadable,
@@ -43,6 +44,7 @@ const {
     backendRequestMock: vi.fn(async () => ({ files: [], matches: [] })),
     workspaceItemsState: { value: [] as any[] },
     sessionSessions: { value: [] as any[] },
+    localNotes: { value: [] as any[] },
     reduxDispatchMock: vi.fn(),
     browserRecentUrls: { value: [] as any[] },
     createSelectorReadable,
@@ -178,7 +180,11 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: Object.assign(
-    vi.fn((workspaceIdArg: any) => createSelectorReadable(workspaceIdArg, () => [])),
+    vi.fn((workspaceIdArg: any) =>
+      createSelectorReadable(workspaceIdArg, (wsId) =>
+        localNotes.value.filter((n) => n.workspaceId === wsId),
+      ),
+    ),
     { select: vi.fn(() => []) },
   ),
 }));
@@ -246,6 +252,8 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 }));
 
 import CommandPalette from './CommandPalette.svelte';
+import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { recordPaletteMruItem } from '$store/renderer/slices/palette/palette-slice';
 import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
 import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
@@ -558,6 +566,15 @@ describe('CommandPalette new actions', () => {
     }
   });
 
+  it('opens Dev Console through the native bridge from the command palette', async () => {
+    const nativeInvoke = vi.spyOn(window.electronAPI, 'invoke').mockResolvedValue({ windowId: 42 });
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Dev Console' } });
+    await fireEvent.click(await screen.findByRole('button', { name: /Dev Console/ }));
+    expect(nativeInvoke).toHaveBeenCalledWith('dev-console:open', {});
+    nativeInvoke.mockRestore();
+  });
+
   it('exposes composer commands with their keyboard hints', async () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
     const input = screen.getByRole('textbox');
@@ -827,5 +844,226 @@ describe('CommandPalette chat message rows', () => {
     expect(ghost.textContent).not.toContain('undefined');
     expect(ghost.textContent).not.toContain('·');
     expect(ghost.textContent).toContain('hello from nowhere');
+  });
+});
+
+describe('CommandPalette indexed notes', () => {
+  const hit = (workspaceId = 'other', noteId = 'spec') => ({
+    workspaceId,
+    noteId,
+    title: 'Remote plan',
+    preview: 'needle <img src=x onerror=alert(1)> **plain**',
+    score: 2,
+    updatedAt: '2026-10-01T00:00:00Z',
+    isArchived: false,
+    workspaceArchived: true,
+  });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localNotes.value = [];
+    sessionSessions.value = [];
+    browserRecentUrls.value = [];
+    paletteMruEntries.value = [];
+    workspaceItemsState.value = [{ id: 'other', title: 'Other space', repositoryName: 'repo' }];
+    window.history.replaceState({}, '', '/workspace/ws-1');
+    gotoMock.mockImplementation(async (url: string) => {
+      window.history.replaceState({}, '', url);
+    });
+    backendRequestMock.mockImplementation(async (method: string) =>
+      method === 'search.notes'
+        ? { indexed: true, requestId: 'r', matches: [hit()] }
+        : { files: [], matches: [] },
+    );
+  });
+
+  it.each(['needle', '#needle'])(
+    'renders body-only matches as text with ownership for %s',
+    async (initialQuery) => {
+      const { container } = render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'ws-1', initialQuery, onClose: vi.fn() },
+      });
+      const row = await screen.findByRole('button', { name: /Remote plan/ });
+      expect(row.textContent).toContain('Other space');
+      expect(row.textContent).toContain('Archived workspace');
+      expect(row.textContent).toContain(hit().preview);
+      expect(container.querySelector('img')).toBeNull();
+      expect(backendRequestMock).toHaveBeenCalledWith('search.notes', {
+        query: 'needle',
+        limit: 10,
+        includeArchived: false,
+        preferWorkspaceId: 'ws-1',
+      });
+    },
+  );
+
+  it.each([false, true])(
+    'opens the owning workspace and preserves adjacent=%s, recording composite MRU',
+    async (adjacent) => {
+      render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '#needle', onClose: vi.fn() },
+      });
+      const row = await screen.findByRole('button', { name: /Remote plan/ });
+      if (adjacent)
+        await fireEvent.keyDown(screen.getByRole('textbox'), {
+          key: 'Enter',
+          metaKey: true,
+          ctrlKey: true,
+        });
+      else await fireEvent.click(row);
+      await waitFor(() =>
+        expect(reduxDispatchMock).toHaveBeenCalledWith(
+          openWorkspaceNote('other', 'spec', { openInAdjacentPanel: adjacent }),
+        ),
+      );
+      expect(gotoMock).toHaveBeenCalledWith('/workspace/other');
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        recordPaletteMruItem('note', JSON.stringify(['other', 'spec']), expect.any(Number)),
+      );
+    },
+  );
+
+  it('keeps identical note IDs from different workspaces selectable', async () => {
+    backendRequestMock.mockImplementation(async (method: string) =>
+      method === 'search.notes'
+        ? { indexed: true, matches: [hit('ws-1'), { ...hit(), title: 'Other plan' }] }
+        : { files: [], matches: [] },
+    );
+    render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '#needle', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Remote plan/ });
+    await fireEvent.click(screen.getByRole('button', { name: /Other plan/ }));
+    await waitFor(() =>
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceNote('other', 'spec', { openInAdjacentPanel: false }),
+      ),
+    );
+  });
+
+  it('falls back to workspace ID when metadata is absent', async () => {
+    workspaceItemsState.value = [];
+    render(CommandPalette, { props: { isOpen: true, initialQuery: '#needle', onClose: vi.fn() } });
+    const row = await screen.findByRole('button', { name: /Remote plan/ });
+    expect(row.textContent).toContain('other');
+    expect(row.textContent).not.toContain('undefined');
+  });
+
+  it.each(['legacy', 'error'])(
+    'retains local title/tag discovery on %s responses',
+    async (mode) => {
+      localNotes.value = [
+        {
+          id: 'tag',
+          workspaceId: 'ws-1',
+          title: 'Local plan',
+          tags: ['needle'],
+          updatedAt: '2026-10-01T00:00:00Z',
+        },
+      ];
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'search.notes') {
+          if (mode === 'error') throw new Error('offline');
+          return { matches: [hit()] };
+        }
+        return { files: [], matches: [] };
+      });
+      render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '#needle', onClose: vi.fn() },
+      });
+      const row = await screen.findByRole('button', { name: /Local plan/ });
+      await waitFor(() =>
+        expect(backendRequestMock).toHaveBeenCalledWith('search.notes', expect.anything()),
+      );
+      expect(screen.queryByRole('button', { name: /Remote plan/ })).toBeNull();
+      await fireEvent.click(row);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceNote('ws-1', 'tag', { openInAdjacentPanel: false }),
+      );
+    },
+  );
+
+  it('browses local notes without querying and reads legacy MRU IDs', async () => {
+    localNotes.value = [
+      { id: 'spec', workspaceId: 'ws-1', title: 'Local spec', updatedAt: '2026-10-01T00:00:00Z' },
+    ];
+    paletteMruEntries.value = [{ type: 'note', id: 'spec', timestamp: 1 }];
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /Local spec/ })).toHaveLength(2),
+    );
+    expect(backendRequestMock.mock.calls.some(([method]) => method === 'search.notes')).toBe(false);
+  });
+
+  it('does not open a note or record MRU when workspace navigation fails', async () => {
+    gotoMock.mockRejectedValueOnce(new Error('navigation cancelled'));
+    render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '#needle', onClose: vi.fn() },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: /Remote plan/ }));
+    await waitFor(() => expect(gotoMock).toHaveBeenCalled());
+    expect(
+      reduxDispatchMock.mock.calls.some(
+        ([action]) =>
+          action.type === openWorkspaceNote.type || action.type === recordPaletteMruItem.type,
+      ),
+    ).toBe(false);
+  });
+
+  it('invalidates an old workspace request and keeps the latest ranked hits', async () => {
+    const pending: Array<(value: any) => void> = [];
+    backendRequestMock.mockImplementation((method: string) =>
+      method === 'search.notes'
+        ? new Promise((resolve) => pending.push(resolve))
+        : Promise.resolve({ files: [], matches: [] }),
+    );
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '#needle', onClose: vi.fn() },
+    });
+    await waitFor(() => expect(pending).toHaveLength(1));
+    await view.rerender({ workspaceId: 'other' });
+    await waitFor(() => expect(pending).toHaveLength(2));
+    pending[1]({ indexed: true, matches: [{ ...hit(), title: 'Current result' }] });
+    await screen.findByRole('button', { name: /Current result/ });
+    pending[0]({ indexed: true, matches: [hit()] });
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: '#fresh' } });
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Current result/ })).toBeNull(),
+    );
+    expect(screen.queryByRole('button', { name: /Remote plan/ })).toBeNull();
+    view.unmount();
+  });
+
+  it('does not query notes under another class filter or after unmount', async () => {
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '@needle', onClose: vi.fn() },
+    });
+    await waitFor(() =>
+      expect(backendRequestMock).toHaveBeenCalledWith('search.messages', expect.anything()),
+    );
+    expect(backendRequestMock.mock.calls.some(([method]) => method === 'search.notes')).toBe(false);
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: '#needle' } });
+    view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    expect(backendRequestMock.mock.calls.some(([method]) => method === 'search.notes')).toBe(false);
+  });
+
+  it('discards in-flight notes on close and unmount', async () => {
+    let resolve!: (response: any) => void;
+    backendRequestMock.mockImplementation((method: string) =>
+      method === 'search.notes'
+        ? new Promise((r) => {
+            resolve = r;
+          })
+        : Promise.resolve({ files: [], matches: [] }),
+    );
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '#needle', onClose: vi.fn() },
+    });
+    await waitFor(() => expect(resolve).toBeDefined());
+    await view.rerender({ isOpen: false });
+    resolve({ indexed: true, matches: [hit()] });
+    await view.rerender({ isOpen: true, initialQuery: '' });
+    expect(screen.queryByRole('button', { name: /Remote plan/ })).toBeNull();
+    view.unmount();
   });
 });

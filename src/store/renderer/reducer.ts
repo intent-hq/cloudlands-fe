@@ -28,6 +28,7 @@ import { systemStatusReducer } from './slices/system-status/system-status-slice'
 import { transientUiReducer } from './slices/transient-ui/transient-ui-slice';
 import { workspaceOperationsReducer } from './slices/workspace-operations/workspace-operations-slice';
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
+import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -138,6 +139,7 @@ export const reducers = {
   transientUi: transientUiReducer,
   userPreferences: userPreferencesReducer,
   workspaceAgents: workspaceAgentsReducer,
+  agentMutationUi: agentMutationUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   workspaceTasks: workspaceTasksReducer,

@@ -1,4 +1,11 @@
 import { agentRetirementSupportReceived } from './workspace-agents-slice';
+import {
+  createAgentFromConfigRequested,
+  agentCreationFinished,
+  clearAgentCreationOutcome,
+} from './workspace-agents-slice';
+import { selectAgentCreationOutcome } from './workspace-agents-selectors';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import type { AgentSession, AgentStatus } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
@@ -83,6 +90,122 @@ import { restoreStoredSessions, upsertSession } from '../agent-session/agent-ses
 import type { StoredAgentSession } from '../agent-session/agent-session-types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+
+describe('correlated agent creation outcomes', () => {
+  const request = (consumerId = 'card', workspaceId = 'ws-a', resourceId = 'primitive-a') =>
+    createAgentFromConfigRequested(
+      workspaceId,
+      { workspaceId: WorkspaceId(workspaceId) },
+      {
+        consumer: { id: consumerId, resourceId },
+      },
+    );
+  const selectOutcome = (
+    state: ReturnType<typeof workspaceAgentsReducer>,
+    consumerId = 'card',
+    workspaceId = 'ws-a',
+    resourceId = 'primitive-a',
+  ) =>
+    selectAgentCreationOutcome.select(
+      { workspaceAgents: state } as StoreState,
+      consumerId,
+      workspaceId,
+      resourceId,
+    );
+
+  it('preserves legacy callers and only exposes a pending request to its workspace/resource/consumer', () => {
+    const legacy = createAgentFromConfigRequested('ws-a', { workspaceId: WorkspaceId('ws-a') });
+    expect(workspaceAgentsReducer(initialState, legacy)).toBe(initialState);
+    const action = request();
+    const pending = workspaceAgentsReducer(initialState, action);
+    expect(selectOutcome(pending)).toMatchObject({ seq: action.seq, status: 'pending' });
+    expect(selectOutcome(pending, 'other')).toBeUndefined();
+    expect(selectOutcome(pending, 'card', 'ws-b')).toBeUndefined();
+    expect(selectOutcome(pending, 'card', 'ws-a', 'primitive-b')).toBeUndefined();
+  });
+
+  it('rejects stale completions and stale consumption even when request payloads are identical', () => {
+    const first = request();
+    const second = request();
+    let state = workspaceAgentsReducer(workspaceAgentsReducer(initialState, first), second);
+    const stale = agentCreationFinished({
+      id: 'card',
+      workspaceId: 'ws-a',
+      resourceId: 'primitive-a',
+      seq: first.seq,
+      status: 'success',
+      agentId: 'old',
+    });
+    expect(workspaceAgentsReducer(state, stale)).toBe(state);
+    expect(workspaceAgentsReducer(state, clearAgentCreationOutcome('card', first.seq))).toBe(state);
+    state = workspaceAgentsReducer(
+      state,
+      agentCreationFinished({
+        id: 'card',
+        workspaceId: 'ws-a',
+        resourceId: 'primitive-a',
+        seq: second.seq,
+        status: 'success',
+        agentId: 'new',
+      }),
+    );
+    expect(selectOutcome(state)).toMatchObject({
+      seq: second.seq,
+      status: 'success',
+      agentId: 'new',
+    });
+    expect(workspaceAgentsReducer(state, stale)).toBe(state);
+    state = workspaceAgentsReducer(state, clearAgentCreationOutcome('card', second.seq));
+    expect(selectOutcome(state)).toBeUndefined();
+    expect(workspaceAgentsReducer(state, stale)).toBe(state);
+  });
+
+  it.each(['failure', 'cancelled'] as const)(
+    'settles %s and ignores terminal results after consumer teardown',
+    (status) => {
+      const action = request();
+      const pending = workspaceAgentsReducer(initialState, action);
+      const finished = agentCreationFinished({
+        id: 'card',
+        workspaceId: 'ws-a',
+        resourceId: 'primitive-a',
+        seq: action.seq,
+        status,
+        error: 'not completed',
+      });
+      expect(selectOutcome(workspaceAgentsReducer(pending, finished))).toMatchObject({
+        status,
+        error: 'not completed',
+      });
+      const cleared = workspaceAgentsReducer(pending, clearAgentCreationOutcome('card'));
+      expect(workspaceAgentsReducer(cleared, finished)).toBe(cleared);
+    },
+  );
+
+  it.each(['release', 'delete'])(
+    'clears only the affected workspace outcomes on %s even before agent hydration',
+    (operation) => {
+      const first = request();
+      const other = request('other-card', 'ws-b');
+      const pending = workspaceAgentsReducer(workspaceAgentsReducer(initialState, first), other);
+      const cleared = workspaceAgentsReducer(
+        pending,
+        operation === 'release' ? removeWorkspaceAgentState('ws-a') : workspaceDeleted('ws-a', []),
+      );
+      expect(selectOutcome(cleared)).toBeUndefined();
+      expect(selectOutcome(cleared, 'other-card', 'ws-b')).toMatchObject({ status: 'pending' });
+      const late = agentCreationFinished({
+        id: 'card',
+        workspaceId: 'ws-a',
+        resourceId: 'primitive-a',
+        seq: first.seq,
+        status: 'success',
+        agentId: 'late',
+      });
+      expect(workspaceAgentsReducer(cleared, late)).toBe(cleared);
+    },
+  );
+});
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';

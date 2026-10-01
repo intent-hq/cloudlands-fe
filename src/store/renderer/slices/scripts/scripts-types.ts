@@ -61,15 +61,7 @@ export type ScriptsWorkspaceState = {
   loading: boolean;
   lifecycleSupported?: boolean;
   activeScriptIds?: string[];
-  archivedScriptIds?: string[];
-  historyInitialized?: boolean;
-  historyLoading?: boolean;
-  historyError?: string;
-  historyVersion?: number;
-  historyLoadedVersion?: number;
   loadError?: string;
-  archiveGeneration?: number;
-  archiveOperation?: { pending: boolean; error?: string; changed?: number; skipped?: number };
 };
 
 /**

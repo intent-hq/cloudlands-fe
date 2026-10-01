@@ -9,6 +9,7 @@
    */
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
+  import { fileContentKey } from '$features/file/utils/file-content-key';
 
   import { selectOriginalFileContent } from '$store/renderer/slices/files/files-selectors';
   import { loadFileContentRequested } from '$store/renderer/slices/files/files-slice';
@@ -766,10 +767,11 @@
     const wsId = workspaceId;
     const filePath = resolveRelativeFilePath(change?.relativePath || change?.file || '');
     const absolutePath = getAbsoluteFilePath(filePath);
-    const fileKey = `${wsId}:${filePath}`;
+    const contentKey = gitRootId ? fileContentKey(absolutePath ?? filePath, gitRootId) : filePath;
+    const fileKey = `${wsId}:${contentKey}`;
 
     effectiveWorkspaceIdStore.set(wsId);
-    filePathStore.set(filePath);
+    filePathStore.set(contentKey);
 
     if (fileKey !== lastObservedWorkingTreeKey) {
       lastObservedWorkingTreeKey = fileKey;
@@ -790,7 +792,13 @@
       !loading &&
       !isGitlinkChange
     ) {
-      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
+      appStore.dispatch(
+        gitRootId
+          ? loadFileContentRequested(wsId, contentKey, absolutePath, {
+              gitRoot: { id: gitRootId, relativePath: filePath },
+            })
+          : loadFileContentRequested(wsId, filePath, absolutePath),
+      );
     }
   });
 

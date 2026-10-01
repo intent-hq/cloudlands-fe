@@ -846,3 +846,48 @@ describe('BrowserWebSocketTransport', () => {
     expect(transport.isAvailable()).toBe(false);
   });
 });
+
+// protocol-version-ok-file: connection-generation compatibility regression fixtures.
+describe('root file reads on the sending connection', () => {
+  it.each(['file.read', 'file.readChunk'])(
+    'rejects %s after a supported connection reconnects to an older daemon',
+    async (method) => {
+      vi.useFakeTimers();
+      const { transport, sockets } = createHarness({ reconnectDelayMs: 10 });
+      const params = { workspaceId: 'ws', path: 'same.txt', gitRootId: 'root-a' };
+      const first = transport.request(method, params);
+      sockets[0].open();
+      await flush();
+      sockets[0].receive({
+        jsonrpc: '2.0',
+        id: sockets[0].lastFrame().id,
+        result: { clientId: 'client', protocolVersion: '11.1' },
+      });
+      await flush();
+      sockets[0].receive({ jsonrpc: '2.0', id: sockets[0].lastFrame().id, result: 'root' });
+      expect(await first).toBe('root');
+      sockets[0].drop();
+      await vi.advanceTimersByTimeAsync(10);
+      const second = transport.request(method, params).catch((error) => error);
+      sockets[1].open();
+      await flush();
+      sockets[1].receive({
+        jsonrpc: '2.0',
+        id: sockets[1].lastFrame().id,
+        result: { clientId: 'client', protocolVersion: '11.0' },
+      });
+      await flush();
+      if (sockets[1].lastFrame().method === method) {
+        sockets[1].receive({
+          jsonrpc: '2.0',
+          id: sockets[1].lastFrame().id,
+          result: 'WRONG PRIMARY',
+        });
+      }
+      const result = await second;
+      transport.dispose();
+      expect(result).toBeInstanceOf(Error);
+      expect(sockets[1].sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+    },
+  );
+});

@@ -12,6 +12,7 @@ import {
   type MockBackendHandle,
 } from '../../../../test/mocks/backend-transport.mock';
 import AgentCard from '../AgentCard.svelte';
+import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
 import { store } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -139,6 +140,65 @@ describe('AgentCard direct retirement', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Forbidden');
     expect(selectAgentSession.select(store.state, agentId)?.retiredAt).toBeUndefined();
+  });
+
+  it.each(['success', 'failure'])(
+    'ignores an old %s after the retirement dialog changes workspace and agent',
+    async (result) => {
+      const pending = Promise.withResolvers<unknown>();
+      backend.onRequest('agent.retire', () => pending.promise);
+      const view = render(RetireAgentModal, {
+        open: true,
+        workspaceId: workspace.id,
+        agentId,
+        agentName: 'First agent',
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Retire Agent' }));
+      await waitFor(() =>
+        expect(backend.requests.filter((request) => request.method === 'agent.retire')).toEqual([
+          { method: 'agent.retire', params: { agentId, workspaceId: workspace.id } },
+        ]),
+      );
+      await view.rerender({
+        open: true,
+        workspaceId: 'other-workspace',
+        agentId: 'other-agent',
+        agentName: 'Next agent',
+      });
+      if (result === 'success') pending.resolve({ success: true, retiredAt });
+      else pending.reject(new Error('Old consumer failure'));
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(
+        (screen.getByRole('button', { name: 'Retire Agent' }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+      expect(backend.requests.filter((request) => request.method === 'agent.retire')).toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it('releases an unmounted dialog so its late error cannot poison a remounted consumer', async () => {
+    const pending = Promise.withResolvers<unknown>();
+    backend.onRequest('agent.retire', () => pending.promise);
+    const props = { open: true, workspaceId: workspace.id, agentId, agentName: 'First agent' };
+    const view = render(RetireAgentModal, props);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Retire Agent' }));
+    await waitFor(() =>
+      expect(backend.requests.filter((request) => request.method === 'agent.retire')).toHaveLength(
+        1,
+      ),
+    );
+    view.unmount();
+    render(RetireAgentModal, props);
+    pending.reject(new Error('Unmounted consumer failure'));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('alert')).toBeNull();
+    backend.onRequest('agent.retire', () => ({ success: true, retiredAt }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(backend.requests.filter((request) => request.method === 'agent.retire')).toHaveLength(2);
   });
 
   it.each(['retired', 'unsupported', 'read-only'])(

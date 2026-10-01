@@ -4,6 +4,49 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.195.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.194.0...v2.195.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* add session-scoped RPC Dev Console ([#3064](https://github.com/intent-hq/cloudlands-fe/issues/3064)) ([d5bf188](https://github.com/intent-hq/cloudlands-fe/commit/d5bf188f8d94416d65ce6a76fca31e4f63e0f14f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.131 ([#3069](https://github.com/intent-hq/cloudlands-fe/issues/3069)) ([84bccf2](https://github.com/intent-hq/cloudlands-fe/commit/84bccf2ce46cc0c7a08890b5670b863c2e1214fd))
+* bump intentd sidecar to v0.9.132 ([#3071](https://github.com/intent-hq/cloudlands-fe/issues/3071)) ([0dcf4eb](https://github.com/intent-hq/cloudlands-fe/commit/0dcf4ebfb283c2bb44eaf5b887f046edc77d6f9d))
+* open untracked files from secondary Git roots ([#3066](https://github.com/intent-hq/cloudlands-fe/issues/3066)) ([2ca43eb](https://github.com/intent-hq/cloudlands-fe/commit/2ca43ebbc7792f938412cef5d5b4624b3fada1c9))
+
+## [2.194.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.193.0...v2.194.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* search note bodies across workspaces in command palette ([#3055](https://github.com/intent-hq/cloudlands-fe/issues/3055)) ([6a9acaf](https://github.com/intent-hq/cloudlands-fe/commit/6a9acaff8c99616a3338b2052824f1b8d578b549))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.129 ([#3061](https://github.com/intent-hq/cloudlands-fe/issues/3061)) ([a0f0822](https://github.com/intent-hq/cloudlands-fe/commit/a0f0822a349b1fbe31b8187ec187b37efab1c1ed))
+* bump intentd sidecar to v0.9.130 ([#3063](https://github.com/intent-hq/cloudlands-fe/issues/3063)) ([b751605](https://github.com/intent-hq/cloudlands-fe/commit/b7516052ad07864ecd9fc10ef5e4cc35eefe8484))
+* recognize finite inline actionChannel consumers ([#3060](https://github.com/intent-hq/cloudlands-fe/issues/3060)) ([2fcc4c3](https://github.com/intent-hq/cloudlands-fe/commit/2fcc4c364e506d336fa473f4aba8074b4dfccf57))
+
+## [2.193.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.192.1...v2.193.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* add script history and reversible bulk archive controls ([#3041](https://github.com/intent-hq/cloudlands-fe/issues/3041)) ([09540a2](https://github.com/intent-hq/cloudlands-fe/commit/09540a286c3bd2c2932de8c21b273dc2ae6bcf84))
+* publish signed Intel Mac desktop builds ([#3040](https://github.com/intent-hq/cloudlands-fe/issues/3040)) ([bb5c7c6](https://github.com/intent-hq/cloudlands-fe/commit/bb5c7c6d7e8040bbf317fc6d4fa596123fae34ce))
+* show imported Claude agents and discovery diagnostics ([#3048](https://github.com/intent-hq/cloudlands-fe/issues/3048)) ([4d3c4bc](https://github.com/intent-hq/cloudlands-fe/commit/4d3c4bc01730396b06000806cc34ca511500134d))
+
+
+### 🐛 Bug Fixes
+
+* add manual Windows signing readiness checks ([#3052](https://github.com/intent-hq/cloudlands-fe/issues/3052)) ([5d7661b](https://github.com/intent-hq/cloudlands-fe/commit/5d7661bf06b782ffbf345cf87346a1076dbd595d))
+* bump intentd sidecar to v0.9.128 ([#3056](https://github.com/intent-hq/cloudlands-fe/issues/3056)) ([fa5318e](https://github.com/intent-hq/cloudlands-fe/commit/fa5318e0a26b21cb862b8b55563bc8698d662a9d))
+
 ## [2.192.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.192.0...v2.192.1) (2026-09-30)
 
 

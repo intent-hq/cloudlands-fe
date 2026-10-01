@@ -112,6 +112,29 @@ describe('LiveScriptsClient (fake transport)', () => {
     expect(result).toEqual({ success: true, id: 's-1', script: definition });
   });
 
+  it.each(['saved', 'oneOff'] as const)(
+    'forwards explicit %s purpose and returns the stored definition',
+    async (purpose) => {
+      const { runtime: _runtime, ...definition } = {
+        ...DEV_SCRIPT,
+        mode: 'command' as const,
+        autoStart: false,
+        purpose,
+      };
+      mockedRequest.mockResolvedValueOnce(definition);
+      const input = { name: 'test', command: 'pnpm test', mode: 'command' as const, purpose };
+      expect(await new LiveScriptsClient().create('ws-1', input)).toEqual({
+        success: true,
+        id: definition.id,
+        script: definition,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('script.create', {
+        workspaceId: 'ws-1',
+        ...input,
+      });
+    },
+  );
+
   it('create omits optional params and folds a daemon error to a failed result', async () => {
     const client = new LiveScriptsClient();
     mockedRequest.mockResolvedValueOnce({ id: 's-2' });
