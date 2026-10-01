@@ -91,6 +91,7 @@ export class LiveScriptsClient implements ScriptsClient {
         name: input.name,
         command: input.command,
         mode: input.mode,
+        ...(input.purpose !== undefined ? { purpose: input.purpose } : {}),
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
         ...(input.env !== undefined ? { env: input.env } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),

@@ -205,6 +205,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               name: entry.name,
               command: entry.command,
               mode: entry.mode as ScriptMode,
+              purpose: 'saved',
               category: (entry.category as ScriptCategory) || 'other',
               source: 'auto-detected',
             });
@@ -243,6 +244,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       name: s.name,
                       command: s.command,
                       mode: s.mode,
+                      purpose: s.purpose ?? 'saved',
                       category: s.category,
                       source: s.source || 'user',
                       cwd: s.cwd,
@@ -296,6 +298,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             name: entry.name,
             command: entry.command,
             mode: entry.mode as ScriptMode,
+            purpose: 'saved',
             category: (entry.category as ScriptCategory) || 'other',
             source: 'auto-detected',
           });
@@ -447,6 +450,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       name: s.name,
       command: s.command,
       mode: s.mode,
+      purpose: s.purpose ?? 'saved',
       category: s.category,
     }));
 
@@ -638,6 +642,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       name: newName.trim(),
       command: newCommand.trim(),
       mode: newMode,
+      purpose: 'saved',
       source: 'user',
     });
     if (result.success && result.data) {

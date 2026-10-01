@@ -27,6 +27,7 @@ import type {
   ScriptMode,
   ScriptCategory,
   ScriptSource,
+  ScriptPurpose,
 } from './types';
 import { createLogger } from '$lib/utils/client-logger';
 import { appClient } from '$lib/client';
@@ -40,6 +41,7 @@ const logger = createLogger('ScriptsClient');
 
 /** Input for creating a new script. */
 export interface CreateScriptInput {
+  purpose?: ScriptPurpose;
   name: string;
   command: string;
   cwd?: string;
@@ -91,6 +93,7 @@ export const scriptsClient = {
       name: script.name,
       command: script.command,
       mode: script.mode,
+      ...(script.purpose !== undefined ? { purpose: script.purpose } : {}),
       cwd: script.cwd,
       env: script.env,
       category: script.category,
@@ -241,6 +244,7 @@ export const scriptsClient = {
             name: candidate.name,
             command: candidate.command,
             mode: candidate.mode,
+            purpose: 'saved',
             category: candidate.category,
           });
           if (createResult.success) {
