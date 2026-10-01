@@ -53,10 +53,16 @@ export function connectDevConsole(
     });
   return {
     /** Fetch just the selected retained record; null means evicted/cleared. Do not cache after dispose. */
-    record: (recordId: string) =>
-      stopped
-        ? Promise.resolve(null)
-        : devConsoleInvoke('dev-console:record', { sessionId, recordId }),
+    record: async (recordId: string) => {
+      if (stopped) return null;
+      try {
+        const record = await devConsoleInvoke('dev-console:record', { sessionId, recordId });
+        return stopped ? null : record;
+      } catch (error) {
+        if (stopped) return null;
+        throw error;
+      }
+    },
     clear: () =>
       stopped ? Promise.resolve(false) : devConsoleInvoke('dev-console:clear', { sessionId }),
     select: (selection: DevConsoleCaptureSelection, enabled: boolean) =>

@@ -53,6 +53,29 @@ it('subscribes before first read, coalesces overlapping reads and ignores late r
   );
 });
 
+it('discards an on-demand payload reply arriving after the renderer bridge is disposed', async () => {
+  let resolveRecord!: (value: unknown) => void;
+  const invoke = vi.fn(async (channel: string) => {
+    if (channel === 'dev-console:connect') return { backendId: 'one', sessionId: 'session' };
+    if (channel === 'dev-console:read') return { sessionId: 'session', revision: 0 };
+    return new Promise((resolve) => {
+      resolveRecord = resolve;
+    });
+  });
+  window.electronAPI = { invoke, on: () => 'listener', offById: vi.fn() } as any;
+  const bridge = connectDevConsole(vi.fn(), vi.fn());
+  await vi.waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith('dev-console:read', {
+      sessionId: 'session',
+      afterRevision: -1,
+    }),
+  );
+  const pending = bridge.record('record');
+  bridge.dispose();
+  resolveRecord({ id: 'record', payload: { text: 'private late payload' } });
+  expect(await pending).toBeNull();
+});
+
 describe('capture delta and dedicated Redux state', () => {
   it('applies new and completed rows, evictions, clears and stale revisions without copying payloads', () => {
     const capture = new DevConsoleCaptureService({ maxRecords: 2 });
@@ -100,6 +123,9 @@ describe('capture delta and dedicated Redux state', () => {
       store.dispatch(consoleUpdated(initial));
       expect(Object.values(store.state.devConsole.rows)[0].status).toBe('success');
       expect(read(complete.revision).upserts).toEqual([]);
+      expect(read(-1).upserts).toHaveLength(1);
+      expect(read(-1).upserts[0].status).toBe('success');
+      expect(read(complete.revision + 100).upserts).toHaveLength(1);
       for (let i = 0; i < 3; i++)
         observe({ type: 'notification', method: 'notice', payload: i, connectionGeneration: 1 });
       store.dispatch(consoleUpdated(read(complete.revision)));
@@ -108,6 +134,15 @@ describe('capture delta and dedicated Redux state', () => {
       capture.clearSession('one', sessionId);
       store.dispatch(consoleUpdated(read()));
       expect(store.state.devConsole.rows).toEqual({});
+      capture.closeSession('one', sessionId);
+      const reopened = capture.openSession('one');
+      expect(capture.getUpdate('one', sessionId, -1)).toBeNull();
+      expect(capture.getRecord('one', sessionId, initial.recordIds[0])).toBeNull();
+      expect(capture.getUpdate('one', reopened.sessionId, -1)).toMatchObject({
+        recordIds: [],
+        upserts: [],
+        fullCapture: [],
+      });
       store.dispatch(consoleReset());
       expect(store.state.devConsole.update).toBeNull();
     } finally {

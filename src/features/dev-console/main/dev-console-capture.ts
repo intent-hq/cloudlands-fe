@@ -150,7 +150,7 @@ export class DevConsoleCaptureService {
       ...this.metadata(backendId, session),
       recordIds: entries.map(({ record }) => record.id),
       upserts: entries
-        .filter((entry) => entry.revision > afterRevision)
+        .filter((entry) => afterRevision > session.revision || entry.revision > afterRevision)
         .map(({ record }) => {
           const { text: _payloadText, ...payload } = record.payload;
           const response = record.response
