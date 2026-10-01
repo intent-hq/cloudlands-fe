@@ -5,9 +5,18 @@ import { DevConsoleCaptureService } from './main/dev-console-capture';
 const original = window.electronAPI;
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.electronAPI = original;
 });
 it('boots from the native console bridge alone and releases listeners on unmount', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   const capture = new DevConsoleCaptureService();
   const snapshot = capture.openSession('fixture-a');
   const invoke = vi.fn(async (channel: string) =>
