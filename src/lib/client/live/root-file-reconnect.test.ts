@@ -22,13 +22,13 @@ describe('production scoped readers across a daemon downgrade', () => {
       vi.useFakeTimers();
       const requests: Array<{ connection: number; method: string }> = [];
       let connections = 0;
+      const sockets: Socket[] = [];
       class Socket implements BrowserWebSocketLike {
         onopen: (() => void) | null = null;
         onclose: (() => void) | null = null;
         onerror: (() => void) | null = null;
         onmessage: ((event: { data: unknown }) => void) | null = null;
         readonly connection = ++connections;
-        private hellos = 0;
         constructor() {
           setTimeout(() => this.onopen?.(), 0);
         }
@@ -37,7 +37,6 @@ describe('production scoped readers across a daemon downgrade', () => {
           const { id, method } = JSON.parse(data);
           requests.push({ connection: this.connection, method });
           const first = this.connection === 1;
-          if (method === 'client.hello') this.hellos++;
           const result =
             method === 'client.hello'
               ? { clientId: 'client', protocolVersion: first ? '11.1' : '11.0' }
@@ -48,12 +47,8 @@ describe('production scoped readers across a daemon downgrade', () => {
                   : 'WRONG PRIMARY';
           setTimeout(() => {
             this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id, result }) });
-            // Drop after the renderer's support probe, or between binary chunks.
-            if (
-              first &&
-              ((kind === 'text' && this.hellos === 2) ||
-                (kind === 'chunks' && method === 'file.readChunk'))
-            ) {
+            // Reconnect between binary windows, before the next scoped read.
+            if (first && kind === 'chunks' && method === 'file.readChunk') {
               this.onclose?.();
             }
           }, 0);
@@ -61,12 +56,22 @@ describe('production scoped readers across a daemon downgrade', () => {
       }
       const transport = new BrowserWebSocketTransport({
         url: 'ws://localhost/rpc',
-        webSocketFactory: () => new Socket(),
+        webSocketFactory: () => {
+          const socket = new Socket();
+          sockets.push(socket);
+          return socket;
+        },
         reconnectDelayMs: 1,
       });
       vi.mocked(backendRequest).mockImplementation((method, params, options) =>
         transport.request(method, params, options),
       );
+      if (kind === 'text') {
+        const warm = transport.request('workspace.get');
+        await vi.advanceTimersByTimeAsync(10);
+        await warm;
+        sockets[0].onclose?.();
+      }
       const result = (
         kind === 'text'
           ? new LiveFilesClient().read('ws', 'same.txt', { gitRootId: 'root-a' })

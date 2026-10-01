@@ -1,4 +1,3 @@
-import { requireRootFileSupport } from '$lib/client/live/require-root-file-support';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
@@ -19,7 +18,6 @@ export async function readPdf(
   gitRootId?: string,
 ): Promise<Uint8Array<ArrayBuffer>> {
   signal.throwIfAborted();
-  if (gitRootId) await requireRootFileSupport();
   let data: Uint8Array<ArrayBuffer> | undefined;
   let offset = 0;
   do {

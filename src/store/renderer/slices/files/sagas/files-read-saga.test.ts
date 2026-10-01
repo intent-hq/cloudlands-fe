@@ -106,7 +106,6 @@ describe('filesReadSaga', () => {
 
   it('keeps root-scoped reads separate and never suffix-resolves a root read failure', async () => {
     vi.mocked(backendRequest).mockImplementation(async (method, params) => {
-      if (method === 'client.hello') return { protocolVersion: '11.1' }; // protocol-version-ok: root-read support fixture
       const { gitRootId } = params as { gitRootId?: string };
       if (gitRootId === 'missing-root') throw new Error('Unknown git root: missing-root');
       return gitRootId === 'root-a' ? 'root A' : 'primary';

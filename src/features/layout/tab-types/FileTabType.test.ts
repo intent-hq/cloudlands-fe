@@ -389,7 +389,6 @@ describe('FileTabType Redux integration', () => {
     'loads root-scoped Markdown under %s through the read saga and live client',
     async (parentPath) => {
       vi.mocked(backendRequest).mockImplementation(async (method, params) => {
-        if (method === 'client.hello') return { protocolVersion: '11.1' }; // protocol-version-ok: scoped-read support fixture
         if (method !== 'file.read') throw new Error(`Unexpected request: ${method}`);
         const request = params as { path: string; gitRootId?: string };
         if (request.path !== 'new.md') throw new Error(`Wrong path: ${request.path}`);
@@ -468,7 +467,6 @@ describe('FileTabType Redux integration', () => {
       const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:root-media');
       const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
       vi.mocked(backendRequest).mockImplementation(async (method) => {
-        if (method === 'client.hello') return { protocolVersion: '11.1' }; // protocol-version-ok: scoped-read support fixture
         if (method === 'file.readChunk') return { content: 'AAEC', bytesRead: 3, size: 3 };
         throw new Error(`Unexpected request: ${method}`);
       });

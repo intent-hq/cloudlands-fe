@@ -1,7 +1,7 @@
 import { m } from './paraglide/messages.js';
 
 /** Registered-root reads were added in protocol 11.1; unknown generations fail closed. */
-export function assertRootFileSupport(protocolVersion: unknown): void {
+function assertRootFileSupport(protocolVersion: unknown): void {
   const match =
     typeof protocolVersion === 'string' ? protocolVersion.match(/^(\d+)\.(\d+)(?:\.\d+)?$/) : null;
   if (!match || Number(match[1]) !== 11 || Number(match[2]) < 1) {
@@ -15,7 +15,11 @@ export function assertScopedFileReadSupport(
   params: unknown,
   protocolVersion: unknown,
 ): void {
-  if (method !== 'file.read' && method !== 'file.readChunk') return;
+  if (isScopedFileRead(method, params)) assertRootFileSupport(protocolVersion);
+}
+
+export function isScopedFileRead(method: string, params: unknown): boolean {
+  if (method !== 'file.read' && method !== 'file.readChunk') return false;
   const root = (params as { gitRootId?: unknown } | null)?.gitRootId;
-  if (typeof root === 'string' && root.trim()) assertRootFileSupport(protocolVersion);
+  return typeof root === 'string' && !!root.trim();
 }
