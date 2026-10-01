@@ -76,7 +76,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       await expect(component.locator('[role="checkbox"]')).toHaveAttribute('aria-checked', 'false');
     });
 
-    test('in-progress task should stay unchecked with in-progress status', async ({ mount }) => {
+    test('in-progress task should display a mixed checkbox', async ({ mount }) => {
       const component = await mount(TaskItemNodeView, {
         props: createMockProps({
           node: createMockNode({ checked: false, status: 'in-progress' }),
@@ -84,7 +84,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       });
 
       await expect(component).toHaveAttribute('data-status', 'in-progress');
-      await expect(component.locator('[role="checkbox"]')).toHaveAttribute('aria-checked', 'false');
+      await expect(component.locator('[role="checkbox"]')).toHaveAttribute('aria-checked', 'mixed');
     });
 
     test('done task should have checked checkbox', async ({ mount }) => {
@@ -119,10 +119,10 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
 
       // Verify updateAttributes was called with correct values
       await expect.poll(() => currentAttrs.status).toBe('in-progress');
-      expect(currentAttrs.checked).toBe(true);
+      expect(currentAttrs.checked).toBe(false);
     });
 
-    test('should move from in-progress to in-progress checked on check', async ({ mount }) => {
+    test('should move from in-progress to done on check', async ({ mount }) => {
       let currentAttrs: Record<string, unknown> = { checked: false, status: 'in-progress' };
 
       const component = await mount(TaskItemNodeView, {
@@ -135,11 +135,11 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       });
       const checkbox = component.locator('[role="checkbox"]');
 
-      await expect(checkbox).toHaveAttribute('aria-checked', 'false');
+      await expect(checkbox).toHaveAttribute('aria-checked', 'mixed');
       await checkbox.click();
 
       await expect.poll(() => currentAttrs.checked).toBe(true);
-      expect(currentAttrs.status).toBe('in-progress');
+      expect(currentAttrs.status).toBe('done');
     });
 
     test('should move from done back to todo on uncheck', async ({ mount }) => {

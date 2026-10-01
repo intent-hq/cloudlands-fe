@@ -65,3 +65,64 @@ it('a live native task view places editable content and remains usable after mou
     host.remove();
   }
 });
+
+it('native Mod-Enter cycles ordinary task status without altering selection or other attributes', async () => {
+  const editor = new Editor({
+    ...createEditorConfig({
+      element: document.createElement('div'),
+      content: '',
+      editable: true,
+      useMarkdown: true,
+      enableComments: false,
+      enableMentions: false,
+      onUpdate: () => {},
+    }),
+    content: await processMarkdownToHTML('- [ ] Native task'),
+  });
+  try {
+    editor.commands.setTextSelection(5);
+    editor.commands.updateAttributes('taskItem', { delegatedAgentId: 'agent-preserved' });
+    for (const [status, checked] of [
+      ['in-progress', false],
+      ['done', true],
+      ['todo', false],
+    ] as const) {
+      editor.commands.keyboardShortcut('Mod-Enter');
+      expect(editor.state.doc.firstChild!.firstChild!.attrs).toMatchObject({
+        status,
+        checked,
+        delegatedAgentId: 'agent-preserved',
+      });
+      expect(editor.state.selection.head).toBe(5);
+    }
+  } finally {
+    editor.destroy();
+    await tick();
+  }
+});
+
+it('keeps the existing linked task Mod-Enter path separate from the inline cycle', async () => {
+  const editor = new Editor({
+    ...createEditorConfig({
+      element: document.createElement('div'),
+      content: '',
+      editable: true,
+      useMarkdown: true,
+      enableComments: false,
+      enableMentions: false,
+      onUpdate: () => {},
+    }),
+    content: await processMarkdownToHTML('- [ ] [Linked task](intent://local/task/note-123)'),
+  });
+  try {
+    editor.commands.setTextSelection(5);
+    editor.commands.keyboardShortcut('Mod-Enter');
+    const item = editor.state.doc.firstChild!.firstChild!;
+    expect(item.attrs).toMatchObject({ status: 'todo', checked: true });
+    expect(item.firstChild!.firstChild!.marks[0].attrs.href).toBe('intent://local/task/note-123');
+    expect(editor.state.selection.head).toBe(5);
+  } finally {
+    editor.destroy();
+    await tick();
+  }
+});
