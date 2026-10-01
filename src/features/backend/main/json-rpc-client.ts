@@ -367,14 +367,7 @@ export class JsonRpcClient extends EventEmitter {
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
       const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
-      this.observeFrame(() => ({
-        type: 'request',
-        key: `out:${id}`,
-        direction: 'outbound',
-        requestId: id,
-        method,
-        payload: JSON.parse(payload).params,
-      }));
+      this.observeOutboundRequest(id, method, payload);
       const timeout = setTimeout(() => {
         this.pending.delete(id);
         this.observeFrame(() => ({
@@ -405,6 +398,19 @@ export class JsonRpcClient extends EventEmitter {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  private observeOutboundRequest(id: number, method: string, frame: string): void {
+    // Keep the frame out of sendNow's shared closure context: its timeout and
+    // pending callbacks outlive the write even when no observer is installed.
+    this.observeFrame(() => ({
+      type: 'request',
+      key: `out:${id}`,
+      direction: 'outbound',
+      requestId: id,
+      method,
+      payload: JSON.parse(frame).params,
+    }));
   }
 
   /** Caller-issued `client.hello`: merge in the persisted identity and observe the result. */
