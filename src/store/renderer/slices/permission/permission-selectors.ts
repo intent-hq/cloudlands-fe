@@ -1,4 +1,8 @@
-import { selectWorkspacePermissionContext } from '../workspace/workspace-selectors';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import {
+  selectWorkspaceManagementDenied,
+  selectWorkspacePermissionContext,
+} from '../workspace/workspace-selectors';
 import { store } from '../../store';
 import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PermissionRequest } from './permission-slice';
@@ -24,15 +28,24 @@ export const selectPendingCount = store.createSelector((state, sessionId: string
   return selectRequestsForSession.select(state, sessionId).length;
 });
 
-// Domain ownership follows admission plus known agent/workspace identity, not
-// every transcript update or an additional owner for principalReceived.
-export const selectPermissionRecoveryScope = store.createSelector((state) =>
+// Snapshot recovery follows the admitted subscription, not agent discovery.
+export const selectPermissionRecoveryScope = selectPrincipalActionContext;
+
+// Late identity/capability hydration can admit cached prompts without another RPC.
+export const selectPermissionRecoveryAgents = store.createSelector((state) =>
   JSON.stringify(
     Object.values(state.agentSessions.byAgentId)
-      .flatMap<[string, string, string]>((agent) => {
+      .flatMap<[string, string, string | null, boolean]>((agent) => {
         if (!agent.workspaceId) return [];
         const context = selectWorkspacePermissionContext.select(state, agent.workspaceId);
-        return context ? [[agent.id, agent.workspaceId, context]] : [];
+        return [
+          [
+            agent.id,
+            agent.workspaceId,
+            context,
+            selectWorkspaceManagementDenied.select(state, agent.workspaceId),
+          ],
+        ];
       })
       .sort((a, b) => a[0].localeCompare(b[0])),
   ),
