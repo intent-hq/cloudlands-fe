@@ -6921,5 +6921,6 @@
   "terminal_scriptOutput_retained_description": "一時的な出力のスナップショットです。上限は10,000行です。ライブ出力は別に表示されます。",
   "terminal_scriptOutput_retainedLoading_label": "保持された出力を読み込み中…",
   "terminal_scriptOutput_retainedUnavailable_label": "保持された出力は利用できません。",
-  "terminal_scriptOutput_live_label": "ライブ出力"
+  "terminal_scriptOutput_live_label": "ライブ出力",
+  "files_secondaryRoot_unsupported_error": "このデーモンは追加の Git ルートからファイルを読み取れません。更新して再接続してください。"
 }

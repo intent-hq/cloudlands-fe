@@ -101,6 +101,10 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice'
     type: 'workspaceNavigation/openWorkspaceCommitChangeset',
     payload: args,
   })),
+  openWorkspaceFile: vi.fn((...args: unknown[]) => ({
+    type: 'workspaceNavigation/openWorkspaceFile',
+    payload: args,
+  })),
   openWorkspaceDiff: vi.fn((...args: unknown[]) => ({
     type: 'workspaceNavigation/openWorkspaceDiff',
     payload: args,
@@ -471,6 +475,82 @@ describe('SecondaryRootChangesView', () => {
       });
       return { ...view, rows };
     }
+
+    it.each(['click', 'Enter', 'Space', 'modifier-click', 'modifier-Enter'])(
+      'opens an untracked file with %s using its literal root-absolute path',
+      async (activation) => {
+        const status = makeStatus('main');
+        status.files = [{ path: 'docs/new.md:17', status: '?', staged: false }];
+        mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+        const view = await renderView(makeEntry('main', 'root-9', undefined, '/repo/packages/sub'));
+        const row = await waitFor(() => view.getByTestId('secondary-root-file-open'));
+        const modifier = navigator.platform.toUpperCase().includes('MAC')
+          ? { metaKey: true }
+          : { ctrlKey: true };
+        if (activation === 'modifier-Enter') {
+          expect(await fireEvent.keyDown(row, { key: 'Enter', ...modifier })).toBe(false);
+        } else if (activation === 'modifier-click') {
+          await fireEvent.click(row, modifier);
+        } else {
+          if (activation !== 'click') {
+            // jsdom does not synthesize the native button click from keyboard events.
+            expect(
+              await fireEvent.keyDown(row, { key: activation === 'Space' ? ' ' : 'Enter' }),
+            ).toBe(true);
+          }
+          await fireEvent.click(row, { detail: activation === 'click' ? 1 : 0 });
+        }
+        const actions = mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'workspaceNavigation/openWorkspaceFile');
+        expect(actions).toEqual([
+          {
+            type: 'workspaceNavigation/openWorkspaceFile',
+            payload: [
+              'ws-1',
+              '/repo/packages/sub/docs/new.md:17',
+              {
+                filePathIsLiteral: true,
+                gitRootId: 'root-9',
+                gitRootPath: '/repo/packages/sub',
+                openInAdjacentPanel: activation.startsWith('modifier-'),
+                sourcePanelId: 'panel-focused',
+              },
+            ],
+          },
+        ]);
+        expect(diffActions()).toHaveLength(0);
+      },
+    );
+
+    it('keeps identical untracked paths in different roots distinct after switching roots', async () => {
+      const status = makeStatus('main');
+      status.files = [{ path: 'new.md', status: '?', staged: false }];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const view = await renderView(makeEntry('main', 'root-a', undefined, '/repo/packages/a'));
+      await fireEvent.click(await waitFor(() => view.getByTestId('secondary-root-file-open')));
+      await view.rerender({
+        workspaceId: 'ws-1',
+        entry: makeEntry('main', 'root-b', undefined, '/repo/packages/b'),
+      });
+      await fireEvent.click(await waitFor(() => view.getByTestId('secondary-root-file-open')));
+      const paths = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNavigation/openWorkspaceFile')
+        .map((action) => action.payload[1]);
+      expect(paths).toEqual(['/repo/packages/a/new.md', '/repo/packages/b/new.md']);
+      expect(diffActions()).toHaveLength(0);
+    });
+
+    it('keeps a deleted tracked file on the root-scoped diff route', async () => {
+      const status = makeStatus('main');
+      status.files = [{ path: 'old.md', status: 'D', staged: false }];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const view = await renderView(makeEntry('main', 'root-9', undefined, '/repo/packages/sub'));
+      await fireEvent.click(await waitFor(() => view.getByTestId('secondary-root-file-open')));
+      expect(diffActions()[0].payload[1]).toMatchObject({ status: 'deleted', stage: 'unstaged' });
+      expect(diffActions()[0].payload[2]).toMatchObject({ gitRootId: 'root-9' });
+    });
 
     it('opens a root-scoped unstaged diff with the root-relative path and absolute file', async () => {
       const { rows } = await renderRows();

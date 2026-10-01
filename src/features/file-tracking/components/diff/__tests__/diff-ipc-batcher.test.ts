@@ -1,3 +1,5 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 /**
  * Wire-contract tests for the daemon-backed diff batcher (D2).
  *
@@ -222,7 +224,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     mockDaemon({
       diffs: [{ path: 'src/a.ts', hunks: [HUNK] }],
       showFiles: { ':0:src/a.ts': 'old a' },
-      files: { '/workspace/packages/sub/src/a.ts': 'new a' },
+      files: { 'src/a.ts': 'new a' },
     });
 
     const promise = batchedGitDiff('ws-1', false, '/workspace/packages/sub/src/a.ts', {
@@ -245,8 +247,84 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
     expect(mockedRequest).toHaveBeenCalledWith('file.read', {
       workspaceId: 'ws-1',
-      path: '/workspace/packages/sub/src/a.ts',
+      path: 'src/a.ts',
+      gitRootId: 'root-9',
     });
+  });
+
+  it.each([false, true])('isolates external-root diff contents (staged=%s)', async (staged) => {
+    mockedRequest.mockImplementation(async (method, params) => {
+      const p = params as { gitRootId?: string; path?: string; ref?: string };
+      if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile')
+        return { content: p.ref === 'HEAD' || !staged ? 'EXTERNAL ORIGINAL' : 'EXTERNAL STAGED' };
+      if (method === 'file.read') {
+        if (p.gitRootId === 'external-root' && p.path === 'tracked.txt') return 'EXTERNAL MODIFIED';
+        return 'WRONG PRIMARY';
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const pending = batchedGitDiff('external-diff', staged, '/external/repo/tracked.txt', {
+      gitRootId: 'external-root',
+      gitRootPath: '/external/repo',
+    });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({
+      oldContent: 'EXTERNAL ORIGINAL',
+      newContent: staged ? 'EXTERNAL STAGED' : 'EXTERNAL MODIFIED',
+    });
+    if (!staged)
+      expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'external-diff',
+        path: 'tracked.txt',
+        gitRootId: 'external-root',
+      });
+    else expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
+  });
+
+  it.each([
+    new Error('Root reads unsupported'),
+    Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
+    Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+    new BackendError(
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Permission denied (os error 13)',
+      }).toErrorPayload(),
+    ),
+  ])('rejects scoped working-tree failures instead of fabricating deletion: %s', async (error) => {
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile') return { content: 'INDEX' };
+      throw error;
+    });
+    const pending = expect(
+      batchedGitDiff('scoped-error', false, 'tracked.txt', {
+        gitRootId: 'external-root',
+      }),
+    ).rejects.toThrow(error.message);
+    await vi.runAllTimersAsync();
+    await pending;
+  });
+
+  it('keeps an explicitly missing scoped file as a deleted working-tree side', async () => {
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'git.diffs') return [{ path: 'gone.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile') return { content: 'INDEX' };
+      throw new BackendError(
+        new JsonRpcError({
+          code: -32603,
+          message: 'Internal error',
+          data: 'No such file or directory (os error 2)',
+        }).toErrorPayload(),
+      );
+    });
+    const pending = batchedGitDiff('scoped-deleted', false, 'gone.txt', {
+      gitRootId: 'external-root',
+    });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ oldContent: 'INDEX', newContent: '' });
   });
 
   it('keeps every diff and file read on explicit workspace B when active workspace is A', async () => {
