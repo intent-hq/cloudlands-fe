@@ -13854,7 +13854,6 @@ it.each([
 ] as const)(
   'workspace lifecycle regression: MCP toggle burst starting %s for %s (saga first=%s)',
   async (firstDisabled, serverId, sagaFirst) => {
-    const { runSaga, stdChannel } = await import('redux-saga');
     const { workspaceCatalogSaga } =
       await import('$store/renderer/slices/provider-catalog/workspace-catalog-saga');
     const { workspaceMounted } =
@@ -13917,15 +13916,7 @@ it.each([
     ];
     backendRequestSpy.mockImplementation(() => Promise.resolve({ providers: [] }));
     await primeBridge();
-    const channel = stdChannel();
-    const dispatch = (action: any) => {
-      appStore.dispatch(action);
-      channel.put(action);
-    };
-    const task = runSaga(
-      { channel, dispatch, getState: () => appStore.state },
-      workspaceCatalogSaga,
-    );
+    const stopCatalogSaga = appStore.runSaga(workspaceCatalogSaga);
     const emitToggle = (disabled: boolean) => {
       for (const h of sagaFirst ? [...capturedHandlers].reverse() : [...capturedHandlers])
         h({
@@ -13966,8 +13957,7 @@ it.each([
       );
       expect(appStore.state.mcpSettings.byWorkspaceId['mcp-burst-B']?.disabledServers).toEqual({});
     } finally {
-      task.cancel();
-      await task.toPromise();
+      stopCatalogSaga();
       for (const spy of spies) spy.mockRestore();
     }
   },
