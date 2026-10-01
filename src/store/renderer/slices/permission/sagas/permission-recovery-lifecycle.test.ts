@@ -50,6 +50,8 @@ import {
 import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
 import { principalSaga } from '../../principal/sagas/principal-saga';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { daemonHealthSaga } from '../../daemon-health/sagas/daemon-health-saga';
 import { daemonEventsSaga } from '../../workspace-events/sagas/daemon-events-saga';
 import { permissionRecoverySaga } from './permission-recovery-saga';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
@@ -126,6 +128,15 @@ describe('permission recovery subscription boundary', () => {
           avatarUrl: null,
           isAdministrator: true,
         };
+      if (method === 'system.status')
+        return {
+          running: true,
+          listenMode: 'uds',
+          transports: ['uds'],
+          port: null,
+          protocolVersion: '2.6',
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'local' },
+        };
       if (method === 'agent.pendingPermissions') return { requests: [] };
       throw new Error(`Unexpected method ${method}`);
     });
@@ -149,6 +160,8 @@ describe('permission recovery subscription boundary', () => {
       .forEach((stop) => stop());
     dispose();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.doUnmock('$lib/components/patterns/notify');
   });
 
   it('waits for the new subscribe ack after disconnected then connected, and live boundary events win', async () => {
@@ -202,6 +215,76 @@ describe('permission recovery subscription boundary', () => {
     expect(getItems(store.state.permission.requests)).toEqual([]);
     expect(reads()).toHaveLength(1);
   });
+  it.each(['notification import', 'boot snapshot'] as const)(
+    'keeps reconnect acknowledgment current while a %s is held',
+    async (held) => {
+      boot();
+      await settle();
+      hydrateWorkspace();
+      await settle();
+      expect(reads()).toHaveLength(1);
+      const snapshot = deferred<{ status: string }>();
+      const notification = deferred<{ notify: { warning: ReturnType<typeof vi.fn> } }>();
+      const importNotification = vi.fn(() => notification.promise);
+      if (held === 'notification import') {
+        vi.doMock('$lib/components/patterns/notify', importNotification);
+      }
+      let statusHandler!: (payload: unknown) => void;
+      vi.stubGlobal('electronAPI', {
+        invoke: vi.fn((channel) =>
+          channel === IPC_CHANNELS.BACKEND.GET_STATUS
+            ? held === 'boot snapshot'
+              ? snapshot.promise
+              : Promise.resolve({ status: 'connected', transport: { versionMismatch: true } })
+            : Promise.resolve(undefined),
+        ),
+        on: vi.fn((channel, handler) => {
+          if (channel === IPC_CHANNELS.BACKEND.STATUS) statusHandler = handler;
+          return 'status-listener';
+        }),
+        offById: vi.fn(),
+      });
+      cancel.push(store.runSaga(daemonHealthSaga));
+      await settle();
+      if (held === 'notification import') {
+        await vi.waitFor(() => expect(importNotification).toHaveBeenCalledOnce());
+      }
+      statusHandler({ status: 'disconnected' });
+      statusHandler({ status: 'connecting' });
+      statusHandler({ status: 'connected' });
+      wire.subscribe.mockResolvedValueOnce({ subscriptionId: 'sub-new' });
+      wire.reconnect!();
+      await settle();
+      snapshot.resolve({ status: 'connected' });
+      const warning = vi.fn();
+      notification.resolve({ notify: { warning } });
+      if (held === 'notification import')
+        await vi.waitFor(() => expect(warning).toHaveBeenCalledOnce());
+      await settle();
+      hydrateWorkspace();
+      await settle();
+      expect(store.state.workspaceEvents.subscriptionPending).toBe(false);
+      expect(selectPrincipalActionContext.select(store.state)).not.toBeNull();
+      expect(reads()).toHaveLength(2);
+      expect(wire.subscribe).toHaveBeenCalledTimes(2);
+
+      // A genuinely newer drop still invalidates an acknowledgment in flight.
+      const staleAck = deferred<{ subscriptionId: string }>();
+      wire.subscribe.mockReturnValueOnce(staleAck.promise);
+      statusHandler({ status: 'disconnected' });
+      statusHandler({ status: 'connecting' });
+      statusHandler({ status: 'connected' });
+      wire.reconnect!();
+      await settle();
+      statusHandler({ status: 'disconnected' });
+      staleAck.resolve({ subscriptionId: 'sub-stale' });
+      await settle();
+      expect(store.state.workspaceEvents.subscriptionPending).toBe(true);
+      expect(selectPrincipalActionContext.select(store.state)).toBeNull();
+      expect(reads()).toHaveLength(2);
+    },
+  );
+
   async function bootGuest() {
     store.dispatch(setLabsMultiplayerEnabled(true));
     wire.subscribe.mockResolvedValue({ subscriptionId: 'sub-new' });
@@ -216,6 +299,15 @@ describe('permission recovery subscription boundary', () => {
           isAdministrator: false,
           hostRole: 'guest',
           hostMembershipRevision: 0,
+        };
+      if (method === 'system.status')
+        return {
+          running: true,
+          listenMode: 'uds',
+          transports: ['uds'],
+          port: null,
+          protocolVersion: '2.6',
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'local' },
         };
       if (method === 'agent.pendingPermissions') return { requests: [] };
       throw new Error(`Unexpected method ${method}`);
