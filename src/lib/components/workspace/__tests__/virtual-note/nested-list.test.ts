@@ -119,6 +119,7 @@ for (const repeats of [4000, 60000]) {
       expect(service.region(0)).toBe(source);
       expect(session.snapshot().maxParsedBytes).toBeLessThanOrEqual(16384);
       expect(session.snapshot().listMetadataBytes).toBeLessThanOrEqual(4096);
+      expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(4096);
       expect(session.snapshot().listProjectionPayloadBytes).toBeLessThanOrEqual(2 * 1024 * 1024);
       expect(session.snapshot().sourceReplicaPayloadBytes).toBeLessThanOrEqual(256 * 1024);
     } finally {

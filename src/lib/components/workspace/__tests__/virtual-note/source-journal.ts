@@ -224,9 +224,31 @@ export class SourceJournal {
       last = Math.min(overlaps.length - 1, first + 8);
     if (first) from = Math.max(from, overlaps[first].from + start);
     if (last < overlaps.length - 1) to = Math.min(to, overlaps[last].to + start);
-    for (const i of overlaps) {
-      if (from > i.from + start && from < i.body + start) from = i.body + start;
-      if (to > i.from + start && to < i.body + start) to = i.from + start;
+    const align = () => {
+      from = this.inlineBoundary(from, 1);
+      to = this.inlineBoundary(to, -1);
+      if (this.splitsSurrogate(from)) from++;
+      if (this.splitsSurrogate(to)) to--;
+      for (const i of overlaps) {
+        if (from > i.from + start && from < i.body + start) from = i.body + start;
+        if (to > i.from + start && to < i.body + start) to = i.from + start;
+      }
+    };
+    align();
+    // Backing-side sizing includes ancestor/ordinal/seam metadata and reserves edit headroom.
+    // This mock may scan its full index; only the final bounded context reaches the renderer.
+    while (
+      bytes(this.slice(from, to)) + bytes(JSON.stringify(this.inlineContext(from, to))) >
+      LIMITS.request - 512
+    ) {
+      const center = Math.max(from, Math.min(to, target));
+      const nextFrom = from + Math.ceil((center - from) / 8);
+      const nextTo = to - Math.ceil((to - center) / 8);
+      if (nextFrom === from && nextTo === to)
+        throw new Error('List context cannot fit the experiment budget');
+      from = nextFrom;
+      to = nextTo;
+      align();
     }
     return { from, to };
   }

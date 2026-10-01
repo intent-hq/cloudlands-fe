@@ -113,6 +113,7 @@ async function compare(page: Page, expected: string, at: number, liveBoundary = 
   expect(result.stats.cachePages).toBeLessThanOrEqual(4);
   expect(result.stats.pmNodes).toBeLessThanOrEqual(256);
   expect(result.stats.retainedEditorStates).toBe(0);
+  expect(result.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
   return result.stats;
 }
 // Compare native live groups directly. Canonical fresh-session topology is checked separately.
