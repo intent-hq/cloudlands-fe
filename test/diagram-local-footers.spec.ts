@@ -25,6 +25,15 @@ async function openNotes(page: Page, width = 960, motion = 'reduced') {
 
 async function settled(root: Locator) {
   await expect(root).toHaveAttribute('data-diagram-settled', 'true', { timeout: 30_000 });
+  await expect
+    .poll(() =>
+      root.evaluate((element) =>
+        element
+          .closest('[data-diagram-presentation]')
+          ?.getAttribute('data-diagram-presentation-settled'),
+      ),
+    )
+    .toBe('true');
 }
 
 async function position(host: Locator, diagram: number, top: number) {
