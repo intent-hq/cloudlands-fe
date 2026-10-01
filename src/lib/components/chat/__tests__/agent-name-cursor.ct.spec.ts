@@ -7,7 +7,12 @@ for (const cursor of ['pointer', 'default'] as const) {
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(AgentNameCursorPreview, { props: { cursor } });
+    const component = await mount(AgentNameCursorPreview, {
+      props: { cursor },
+      hooksConfig: {
+        mockBackend: { 'agent.rename': { success: true, name: 'Renamed developer' } },
+      },
+    });
     const name = component.getByTestId('agent-card-name');
     await expect(name).toHaveText('Demo developer');
     await expect(name).toHaveCSS('cursor', cursor);

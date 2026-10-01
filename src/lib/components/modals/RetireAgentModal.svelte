@@ -1,24 +1,51 @@
 <script lang="ts">
+  import { writable } from 'svelte/store';
   import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    agentMutationUiConsumed,
+    agentMutationUiReleased,
+    agentMutationUiRequested,
+  } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
 
   interface Props {
     open?: boolean;
     agentName: string;
-    onRetire: () => Promise<void>;
+    workspaceId: string;
+    agentId: string;
   }
 
-  let { open = $bindable(false), agentName, onRetire }: Props = $props();
-  let error = $state('');
+  let { open = $bindable(false), agentName, workspaceId, agentId }: Props = $props();
+  const consumerId = crypto.randomUUID();
+  const workspaceIdStore = writable('');
+  const outcome$ = selectAgentMutationUi(workspaceIdStore, consumerId);
+  const outcome = $derived(
+    $outcome$?.workspaceId === workspaceId && $outcome$.agentId === agentId ? $outcome$ : undefined,
+  );
+  const busy = $derived(outcome?.status === 'pending');
+  const error = $derived(outcome?.status === 'failed' ? outcome.error : '');
+  $effect(() => {
+    const wsId = workspaceId;
+    void agentId;
+    workspaceIdStore.set(wsId);
+    return () => appStore.dispatch(agentMutationUiReleased(wsId, consumerId));
+  });
+  $effect(() => {
+    if (outcome?.status !== 'succeeded') return;
+    open = false;
+    appStore.dispatch(agentMutationUiConsumed(workspaceId, consumerId, outcome.requestId));
+  });
 
-  async function retire() {
-    error = '';
-    try {
-      await onRetire();
-      open = false;
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : m.agent_mutation_retireFailed_error();
-    }
+  function retire() {
+    const current = selectAgentMutationUi.select(appStore.state, workspaceId, consumerId);
+    if (current?.agentId === agentId && current.status === 'pending') return;
+    appStore.dispatch(
+      agentMutationUiRequested(workspaceId, consumerId, crypto.randomUUID(), agentId, {
+        kind: 'retire',
+      }),
+    );
   }
 </script>
 
@@ -30,6 +57,7 @@
   cancelLabel={m.modals_bulkActionConfirm_cancel_label()}
   focusSubmit={false}
   focusCancel
+  {busy}
   onConfirm={retire}
 >
   {#snippet details()}
