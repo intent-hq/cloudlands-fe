@@ -357,3 +357,96 @@ test('Dev Console searches the end of an oversized payload with an explained fol
   expect(copied).not.toContain('\n');
   await expect(page.locator('footer')).toBeInViewport({ ratio: 1 });
 });
+
+for (const scenario of ['nested', 'oversized'] as const) {
+  test(`Dev Console keeps ${scenario} payloads usable while resizing between compact and split views`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    test.setTimeout(60000);
+    await page.setViewportSize({ width: 640, height: 400 });
+    await mount(Fixture, { props: { scenario } });
+    await page.locator('[data-index]').filter({ hasText: 'fixture.inspect' }).click();
+    for (const label of ['Request', 'Response / error']) {
+      const region = viewer(page, label);
+      await ready(region);
+      await region.getByRole('button', { name: 'Search', exact: true }).click();
+      await region
+        .getByRole('textbox', { name: 'Find', exact: true })
+        .fill(
+          scenario === 'oversized' && label === 'Request' ? 'large-payload-last-match' : 'second',
+        );
+      await expect(region.locator('.matchesCount')).toHaveText('1 of 1');
+    }
+    for (const height of [500, 501, 550, 600, 900, 1200, 501, 400]) {
+      await test.step(`640×${height} with both searches open`, async () => {
+        await page.setViewportSize({ width: 640, height });
+        for (const label of ['Request', 'Response / error']) {
+          const region = viewer(page, label);
+          // Budget actual native find controls, top padding, and two readable text lines.
+          await expect
+            .poll(
+              () =>
+                region.evaluate((host) => {
+                  const editor = host.querySelector('.monaco-editor');
+                  const line = host.querySelector('.view-line');
+                  const find = host.querySelector('.find-widget');
+                  if (!editor || !line || !find) return -1;
+                  return (
+                    editor.getBoundingClientRect().height -
+                    find.getBoundingClientRect().height -
+                    8 -
+                    2 * parseFloat(getComputedStyle(line).lineHeight)
+                  );
+                }),
+              { message: `${label} reading area at640×${height}` },
+            )
+            .toBeGreaterThanOrEqual(0);
+          await expect(region.getByRole('textbox', { name: 'Find', exact: true })).toBeInViewport({
+            ratio: 1,
+          });
+          // Resizing may change native scroll position; navigation must reveal the match again.
+          await region.getByRole('textbox', { name: 'Find', exact: true }).press('Enter');
+          await expect(region.locator('.currentFindMatch')).toBeInViewport({ ratio: 1 });
+          await expect(region.getByRole('button', { name: 'Search', exact: true })).toBeInViewport({
+            ratio: 1,
+          });
+          await expect(
+            region.locator('..').getByRole('button', { name: 'Copy payload', exact: true }),
+          ).toBeInViewport({ ratio: 1 });
+          await expect
+            .poll(async () => {
+              const host = await region.boundingBox();
+              const editor = await region.locator('.monaco-editor').boundingBox();
+              return editor!.y + editor!.height - (host!.y + host!.height);
+            })
+            .toBeLessThanOrEqual(0);
+        }
+        await expect(page.locator('footer')).toBeInViewport({ ratio: 1 });
+        await expect(page.getByRole('button', { name: 'Close details' })).toBeInViewport({
+          ratio: 1,
+        });
+        if (scenario === 'oversized') {
+          const request = viewer(page, 'Request');
+          await expect(request.getByRole('status')).toBeInViewport({ ratio: 1 });
+          await expect(
+            request.getByRole('button', { name: 'Collapse all', exact: true }),
+          ).toBeDisabled();
+        }
+        if (height === 1200) {
+          await expect(page.locator('.traffic-table')).toBeVisible();
+          await expect
+            .poll(async () => (await page.locator('.viewport').boundingBox())?.height ?? 0)
+            .toBeGreaterThan(100);
+          const table = await page.locator('.traffic-table').boundingBox();
+          const details = await page.locator('.details').boundingBox();
+          expect(table!.y + table!.height).toBeLessThanOrEqual(details!.y);
+          await testInfo.attach(`${scenario}-split-search`, {
+            body: await page.screenshot(),
+            contentType: 'image/png',
+          });
+        }
+      });
+    }
+  });
+}

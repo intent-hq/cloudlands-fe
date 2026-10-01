@@ -31,12 +31,18 @@
     position: fixed;
     top: 4px;
     right: 12px;
+    max-width: calc(100vw - 150px);
     z-index: 10;
     display: flex;
     align-items: center;
     gap: 12px;
     font: 11px monospace;
     color: hsl(var(--muted-foreground));
+  }
+  .fixture > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .fixture :global(.fixture-control) {
     border: 1px solid hsl(var(--border));
