@@ -3,11 +3,12 @@
   import type { editor as MonacoEditor } from 'monaco-editor';
   import { Button } from '$lib/components/ui/button';
   import * as m from '$shared/paraglide/messages.js';
-  import { payloadDocument } from './traffic-view';
+  import { payloadDocument, payloadSupportsRichView } from './traffic-view';
   import { initializePayloadMonaco } from './payload-monaco';
 
   let { text, label }: { text: string; label: string } = $props();
   const content = $derived(payloadDocument(text));
+  const richView = $derived(payloadSupportsRichView(content.text));
   let host: HTMLDivElement;
   let editor = $state.raw<MonacoEditor.IStandaloneCodeEditor | null>(null);
   let failed = $state(false);
@@ -16,6 +17,7 @@
   $effect(() => {
     // Track both content and readiness: replies can arrive while Monaco is loading.
     void content;
+    void richView;
     void label;
     if (editor) update?.();
   });
@@ -42,7 +44,8 @@
         defineMonacoThemes();
         const theme = () =>
           getActiveMonacoThemeName(document.documentElement.classList.contains('dark'));
-        model = monaco.editor.createModel(content.text, content.language);
+        let modelRichView = richView;
+        model = monaco.editor.createModel(content.text, richView ? content.language : 'plaintext');
         instance = monaco.editor.create(host, {
           model,
           theme: theme(),
@@ -56,7 +59,8 @@
           lineDecorationsWidth: 16,
           glyphMargin: false,
           scrollBeyondLastLine: false,
-          folding: true,
+          folding: richView,
+          largeFileOptimizations: true,
           foldingStrategy: 'indentation',
           showFoldingControls: 'always',
           renderLineHighlight: 'none',
@@ -67,11 +71,22 @@
           padding: { top: 8, bottom: 8 },
         });
         update = () => {
-          if (model!.getValue() !== content.text) model!.setValue(content.text);
-          if (model!.getLanguageId() !== content.language) {
-            monaco.editor.setModelLanguage(model!, content.language);
+          const language = richView ? content.language : 'plaintext';
+          if (modelRichView !== richView) {
+            // Monaco fixes its large-file capability at model construction time.
+            // Replace on boundary crossings so safeguards and rich features recover.
+            const previous = model!;
+            model = monaco.editor.createModel(content.text, language);
+            instance!.setModel(model);
+            previous.dispose();
+            modelRichView = richView;
+          } else {
+            if (model!.getValue() !== content.text) model!.setValue(content.text);
+            if (model!.getLanguageId() !== language) {
+              monaco.editor.setModelLanguage(model!, language);
+            }
           }
-          instance!.updateOptions({ ariaLabel: label });
+          instance!.updateOptions({ ariaLabel: label, folding: richView });
         };
         themeObserver = new MutationObserver(() => instance?.updateOptions({ theme: theme() }));
         themeObserver.observe(document.documentElement, {
@@ -103,18 +118,26 @@
     <Button size="compact" variant="ghost" disabled={!editor} onclick={() => run('actions.find')}>
       {m.devConsole_payload_search_label()}
     </Button>
-    <Button size="compact" variant="ghost" disabled={!editor} onclick={() => run('editor.foldAll')}>
+    <Button
+      size="compact"
+      variant="ghost"
+      disabled={!editor || !richView}
+      onclick={() => run('editor.foldAll')}
+    >
       {m.devConsole_payload_collapse_label()}
     </Button>
     <Button
       size="compact"
       variant="ghost"
-      disabled={!editor}
+      disabled={!editor || !richView}
       onclick={() => run('editor.unfoldAll')}
     >
       {m.devConsole_payload_expand_label()}
     </Button>
   </div>
+  {#if !richView}<span class="limitation" role="status"
+      >{m.devConsole_payload_large_description()}</span
+    >{/if}
   {#if !editor}
     {#if failed}<span role="status">{m.devConsole_payload_load_error()}</span>{/if}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (Fallback payload must be keyboard reachable.) -->
@@ -143,6 +166,11 @@
     flex: 1;
     min-height: 60px;
     min-width: 0;
+  }
+  .limitation {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    color: var(--muted-foreground);
   }
   .pending {
     position: absolute;

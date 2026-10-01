@@ -4,6 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PayloadViewer from './PayloadViewer.svelte';
 import PayloadDetails from './PayloadDetails.svelte';
 import type { DevConsoleRecord } from '$shared/types/dev-console';
+const richViewSupported = vi.hoisted(() => vi.fn(() => true));
+vi.mock('./traffic-view', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./traffic-view')>()),
+  payloadSupportsRichView: richViewSupported,
+}));
 import {
   configureMonacoWorkers,
   initializePayloadMonaco,
@@ -15,7 +20,10 @@ import {
 
 vi.mock('./payload-monaco', () => ({ initializePayloadMonaco: () => initializePayloadMonaco() }));
 
-beforeEach(resetMonaco);
+beforeEach(() => {
+  resetMonaco();
+  richViewSupported.mockReset().mockReturnValue(true);
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -58,43 +66,47 @@ it('creates a read-only JSON model and sends search/fold actions to the owning p
   expect(editors[0].getAction('editor.foldAll').run).not.toHaveBeenCalled();
 });
 
-it('preserves original-text copying and capture state labels for both payloads', async () => {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
-  const record: DevConsoleRecord = {
-    id: 'a',
-    method: 'test.call',
-    rpcMethod: 'test.call',
-    timestamp: 0,
-    direction: 'outbound',
-    kind: 'request',
-    backendId: 'one',
-    connectionId: 'main',
-    connectionGeneration: 1,
-    status: 'success',
-    payload: { state: 'complete', text: '{"x":1}', originalBytes: 7, retainedBytes: 7 },
-    response: { state: 'truncated', text: '{"partial":', originalBytes: 100, retainedBytes: 11 },
-  };
-  const view = render(PayloadDetails, {
-    row: record,
-    record,
-    full: false,
-    ontoggle: vi.fn(),
-    onclose: vi.fn(),
-  });
-  await waitFor(() => expect(editors).toHaveLength(2));
-  expect(models[0].getValue()).toBe('{\n  "x": 1\n}');
-  expect(models[1].getValue()).toBe(record.response!.text);
-  const copy = view.getAllByRole('button', { name: 'Copy payload', exact: true });
-  await fireEvent.click(copy[0]);
-  expect(writeText).toHaveBeenLastCalledWith('{"x":1}');
-  await fireEvent.click(copy[1]);
-  expect(writeText).toHaveBeenLastCalledWith('{"partial":');
-  expect(view.container.textContent).toContain('Truncated');
-  expect(view.container.textContent).toContain('11');
-  expect(view.container.textContent).toContain('100');
-  vi.unstubAllGlobals();
-});
+it.each([true, false])(
+  'preserves original-text copying and capture labels with rich view %s',
+  async (rich) => {
+    richViewSupported.mockReturnValue(rich);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const record: DevConsoleRecord = {
+      id: 'a',
+      method: 'test.call',
+      rpcMethod: 'test.call',
+      timestamp: 0,
+      direction: 'outbound',
+      kind: 'request',
+      backendId: 'one',
+      connectionId: 'main',
+      connectionGeneration: 1,
+      status: 'success',
+      payload: { state: 'complete', text: '{"x":1}', originalBytes: 7, retainedBytes: 7 },
+      response: { state: 'truncated', text: '{"partial":', originalBytes: 100, retainedBytes: 11 },
+    };
+    const view = render(PayloadDetails, {
+      row: record,
+      record,
+      full: false,
+      ontoggle: vi.fn(),
+      onclose: vi.fn(),
+    });
+    await waitFor(() => expect(editors).toHaveLength(2));
+    expect(models[0].getValue()).toBe('{\n  "x": 1\n}');
+    expect(models[1].getValue()).toBe(record.response!.text);
+    const copy = view.getAllByRole('button', { name: 'Copy payload', exact: true });
+    await fireEvent.click(copy[0]);
+    expect(writeText).toHaveBeenLastCalledWith('{"x":1}');
+    await fireEvent.click(copy[1]);
+    expect(writeText).toHaveBeenLastCalledWith('{"partial":');
+    expect(view.container.textContent).toContain('Truncated');
+    expect(view.container.textContent).toContain('11');
+    expect(view.container.textContent).toContain('100');
+    vi.unstubAllGlobals();
+  },
+);
 
 it.each(['absent', 'unserializable'] as const)(
   'renders %s payloads without inventing content',
@@ -144,7 +156,7 @@ it('updates the existing model when a reply changes, including switching to raw 
   const updates = models[0].setValue.mock.calls.length;
   await view.rerender({ text: '{"truncated":', label: 'Event' });
   expect(models[0].setValue).toHaveBeenCalledTimes(updates);
-  expect(editors[0].updateOptions).toHaveBeenLastCalledWith({ ariaLabel: 'Event' });
+  expect(editors[0].updateOptions).toHaveBeenLastCalledWith({ ariaLabel: 'Event', folding: true });
 });
 
 it('uses the latest payload if it changes during worker startup', async () => {
@@ -206,4 +218,50 @@ it('releases a partially created model if editor creation fails', async () => {
   expect(models[0].dispose).toHaveBeenCalledOnce();
   view.unmount();
   expect(models[0].dispose).toHaveBeenCalledOnce();
+});
+
+it('explains the large-payload limitation and disables folding while keeping search available', async () => {
+  // Exercise presentation without inserting a 300,000-line text node into jsdom.
+  richViewSupported.mockReturnValue(false);
+  const view = render(PayloadViewer, { text: '{"large":true}', label: 'Response' });
+  await waitFor(() => expect(editors).toHaveLength(1));
+  expect(view.getByRole('status').textContent).toContain('Syntax highlighting and folding');
+  expect((view.getByRole('button', { name: 'Collapse all' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect((view.getByRole('button', { name: 'Expand all' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect((view.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(models[0].getValue()).toBe('{\n  "large": true\n}');
+  expect(models[0].getLanguageId()).toBe('plaintext');
+  await fireEvent.click(view.getByRole('button', { name: 'Search' }));
+  expect(editors[0].getAction('actions.find').run).toHaveBeenCalledOnce();
+});
+
+it('replaces models when updates cross the rich-view boundary and restores ordinary JSON features', async () => {
+  const view = render(PayloadViewer, { text: '{"small":1}', label: 'Response' });
+  await waitFor(() => expect(editors).toHaveLength(1));
+  richViewSupported.mockReturnValue(false);
+  await view.rerender({ text: '{"large":true}', label: 'Response' });
+  expect(models).toHaveLength(2);
+  expect(models[0].dispose).toHaveBeenCalledOnce();
+  expect(models[1].getLanguageId()).toBe('plaintext');
+  expect(editors[0].updateOptions).toHaveBeenLastCalledWith(
+    expect.objectContaining({ folding: false }),
+  );
+  richViewSupported.mockReturnValue(true);
+  await view.rerender({ text: '{"small":2}', label: 'Response' });
+  expect(models).toHaveLength(3);
+  expect(models[1].dispose).toHaveBeenCalledOnce();
+  expect(models[2].getLanguageId()).toBe('json');
+  expect(view.queryByRole('status')).toBeNull();
+  expect((view.getByRole('button', { name: 'Collapse all' }) as HTMLButtonElement).disabled).toBe(
+    false,
+  );
+  expect(editors[0].updateOptions).toHaveBeenLastCalledWith(
+    expect.objectContaining({ folding: true }),
+  );
+  view.unmount();
+  expect(models.every((model) => model.dispose.mock.calls.length === 1)).toBe(true);
 });

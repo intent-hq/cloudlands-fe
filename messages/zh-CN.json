@@ -6992,5 +6992,6 @@
   "devConsole_payload_search_label": "搜索",
   "devConsole_payload_collapse_label": "全部折叠",
   "devConsole_payload_expand_label": "全部展开",
-  "devConsole_payload_load_error": "无法加载查看器。捕获的文本显示在下方。"
+  "devConsole_payload_load_error": "无法加载查看器。捕获的文本显示在下方。",
+  "devConsole_payload_large_description": "载荷较大，无法使用语法高亮和折叠功能；搜索和复制仍然可用。"
 }

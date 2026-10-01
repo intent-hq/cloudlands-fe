@@ -32,6 +32,10 @@ function createEditor(host: HTMLElement, options: { model: ReturnType<typeof cre
   const instance = {
     focus: vi.fn(),
     updateOptions: vi.fn(),
+    setModel: vi.fn((model: ReturnType<typeof createModel>) => {
+      host.replaceChildren();
+      model.attach(host);
+    }),
     getAction: (id: string) => {
       if (!actions.has(id)) actions.set(id, { run: vi.fn().mockResolvedValue(undefined) });
       return actions.get(id)!;

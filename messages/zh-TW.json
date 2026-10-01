@@ -6992,5 +6992,6 @@
   "devConsole_payload_search_label": "搜尋",
   "devConsole_payload_collapse_label": "全部摺疊",
   "devConsole_payload_expand_label": "全部展開",
-  "devConsole_payload_load_error": "無法載入檢視器。擷取的文字顯示於下方。"
+  "devConsole_payload_load_error": "無法載入檢視器。擷取的文字顯示於下方。",
+  "devConsole_payload_large_description": "承載資料較大，無法使用語法醒目提示和摺疊功能；搜尋與複製仍可使用。"
 }
