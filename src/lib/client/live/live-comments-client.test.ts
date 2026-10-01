@@ -599,6 +599,30 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     mockedResolve.mockResolvedValue('ws-1');
   });
 
+  it('replaces canonical attribution on full subscription re-read deltas', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    try {
+      await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+      await flush();
+      const identity = { provider: 'github', host: 'github.com', externalUserId: '42' };
+      pushSnapshot('chan-1', 0, [
+        { ...wireComment('c', 'body'), authorPrincipalId: 'creator', authorIdentity: identity },
+      ]);
+      expect(handler.mock.calls.at(-1)?.[0][0]).toMatchObject({
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+      });
+      pushDelta('chan-1', 1, { updated: [{ ...wireComment('c', 'body'), author: 'legacy' }] });
+      const row = handler.mock.calls.at(-1)?.[0][0];
+      expect(row.author).toBe('legacy');
+      expect(row).not.toHaveProperty('authorIdentity');
+      expect(row).not.toHaveProperty('authorPrincipalId');
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('registers comment.subscribe with { workspaceId, noteId } when the caller supplies workspaceId', async () => {
     const client = new LiveCommentsClient();
     const unsubscribe = client.subscribe('note-1', () => {}, 'ws-A');
@@ -715,5 +739,83 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     const recovered = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(recovered.map((c) => c.id)).toEqual(['c-1', 'c-2']);
     unsubscribe();
+  });
+});
+
+describe('qualified comment wire projections', () => {
+  afterEach(() => vi.clearAllMocks());
+  const identity = { provider: 'github', host: 'github.com', externalUserId: '42' };
+  it('keeps safe output fields and omits invalid identities without borrowing a label identity', async () => {
+    const rows = [
+      {
+        id: 'local',
+        author: 'same',
+        authorType: 'user',
+        authorPrincipalId: 'creator',
+        authorIdentity: { ...identity, credential: 'not-a-display-field' },
+      },
+      {
+        id: 'imported',
+        author: 'same',
+        authorType: 'user',
+        authorIdentity: { ...identity, provider: 'gitlab', host: 'gitlab.example' },
+      },
+      ...[
+        null,
+        { ...identity, provider: 'future' },
+        { ...identity, host: 'https://github.com' },
+        { ...identity, externalUserId: ' ' },
+      ].map((authorIdentity, n) => ({
+        id: `unknown-${n}`,
+        author: 'same',
+        authorType: 'user',
+        authorIdentity,
+      })),
+      {
+        id: 'agent',
+        author: 'agent',
+        authorType: 'agent',
+        authorPrincipalId: 'spoof',
+        authorIdentity: identity,
+      },
+    ];
+    mockedRequest.mockResolvedValueOnce({ threads: [{ comments: rows }] });
+    const result = await new LiveCommentsClient().list('note-1', 'ws-1');
+    expect(result[0]).toMatchObject({ authorPrincipalId: 'creator', authorIdentity: identity });
+    expect(result[0].authorIdentity).toEqual(identity);
+    expect(result[1]).toMatchObject({
+      authorIdentity: { ...identity, provider: 'gitlab', host: 'gitlab.example' },
+    });
+    expect(result[1]).not.toHaveProperty('authorPrincipalId');
+    for (const row of result.slice(2)) expect(row).not.toHaveProperty('authorIdentity');
+    expect(result.at(-1)).not.toHaveProperty('authorPrincipalId');
+  });
+  it('maps summary attribution from exactly the selected latest comment', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          threadId: 't',
+          latestCommentAuthor: 'latest',
+          latestCommentAuthorType: 'user',
+          latestCommentAuthorIdentity: identity,
+          authorPrincipalId: 'root-must-not-win',
+        },
+        {
+          threadId: 'u',
+          latestCommentAuthor: 'unknown',
+          latestCommentAuthorType: 'user',
+          authorIdentity: identity,
+        },
+      ],
+    });
+    const result = await new LiveCommentsClient().list('note-1', 'ws-1');
+    expect(result[0]).toMatchObject({
+      author: 'latest',
+      authorType: 'user',
+      authorIdentity: identity,
+    });
+    expect(result[0]).not.toHaveProperty('authorPrincipalId');
+    expect(result[1]).toMatchObject({ author: 'unknown' });
+    expect(result[1]).not.toHaveProperty('authorIdentity');
   });
 });

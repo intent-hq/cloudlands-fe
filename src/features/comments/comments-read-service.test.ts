@@ -82,6 +82,43 @@ describe('commentsReadService (fake seam, real store)', () => {
     expect(noteB).toEqual(['c-b1']);
   });
 
+  it('converges the canonical creator at unchanged content/time/status and clears an authoritative unstamped replacement', async () => {
+    const base = makeComment('creator-row', 'spec', { workspaceId: 'ws-1' });
+    const identity = { provider: 'gitlab', host: 'gitlab.example', externalUserId: '42' };
+    appStore.dispatch(
+      loadCommentsAction([base, makeComment('other', 'spec', { workspaceId: 'ws-2' })]),
+    );
+    commentsListMock.mockResolvedValueOnce([
+      {
+        ...base,
+        author: 'canonical',
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+      } as CommentV2,
+    ]);
+    applyCommentFromEvent('ws-1', 'spec', 'added');
+    await vi.waitFor(() =>
+      expect(appStore.state.comments.commentsById.map['creator-row']).toMatchObject({
+        author: 'canonical',
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+      }),
+    );
+    commentsListMock.mockResolvedValueOnce([{ ...base, author: 'legacy', authorType: 'agent' }]);
+    applyCommentFromEvent('ws-1', 'spec', 'resolved');
+    await vi.waitFor(() =>
+      expect(appStore.state.comments.commentsById.map['creator-row'].author).toBe('legacy'),
+    );
+    const row = appStore.state.comments.commentsById.map['creator-row'];
+    expect(row.authorType).toBe('agent');
+    expect(row.authorPrincipalId).toBeUndefined();
+    expect(row.authorIdentity).toBeUndefined();
+    expect(appStore.state.comments.commentsById.map.other).toMatchObject({
+      author: 'u1',
+      workspaceId: 'ws-2',
+    });
+  });
+
   // Round-5 regression: note ids repeat across workspaces (every workspace
   // has a `spec` note), so the removal set must be scoped by workspaceId —
   // another workspace's same-id note's comments must not be treated as

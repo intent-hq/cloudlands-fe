@@ -1184,3 +1184,44 @@ describe('tool-result-parser', () => {
     });
   });
 });
+
+describe('latest comment creator attribution', () => {
+  it('keeps the selected latest identity, never the root or another reply', () => {
+    const identity = { provider: 'gitlab', host: 'gitlab.example', externalUserId: '42' };
+    const result = parseToolResult(
+      'workspace_api_workspace-mcp',
+      { code: 'return await ws.comment.list("spec")' },
+      JSON.stringify({
+        threads: [
+          {
+            threadId: 't',
+            latestCommentAuthor: 'same',
+            latestCommentAuthorType: 'user',
+            latestCommentAuthorIdentity: identity,
+          },
+          {
+            threadId: 'u',
+            latestCommentAuthor: 'same',
+            latestCommentAuthorType: 'user',
+            authorIdentity: identity,
+            comments: [{ authorIdentity: identity }],
+          },
+          {
+            threadId: 'a',
+            latestCommentAuthor: 'agent',
+            latestCommentAuthorType: 'agent',
+            latestCommentAuthorIdentity: identity,
+          },
+        ],
+      }),
+    );
+    expect(result.commentThreads?.[0]).toMatchObject({
+      latestAuthor: 'same',
+      latestAuthorType: 'user',
+      latestAuthorIdentity: identity,
+    });
+    expect(result.commentThreads?.[0]).not.toHaveProperty('latestAuthorPrincipalId');
+    expect(result.commentThreads?.[1]).not.toHaveProperty('latestAuthorIdentity');
+    expect(result.commentThreads?.[2]).not.toHaveProperty('latestAuthorIdentity');
+  });
+});
