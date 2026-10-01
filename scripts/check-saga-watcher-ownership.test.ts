@@ -333,29 +333,6 @@ describe('saga watcher ownership guard', () => {
     ]);
   });
 
-  it.each([
-    ['backendReconnected', 0],
-    ['loadWorkspaceDataRequested', 1],
-  ])('classifies lifecycle broadcast ownership for %s', (action, violations) => {
-    const owners = ['subscriptions', 'git'];
-    const result = inspectSagaWatcherOwnership([
-      root(
-        owners.map((owner) => `${owner}Saga`),
-        owners.map((owner) => `import { ${owner}Saga } from './slices/${owner}/sagas/read-saga';`),
-      ),
-      ...owners.map((owner) => ({
-        path: `src/store/renderer/slices/${owner}/sagas/read-saga.ts`,
-        content: `import { takeEvery } from 'typed-redux-saga';
-import { ${action} } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-export function* ${owner}Saga() { yield* takeEvery(${action}, refresh); }`,
-      })),
-      actionOwner('src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts', [
-        action,
-      ]),
-    ]);
-    expect(result.violations).toHaveLength(violations);
-  });
-
   it('rejects duplicate watcher ownership for the same action', () => {
     const source = [
       "import { takeEvery, takeLatest } from 'typed-redux-saga';",

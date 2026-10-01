@@ -1,4 +1,5 @@
 import type { Task } from 'redux-saga';
+import { createChannelFromSelector } from '@themislib/themis/saga';
 import {
   all,
   call,
@@ -35,10 +36,8 @@ import {
   selectWaitingState,
   selectSubscriptionSnapshotStatus,
 } from '../agent-subscription-ui-selectors';
-import {
-  workspaceUnmounted,
-  backendReconnected,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectDaemonEventsSubscriptionGeneration } from '../../workspace-events/workspace-events-selectors';
 import { initializeChatRequested } from '../../chat-state/chat-state-slice';
 import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
@@ -321,10 +320,22 @@ function* clearWorkspaceSubscriptionsWorker(
   for (const agentId of agentIds) yield* put(deleteSubscriptionUI(wsId, agentId));
 }
 
-/** Cached mount reads rely on live events; reconcile missed events after reconnect. */
-function* refreshAfterReconnect(coordinator: ReadCoordinator) {
-  for (const { wsId, agentId } of coordinator.contexts.values()) {
-    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+/** Reconcile only after the event lease is live, so no watch change falls
+ * between the recovery snapshot and the replacement subscription. */
+function* watchSubscriptionGeneration(coordinator: ReadCoordinator): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectDaemonEventsSubscriptionGeneration);
+  let generation = yield* selectDaemonEventsSubscriptionGeneration.effect();
+  try {
+    while (true) {
+      const { payload } = yield* take(channel);
+      if (payload === generation) continue;
+      generation = payload;
+      for (const { wsId, agentId } of coordinator.contexts.values()) {
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+      }
+    }
+  } finally {
+    channel.close();
   }
 }
 
@@ -346,6 +357,6 @@ export function* agentSubscriptionReadSaga() {
       coordinator,
     ),
     takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker, coordinator),
-    takeEvery(backendReconnected, refreshAfterReconnect, coordinator),
+    fork(watchSubscriptionGeneration, coordinator),
   ]);
 }

@@ -12,12 +12,21 @@ import { store } from '$store/renderer/store';
 import { normalizeNote } from '$lib/client/live/live-notes-client';
 import { ensureNoteContentLoaded, __resetNotesReadServiceForTests } from './notes-read-service';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import {
+  ensureWorkspaceTasksLoaded,
+  loadWorkspaceTasksRequested,
+} from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
 import {
   workspaceUnmounted,
   backendReconnected,
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  daemonEventsSubscribed,
+  daemonEventsSubscribing,
+} from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import { workspaceReconnectSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/workspace-reconnect-saga';
+import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
 import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import {
   requestSubscriptionFetch,
@@ -183,10 +192,78 @@ describe('background reads through the real store, sagas, clients and event brid
     },
   );
 
-  it('refreshes cached subscriptions after reconnect even when the card stays mounted', async () => {
+  it('reconciles demand that completed before the initial event subscription went live', async () => {
+    const ack = deferred<{ subscriptionId: string }>();
+    backend.onSubscribe(() => ack.promise);
+    cancel.push(store.runSaga(workspaceReconnectSaga), store.runSaga(daemonEventsSaga));
     store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
     await settle();
-    store.dispatch(backendReconnected());
+    expect(reads('agent.getSubscriptions')).toHaveLength(1);
+    backend.onRequest('agent.getSubscriptions', () => ({
+      ...empty(),
+      subscriptions: [
+        {
+          id: 'boot-watch',
+          agentId: 'child',
+          eventTypes: [],
+          actorIds: [],
+          createdAt: '2026-01-01',
+          description: '',
+        },
+      ],
+    }));
+    ack.resolve({ subscriptionId: 'initial' });
+    await settle();
+    expect(
+      store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].subscriptions.map((s) => s.id),
+    ).toEqual(['boot-watch']);
+    expect(reads('agent.getSubscriptions')).toHaveLength(2);
+  });
+
+  it('reconciles subscriptions after the replacement event subscription is acknowledged', async () => {
+    cancel.push(store.runSaga(workspaceReconnectSaga), store.runSaga(daemonEventsSaga));
+    await settle();
+    expect(store.state.workspaceEvents.subscriptionGeneration).toBe(1);
+    store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
+    await settle();
+    const initialReads = reads('agent.getSubscriptions').length;
+    const ack = deferred<{ subscriptionId: string }>();
+    backend.onSubscribe(() => ack.promise);
+    backend.triggerReconnect();
+    await settle();
+    expect(store.state.workspaceEvents.subscriptionPending).toBe(true);
+    // Any read before the replacement subscription is live misses this change.
+    backend.onRequest('agent.getSubscriptions', () => ({
+      ...empty(),
+      subscriptions: [
+        {
+          id: 'gap-watch',
+          agentId: 'child',
+          eventTypes: [],
+          actorIds: [],
+          createdAt: '2026-01-01',
+          description: '',
+        },
+      ],
+    }));
+    ack.resolve({ subscriptionId: 'replacement' });
+    await settle();
+    expect(store.state.workspaceEvents.subscriptionGeneration).toBe(2);
+    expect(
+      store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].subscriptions.map((s) => s.id),
+    ).toEqual(['gap-watch']);
+    expect(reads('agent.getSubscriptions')).toHaveLength(initialReads + 1);
+  });
+
+  it('refreshes cached subscriptions only on an admitted live generation while the card stays mounted', async () => {
+    store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
+    await settle();
+    store.dispatch(daemonEventsSubscribing());
+    const attempt = store.state.workspaceEvents.subscriptionAttempt;
+    store.dispatch(daemonEventsSubscribed(attempt - 1));
+    await settle();
+    expect(reads('agent.getSubscriptions')).toHaveLength(1);
+    store.dispatch(daemonEventsSubscribed(attempt));
     await settle();
     expect(reads('agent.getSubscriptions')).toHaveLength(2);
     store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
@@ -253,6 +330,7 @@ describe('background reads through the real store, sagas, clients and event brid
     // An unmounted workspace must no longer be tracked for reconnect.
     store.dispatch(workspaceUnmounted(WS));
     store.dispatch(backendReconnected());
+    store.dispatch(daemonEventsSubscribed());
     await settle();
     expect(reads('agent.getSubscriptions')).toHaveLength(3);
   });
@@ -275,15 +353,22 @@ describe('background reads through the real store, sagas, clients and event brid
     expect(reads('agent.getSubscriptions')).toHaveLength(initial + 4);
   });
 
-  it.each([0, 2000])(
-    'retains task invalidations during initial loading with response delayed %i ms',
-    async (delay) => {
+  it.each([
+    ['ensure', 0],
+    ['ensure', 2000],
+    ['force', 0],
+    ['force', 2000],
+  ] as const)(
+    'retains task invalidations during first %s load with response delayed %i ms',
+    async (trigger, delay) => {
       const pending = deferred<{ tasks: []; stats: { total: number; completed: number } }>();
       let calls = 0;
       backend.onRequest('task.list', () =>
         ++calls === 1 ? pending.promise : { tasks: [], stats: { total: 1, completed: 1 } },
       );
-      store.dispatch(ensureWorkspaceTasksLoaded(WS));
+      store.dispatch(
+        trigger === 'ensure' ? ensureWorkspaceTasksLoaded(WS) : loadWorkspaceTasksRequested(WS),
+      );
       await settle();
       event('task:status-changed', {
         noteId: 'task-note',
