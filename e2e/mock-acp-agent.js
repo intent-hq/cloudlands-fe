@@ -22,10 +22,15 @@
  *     Gives the app time to finish chat initialization. Default: 3000. Set to 0 for no delay.
  */
 import readline from 'node:readline';
+import { createMockChild } from './mock-workspace-mcp.js';
+import { respondToMockRequest } from './mock-acp-request.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 let workspacePath = null;
+let mcpServers = [];
+let delegated = false;
+let childFixture;
 const sessionId = 'mock-session-1';
 
 // --- JSON-RPC helpers ---
@@ -69,6 +74,7 @@ function handleAuthenticate(id) {
 }
 
 async function handleSessionNew(id, params) {
+  mcpServers = params?.mcpServers ?? [];
   // Capture workspace path from metadata or cwd fallback
   workspacePath =
     (params && params.metadata && params.metadata.workspacePath) || (params && params.cwd) || null;
@@ -85,7 +91,7 @@ function handleSessionLoad(id) {
   return jsonrpcError(id, -32601, 'Method not found: session/load');
 }
 
-async function handleSessionPrompt(id) {
+async function handleSessionPrompt(id, params) {
   let behaviorRaw = process.env.MOCK_AGENT_BEHAVIOR || '{}';
   const behaviorFile = process.env.MOCK_AGENT_BEHAVIOR_FILE;
   if (behaviorFile && fs.existsSync(behaviorFile)) {
@@ -96,6 +102,18 @@ async function handleSessionPrompt(id) {
     behavior = JSON.parse(behaviorRaw);
   } catch {
     behavior = { response: 'Mock agent received prompt.' };
+  }
+
+  const promptText = (params?.prompt ?? [])
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+  if (childFixture === undefined) childFixture = promptText.includes('CHILD_REQUEST:');
+  if (behavior.child && childFixture) behavior = behavior.child;
+  // Delegate once through the authenticated parent context. No fabricated IDs or metadata linkage.
+  if (behavior.delegate && !delegated) {
+    delegated = true;
+    await createMockChild(mcpServers, behavior.delegate);
   }
 
   process.stderr.write(
@@ -160,7 +178,7 @@ function handleMessage(msg) {
     case 'session/load':
       return handleSessionLoad(id);
     case 'session/prompt':
-      return handleSessionPrompt(id);
+      return handleSessionPrompt(id, params);
     case 'session/cancel':
       // Acknowledge silently — no response needed for notifications
       return null;
@@ -187,14 +205,12 @@ rl.on('line', async (line) => {
 
   pendingHandlers++;
   try {
-    const msg = JSON.parse(trimmed);
-    const response = await handleMessage(msg);
+    const response = await respondToMockRequest(trimmed, handleMessage, (error) =>
+      process.stderr.write(error),
+    );
     if (response) {
       process.stdout.write(response + '\n');
     }
-  } catch (err) {
-    // Invalid JSON — send parse error
-    process.stdout.write(jsonrpcError(null, -32700, 'Parse error: ' + err.message) + '\n');
   } finally {
     pendingHandlers--;
     exitIfDone();

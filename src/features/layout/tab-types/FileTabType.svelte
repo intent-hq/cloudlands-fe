@@ -32,7 +32,8 @@
   import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
   import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
   import { notify } from '$lib/components/patterns/notify';
-  import { appClient } from '$lib/client';
+  import { gitReadRequested, releaseGitRead } from '$store/renderer/slices/git/git-slice';
+  import { selectGitRead } from '$store/renderer/slices/git/git-selectors';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
   import { LineType } from '$shared/types';
@@ -95,6 +96,9 @@
   // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
   const headerContext = getPanelHeaderContext();
+  const gutterConsumerId = `file-gutter:${crypto.randomUUID()}`;
+  // svelte-ignore state_referenced_locally
+  const gutterRead$ = selectGitRead(workspaceId, gutterConsumerId);
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
@@ -128,7 +132,6 @@
     focus: () => boolean;
     runShortcut: (action: Exclude<EditorShortcutAction, 'toggle-task-list'>) => boolean;
   } | null>(null);
-  let isMounted = $state(true);
   let fileLineChanges = $state<LineChange[]>([]);
   let resolvedWorkspaceMediaPath = $state<string | null>(null);
 
@@ -149,13 +152,6 @@
     lastJumpTimestamp = timestamp;
     jumpToLine = { line };
     markdownPreview = false;
-  });
-
-  $effect(() => {
-    isMounted = true;
-    return () => {
-      isMounted = false;
-    };
   });
 
   // Computed values
@@ -360,35 +356,43 @@
       fileLineChanges = [];
       return;
     }
-    (async () => {
-      try {
-        // Daemon-backed per-file hunks (`git.diffs`, PROTOCOL §5.6) via the
-        // appClient seam — this consumer only needs hunk line data, replacing
-        // the retired local `git:diff` read.
-        const chunks = await appClient.git.diffs(workspaceId, {
-          path: filePath,
-          staged: change.stage === 'staged',
-        });
-        if (!isMounted) return;
-        const fileChunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
-        if (fileChunk?.chunks && fileChunk.chunks.length > 0) {
-          const hunks = fileChunk.chunks.map((chunk) => ({
+    if (!isActive) return;
+    const wsId = workspaceId;
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(
+      gitReadRequested(wsId, gutterConsumerId, requestId, {
+        kind: 'diffs',
+        path: filePath,
+        staged: change.stage === 'staged',
+      }),
+    );
+    return () => {
+      appStore.dispatch(releaseGitRead(wsId, gutterConsumerId, requestId));
+    };
+  });
+
+  $effect(() => {
+    const read = $gutterRead$;
+    const chunks = read?.result?.kind === 'diffs' ? read.result.chunks : [];
+    const fileChunk = chunks.find((chunk) => chunk.file === tab.filePath) ?? chunks[0];
+    fileLineChanges = fileChunk
+      ? parseHunksToLineChanges(
+          fileChunk.chunks.map((chunk) => ({
             oldStart: chunk.oldStart,
             oldLines: chunk.oldLines,
             newStart: chunk.newStart,
             newLines: chunk.newLines,
-            lines: chunk.lines.map((line) => {
-              if (line.type === LineType.Addition) return '+' + line.content;
-              if (line.type === LineType.Deletion) return '-' + line.content;
-              return ' ' + line.content;
-            }),
-          }));
-          fileLineChanges = parseHunksToLineChanges(hunks);
-        }
-      } catch {
-        if (isMounted) fileLineChanges = [];
-      }
-    })();
+            lines: chunk.lines.map(
+              (line) =>
+                (line.type === LineType.Addition
+                  ? '+'
+                  : line.type === LineType.Deletion
+                    ? '-'
+                    : ' ') + line.content,
+            ),
+          })),
+        )
+      : [];
   });
 
   function handleKeyDown(e: KeyboardEvent) {

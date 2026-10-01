@@ -39,11 +39,19 @@ const launcher = pnpmInvocation([
   '--config=e2e/build-smoke.config.ts',
   ...process.argv.slice(2),
 ]);
-const child = spawn(launcher.executable, launcher.args, {
-  stdio: 'inherit',
-  shell: launcher.shell,
-  env: { ...process.env, PACKAGED_APP_PATH: packagedApp },
-});
+// The hosted Linux workflow adds bounded fixture capture around this same suite.
+const hostedLinux = process.env.BUILD_SMOKE_HOSTED_LINUX === '1';
+const child = spawn(
+  hostedLinux ? 'python3' : launcher.executable,
+  hostedLinux
+    ? ['-I', '-S', '-B', 'scripts/run-packaged-linux-smoke.py', ...process.argv.slice(2)]
+    : launcher.args,
+  {
+    stdio: 'inherit',
+    shell: hostedLinux ? false : launcher.shell,
+    env: { ...process.env, PACKAGED_APP_PATH: packagedApp },
+  },
+);
 
 child.on('close', (code) => process.exit(code ?? 1));
 child.on('error', (error) => {

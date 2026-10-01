@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.192.0",
+  "version": "2.192.1",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -42,10 +42,10 @@
     "build:speech-helper": "node scripts/build-speech-helper.cjs",
     "build:keychain-helper": "node scripts/build-keychain-helper.cjs",
     "dist": "node scripts/pnpm-run.mjs build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs && node scripts/build-speech-helper.cjs && node scripts/build-keychain-helper.cjs && electron-builder",
-    "dist:mac": "node scripts/pnpm-run.mjs build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs --targets=darwin-arm64 && node scripts/build-speech-helper.cjs && node scripts/build-keychain-helper.cjs && electron-builder --mac",
+    "dist:mac": "node scripts/package-mac.mjs",
     "dist:win": "node scripts/pnpm-run.mjs build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs --targets=win32-x64 && electron-builder --win",
     "dist:linux": "node scripts/pnpm-run.mjs build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs --targets=linux-x64,linux-arm64 && electron-builder --linux",
-    "dist:all": "node scripts/pnpm-run.mjs build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs --targets=darwin-arm64,win32-x64,linux-x64,linux-arm64 && node scripts/build-speech-helper.cjs && node scripts/build-keychain-helper.cjs && electron-builder -mwl",
+    "dist:all": "node scripts/pnpm-run.mjs build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs --targets=darwin-arm64,darwin-x64,win32-x64,linux-x64,linux-arm64 && node scripts/build-speech-helper.cjs && node scripts/build-keychain-helper.cjs && electron-builder -mwl",
     "version:set": "node scripts/set-version.cjs",
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
@@ -319,7 +319,7 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "@themislib/themis": "0.3.2",
+    "@themislib/themis": "0.3.3",
     "body-parser": "^2.3.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",

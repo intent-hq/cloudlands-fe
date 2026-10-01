@@ -18,6 +18,7 @@ import { deleteWithUndo } from '$lib/utils/reversible-actions';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '../../../store';
+import { queueFileMutation } from '../../../utils/worktree-mutation-queue';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
 import {
   selectEffectiveFileExplorerWorkspacePath,
@@ -41,10 +42,6 @@ import {
 
 const logger = createLogger('FilesWriteSaga');
 export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
-// Transport promises outlive cancellation of their UI consumers. Keep the tail
-// until the actual I/O settles, including across workspace unmount/remount.
-const pendingFileMutations = new Map<string, Promise<void>>();
-
 function* serializeFileMutation<T>(
   workspaceId: string,
   path: string,
@@ -56,19 +53,7 @@ function* serializeFileMutation<T>(
     ? yield* selectEffectiveFileExplorerWorkspacePath.effect(workspaceId)
     : '';
   const relativePath = stripWorkspacePrefix(path, workspacePath);
-  const key = JSON.stringify([workspaceId, relativePath]);
-  const previous = pendingFileMutations.get(key);
-  const invoke = () => run(relativePath);
-  const result = previous ? previous.then(invoke) : invoke();
-  const tail = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  pendingFileMutations.set(key, tail);
-  void tail.then(() => {
-    if (pendingFileMutations.get(key) === tail) pendingFileMutations.delete(key);
-  });
-  return yield* call(() => result);
+  return yield* call(() => queueFileMutation(workspaceId, relativePath, () => run(relativePath)));
 }
 
 type SaveRequest = {
