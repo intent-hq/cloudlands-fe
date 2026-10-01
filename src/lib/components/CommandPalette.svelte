@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openDevConsole } from '$features/dev-console/dev-console-client';
   import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -30,7 +31,6 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import {
     selectLabsGitLabEnabled,
@@ -103,9 +103,7 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
-
   const logger = createLogger('CommandPalette');
-
   interface Props {
     isOpen: boolean;
     initialQuery?: string;
@@ -114,7 +112,6 @@
     /** Callback when a file is selected. Includes openInAdjacentPanel for cmd+Enter support. */
     onSelectFile?: (detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => void;
   }
-
   let {
     isOpen = $bindable(false),
     initialQuery = '',
@@ -891,6 +888,9 @@
         return true;
       case 'attach-files':
         dispatchWindowEvent('chat:attach-files');
+        return true;
+      case 'open-dev-console':
+        void openDevConsole();
         return true;
       case 'open-hud':
         void invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' });
