@@ -3,6 +3,8 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { Transform, type Step } from '@tiptap/pm/transform';
 import type { Splice } from './source-journal';
 import { scanFences, type Fence } from './fence-context';
+import type { ListItem } from './list-context';
+import { ListProjection } from './list-projection';
 
 export type Mark = { type: string; attrs?: Record<string, unknown> };
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
@@ -14,6 +16,7 @@ export type InlineContext = {
   before: Mark[];
   after: Mark[];
   fences?: Fence[];
+  lists?: ListItem[];
   documentEnd?: boolean;
 };
 export const openMark = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');
@@ -75,6 +78,7 @@ export class SourceProjection {
   readonly code: Array<{ pm: number; end: number; fence: Fence; prefix: string; suffix: string }> =
     [];
   private trailing = '';
+  readonly list?: ListProjection;
   constructor(
     readonly source: string,
     readonly start = 0,
@@ -83,6 +87,16 @@ export class SourceProjection {
   ) {
     if (context && (context.from !== start || context.to !== start + source.length))
       throw new Error('Context does not describe this source window');
+    if (context?.lists?.length && !indexOnly) {
+      this.list = new ListProjection(source, start, context);
+      this.content.content = this.list.content.content;
+      for (const [p, s] of this.list.positions) this.positions.set(p, s);
+      for (const [p, s] of this.list.ends) this.ends.set(p, s);
+      for (const [p, s] of this.list.boundaries) this.boundaries.set(p, s);
+      this.tokens.push(...this.list.tokens);
+      this.marks.push(...this.list.marks);
+      return;
+    }
     const fences =
       context?.fences ??
       scanFences(source).map((f) => ({
@@ -307,6 +321,7 @@ export class SourceProjection {
     return nearest;
   }
   translate(step: Step, before: PMNode, codeContext?: (fences: Fence[]) => void): Splice[] {
+    if (this.list) return this.list.translate(step, before);
     const applied = step.apply(before);
     if (!applied.doc) throw new Error(applied.failed ?? 'Invalid proof step');
     const after = canonicalBold(applied.doc, this.context),

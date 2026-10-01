@@ -49,7 +49,11 @@ it('a live native task view places editable content and remains usable after mou
   try {
     await tick();
     await tick();
-    const container = host.querySelector('[data-node-view-content]');
+    const container = host.querySelector<HTMLElement>('[data-node-view-content]');
+    expect(container?.style.whiteSpace).toBe('pre-wrap');
+    expect(host.querySelector<HTMLElement>('[data-node-view-wrapper]')?.style.whiteSpace).toBe(
+      'normal',
+    );
     expect(container?.textContent).toBe('Native task');
     expect(container?.querySelector('p')).not.toBeNull();
     editor.commands.setTextSelection(3);

@@ -6,7 +6,7 @@
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { DocumentSession } from './document-session';
   import { SourceJournal, fixture } from './source-journal';
-  import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   let {
     oracle = false,
     small = false,
@@ -69,6 +69,23 @@
         const editor = proof?.editor ?? native;
         return { html, doc: DOMParser.fromSchema(editor.schema).parse(element).toJSON() };
       },
+      nativeMarkdown: () => processHTMLToMarkdown(native.getHTML(), { preserveAnchors: true }),
+      reloadNative: async (source: string) => {
+        const content = await processMarkdownToHTML(source);
+        native.destroy();
+        native = new Editor(
+          createEditorConfig({
+            element: host,
+            content,
+            editable: true,
+            useMarkdown: true,
+            enableComments: false,
+            enableMentions: false,
+            onUpdate: () => {},
+          }),
+        );
+        Object.assign(root, { native });
+      },
       appendProbe: () => {
         const editor = proof.editor!;
         editor.registerPlugin(
@@ -116,3 +133,9 @@
   </div>
   <output data-testid="snapshot">{snapshot}</output>
 </div>
+
+<style>
+  :global(.proof-synthetic-list-item > div > [contenteditable='false']) {
+    display: none;
+  }
+</style>

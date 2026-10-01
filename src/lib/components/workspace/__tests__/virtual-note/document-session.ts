@@ -32,6 +32,8 @@ export class DocumentSession {
   maxInFlightBytes = 0;
   acceptedRoots = 0;
   acceptedAppended = 0;
+  rejectedTransactions = 0;
+  lastRejection = '';
   private drainingInput = false;
   private replayingInput = false;
   private replayTime?: number;
@@ -85,6 +87,7 @@ export class DocumentSession {
       this.maxProjectionInputBytes,
       bytes(source) +
         bytes(JSON.stringify(context.fences ?? [])) +
+        bytes(JSON.stringify(context.lists ?? [])) +
         bytes(context.before.map(openMark).join('') + context.after.map(closeMark).join('')),
     );
     return new SourceProjection(source, start, context);
@@ -113,6 +116,7 @@ export class DocumentSession {
     const bounds = continuationWindow(this.service, id, position);
     bounds.from = this.service.inlineBoundary(bounds.from, 1);
     bounds.to = this.service.inlineBoundary(bounds.to, -1);
+    Object.assign(bounds, this.service.listWindow(bounds.from, bounds.to, position ?? bounds.from));
     const source = this.readRange(bounds.from, bounds.to);
     this.inFlightBytes += bytes(source);
     this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
@@ -167,11 +171,15 @@ export class DocumentSession {
           let accepted = true;
           if (current.command === 'undo' || current.command === 'redo')
             await this.history(current.command === 'redo');
-          else if (current.command === 'insertParagraph') {
+          else if (['insertParagraph', 'indent', 'outdent'].includes(current.command)) {
             // Enter is a keymap transaction, not a browser beforeinput operation.
             // Replay that same keymap after context arrives, with the saved timestamp.
             const view = this.editor.view;
-            const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+            const event = new KeyboardEvent('keydown', {
+              key: current.command === 'insertParagraph' ? 'Enter' : 'Tab',
+              shiftKey: current.command === 'outdent',
+              cancelable: true,
+            });
             accepted = !!view.someProp('handleKeyDown', (handler) => handler(view, event));
           } else if (/^(move|extend)(Forward|Backward)$/.test(current.command)) {
             const selection = window.getSelection()!;
@@ -286,10 +294,10 @@ export class DocumentSession {
         // Keep Chromium's active keyboard or mouse gesture on the same focused view.
         // Only the bounded projection is replaced; durable source/history are untouched.
         const editor = this.editor;
-        const before = editor.view.coordsAtPos(editor.state.selection.head).top;
         let scroller = this.host.parentElement;
         while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY))
           scroller = scroller.parentElement;
+        const before = scroller ? editor.view.coordsAtPos(editor.state.selection.head).top : 0;
         this.projection = next;
         this.windowEnd = window.to;
         this.suppress = true;
@@ -330,14 +338,22 @@ export class DocumentSession {
           this.service.revision,
           this.service.generation,
         );
-        return DecorationSet.create(
-          state.doc,
-          result.items.flatMap((a) => {
+        return DecorationSet.create(state.doc, [
+          ...(p.list?.synthetic ?? []).map((pos) =>
+            Decoration.node(pos, pos + 2, { style: 'display:none', contenteditable: 'false' }),
+          ),
+          ...(p.list?.entries.filter((e) => !e.part) ?? []).map((e) =>
+            Decoration.node(e.pm, e.pm + state.doc.nodeAt(e.pm)!.nodeSize, {
+              class: 'proof-synthetic-list-item',
+              style: 'list-style-type:none',
+            }),
+          ),
+          ...result.items.flatMap((a) => {
             const from = p.pmAt(Math.max(a.from, p.start)),
               to = p.pmAt(Math.min(a.to, p.start + p.source.length), -1);
             return from < to ? [Decoration.inline(from, to, { 'data-proof-comment': a.id })] : [];
           }),
-        );
+        ]);
       };
       const annotations = Extension.create({
         name: 'sourceAnchoredProof',
@@ -404,6 +420,16 @@ export class DocumentSession {
           },
           handleKeyDown: (_view, event) => {
             if (
+              this.projection!.list &&
+              !this.replayingInput &&
+              (this.service.pendingInputs || this.pendingFetch) &&
+              event.key === 'Tab'
+            ) {
+              event.preventDefault();
+              this.deferInput(event.shiftKey ? 'outdent' : 'indent');
+              return true;
+            }
+            if (
               (this.service.pendingInputs ||
                 (this.selection.anchor === this.selection.head &&
                   this.selection.head === this.windowEnd &&
@@ -451,7 +477,16 @@ export class DocumentSession {
               return true;
             }
             if (
-              this.service.pendingInputs &&
+              (this.service.pendingInputs ||
+                (this.projection!.list &&
+                  this.selection.anchor === this.selection.head &&
+                  ((event.key === 'ArrowLeft' &&
+                    this.selection.head === this.projection!.start &&
+                    this.projection!.start > 0) ||
+                    (event.key === 'ArrowRight' &&
+                      this.selection.head === this.windowEnd &&
+                      this.windowEnd < this.service.length)))) &&
+              !this.replayingInput &&
               !event.ctrlKey &&
               !event.metaKey &&
               !event.altKey &&
@@ -515,6 +550,7 @@ export class DocumentSession {
             );
           }
           if (
+            (this.projection?.list && this.windowEnd < this.service.length) ||
             this.projection?.code.some(
               (c) => c.fence.bodyTo >= this.windowEnd && c.fence.to > this.windowEnd,
             )
@@ -547,7 +583,7 @@ export class DocumentSession {
           this.selection.head > window.from + window.source.length)
       ) {
         // Navigation changes the viewport, not the durable document selection.
-        this.editor.commands.setTextSelection(1);
+        this.editor.commands.setTextSelection(this.projection!.pmAt(window.from));
       } else this.renderSelection();
       this.suppress = false;
       this.editor.view.focus();
@@ -642,26 +678,40 @@ export class DocumentSession {
             transactions[0].getMeta('addToHistory') !== false;
           this.service.beginChanges();
           let oldStart = this.projection!.start;
-          for (let n = 0; n < tr.steps.length; n++) {
+          const listBatch = !!this.projection!.list;
+          for (let n = 0; n < (listBatch ? 1 : tr.steps.length); n++) {
             let fences: NonNullable<InlineContext['fences']> = [];
-            const splices = this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
-              fences = next;
-            });
-            for (const splice of this.service.stageProjection(
+            // Native joins may have intermediate structures with no Markdown representation.
+            // Admit the final list document atomically using every step's token mapping.
+            const splices = listBatch
+              ? this.projection!.list!.translateDocument(tr.doc, tr.mapping)
+              : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
+                  fences = next;
+                });
+            this.service.stageProjection(
               splices,
               fences,
               this.projection!.context!.revision,
               history,
-            )) {
-              oldStart = mapPoint(oldStart, splice, -1);
-              this.windowEnd = mapPoint(this.windowEnd, splice);
-              if (!history && this.prevRange)
-                this.prevRange = [
-                  mapPoint(this.prevRange[0], splice),
-                  mapPoint(this.prevRange[1], splice),
-                ];
-            }
+              this.projection!.list?.indentation,
+              (splice) => {
+                oldStart = mapPoint(oldStart, splice, -1);
+                this.windowEnd = mapPoint(this.windowEnd, splice);
+                if (!history && this.prevRange)
+                  this.prevRange = [
+                    mapPoint(this.prevRange[0], splice),
+                    mapPoint(this.prevRange[1], splice),
+                  ];
+              },
+            );
             this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
+            if (
+              this.projection.list &&
+              !this.editor!.schema.nodeFromJSON(this.projection.content).eq(
+                listBatch ? tr.doc : tr.steps[n].apply(tr.docs[n]).doc!,
+              )
+            )
+              throw new Error('Translated list source differs from accepted document');
           }
           const after = this.fromPM(tr.selection);
           const composition = tr.getMeta('composition');
@@ -706,6 +756,8 @@ export class DocumentSession {
       Object.assign(this, old);
       if (this.rollbackState) this.editor!.view.updateState(this.rollbackState);
       this.error = String(error);
+      this.rejectedTransactions++;
+      this.lastRejection = this.error.slice(0, 512);
       this.changed();
     }
   }
@@ -829,6 +881,29 @@ export class DocumentSession {
       return value;
     });
     return {
+      listMetadataBytes: bytes(JSON.stringify(this.projection?.context?.lists ?? [])),
+      syntheticListParents: this.projection?.list?.synthetic.length ?? 0,
+      listProjectionPayloadBytes: bytes(
+        JSON.stringify({
+          positions: [...(this.projection?.list?.positions ?? [])],
+          ends: [...(this.projection?.list?.ends ?? [])],
+          boundaries: [...(this.projection?.list?.boundaries ?? [])],
+          tokens: this.projection?.list?.tokens,
+          indentation: this.projection?.list?.indentation,
+          parts: [
+            ...(this.projection?.list?.entries.map((e) => e.part) ?? []),
+            ...(this.projection?.list?.prose.map((e) => e.part) ?? []),
+          ].map((part) => ({
+            source: part?.source,
+            content: part?.content,
+            positions: [...(part?.positions ?? [])],
+            ends: [...(part?.ends ?? [])],
+            boundaries: [...(part?.boundaries ?? [])],
+            tokens: part?.tokens,
+            marks: part?.marks,
+          })),
+        }),
+      ),
       maxHighlightBytes: this.maxHighlightBytes,
       highlightCalls: this.highlightCalls,
       codeMetadataBytes: bytes(JSON.stringify(this.projection?.code ?? [])),
@@ -865,6 +940,8 @@ export class DocumentSession {
       // counts, not a heap measurement. Mock backing source and oracle live elsewhere.
       sourceReplicaPayloadBytes:
         bytes(this.projection?.source ?? '') +
+        (this.projection?.list?.entries.reduce((n, e) => n + bytes(e.part?.source ?? ''), 0) ?? 0) +
+        (this.projection?.list?.prose.reduce((n, e) => n + bytes(e.part.source), 0) ?? 0) +
         bytes(JSON.stringify(this.projection?.context ?? {})) +
         bytes(JSON.stringify(this.projection?.code ?? [])) +
         [...this.cache.values()].reduce((n, page) => n + bytes(page), 0) +
@@ -909,6 +986,8 @@ export class DocumentSession {
       acceptedRoots: this.acceptedRoots,
       acceptedAppended: this.acceptedAppended,
       ...this.service.stats,
+      rejectedTransactions: this.rejectedTransactions,
+      lastRejection: this.lastRejection,
     };
   }
   destroy() {

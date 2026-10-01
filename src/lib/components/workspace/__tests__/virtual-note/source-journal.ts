@@ -2,6 +2,7 @@
 import { bytes } from './bounded-note-service';
 import { SourceProjection, type InlineContext } from './source-projection';
 import { scanFences, type Fence } from './fence-context';
+import { scanLists, type ListItem } from './list-context';
 export const LIMITS = {
   request: 4096,
   active: 16384,
@@ -53,7 +54,7 @@ export class SourceJournal {
   // Mock backing index only. Rebuilt lazily per revision; no full projection/token map retained.
   private inlineIndex = new Map<
     number,
-    { source: string; spans: SourceProjection['marks']; fences: Fence[] }
+    { source: string; spans: SourceProjection['marks']; fences: Fence[]; lists: ListItem[] }
   >();
   backingIndexBuilds = 0;
   backingIndexScannedBytes = 0;
@@ -61,6 +62,8 @@ export class SourceJournal {
   backingFenceScannedBytes = 0;
   maxBackingFenceScanBytes = 0;
   maxFenceRepairBytes = 0;
+  backingListRepairs = 0;
+  maxListRepairRead = 0;
   inlineContextReads = 0;
   maxInlineContextBytes = 0;
   private spans(id: number) {
@@ -74,13 +77,39 @@ export class SourceJournal {
         { revision: this.revision, from: 0, to: source.length, before: [], after: [], fences },
         true,
       );
-      index = { source, spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom), fences };
+      index = {
+        source,
+        spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom),
+        fences,
+        lists: scanLists(source).filter(
+          (i) => !fences.some((f) => i.from >= f.from && i.from < f.to),
+        ),
+      };
       this.inlineIndex.set(id, index);
       this.backingIndexBuilds++;
       this.backingIndexScannedBytes += bytes(source);
       this.maxBackingIndexSourceBytes = Math.max(this.maxBackingIndexSourceBytes, bytes(source));
     }
     return index.spans;
+  }
+  /** Limit both item metadata and mounted structure, independently of text bytes. */
+  listWindow(from: number, to: number, target: number) {
+    const { id, start } = this.locate(target);
+    this.spans(id);
+    const items = this.inlineIndex.get(id)!.lists;
+    const overlaps = items.filter((i) => i.to + start > from && i.from + start < to);
+    if (!overlaps.length) return { from, to };
+    const found = overlaps.findIndex((i) => i.to + start > target);
+    const center = found < 0 ? overlaps.length - 1 : found;
+    const first = Math.max(0, center - 4),
+      last = Math.min(overlaps.length - 1, first + 8);
+    if (first) from = Math.max(from, overlaps[first].from + start);
+    if (last < overlaps.length - 1) to = Math.min(to, overlaps[last].to + start);
+    for (const i of overlaps) {
+      if (from > i.from + start && from < i.body + start) from = i.body + start;
+      if (to > i.from + start && to < i.body + start) to = i.from + start;
+    }
+    return { from, to };
   }
   /** Never crop inside syntax: move inward, without transmitting that syntax. */
   inlineBoundary(position: number, direction: -1 | 1) {
@@ -119,9 +148,35 @@ export class SourceJournal {
     const before = stack(from),
       after = stack(to);
     const fences: Fence[] = [];
+    const lists: ListItem[] = [];
     for (let id = this.locate(from).id; id <= this.locate(to).id; id++) {
       this.spans(id);
       const start = this.start(id);
+      const all = this.inlineIndex.get(id)!.lists;
+      const included = new Map<number, ListItem>();
+      const visible = all.filter((i) => i.from + start < to && i.to + start > from);
+      const first = visible[0];
+      const previous =
+        first && all.filter((i) => i.parent === first.parent && i.from < first.from).at(-1);
+      for (const item of [...(previous ? [previous] : []), ...visible]) {
+        let next: ListItem | undefined = item;
+        while (next && !included.has(next.from)) {
+          included.set(next.from, next);
+          next = all.find((i) => i.from === next!.parent);
+        }
+      }
+      lists.push(
+        ...[...included.values()]
+          .sort((a, b) => a.from - b.from)
+          .map((i) => ({
+            ...i,
+            from: i.from + start,
+            body: i.body + start,
+            end: i.end + start,
+            to: i.to + start,
+            parent: i.parent < 0 ? -1 : i.parent + start,
+          })),
+      );
       for (const f of this.inlineIndex.get(id)!.fences)
         if (f.from + start < to && f.to + start > from)
           fences.push({
@@ -138,6 +193,7 @@ export class SourceJournal {
       to,
       before,
       after,
+      ...(lists.length ? { lists, documentEnd: to === this.length } : {}),
       ...(fences.length ? { fences, documentEnd: to === this.length } : {}),
     };
     const size = bytes(JSON.stringify(context));
@@ -454,11 +510,53 @@ export class SourceJournal {
   /** Mock backing admission: literal code and its framing form one atomic edit.
    * Full body scans are backing work, never renderer reads or parser inputs.
    */
-  stageProjection(splices: Splice[], fences: Fence[], revision: number, history = true) {
+  stageProjection(
+    splices: Splice[],
+    fences: Fence[],
+    revision: number,
+    history = true,
+    indentation: Array<{ from: number; after: number; delta: number }> = [],
+    onSplice?: (splice: Splice) => void,
+  ) {
     if (revision !== this.revision) throw new Error('Stale code admission revision');
     return this.atomic(() => {
-      for (const splice of splices) this.stage(splice, history);
+      // Full descendant discovery belongs to the mock backing index. The renderer
+      // supplies bounded structural intents and receives one bounded repair at a time.
+      const listRepairs = new Map<number, Splice>();
+      for (const change of indentation) {
+        const { id, start } = this.locate(change.from);
+        this.spans(id);
+        const items = this.inlineIndex.get(id)!.lists;
+        const parent = items.find((i) => i.from + start === change.from)!;
+        for (const child of items) {
+          if (child.from <= parent.from) continue;
+          if (child.indent <= parent.indent) break;
+          if (child.from + start < change.after || listRepairs.has(child.from + start)) continue;
+          listRepairs.set(child.from + start, {
+            from: child.from + start,
+            to: child.from + start + child.indent,
+            insert: ' '.repeat(child.indent + change.delta),
+          });
+        }
+      }
+      for (const splice of splices) {
+        this.stage(splice, history);
+        onSplice?.(splice);
+      }
       const repairs: Splice[] = [];
+      for (const original of [...listRepairs.values()].sort((a, b) => b.from - a.from)) {
+        const repair = { ...original };
+        for (const splice of splices) {
+          repair.from = mapPoint(repair.from, splice);
+          repair.to = mapPoint(repair.to, splice);
+        }
+        if (!onSplice) throw new Error('List repair requires bounded acknowledgement');
+        this.maxListRepairRead = Math.max(this.maxListRepairRead, bytes(JSON.stringify(repair)));
+        if (this.maxListRepairRead > LIMITS.request) throw new Error('List repair exceeds budget');
+        this.stage(repair, history);
+        onSplice(repair);
+        this.backingListRepairs++;
+      }
       for (const fence of fences) {
         const marker = fence.opening.match(/^(`{3,}|~{3,})/)![0];
         const body = this.slice(fence.bodyFrom, fence.bodyTo);
@@ -491,8 +589,11 @@ export class SourceJournal {
       // Descending source order preserves coordinates for every independent fence.
       repairs.sort((a, b) => b.from - a.from);
       this.maxFenceRepairBytes = Math.max(this.maxFenceRepairBytes, bytes(JSON.stringify(repairs)));
-      for (const splice of repairs) this.stage(splice, history);
-      return [...splices, ...repairs];
+      for (const splice of repairs) {
+        this.stage(splice, history);
+        onSplice?.(splice);
+      }
+      return onSplice ? [] : [...splices, ...repairs];
     });
   }
   /** Admission and inverse paging live in the mock backing service, not a renderer change array. */
@@ -595,6 +696,8 @@ export class SourceJournal {
   }
   get stats() {
     return {
+      backingListRepairs: this.backingListRepairs,
+      maxListRepairRead: this.maxListRepairRead,
       backingIndexBuilds: this.backingIndexBuilds,
       backingIndexScannedBytes: this.backingIndexScannedBytes,
       maxBackingIndexSourceBytes: this.maxBackingIndexSourceBytes,
@@ -602,7 +705,7 @@ export class SourceJournal {
       maxBackingFenceScanBytes: this.maxBackingFenceScanBytes,
       maxFenceRepairBytes: this.maxFenceRepairBytes,
       backingIndexPayloadBytes: [...this.inlineIndex.values()].reduce(
-        (n, i) => n + bytes(JSON.stringify({ spans: i.spans, fences: i.fences })),
+        (n, i) => n + bytes(JSON.stringify({ spans: i.spans, fences: i.fences, lists: i.lists })),
         0,
       ),
       backingIndexSourceBytes: [...this.inlineIndex.values()].reduce(
