@@ -444,7 +444,7 @@
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
-  // shows the sender chip with the guest role — the preamble itself is
+  // shows the sender chip with its matched historical member or guest role — the preamble itself is
   // display-stripped by the presentation boundary, so the chip is the only
   // place the sender and their role remain visible, for owner and guest alike.
   // The workspace owner's own rows never qualify (the daemon prepends the
@@ -475,7 +475,13 @@
     const login = cleanLogin ? `@${cleanLogin}` : null;
     const name = singleLineName(humanAuthor.displayName);
     // i18n-ignore (handle + name composition, mirrors the daemon preamble)
-    return login && name ? `${login} (${name})` : (login ?? name);
+    const who = login && name ? `${login} (${name})` : (login ?? name);
+    if (collaboratorSender.role === 'member') {
+      // i18n-ignore (principal fallback mirrors the accepted daemon preamble)
+      const label = who ?? `principal ${singleLineName(humanAuthor.principalId) ?? ''}`;
+      return getMessageAuthorLabel({ ...humanAuthor, login: null, displayName: label });
+    }
+    return who;
   });
 
   // Local state
@@ -1571,20 +1577,29 @@
           {/if}
 
           <!-- Human author identity in multi-member workspaces, and the
-               collaborator (guest) sender chip on preamble-carrying rows -->
+               historical member or guest sender chip on preamble-carrying rows -->
           {#if humanAuthor && !isSticky}
             <div
               class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
               data-testid="user-message-author"
               data-principal-id={humanAuthor.principalId}
-              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
-              aria-label={collaboratorSender
-                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+              data-sender-role={collaboratorSender?.role === 'member'
+                ? 'member'
+                : collaboratorSender
+                  ? 'collaborator'
+                  : undefined}
+              aria-label={collaboratorSender?.role === 'member'
+                ? m.workspace_share_member_identityRole_label({
+                    handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    role: m.collaboration_host_member_label(),
                   })
-                : m.chat_chatMessage_author_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                  })}
+                : collaboratorSender
+                  ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })
+                  : m.chat_chatMessage_author_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })}
             >
               <PrincipalAvatar
                 avatarUrl={humanAuthor.avatarUrl}
@@ -1600,7 +1615,9 @@
               {#if collaboratorSender}
                 <span aria-hidden="true" class="shrink-0">·</span>
                 <span class="shrink-0" data-testid="user-message-author-role"
-                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                  >{collaboratorSender.role === 'member'
+                    ? m.collaboration_host_member_label()
+                    : m.chat_chatMessage_collaboratorRole_label()}</span
                 >
               {/if}
             </div>
