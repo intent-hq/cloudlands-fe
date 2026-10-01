@@ -380,6 +380,10 @@ function inlineChannelConsumers(pattern, bindings, resolveType) {
         const a = literal(expand(node.left));
         const b = literal(expand(node.right));
         const equal = op === ts.SyntaxKind.EqualsEqualsEqualsToken;
+        // The intrinsic NaN is never strictly equal to any value, including
+        // itself. literal() leaves shadowed identifiers as ordinary guard values.
+        if ((a && Number.isNaN(a.value)) || (b && Number.isNaN(b.value)))
+          return equal ? [] : [branch()];
         if ((a && b) || left === right)
           return (a && b ? a.value === b.value : true) === equal ? [branch()] : [];
         const facts = new Map([[JSON.stringify([left, right].sort()), equal]]);

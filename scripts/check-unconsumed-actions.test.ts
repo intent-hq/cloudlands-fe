@@ -262,6 +262,8 @@ describe('inline actionChannel predicates', () => {
     '(action) => { const current = action; return current.type === a.type; }',
     '(action) => (action.type === a.type) satisfies boolean',
     '(action) => action.type === a.type && true',
+    '(action) => action.type === a.type && action.payload !== NaN',
+    '(action) => action.type === a.type && NaN !== action.payload',
     '(action) => false || action.type === a.type',
     '(action) => (action.type === b.type && false) || action.type === a.type',
     'function (action) { return action.type === a.type; }',
@@ -335,6 +337,14 @@ describe('inline actionChannel predicates', () => {
     ]);
   });
 
+  it('does not treat a shadowed NaN identifier as the intrinsic constant', () => {
+    expect(
+      inspect('(action) => action.type === a.type && action.payload === NaN', {
+        before: 'const NaN = expectedPayload;',
+      }).violations,
+    ).toEqual(allUnhandled.slice(1));
+  });
+
   it('bounds expansion of repeated disjunctions', () => {
     const predicate = `(action) => ${Array(65).fill('action.type === a.type').join(' || ')}`;
     expect(inspect(predicate).violations).toEqual(allUnhandled);
@@ -363,6 +373,9 @@ describe('inline actionChannel predicates', () => {
     '(action) => action.type === a.type && null',
     '(action) => action.type === a.type && undefined',
     '(action) => action.type === a.type && NaN',
+    '(action) => action.type === a.type && action.payload === NaN',
+    '(action) => action.type === a.type && NaN === action.payload',
+    '(action) => { const invalid = NaN; return action.type === a.type && action.payload === invalid; }',
     '(action) => action.type === a.type && void 0',
     '(action) => action.type === a.type && (enabled ? false : false)',
     '(action) => { const guard = enabled ? false : false; return action.type === a.type && guard; }',
