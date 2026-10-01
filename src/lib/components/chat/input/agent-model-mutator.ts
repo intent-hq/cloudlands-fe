@@ -16,7 +16,6 @@
 import {
   applyReasoningEffort,
   reconcileAgentReasoningEffort,
-  markReasoningEffortIntent,
 } from '$features/agent/reasoning-effort';
 import {
   agentModelMutationRequested,
@@ -104,10 +103,7 @@ export function createAgentModelMutator({
       return await appStore.dispatch(
         agentModelMutationRequested(
           { requestId, consumerId, agentId, workspaceId, connection: context(), operation },
-          {
-            ...options,
-            intent: markReasoningEffortIntent(agentId, workspaceId),
-          },
+          options,
         ),
       );
     } finally {

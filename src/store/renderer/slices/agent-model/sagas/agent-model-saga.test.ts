@@ -44,7 +44,9 @@ import { agentModelMutationRequested, agentModelMutationConsumed } from '../agen
 import { createAgentModelMutator } from '$lib/components/chat/input/agent-model-mutator';
 import {
   applyReasoningEffort,
+  markReasoningEffortIntent,
   reconcileAgentReasoningEffort,
+  releaseReasoningEffortIntent,
 } from '$features/agent/reasoning-effort';
 import { agentModelSaga } from './agent-model-saga';
 import '../../../seeders/agent-ipc-bridge-seeder';
@@ -59,10 +61,12 @@ let dispose: () => void;
 let cancels: (() => void)[];
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((yes) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
     resolve = yes;
+    reject = no;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 function seedCatalog(
   options: {
@@ -202,6 +206,206 @@ describe('registered model and effort mutation owner', () => {
       'agent.setModel',
     ]);
     expect(session()).toMatchObject({ model: 'next', reasoningEffort: 'low' });
+  });
+
+  it.each(['adapter', 'action'] as const)(
+    'restores confirmed effort when a queued model pick also rejects (%s)',
+    async (caller) => {
+      store.dispatch(updateSession(agentId, { reasoningEffort: 'high' }));
+      const held = deferred<unknown>();
+      request.mockReturnValueOnce(held.promise).mockRejectedValueOnce(new Error('model denied'));
+      const effort = applyReasoningEffort(agentId, workspaceId, 'low', 'high');
+      const model =
+        caller === 'adapter'
+          ? pick().selectModel(agentId, 'next', workspaceId, 'codex')
+          : store.dispatch(
+              agentModelMutationRequested({
+                requestId: 'queued-pick',
+                consumerId: 'picker',
+                agentId,
+                workspaceId,
+                connection: selectPrincipalConnectionContext.select(store.state),
+                operation: { kind: 'model', model: 'next', providerId: 'codex', commit: true },
+              }),
+            );
+      expect(session().reasoningEffort).toBe('low');
+      expect(request).toHaveBeenCalledTimes(1);
+
+      held.reject(new Error('effort denied'));
+      await expect(effort).resolves.toBe(false);
+      await expect(model).resolves.toMatchObject({ status: 'failure' });
+      expect(request.mock.calls).toEqual([
+        ['agent.update', { agentId, workspaceId, changes: { reasoningEffort: 'low' } }],
+        ['agent.setModel', { agentId, workspaceId, modelId: 'next', providerId: 'codex' }],
+      ]);
+      expect(session()).toMatchObject({ model: 'old', reasoningEffort: 'high' });
+      expect(notify.error).toHaveBeenCalledExactlyOnceWith('effort denied');
+      if (caller === 'action') {
+        expect(selectAgentModelMutations.select(store.state, 'picker')).toMatchObject([
+          { requestId: 'queued-pick', status: 'failure' },
+        ]);
+        store.dispatch(agentModelMutationConsumed('queued-pick', 'picker'));
+      }
+      expect(store.state.agentModel.mutations.ids).toEqual([]);
+    },
+  );
+
+  it.each(['success', 'cancelled'] as const)(
+    'restores rejected effort before a queued model pick settles as %s',
+    async (outcome) => {
+      store.dispatch(updateSession(agentId, { reasoningEffort: 'high' }));
+      const held = deferred<unknown>();
+      request.mockReturnValueOnce(held.promise);
+      const effort = applyReasoningEffort(agentId, workspaceId, 'low', 'high');
+      let live = true;
+      const model = pick().selectModel(agentId, 'next', workspaceId, 'codex', () => live);
+      live = outcome !== 'cancelled';
+
+      held.reject(new Error('effort denied'));
+      await expect(effort).resolves.toBe(false);
+      await expect(model).resolves.toMatchObject({ status: outcome });
+      expect(session()).toMatchObject({
+        model: outcome === 'success' ? 'next' : 'old',
+        reasoningEffort: 'high',
+      });
+      expect(request.mock.calls).toEqual([
+        ['agent.update', { agentId, workspaceId, changes: { reasoningEffort: 'low' } }],
+        ...(outcome === 'success'
+          ? [['agent.setModel', { agentId, workspaceId, modelId: 'next', providerId: 'codex' }]]
+          : []),
+      ]);
+      expect(notify.error).toHaveBeenCalledExactlyOnceWith('effort denied');
+      expect(store.state.agentModel.mutations.ids).toEqual([]);
+    },
+  );
+
+  it('preserves a newer same-value effort until it rejects behind the leading effort', async () => {
+    store.dispatch(updateSession(agentId, { reasoningEffort: 'high' }));
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    request
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+      .mockRejectedValueOnce(new Error('model denied'));
+    const leading = applyReasoningEffort(agentId, workspaceId, 'low', 'high');
+    const trailing = applyReasoningEffort(agentId, workspaceId, 'low', 'low');
+    const model = pick().selectModel(agentId, 'next', workspaceId, 'codex');
+
+    first.reject(new Error('old effort denied'));
+    await expect(leading).resolves.toBe(false);
+    expect(session().reasoningEffort).toBe('low');
+    expect(notify.error).not.toHaveBeenCalled();
+    second.reject(new Error('latest effort denied'));
+    await expect(trailing).resolves.toBe(false);
+    await expect(model).resolves.toMatchObject({ status: 'failure' });
+    expect(session()).toMatchObject({ model: 'old', reasoningEffort: 'high' });
+    expect(notify.error).toHaveBeenCalledExactlyOnceWith('latest effort denied');
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      'agent.update',
+      'agent.update',
+      'agent.setModel',
+    ]);
+  });
+
+  it.each(
+    (['adapter', 'action'] as const).flatMap((caller) =>
+      [false, true].map((released) => ({ caller, released })),
+    ),
+  )(
+    'respects coalescing effort ownership with a queued model ($caller, reservation released: $released)',
+    async ({ caller, released }) => {
+      store.dispatch(updateSession(agentId, { reasoningEffort: 'high' }));
+      const held = deferred<unknown>();
+      request.mockReturnValueOnce(held.promise).mockRejectedValueOnce(new Error('model denied'));
+      const effort = applyReasoningEffort(agentId, workspaceId, 'low', 'high');
+      const intent = markReasoningEffortIntent(agentId, workspaceId);
+      const model =
+        caller === 'adapter'
+          ? pick().selectModel(agentId, 'next', workspaceId, 'codex')
+          : store.dispatch(
+              agentModelMutationRequested({
+                requestId: 'queued-pick',
+                consumerId: 'picker',
+                agentId,
+                workspaceId,
+                connection: selectPrincipalConnectionContext.select(store.state),
+                operation: { kind: 'model', model: 'next', providerId: 'codex', commit: true },
+              }),
+            );
+      if (released) releaseReasoningEffortIntent(agentId, workspaceId, intent);
+
+      held.reject(new Error('effort denied'));
+      await expect(effort).resolves.toBe(false);
+      await expect(model).resolves.toMatchObject({ status: 'failure' });
+      expect(session().reasoningEffort).toBe(released ? 'high' : 'low');
+      expect(notify.error.mock.calls).toEqual(released ? [['effort denied']] : []);
+      if (!released) {
+        await expect(
+          applyReasoningEffort(agentId, workspaceId, 'low', 'high', { source: 'encoder', intent }),
+        ).resolves.toBe(true);
+        expect(session().reasoningEffort).toBe('low');
+      }
+    },
+  );
+
+  it('reconciles an accepted released effort before a queued model rejects', async () => {
+    store.dispatch(updateSession(agentId, { reasoningEffort: 'high' }));
+    const held = deferred<unknown>();
+    request.mockReturnValueOnce(held.promise).mockRejectedValueOnce(new Error('model denied'));
+    let live = true;
+    const intent = markReasoningEffortIntent(agentId, workspaceId);
+    const effort = applyReasoningEffort(agentId, workspaceId, 'low', 'high', {
+      source: 'encoder',
+      intent,
+      canSend: () => live,
+      canMutate: () => live,
+      canReconcileAccepted: () => true,
+    });
+    const model = pick().selectModel(agentId, 'next', workspaceId, 'codex');
+    live = false;
+    releaseReasoningEffortIntent(agentId, workspaceId, intent);
+    store.dispatch(updateSession(agentId, { reasoningEffort: 'high' }));
+
+    held.resolve({
+      agent: {
+        id: agentId,
+        workspaceId,
+        name: 'Agent',
+        status: 'idle',
+        model: 'old',
+        provider: 'codex',
+        reasoningEffort: 'low',
+        createdAt: '2026-09-01',
+        updatedAt: '2026-09-01',
+      },
+    });
+    await expect(effort).resolves.toBe(true);
+    await expect(model).resolves.toMatchObject({ status: 'failure' });
+    expect(session()).toMatchObject({ model: 'old', reasoningEffort: 'low' });
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('rolls back in-flight model effort reconciliation without undoing the accepted model', async () => {
+    const held = deferred<unknown>();
+    request
+      .mockResolvedValueOnce({ success: true, modelId: 'next' })
+      .mockReturnValueOnce(held.promise)
+      .mockRejectedValueOnce(new Error('later model denied'));
+    const first = pick('first').selectModel(agentId, 'next', workspaceId, 'codex');
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(session()).toMatchObject({ model: 'next', reasoningEffort: 'high' });
+    const second = pick('second').selectModel(agentId, 'last', workspaceId, 'codex');
+
+    held.reject(new Error('effort denied'));
+    await expect(first).resolves.toMatchObject({ status: 'failure', modelAccepted: true });
+    await expect(second).resolves.toMatchObject({ status: 'failure' });
+    expect(session()).toMatchObject({ model: 'next', reasoningEffort: 'xhigh' });
+    expect(request.mock.calls).toEqual([
+      ['agent.setModel', { agentId, workspaceId, modelId: 'next', providerId: 'codex' }],
+      ['agent.update', { agentId, workspaceId, changes: { reasoningEffort: 'high' } }],
+      ['agent.setModel', { agentId, workspaceId, modelId: 'last', providerId: 'codex' }],
+    ]);
   });
 
   it('serializes two picker consumers and never consumes another consumer result', async () => {

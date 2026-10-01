@@ -52,13 +52,34 @@ export function* agentModelSaga() {
     );
   }
 
-  function* owns(write: Write, queue: Queue) {
+  function latestEffortIntent(write: Write, queue: Queue) {
+    const [request] = write.action.payload;
+    // Queued model/session picks have not changed effort. They must still fence
+    // model reconciliation, but cannot take ownership of an optimistic effort.
+    return Math.max(
+      queue.confirmedIntent,
+      reservations.get(intentKey(request.agentId, request.workspaceId))?.ordinal ?? 0,
+      ...queue.writes
+        .filter(
+          (other) =>
+            other === write ||
+            ((other.action.payload[0].operation.kind === 'effort' ||
+              other.action.payload[0].operation.kind === 'reconcile') &&
+              (other.issued ||
+                (other.intent <= queue.latestIntent &&
+                  other.action.payload[1]?.canSend?.() !== false))),
+        )
+        .map((other) => other.intent),
+    );
+  }
+
+  function* owns(write: Write, queue: Queue, effortOnly = false) {
     const [, options] = write.action.payload;
     const current = yield* snapshot(write);
     return (
       admitted(write, current) &&
       current.identity === write.identity &&
-      queue.latestIntent === write.intent &&
+      (effortOnly ? latestEffortIntent(write, queue) : queue.latestIntent) === write.intent &&
       options?.canMutate?.() !== false
     );
   }
@@ -124,16 +145,16 @@ export function* agentModelSaga() {
     }
     options?.onConfirmedEffort?.(queue.confirmed);
     if (result.success) {
-      if (queue.latestIntent === write.intent && options?.canReconcileAccepted?.()) {
+      if (latestEffortIntent(write, queue) === write.intent && options?.canReconcileAccepted?.()) {
         yield* put(updateSession(request.agentId, { reasoningEffort: value }));
       }
       return { status: 'success' } satisfies AgentModelOutcome;
     }
-    if (yield* owns(write, queue)) {
+    if (yield* owns(write, queue, true)) {
       if ((settled.session?.reasoningEffort ?? null) === value) {
         yield* put(updateSession(request.agentId, { reasoningEffort: queue.confirmed }));
       }
-      if (yield* owns(write, queue))
+      if (yield* owns(write, queue, true))
         yield* call(notify.error, result.error ?? m.chat_effortPicker_updateFailed_error());
     }
     return { status: 'failure', error: result.error } satisfies AgentModelOutcome;
