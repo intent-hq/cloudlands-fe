@@ -224,13 +224,18 @@ function inlineChannelConsumers(pattern, bindings, resolveType) {
     if (ts.isIdentifier(node)) return `id:${node.text}`;
     if (ts.isPropertyAccessExpression(node) && node.name.text !== 'type') {
       const base = valueKey(node.expression);
-      return base && `${base}${node.questionDotToken ? '?.' : '.'}${node.name.text}`;
+      // Dot/bracket and optional spelling identify the same static property.
+      // Structured keys keep payload["a.b"] distinct from payload.a.b.
+      return base && JSON.stringify(['get', base, node.name.text]);
     }
     if (ts.isElementAccessExpression(node) && literal(unwrap(node.argumentExpression))) {
       // Bracket spelling must not bypass the dedicated owner/type analysis.
       if (literal(unwrap(node.argumentExpression)).value === 'type') return undefined;
       const base = valueKey(node.expression);
-      return base && `${base}[${valueKey(node.argumentExpression)}]`;
+      return (
+        base &&
+        JSON.stringify(['get', base, String(literal(unwrap(node.argumentExpression)).value)])
+      );
     }
     if (ts.isTypeOfExpression(node)) {
       const operand = valueKey(node.expression);
