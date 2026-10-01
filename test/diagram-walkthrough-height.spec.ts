@@ -168,13 +168,22 @@ async function sampleChange(
       const read = new Function(`return (${source})`)() as typeof geometry;
       const samples = [read(element)];
       let frameSample = samples[0];
-      // Register after the renderer's observer. Its synchronous refit must be included
-      // in the same frame, before paint, rather than measured later in a timer task.
+      // A non-painted probe requests an observation every frame, even when only a
+      // transform changes. Register after the renderer's observer so its synchronous
+      // refit and all rAF callbacks are included before paint.
+      const frameProbe = resizeWidth ? document.createElement('div') : undefined;
+      if (frameProbe) {
+        frameProbe.style.cssText =
+          'position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;contain:strict;' +
+          'transition:none!important;animation:none!important;width:0;height:0';
+        element.append(frameProbe);
+      }
       const observer = resizeWidth
         ? new ResizeObserver(() => {
             frameSample = read(element);
           })
         : undefined;
+      if (frameProbe) observer?.observe(frameProbe);
       observer?.observe(element.querySelector('.diagram-scroll-container')!);
       try {
         element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
@@ -186,7 +195,7 @@ async function sampleChange(
         do {
           await new Promise<void>((resolve) =>
             requestAnimationFrame(() => {
-              if (resizeWidth) frameSample = read(element);
+              if (frameProbe) frameProbe.style.width = `${(samples.length % 2) + 1}px`;
               resolve();
             }),
           );
@@ -205,6 +214,7 @@ async function sampleChange(
         );
       } finally {
         observer?.disconnect();
+        frameProbe?.remove();
       }
       return samples;
     },
@@ -458,4 +468,61 @@ test('resize sampling detects painted overflow and control movement', async ({
   expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
   expect(samples.at(-1)!.overflow).toBeGreaterThan(1);
   await root.screenshot({ path: testInfo.outputPath('painted-defect-control.png') });
+});
+
+// Unlike a persistent defect, this paint disappears before the following sampler rAF.
+test('resize sampling detects one painted frame from a later callback', async ({
+  page,
+}, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  await root.evaluate((element, source) => {
+    const read = new Function(`return (${source})`)() as typeof geometry;
+    const target = element as HTMLElement & { paintedDefect: ReturnType<typeof geometry>[] };
+    target.paintedDefect = [];
+    element.querySelector('.stepper-dot')!.addEventListener(
+      'click',
+      () => {
+        // Register after the sampler rAF, then after its post-frame task. The initial
+        // observer delivery has finished before the one-frame defect is introduced.
+        queueMicrotask(() =>
+          requestAnimationFrame(() =>
+            setTimeout(
+              () =>
+                requestAnimationFrame(() => {
+                  const node = element.querySelector<SVGElement>('[data-node-id="redux"]')!;
+                  const controls = element.querySelector<HTMLElement>('.state-navigation')!;
+                  node.style.translate = '200px 0';
+                  controls.style.translate = '0 12px';
+                  target.paintedDefect.push(read(element));
+                  requestAnimationFrame(() => {
+                    node.style.removeProperty('translate');
+                    controls.style.removeProperty('translate');
+                    target.paintedDefect.push(read(element));
+                  });
+                }),
+              0,
+            ),
+          ),
+        );
+      },
+      { once: true },
+    );
+  }, geometry.toString());
+  const samples = await sampleChange(root, 0, 662);
+  const injected = await root.evaluate(
+    (element) =>
+      (element as HTMLElement & { paintedDefect: ReturnType<typeof geometry>[] }).paintedDefect,
+  );
+  await testInfo.attach('one-frame-defect-control', {
+    body: JSON.stringify({ samples, injected }, null, 2),
+    contentType: 'application/json',
+  });
+  expect(injected).toHaveLength(2);
+  expect(injected[0].overflow).toBeGreaterThan(1);
+  expect(injected[1].overflow).toBeLessThanOrEqual(1);
+  expect(samples[0].overflow).toBeLessThanOrEqual(1);
+  expect(Math.max(...samples.map((sample) => sample.overflow))).toBeGreaterThan(1);
+  const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+  expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
+  expect(samples.at(-1)!.overflow).toBeLessThanOrEqual(1);
 });
