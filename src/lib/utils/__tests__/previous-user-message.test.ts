@@ -102,7 +102,7 @@ describe('isAutomatedChatMessage', () => {
 describe('getHumanMessageAuthor', () => {
   // PROTOCOL §5.5 serve-time projection (intent-hq/intentd#1869): every user
   // row carries `author`, resolved from `metadata.fromPrincipalId`.
-  const author: MessageAuthor = {
+  const author: MessageAuthor & { principalId: string } = {
     principalId: 'principal-guest',
     login: 'guest',
     displayName: 'Guest User',
@@ -201,13 +201,13 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
   // Queue entries carry only the daemon's `messageMetadata.fromPrincipalId`
   // stamp (intent-hq/intentd#1869); the queue surface resolves the author
   // from the projections the transcript already carries.
-  const guest: MessageAuthor = {
+  const guest: MessageAuthor & { principalId: string } = {
     principalId: 'principal-guest',
     login: 'guest',
     displayName: 'Guest User',
     avatarUrl: null,
   };
-  const owner: MessageAuthor = {
+  const owner: MessageAuthor & { principalId: string } = {
     principalId: 'principal-owner',
     login: 'owner',
     displayName: 'Owner Person',
@@ -492,6 +492,18 @@ describe('portable human author projection and local-only cache', () => {
     );
     expect(getQueuedMessageAuthor({ author: local }, cache, 'self')).toBeNull();
     expect(getQueuedMessageAuthor({ author: local }, null)).toBeNull();
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: 'self' } },
+        new Map([['self', portable]]),
+      ),
+    ).toBeNull();
+    expect(
+      getHumanMessageAuthor({
+        ...msg('principal-only', 'user', 'body'),
+        author: { principalId: 'other' },
+      }),
+    ).toEqual({ principalId: 'other', login: null, displayName: null, avatarUrl: null });
     for (const metadata of [
       { type: 'agent_message', fromAgentId: 'agent' },
       { source: 'system' },
