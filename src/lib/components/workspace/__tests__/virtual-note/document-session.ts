@@ -531,7 +531,7 @@ export class DocumentSession {
               const view = this.editor!.view;
               const anchor = view.domAtPos(view.state.selection.anchor);
               const head = view.domAtPos(view.state.selection.head);
-              window
+              view.dom.ownerDocument
                 .getSelection()
                 ?.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
             }
