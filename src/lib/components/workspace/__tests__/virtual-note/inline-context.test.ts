@@ -141,3 +141,80 @@ it('refuses a stale context response before replacing the active editor', async 
     session.destroy();
   }
 });
+
+for (const [kind, open, close] of [
+  ['bold', '**', '**'],
+  ['link', '[', '](https://example.test/path)'],
+  ['combined', '[**', '**](https://example.test/path)'],
+]) {
+  const source =
+    'x'.repeat(6141) +
+    open +
+    'repeated café 🌍 text repeated. '.repeat(2600).trimEnd() +
+    close +
+    ' tail';
+  const at = 6141 + open.length - 2048;
+  it(`does not render an empty ${kind} span at the crop end`, async () => {
+    const session = new DocumentSession(
+      new SourceJournal(() => source, 1),
+      document.createElement('div'),
+    );
+    try {
+      await session.seek(at);
+      const from = session.projection!.start;
+      expect(session.editor!.getText()).toBe('x'.repeat(6141 - from));
+      expect(
+        session.projection!.tokens.every(
+          (t) =>
+            t.from >= from && t.to <= session.projection!.start + session.projection!.source.length,
+        ),
+      ).toBe(true);
+    } finally {
+      session.destroy();
+    }
+  });
+  it(`accepts typing before an unloaded ${kind} opener and conserves source/history`, async () => {
+    const service = new SourceJournal(() => source, 1);
+    const session = new DocumentSession(service, document.createElement('div'));
+    try {
+      await session.seek(at);
+      session.editor!.commands.setTextSelection(at - session.projection!.start + 1);
+      session.editor!.commands.insertContent('Z');
+      expect(session.error).toBe('');
+      expect(service.region(0)).toBe(source.slice(0, at) + 'Z' + source.slice(at));
+      expect(session.selection.head).toBe(at + 1);
+      expect(service.depth).toBe(1);
+      session.save();
+      await session.seek(65000);
+      await session.seek(at);
+      await session.history();
+      expect(service.region(0)).toBe(source);
+      expect(session.selection.head).toBe(at);
+      await session.history(true);
+      expect(service.region(0)).toBe(source.slice(0, at) + 'Z' + source.slice(at));
+    } finally {
+      session.destroy();
+    }
+  });
+}
+
+for (const [kind, open, close] of [
+  ['bold', '**', '**'],
+  ['link', '[', '](https://example.test/path)'],
+  ['combined', '[**', '**](https://example.test/path)'],
+])
+  it(`does not render empty inherited ${kind} at a crop starting before its closer`, async () => {
+    const text = 'repeated café 🌍 text repeated. '.repeat(2600).trimEnd();
+    const source = open + text + close + 'y'.repeat(6141);
+    const session = new DocumentSession(
+      new SourceJournal(() => source, 1),
+      document.createElement('div'),
+    );
+    try {
+      await session.seek(open.length + text.length + 2048);
+      expect(session.editor!.getText()).toBe('y'.repeat(session.projection!.source.length));
+      expect(session.projection!.context!.before).toEqual([]);
+    } finally {
+      session.destroy();
+    }
+  });

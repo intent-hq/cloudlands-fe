@@ -448,3 +448,112 @@ test('delimiter crop boundaries match real native text and marks', async ({
   });
   expect(evidence.map((r) => r.equal)).toEqual([true, true, true, true, true]);
 });
+
+for (const [kind, open, close] of [
+  ['bold', '**', '**'],
+  ['link', '[', '](https://example.test/path)'],
+  ['combined', '[**', '**](https://example.test/path)'],
+]) {
+  const source =
+    'x'.repeat(6141) +
+    open +
+    'repeated café 🌍 text repeated. '.repeat(2600).trimEnd() +
+    close +
+    ' tail';
+  const at = 6141 + open.length - 2048;
+  test(`empty ${kind} crop-end display agrees with native at and beside the opener`, async ({
+    mount,
+    page,
+  }, info) => {
+    await mount(Pair, { props: { sourceOverride: source } });
+    await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+    const results = await root(page).evaluate(
+      async (el, { at, open }) => {
+        const h = el as Host,
+          p = h.proof;
+        const native = (
+          document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host
+        ).native;
+        const canonical = (await h.parseSource(p.service.region(0))).doc;
+        const rows = [];
+        for (const delta of [-2, -1, 0, 1, 2]) {
+          await p.seek(at + delta);
+          const from = p.projection!.start,
+            to = from + p.projection!.source.length;
+          const visibleEnd = Math.min(to, 6141) + Math.max(0, to - 6141 - open.length);
+          const expected = native.state.doc.slice(from + 1, visibleEnd + 1, true).content.toJSON();
+          rows.push({
+            delta,
+            from,
+            to,
+            equal:
+              JSON.stringify(p.editor!.state.doc.content.toJSON()) === JSON.stringify(expected),
+            snapshot: p.snapshot(),
+          });
+        }
+        return {
+          nativeCanonicalEqual: JSON.stringify(native.getJSON()) === JSON.stringify(canonical),
+          rows,
+        };
+      },
+      { at, open },
+    );
+    await info.attach('empty-edge-display.json', {
+      body: JSON.stringify({ kind, ...results }, null, 2),
+      contentType: 'application/json',
+    });
+    expect(results.nativeCanonicalEqual).toBe(true);
+    expect(results.rows.map((r) => r.equal)).toEqual([true, true, true, true, true]);
+  });
+  test(`native Z input beside an unloaded ${kind} opener survives save, eviction and undo`, async ({
+    mount,
+    page,
+  }, info) => {
+    await mount(Pair, { props: { sourceOverride: source } });
+    await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+    await root(page).evaluate((el, at) => (el as Host).proof.seek(at), at);
+    for (const side of ['native', 'bounded']) {
+      await select(page, side, at, 0);
+      await page.keyboard.insertText('Z');
+      await settled(page);
+    }
+    const expected = source.slice(0, at) + 'Z' + source.slice(at);
+    await sameCanonical(page, expected);
+    const edited = await root(page).evaluate((el) => (el as Host).proof.snapshot());
+    expect(edited.selection.head).toBe(at + 1);
+    expect(edited.journalEvents).toBe(1);
+    const eviction = await root(page).evaluate(async (el, at) => {
+      const p = (el as Host).proof,
+        old = p.editor;
+      for (const destination of [65000, 35000, at]) await p.seek(destination);
+      return { destroyed: old!.isDestroyed, snapshot: p.snapshot() };
+    }, at);
+    expect(eviction.destroyed).toBe(true);
+    expect(eviction.snapshot.created).toBe(edited.created + 3);
+    await sameCanonical(page, expected);
+    for (const [key, wanted] of [
+      ['Control+z', source],
+      ['Control+Shift+z', expected],
+    ]) {
+      for (const side of ['native', 'bounded']) {
+        await focus(page, side);
+        await page.keyboard.press(key);
+        await settled(page);
+      }
+      await sameCanonical(page, wanted);
+    }
+    await info.attach('empty-edge-input.json', {
+      body: JSON.stringify(
+        {
+          kind,
+          edited,
+          eviction,
+          final: await root(page).evaluate((el) => (el as Host).proof.snapshot()),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+  });
+}

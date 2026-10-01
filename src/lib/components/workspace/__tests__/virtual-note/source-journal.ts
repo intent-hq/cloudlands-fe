@@ -73,12 +73,20 @@ export class SourceJournal {
   inlineBoundary(position: number, direction: -1 | 1) {
     const { id, start } = this.locate(position);
     let local = position - start;
-    for (const span of this.spans(id)) {
-      for (const [from, to] of [
-        [span.openFrom, span.contentFrom],
-        [span.contentTo, span.closeTo],
-      ])
-        if (local > from && local < to) local = direction > 0 ? to : from;
+    const spans = this.spans(id);
+    // Include empty boundary spans: an opener alone (or a closer alone) cannot
+    // form an editable projection. Inner-first traversal also removes an empty
+    // outer span when moving past nested syntax lands on its content boundary.
+    for (let i = spans.length - 1; i >= 0; i--) {
+      const span = spans[i];
+      if (local > span.openFrom && local <= span.contentFrom) {
+        if (direction < 0) local = span.openFrom;
+        else if (local < span.contentFrom) local = span.contentFrom;
+      }
+      if (local >= span.contentTo && local < span.closeTo) {
+        if (direction > 0) local = span.closeTo;
+        else if (local > span.contentTo) local = span.contentTo;
+      }
     }
     return start + local;
   }
