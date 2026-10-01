@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { orderTraffic, selectedPayloadReader } from './traffic-view';
+import {
+  orderTraffic,
+  selectedPayloadReader,
+  payloadDocument,
+  payloadSupportsRichView,
+} from './traffic-view';
 import type { DevConsoleRecord, DevConsoleRow } from '$shared/types/dev-console';
 const row = (id: string, method: string, timestamp = 0): DevConsoleRow => ({
   id,
@@ -13,6 +18,46 @@ const row = (id: string, method: string, timestamp = 0): DevConsoleRow => ({
   connectionGeneration: 1,
   status: 'pending',
   payload: { state: 'absent', originalBytes: 0, retainedBytes: 0 },
+});
+describe('payload documents', () => {
+  it('bounds rich rendering by UTF-16 length, preserving the 20 * 1024 * 1024 boundary', () => {
+    const boundary = 'x'.repeat(20 * 1024 * 1024);
+    expect(payloadSupportsRichView(boundary)).toBe(true);
+    expect(payloadSupportsRichView(boundary + 'x')).toBe(false);
+  });
+  it.each(['\n', '\r', '\r\n'])(
+    'bounds rich rendering at 300,000 logical lines with %j separators',
+    (newline) => {
+      const boundary = newline.repeat(299999);
+      expect(payloadSupportsRichView(boundary)).toBe(true);
+      expect(payloadSupportsRichView(boundary + newline)).toBe(false);
+    },
+  );
+  it('detects a supported capture whose pretty-printed JSON crosses the line limit', () => {
+    const captured = JSON.stringify({
+      items: Array.from({ length: 100000 }, () => ({ value: 1 })),
+    });
+    expect(captured.length).toBe(1200011);
+    const formatted = payloadDocument(captured);
+    expect(formatted.text.split('\n')).toHaveLength(300004);
+    expect(payloadSupportsRichView(formatted.text)).toBe(false);
+    expect(formatted.language).toBe('json');
+  });
+  it.each(['null', 'true', 'false', '42', '"hello"'])('handles scalar JSON %s', (text) => {
+    expect(payloadDocument(text)).toEqual({ text, language: 'json' });
+  });
+  it('indents nested objects and arrays with two spaces', () => {
+    expect(payloadDocument('{"items":[{"value":1}]}')).toEqual({
+      text: '{\n  "items": [\n    {\n      "value": 1\n    }\n  ]\n}',
+      language: 'json',
+    });
+  });
+  it.each(['', 'undefined', '[unserializable]', '{"truncated":', 'plain text', ' \n '])(
+    'preserves non-JSON text %j',
+    (text) => {
+      expect(payloadDocument(text)).toEqual({ text, language: 'plaintext' });
+    },
+  );
 });
 describe('Dev Console traffic view', () => {
   it('keeps arrival-order ties stable while filtering names and sorting response updates', () => {

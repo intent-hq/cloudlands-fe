@@ -6988,5 +6988,10 @@
   "settings_personalDevices_pairing_error": "Kopplung nicht verfügbar. Prüfen Sie Verbindung und Zugriffsrechte und versuchen Sie es erneut.",
   "settings_personalDevices_roster_error": "Verbundene Geräte konnten nicht geladen werden. Versuchen Sie es erneut.",
   "settings_personalDevices_copy_label": "Kopplungslink kopieren",
-  "settings_personalDevices_copied_label": "Link kopiert"
+  "settings_personalDevices_copied_label": "Link kopiert",
+  "devConsole_payload_search_label": "Suchen",
+  "devConsole_payload_collapse_label": "Alle einklappen",
+  "devConsole_payload_expand_label": "Alle ausklappen",
+  "devConsole_payload_load_error": "Die Anzeige konnte nicht geladen werden. Der erfasste Text wird unten angezeigt.",
+  "devConsole_payload_large_description": "Große Nutzlast. Syntaxhervorhebung und Einklappen sind nicht verfügbar; Suchen und Kopieren funktionieren weiterhin."
 }

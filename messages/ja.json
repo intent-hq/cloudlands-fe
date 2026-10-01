@@ -6988,5 +6988,10 @@
   "settings_personalDevices_pairing_error": "ペアリングできません。接続とアクセス権を確認して再試行してください。",
   "settings_personalDevices_roster_error": "接続中のデバイスを読み込めませんでした。再試行してください。",
   "settings_personalDevices_copy_label": "ペアリングリンクをコピー",
-  "settings_personalDevices_copied_label": "リンクをコピーしました"
+  "settings_personalDevices_copied_label": "リンクをコピーしました",
+  "devConsole_payload_search_label": "検索",
+  "devConsole_payload_collapse_label": "すべて折りたたむ",
+  "devConsole_payload_expand_label": "すべて展開",
+  "devConsole_payload_load_error": "ビューアーを読み込めませんでした。取得したテキストを以下に表示します。",
+  "devConsole_payload_large_description": "大きなペイロードです。構文の強調表示と折りたたみは利用できませんが、検索とコピーは引き続き使用できます。"
 }

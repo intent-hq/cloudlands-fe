@@ -1,11 +1,15 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Shell from './DevConsoleShell.svelte';
+import { resetMonaco, editors, models, initializePayloadMonaco } from './__tests__/monaco-mock';
+vi.mock('./payload-monaco', () => ({ initializePayloadMonaco: () => initializePayloadMonaco() }));
+
 import { DevConsoleCaptureService } from './main/dev-console-capture';
 import type { RpcTrafficObserver } from '$features/backend/main/rpc-traffic';
 import type { DevConsoleRecord } from '$shared/types/dev-console';
 const original = window.electronAPI;
 beforeEach(() => {
+  resetMonaco();
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -70,7 +74,11 @@ it('loads only selected payloads, refreshes their response, and sends exact pros
   await waitFor(() => expect(view.getByText('agent.send')).toBeTruthy());
   expect(invoke.mock.calls.filter(([channel]) => channel === 'dev-console:record')).toHaveLength(0);
   await fireEvent.click(view.getByText('agent.send'));
-  await waitFor(() => expect(view.container.querySelector('pre')?.textContent?.length).toBe(2048));
+  await waitFor(() =>
+    expect(
+      view.container.querySelector('[data-testid=payload-document]')?.textContent?.length,
+    ).toBe(2048),
+  );
   await fireEvent.click(view.getByRole('checkbox'));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith('dev-console:select', {
@@ -79,7 +87,9 @@ it('loads only selected payloads, refreshes their response, and sends exact pros
       enabled: true,
     }),
   );
-  expect(view.container.querySelector('pre')?.textContent?.length).toBe(2048);
+  expect(view.container.querySelector('[data-testid=payload-document]')?.textContent?.length).toBe(
+    2048,
+  );
   emit({
     type: 'response',
     key: 'a',
@@ -88,15 +98,21 @@ it('loads only selected payloads, refreshes their response, and sends exact pros
     connectionGeneration: 1,
   });
   await waitFor(() =>
-    expect(view.container.querySelectorAll('pre')[1]?.textContent).toContain('y'.repeat(5000)),
+    expect(
+      view.container.querySelectorAll('[data-testid=payload-document]')[1]?.textContent,
+    ).toContain('y'.repeat(5000)),
   );
   const reads = invoke.mock.calls.filter(([c]) => c === 'dev-console:record').length;
   request('c', 'unrelated');
   await waitFor(() => expect(view.getByText('unrelated')).toBeTruthy());
   expect(invoke.mock.calls.filter(([c]) => c === 'dev-console:record')).toHaveLength(reads);
   await fireEvent.click(view.getByRole('button', { name: 'Clear', exact: true }));
-  await waitFor(() => expect(view.container.querySelectorAll('pre')).toHaveLength(0));
+  await waitFor(() =>
+    expect(view.container.querySelectorAll('[data-testid=payload-document]')).toHaveLength(0),
+  );
   expect(capture.getSnapshot('one', sessionId)?.records).toEqual([]);
+  expect(editors.every((editor) => editor.dispose.mock.calls.length === 1)).toBe(true);
+  expect(models.every((model) => model.dispose.mock.calls.length === 1)).toBe(true);
 });
 it('discards a selected payload when its row is evicted, filtered out or deselected', async () => {
   const { request, view } = setup(2);
@@ -104,13 +120,21 @@ it('discards a selected payload when its row is evicted, filtered out or deselec
   request('b', 'second');
   await waitFor(() => expect(view.getByText('first')).toBeTruthy());
   await fireEvent.click(view.getByText('first'));
-  await waitFor(() => expect(view.container.querySelector('pre')).toBeTruthy());
+  await waitFor(() =>
+    expect(view.container.querySelector('[data-testid=payload-document]')).toBeTruthy(),
+  );
   request('c', 'third');
-  await waitFor(() => expect(view.container.querySelector('pre')).toBeNull());
+  await waitFor(() =>
+    expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull(),
+  );
   await fireEvent.click(view.getByText('second'));
-  await waitFor(() => expect(view.container.querySelector('pre')).toBeTruthy());
+  await waitFor(() =>
+    expect(view.container.querySelector('[data-testid=payload-document]')).toBeTruthy(),
+  );
   await fireEvent.input(view.getByRole('textbox'), { target: { value: 'third' } });
-  await waitFor(() => expect(view.container.querySelector('pre')).toBeNull());
+  await waitFor(() =>
+    expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull(),
+  );
 });
 it('rejects a late payload from a formerly selected row', async () => {
   const { request, view, invoke } = setup();
@@ -139,7 +163,22 @@ it('rejects a late payload from a formerly selected row', async () => {
   } as DevConsoleRecord);
   await Promise.resolve();
   expect(view.container.textContent).not.toContain('PRIVATE-LATE-REPLY');
-  expect(view.container.querySelector('pre')).toBeNull();
+  expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
+});
+
+it('moves keyboard focus into compact details and back to the selected record on close', async () => {
+  const { request, view } = setup();
+  request('a', 'first');
+  request('b', 'second');
+  await waitFor(() => expect(view.getByText('second')).toBeTruthy());
+  const row = view.getByText('second').closest<HTMLElement>('[role=row]')!;
+  row.focus();
+  await fireEvent.keyDown(row, { key: 'Enter' });
+  const close = view.getByRole('button', { name: 'Close details' });
+  await waitFor(() => expect(document.activeElement).toBe(close));
+  await fireEvent.click(close);
+  await waitFor(() => expect(document.activeElement).toBe(row));
+  expect(view.queryByRole('button', { name: 'Close details' })).toBeNull();
 });
 
 it('keeps a rejected full-capture checkbox off and reports the control error', async () => {
@@ -167,7 +206,7 @@ it('shows bridge connection failures without inventing an active session', async
     expect(view.getByRole('alert').textContent).toContain('native session unavailable'),
   );
   expect(view.container.querySelector('[data-dev-console-ready="true"]')).toBeNull();
-  expect(view.container.querySelector('pre')).toBeNull();
+  expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
 });
 
 it('separates three tabs, keeps method filtering/counts scoped, and resets details on tab changes', async () => {
@@ -198,16 +237,20 @@ it('separates three tabs, keeps method filtering/counts scoped, and resets detai
   expect(view.getAllByRole('tab')).toHaveLength(3);
   await fireEvent.click(view.getByRole('cell', { name: 'same.method' }));
   await waitFor(() =>
-    expect(view.container.querySelector('pre')?.textContent).toContain('"key": "a"'),
+    expect(view.container.querySelector('[data-testid=payload-document]')?.textContent).toContain(
+      '"key": "a"',
+    ),
   );
   await fireEvent.click(view.getByRole('tab', { name: 'Inbound RPC', exact: true }));
-  expect(view.container.querySelector('pre')).toBeNull();
+  expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
   await fireEvent.click(view.getByRole('cell', { name: 'same.method' }));
   await waitFor(() =>
-    expect(view.container.querySelector('pre')?.textContent).toContain('reverseOnly'),
+    expect(view.container.querySelector('[data-testid=payload-document]')?.textContent).toContain(
+      'reverseOnly',
+    ),
   );
   await fireEvent.click(view.getByRole('tab', { name: 'Events', exact: true }));
-  expect(view.container.querySelector('pre')).toBeNull();
+  expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
   await waitFor(() =>
     expect(view.container.querySelector('footer')?.textContent).toContain('2 shown'),
   );
@@ -218,9 +261,11 @@ it('separates three tabs, keeps method filtering/counts scoped, and resets detai
   );
   await fireEvent.click(view.getByRole('cell', { name: 'same.event' }));
   await waitFor(() =>
-    expect(view.container.querySelector('pre')?.textContent).toContain('eventOnly'),
+    expect(view.container.querySelector('[data-testid=payload-document]')?.textContent).toContain(
+      'eventOnly',
+    ),
   );
   await fireEvent.click(view.getByRole('tab', { name: 'Outbound RPC', exact: true }));
-  expect(view.container.querySelector('pre')).toBeNull();
+  expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
   expect(view.getByRole('cell', { name: 'same.method' })).toBeTruthy();
 });
