@@ -2441,6 +2441,7 @@
   "chat_thinkingBlock_reasoning_label": "Raisonnement",
   "chat_queuedMessages_header_one": "1 message en file d'attente",
   "chat_queuedMessages_header_many": "{count} messages en file d'attente",
+  "chat_queuedMessages_idleDelivery_description": "Tous les messages prêts seront envoyés ensemble quand l'agent sera inactif.",
   "chat_queuedMessages_heldForEditing_title": "Retenu pour modification",
   "chat_queuedMessages_save_tooltip": "Enregistrer",
   "chat_queuedMessages_cancel_tooltip": "Annuler",

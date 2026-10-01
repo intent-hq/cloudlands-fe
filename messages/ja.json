@@ -2441,6 +2441,7 @@
   "chat_thinkingBlock_reasoning_label": "推論",
   "chat_queuedMessages_header_one": "1 件のキュー内メッセージ",
   "chat_queuedMessages_header_many": "{count} 件のキュー内メッセージ",
+  "chat_queuedMessages_idleDelivery_description": "エージェントが待機状態になると、送信可能なメッセージをすべてまとめて送信します。",
   "chat_queuedMessages_heldForEditing_title": "編集のため保留中",
   "chat_queuedMessages_save_tooltip": "保存",
   "chat_queuedMessages_cancel_tooltip": "キャンセル",

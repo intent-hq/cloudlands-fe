@@ -636,6 +636,7 @@
         : 'px-3.5!'} py-0 text-left text-subtle {expanded ? 'pt-1!' : ''}"
       aria-expanded={expanded}
       aria-controls={contentId}
+      aria-describedby={`${contentId}-delivery`}
       data-testid="queued-messages-disclosure"
       onclick={() => (expanded = !expanded)}
     >
@@ -657,6 +658,20 @@
         />
       </span>
     </Button>
+
+    <p
+      id={`${contentId}-delivery`}
+      class="relative type-caption {rowInset} pb-1 text-subtle"
+      data-testid="queued-messages-delivery"
+    >
+      {#if expanded && hasBatch && lastReadyIndex !== -1}
+        <span
+          class="pointer-events-none absolute left-4 inset-y-0 border-l border-border"
+          aria-hidden="true"
+        ></span>
+      {/if}
+      {m.chat_queuedMessages_idleDelivery_description()}
+    </p>
 
     {#if expanded}
       <div
