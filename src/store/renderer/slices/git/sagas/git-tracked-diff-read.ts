@@ -1,6 +1,7 @@
 import { call, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
+import { isMissingWorkingTreeFile } from '$features/file-tracking/components/diff/is-missing-working-tree-file';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   batchedGitBranchBaseDiff,
@@ -121,8 +122,9 @@ export function* readTrackedDiff(
         if (response.success !== false)
           result.newContent =
             typeof response.data === 'string' ? response.data : (response.data?.content ?? '');
-      } catch {
-        // Preserve the existing missing/unreadable working-tree fallback.
+      } catch (error) {
+        if (gitRootId && !isMissingWorkingTreeFile(error)) throw error;
+        // Scoped missing files and legacy unscoped reads keep an empty new side.
       }
     }
     return result;

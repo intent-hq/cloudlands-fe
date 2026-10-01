@@ -347,6 +347,55 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
     );
   });
 
+  it.each([
+    new Error('Root reads unsupported'),
+    Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
+    Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+    Object.assign(new Error('Permission denied (os error 13)'), { rpcCode: -32603 }),
+  ])('shows scoped fallback read errors without a deletion diff: %s', async (error) => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'tracked.txt',
+      oldContent: 'INDEX',
+      newContent: '',
+    });
+    testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'INDEX' });
+    vi.mocked(backendRequest).mockRejectedValue(error);
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: '/external/repo/tracked.txt', relativePath: 'tracked.txt' }),
+        workspaceId: 'ws-1',
+        gitRootId: 'external-root',
+        gitRootPath: '/external/repo',
+      },
+    });
+    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    expect(screen.queryByTestId('new-content')).toBeNull();
+    expect(testState.invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves verified scoped deletion in the fallback reader', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'gone.txt',
+      oldContent: 'INDEX',
+      newContent: '',
+    });
+    testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'INDEX' });
+    vi.mocked(backendRequest).mockRejectedValue(
+      Object.assign(new Error('No such file or directory (os error 2)'), { rpcCode: -32603 }),
+    );
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: '/external/repo/gone.txt', relativePath: 'gone.txt' }),
+        workspaceId: 'ws-1',
+        gitRootId: 'external-root',
+        gitRootPath: '/external/repo',
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('old-content').textContent).toBe('INDEX'));
+    expect(screen.getByTestId('new-content').textContent).toBe('');
+    expect(testState.invokeMock).not.toHaveBeenCalled();
+  });
+
   it('passes secondary-root identity and path to working-tree diff reads', async () => {
     testState.batchedGitDiffMock.mockResolvedValue({
       file: 'src/app.ts',

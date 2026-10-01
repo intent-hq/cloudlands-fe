@@ -28,6 +28,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
+import { isMissingWorkingTreeFile } from './is-missing-working-tree-file';
 import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
 
 const logger = createLogger('diff-ipc-batcher');
@@ -227,8 +228,8 @@ function toDaemonDiffChunks(result: unknown): DiffChunk[] {
 }
 
 /** Working-tree side of an unstaged diff via `file.read` (PROTOCOL §5.9). A
- * read failure folds to empty content (the file was deleted from the workdir),
- * mirroring the legacy handler's fallback. */
+ * Scoped failures propagate unless the daemon confirms a missing file;
+ * unscoped reads retain the legacy empty-content fallback. */
 async function readWorkingTreeContent(
   workspaceId: string,
   filePath: string,
@@ -248,6 +249,7 @@ async function readWorkingTreeContent(
           : '';
     return { success: true, data: content };
   } catch (error) {
+    if (gitRootId && !isMissingWorkingTreeFile(error)) throw error;
     logger.debug('file.read failed for working-tree diff side (file deleted?)', {
       workspaceId,
       filePath,

@@ -280,6 +280,39 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     else expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
   });
 
+  it.each([
+    new Error('Root reads unsupported'),
+    Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
+    Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+    Object.assign(new Error('Permission denied (os error 13)'), { rpcCode: -32603 }),
+  ])('rejects scoped working-tree failures instead of fabricating deletion: %s', async (error) => {
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile') return { content: 'INDEX' };
+      throw error;
+    });
+    const pending = expect(
+      batchedGitDiff('scoped-error', false, 'tracked.txt', {
+        gitRootId: 'external-root',
+      }),
+    ).rejects.toThrow(error.message);
+    await vi.runAllTimersAsync();
+    await pending;
+  });
+
+  it('keeps an explicitly missing scoped file as a deleted working-tree side', async () => {
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'git.diffs') return [{ path: 'gone.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile') return { content: 'INDEX' };
+      throw Object.assign(new Error('No such file or directory (os error 2)'), { rpcCode: -32603 });
+    });
+    const pending = batchedGitDiff('scoped-deleted', false, 'gone.txt', {
+      gitRootId: 'external-root',
+    });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ oldContent: 'INDEX', newContent: '' });
+  });
+
   it('keeps every diff and file read on explicit workspace B when active workspace is A', async () => {
     storeState.workspaces = [
       { id: 'ws-a', worktreePath: '/workspace-a' },
