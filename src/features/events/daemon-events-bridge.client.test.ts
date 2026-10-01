@@ -3639,6 +3639,49 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
   });
 
+  it('preserves portable queue projections through the real event bridge and scoped store replacement', async () => {
+    await primeBridge();
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const queue: QueuedMessage[] = [
+      {
+        id: 'portable-one',
+        content: '  unchanged\n',
+        position: 0,
+        queuedAt: '2026-01-01T00:00:00Z',
+        author,
+        messageMetadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      },
+      {
+        id: 'portable-two',
+        content: 'second',
+        position: 1,
+        queuedAt: '2026-01-01T00:00:00Z',
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      },
+      {
+        id: 'unknown',
+        content: 'unknown',
+        position: 2,
+        queuedAt: '2026-01-01T00:00:00Z',
+        author: { principalId: null, login: null, displayName: null, avatarUrl: null },
+      },
+    ];
+    const before = JSON.stringify(queue);
+    capturedHandlers[0]!(notification('agent:queue:updated', { agentId: AGENT, queue }));
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(queue);
+    expect(JSON.stringify(queue)).toBe(before);
+    const foreign = notification('agent:queue:updated', { agentId: AGENT, queue: [] });
+    foreign.params.event.workspaceId = 'foreign';
+    capturedHandlers[0]!(foreign);
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(queue);
+  });
+
   it('renders the BE queue snapshot from a PROTOCOL §5.5 agent:queue:updated payload', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

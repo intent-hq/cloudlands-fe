@@ -687,6 +687,51 @@ describe('QueuedMessageList', () => {
     expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
   });
 
+  it('renders portable queue authors without a roster cache and keeps unknown, null and absent distinct', () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: 'Same Person',
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const messages = [
+      queued({
+        id: 'p1',
+        content: 'first',
+        author,
+        messageMetadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      }),
+      queued({
+        id: 'p2',
+        content: 'second',
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      }),
+      queued({
+        id: 'unknown',
+        content: 'unknown',
+        author: { principalId: null, login: null, displayName: null, avatarUrl: null },
+      }),
+      queued({ id: 'null', content: 'no author', author: null }),
+      queued({ id: 'absent', content: 'old host' }),
+      queued({
+        id: 'automatic',
+        content: 'automatic',
+        author,
+        messageMetadata: { type: 'hook_wake' },
+      }),
+    ];
+    const before = JSON.stringify(messages);
+    render(QueuedMessageList, { props: { messages, authors: null, ownPrincipalId: 'self' } });
+    const chips = screen.getAllByTestId('queued-message-author');
+    expect(chips).toHaveLength(3);
+    expect(chips[0].getAttribute('aria-label')).toContain('gitlab@one.example');
+    expect(chips[1].getAttribute('aria-label')).toContain('gitlab@two.example');
+    expect(chips[2].textContent?.trim()).not.toBe('');
+    expect(chips.every((chip) => !chip.hasAttribute('data-principal-id'))).toBe(true);
+    expect(JSON.stringify(messages)).toBe(before);
+  });
+
   describe('human author identity (multiplayer)', () => {
     // Queue entries carry the daemon's `messageMetadata.fromPrincipalId`
     // stamp (PROTOCOL §5.5, intent-hq/intentd#1869); the author projection is

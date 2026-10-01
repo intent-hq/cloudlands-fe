@@ -792,6 +792,56 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
   });
 });
 
+describe('ChatMessage portable human authors', () => {
+  it('shows distinct historical identities and unknown human without membership or local-principal inference', () => {
+    const authors = [
+      {
+        principalId: null,
+        login: 'same',
+        displayName: 'Same Person',
+        avatarUrl: null,
+        identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+      },
+      {
+        principalId: null,
+        login: 'same',
+        displayName: 'Same Person',
+        avatarUrl: null,
+        identity: { provider: 'gitlab' as const, host: 'two.example', externalUserId: '42' },
+      },
+      { principalId: null, login: null, displayName: null, avatarUrl: null },
+    ];
+    for (const [i, author] of authors.entries()) {
+      const message: AgentMessage = {
+        ...userTextMessage(`portable body ${i}`),
+        id: `portable-${i}`,
+        author,
+        metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      };
+      const before = JSON.stringify(message);
+      render(ChatMessage, {
+        props: {
+          message,
+          workspace: createMockWorkspace({ memberCount: 1, ownerPrincipalId: 'self' }),
+          ownPrincipalId: 'self',
+        },
+      });
+      expect(JSON.stringify(message)).toBe(before);
+    }
+    const chips = screen.getAllByTestId('user-message-author');
+    expect(chips).toHaveLength(3);
+    expect(chips[0].getAttribute('aria-label')).toContain('gitlab@one.example');
+    expect(chips[1].getAttribute('aria-label')).toContain('gitlab@two.example');
+    expect(chips[2].textContent?.trim()).not.toBe('');
+    expect(
+      chips.every(
+        (chip) => !chip.hasAttribute('data-principal-id') && !chip.hasAttribute('data-sender-role'),
+      ),
+    ).toBe(true);
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+  });
+});
+
 describe('ChatMessage human author identity (multiplayer)', () => {
   // PROTOCOL §5.5 serve-time `author` projection (intent-hq/intentd#1869) on
   // a user row, plus the §5.1 membership summary (intent-hq/intentd#1868).
