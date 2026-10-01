@@ -103,6 +103,11 @@
   let expanded = $state(true);
   let previousMessageCount = $state(0);
   const contentId = $derived(`queued-messages-content-${messages[0]?.id ?? 'empty'}`);
+  const headerLabel = $derived(
+    messages.length === 1
+      ? m.chat_queuedMessages_header_one()
+      : m.chat_queuedMessages_header_many({ count: formatInteger(messages.length) }),
+  );
   const hasBatch = $derived(messages.length > 1);
   const lastReadyIndex = $derived(
     messages.findLastIndex((message) => !message.editing && message.id !== editingId),
@@ -636,14 +641,12 @@
         : 'px-3.5!'} py-0 text-left text-subtle {expanded ? 'pt-1!' : ''}"
       aria-expanded={expanded}
       aria-controls={contentId}
-      aria-describedby={`${contentId}-delivery`}
+      title={headerLabel}
       data-testid="queued-messages-disclosure"
       onclick={() => (expanded = !expanded)}
     >
       <span class="min-w-0 flex-1 truncate" aria-live="polite" data-testid="queued-messages-label">
-        {messages.length === 1
-          ? m.chat_queuedMessages_header_one()
-          : m.chat_queuedMessages_header_many({ count: formatInteger(messages.length) })}
+        {headerLabel}
       </span>
       <span
         class="ml-auto inline-flex h-4 w-4 shrink-0 items-center justify-center"
@@ -658,20 +661,6 @@
         />
       </span>
     </Button>
-
-    <p
-      id={`${contentId}-delivery`}
-      class="relative type-caption {rowInset} pb-1 text-subtle"
-      data-testid="queued-messages-delivery"
-    >
-      {#if expanded && hasBatch && lastReadyIndex !== -1}
-        <span
-          class="pointer-events-none absolute left-4 inset-y-0 border-l border-border"
-          aria-hidden="true"
-        ></span>
-      {/if}
-      {m.chat_queuedMessages_idleDelivery_description()}
-    </p>
 
     {#if expanded}
       <div

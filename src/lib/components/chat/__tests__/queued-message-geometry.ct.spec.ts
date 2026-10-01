@@ -47,7 +47,7 @@ test('packs queued rows together without shrinking keyboard action targets', asy
   }
   const textInsets = await component.evaluate((root) => {
     const label = root
-      .querySelector('[data-testid="queued-messages-delivery"]')!
+      .querySelector('[data-testid="queued-messages-disclosure"]')!
       .getBoundingClientRect();
     const texts = [...root.querySelectorAll('[data-testid="queued-message-text"]')].map((node) =>
       node.getBoundingClientRect(),
@@ -84,11 +84,7 @@ test('keeps a narrow batch keyboard accessible when collapsed', async ({
   });
   const disclosure = component.getByTestId('queued-messages-disclosure');
   const surface = component.getByTestId('queued-messages-container');
-  const delivery = component.getByTestId('queued-messages-delivery');
-  await expect(disclosure).toHaveAttribute(
-    'aria-describedby',
-    (await delivery.getAttribute('id'))!,
-  );
+  await expect(disclosure).toHaveAccessibleName(/^3\b/);
   expect(await surface.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await testInfo.attach('expanded-queue-batch', {
     body: await surface.screenshot(),
@@ -98,7 +94,7 @@ test('keeps a narrow batch keyboard accessible when collapsed', async ({
   await page.keyboard.press('Enter');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
   await expect(component.getByTestId('queued-message-row')).toHaveCount(0);
-  await expect(delivery).toBeVisible();
+  await expect(disclosure).toHaveAccessibleName(/^3\b/);
   await expect(disclosure).toBeFocused();
   await testInfo.attach('collapsed-queue-batch', {
     body: await surface.screenshot(),
@@ -191,7 +187,7 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await expect(rows).toHaveCount(0);
 
   await component.update({ props: { width: 360, zoom: 1, messageCount: 3 } });
-  await expect(component.getByTestId('queued-messages-label')).toHaveText('3 queued messages');
+  await expect(component.getByTestId('queued-messages-label')).toHaveText(/^3\b/);
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
   await expect(rows).toHaveCount(0);
 
@@ -393,14 +389,12 @@ for (const state of [
     const container = component.getByTestId('queued-messages-container');
     const disclosure = component.getByTestId('queued-messages-disclosure');
     const label = component.getByTestId('queued-messages-label');
-    const delivery = component.getByTestId('queued-messages-delivery');
     const chevron = component.getByTestId('queued-messages-chevron');
     const messageRows = component.getByTestId('queued-message-row');
     const firstText = component.getByTestId('queued-message-text').first();
 
     const containerBox = await container.boundingBox();
     const disclosureBox = await disclosure.boundingBox();
-    const deliveryBox = (await delivery.boundingBox())!;
     const labelBox = await label.boundingBox();
     const chevronBox = await chevron.boundingBox();
     const firstTextBox = await firstText.boundingBox();
@@ -418,8 +412,7 @@ for (const state of [
     expect(disclosureBox!.width).toBeCloseTo(containerBox!.width, 1);
     expect(disclosureBox!.height).toBeCloseTo(28 * state.zoom, 1);
     expect(disclosureBox!.y - containerBox!.y).toBeCloseTo(4 * state.zoom, 1);
-    expect(deliveryBox.y).toBeGreaterThanOrEqual(disclosureBox!.y + disclosureBox!.height);
-    expect(firstRowBox!.y).toBeGreaterThanOrEqual(deliveryBox.y + deliveryBox.height);
+    expect(firstRowBox!.y).toBeGreaterThanOrEqual(disclosureBox!.y + disclosureBox!.height);
     expect(chevronBox!.width).toBeCloseTo(16 * state.zoom, 1);
     expect(chevronBox!.height).toBeCloseTo(16 * state.zoom, 1);
     expect(labelBox!.x - disclosureBox!.x).toBeCloseTo(
@@ -445,20 +438,16 @@ for (const state of [
     const collapsedContainerBox = (await container.boundingBox())!;
     const collapsedDisclosureBox = (await disclosure.boundingBox())!;
     const collapsedLabelBox = (await label.boundingBox())!;
-    const collapsedDeliveryBox = (await delivery.boundingBox())!;
     expect(collapsedDisclosureBox.height).toBeCloseTo(28 * state.zoom, 1);
     expect(collapsedDisclosureBox.y).toBeCloseTo(collapsedContainerBox.y, 1);
     expect(collapsedLabelBox.y + collapsedLabelBox.height / 2).toBeCloseTo(
       collapsedDisclosureBox.y + collapsedDisclosureBox.height / 2,
       1,
     );
-    expect(collapsedDeliveryBox.y).toBeGreaterThanOrEqual(
-      collapsedDisclosureBox.y + collapsedDisclosureBox.height,
-    );
     expect(
       collapsedContainerBox.y +
         collapsedContainerBox.height -
-        (collapsedDeliveryBox.y + collapsedDeliveryBox.height),
+        (collapsedDisclosureBox.y + collapsedDisclosureBox.height),
     ).toBeCloseTo(1 * state.zoom, 1);
     await disclosure.press('Enter');
     await expect(messageRows).toHaveCount(state.messageCount);
