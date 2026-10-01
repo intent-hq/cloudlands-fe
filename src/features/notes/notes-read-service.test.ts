@@ -278,14 +278,14 @@ describe('notesReadService (fake seam, real store)', () => {
     ensureNoteContentLoaded(ws, 'note-co');
     ensureNoteContentLoaded(ws, 'note-co');
     // Single-flight: the second call coalesces onto the in-flight fetch
-    // (marking it dirty for one trailing refetch) instead of firing its own.
+    // without invalidating it or scheduling a trailing fetch.
     expect(notesGetMock).toHaveBeenCalledTimes(1);
 
     first.resolve(makeNote('note-co', ws, { content: 'body' }));
     await flush();
     await flush();
 
-    expect(notesGetMock).toHaveBeenCalledTimes(2);
+    expect(notesGetMock).toHaveBeenCalledTimes(1);
     const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
     expect(wsState?.notes.map['note-co']?.content).toBe('body');
   });

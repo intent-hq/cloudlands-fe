@@ -257,7 +257,11 @@ import {
   showWorkspaceAccessRemovedToast,
   showWorkspaceAutoUnarchiveToast,
 } from '$features/agent/agent-attention-toast-service';
-import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import {
+  makeKey,
+  requestSubscriptionFetch,
+  refreshWorkspaceSubscriptionEntriesRequested,
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   permissionRequestReceived,
   removePermissionRequest,
@@ -2098,8 +2102,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
   appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
-  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+  // Share the note-event debounce: one mutation can emit both events.
+  // The task row updates above remain immediate; the BE owns the rollup.
+  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
@@ -3842,7 +3847,16 @@ export function routeDaemonEventsNotification(
   // agent-subscription-ui entry via `agent.getSubscriptions` — completion
   // counts tick live while a coordinator waits on `waitMode: after_all`.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
-    appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    const agentId = (event as { data?: { agentId?: unknown } }).data?.agentId;
+    if (type === 'agent:subscriptions-changed' && typeof agentId === 'string' && agentId) {
+      // This event names the parent whose watch set changed. Other lifecycle
+      // events can affect arbitrary watched children and retain workspace scope.
+      if (appStore.state.agentSubscriptionUI.entries[makeKey(workspaceId, agentId)]) {
+        appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId));
+      }
+    } else {
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    }
   }
 
   // STAB-9: Agent lifecycle events (status-changed, idle) refresh ONLY the

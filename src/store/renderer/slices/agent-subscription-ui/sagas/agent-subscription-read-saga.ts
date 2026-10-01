@@ -30,8 +30,15 @@ import {
   setSubscriptionSnapshot,
   subscriptionSnapshotFetchFailed,
 } from '../agent-subscription-ui-slice';
-import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
-import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  selectTrackedAgentIds,
+  selectWaitingState,
+  selectSubscriptionSnapshotStatus,
+} from '../agent-subscription-ui-selectors';
+import {
+  workspaceUnmounted,
+  backendReconnected,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { initializeChatRequested } from '../../chat-state/chat-state-slice';
 import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
@@ -54,6 +61,7 @@ interface WireResult {
 }
 
 interface ReadCoordinator {
+  contexts: Map<string, { wsId: string; agentId: string }>;
   reads: Map<string, Task>;
   completedCleanups: Map<string, Task>;
   pendingSnapshots: Set<string>;
@@ -218,6 +226,7 @@ function* startSnapshotRead(
   mode: ReadMode,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
+  coordinator.contexts.set(key, { wsId, agentId });
   if (coordinator.reads.has(key)) {
     if (mode === 'confirmation') {
       coordinator.pendingConfirmations.add(key);
@@ -238,8 +247,20 @@ function* requestSubscriptionFetchWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof requestSubscriptionFetch>,
 ) {
-  const [wsId, agentId] = action.payload;
+  const [wsId, agentId, ensure] = action.payload;
   if (!wsId || !agentId) return;
+  if (ensure) {
+    yield* ensureSnapshotRead(coordinator, wsId, agentId);
+  } else {
+    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  }
+}
+
+/** Mount demand joins current work; only invalidation requires a trailing read. */
+function* ensureSnapshotRead(coordinator: ReadCoordinator, wsId: string, agentId: string) {
+  coordinator.contexts.set(makeKey(wsId, agentId), { wsId, agentId });
+  if (coordinator.reads.has(makeKey(wsId, agentId))) return;
+  if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'ready') return;
   yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
 }
 
@@ -252,7 +273,7 @@ function* initializeChatPrefetchWorker(
 ) {
   const { agentId, wsId } = action.payload;
   if (!wsId || !agentId) return;
-  yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  yield* ensureSnapshotRead(coordinator, wsId, agentId);
 }
 
 /** View-time prefetch on agent switch (`markAgentAsViewed` carries only the
@@ -266,6 +287,7 @@ function* markAgentAsViewedPrefetchWorker(
   if (!agentId) return;
   const session = yield* selectAgentSession.effect(agentId);
   if (!session?.workspaceId) return;
+  if (coordinator.reads.has(makeKey(session.workspaceId, agentId))) return;
   yield* startSnapshotRead(coordinator, session.workspaceId, agentId, 'snapshot');
 }
 
@@ -281,14 +303,28 @@ function* refreshWorkspaceSubscriptionsWorker(
   }
 }
 
-function* clearWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceUnmounted>) {
+function* clearWorkspaceSubscriptionsWorker(
+  coordinator: ReadCoordinator,
+  action: ReturnType<typeof workspaceUnmounted>,
+) {
   const [wsId] = action.payload;
+  for (const [key, context] of coordinator.contexts) {
+    if (context.wsId === wsId) coordinator.contexts.delete(key);
+  }
   const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
   for (const agentId of agentIds) yield* put(deleteSubscriptionUI(wsId, agentId));
 }
 
+/** Cached mount reads rely on live events; reconcile missed events after reconnect. */
+function* refreshAfterReconnect(coordinator: ReadCoordinator) {
+  for (const { wsId, agentId } of coordinator.contexts.values()) {
+    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  }
+}
+
 export function* agentSubscriptionReadSaga() {
   const coordinator: ReadCoordinator = {
+    contexts: new Map(),
     reads: new Map(),
     completedCleanups: new Map(),
     pendingSnapshots: new Set(),
@@ -303,6 +339,7 @@ export function* agentSubscriptionReadSaga() {
       refreshWorkspaceSubscriptionsWorker,
       coordinator,
     ),
-    takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker),
+    takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker, coordinator),
+    takeEvery(backendReconnected, refreshAfterReconnect, coordinator),
   ]);
 }

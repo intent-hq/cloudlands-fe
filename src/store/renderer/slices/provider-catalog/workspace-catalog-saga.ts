@@ -17,10 +17,14 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   workspaceCatalogRequested,
+  ensureWorkspaceCatalogRequested,
   workspaceCatalogReceived,
   workspaceCatalogInvalidated,
 } from './provider-catalog-slice';
-import { selectWorkspaceCatalogEpoch } from './workspace-catalog-selectors';
+import {
+  selectWorkspaceCatalogEpoch,
+  selectContextReadinessLoaded,
+} from './workspace-catalog-selectors';
 
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import { copyServerForState } from '../mcp-settings/mcp-settings-normalization';
@@ -32,10 +36,11 @@ type CatalogAction =
   | ReturnType<typeof workspaceUnmounted>
   | ReturnType<typeof workspaceDeleted>
   | ReturnType<typeof removeWorkspaceEntity>;
-function* readCatalog(action: CatalogAction) {
+function* readCatalog(pending: Set<string>, action: CatalogAction) {
   if (action.type !== workspaceCatalogRequested.type) return;
   const [workspaceId] = action.payload;
   const epoch = yield* selectWorkspaceCatalogEpoch.effect();
+  pending.add(workspaceId);
   try {
     const [catalog, settings, specialistCatalog, discovery, auth, mcpServers] = yield* call(
       async () =>
@@ -101,11 +106,23 @@ function* readCatalog(action: CatalogAction) {
     );
   } catch (error) {
     logger.warn('Workspace catalog read failed', { workspaceId, error });
+  } finally {
+    pending.delete(workspaceId);
   }
 }
 
 function* onMount(action: ReturnType<typeof workspaceMounted>) {
-  yield* put(workspaceCatalogRequested(action.payload[0]));
+  yield* put(ensureWorkspaceCatalogRequested(action.payload[0]));
+}
+
+function* ensureCatalog(
+  pending: Set<string>,
+  action: ReturnType<typeof ensureWorkspaceCatalogRequested>,
+) {
+  const [workspaceId] = action.payload;
+  if (!workspaceId || pending.has(workspaceId)) return;
+  if (yield* selectContextReadinessLoaded.effect(workspaceId)) return;
+  yield* put(workspaceCatalogRequested(workspaceId));
 }
 
 function* watchInvalidations() {
@@ -156,6 +173,7 @@ function* watchInvalidations() {
 }
 
 export function* workspaceCatalogSaga() {
+  const pending = new Set<string>();
   yield* takeSingleFlightInContext(
     [workspaceCatalogRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
     (action: CatalogAction) =>
@@ -163,7 +181,9 @@ export function* workspaceCatalogSaga() {
         ? action.payload[0]
         : { context: action.payload[0], cancel: true as const },
     readCatalog,
+    pending,
   );
+  yield* takeEvery(ensureWorkspaceCatalogRequested, ensureCatalog, pending);
   yield* takeEvery(workspaceMounted, onMount);
   yield* fork(watchInvalidations);
 }

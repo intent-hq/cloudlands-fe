@@ -48,6 +48,10 @@ providerCatalogReducer.with(hostExecutionConnectionChanged, (state) => ({
   ...initialState,
   workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
 }));
+/** Mount demand reuses a hydrated catalog; explicit refreshes use workspaceCatalogRequested. */
+export const ensureWorkspaceCatalogRequested = createAction<[workspaceId: string]>(
+  'providerCatalog/ensureWorkspaceCatalogRequested',
+);
 export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
   'providerCatalog/workspaceCatalogRequested',
 );

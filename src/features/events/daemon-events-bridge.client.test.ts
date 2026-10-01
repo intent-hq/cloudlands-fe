@@ -10502,13 +10502,7 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  it.each([
-    'agent:idle',
-    'agent:failed',
-    'agent:deleted',
-    'agent:created',
-    'agent:subscriptions-changed',
-  ])(
+  it.each(['agent:idle', 'agent:failed', 'agent:deleted', 'agent:created'])(
     "%s dispatches refreshWorkspaceSubscriptionEntriesRequested for the event's workspace",
     async (eventType) => {
       await primeBridge();
@@ -11141,9 +11135,13 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
 
   afterEach(() => vi.clearAllMocks());
 
-  it('task:status-changed dispatches loadWorkspaceTasksRequested(workspaceId) for task list refetch', async () => {
+  it('task:status-changed debounces the initialized workspace task-list refetch', async () => {
+    const { loadWorkspaceTasksSucceeded, emptyWorkspaceTaskStats } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [], emptyWorkspaceTaskStats));
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    vi.useFakeTimers();
 
     // Get loadWorkspaceTasksRequested before creating spy to avoid import timing issues
     const loadWorkspaceTasksRequested =
@@ -11163,7 +11161,10 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
       }),
     );
 
+    expect(dispatchSpy).not.toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+    await vi.advanceTimersByTimeAsync(2000);
     expect(dispatchSpy).toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+    vi.useRealTimers();
 
     // Restore the getter to prevent leakage
     dispatchGetterSpy.mockRestore();
