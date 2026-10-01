@@ -12,7 +12,12 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
   // This lane starts from a fresh checkout; exercise the real generated preload.
   execFileSync('pnpm', ['run', 'build:preload'], { cwd: process.cwd(), stdio: 'pipe' });
   const root = await mkdtemp(join(tmpdir(), 'intent-dev-console-'));
+  let failConsoleRequests = false;
   const server = createServer((req, res) => {
+    if (failConsoleRequests && req.url === '/dev-console') {
+      res.destroy();
+      return;
+    }
     res.setHeader('Content-Type', 'text/html');
     res.end(
       '<!doctype html><title>Dev Console native fixture</title><main>Native lifecycle fixture</main>',
@@ -121,7 +126,7 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     ).toMatchObject({ recordIds: [], fullCapture: [] });
     expect(
       await app.evaluate(
-        (oldId) => (globalThis as any).fixture.capture.getSnapshot('fixture-a', oldId),
+        (_electron, oldId) => (globalThis as any).fixture.capture.getSnapshot('fixture-a', oldId),
         identity.sessionId,
       ),
     ).toBeNull();
@@ -133,11 +138,25 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(1);
     await app.evaluate(() => (globalThis as any).fixture.windows.open('fixture-a').close());
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
-    await app.evaluate(async () => {
+    failConsoleRequests = true;
+    const failedLoad = await app.evaluate(async () => {
       const fixture = (globalThis as any).fixture;
       const window = fixture.windows.open('fixture-a');
-      await window.loadURL('http://127.0.0.1:1/failed').catch(() => {});
+      return await new Promise<{ url: string; isMainFrame: boolean }>((done) => {
+        window.webContents.once(
+          'did-fail-load',
+          (
+            _event: unknown,
+            _code: number,
+            _description: string,
+            url: string,
+            isMainFrame: boolean,
+          ) => done({ url, isMainFrame }),
+        );
+      });
     });
+    expect(failedLoad).toEqual({ url: `${base}/dev-console`, isMainFrame: true });
+    failConsoleRequests = false;
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
     await app.evaluate(() => {
       const f = (globalThis as any).fixture;
