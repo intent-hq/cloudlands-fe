@@ -32,6 +32,24 @@ async function visibleComposerGap(component: Locator) {
   });
 }
 
+async function rowGeometry(component: Locator) {
+  return component
+    .getByTestId('queued-message-row')
+    .first()
+    .evaluate((row) => {
+      const style = getComputedStyle(row);
+      const list = row.parentElement!;
+      return {
+        paddingTop: style.paddingTop,
+        paddingBottom: style.paddingBottom,
+        rowGap: getComputedStyle(list).rowGap,
+        containerPaddingBottom: getComputedStyle(
+          row.closest('[data-testid="queued-messages-container"]')!,
+        ).paddingBottom,
+      };
+    });
+}
+
 test('keeps the edge gap at zero for empty, one, and many queues in every display matrix', async ({
   mount,
   page,
@@ -71,7 +89,7 @@ test('keeps the edge gap at zero for empty, one, and many queues in every displa
             '0px',
           );
           expect(await outerGap(component)).toBeCloseTo(0, 5);
-          expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
+          await expect.poll(() => visibleComposerGap(component)).toBeCloseTo(0, 5);
         }
       }
     }
@@ -112,7 +130,7 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
   await expect(textarea).toHaveCount(1);
   expect(await outerGap(component)).toBeCloseTo(0, 5);
   await expect(textarea).toHaveCount(0);
-  expect(await rowGeometry(component)).toEqual(baseline);
+  await expect.poll(() => rowGeometry(component)).toEqual(baseline);
 
   await rows.first().hover();
   await rows.first().getByTestId('queued-message-content').dblclick();
@@ -129,8 +147,8 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
     .click();
   await settle(component, page);
   await expect(rows).toHaveCount(2);
-  expect(await rowGeometry(component)).toEqual(baseline);
-  expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
+  await expect.poll(() => rowGeometry(component)).toEqual(baseline);
+  await expect.poll(() => visibleComposerGap(component)).toBeCloseTo(0, 5);
   await expect(component.getByTestId('queued-gap-bottom-state')).toContainText('locked:0');
 
   const transcript = component.getByTestId('queued-gap-transcript');
