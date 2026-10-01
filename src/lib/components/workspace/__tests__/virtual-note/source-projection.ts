@@ -1,12 +1,38 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import type { Step } from '@tiptap/pm/transform';
+import { Transform, type Step } from '@tiptap/pm/transform';
 import type { Splice } from './source-journal';
 
 type Mark = { type: string; attrs?: Record<string, unknown> };
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
 const key = (mark: Mark) => `${mark.type}:${mark.type === 'link' ? mark.attrs?.href : ''}`;
 const escape = (text: string) => text.replace(/[\\`*_[\]{}()#+.!>~-]/g, '\\$&');
+
+// Markdown strong delimiters cannot enclose boundary whitespace. Normalize only
+// those invisible marks; all text, positions, internal whitespace and other marks stay intact.
+function canonicalBold(doc: PMNode): PMNode {
+  const tr = new Transform(doc);
+  const bold = doc.type.schema.marks.bold;
+  doc.forEach((paragraph, offset) => {
+    let from = offset + 1,
+      text = '';
+    const flush = () => {
+      const leading = text.match(/^\s+/u)?.[0].length ?? 0;
+      const trailing = text.match(/\s+$/u)?.[0].length ?? 0;
+      if (leading) tr.removeMark(from, from + leading, bold);
+      if (trailing) tr.removeMark(from + text.length - trailing, from + text.length, bold);
+      text = '';
+    };
+    paragraph.forEach((node, inner) => {
+      if (node.isText && bold.isInSet(node.marks)) {
+        if (!text) from = offset + 1 + inner;
+        text += node.text!;
+      } else flush();
+    });
+    flush();
+  });
+  return tr.doc;
+}
 
 /** Exact UTF-16 token provenance for paragraphs, escaped text, nested bold and links. */
 export class SourceProjection {
@@ -146,7 +172,7 @@ export class SourceProjection {
   translate(step: Step, before: PMNode): Splice[] {
     const applied = step.apply(before);
     if (!applied.doc) throw new Error(applied.failed ?? 'Invalid proof step');
-    const after = applied.doc,
+    const after = canonicalBold(applied.doc),
       mapping = step.getMap();
     const survivors = new Map<number, Token>();
     for (const token of this.tokens) {

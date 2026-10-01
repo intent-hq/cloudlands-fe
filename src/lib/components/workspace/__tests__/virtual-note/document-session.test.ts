@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { Transform } from '@tiptap/pm/transform';
+import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { SourceProjection } from './source-projection';
 import { SourceJournal, fixture, LIMITS, mapSelection, type Event } from './source-journal';
 const schema = new Schema({
@@ -345,4 +346,35 @@ it('admits source and inverse pages within budget without retaining a renderer c
     store.apply({ from: c.from, to: c.from + c.insert.length, insert: c.removed });
   expect(store.region(0)).toBe('x'.repeat(7000) + '\n\n');
   expect(store.maxJournalRead).toBeLessThanOrEqual(LIMITS.journalPage);
+});
+
+describe('canonical whitespace-edge bold source', () => {
+  for (const [label, from, to, prefix, bold] of [
+    ['trailing', 1, 8, '**Region** 0000', 'Region'],
+    ['leading', 7, 12, 'Region **0000**', '0000'],
+    ['both edges', 7, 13, 'Region **0000** ', '0000'],
+    ['only whitespace', 7, 8, 'Region 0000', ''],
+    ['internal space control', 1, 12, '**Region 0000**', 'Region 0000'],
+  ] as const)
+    it(`normalizes ${label} whitespace and round trips through the application parser`, async () => {
+      const original = fixture(0) + fixture(1);
+      const projection = new SourceProjection(original);
+      const before = schema.nodeFromJSON(projection.content);
+      const tr = new Transform(before).addMark(from, to, schema.marks.bold.create());
+      let source = original;
+      for (const splice of projection.translate(tr.steps[0], before))
+        source = source.slice(0, splice.from) + splice.insert + source.slice(splice.to);
+      const expected = prefix.trimEnd() + original.slice('Region 0000'.length);
+      expect(source).toBe(expected);
+      const parsed = document.createElement('div');
+      parsed.innerHTML = await processMarkdownToHTML(source);
+      expect(parsed.querySelector('p')!.textContent).toBe(
+        'Region 0000 — café 🌍. repeated repeated link.',
+      );
+      expect([...parsed.querySelectorAll('strong')].map((el) => el.textContent).join('')).toBe(
+        bold,
+      );
+      expect(parsed.querySelectorAll('a')).toHaveLength(2);
+      expect(parsed.querySelector('a')!.getAttribute('href')).toBe('https://example.test');
+    });
 });

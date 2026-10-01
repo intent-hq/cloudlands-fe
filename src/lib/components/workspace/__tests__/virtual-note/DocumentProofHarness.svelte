@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Editor } from '@tiptap/core';
+  import { DOMParser } from '@tiptap/pm/model';
   import { Plugin } from '@tiptap/pm/state';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { DocumentSession } from './document-session';
@@ -42,6 +43,13 @@
     Object.assign(root, {
       proof: proof ?? null,
       native: native ?? null,
+      parseSource: async (source: string) => {
+        const html = await processMarkdownToHTML(source);
+        const element = document.createElement('div');
+        element.innerHTML = html;
+        const editor = proof?.editor ?? native;
+        return { html, doc: DOMParser.fromSchema(editor.schema).parse(element).toJSON() };
+      },
       appendProbe: () => {
         const editor = proof.editor!;
         editor.registerPlugin(

@@ -1,9 +1,13 @@
 import { test, expect } from '../../../../../test/ct-test';
 import type { Page } from '@playwright/test';
-import type { Editor } from '@tiptap/core';
+import type { JSONContent, Editor } from '@tiptap/core';
 import type { DocumentSession } from './document-session';
 import Harness from './DifferentialProofHarness.svelte';
-type Host = HTMLElement & { proof: DocumentSession; native: Editor };
+type Host = HTMLElement & {
+  proof: DocumentSession;
+  native: Editor;
+  parseSource: (source: string) => Promise<{ html: string; doc: JSONContent }>;
+};
 async function state(page: Page, side: string) {
   return page
     .getByTestId(side)
@@ -536,3 +540,103 @@ test('rapid seam selection preserves every native keyboard movement after repeat
     await same(page);
   }
 });
+
+for (const [label, anchor, head, prefix, bold] of [
+  ['trailing', 1, 8, '**Region** 0000', 'Region'],
+  ['leading backwards', 12, 7, 'Region **0000**', '0000'],
+] as const)
+  test(`canonical bold: ${label} whitespace preserves saved text, selection and history`, async ({
+    mount,
+    page,
+  }) => {
+    await mount(Harness);
+    await select(page, 'bounded', anchor, head);
+    const original = await page
+      .getByTestId('bounded')
+      .getByTestId('proof')
+      .evaluate((el) => {
+        const p = (el as Host).proof;
+        return p.service.slice(0, p.service.length);
+      });
+    for (const side of ['native', 'bounded']) {
+      await select(page, side, anchor, head);
+      await page.keyboard.press('Control+b');
+      await settled(page);
+    }
+    await same(page);
+    const expected = prefix + original.slice('Region 0000'.length);
+    const snapshots: unknown[] = [];
+    const assertSaved = async (source: string, expectedBold: string) => {
+      const result = await page
+        .getByTestId('bounded')
+        .getByTestId('proof')
+        .evaluate(async (el) => {
+          const h = el as Host,
+            p = h.proof;
+          p.save();
+          const source = p.service.slice(0, p.service.length);
+          const oldEditor = p.editor;
+          await p.show(0, true);
+          const parsed = await h.parseSource(source);
+          const doc = document.createElement('div');
+          doc.innerHTML = parsed.html;
+          const letters = (json: JSONContent) => {
+            const values: Array<{ text: string; marks: unknown }> = [];
+            const visit = (node: JSONContent) => {
+              if (node.text)
+                for (const char of node.text) {
+                  if (!/\s/u.test(char)) values.push({ text: char, marks: node.marks ?? [] });
+                }
+              node.content?.forEach(visit);
+            };
+            visit(json);
+            return values;
+          };
+          return {
+            source,
+            destroyed: oldEditor!.isDestroyed,
+            text: doc.querySelector('p')!.textContent,
+            bold: [...doc.querySelectorAll('strong')].map((n) => n.textContent).join(''),
+            links: [...doc.querySelectorAll('a')].map((n) => [
+              n.textContent,
+              n.getAttribute('href'),
+            ]),
+            canonical: letters(parsed.doc),
+            mounted: letters(p.editor!.getJSON()),
+            native: letters(
+              (
+                document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host
+              ).native.getJSON(),
+            ),
+            selection: p.editor!.state.selection.toJSON(),
+            error: p.error,
+          };
+        });
+      snapshots.push(result);
+      expect(result.source).toBe(source);
+      expect(result.destroyed).toBe(true);
+      expect(result.text).toBe('Region 0000 — café 🌍. repeated repeated link.');
+      expect(result.bold).toBe(expectedBold);
+      expect(result.links).toEqual([
+        ['link', 'https://example.test'],
+        ['link', 'https://example.test'],
+      ]);
+      expect(result.canonical).toEqual(result.native);
+      expect(result.mounted).toEqual(result.native);
+      expect(result.selection).toEqual((await state(page, 'native')).selection);
+      expect(result.error).toBe('');
+    };
+    await assertSaved(expected, bold);
+    for (const key of ['Control+z', 'Control+Shift+z']) {
+      for (const side of ['native', 'bounded']) {
+        await focus(page, side);
+        await page.keyboard.press(key);
+        await settled(page);
+      }
+      await assertSaved(key === 'Control+z' ? original : expected, key === 'Control+z' ? '' : bold);
+    }
+    await test.info().attach('canonical-bold.json', {
+      body: JSON.stringify({ label, snapshots }, null, 2),
+      contentType: 'application/json',
+    });
+  });
