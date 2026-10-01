@@ -6959,5 +6959,17 @@
   "terminal_scriptOutput_retained_description": "Instantánea de la salida temporal, limitada a 10.000 líneas. La salida en directo se muestra por separado.",
   "terminal_scriptOutput_retainedLoading_label": "Cargando salida conservada…",
   "terminal_scriptOutput_retainedUnavailable_label": "La salida conservada no está disponible.",
-  "terminal_scriptOutput_live_label": "Salida en directo"
+  "terminal_scriptOutput_live_label": "Salida en directo",
+  "settings_aiBehavior_importedClaude_title": "Importado de Claude Code",
+  "settings_aiBehavior_importedClaude_readOnly": "Solo lectura en Intent. Abre el archivo original para realizar cambios.",
+  "settings_aiBehavior_importedClaude_unsupported": "No se puede iniciar en Intent porque estos ajustes no son compatibles: {fields}. Abre el archivo original y elimina o adapta estos ajustes antes de iniciar.",
+  "settings_aiBehavior_importNotices": "Avisos de importación de agentes de Claude",
+  "settings_aiBehavior_importInvalid": "Definición de agente no válida",
+  "settings_aiBehavior_importUnreadable": "No se puede leer el archivo del agente",
+  "settings_aiBehavior_importBrokenLink": "Enlace de archivo roto",
+  "settings_aiBehavior_importTooLarge": "El archivo del agente es demasiado grande",
+  "settings_aiBehavior_importShadowed": "Otra definición tiene prioridad",
+  "settings_aiBehavior_importScanLimit": "Se alcanzó el límite de búsqueda",
+  "settings_aiBehavior_importMissingSkills": "Faltan habilidades necesarias en este catálogo: {skills}. Deben estar disponibles en el espacio de trabajo donde inicies este agente. Restáuralas o instálalas allí, o actualiza el archivo original del agente.",
+  "settings_aiBehavior_importDetails": "Detalles"
 }

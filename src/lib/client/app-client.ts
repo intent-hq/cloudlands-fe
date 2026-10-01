@@ -1934,6 +1934,12 @@ export interface SkillsClient {
  */
 export interface SpecialistDef {
   runsOn?: AgentPlacement;
+  /** Original Claude definition; read-only in Intent. */
+  importedFrom?: 'claude-code';
+  /** Unsupported settings that prevent launching this imported definition. */
+  unsupportedFields?: string[];
+  requiredSkills?: string[];
+  missingSkills?: string[];
   id: string;
   name: string;
   description: string;
@@ -1988,7 +1994,29 @@ export interface SpecialistDef {
   resolvedReasoningEffort?: string;
 }
 
+export interface SpecialistImportDiagnostic {
+  path: string;
+  isDirectory?: boolean;
+  source: 'user' | 'project';
+  code: 'invalid' | 'unreadable' | 'broken-link' | 'too-large' | 'shadowed' | 'scan-limit';
+  message: string;
+  specialistId?: string;
+  winnerPath?: string;
+}
+
+export interface SpecialistCatalog {
+  specialists: SpecialistDef[];
+  importDiagnostics?: SpecialistImportDiagnostic[];
+}
+
 export interface SpecialistsClient {
+  /** Additive catalog view; legacy list/subscribe consumers keep their array API. */
+  listCatalog?(
+    provider?: string,
+    workspaceId?: string,
+    options?: { includeProject?: boolean },
+  ): Promise<SpecialistCatalog>;
+  subscribeCatalog?(handler: SubscriptionHandler<SpecialistCatalog>): Unsubscribe;
   /**
    * Merged bundled + user definitions (`specialist.list`, PROTOCOL
    * §5.11). The optional `provider` supplies the resolution context for the

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       integrated_signing:
-        description: 'Enable integrated DigiCert/KeyLocker signing during Electron Builder packaging'
+        description: 'Enable Azure Artifact Signing (requires approved account, identity and credentials)'
         required: false
         type: boolean
         default: false
@@ -76,52 +76,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
-      # ── DigiCert signing setup (official action) ──────────────────────
-      - name: Check integrated signing configuration
-        id: integrated_signing
-        if: ${{ inputs.integrated_signing }}
-        shell: bash
-        run: |
-          missing=""
-          for name in INTENT_WINDOWS_SM_HOST INTENT_WINDOWS_SM_KEYPAIR_ALIAS INTENT_WINDOWS_SM_API_KEY INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              missing="${missing:+$missing, }${name}"
-            fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Integrated signing requested but missing: $missing"
-            exit 1
-          fi
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-        env:
-          INTENT_WINDOWS_SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
-          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
-          INTENT_WINDOWS_SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
-          INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
-
-      # The decoded cert lives in the per-run temp dir; a D: scratch drive
-      # (used by an older GH-hosted variant of this job) isn't guaranteed on
-      # every runner image.
-      - name: Decode DigiCert client certificate
-        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
-        shell: bash
-        env:
-          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
-        run: |
-          echo "$INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
-
-      - name: Setup DigiCert Software Trust Manager
-        if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
-        uses: digicert/code-signing-software-trust-action@v1
-        with:
-          simple-signing-mode: true
-        env:
-          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
-          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
-
       # ── Build ─────────────────────────────────────────────────────────
       - name: Build Windows
         id: build_windows
@@ -140,65 +94,36 @@ jobs:
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
-          # Signing env is emptied when integrated_signing=false — the gate
-          # step is skipped, and scripts/windows-sign.cjs skips silently — so
-          # the secrets never reach an unsigned build's process env (same
-          # gating as manual-signed-build.yml's Windows leg).
-          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
-          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS || '' }}
-          SM_HOST: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST || '' }}
-          SM_API_KEY: ${{ inputs.integrated_signing && secrets.INTENT_WINDOWS_SM_API_KEY || '' }}
-          SM_CLIENT_CERT_FILE: ${{ inputs.integrated_signing && format('{0}\Certificate_pkcs12.p12', runner.temp) || '' }}
-          SM_CLIENT_CERT_PASSWORD: ${{ inputs.integrated_signing && secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD || '' }}
+          # Credentials are available only to an explicitly signed packaging step.
+          INTENT_WINDOWS_SIGNING_MODE: ${{ inputs.integrated_signing && 'azure' || 'unsigned' }}
+          INTENT_WINDOWS_AZURE_ENDPOINT: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_AZURE_ENDPOINT || '' }}
+          INTENT_WINDOWS_AZURE_ACCOUNT_NAME: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_AZURE_ACCOUNT_NAME || '' }}
+          INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_NAME: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_PUBLISHER_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_SUBJECT: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_PUBLISHER_SUBJECT || '' }}
+          AZURE_TENANT_ID: ${{ inputs.integrated_signing && vars.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ inputs.integrated_signing && vars.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ inputs.integrated_signing && secrets.AZURE_CLIENT_SECRET || '' }}
         run: |
-          pnpm run dist:win
+          node -e "require('./scripts/windows-builder.cjs')()"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path dist-electron) { Remove-Item -Recurse -Force dist-electron }
+          pnpm run dist:win --config scripts/windows-builder.cjs --publish never
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      # ── Post-build validation (when signing is enabled) ───────────────
-      - name: Validate latest.yml matches signed installer
-        if: ${{ steps.integrated_signing.outputs.enabled == 'true' && steps.build_windows.outcome == 'success' }}
-        id: latest_yml_check
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto');
-          const yaml = require('js-yaml');
-
-          const distDir = 'dist-electron';
-          const latest = yaml.load(fs.readFileSync(path.join(distDir, 'latest.yml'), 'utf8'));
-          const exeEntry = (latest.files || []).find(f => String(f.url || '').toLowerCase().endsWith('.exe'));
-          const installerName = path.basename((exeEntry && exeEntry.url) || latest.path || '');
-          if (!installerName) throw new Error('No installer found in latest.yml');
-
-          const installerPath = path.join(distDir, installerName);
-          const actualSha512 = crypto.createHash('sha512').update(fs.readFileSync(installerPath)).digest('base64');
-
-          console.log(`Installer: ${installerName}`);
-          console.log(`latest.yml sha512: ${exeEntry?.sha512 || latest.sha512}`);
-          console.log(`Actual sha512:     ${actualSha512}`);
-
-          const match = (exeEntry?.sha512 || latest.sha512) === actualSha512;
-          if (!match) throw new Error('latest.yml sha512 does not match signed installer.');
-          console.log('✅ Hash match confirmed.');
-
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `installer_path=${installerPath}\n`);
-          NODE
-
-      - name: Verify Authenticode signature
-        if: ${{ steps.integrated_signing.outputs.enabled == 'true' && steps.latest_yml_check.outcome == 'success' }}
-        shell: pwsh
+      - name: Verify Windows artifacts
+        id: verify_windows
+        shell: powershell
         env:
-          INSTALLER_PATH: ${{ steps.latest_yml_check.outputs.installer_path }}
+          INTENT_WINDOWS_SIGNING_MODE: ${{ inputs.integrated_signing && 'azure' || 'unsigned' }}
+          INTENT_WINDOWS_AZURE_ENDPOINT: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_AZURE_ENDPOINT || '' }}
+          INTENT_WINDOWS_AZURE_ACCOUNT_NAME: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_AZURE_ACCOUNT_NAME || '' }}
+          INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_NAME: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_PUBLISHER_NAME || '' }}
+          INTENT_WINDOWS_PUBLISHER_SUBJECT: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_PUBLISHER_SUBJECT || '' }}
         run: |
-          $sig = Get-AuthenticodeSignature -FilePath $env:INSTALLER_PATH
-          Write-Host "Status: $($sig.Status)"
-          Write-Host "Subject: $($sig.SignerCertificate.Subject)"
-          if ($sig.Status -ne 'Valid') {
-            throw "Authenticode signature is not valid: $($sig.Status)"
-          }
-          Write-Host "✅ Authenticode signature is valid."
+          node scripts/verify-windows-artifacts.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # ── Summary & artifacts ───────────────────────────────────────────
       - name: Post summary
@@ -209,10 +134,12 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ steps.build_windows.outcome }}" != "success" ]; then
             echo "❌ Build failed." >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${{ steps.integrated_signing.outputs.enabled }}" != "true" ]; then
+          elif [ "${{ steps.verify_windows.outcome }}" != "success" ]; then
+            echo "❌ Artifact verification failed." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ inputs.integrated_signing }}" != "true" ]; then
             echo "⚠️ Unsigned build completed (signing not requested)." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "✅ Signed build completed." >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ Azure artifact checks passed; native install/update acceptance pending." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           ls -la dist-electron/ >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No dist-electron/ directory." >> "$GITHUB_STEP_SUMMARY"
@@ -224,6 +151,8 @@ jobs:
           path: |
             dist-electron/*.exe
             dist-electron/*.exe.blockmap
-            dist-electron/latest.yml
+            dist-electron/*.yml
+            !dist-electron/builder-*.yml
+            dist-electron/windows-verification.json
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error

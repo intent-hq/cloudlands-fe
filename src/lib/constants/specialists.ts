@@ -17,6 +17,12 @@ export type BuiltinSpecialistId =
   | 'chief-of-staff';
 
 export interface Specialist {
+  /** Original Claude definition; read-only in Intent. */
+  importedFrom?: 'claude-code';
+  /** Unsupported settings that prevent launching this imported definition. */
+  unsupportedFields?: string[];
+  requiredSkills?: string[];
+  missingSkills?: string[];
   id: string;
   name: string;
   description: string;

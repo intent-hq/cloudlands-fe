@@ -6959,5 +6959,17 @@
   "terminal_scriptOutput_retained_description": "临时输出快照，最多 10,000 行。实时输出单独显示。",
   "terminal_scriptOutput_retainedLoading_label": "正在加载保留的输出…",
   "terminal_scriptOutput_retainedUnavailable_label": "保留的输出不可用。",
-  "terminal_scriptOutput_live_label": "实时输出"
+  "terminal_scriptOutput_live_label": "实时输出",
+  "settings_aiBehavior_importedClaude_title": "从 Claude Code 导入",
+  "settings_aiBehavior_importedClaude_readOnly": "在 Intent 中为只读。请打开原始文件进行修改。",
+  "settings_aiBehavior_importedClaude_unsupported": "无法在 Intent 中启动，因为不支持以下设置：{fields}。请打开原始文件，移除或调整这些设置后再启动。",
+  "settings_aiBehavior_importNotices": "Claude 智能体导入提示",
+  "settings_aiBehavior_importInvalid": "智能体定义无效",
+  "settings_aiBehavior_importUnreadable": "无法读取智能体文件",
+  "settings_aiBehavior_importBrokenLink": "文件链接已失效",
+  "settings_aiBehavior_importTooLarge": "智能体文件过大",
+  "settings_aiBehavior_importShadowed": "另一项定义优先",
+  "settings_aiBehavior_importScanLimit": "已达到发现上限",
+  "settings_aiBehavior_importMissingSkills": "此目录中缺少必需的技能：{skills}。启动此智能体的工作区中必须提供这些技能。请在该工作区中恢复或安装它们，或更新原始智能体文件。",
+  "settings_aiBehavior_importDetails": "详细信息"
 }

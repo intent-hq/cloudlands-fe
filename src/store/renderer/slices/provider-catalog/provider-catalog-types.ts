@@ -27,6 +27,7 @@ export interface ProviderCatalogState {
 }
 
 export interface WorkspaceCatalogSnapshot {
+  importDiagnostics?: import('$lib/client/app-client').SpecialistImportDiagnostic[];
   mcpServers?: import('../mcp-settings/mcp-settings-types').McpServerConfig[];
   mcpStatuses?: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus[];
   readiness: Record<string, import('$shared/types/provider-availability').ProviderStatus>;

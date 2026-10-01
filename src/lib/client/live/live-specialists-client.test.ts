@@ -131,7 +131,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
   describe('subscribe (specialists:changed live refetch)', () => {
     afterEach(() => vi.useRealTimers());
 
-    it('emits an initial snapshot and registers the specialists:changed subscription', async () => {
+    it('emits an initial snapshot and registers specialist and skill change subscriptions', async () => {
       mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
       const client = new LiveSpecialistsClient();
 
@@ -139,7 +139,9 @@ describe('LiveSpecialistsClient (fake transport)', () => {
       const unsubscribe = client.subscribe(handler);
 
       // Exact daemon subscription wire shape.
-      expect(mockedSubscribe).toHaveBeenCalledWith({ eventTypes: ['specialists:changed'] });
+      expect(mockedSubscribe).toHaveBeenCalledWith({
+        eventTypes: ['specialists:changed', 'skills:changed'],
+      });
       await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
       expect(handler).toHaveBeenCalledTimes(1);
       unsubscribe();
@@ -210,7 +212,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
       await vi.advanceTimersByTimeAsync(0);
       handler.mockClear();
 
-      notify?.({ method: 'skills:changed', params: { workspaceId: 'ws-1' } });
+      notify?.({ method: 'workspace:updated', params: { workspaceId: 'ws-1' } });
       await vi.advanceTimersByTimeAsync(200);
 
       expect(mockedRequest).toHaveBeenCalledTimes(1); // initial snapshot only
@@ -341,7 +343,9 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
         // Re-subscribe with the same wire shape + exactly one snapshot refetch.
         expect(mockedSubscribe).toHaveBeenCalledTimes(2);
-        expect(mockedSubscribe).toHaveBeenLastCalledWith({ eventTypes: ['specialists:changed'] });
+        expect(mockedSubscribe).toHaveBeenLastCalledWith({
+          eventTypes: ['specialists:changed', 'skills:changed'],
+        });
         await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]));
         expect(mockedRequest).toHaveBeenCalledTimes(1);
         expect(mockedRequest).toHaveBeenCalledWith('specialist.list');

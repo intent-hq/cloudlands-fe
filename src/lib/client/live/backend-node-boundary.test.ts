@@ -35,6 +35,41 @@ beforeEach(() => {
   });
 });
 describe('renderer final wire boundary', () => {
+  it.each([
+    'Claude agent Builder uses settings Intent cannot apply: hooks',
+    'Claude agent Builder requires skills that are unavailable: review',
+  ])('preserves imported specialist launch guidance after placement: %s', async (message) => {
+    const placement = { target: 'local', checkout: 'isolated' };
+    const original = new BackendError({ code: 'invalid-params', rpcCode: -32602, message });
+    fixture.request.mockImplementation(async (method: string) => {
+      if (method === 'client.hello')
+        return { server: { capabilities: { agentNodes: 1, localNodeIsolation: 1 } } };
+      if (method === 'specialist.get')
+        return {
+          specialist: {
+            importedFrom: 'claude-code',
+            unsupportedFields: ['hooks'],
+            missingSkills: ['review'],
+            runsOn: placement,
+          },
+        };
+      if (method === 'agent.create') throw original;
+      throw new Error(`Unexpected ${method}`);
+    });
+    const input = { workspaceId: 'ws', workspacePath: '/project', specialistId: 'builder' };
+    await expect(backendRequest('agent.create', input)).rejects.toBe(original);
+    expect(fixture.request).toHaveBeenCalledWith('specialist.get', {
+      id: 'builder',
+      workspaceId: 'ws',
+      workspacePath: '/project',
+    });
+    expect(fixture.request).toHaveBeenLastCalledWith(
+      'agent.create',
+      { ...input, placement },
+      undefined,
+    );
+    expect(fixture.choose).not.toHaveBeenCalled();
+  });
   it.each(['workspace.get', 'agent.create'])(
     'preserves host authorization recovery for %s during guarded creation',
     async (deniedMethod) => {

@@ -79,7 +79,9 @@ providerCatalogReducer.with(
   workspaceCatalogInvalidated,
   (state, { payload: [connectionChanged] }) => ({
     ...state,
-    byWorkspaceId: {},
+    // Keep the last successful snapshot during a refresh; a changed connection
+    // must discard it so data from another daemon cannot leak into this one.
+    byWorkspaceId: connectionChanged ? {} : state.byWorkspaceId,
     mcpServerNamesByWorkspaceId: connectionChanged ? {} : state.mcpServerNamesByWorkspaceId,
     workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
   }),
