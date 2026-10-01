@@ -38,7 +38,7 @@ export function singleLineName(name: string | null | undefined): string | null {
 }
 
 /**
- * Byte-exact rebuild of the accepted guest (v1) and member (v2.9) templates: login +
+ * Byte-exact rebuild of the accepted guest and host member templates: login +
  * display name, then login alone, then display name alone, then the
  * principal id.
  */
@@ -58,11 +58,11 @@ export function buildCollaboratorSenderPreamble(
   else who = `principal ${principal}`;
   if (sender) {
     const identity = sender.identity;
-    // i18n-ignore (byte-exact accepted daemon member template, harness v2.9)
+    // i18n-ignore (byte-exact accepted daemon host member template)
     const clause = identity
       ? `; ${singleLineName(identity.provider) ?? ''}@${singleLineName(identity.host) ?? ''} user ${singleLineName(identity.externalUserId) ?? ''}`
       : '';
-    // i18n-ignore (byte-exact accepted daemon member template, harness v2.9)
+    // i18n-ignore (byte-exact accepted daemon host member template)
     return `Message from ${who}, a host member (principal ${principal}${clause}) — not the workspace owner.`;
   }
   // i18n-ignore (mirrors the daemon's collaborator sender preamble, PROTOCOL §5.5)
