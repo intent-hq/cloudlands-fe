@@ -1,5 +1,8 @@
-import { AgentPlacementSchema } from '$shared/types/agent-node';
-import { NodeExecutionClient } from '$features/agent/services/node-execution';
+import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
+import {
+  NodeExecutionClient,
+  assertPlacementSupported,
+} from '$features/agent/services/node-execution';
 import { m } from '$shared/paraglide/messages.js';
 
 type Request = (method: string, params?: unknown) => Promise<unknown>;
@@ -50,7 +53,9 @@ export async function prepareNodeRequest(
   const client = new NodeExecutionClient(request, remoteEnabled);
   if (method === 'workspace.update') {
     if (params.defaultAgentPlacement != null)
-      await client.preparePlacement(AgentPlacementSchema.parse(params.defaultAgentPlacement));
+      await client.preparePlacement(
+        AgentPlacementRequestSchema.parse(params.defaultAgentPlacement),
+      );
     return input;
   }
   const key = nestedKey(method);
@@ -104,20 +109,15 @@ export async function prepareNodeRequest(
     if (placement != null) throw new Error(m.agent_placement_unavailable());
     return input;
   }
-  const checked = placement == null ? undefined : AgentPlacementSchema.parse(placement);
-  if (!remoteEnabled() && checked?.target === 'remote')
+  const checked = placement == null ? undefined : AgentPlacementRequestSchema.parse(placement);
+  if (!remoteEnabled() && (checked?.target === 'remote' || checked?.exclusive === true))
     throw new Error(m.agent_placement_labsRequired());
   if (readDefaults) capabilities = await client.capabilities();
-  if (
-    !capabilities.agentNodes ||
-    (checked?.target === 'local' &&
-      checked.checkout === 'isolated' &&
-      !capabilities.localNodeIsolation)
-  )
-    throw new Error(m.agent_placement_unavailable());
+  if (checked) assertPlacementSupported(checked, capabilities);
+  else if (!capabilities.agentNodes) throw new Error(m.agent_placement_unavailable());
   // Omitted placement follows the documented head default, without a human launch prompt.
   // Known remote intent remains explicit and must never be converted to a local fallback.
-  if (!remoteEnabled() && checked?.target === 'remote')
+  if (!remoteEnabled() && (checked?.target === 'remote' || checked?.exclusive === true))
     throw new Error(m.agent_placement_labsRequired());
   if (!checked) return input;
   if (creation.isolation !== undefined) throw new Error(m.agent_placement_incompatibleIsolation());
@@ -135,6 +135,10 @@ export function assertRemoteRequestEnabled(method: string, input: unknown, enabl
     ? creation.tasks.map((task) => object(task).placement ?? creation.placement)
     : [creation.placement];
   placements.push(params.defaultAgentPlacement);
-  if (placements.some((placement) => object(placement).target === 'remote'))
+  if (
+    placements.some(
+      (placement) => object(placement).target === 'remote' || object(placement).exclusive === true,
+    )
+  )
     throw new Error(m.agent_placement_labsRequired());
 }

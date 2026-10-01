@@ -1,4 +1,4 @@
-import type { AgentPlacement } from './types/agent-node';
+import type { AgentPlacement, AgentPlacementRequest } from './types/agent-node';
 /**
  * Unified Type Definitions
  *
@@ -424,7 +424,7 @@ export interface Workspace {
   /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
   /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
-  defaultAgentPlacement?: AgentPlacement;
+  defaultAgentPlacement?: AgentPlacementRequest;
   checkoutMode?: 'cow' | 'worktree' | 'direct';
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
   diskUsage?: WorkspaceDiskUsage;
@@ -1703,7 +1703,7 @@ export interface CreateWorkspaceRequest {
 }
 
 export interface UpdateWorkspaceRequest {
-  defaultAgentPlacement?: AgentPlacement | null;
+  defaultAgentPlacement?: AgentPlacementRequest | null;
   id: WorkspaceId;
   title?: string;
   branch?: string;

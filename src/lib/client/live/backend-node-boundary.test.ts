@@ -240,3 +240,142 @@ describe('renderer final wire boundary', () => {
     expect(fixture.choose).not.toHaveBeenCalled();
   });
 });
+
+describe('platform-default wire compatibility', () => {
+  const placement = { arch: 'x86_64' };
+  const hello = (
+    routing: unknown = 1,
+    agentNodes: unknown = 1,
+    localNodeIsolation: unknown = 1,
+  ) => ({
+    server: { capabilities: { agentNodes, agentPlatformRouting: routing, localNodeIsolation } },
+  });
+  function useDefault(read: () => unknown = () => placement, capabilities = () => hello()) {
+    fixture.request.mockImplementation(async (method: string) => {
+      if (method === 'client.hello') return capabilities();
+      if (method === 'workspace.get') return { workspace: { defaultAgentPlacement: await read() } };
+      if (method === 'agent.create') return { agentId: 'created-agent' };
+      return { ok: true };
+    });
+  }
+  it('preserves an arch-only default and the actual launch response without opening a chooser', async () => {
+    useDefault();
+    await expect(backendRequest('agent.create', { workspaceId: 'ws' })).resolves.toEqual({
+      agentId: 'created-agent',
+    });
+    expect(fixture.request).toHaveBeenLastCalledWith(
+      'agent.create',
+      { workspaceId: 'ws', placement },
+      undefined,
+    );
+    expect(fixture.choose).not.toHaveBeenCalled();
+  });
+  it.each([undefined, null, false, true, 0, 2, '1'])(
+    'rejects unsupported platform capability %j without dispatch',
+    async (routing) => {
+      useDefault(
+        () => placement,
+        () => ({ server: { capabilities: { agentNodes: 1, agentPlatformRouting: routing } } }),
+      );
+      await expect(backendRequest('agent.create', { workspaceId: 'ws' })).rejects.toThrow(
+        /unavailable/,
+      );
+      expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+    },
+  );
+  it('requires agentNodes alongside the exact platform capability', async () => {
+    useDefault(
+      () => placement,
+      () => hello(1, 2),
+    );
+    await expect(backendRequest('agent.create', { workspaceId: 'ws' })).rejects.toThrow(
+      /unavailable/,
+    );
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+  });
+  it('rechecks platform support after the awaited default read', async () => {
+    let supported = true;
+    useDefault(
+      () => {
+        supported = false;
+        return placement;
+      },
+      () => hello(supported ? 1 : 2),
+    );
+    await expect(backendRequest('agent.create', { workspaceId: 'ws' })).rejects.toThrow(
+      /unavailable/,
+    );
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+  });
+  it('rejects a connection generation change during the default read', async () => {
+    useDefault(() => {
+      fixture.state.daemonHealth.connectionGeneration++;
+      return placement;
+    });
+    await expect(backendRequest('agent.create', { workspaceId: 'ws' })).rejects.toThrow(/changed/i);
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+  });
+  it('keeps known exclusive remote intent gated after Labs changes during an await', async () => {
+    fixture.state.userPreferences.labsRemoteAgentsEnabled = true;
+    useDefault(() => {
+      fixture.state.userPreferences.labsRemoteAgentsEnabled = false;
+      return { exclusive: true };
+    });
+    await expect(backendRequest('agent.create', { workspaceId: 'ws' })).rejects.toThrow(/Labs/);
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+  });
+  it('does not downgrade local isolation when the local capability is absent', async () => {
+    useDefault(
+      () => ({ target: 'local' }),
+      () => hello(1, 1, 0),
+    );
+    await expect(backendRequest('agent.create', { workspaceId: 'ws' })).rejects.toThrow(
+      /unavailable/,
+    );
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+  });
+  it.each([
+    ['agent.create', { workspaceId: 'ws', placement: {} }],
+    ['agent.delegate', { workspaceId: 'ws', taskNoteId: 'task', placement: {} }],
+    ['agent.wakeOrCreate', { workspaceId: 'ws', create: { placement: {} } }],
+    ['workspace.create', { title: 'New workspace', initialAgent: { placement: {} } }],
+  ])(
+    'preserves explicit empty placement without inheriting workspace constraints for %s',
+    async (method, input) => {
+      useDefault(() => {
+        throw new Error('Must not read a lower-precedence default');
+      });
+      await backendRequest(method as string, input);
+      expect(fixture.request).toHaveBeenLastCalledWith(method, input, undefined);
+    },
+  );
+  it('retains per-task whole-object overrides over a partial batch default', async () => {
+    useDefault(() => {
+      throw new Error('Must not read lower defaults');
+    });
+    await backendRequest('agent.delegate', {
+      workspaceId: 'ws',
+      placement,
+      tasks: [{ taskNoteId: 'task-one', placement: {} }, { taskNoteId: 'task-two' }],
+    });
+    expect(fixture.request).toHaveBeenLastCalledWith(
+      'agent.delegate',
+      {
+        workspaceId: 'ws',
+        tasks: [
+          { taskNoteId: 'task-one', placement: {} },
+          { taskNoteId: 'task-two', placement },
+        ],
+      },
+      undefined,
+    );
+  });
+  it('preserves default-clear null without requiring node capabilities', async () => {
+    await backendRequest('workspace.update', { workspaceId: 'ws', defaultAgentPlacement: null });
+    expect(fixture.request).toHaveBeenCalledExactlyOnceWith(
+      'workspace.update',
+      { workspaceId: 'ws', defaultAgentPlacement: null },
+      undefined,
+    );
+  });
+});

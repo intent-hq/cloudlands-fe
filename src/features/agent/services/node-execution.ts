@@ -1,10 +1,30 @@
 import { m } from '$shared/paraglide/messages.js';
 import { z } from 'zod';
-import { AgentPlacementSchema, type AgentPlacement } from '$shared/types/agent-node';
+import {
+  AgentPlacementSchema,
+  AgentPlacementRequestSchema,
+  type AgentPlacementRequest,
+} from '$shared/types/agent-node';
 
 export interface NodeCapabilities {
   agentNodes: boolean;
   localNodeIsolation: boolean;
+  agentPlatformRouting?: boolean;
+}
+export function assertPlacementSupported(
+  placement: AgentPlacementRequest,
+  capabilities: NodeCapabilities,
+): void {
+  if (
+    !capabilities.agentNodes ||
+    (!AgentPlacementSchema.safeParse(placement).success &&
+      capabilities.agentPlatformRouting !== true) ||
+    (placement.target === 'local' &&
+      (placement.checkout ?? 'isolated') === 'isolated' &&
+      !capabilities.localNodeIsolation)
+  ) {
+    throw new Error(m.agent_placement_unavailable());
+  }
 }
 const hubTarget = z
   .object({
@@ -34,33 +54,38 @@ export class NodeExecutionClient {
 
   async capabilities(): Promise<NodeCapabilities> {
     const hello = (await this.request('client.hello', {})) as {
-      server?: { capabilities?: { agentNodes?: unknown; localNodeIsolation?: unknown } };
+      server?: {
+        capabilities?: {
+          agentNodes?: unknown;
+          localNodeIsolation?: unknown;
+          agentPlatformRouting?: unknown;
+        };
+      };
     } | null;
     const caps = hello?.server?.capabilities;
     return {
       agentNodes: caps?.agentNodes === 1,
+      ...(caps?.agentNodes === 1 && caps?.agentPlatformRouting === 1
+        ? { agentPlatformRouting: true }
+        : {}),
       localNodeIsolation: caps?.agentNodes === 1 && caps?.localNodeIsolation === 1,
     };
   }
 
-  async preparePlacement(input: AgentPlacement): Promise<AgentPlacement> {
-    const placement = AgentPlacementSchema.parse(input);
+  async preparePlacement(input: AgentPlacementRequest): Promise<AgentPlacementRequest> {
+    const placement = AgentPlacementRequestSchema.parse(input);
     const checkLabs = () => {
-      if (placement.target === 'remote' && !this.remoteEnabled()) {
+      if (
+        (placement.target === 'remote' || placement.exclusive === true) &&
+        !this.remoteEnabled()
+      ) {
         throw new Error(m.agent_placement_labsRequired());
       }
     };
     checkLabs();
     const capabilities = await this.capabilities();
     checkLabs();
-    if (
-      !capabilities.agentNodes ||
-      (placement.target === 'local' &&
-        placement.checkout === 'isolated' &&
-        !capabilities.localNodeIsolation)
-    ) {
-      throw new Error(m.agent_placement_unavailable());
-    }
+    assertPlacementSupported(placement, capabilities);
     return placement;
   }
 
