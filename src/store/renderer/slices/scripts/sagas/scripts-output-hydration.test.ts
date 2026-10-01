@@ -95,6 +95,63 @@ afterEach(async () => {
   store.dispose();
 });
 describe('retained script output hydration', () => {
+  it.each([ID, 'second-script'])(
+    'retains runtime for %s when the first viewer releases a shared definition read',
+    async (targetId) => {
+      const list = deferred<{ scripts: unknown[] }>();
+      const runtime = { status: 'exited' as const, exitCode: 1, restartCount: 0 };
+      transport.request.mockImplementation(async (method) => {
+        if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+        if (method === 'script.list') return list.promise;
+        return 'failure output';
+      });
+      const run = start(false);
+      run.dispatch(request('first'));
+      await settle();
+      run.dispatch(updateRuntimeState(WS, targetId, runtime));
+      run.dispatch({ ...request('second'), payload: [WS, targetId, 'second'] });
+      await settle();
+      run.dispatch(release('first'));
+      list.resolve({
+        scripts: [{ id: targetId, runtime: { status: 'running', restartCount: 0 } }],
+      });
+      await settle();
+      expect(
+        transport.request.mock.calls.filter(([method]) => method === 'script.list'),
+      ).toHaveLength(1);
+      expect(run.retained('first')).toBeUndefined();
+      expect(run.retained('second')?.text).toBe('failure output');
+      expect(run.state.scripts.byWorkspaceId[WS].scripts[targetId].runtime).toMatchObject(runtime);
+    },
+  );
+
+  it('starts a fresh definition read after all viewers release the old read', async () => {
+    const stale = deferred<{ scripts: unknown[] }>();
+    const fresh = deferred<{ scripts: unknown[] }>();
+    let lists = 0;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list') return ++lists === 1 ? stale.promise : fresh.promise;
+      return 'new output';
+    });
+    const run = start(false);
+    run.dispatch(request('old'));
+    await settle();
+    run.dispatch(release('old'));
+    run.dispatch(updateRuntimeState(WS, ID, { status: 'exited', exitCode: 1 }));
+    run.dispatch(request('fresh'));
+    await settle();
+    expect(lists).toBe(2);
+    fresh.resolve({
+      scripts: [{ id: ID, runtime: { status: 'exited', exitCode: 1, restartCount: 0 } }],
+    });
+    await settle();
+    stale.resolve({ scripts: [{ id: ID, runtime: { status: 'running', restartCount: 0 } }] });
+    await settle();
+    expect(run.retained('fresh')?.text).toBe('new output');
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[ID].runtime.status).toBe('exited');
+  });
+
   it.each([
     {
       status: 'exited' as const,

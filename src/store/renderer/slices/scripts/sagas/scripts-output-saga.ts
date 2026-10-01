@@ -24,13 +24,13 @@ import {
   updateRuntimeState,
 } from '../scripts-slice';
 
-type DefinitionReads = Map<
-  string,
-  {
-    dispatch: typeof store.dispatch;
-    promise: Promise<Awaited<ReturnType<typeof appClient.scripts.list>>>;
-  }
->;
+type DefinitionRead = {
+  dispatch: typeof store.dispatch;
+  promise: Promise<Awaited<ReturnType<typeof appClient.scripts.list>>>;
+  runtimeById: Map<string, ReturnType<typeof updateRuntimeState>['payload']['partial']>;
+  viewers: Set<symbol>;
+};
+type DefinitionReads = Map<string, DefinitionRead>;
 
 function* readOutput(
   reads: DefinitionReads,
@@ -49,7 +49,8 @@ function* readOutput(
       value?.runtime?.restartCount,
     ]);
   let run = runtimeKey(script);
-  let pendingRuntime: ReturnType<typeof updateRuntimeState>['payload']['partial'] = {};
+  let definitionRead: DefinitionRead | undefined;
+  const reader = Symbol();
   const cleanup = (event: { type: string; payload?: unknown }) => {
     const payload = event.payload;
     if (!Array.isArray(payload) || payload[0] !== workspaceId) return false;
@@ -77,13 +78,15 @@ function* readOutput(
       let pending = reads.get(definitionKey);
       if (!pending || pending.dispatch !== dispatch) {
         const promise = appClient.scripts.list(workspaceId, { archive: 'all' });
-        pending = { dispatch, promise };
+        pending = { dispatch, promise, runtimeById: new Map(), viewers: new Set() };
         reads.set(definitionKey, pending);
         const clear = () => {
           if (reads.get(definitionKey) === pending) reads.delete(definitionKey);
         };
         void promise.then(clear, clear);
       }
+      definitionRead = pending;
+      pending.viewers.add(reader);
       const entries = yield* call(() => pending.promise);
       if (!(yield* isCurrent())) return;
       const definition = entries.find((entry) => entry.id === scriptId);
@@ -93,7 +96,10 @@ function* readOutput(
         yield* put(
           scriptOutputDefinitionReceived(
             workspaceId,
-            { ...definition, runtime: { ...definition.runtime, ...pendingRuntime } },
+            {
+              ...definition,
+              runtime: { ...definition.runtime, ...pending.runtimeById.get(scriptId) },
+            },
             viewerId,
           ),
         );
@@ -126,12 +132,18 @@ function* readOutput(
           scriptId: id,
           partial,
         } = (event as ReturnType<typeof updateRuntimeState>).payload;
-        if (!script && wsId === workspaceId && id === scriptId) {
-          pendingRuntime = { ...pendingRuntime, ...partial };
+        if (!script && definitionRead && wsId === workspaceId) {
+          // The shared list may serve a later viewer for any script. Its live
+          // events must survive the viewer that first requested the list.
+          definitionRead.runtimeById.set(id, {
+            ...definitionRead.runtimeById.get(id),
+            ...partial,
+          });
         }
       }
       if (cleanup(event)) {
-        if (event.type !== scriptOutputReleased.type) reads.delete(definitionKey);
+        if (event.type !== scriptOutputReleased.type && reads.get(definitionKey) === definitionRead)
+          reads.delete(definitionKey);
         yield* put(scriptOutputReleased(workspaceId, scriptId, viewerId));
         return;
       }
@@ -145,6 +157,12 @@ function* readOutput(
     }
   } finally {
     releases.close();
+    if (definitionRead) {
+      definitionRead.viewers.delete(reader);
+      if (definitionRead.viewers.size === 0 && reads.get(definitionKey) === definitionRead) {
+        reads.delete(definitionKey);
+      }
+    }
   }
 }
 
