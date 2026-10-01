@@ -1,6 +1,6 @@
 import { m } from './paraglide/messages.js';
 
-/** Registered-root reads were added in protocol 11.1; unknown generations fail closed. */
+/** Require the registered-root file.read/file.readChunk contract; unknown generations fail closed. */
 function assertRootFileSupport(protocolVersion: unknown): void {
   const match =
     typeof protocolVersion === 'string' ? protocolVersion.match(/^(\d+)\.(\d+)(?:\.\d+)?$/) : null;
