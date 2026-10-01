@@ -59,8 +59,9 @@
     ) => QueuedMessageSendOutcome | void | Promise<QueuedMessageSendOutcome | void>;
     ondone?: () => void;
     /**
-     * Queue-surface attribution (multiplayer w2). `null` = off (single-member
-     * workspace). Otherwise a user-authored entry renders its own `author`
+     * Local queue attribution (multiplayer w2). `null` disables local fallback
+     * in a single-member workspace. Portable author snapshots remain visible
+     * independently. Otherwise a user-authored entry renders its own `author`
      * projection, or — on a daemon that stamps `fromPrincipalId` only — the
      * transcript author this map resolves it to.
      */

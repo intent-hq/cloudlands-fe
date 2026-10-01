@@ -439,7 +439,8 @@
   // more than one member, on plain human rows — agent-to-agent sends and
   // automated wakes carry their own sender header. Reads the daemon's
   // serve-time `author` projection verbatim; single-member workspaces, the
-  // viewer's own rows and rows without the projection render unchanged.
+  // viewer's own local rows and rows without the projection render unchanged.
+  // Portable human snapshots remain visible without current membership.
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
@@ -453,14 +454,15 @@
       ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
       : null,
   );
+  const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));
   let humanAuthor = $derived(
     collaboratorSender
       ? collaboratorSender.author
       : role === 'user' &&
-          (workspace?.memberCount ?? 0) >= 2 &&
+          ((workspace?.memberCount ?? 0) >= 2 || projectedHumanAuthor?.principalId === null) &&
           !agentAttribution &&
           !automatedWakePresentation
-        ? getHumanMessageAuthor(message, ownPrincipalId)
+        ? projectedHumanAuthor
         : null,
   );
   let humanAuthorLabel = $derived.by(() => {

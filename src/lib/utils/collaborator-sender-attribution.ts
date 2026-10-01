@@ -74,11 +74,11 @@ export function buildCollaboratorSenderPreamble(
 }
 
 /** The value as a `MessageAuthor` when it carries a principal id, else null. */
-function asMessageAuthor(value: unknown): MessageAuthor | null {
+function asMessageAuthor(value: unknown): (MessageAuthor & { principalId: string }) | null {
   if (!value || typeof value !== 'object') return null;
   const { principalId } = value as { principalId?: unknown };
   if (typeof principalId !== 'string' || principalId.length === 0) return null;
-  return value as MessageAuthor;
+  return value as MessageAuthor & { principalId: string };
 }
 
 /** Leading text of a row, as the daemon persisted it (first text block onward). */
