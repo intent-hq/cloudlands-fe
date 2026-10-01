@@ -1,4 +1,4 @@
-import { call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import {
   createChannelFromSelector,
   takeLatestFromSelector,
@@ -30,16 +30,15 @@ export function* recoverPendingPermissions(): SagaGenerator<void> {
   let reading = true;
   // Start before the snapshot. Late replies and late agent discovery must never
   // overwrite a newer live prompt or resurrect a resolved one.
-  yield* fork(function* (): SagaGenerator<void> {
-    while (true) {
-      const action = yield* take([permissionRequestReceived, removePermissionRequest]);
-      const id =
-        action.type === removePermissionRequest.type
-          ? (action as ReturnType<typeof removePermissionRequest>).payload[0]
-          : (action as ReturnType<typeof permissionRequestReceived>).payload[0].requestId;
-      if (reading) changedDuringRead.add(id);
-      pending.delete(id);
-    }
+  const invalidate = (id: string) => {
+    if (reading) changedDuringRead.add(id);
+    pending.delete(id);
+  };
+  yield* takeEvery(permissionRequestReceived, function* (action) {
+    yield* call(invalidate, action.payload[0].requestId);
+  });
+  yield* takeEvery(removePermissionRequest, function* (action) {
+    yield* call(invalidate, action.payload[0]);
   });
   try {
     // The aggregate is routed to this window's backend and filtered by the
