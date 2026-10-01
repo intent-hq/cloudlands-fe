@@ -15,7 +15,11 @@ const mocks = vi.hoisted(() => ({
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
   events: { queryPage: vi.fn() },
   skills: { list: vi.fn() },
-  scripts: { list: vi.fn(), supportsLifecycle: undefined as undefined | (() => Promise<boolean>) },
+  scripts: {
+    list: vi.fn(),
+    status: vi.fn(),
+    supportsLifecycle: undefined as undefined | (() => Promise<boolean>),
+  },
   git: {
     prRefresh: vi.fn(),
     status: vi.fn(),
@@ -67,8 +71,8 @@ import {
   refreshScripts,
   setScriptListState,
   setActiveScriptsData,
-  setArchivedScriptsData,
-  setScriptHistoryLoadState,
+  scriptOutputRequested,
+  updateRuntimeState,
 } from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
@@ -1175,26 +1179,85 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('loads archived failures once alongside the initial active list', async () => {
+  it('refreshes only the active partition on initial load and repeated refreshes', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
-    const archived = {
-      id: 'script-history',
-      archivedAt: '2026-09-30T12:00:00Z',
-      lastRun: { outcome: 'failed' },
-    };
-    mocks.scripts.list.mockResolvedValueOnce([]).mockResolvedValueOnce([archived]);
-    const run = start();
+    mocks.scripts.list.mockResolvedValue([]);
+    const run = startScriptCache();
     try {
-      run.channel.put(refreshScripts(WS));
-      await settle();
-      await settle();
+      for (const workspaceId of [WS, WS, 'other']) {
+        run.dispatch(refreshScripts(workspaceId));
+        await settle();
+        await settle();
+      }
       expect(mocks.scripts.list.mock.calls).toEqual([
         [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
+        [WS, { archive: 'active' }],
+        ['other', { archive: 'active' }],
       ]);
-      expect(run.actions).toContainEqual(setActiveScriptsData(WS, []));
-      expect(run.actions).toContainEqual(setArchivedScriptsData(WS, [archived] as never, 0));
-      expect(run.actions).toContainEqual(setScriptListState(WS, false, undefined, true));
+      expect(mocks.scripts.status).not.toHaveBeenCalled();
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('recovers missed retirement state for open output without scanning archives', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list.mockResolvedValue([]);
+    mocks.scripts.status.mockResolvedValue({ status: 'exited', exitCode: 1, restartCount: 0 });
+    const run = startScriptCache();
+    try {
+      const row = { id: 'open-output', runtime: { status: 'running', restartCount: 0 } };
+      run.dispatch(setScriptsData(WS, [row, { ...row, id: 'closed-output' }] as never));
+      run.dispatch(scriptOutputRequested(WS, row.id, 'viewer'));
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([[WS, { archive: 'active' }]]);
+      expect(mocks.scripts.status.mock.calls).toEqual([[WS, 'open-output']]);
+      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
+        status: 'exited',
+        exitCode: 1,
+      });
+      expect(run.getState().byWorkspaceId[WS].activeScriptIds).toEqual([]);
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('keeps a newer live event when an open retired viewer status read finishes late', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list.mockResolvedValue([]);
+    let resolveStatus!: (value: unknown) => void;
+    mocks.scripts.status.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+    const run = startScriptCache();
+    try {
+      run.dispatch(
+        setScriptsData(WS, [
+          { id: 'open-output', runtime: { status: 'running', restartCount: 0 } },
+        ] as never),
+      );
+      run.dispatch(scriptOutputRequested(WS, 'open-output', 'viewer'));
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(mocks.scripts.status).toHaveBeenCalledOnce();
+      run.dispatch(
+        updateRuntimeState(WS, 'open-output', { status: 'starting', startedAt: 'new run' }),
+      );
+      resolveStatus({ status: 'exited', exitCode: 1, restartCount: 0 });
+      await settle();
+      await settle();
+      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
+        status: 'starting',
+        startedAt: 'new run',
+      });
     } finally {
       mocks.scripts.supportsLifecycle = undefined;
       await stop(run.task);
@@ -1216,115 +1279,7 @@ describe('lifecycleReadSaga', () => {
     return { task, dispatch, actions, getState: () => current.scripts };
   }
 
-  it('caches history across routine refreshes and invalidates it explicitly per workspace', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list.mockResolvedValue([]);
-    const run = startScriptCache();
-    try {
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-      ]);
-      run.dispatch(refreshScripts(WS, true));
-      await settle();
-      await settle();
-      run.dispatch(refreshScripts('other'));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        ['other', { archive: 'active' }],
-        ['other', { archive: 'archived' }],
-      ]);
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('keeps active rows and a retryable error when history fails, then retries the missing history', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list
-      .mockResolvedValueOnce([{ id: 'active' }])
-      .mockRejectedValueOnce(new Error('history offline'))
-      .mockResolvedValue([]);
-    const run = startScriptCache();
-    try {
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(run.getState().byWorkspaceId[WS]).toMatchObject({
-        activeScriptIds: ['active'],
-        historyLoading: false,
-        historyError: 'history offline',
-        loading: false,
-      });
-      expect(run.actions).toContainEqual(setScriptHistoryLoadState(WS, false, 'history offline'));
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-      ]);
-      expect(run.getState().byWorkspaceId[WS].historyError).toBeUndefined();
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('does not lose a history invalidation arriving during an archived read', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    let resolveHistory!: (rows: unknown[]) => void;
-    mocks.scripts.list
-      .mockResolvedValueOnce([])
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveHistory = resolve;
-        }),
-      )
-      .mockResolvedValue([]);
-    const run = startScriptCache();
-    try {
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      run.dispatch(refreshScripts(WS, true));
-      resolveHistory([]);
-      await settle();
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-      ]);
-      expect(run.getState().byWorkspaceId[WS]).toMatchObject({
-        historyVersion: 1,
-        historyLoadedVersion: 1,
-      });
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('exposes a supporting daemon load failure as retryable History, not an empty list', async () => {
+  it('exposes a supporting daemon load failure as retryable, not an empty list', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
     mocks.scripts.list.mockRejectedValueOnce(new Error('history offline'));
     const run = start();
@@ -4138,7 +4093,7 @@ import { backendRequest as lifecycleRequest } from '$lib/client/live/backend-tra
 import { LiveScriptsClient } from '$lib/client/live/live-scripts-client';
 
 describe('script lifecycle capability coherence', () => {
-  it('does not cache a history response after changing the bound backend', async () => {
+  it('does not cache an active response after changing the bound backend', async () => {
     appStore.dispose();
     appStore.init();
     const request = vi.mocked(lifecycleRequest);
@@ -4151,7 +4106,7 @@ describe('script lifecycle capability coherence', () => {
     request.mockImplementation(async (method, params) => {
       if (method === 'client.hello') {
         helloCount++;
-        if (helloCount === 3) return pending as never;
+        if (helloCount === 2) return pending as never;
         return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
       }
       const archived = (params as { archive?: string }).archive === 'archived';
@@ -4172,12 +4127,11 @@ describe('script lifecycle capability coherence', () => {
     const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
     try {
       dispatch(refreshScripts(WS));
-      await vi.waitFor(() => expect(helloCount).toBe(3));
+      await vi.waitFor(() => expect(helloCount).toBe(2));
       current.connections.windowBackendId = 'replacement';
       resolveHello({ server: { capabilities: { scriptLifecycle: 1 } } });
       for (let i = 0; i < 10; i++) await settle();
-      expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toBeUndefined();
-      expect(current.scripts.byWorkspaceId[WS].historyInitialized).toBeUndefined();
+      expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toBeUndefined();
       expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
     } finally {
       mocks.scripts.supportsLifecycle = undefined;
@@ -4186,7 +4140,7 @@ describe('script lifecycle capability coherence', () => {
     }
   });
   it.each(['failure', 'unsupported'] as const)(
-    'keeps active membership when history negotiation returns %s',
+    'keeps existing membership when active-list negotiation returns %s',
     async (mode) => {
       appStore.dispose();
       appStore.init();
@@ -4219,7 +4173,7 @@ describe('script lifecycle capability coherence', () => {
       request.mockImplementation(async (method, params) => {
         if (method === 'client.hello') {
           helloCount++;
-          if (helloCount === 3) {
+          if (helloCount === 2) {
             if (mode === 'failure') throw new Error('temporary hello failure');
             return { server: { capabilities: {} } } as never;
           }
@@ -4239,6 +4193,10 @@ describe('script lifecycle capability coherence', () => {
       mocks.scripts.supportsLifecycle = client.supportsLifecycle.bind(client);
       mocks.scripts.list.mockImplementation(client.list.bind(client));
       let current = state();
+      current.scripts = scriptsReducer(
+        current.scripts,
+        setActiveScriptsData(WS, [rows[0]] as never),
+      );
       const channel = stdChannel();
       const dispatch = (action: any) => {
         current = { ...current, scripts: scriptsReducer(current.scripts, action) };
@@ -4248,18 +4206,17 @@ describe('script lifecycle capability coherence', () => {
       const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
       try {
         dispatch(refreshScripts(WS));
+        await vi.waitFor(() => expect(current.scripts.byWorkspaceId[WS]?.loadError).toBeTruthy());
+        expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
+        expect(request.mock.calls.filter(([method]) => method === 'script.list')).toHaveLength(0);
+        dispatch(refreshScripts(WS));
         await vi.waitFor(() => expect(current.scripts.byWorkspaceId[WS]?.initialized).toBe(true));
+        expect(current.scripts.byWorkspaceId[WS].loadError).toBeUndefined();
         expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
-        expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toBeUndefined();
-        expect(current.scripts.byWorkspaceId[WS].historyError).toBeTruthy();
-        expect(request.mock.calls.filter(([method]) => method === 'script.list')).toHaveLength(1);
-        dispatch(refreshScripts(WS, true));
-        await vi.waitFor(() =>
-          expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toEqual(['history']),
-        );
-        expect(current.scripts.byWorkspaceId[WS].historyError).toBeUndefined();
-        expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
-        expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toEqual(['history']);
+        expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
+        expect(request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([
+          ['script.list', { workspaceId: WS, archive: 'active' }],
+        ]);
       } finally {
         mocks.scripts.supportsLifecycle = undefined;
         await stop(task);

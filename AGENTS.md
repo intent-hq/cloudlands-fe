@@ -512,14 +512,15 @@ on the BE rather than looping on the client.
 
 ### Saga-owned mutations & soft-hide-then-commit
 
-Some async-action triggers (`*Requested` actions with a `.promise`) lost their handlers
-when the saga runtime was removed. They are re-homed in a **mutation middleware** rather
-than a new saga: `createAgentMutationMiddleware()` in
-`src/features/agent/agent-mutation-service.ts` observes dispatched actions and, after the
-reducer runs, calls the `AppClient` seam and dispatches the per-dispatch
-`action.success`/`action.failure` so the awaited promise settles. Keep these middlewares
-dependency-light (no selector imports — they evaluate `store.createSelector` at chain
-construction); read state directly off `appStore.state` and import the toast lib lazily.
+Agent lifecycle mutations are owned by `agentMutationSaga` in
+`src/store/renderer/slices/agent-session/sagas/agent-mutation-saga.ts`, registered once
+in `src/store/renderer/sagas.ts`. Creation is owned by `agentCreationSaga` and routes
+through `agentFactory.createAgent()`. Extend these owners, not a mutation middleware
+or a second runtime. Existing async-action callers (`*Requested` actions with a
+`.promise`) remain supported: settle through the originating action's
+`action.success`/`action.failure` helpers so each dispatch retains its correlation.
+New UI consumers dispatch intent and read correlated selector outcomes; the saga
+owns transport calls, rollback and notifications.
 
 Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5,
 `agent.delete { undoDelayMs }`; the handlers live in the agent mutation saga):

@@ -95,7 +95,6 @@ describe('B2 caller metadata regression', () => {
     const expected = {
       checkbox: [
         'src/features/dev-console/PayloadDetails.svelte',
-        'src/features/scripts/components/ScriptHistoryView.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',

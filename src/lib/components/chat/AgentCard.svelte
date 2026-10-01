@@ -3,7 +3,6 @@
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
-  import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -16,13 +15,9 @@
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectPendingQuestionRecovery } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
-    deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
-    renameAgentSessionRequested,
-    retireAgentRequested,
     agentRetirementSupportRequested,
     setAgentNotificationsMutedRequested,
-    stopAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -42,7 +37,12 @@
   import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
   import { deriveAgentHasPendingQuestion } from './questions/wizard-gate';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    agentMutationUiConsumed,
+    agentMutationUiReleased,
+    agentMutationUiRequested,
+  } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import {
     getPanelLayoutManager,
     hasPanelLayoutManager,
@@ -167,21 +167,46 @@
     readOnly = false,
   }: Props = $props();
 
-  const logger = createLogger('AgentCard');
+  const mutationConsumerId = crypto.randomUUID();
+  const renameConsumerId = crypto.randomUUID();
+  const mutationWorkspaceIdStore = writable('');
+  const mutation$ = selectAgentMutationUi(mutationWorkspaceIdStore, mutationConsumerId);
+  const rename$ = selectAgentMutationUi(mutationWorkspaceIdStore, renameConsumerId);
+  $effect(() => {
+    const wsId = mutationWorkspaceId;
+    void agentId;
+    mutationWorkspaceIdStore.set(wsId);
+    return () => {
+      appStore.dispatch(agentMutationUiReleased(wsId, mutationConsumerId));
+      appStore.dispatch(agentMutationUiReleased(wsId, renameConsumerId));
+    };
+  });
+  $effect(() => {
+    for (const outcome of [$mutation$, $rename$]) {
+      if (
+        !outcome ||
+        outcome.workspaceId !== mutationWorkspaceId ||
+        outcome.agentId !== agentId ||
+        outcome.status === 'pending'
+      )
+        continue;
+      if (outcome.operation.kind === 'stop') closeContextMenu();
+      appStore.dispatch(
+        agentMutationUiConsumed($mutationWorkspaceIdStore, outcome.id, outcome.requestId),
+      );
+    }
+  });
   const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground';
   const hasTaskProgress = $derived(taskProgress.length > 0);
-
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
   $effect(() => {
     agentIdStore.set(agentId);
   });
-
   const agentPermCount = selectPendingCount(agentIdStore);
   const hasCapturedQuestion$ = selectHudAgentHasPendingQuestion(agentIdStore);
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
-
   // Load missing rows only; list projections must not trigger per-card detail
   // fan-out. handleContextMenu loads detail-only fields on demand.
   $effect(() => {
@@ -190,23 +215,14 @@
     if (selectAgentSession.select(appStore.state, agentId)) return;
     appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
   });
-
-  // Inline editing state
   let isEditing = $state(false);
   let editingValue = $state('');
   let editInputRef: HTMLInputElement | null = $state(null);
-
-  // Context menu state
   let contextMenu: SidebarContextPosition | null = $state(null);
-
-  // Read-only harness-features modal (opened from the context menu).
   let harnessModalOpen = $state(false);
-
-  // Replace Agent modal (opened from the context menu when eligible).
   let replaceAgentModalOpen = $state(false);
   let retireAgentModalOpen = $state(false);
   const retirementSupported$ = selectAgentRetirementSupported();
-
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -222,7 +238,6 @@
       ? 'Finder'
       : m.chat_agentCard_fileManager_label();
 
-  // Start editing the agent name
   async function startEditing() {
     if (readOnly || isEditing) return;
     editingValue = displayName;
@@ -232,7 +247,6 @@
     editInputRef?.select();
   }
 
-  // Save the edited name
   function saveEdit() {
     if (!isEditing) return;
     const nextName = editingValue.trim();
@@ -245,37 +259,21 @@
           ? String(workspace.id)
           : undefined;
       if (wsId) {
-        // Capture previous values before the optimistic dispatch so a failed
-        // rename can revert back to exactly what the user saw.
-        const previousName = displayName;
-        const previousNameExplicitlySet = $agent$?.nameExplicitlySet ?? false;
         appStore.dispatch(
-          updateAgentSessionFields(agentId, {
+          agentMutationUiRequested(wsId, renameConsumerId, crypto.randomUUID(), agentId, {
+            kind: 'rename',
             name: nextName,
-            nameExplicitlySet: true,
-          } as any),
+          }),
         );
-        appStore.dispatch(renameAgentSessionRequested(wsId, agentId, nextName)).catch(() => {
-          // Revert the optimistic dispatch so Redux matches disk, then notify.
-          appStore.dispatch(
-            updateAgentSessionFields(agentId, {
-              name: previousName,
-              nameExplicitlySet: previousNameExplicitlySet,
-            } as any),
-          );
-          notify.error(m.chat_agentCard_renameFailed_error());
-        });
       }
     }
   }
 
-  // Cancel editing
   function cancelEdit() {
     isEditing = false;
     editingValue = '';
   }
 
-  // Handle keyboard events during editing
   function handleEditKeydown(e: KeyboardEvent) {
     e.stopPropagation();
     if (e.key === 'Enter' && !e.isComposing) {
@@ -291,7 +289,6 @@
     e.stopPropagation();
   }
 
-  // Handle double-click on name
   function handleNameDoubleClick(e: MouseEvent) {
     if (readOnly) return;
     e.preventDefault();
@@ -299,7 +296,6 @@
     startEditing();
   }
 
-  // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
     if (readOnly) return;
     if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
@@ -322,7 +318,6 @@
     }
   }
 
-  // Context menu handlers
   function handleContextMenu(e: MouseEvent | KeyboardEvent) {
     if (readOnly) return;
     const position = getSidebarContextPosition(e);
@@ -441,22 +436,23 @@
         id: 'stop',
         label: m.chat_agentCard_menu_stop_label(),
         icon: faStop,
-        onClick: async () => {
+        disabled:
+          $mutation$?.agentId === agentId &&
+          $mutation$.operation.kind === 'stop' &&
+          $mutation$.status === 'pending',
+        onClick: () => {
           const wsId = $agent$?.workspaceId
             ? String($agent$.workspaceId)
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          // Close the menu even when the daemon refuses the stop.
-          try {
-            if (wsId) {
-              await appStore.dispatch(stopAgentSessionRequested(wsId, agentId));
-            }
-          } catch (error) {
-            logger.error('Failed to stop agent', { agentId, error });
-          } finally {
-            closeContextMenu();
-          }
+          if (wsId)
+            appStore.dispatch(
+              agentMutationUiRequested(wsId, mutationConsumerId, crypto.randomUUID(), agentId, {
+                kind: 'stop',
+              }),
+            );
+          else closeContextMenu();
         },
       });
     }
@@ -500,7 +496,7 @@
         label: m.chat_agentCard_menu_delete_label(),
         icon: faTrash,
         destructive: true,
-        onClick: async () => {
+        onClick: () => {
           // Close related panel tabs before deleting
           if (deleteWorkspaceId && hasPanelLayoutManager(deleteWorkspaceId)) {
             getPanelLayoutManager(deleteWorkspaceId).closeTabsByType('agent', 'agentId', agentId);
@@ -508,8 +504,14 @@
           closeContextMenu();
 
           if (deleteWorkspaceId) {
-            await appStore.dispatch(
-              deleteAgentWithUndoRequested(deleteWorkspaceId, agentId, agentName || undefined),
+            appStore.dispatch(
+              agentMutationUiRequested(
+                deleteWorkspaceId,
+                mutationConsumerId,
+                crypto.randomUUID(),
+                agentId,
+                { kind: 'delete', name: agentName || undefined },
+              ),
             );
           }
         },
@@ -554,13 +556,11 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
+  const mutationWorkspaceId = $derived(String($agent$?.workspaceId || workspace?.id || ''));
   const backgroundPending$ = selectAgentBackgroundPending(agentIdStore);
   const agentDetailHydrated$ = selectAgentDetailHydrated(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
-
-  // Get parent agent ID from metadata (for delegation info)
   const parentAgentId = $derived(agentData?.parentAgentId);
-
   // Mirror the parent agent ID into a writable so the Redux selector
   // re-evaluates reactively: the "Delegated by" label appears as soon as
   // the parent session lands in state (e.g. on workspace restore) without
@@ -1068,10 +1068,8 @@
   <RetireAgentModal
     bind:open={retireAgentModalOpen}
     agentName={$agent$?.name || agentName || ''}
-    onRetire={() =>
-      appStore.dispatch(
-        retireAgentRequested(String($agent$?.workspaceId || workspace?.id), agentId),
-      )}
+    workspaceId={String($agent$?.workspaceId || workspace?.id)}
+    {agentId}
   />
 {/if}
 

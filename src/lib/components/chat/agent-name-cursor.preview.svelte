@@ -27,6 +27,7 @@
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { AgentStatus, type AgentSession } from '$shared/types';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+  import { setupAgentMutationPreview } from '../../../test/agent-mutation-preview';
   import AgentCard from './AgentCard.svelte';
 
   let {
@@ -35,6 +36,7 @@
   }: { cursor?: 'pointer' | 'default'; nodeStatus?: 'pending' | 'halted' | 'resuming' } = $props();
   const agentId = 'agent-name-cursor-preview';
   onMount(() => {
+    const stopMutations = setupAgentMutationPreview();
     appStore.dispatch(
       bulkUpsertSessions([
         {
@@ -56,7 +58,10 @@
         } as AgentSession,
       ]),
     );
-    return () => appStore.dispatch(removeSession(agentId));
+    return () => {
+      stopMutations();
+      appStore.dispatch(removeSession(agentId));
+    };
   });
 </script>
 

@@ -251,6 +251,62 @@ describe('TerminalSidebar detection flow', () => {
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
   });
 
+  it('saves commands added through the user form', async () => {
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByTitle('Add script'));
+    await fireEvent.input(screen.getByPlaceholderText('Name'), { target: { value: 'test' } });
+    await fireEvent.input(screen.getByPlaceholderText('Command, e.g. npm run dev'), {
+      target: { value: 'pnpm test' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }));
+    expect(mockScriptCreate).toHaveBeenCalledWith('ws-1', {
+      name: 'test',
+      command: 'pnpm test',
+      mode: 'command',
+      purpose: 'saved',
+      source: 'user',
+    });
+  });
+
+  it('saves commands returned by legacy agent detection', async () => {
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify([{ name: 'test', command: 'pnpm test', mode: 'command' }]),
+    );
+    expect(mockScriptCreate).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({ purpose: 'saved' }),
+    );
+  });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'restores %s purpose when undo recreates a definition',
+    async (purpose) => {
+      scriptEntries.value = [
+        {
+          id: 'old',
+          name: 'test',
+          command: 'pnpm test',
+          mode: 'command',
+          purpose,
+          runtime: { status: 'idle' },
+        },
+      ];
+      mockScriptCreate.mockResolvedValue({ success: true, data: { id: 'new-command' } });
+      render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+      await backgroundAgentOptions.value!.onResult(
+        JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
+      );
+      await notify.success.mock.calls[0][1].action.onClick();
+      expect(mockScriptCreate).toHaveBeenLastCalledWith(
+        'ws-1',
+        expect.objectContaining({ name: 'test', purpose: purpose ?? 'saved' }),
+      );
+    },
+  );
+
   it('runs local detection first and shows scanning copy without starting the agent', async () => {
     // When scripts exist, the scan icon button triggers local detection
     scriptEntries.value = [
@@ -478,7 +534,12 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
     });
     expect(mockScriptCreate).toHaveBeenCalledWith(
       'ws-1',
-      expect.objectContaining({ name: 'lint', command: 'pnpm lint', mode: 'command' }),
+      expect.objectContaining({
+        name: 'lint',
+        command: 'pnpm lint',
+        mode: 'command',
+        purpose: 'saved',
+      }),
     );
     expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
     expect(notify.warning).toHaveBeenCalledTimes(1);

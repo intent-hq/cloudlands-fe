@@ -62,7 +62,9 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}) });
+  return createAppStoreMockModule({
+    state: () => ({ agentMutationUi: { byWorkspaceId: {} } }),
+  });
 });
 
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({

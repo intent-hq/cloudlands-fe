@@ -14,6 +14,8 @@ import ChatChangesPanelHarness from '../ChatChangesPanelHarness.svelte';
 import ToolCall from '../ToolCall.svelte';
 import { invoke } from '$lib/electron-bridge';
 import { canOpenAgentPath } from '../agent-path-actions';
+import { appClient } from '$lib/client';
+import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 
 const id = 'agent-node-view';
 const makeAgent = (extra: Partial<AgentSession> = {}): AgentSession => ({
@@ -77,6 +79,38 @@ afterEach(() => {
 });
 
 describe('node agents in existing views', () => {
+  it('restores a failed remote rename while keeping halted status and path restrictions', async () => {
+    const response = Promise.withResolvers<{ success: false; error: string }>();
+    const rename = vi.spyOn(appClient.agents, 'rename').mockReturnValue(response.promise);
+    appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+    const stop = appStore.runSaga(agentMutationSaga);
+    try {
+      const view = render(AgentCard, { agentId: id, panelRow: true, hidePreview: true });
+      await fireEvent.contextMenu(view.container.querySelector('[data-agent-panel-row]')!);
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+      const input = await screen.findByRole('textbox', { name: 'Rename' });
+      await fireEvent.input(input, { target: { value: 'Temporary identity' } });
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-card-name').textContent).toBe('Temporary identity'),
+      );
+      expect(rename).toHaveBeenCalledExactlyOnceWith(
+        id,
+        'Temporary identity',
+        'preview-chat-changes',
+      );
+      response.resolve({ success: false, error: 'rename refused' });
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-card-name').textContent).toBe('Remote builder'),
+      );
+      expect(screen.getByTestId('agent-card-status').textContent).toBe('Halted');
+      expect(canOpenAgentPath(appStore.state, id)).toBe(false);
+      expect(appStore.state.agentSessions.byAgentId[id]?.checkpoint?.id).toBe('checkpoint-view');
+    } finally {
+      stop();
+    }
+  });
+
   it('reacts to provisioning, halt and resume while preserving legacy labels', async () => {
     appStore.dispatch(
       bulkUpsertSessions([

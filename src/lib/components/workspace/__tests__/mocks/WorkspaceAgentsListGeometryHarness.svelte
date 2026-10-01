@@ -9,6 +9,7 @@
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { AgentStatus, type AgentSession } from '$shared/types';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+  import { setupAgentMutationPreview } from '../../../../../test/agent-mutation-preview';
   import '../../../../../app.css';
 
   appStore.init();
@@ -92,7 +93,9 @@
   const virtualLoadedParentIds: Record<string, true> = { [loadedParentId]: true };
   const agents = $derived(virtual ? virtualAgents : treeAgents);
   onMount(() => {
+    const stopMutations = setupAgentMutationPreview();
     appStore.dispatch(bulkUpsertSessions(agents));
+    return stopMutations;
   });
   onDestroy(() => {
     for (const agent of agents) appStore.dispatch(removeSession(agent.id));
