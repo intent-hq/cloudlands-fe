@@ -1550,6 +1550,120 @@ function assertCompanionDiagnosticOutcome(
   };
 }
 
+/** Original synchronous IPC-to-client edges; saved backend IDs are not client identities. */
+function companionDocumentReads(
+  source: Record<string, any>,
+  sender: number,
+  pathname: string,
+  from: number,
+  until: number,
+) {
+  const id = (value: unknown): value is string =>
+    typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+  const ipcIds = new Set<string>();
+  for (const row of source.completions.filter((row: any) => row.layer === 'ipc')) {
+    companionMainRequire(
+      id(row.ipcInvocationId) && !ipcIds.has(row.ipcInvocationId),
+      'unique original IPC invocation identity',
+    );
+    ipcIds.add(row.ipcInvocationId);
+  }
+  const reads = source.completions.filter(
+    (row: any) =>
+      row.layer === 'ipc' &&
+      row.channel === 'backend:request' &&
+      row.sender === sender &&
+      row.sequence >= from &&
+      row.sequence < until &&
+      ['principal.me', 'workspace.list'].includes(row.args?.method),
+  );
+  companionMainRequire(
+    ['principal.me', 'workspace.list'].every((method) =>
+      reads.some((row: any) => row.args.method === method),
+    ),
+    'both original admitted document reads',
+  );
+  const linked = reads.map((ipc: Record<string, any>) => {
+    const document = new URL(ipc.document);
+    companionMainRequire(
+      ipc.main === true &&
+        Number.isSafeInteger(ipc.frame) &&
+        ipc.frame > 0 &&
+        document.protocol === 'http:' &&
+        document.hostname === '127.0.0.1' &&
+        document.port.length > 0 &&
+        document.pathname === pathname &&
+        !document.search &&
+        !document.hash &&
+        ipc.state === 'fulfilled' &&
+        ipc.value?.ok === true &&
+        ipc.args.metadataOnly === true,
+      'original main-frame document read',
+    );
+    const clients = source.completions.filter(
+      (row: any) => row.layer === 'client' && row.ipcInvocationId === ipc.ipcInvocationId,
+    );
+    companionMainRequire(clients.length === 1, 'exact synchronous IPC client edge');
+    const call = clients[0];
+    companionMainRequire(
+      call.sequence > ipc.sequence &&
+        call.sequence < until &&
+        call.method === ipc.args.method &&
+        call.captured === false &&
+        call.state === 'fulfilled' &&
+        id(call.callId) &&
+        id(call.clientId) &&
+        id(call.socketId) &&
+        source.completions.filter((row: any) => row.callId === call.callId).length === 1 &&
+        Array.isArray(call.wireRequests) &&
+        call.wireRequests.length === 1,
+      'original client invocation completion',
+    );
+    const wire = call.wireRequests[0];
+    const packets = source.records.filter(
+      (row: any) => row.socketId === call.socketId && row.envelope?.id === wire.requestId,
+    );
+    const request = packets.filter((row: any) => row.direction === 'request');
+    const response = packets.filter((row: any) => row.direction === 'response');
+    companionMainRequire(
+      wire.socketId === call.socketId &&
+        wire.method === call.method &&
+        request.length === 1 &&
+        response.length === 1 &&
+        request[0].host === 0 &&
+        response[0].host === 0 &&
+        request[0].envelope.method === call.method &&
+        request[0].envelope.callId === call.callId &&
+        response[0].envelope.method === call.method &&
+        !Object.hasOwn(response[0].envelope, 'error') &&
+        isDeepStrictEqual(response[0].envelope.result, call.value) &&
+        source.allocations.filter((row: any) => row.socketId === call.socketId && row.host === 0)
+          .length === 1 &&
+        (call.method !== 'workspace.list' || (id(call.connectionId) && id(call.incarnationId))),
+      'original allocation wire and result edge',
+    );
+    return { ipc, call, document: document.origin };
+  });
+  const first = linked[0];
+  companionMainRequire(
+    linked.every(
+      (row: (typeof linked)[number]) =>
+        row.ipc.document === first.ipc.document &&
+        row.ipc.frame === first.ipc.frame &&
+        row.call.clientId === first.call.clientId &&
+        row.call.socketId === first.call.socketId,
+    ),
+    'one original document and client generation',
+  );
+  return {
+    linked,
+    frame: first.ipc.frame,
+    origin: first.document,
+    client: first.call.clientId,
+    socket: first.call.socketId,
+  };
+}
+
 function assertCompanionMemberTransition(
   source: Record<string, any>,
   finalReceipt: Record<string, any>,
@@ -1656,7 +1770,6 @@ function assertCompanionMemberTransition(
       typeof next.admission === 'string' &&
       next.admission.length > 0 &&
       originalState.admission !== next.admission &&
-      originalState.windowBackendId !== next.windowBackendId &&
       originalState.workspaceAdmission === originalState.admission &&
       next.workspaceAdmission === next.admission &&
       isDeepStrictEqual(identity(originalState), identity(memberState)) &&
@@ -1667,6 +1780,74 @@ function assertCompanionMemberTransition(
       originalState.workspaces[0].id === next.workspaces[0].id,
     'original Member to fresh Guest document and cached local root receipt',
   );
+  const admission = (state: Record<string, any>) => {
+    const value = JSON.parse(state.admission);
+    const context = JSON.parse(value[0]);
+    companionMainRequire(
+      value.length === 3 &&
+        context.length === 3 &&
+        context[0] === state.windowBackendId &&
+        Number.isSafeInteger(value[1]) &&
+        value[1] >= 0 &&
+        typeof value[2] === 'string' &&
+        value[2].length > 0 &&
+        state.hasReceivedList === true &&
+        state.workspaceLoaded === true &&
+        context[2] === state.subscriptionGeneration &&
+        Number.isSafeInteger(state.subscriptionGeneration) &&
+        state.subscriptionGeneration > 0,
+      'actual current admitted principal and workspace read',
+    );
+    return value[2];
+  };
+  companionMainRequire(
+    admission(originalState) !== admission(next) &&
+      typeof originalState.workspaces[0].hostContext === 'string' &&
+      originalState.workspaces[0].hostContext.length > 0 &&
+      next.workspaces[0].hostContext === null,
+    'distinct original Member and Guest admissions with Guest refusal',
+  );
+  const memberReads = companionDocumentReads(source, original.sender, '/host-A', 0, joined.rows);
+  const guestReads = companionDocumentReads(
+    source,
+    original.sender,
+    '/host-A-next',
+    joined.rows,
+    source.completions.length,
+  );
+  companionMainRequire(
+    memberReads.frame !== guestReads.frame &&
+      memberReads.origin === guestReads.origin &&
+      memberReads.client !== guestReads.client &&
+      memberReads.socket !== guestReads.socket,
+    'fresh original document client and allocation independent of saved backend identity',
+  );
+  for (const [read, lower, upper] of [
+    [memberReads, 0, roots[0].sequence],
+    [guestReads, ledgers[0].sequence, journal.length + 1],
+  ] as const) {
+    const enrolled = journal.filter(
+      (row) => row.phase === 'direct-member' && row.clientId === read.client,
+    );
+    companionMainRequire(
+      enrolled.length === 1 && enrolled[0].sequence > lower && enrolled[0].sequence < upper,
+      'original document client direct member phase',
+    );
+  }
+  for (const [packet, reads] of [
+    [member, memberReads],
+    [before, guestReads],
+    [denied, guestReads],
+  ] as const) {
+    companionMainRequire(
+      reads.linked.every(
+        ({ ipc, call }: (typeof reads.linked)[number]) =>
+          isDeepStrictEqual(packet.source.completions?.[ipc.sequence], ipc) &&
+          isDeepStrictEqual(packet.source.completions?.[call.sequence], call),
+      ),
+      'original read identity retained at the actual body checkpoint',
+    );
+  }
   const prefix = source.completions.slice(0, joined.rows);
   companionMainRequire(
     prefix.every(

@@ -195,6 +195,38 @@ export function statusProducerJournal() {
   };
 }
 
+/** Synchronous diagnostic provenance only; never extends routing or async authority. */
+export function ipcInvocationObserver(faults: string[], allocate: () => string = randomUUID) {
+  let current: string | null = null;
+  let issued = 0;
+  let failed = false;
+  const seen = new Set<string>();
+  return {
+    current: () => current,
+    invoke<T>(fn: (...args: any[]) => T, receiver: unknown, args: unknown[]): T {
+      const previous = current;
+      current = null;
+      try {
+        if (failed || issued >= 1024) throw new Error('IPC invocation observation bound');
+        issued++;
+        const id = allocate();
+        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) || seen.has(id))
+          throw new Error('IPC invocation identity unavailable');
+        seen.add(id);
+        current = id;
+      } catch {
+        if (!failed) faults.push('Original IPC invocation observation failed');
+        failed = true;
+      }
+      try {
+        return Reflect.apply(fn, receiver, args);
+      } finally {
+        current = previous;
+      }
+    },
+  };
+}
+
 /** Passive original-call ledger. Its observers never replace the returned value or Promise. */
 export function completionLedger() {
   const rows: Array<Record<string, any>> = [];
@@ -533,6 +565,7 @@ async function run() {
   const completions = completionLedger();
   const diagnosticOwnership = process.env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328 === '1';
   const statusProducers = statusProducerJournal();
+  const ipcInvocations = diagnosticOwnership ? ipcInvocationObserver(completions.faults) : null;
   const identities = new WeakMap<object, string>();
   const connectionSockets = new WeakMap<object, string>();
   const objectId = (object: object | null) => {
@@ -599,6 +632,7 @@ async function run() {
             args,
             {
               layer: 'client',
+              ...(ipcInvocations ? { ipcInvocationId: ipcInvocations.current() } : {}),
               callId,
               method,
               captured,
@@ -871,64 +905,70 @@ async function run() {
   const handles = new Map<string, { id: string; input: NativeReviewInput }>();
   const originalHandle = ipcMain.handle;
   ipcMain.handle = function (channel, listener) {
-    return Reflect.apply(originalHandle, this, [
-      channel,
-      function (this: unknown, event, ...args) {
-        const result = uiMode
-          ? completions.invoke(
-              listener,
-              this,
-              [event, ...args],
-              {
-                layer: 'ipc',
-                channel,
-                sender: event.sender.id,
-                frame: event.senderFrame?.routingId,
-                document: event.senderFrame?.url,
-                main: event.senderFrame === event.sender.mainFrame,
-                args:
-                  channel.startsWith('backend:native-review:') ||
-                  channel.startsWith('backend:repository:')
-                    ? args
-                    : { metadataOnly: true, method: args[0]?.method },
-              },
-              (value) =>
+    const observedListener: typeof listener = function (this: unknown, event, ...args) {
+      const result = uiMode
+        ? completions.invoke(
+            listener,
+            this,
+            [event, ...args],
+            {
+              layer: 'ipc',
+              ...(ipcInvocations ? { ipcInvocationId: ipcInvocations.current() } : {}),
+              channel,
+              sender: event.sender.id,
+              frame: event.senderFrame?.routingId,
+              document: event.senderFrame?.url,
+              main: event.senderFrame === event.sender.mainFrame,
+              args:
                 channel.startsWith('backend:native-review:') ||
                 channel.startsWith('backend:repository:')
-                  ? value
-                  : observationValue(channel, value),
-            )
-          : Reflect.apply(listener, this, [event, ...args]);
-        if (channel.startsWith('backend:native-review:')) {
-          const record: Record<string, unknown> = {
-            channel,
-            sender: event.sender.id,
-            main: event.senderFrame === event.sender.mainFrame,
-            frame: event.senderFrame?.routingId,
-            args,
-          };
-          ipcRecords.push(record);
-          const promise = Promise.resolve(result);
-          pending.add(promise);
-          void promise
-            .then(
-              (value) => {
-                record.result = value;
-                if (channel.endsWith(':prepare') && value?.ok) {
-                  const key = [...windows].find(
-                    ([, window]) => !window.isDestroyed() && window.webContents === event.sender,
-                  )?.[0];
-                  if (key) handles.set(key, { id: value.result.id, input: args[0].input });
-                }
-              },
-              (error) => {
-                record.rejected = String(error);
-              },
-            )
-            .finally(() => pending.delete(promise));
-        }
-        return result;
-      },
+                  ? args
+                  : { metadataOnly: true, method: args[0]?.method },
+            },
+            (value) =>
+              channel.startsWith('backend:native-review:') ||
+              channel.startsWith('backend:repository:')
+                ? value
+                : observationValue(channel, value),
+          )
+        : Reflect.apply(listener, this, [event, ...args]);
+      if (channel.startsWith('backend:native-review:')) {
+        const record: Record<string, unknown> = {
+          channel,
+          sender: event.sender.id,
+          main: event.senderFrame === event.sender.mainFrame,
+          frame: event.senderFrame?.routingId,
+          args,
+        };
+        ipcRecords.push(record);
+        const promise = Promise.resolve(result);
+        pending.add(promise);
+        void promise
+          .then(
+            (value) => {
+              record.result = value;
+              if (channel.endsWith(':prepare') && value?.ok) {
+                const key = [...windows].find(
+                  ([, window]) => !window.isDestroyed() && window.webContents === event.sender,
+                )?.[0];
+                if (key) handles.set(key, { id: value.result.id, input: args[0].input });
+              }
+            },
+            (error) => {
+              record.rejected = String(error);
+            },
+          )
+          .finally(() => pending.delete(promise));
+      }
+      return result;
+    };
+    return Reflect.apply(originalHandle, this, [
+      channel,
+      ipcInvocations
+        ? function (this: unknown, event: Parameters<typeof listener>[0], ...args: unknown[]) {
+            return ipcInvocations.invoke(observedListener, this, [event, ...args]);
+          }
+        : observedListener,
     ]);
   };
   const uiAssets = uiMode ? await loadUiAssets(rendererPath) : null;

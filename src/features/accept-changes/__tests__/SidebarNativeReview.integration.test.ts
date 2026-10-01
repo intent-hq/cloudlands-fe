@@ -1,3 +1,16 @@
+import { tick } from 'svelte';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { selectPrincipalAdmissionContext } from '$store/renderer/slices/principal/principal-selectors';
+import {
+  principalContextChanged,
+  principalIdentityChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import {
+  setWorkspaceHasLoaded,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { store, initAppStore } from '$store/renderer/store';
@@ -12,6 +25,7 @@ import {
   nativeReviewEditRequested,
   nativeReviewCompanionRequested,
   nativeReviewEditEnded,
+  repositoryContextDemanded,
 } from '$store/renderer/slices/repository-context/repository-context-slice';
 import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -815,4 +829,185 @@ describe('origin status delivery preserves original command ownership', () => {
       expect(fixture.captures).toHaveLength(1);
     },
   );
+});
+
+describe('admitted Guest sidebar refusal without command authority', () => {
+  it.each([true, false])(
+    'shows passive refusal to admitted collaborator Guest (withoutOrigin=%s)',
+    async (withoutOrigin) => {
+      fixture = installSidebarNativeFixture({ role: 'collaborator', withoutOrigin });
+      const dispatch = vi.spyOn(store, 'dispatch');
+      render((await import('$lib/components/patterns/confirm/ConfirmHost.svelte')).default);
+      const mounted = render(
+        (await import('$lib/components/workspace/sidebar/SidebarChangesPanel.svelte')).default,
+        { workspaceId: sidebarWorkspaceId },
+      );
+      expect(
+        selectWorkspaceHostOperationContext.select(store.state, sidebarWorkspaceId),
+      ).toBeNull();
+      expect(store.state.workspace.loadedPrincipalContext).not.toBeNull();
+      await screen.findByText(
+        'This review cannot be prepared with the current repository and access.',
+      );
+      expect(screen.queryByTestId('pr-create-button')).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(fixture.base.captures).toHaveLength(0);
+      expect(fixture.captures).toHaveLength(0);
+      expect(fixture.requests).toHaveLength(0);
+      expect(recordedActions(dispatch, repositoryContextDemanded)).toHaveLength(0);
+      expect(recordedActions(dispatch, nativeReviewEditRequested)).toHaveLength(0);
+      expect(recordedActions(dispatch, setPendingAutoAction)).toHaveLength(0);
+      expect(fixture.base.selectionRequests).toHaveLength(0);
+      mounted.unmount();
+      expect(fixture.base.releases).toHaveLength(0);
+      expect(fixture.releases).toHaveLength(0);
+    },
+  );
+});
+
+async function renderGuestSection(overrides: Partial<ComponentProps<typeof PRSection>> = {}) {
+  const props: ComponentProps<typeof PRSection> = {
+    workspaceId: sidebarWorkspaceId,
+    nativeReview: true,
+    listOnly: false,
+    hasStaged: true,
+    hasUnstaged: false,
+    hasCommits: false,
+    hasOpenPR: false,
+    hasRemote: false,
+    hasPRs: false,
+    pullRequests: [],
+    commits: [],
+    pushedCommits: [],
+    allCommits: [],
+    stagedChanges: [],
+    trunkBranch: 'trunk',
+    targetBranch: 'trunk',
+    repoPath: '/fixture',
+    repoType: 'local',
+    commitMessage: 'Original',
+    hasUnpushedCommits: false,
+    unpushedCount: 0,
+    hasPushedCommits: false,
+    isDiverged: false,
+    isBehind: false,
+    behindCount: 0,
+    isMergedToTrunk: false,
+    areAllPRsMerged: false,
+    hasResetToTrunk: false,
+    isContentMergedToTrunk: false,
+    hasNewWorkAfterMerge: false,
+    isPRMerged: false,
+    mergeDrawerOpen: false,
+    onMergeDrawerToggle: () => {},
+  };
+
+  return render(PRSection, { ...props, isOwner: false, ...overrides });
+}
+
+describe('passive refusal admission and default isolation', () => {
+  it('waits for the current Guest workspace admission after a same-backend Member transition', async () => {
+    fixture = installSidebarNativeFixture({ role: 'member', withoutOrigin: true });
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const mounted = render(
+      (await import('$lib/components/workspace/sidebar/SidebarChangesPanel.svelte')).default,
+      { workspaceId: sidebarWorkspaceId },
+    );
+    const originalBackend = store.state.connections.windowBackendId;
+    const originalAdmission = selectPrincipalAdmissionContext.select(store.state);
+    const snapshot = store.state.principal.snapshot!;
+    store.dispatch(principalIdentityChanged(snapshot.principal.id));
+    const read = store.state.principal;
+    store.dispatch(
+      principalReceived(
+        {
+          context: read.context!,
+          invalidation: read.invalidation,
+          presentationVersion: read.presentationVersion,
+        },
+        {
+          ...snapshot,
+          principal: { ...snapshot.principal, hostRole: 'guest', isAdministrator: false },
+        },
+      ),
+    );
+    store.dispatch(
+      setWorkspaceEntity({
+        ...selectWorkspaceById.select(store.state, sidebarWorkspaceId)!,
+        myRole: 'collaborator',
+        canManage: false,
+      }),
+    );
+    await tick();
+    expect(store.state.workspace.loadedPrincipalContext).toBe(originalAdmission);
+    expect(selectPrincipalAdmissionContext.select(store.state)).not.toBe(originalAdmission);
+    expect(
+      screen.queryByText('This review cannot be prepared with the current repository and access.'),
+    ).toBeNull();
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        originalBackend,
+        selectPrincipalAdmissionContext.select(store.state),
+      ),
+    );
+    await screen.findByText(
+      'This review cannot be prepared with the current repository and access.',
+    );
+    expect(store.state.connections.windowBackendId).toBe(originalBackend);
+    expect(screen.queryByTestId('pr-create-button')).toBeNull();
+    expect(fixture.base.captures).toHaveLength(0);
+    expect(fixture.captures).toHaveLength(0);
+    expect(fixture.requests).toHaveLength(0);
+    expect(recordedActions(dispatch, repositoryContextDemanded)).toHaveLength(0);
+    expect(recordedActions(dispatch, nativeReviewEditRequested)).toHaveLength(0);
+    expect(recordedActions(dispatch, setPendingAutoAction)).toHaveLength(0);
+    expect(fixture.base.selectionRequests).toHaveLength(0);
+    mounted.unmount();
+    expect(fixture.base.releases).toHaveLength(0);
+  });
+  it.each([
+    'unknown',
+    'loading',
+    'disconnected',
+    'stale',
+    'labs-off',
+    'list-only',
+    'not-opted-in',
+  ] as const)('does not add refusal or authority for %s collaborator state', async (state) => {
+    fixture = installSidebarNativeFixture({ role: 'collaborator', withoutOrigin: true });
+    const dispatch = vi.spyOn(store, 'dispatch');
+    if (state === 'unknown') store.dispatch(principalContextChanged(null));
+    if (state === 'disconnected')
+      store.dispatch(
+        connectionsListReceived({
+          connections: [],
+          activeId: 'other-host',
+          windowBackendId: 'other-host',
+        }),
+      );
+    if (state === 'loading')
+      store.dispatch(principalIdentityChanged(store.state.principal.snapshot!.principal.id));
+    if (state === 'stale')
+      store.dispatch(
+        setWorkspaceHasLoaded(true, store.state.connections.windowBackendId, 'old-admission'),
+      );
+    if (state === 'labs-off') store.dispatch(setLabsMultiplayerEnabled(false));
+    await renderGuestSection({
+      listOnly: state === 'list-only',
+      nativeReview: state !== 'not-opted-in',
+    });
+    await tick();
+    expect(
+      screen.queryByText('This review cannot be prepared with the current repository and access.'),
+    ).toBeNull();
+    expect(screen.queryByTestId('pr-create-button')).toBeNull();
+    expect(fixture.base.captures).toHaveLength(0);
+    expect(fixture.captures).toHaveLength(0);
+    expect(fixture.requests).toHaveLength(0);
+    expect(recordedActions(dispatch, repositoryContextDemanded)).toHaveLength(0);
+    expect(recordedActions(dispatch, nativeReviewEditRequested)).toHaveLength(0);
+    expect(recordedActions(dispatch, setPendingAutoAction)).toHaveLength(0);
+    expect(fixture.base.selectionRequests).toHaveLength(0);
+  });
 });

@@ -234,7 +234,10 @@
     selectAcceptChangesState,
   } from '$store/renderer/slices/changes/changes-selectors';
 
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectWorkspaceById,
+    selectWorkspaceListLoadedForBackend,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
@@ -278,7 +281,10 @@
   import { store as appStore } from '$store/renderer/store';
 
   import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectPrincipalAdmissionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectPrincipalAdmissionContext,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import {
     repositoryContextDemanded,
     repositoryContextDemandEnded,
@@ -403,6 +409,16 @@
 
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const workspace$ = selectWorkspaceById(workspaceIdStore);
+  const admittedGuest$ = appStore.createSelector((state, id: string) => {
+    const admission = selectPrincipalAdmissionContext.select(state);
+    return (
+      !!selectWorkspaceById.select(state, id) &&
+      selectHostRole.select(state) === 'guest' &&
+      admission !== null &&
+      state.workspace.loadedPrincipalContext === admission &&
+      selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
+    );
+  })(workspaceIdStore);
   // Agent attribution for monitored PR rows (PROTOCOL §6.9).
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
@@ -1588,7 +1604,7 @@
   </section>
 {/snippet}
 
-{#if nativeReview && $nativeEnabled && isOwner && !$hostOperationContext$}
+{#if nativeReview && $nativeEnabled && (isOwner || (!listOnly && $admittedGuest$)) && !$hostOperationContext$}
   <p role="status">{m.native_review_unavailable_description()}</p>
 {/if}
 
