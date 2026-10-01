@@ -77,3 +77,23 @@ test('Dev Console switches tabs by keyboard and inspects inbound and truncated p
   await page.getByRole('button', { name: 'Close details' }).click();
   await expect(page.locator('pre')).toHaveCount(0);
 });
+
+test('Dev Console resumes following from a sorted short list before it grows beyond the viewport', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1200 });
+  await mount(Fixture, { props: { count: 120 } });
+  await page.getByRole('textbox').fill('workspace.list');
+  const viewport = page.locator('.viewport');
+  await expect.poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight)).toBe(0);
+  await page.getByRole('columnheader', { name: 'Method / event' }).getByRole('button').click();
+  await page.getByRole('button', { name: 'Jump to live' }).click();
+  await page.getByRole('button', { name: 'Append fixture traffic' }).click();
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeGreaterThan(200);
+  await expect
+    .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+    .toBeLessThan(25);
+});

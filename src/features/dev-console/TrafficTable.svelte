@@ -81,9 +81,10 @@
   }
   async function live() {
     onsort('timestamp', false);
-    following = true;
     await tick();
+    following = true;
     viewport.scrollTop = viewport.scrollHeight;
+    top = viewport.scrollTop;
   }
   async function key(event: KeyboardEvent, index: number) {
     let target = index;
