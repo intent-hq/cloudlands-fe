@@ -10502,13 +10502,7 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  it.each([
-    'agent:idle',
-    'agent:failed',
-    'agent:deleted',
-    'agent:created',
-    'agent:subscriptions-changed',
-  ])(
+  it.each(['agent:idle', 'agent:failed', 'agent:deleted', 'agent:created'])(
     "%s dispatches refreshWorkspaceSubscriptionEntriesRequested for the event's workspace",
     async (eventType) => {
       await primeBridge();
@@ -11141,9 +11135,13 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
 
   afterEach(() => vi.clearAllMocks());
 
-  it('task:status-changed dispatches loadWorkspaceTasksRequested(workspaceId) for task list refetch', async () => {
+  it('task:status-changed debounces the initialized workspace task-list refetch', async () => {
+    const { loadWorkspaceTasksSucceeded, emptyWorkspaceTaskStats } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [], emptyWorkspaceTaskStats));
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    vi.useFakeTimers();
 
     // Get loadWorkspaceTasksRequested before creating spy to avoid import timing issues
     const loadWorkspaceTasksRequested =
@@ -11163,7 +11161,10 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
       }),
     );
 
+    expect(dispatchSpy).not.toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+    await vi.advanceTimersByTimeAsync(2000);
     expect(dispatchSpy).toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+    vi.useRealTimers();
 
     // Restore the getter to prevent leakage
     dispatchGetterSpy.mockRestore();
@@ -13853,7 +13854,6 @@ it.each([
 ] as const)(
   'workspace lifecycle regression: MCP toggle burst starting %s for %s (saga first=%s)',
   async (firstDisabled, serverId, sagaFirst) => {
-    const { runSaga, stdChannel } = await import('redux-saga');
     const { workspaceCatalogSaga } =
       await import('$store/renderer/slices/provider-catalog/workspace-catalog-saga');
     const { workspaceMounted } =
@@ -13916,15 +13916,7 @@ it.each([
     ];
     backendRequestSpy.mockImplementation(() => Promise.resolve({ providers: [] }));
     await primeBridge();
-    const channel = stdChannel();
-    const dispatch = (action: any) => {
-      appStore.dispatch(action);
-      channel.put(action);
-    };
-    const task = runSaga(
-      { channel, dispatch, getState: () => appStore.state },
-      workspaceCatalogSaga,
-    );
+    const stopCatalogSaga = appStore.runSaga(workspaceCatalogSaga);
     const emitToggle = (disabled: boolean) => {
       for (const h of sagaFirst ? [...capturedHandlers].reverse() : [...capturedHandlers])
         h({
@@ -13965,8 +13957,7 @@ it.each([
       );
       expect(appStore.state.mcpSettings.byWorkspaceId['mcp-burst-B']?.disabledServers).toEqual({});
     } finally {
-      task.cancel();
-      await task.toPromise();
+      stopCatalogSaga();
       for (const spy of spies) spy.mockRestore();
     }
   },

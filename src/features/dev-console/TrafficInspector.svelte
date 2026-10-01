@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
   import type { DevConsoleState } from '$store/renderer/dev-console/dev-console-slice';
   import type { connectDevConsole } from '$store/renderer/dev-console/dev-console-bridge';
@@ -44,6 +44,22 @@
     ),
   );
   const selectedRow = $derived(selected ? (consoleState.rows[selected] ?? null) : null);
+  let panel: HTMLDivElement;
+  let panelHeight = $state(0);
+  let minimumDetailsHeight = $state(0);
+  const compact = $derived(panelHeight < minimumDetailsHeight + 100);
+  $effect.pre(() => {
+    if (
+      compact &&
+      selectedRow &&
+      panel?.querySelector('.traffic-table')?.contains(document.activeElement)
+    ) {
+      void tick().then(() =>
+        panel.querySelector<HTMLButtonElement>('[data-close-details]')?.focus(),
+      );
+    }
+  });
+  let table = $state.raw<{ focusRecord: (id: string) => Promise<void> }>();
   const reader = selectedPayloadReader(
     async (id) => bridge?.record(id) ?? null,
     (value) => {
@@ -75,6 +91,20 @@
     } else reader.select(consoleState.update?.sessionId ?? '', row);
   });
   onDestroy(() => reader.dispose());
+  async function selectRecord(id: string) {
+    selected = id;
+    error = '';
+    await tick();
+    if (selected === id && compact) {
+      panel.querySelector<HTMLButtonElement>('[data-close-details]')?.focus();
+    }
+  }
+  async function closeDetails() {
+    const id = selected;
+    selected = null;
+    await tick();
+    if (id) await table?.focusRecord(id);
+  }
   function sort(next: TrafficColumn, reverse: boolean) {
     column = next;
     descending = reverse;
@@ -179,14 +209,20 @@
       </details>{/if}
   </div>
   {#if consoleState.error || error}<div role="alert">{consoleState.error || error}</div>{/if}
-  <div role="tabpanel" id="traffic-panel" aria-labelledby={`tab-${direction}`}>
+  <div
+    role="tabpanel"
+    id="traffic-panel"
+    aria-labelledby={`tab-${direction}`}
+    class:inspecting={!!selectedRow}
+    class:compact
+    bind:this={panel}
+    bind:clientHeight={panelHeight}
+  >
     {#key direction}<TrafficTable
+        bind:this={table}
         {rows}
         {selected}
-        onselect={(id) => {
-          selected = id;
-          error = '';
-        }}
+        onselect={selectRecord}
         {column}
         {descending}
         onsort={sort}
@@ -195,10 +231,12 @@
           row={selectedRow}
           {record}
           {full}
-          ontoggle={(enabled) => toggle(selectedRow, enabled)}
-          onclose={() => {
-            selected = null;
+          height={compact ? panelHeight : Math.max(panelHeight * 0.38, minimumDetailsHeight)}
+          onminimumheight={(height) => {
+            minimumDetailsHeight = height;
           }}
+          ontoggle={(enabled) => toggle(selectedRow, enabled)}
+          onclose={closeDetails}
         />{/key}
     {:else}<div class="hint">{m.devConsole_select_label()}</div>{/if}
   </div>
@@ -223,6 +261,9 @@
 </div>
 
 <style>
+  .inspecting.compact :global(.traffic-table) {
+    display: none;
+  }
   .inspector {
     display: flex;
     flex-direction: column;
