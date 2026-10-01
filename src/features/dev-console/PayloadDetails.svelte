@@ -49,6 +49,7 @@
       variant="ghost"
       wrapContent={false}
       class="payload-control"
+      data-close-details
       onclick={onclose}>{m.devConsole_closeDetails_label()}</Button
     >
   </header>
@@ -187,7 +188,7 @@
   }
   @media (max-height: 500px) {
     .details {
-      flex: 0 0 calc(100% - 78px);
+      flex: 1;
       min-height: 0;
       max-height: none;
     }

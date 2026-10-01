@@ -86,6 +86,19 @@
     viewport.scrollTop = viewport.scrollHeight;
     top = viewport.scrollTop;
   }
+  export async function focusRecord(id: string) {
+    const index = rows.findIndex((row) => row.id === id);
+    if (index < 0) return;
+    following = false;
+    const y = 27 + index * rowHeight;
+    if (y < viewport.scrollTop + 27 || y + rowHeight > viewport.scrollTop + viewport.clientHeight) {
+      viewport.scrollTop = Math.max(0, y - viewport.clientHeight / 2);
+    }
+    // Showing a hidden viewport can restore native scrollTop without a scroll event.
+    top = viewport.scrollTop;
+    await tick();
+    viewport.querySelector<HTMLElement>(`[data-index="${index}"]`)?.focus({ preventScroll: true });
+  }
   async function key(event: KeyboardEvent, index: number) {
     let target = index;
     if (event.key === 'ArrowDown') target++;

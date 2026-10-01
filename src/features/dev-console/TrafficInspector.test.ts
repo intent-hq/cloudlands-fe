@@ -166,6 +166,25 @@ it('rejects a late payload from a formerly selected row', async () => {
   expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
 });
 
+it('moves keyboard focus into compact details and back to the selected record on close', async () => {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({ matches: true })),
+  );
+  const { request, view } = setup();
+  request('a', 'first');
+  request('b', 'second');
+  await waitFor(() => expect(view.getByText('second')).toBeTruthy());
+  const row = view.getByText('second').closest<HTMLElement>('[role=row]')!;
+  row.focus();
+  await fireEvent.keyDown(row, { key: 'Enter' });
+  const close = view.getByRole('button', { name: 'Close details' });
+  await waitFor(() => expect(document.activeElement).toBe(close));
+  await fireEvent.click(close);
+  await waitFor(() => expect(document.activeElement).toBe(row));
+  expect(view.queryByRole('button', { name: 'Close details' })).toBeNull();
+});
+
 it('keeps a rejected full-capture checkbox off and reports the control error', async () => {
   const { request, view, invoke } = setup();
   request('a', 'first');
