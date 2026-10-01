@@ -112,7 +112,7 @@ export const scriptsClient = {
     scriptId: string,
     updates: UpdateScriptInput,
   ): Promise<CommandResponse<WorkspaceScript>> {
-    const scripts = await appClient.scripts.list(workspaceId);
+    const scripts = await appClient.scripts.list(workspaceId, { archive: 'all' });
     const existing = scripts.find((script) => script.id === scriptId);
     if (!existing) {
       return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
@@ -215,7 +215,7 @@ export const scriptsClient = {
         appClient.files,
         workspaceId,
       );
-      const existing = await appClient.scripts.list(workspaceId);
+      const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
 
       const existingUserNames = new Set<string>();
       const existingAutoByName = new Map<string, ScriptWithState>();

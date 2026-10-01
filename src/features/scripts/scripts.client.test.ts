@@ -195,7 +195,7 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
 
     const result = await scriptsClient.update('ws-1', 'script-auto-dev', { command: 'pnpm dev' });
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
     expect(scriptsCreate).toHaveBeenCalledTimes(1);
     expect(scriptsCreate).toHaveBeenCalledWith(
       'ws-1',
@@ -246,7 +246,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     const result = await scriptsClient.detect('ws-1');
 
     expect(filesRead).toHaveBeenCalledWith('ws-1', 'package.json');
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
     expect(scriptsCreate).toHaveBeenCalledTimes(2);
     expect(scriptsCreate).toHaveBeenNthCalledWith(1, 'ws-1', {
       name: 'dev',

@@ -281,6 +281,7 @@ import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-ass
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import {
   appendScriptOutput,
+  removeScript,
   refreshScripts,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
@@ -4145,7 +4146,11 @@ export function routeDaemonEventsNotification(
   // canonical list refetch, output feeds the live buffer, and state mirrors
   // the recomputed runtime into the scripts slice.
   if (type === 'script:changed') {
-    appStore.dispatch(refreshScripts(workspaceId));
+    const data = (event as { data?: Record<string, unknown> }).data;
+    if (data?.action === 'removed' && typeof data.scriptId === 'string') {
+      appStore.dispatch(removeScript(workspaceId, data.scriptId));
+    }
+    appStore.dispatch(refreshScripts(workspaceId, true));
     // fall through so the activity timeline records the mutation
   }
   if (type === 'script:output') {
@@ -4386,10 +4391,19 @@ export async function refreshDaemonEventsAfterReconnect(
   agentSessionRefreshInFlight.clear();
   agentSessionRefreshFollowUpWanted.clear();
   const state = appStore.state as {
+    scripts?: { byWorkspaceId: Record<string, unknown> };
     workspaceAgents?: {
       byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
     };
   };
+  // Script history is cached between ordinary refreshes. Recover missed archive
+  // and restore events once on reconnect for every workspace holding script state.
+  for (const workspaceId of new Set([
+    ...Object.keys(state.scripts?.byWorkspaceId ?? {}),
+    ...(activeWorkspaceId ? [activeWorkspaceId] : []),
+  ])) {
+    appStore.dispatch(refreshScripts(workspaceId, true));
+  }
   if (activeWorkspaceId) {
     appStore.dispatch(hydrateAgentsRequested(activeWorkspaceId));
     const activeAgentId =
