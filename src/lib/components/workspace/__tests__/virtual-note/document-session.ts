@@ -26,6 +26,8 @@ export class DocumentSession {
   parsedBytes = 0;
   maxParsedBytes = 0;
   maxProjectionInputBytes = 0;
+  maxHighlightBytes = 0;
+  highlightCalls = 0;
   inFlightBytes = 0;
   maxInFlightBytes = 0;
   acceptedRoots = 0;
@@ -40,8 +42,13 @@ export class DocumentSession {
   private selectionGeneration = 0;
   private pointerSelecting = false;
   private continuationQueued = false;
-  private pointerDown = () => {
+  private pointerAnchor?: number;
+  private pointerRemapped = false;
+  private pointerDown = (event: PointerEvent) => {
     this.pointerSelecting = true;
+    this.pointerRemapped = false;
+    const pos = this.editor?.view.posAtCoords({ left: event.clientX, top: event.clientY });
+    this.pointerAnchor = pos ? this.projection?.sourceAt(pos.pos) : undefined;
   };
   private pointerUp = () => {
     this.pointerSelecting = false;
@@ -77,6 +84,7 @@ export class DocumentSession {
     this.maxProjectionInputBytes = Math.max(
       this.maxProjectionInputBytes,
       bytes(source) +
+        bytes(JSON.stringify(context.fences ?? [])) +
         bytes(context.before.map(openMark).join('') + context.after.map(closeMark).join('')),
     );
     return new SourceProjection(source, start, context);
@@ -274,6 +282,7 @@ export class DocumentSession {
     try {
       const next = this.project(window.source, window.from);
       if (preserveView && this.editor) {
+        if (this.pointerSelecting) this.pointerRemapped = true;
         // Keep Chromium's active keyboard or mouse gesture on the same focused view.
         // Only the bounded projection is replaced; durable source/history are untouched.
         const editor = this.editor;
@@ -345,16 +354,30 @@ export class DocumentSession {
         enableMentions: false,
         onUpdate: () => {},
       });
+      // Keep the native highlighter; meter its actual input, including auto detection.
+      const extensions = config.extensions.map((ext) => {
+        if (ext.name === 'starterKit') return ext.configure({ ...ext.options, undoRedo: false });
+        if (ext.name !== 'codeBlock') return ext;
+        const lowlight = ext.options.lowlight;
+        const measured = new Proxy(lowlight, {
+          get: (target, key) => {
+            const value = Reflect.get(target, key);
+            if (key !== 'highlight' && key !== 'highlightAuto') return value;
+            return (...args: unknown[]) => {
+              const source = String(args[key === 'highlight' ? 1 : 0]);
+              this.maxHighlightBytes = Math.max(this.maxHighlightBytes, bytes(source));
+              this.highlightCalls++;
+              return value.apply(target, args);
+            };
+          },
+        });
+        return ext.configure({ ...ext.options, lowlight: measured });
+      });
       this.suppress = true;
       this.editor = new Editor({
         ...config,
         content: this.projection.content,
-        extensions: [
-          ...config.extensions.map((ext) =>
-            ext.name === 'starterKit' ? ext.configure({ ...ext.options, undoRedo: false }) : ext,
-          ),
-          annotations,
-        ],
+        extensions: [...extensions, annotations],
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         onTransaction: ({ transaction, appendedTransactions }) =>
@@ -381,7 +404,10 @@ export class DocumentSession {
           },
           handleKeyDown: (_view, event) => {
             if (
-              this.service.pendingInputs &&
+              (this.service.pendingInputs ||
+                (this.selection.anchor === this.selection.head &&
+                  this.selection.head === this.windowEnd &&
+                  this.projection!.code.some((c) => c.fence.bodyTo > this.windowEnd))) &&
               !this.replayingInput &&
               event.key === 'Enter' &&
               !event.shiftKey &&
@@ -470,10 +496,45 @@ export class DocumentSession {
       const dispatch = this.editor.view.props.dispatchTransaction!;
       this.editor.view.setProps({
         dispatchTransaction: (tr) => {
+          // ProseMirror's active mouse gesture remembers its pre-crop anchor.
+          // Restore that source anchor before admitting its next selection transaction.
+          if (
+            !this.suppress &&
+            this.pointerSelecting &&
+            this.pointerRemapped &&
+            this.pointerAnchor !== undefined &&
+            tr.selectionSet &&
+            !tr.docChanged
+          ) {
+            tr.setSelection(
+              TextSelection.create(
+                tr.doc,
+                this.projection!.pmAt(this.pointerAnchor),
+                tr.selection.head,
+              ),
+            );
+          }
+          if (
+            this.projection?.code.some(
+              (c) => c.fence.bodyTo >= this.windowEnd && c.fence.to > this.windowEnd,
+            )
+          )
+            tr.setMeta('skipTrailingNode', true);
           if (this.replayTime !== undefined) tr.setTime(this.replayTime);
           this.rollbackState = this.editor!.state;
           try {
             dispatch.call(this.editor!.view, tr);
+            if (this.pointerSelecting && this.pointerRemapped) {
+              // The view deliberately defers DOM selection writes during native mouse
+              // drags. A crop replaced the highlighted text nodes, so reattach both
+              // endpoints now rather than leaving Chromium on the detached anchor.
+              const view = this.editor!.view;
+              const anchor = view.domAtPos(view.state.selection.anchor);
+              const head = view.domAtPos(view.state.selection.head);
+              window
+                .getSelection()
+                ?.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
+            }
           } finally {
             this.rollbackState = undefined;
           }
@@ -759,6 +820,9 @@ export class DocumentSession {
       return value;
     });
     return {
+      maxHighlightBytes: this.maxHighlightBytes,
+      highlightCalls: this.highlightCalls,
+      codeMetadataBytes: bytes(JSON.stringify(this.projection?.code ?? [])),
       residentInputBytes: this.residentInputBytes,
       maxResidentInputBytes: this.maxResidentInputBytes,
       continuation: this.continuation,
@@ -792,6 +856,8 @@ export class DocumentSession {
       // counts, not a heap measurement. Mock backing source and oracle live elsewhere.
       sourceReplicaPayloadBytes:
         bytes(this.projection?.source ?? '') +
+        bytes(JSON.stringify(this.projection?.context ?? {})) +
+        bytes(JSON.stringify(this.projection?.code ?? [])) +
         [...this.cache.values()].reduce((n, page) => n + bytes(page), 0) +
         this.inFlightBytes +
         (this.projection?.tokens.reduce((n, t) => n + bytes(t.raw) + bytes(t.text), 0) ?? 0) +
@@ -811,9 +877,16 @@ export class DocumentSession {
         ).length ?? 0,
       projectionJsonBytes: bytes(JSON.stringify(this.projection?.content ?? {})),
       editorContentOptionBytes: bytes(JSON.stringify(this.editor?.options.content ?? {})),
-      provenanceEntries: (this.projection?.positions.size ?? 0) + (this.projection?.ends.size ?? 0),
+      provenanceEntries:
+        (this.projection?.positions.size ?? 0) +
+        (this.projection?.ends.size ?? 0) +
+        (this.projection?.boundaries.size ?? 0),
       provenancePayloadBytes: bytes(
-        JSON.stringify([...(this.projection?.positions ?? []), ...(this.projection?.ends ?? [])]),
+        JSON.stringify([
+          ...(this.projection?.positions ?? []),
+          ...(this.projection?.ends ?? []),
+          ...(this.projection?.boundaries ?? []),
+        ]),
       ),
       annotationPayloadBytes: bytes(JSON.stringify(this.service.anchors)),
       rendererJournalPages: 0,

@@ -2,6 +2,7 @@ import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Transform, type Step } from '@tiptap/pm/transform';
 import type { Splice } from './source-journal';
+import { scanFences, type Fence } from './fence-context';
 
 export type Mark = { type: string; attrs?: Record<string, unknown> };
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
@@ -12,6 +13,8 @@ export type InlineContext = {
   to: number;
   before: Mark[];
   after: Mark[];
+  fences?: Fence[];
+  documentEnd?: boolean;
 };
 export const openMark = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');
 export const closeMark = (mark: Mark) => (mark.type === 'bold' ? '**' : `](${mark.attrs?.href})`);
@@ -56,6 +59,7 @@ export class SourceProjection {
   readonly content: JSONContent = { type: 'doc', content: [] };
   readonly positions = new Map<number, number>();
   readonly ends = new Map<number, number>();
+  readonly boundaries = new Map<number, number>();
   readonly tokens: Token[] = [];
   readonly marks: Array<{
     type: string;
@@ -68,6 +72,8 @@ export class SourceProjection {
     mark: Mark;
   }> = [];
   private paragraphs: Array<{ end: number; next: number; separator: string }> = [];
+  readonly code: Array<{ pm: number; end: number; fence: Fence; prefix: string; suffix: string }> =
+    [];
   private trailing = '';
   constructor(
     readonly source: string,
@@ -77,6 +83,98 @@ export class SourceProjection {
   ) {
     if (context && (context.from !== start || context.to !== start + source.length))
       throw new Error('Context does not describe this source window');
+    const fences =
+      context?.fences ??
+      scanFences(source).map((f) => ({
+        ...f,
+        from: f.from + start,
+        bodyFrom: f.bodyFrom + start,
+        bodyTo: f.bodyTo + start,
+        to: f.to + start,
+      }));
+    if (fences.length) {
+      let cursor = start,
+        pm = 0;
+      const end = start + source.length;
+      const prose = (to: number) => {
+        if (to <= cursor) return;
+        const part = new SourceProjection(
+          source.slice(cursor - start, to - start),
+          cursor,
+          {
+            revision: context?.revision ?? 0,
+            from: cursor,
+            to,
+            before: cursor === start ? (context?.before ?? []) : [],
+            after: to === end ? (context?.after ?? []) : [],
+            fences: [],
+          },
+          indexOnly,
+        );
+        for (const [pos, src] of part.positions) this.positions.set(pm + pos, src);
+        for (const [pos, src] of part.ends) this.ends.set(pm + pos, src);
+        for (const [pos, src] of part.boundaries) this.boundaries.set(pm + pos, src);
+        this.tokens.push(...part.tokens.map((t) => ({ ...t, pm: t.pm + pm })));
+        this.marks.push(
+          ...part.marks.map((m) => ({ ...m, pmFrom: m.pmFrom + pm, pmTo: m.pmTo + pm })),
+        );
+        this.paragraphs.push(
+          ...part.paragraphs.map((p) => ({ ...p, end: p.end + pm, next: p.next + pm })),
+        );
+        this.content.content!.push(...part.content.content!);
+        for (const node of part.content.content!)
+          pm += 2 + (node.content ?? []).reduce((n, t) => n + (t.text?.length ?? 0), 0);
+        this.trailing = part.trailing;
+        cursor = to;
+      };
+      for (const fence of fences) {
+        prose(Math.max(cursor, Math.min(end, fence.from)));
+        const from = Math.max(start, fence.bodyFrom),
+          to = Math.min(end, fence.bodyTo);
+        if (to < from) continue;
+        const text = indexOnly ? '' : source.slice(from - start, to - start);
+        if (!indexOnly) {
+          this.content.content!.push({
+            type: 'codeBlock',
+            attrs: { language: fence.language },
+            content: text ? [{ type: 'text', text }] : [],
+          });
+          const prefix = source.slice(Math.max(start, fence.from) - start, from - start);
+          const suffix = source.slice(to - start, Math.min(end, fence.to) - start);
+          this.code.push({ pm, end: pm + text.length + 2, fence, prefix, suffix });
+          this.boundaries.set(pm, Math.max(start, fence.from));
+          for (let i = 0; i <= text.length; i++) this.positions.set(pm + 1 + i, from + i);
+          for (let i = 0; i < text.length; i++) {
+            this.ends.set(pm + 2 + i, from + i + 1);
+            this.tokens.push({
+              pm: pm + 1 + i,
+              from: from + i,
+              to: from + i + 1,
+              text: text[i],
+              raw: text[i],
+              marks: [],
+            });
+          }
+          this.boundaries.set(pm + text.length + 2, Math.min(end, fence.to));
+        }
+        pm += to - from + 2;
+        cursor = Math.min(end, fence.to);
+        this.trailing = '';
+      }
+      prose(end);
+      // The native trailing paragraph at the real document end has a caret but no
+      // source bytes until the user writes into it. Never add it at a crop edge.
+      if (
+        !indexOnly &&
+        context?.documentEnd &&
+        this.content.content!.at(-1)?.type === 'codeBlock'
+      ) {
+        this.content.content!.push({ type: 'paragraph' });
+        this.positions.set(pm + 1, end);
+        this.boundaries.set(pm + 2, end);
+      }
+      return;
+    }
     const prefix = context?.before.map(openMark).join('') ?? '';
     const suffix = context?.after.slice().reverse().map(closeMark).join('') ?? '';
     source = prefix + source + suffix;
@@ -87,6 +185,7 @@ export class SourceProjection {
     while ((match = paragraphs.exec(source)) && match[0]) {
       const raw = match[1],
         base = start + match.index;
+      if (!indexOnly) this.boundaries.set(pm, base);
       pm++;
       if (!indexOnly) this.positions.set(pm, base);
       const nodes: JSONContent[] = [];
@@ -180,6 +279,7 @@ export class SourceProjection {
       if (!indexOnly) this.paragraphs.push({ end: pm, next: pm + 2, separator: match[2] });
       if (!indexOnly) this.content.content!.push({ type: 'paragraph', content: nodes });
       pm++;
+      if (!indexOnly) this.boundaries.set(pm, base + raw.length + match[2].length);
       this.trailing = match[2];
     }
     if (!this.content.content!.length) {
@@ -190,8 +290,9 @@ export class SourceProjection {
   sourceAt(pm: number, affinity = 1) {
     const source =
       affinity < 0 ? (this.ends.get(pm) ?? this.positions.get(pm)) : this.positions.get(pm);
-    if (source === undefined) throw new Error(`No exact source provenance at PM ${pm}`);
-    return source;
+    const exact = source ?? this.boundaries.get(pm);
+    if (exact === undefined) throw new Error(`No exact source provenance at PM ${pm}`);
+    return exact;
   }
   pmAt(source: number, affinity = 1) {
     let nearest = 1,
@@ -224,7 +325,31 @@ export class SourceProjection {
         separators.set(end.pos, paragraph.separator);
     }
     let source = '';
+    const nextFences: Fence[] = [];
     after.forEach((paragraph, offset, index) => {
+      if (paragraph.type.name === 'codeBlock') {
+        const original = this.code.find((c) => mapping.map(c.pm, -1) === offset);
+        if (!original) throw new Error('Missing code source provenance');
+        let suffix = original.suffix;
+        const following = index + 1 < after.childCount ? after.child(index + 1) : undefined;
+        if (following?.textContent && !suffix.endsWith('\n\n'))
+          suffix += suffix.endsWith('\n') ? '\n' : '\n\n';
+        const start = this.start + source.length;
+        const bodyEnd = start + original.prefix.length + paragraph.textContent.length;
+        nextFences.push({
+          ...original.fence,
+          from: original.prefix ? start : original.fence.from,
+          bodyFrom: original.prefix ? start + original.prefix.length : original.fence.bodyFrom,
+          bodyTo: original.suffix
+            ? bodyEnd
+            : original.fence.bodyTo + paragraph.content.size - (original.end - original.pm - 2),
+          to: original.suffix
+            ? bodyEnd + suffix.length
+            : original.fence.to + paragraph.content.size - (original.end - original.pm - 2),
+        });
+        source += original.prefix + paragraph.textContent + suffix;
+        return;
+      }
       if (paragraph.type.name !== 'paragraph')
         throw new Error(`Unsupported proof node ${paragraph.type.name}`);
       let active: Mark[] = index === 0 ? (this.context?.before ?? []) : [];
@@ -266,15 +391,6 @@ export class SourceProjection {
       const end = offset + paragraph.nodeSize - 1;
       source += index < after.childCount - 1 ? separators.get(end) || '\n\n' : this.trailing;
     });
-    // Verify the entire bounded projection BEFORE admitting a source/journal mutation.
-    const projected = before.type.schema.nodeFromJSON(
-      new SourceProjection(
-        source,
-        this.start,
-        this.context && { ...this.context, to: this.start + source.length },
-      ).content,
-    );
-    if (!projected.eq(after)) throw new Error('Translated source differs from accepted document');
     let from = 0,
       oldEnd = this.source.length,
       newEnd = source.length;
@@ -283,6 +399,15 @@ export class SourceProjection {
       oldEnd--;
       newEnd--;
     }
+    // Verify the entire bounded projection BEFORE admitting a source/journal mutation.
+    const projected = before.type.schema.nodeFromJSON(
+      new SourceProjection(
+        source,
+        this.start,
+        this.context && { ...this.context, to: this.start + source.length, fences: nextFences },
+      ).content,
+    );
+    if (!projected.eq(after)) throw new Error('Translated source differs from accepted document');
     return from === oldEnd && from === newEnd
       ? []
       : [{ from: this.start + from, to: this.start + oldEnd, insert: source.slice(from, newEnd) }];

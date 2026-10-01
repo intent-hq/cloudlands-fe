@@ -1,6 +1,7 @@
 /** Test-only backing store. Its Maps model disk/server state, NOT renderer caches. */
 import { bytes } from './bounded-note-service';
 import { SourceProjection, type InlineContext } from './source-projection';
+import { scanFences, type Fence } from './fence-context';
 export const LIMITS = {
   request: 4096,
   active: 16384,
@@ -50,7 +51,10 @@ export class SourceJournal {
   commentRevision = 1;
   private regions = new Map<number, string>();
   // Mock backing index only. Rebuilt lazily per revision; no full projection/token map retained.
-  private inlineIndex = new Map<number, { source: string; spans: SourceProjection['marks'] }>();
+  private inlineIndex = new Map<
+    number,
+    { source: string; spans: SourceProjection['marks']; fences: Fence[] }
+  >();
   backingIndexBuilds = 0;
   backingIndexScannedBytes = 0;
   maxBackingIndexSourceBytes = 0;
@@ -60,8 +64,14 @@ export class SourceJournal {
     const source = this.region(id);
     let index = this.inlineIndex.get(id);
     if (!index || index.source !== source) {
-      const projection = new SourceProjection(source, 0, undefined, true);
-      index = { source, spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom) };
+      const fences = scanFences(source);
+      const projection = new SourceProjection(
+        source,
+        0,
+        { revision: this.revision, from: 0, to: source.length, before: [], after: [], fences },
+        true,
+      );
+      index = { source, spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom), fences };
       this.inlineIndex.set(id, index);
       this.backingIndexBuilds++;
       this.backingIndexScannedBytes += bytes(source);
@@ -74,6 +84,10 @@ export class SourceJournal {
     const { id, start } = this.locate(position);
     let local = position - start;
     const spans = this.spans(id);
+    for (const f of this.inlineIndex.get(id)!.fences) {
+      if (local > f.from && local < f.bodyFrom) local = direction > 0 ? f.bodyFrom : f.from;
+      if (local > f.bodyTo && local < f.to) local = direction > 0 ? f.to : f.bodyTo;
+    }
     // Include empty boundary spans: an opener alone (or a closer alone) cannot
     // form an editable projection. Inner-first traversal also removes an empty
     // outer span when moving past nested syntax lands on its content boundary.
@@ -99,7 +113,30 @@ export class SourceJournal {
         .filter((s) => s.openFrom < local && s.contentFrom <= local && local <= s.contentTo)
         .map((s) => s.mark);
     };
-    const context = { revision, from, to, before: stack(from), after: stack(to) };
+    const before = stack(from),
+      after = stack(to);
+    const fences: Fence[] = [];
+    for (let id = this.locate(from).id; id <= this.locate(to).id; id++) {
+      this.spans(id);
+      const start = this.start(id);
+      for (const f of this.inlineIndex.get(id)!.fences)
+        if (f.from + start < to && f.to + start > from)
+          fences.push({
+            ...f,
+            from: f.from + start,
+            bodyFrom: f.bodyFrom + start,
+            bodyTo: f.bodyTo + start,
+            to: f.to + start,
+          });
+    }
+    const context: InlineContext = {
+      revision,
+      from,
+      to,
+      before,
+      after,
+      ...(fences.length ? { fences, documentEnd: to === this.length } : {}),
+    };
     const size = bytes(JSON.stringify(context));
     if (size > LIMITS.request) throw new Error('Inline context exceeds experiment metadata budget');
     this.inlineContextReads++;
@@ -515,7 +552,7 @@ export class SourceJournal {
       backingIndexScannedBytes: this.backingIndexScannedBytes,
       maxBackingIndexSourceBytes: this.maxBackingIndexSourceBytes,
       backingIndexPayloadBytes: [...this.inlineIndex.values()].reduce(
-        (n, i) => n + bytes(JSON.stringify(i.spans)),
+        (n, i) => n + bytes(JSON.stringify({ spans: i.spans, fences: i.fences })),
         0,
       ),
       backingIndexSourceBytes: [...this.inlineIndex.values()].reduce(
