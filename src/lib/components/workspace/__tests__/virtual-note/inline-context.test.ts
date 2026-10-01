@@ -218,3 +218,79 @@ for (const [kind, open, close] of [
       session.destroy();
     }
   });
+
+for (const prefixLength of [6141, 24573])
+  for (const [kind, open, close] of [
+    ['bold', '**', '**'],
+    ['link', '[', '](https://example.test/path)'],
+    ['combined', '[**', '**](https://example.test/path)'],
+  ])
+    it(`remote ${kind} opener refreshes a safe closing edge after ${prefixLength} characters`, async () => {
+      const original = 'x'.repeat(prefixLength) + close + 'y'.repeat(83000);
+      const expected = open + original;
+      const at = prefixLength + 2048;
+      const service = new SourceJournal(() => original, 1);
+      const session = new DocumentSession(service, document.createElement('div'));
+      try {
+        await session.seek(at);
+        session.editor!.commands.setTextSelection(session.projection!.pmAt(at));
+        session.remote({ from: 0, to: 0, insert: open });
+        const display = session.editor!.getText();
+        const selected = { ...session.selection };
+        session.editor!.commands.insertContent('Z');
+        const position = at + open.length;
+        const changed = expected.slice(0, position) + 'Z' + expected.slice(position);
+        expect({ display: display.slice(0, 8), error: session.error }).toEqual({
+          display: 'yyyyyyyy',
+          error: '',
+        });
+        expect(selected.head).toBe(position);
+        expect(service.region(0)).toBe(changed);
+        expect(session.selection.head).toBe(position + 1);
+        expect(service.depth).toBe(1);
+        session.save();
+        const editor = session.editor!;
+        await session.seek(80000);
+        expect(editor.isDestroyed).toBe(true);
+        await session.seek(position);
+        await session.history();
+        expect(service.region(0)).toBe(expected);
+        expect(session.selection.head).toBe(position);
+        await session.history(true);
+        expect(service.region(0)).toBe(changed);
+        expect(session.selection.head).toBe(position + 1);
+        expect(session.snapshot().maxSourceRead).toBeLessThanOrEqual(4096);
+        expect(session.snapshot().activeBytes).toBeLessThanOrEqual(16384);
+      } finally {
+        session.destroy();
+      }
+    });
+
+for (const [kind, open, close] of [
+  ['bold', '**', '**'],
+  ['link', '[', '](https://example.test/path)'],
+  ['combined', '[**', '**](https://example.test/path)'],
+])
+  it(`remote ${kind} closer keeps the after-window refresh boundary safe`, async () => {
+    const original = 'x'.repeat(6141) + open + 'y'.repeat(83000);
+    const service = new SourceJournal(() => original, 1);
+    const session = new DocumentSession(service, document.createElement('div'));
+    try {
+      const at = 6141 + open.length - 2048;
+      await session.seek(at);
+      session.editor!.commands.setTextSelection(session.projection!.pmAt(at));
+      session.remote({ from: original.length, to: original.length, insert: close });
+      await Promise.resolve();
+      const expected = original + close;
+      expect(session.editor!.getText()).toBe('x'.repeat(6141 - session.projection!.start));
+      expect(session.projection!.context!.revision).toBe(service.revision);
+      session.editor!.commands.insertContent('Z');
+      expect(session.error).toBe('');
+      expect(service.region(0)).toBe(expected.slice(0, at) + 'Z' + expected.slice(at));
+      expect(session.selection.head).toBe(at + 1);
+      await session.history();
+      expect(service.region(0)).toBe(expected);
+    } finally {
+      session.destroy();
+    }
+  });

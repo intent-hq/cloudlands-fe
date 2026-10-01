@@ -282,7 +282,8 @@ test('one MiB combined span retains bounded context while seeking middle and end
     'repeated café 🌍 text repeated. '.repeat(36000).trimEnd() +
     '**](https://example.test/path)';
   await mount(Pair, { props: { sourceOverride: source } });
-  await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+  // The full native oracle parses >1 MiB asynchronously before mounting.
+  await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1, { timeout: 15000 });
   const evidence = await root(page).evaluate(async (el) => {
     const h = el as Host,
       p = h.proof;
@@ -557,3 +558,110 @@ for (const [kind, open, close] of [
     });
   });
 }
+
+for (const [kind, open, close] of [
+  ['bold', '**', '**'],
+  ['link', '[', '](https://example.test/path)'],
+  ['combined', '[**', '**](https://example.test/path)'],
+])
+  test(`remote ${kind} opener preserves native display, typing and history at a closing crop edge`, async ({
+    mount,
+    page,
+  }, info) => {
+    const prefixLength = 24573;
+    const source = 'x'.repeat(prefixLength) + close + 'y'.repeat(83000);
+    const remote = open + source;
+    const at = prefixLength + 2048;
+    await mount(Pair, { props: { sourceOverride: source } });
+    await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+    const beforeEqual = await root(page).evaluate(async (el) => {
+      const h = el as Host;
+      const native = (
+        document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host
+      ).native;
+      return (
+        JSON.stringify(native.getJSON()) ===
+        JSON.stringify((await h.parseSource(h.proof.service.region(0))).doc)
+      );
+    });
+    expect(beforeEqual).toBe(true);
+    await root(page).evaluate((el, at) => (el as Host).proof.seek(at), at);
+    for (const side of ['native', 'bounded']) await select(page, side, at, 0);
+    await root(page).evaluate(
+      (el, open) => (el as Host).proof.remote({ from: 0, to: 0, insert: open }),
+      open,
+    );
+    await root(page, 'native').evaluate(
+      (el, { prefixLength, close, kind }) => {
+        const e = (el as Host).native;
+        // Before the opener arrives the bare URL is auto-linked; remote parsing removes it.
+        const tr = e.state.tr
+          .removeMark(1, e.state.doc.content.size, e.schema.marks.link)
+          .delete(prefixLength + 1, prefixLength + close.length + 1);
+        if (kind !== 'link') tr.addMark(1, prefixLength + 1, e.schema.marks.bold.create());
+        if (kind !== 'bold')
+          tr.addMark(
+            1,
+            prefixLength + 1,
+            e.schema.marks.link.create({ href: 'https://example.test/path' }),
+          );
+        e.view.dispatch(tr.setMeta('addToHistory', false));
+      },
+      { prefixLength, close, kind },
+    );
+    await settled(page);
+    await sameCanonical(page, remote);
+    const display = await root(page).evaluate((el, delimiters) => {
+      const p = (el as Host).proof;
+      const native = (
+        document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host
+      ).native;
+      const from = p.projection!.start - delimiters;
+      const to = from + p.projection!.source.length;
+      return {
+        text: p.editor!.getText().slice(0, 8),
+        nativeEqual:
+          JSON.stringify(p.editor!.state.doc.content.toJSON()) ===
+          JSON.stringify(native.state.doc.slice(from + 1, to + 1, true).content.toJSON()),
+        context: p.projection!.context,
+        snapshot: p.snapshot(),
+      };
+    }, open.length + close.length);
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.insertText('Z');
+      await settled(page);
+    }
+    const position = at + open.length;
+    const changed = remote.slice(0, position) + 'Z' + remote.slice(position);
+    await sameCanonical(page, changed);
+    expect(display.text).toBe('yyyyyyyy');
+    expect(display.nativeEqual).toBe(true);
+    const edited = await root(page).evaluate((el) => (el as Host).proof.snapshot());
+    expect(edited.journalEvents).toBe(1);
+    const eviction = await root(page).evaluate(async (el, position) => {
+      const p = (el as Host).proof;
+      p.save();
+      const editor = p.editor!;
+      for (const at of [60000, 80000, position]) await p.seek(at);
+      return { destroyed: editor.isDestroyed, snapshot: p.snapshot() };
+    }, position);
+    expect(eviction.destroyed).toBe(true);
+    for (const [key, expected] of [
+      ['Control+z', remote],
+      ['Control+Shift+z', changed],
+    ]) {
+      for (const side of ['native', 'bounded']) {
+        await focus(page, side);
+        await page.keyboard.press(key);
+        await settled(page);
+      }
+      await sameCanonical(page, expected);
+    }
+    expect(edited.maxSourceRead).toBeLessThanOrEqual(4096);
+    expect(edited.activeBytes).toBeLessThanOrEqual(16384);
+    await info.attach('remote-edge-history.json', {
+      body: JSON.stringify({ kind, display, edited, eviction }),
+      contentType: 'application/json',
+    });
+  });

@@ -714,7 +714,9 @@ export class DocumentSession {
       this.prevRange = [mapPoint(this.prevRange[0], splice), mapPoint(this.prevRange[1], splice)];
     this.cache.clear();
     if (splice.to <= oldStart) {
-      const start = mapPoint(oldStart, splice);
+      // Remote delimiter changes can turn either mapped edge into an empty mark span.
+      const start = this.service.inlineBoundary(mapPoint(oldStart, splice), 1);
+      this.windowEnd = this.service.inlineBoundary(this.windowEnd, -1);
       this.projection = this.project(this.readRange(start, this.windowEnd), start);
       // A remote delimiter outside the crop can change its marks without changing its text.
       const editor = this.editor!;
