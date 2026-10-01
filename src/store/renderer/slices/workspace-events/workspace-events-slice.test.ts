@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   bulkEventsReceived,
   daemonEventsSubscribed,
+  daemonEventsSubscribing,
   eventReceived,
   eventsCleared,
   eventsLoaded,
@@ -43,6 +45,43 @@ describe('workspaceEventsReducer', () => {
     state = workspaceEventsReducer(state, daemonEventsSubscribed());
     expect(state.subscriptionGeneration).toBe(2);
     expect(state.byWorkspaceId).toBe(buffers);
+  });
+
+  it('requires fresh acknowledgment after disconnect and rejects an old in-flight acknowledgment', () => {
+    let state = workspaceEventsReducer(initialState, daemonEventsSubscribing());
+    const oldAttempt = state.subscriptionAttempt;
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(oldAttempt));
+    expect(state.subscriptionPending).toBe(false);
+    state = workspaceEventsReducer(state, connectionStatusChanged('disconnected'));
+    state = workspaceEventsReducer(state, connectionStatusChanged('connected'));
+    expect(state.subscriptionPending).toBe(true);
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(oldAttempt));
+    expect(state.subscriptionPending).toBe(true);
+    expect(state.subscriptionGeneration).toBe(1);
+    state = workspaceEventsReducer(state, daemonEventsSubscribing());
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(state.subscriptionAttempt));
+    expect(state.subscriptionPending).toBe(false);
+    expect(state.subscriptionGeneration).toBe(2);
+  });
+
+  it('accepts the first acknowledgment when initial connecting status follows subscribe startup', () => {
+    let state = workspaceEventsReducer(initialState, daemonEventsSubscribing());
+    const attempt = state.subscriptionAttempt;
+    state = workspaceEventsReducer(state, connectionStatusChanged('disconnected'));
+    state = workspaceEventsReducer(state, connectionStatusChanged('connecting'));
+    state = workspaceEventsReducer(state, connectionStatusChanged('connected'));
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(attempt));
+    expect(state.subscriptionPending).toBe(false);
+    expect(state.subscriptionGeneration).toBe(1);
+  });
+
+  it('keeps readiness on repeated connected metadata and closes it before resubscription', () => {
+    let state = workspaceEventsReducer(initialState, daemonEventsSubscribed());
+    state = workspaceEventsReducer(state, connectionStatusChanged('connected'));
+    expect(state.subscriptionPending).toBe(false);
+    state = workspaceEventsReducer(state, daemonEventsSubscribing());
+    expect(state.subscriptionPending).toBe(true);
+    expect(state.subscriptionGeneration).toBe(1);
   });
 
   it('appends a single eventReceived into the workspace buffer', () => {

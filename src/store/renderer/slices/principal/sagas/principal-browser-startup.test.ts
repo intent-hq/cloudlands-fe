@@ -38,6 +38,15 @@ describe('principal discovery through browser startup', () => {
               hostRole: role,
               hostMembershipRevision: 0,
             };
+      if (frame.method === 'system.status')
+        result = {
+          running: true,
+          listenMode: 'wss',
+          transports: ['wss'],
+          port: null,
+          protocolVersion: '2.6',
+          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+        };
       if (frame.method === 'events.subscribe')
         result = { subscriptionId: `subscription-${frame.id}` };
       queueMicrotask(() =>
