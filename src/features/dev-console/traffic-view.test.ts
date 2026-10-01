@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { orderTraffic, selectedPayloadReader } from './traffic-view';
+import { orderTraffic, selectedPayloadReader, payloadDocument } from './traffic-view';
 import type { DevConsoleRecord, DevConsoleRow } from '$shared/types/dev-console';
 const row = (id: string, method: string, timestamp = 0): DevConsoleRow => ({
   id,
@@ -13,6 +13,23 @@ const row = (id: string, method: string, timestamp = 0): DevConsoleRow => ({
   connectionGeneration: 1,
   status: 'pending',
   payload: { state: 'absent', originalBytes: 0, retainedBytes: 0 },
+});
+describe('payload documents', () => {
+  it.each(['null', 'true', 'false', '42', '"hello"'])('handles scalar JSON %s', (text) => {
+    expect(payloadDocument(text)).toEqual({ text, language: 'json' });
+  });
+  it('indents nested objects and arrays with two spaces', () => {
+    expect(payloadDocument('{"items":[{"value":1}]}')).toEqual({
+      text: '{\n  "items": [\n    {\n      "value": 1\n    }\n  ]\n}',
+      language: 'json',
+    });
+  });
+  it.each(['', 'undefined', '[unserializable]', '{"truncated":', 'plain text', ' \n '])(
+    'preserves non-JSON text %j',
+    (text) => {
+      expect(payloadDocument(text)).toEqual({ text, language: 'plaintext' });
+    },
+  );
 });
 describe('Dev Console traffic view', () => {
   it('keeps arrival-order ties stable while filtering names and sorting response updates', () => {

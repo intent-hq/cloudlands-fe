@@ -7,7 +7,7 @@
     DevConsoleRecord,
     DevConsoleRow,
   } from '$shared/types/dev-console';
-  import { readablePayload } from './traffic-view';
+  import PayloadViewer from './PayloadViewer.svelte';
   import * as m from '$shared/paraglide/messages.js';
   let {
     row,
@@ -82,8 +82,7 @@
           onclick={() => copy(payload.text)}>{m.devConsole_copy_label()}</Button
         >
       </div>
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable payload must be keyboard reachable.) -->
-      <pre tabindex="0">{readablePayload(payload.text)}</pre>
+      <PayloadViewer text={payload.text} {label} />
     </section>
   {/snippet}
   <div class="payloads">
@@ -134,7 +133,6 @@
     border-radius: 3px;
   }
   .details :global(.payload-control):focus-visible,
-  pre:focus-visible,
   .details :global(.payload-checkbox):focus-visible {
     outline: 2px solid hsl(var(--ring));
   }
@@ -172,16 +170,6 @@
     flex-wrap: wrap;
     gap: 4px 10px;
   }
-  pre {
-    flex: 1;
-    min-height: 60px;
-    overflow: auto;
-    white-space: pre;
-    padding: 8px 12px;
-    margin: 0;
-    line-height: 1.45;
-    user-select: text;
-  }
   .truncated {
     color: hsl(var(--danger));
   }
@@ -211,9 +199,6 @@
     .capture {
       padding-block: 2px;
       flex-shrink: 0;
-    }
-    pre {
-      min-height: 0;
     }
   }
 </style>

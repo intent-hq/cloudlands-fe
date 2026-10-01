@@ -6988,5 +6988,9 @@
   "settings_personalDevices_pairing_error": "暫時無法配對。請檢查連線和存取權限，然後重試。",
   "settings_personalDevices_roster_error": "無法載入已連線的裝置。請重試。",
   "settings_personalDevices_copy_label": "複製配對連結",
-  "settings_personalDevices_copied_label": "連結已複製"
+  "settings_personalDevices_copied_label": "連結已複製",
+  "devConsole_payload_search_label": "搜尋",
+  "devConsole_payload_collapse_label": "全部摺疊",
+  "devConsole_payload_expand_label": "全部展開",
+  "devConsole_payload_load_error": "無法載入檢視器。擷取的文字顯示於下方。"
 }

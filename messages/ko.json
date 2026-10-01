@@ -6988,5 +6988,9 @@
   "settings_personalDevices_pairing_error": "페어링할 수 없습니다. 연결과 접근 권한을 확인한 후 다시 시도하세요.",
   "settings_personalDevices_roster_error": "연결된 기기를 불러올 수 없습니다. 다시 시도하세요.",
   "settings_personalDevices_copy_label": "페어링 링크 복사",
-  "settings_personalDevices_copied_label": "링크 복사됨"
+  "settings_personalDevices_copied_label": "링크 복사됨",
+  "devConsole_payload_search_label": "검색",
+  "devConsole_payload_collapse_label": "모두 접기",
+  "devConsole_payload_expand_label": "모두 펼치기",
+  "devConsole_payload_load_error": "뷰어를 불러올 수 없습니다. 캡처된 텍스트가 아래에 표시됩니다."
 }

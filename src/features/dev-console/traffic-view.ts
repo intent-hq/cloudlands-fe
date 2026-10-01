@@ -90,10 +90,10 @@ export function selectedPayloadReader(
     },
   };
 }
-export function readablePayload(text: string): string {
+export function payloadDocument(text: string): { text: string; language: 'json' | 'plaintext' } {
   try {
-    return JSON.stringify(JSON.parse(text), null, 2);
+    return { text: JSON.stringify(JSON.parse(text), null, 2), language: 'json' };
   } catch {
-    return text;
+    return { text, language: 'plaintext' };
   }
 }

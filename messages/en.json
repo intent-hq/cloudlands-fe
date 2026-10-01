@@ -6988,5 +6988,9 @@
   "settings_personalDevices_pairing_error": "Pairing is unavailable. Check your connection and access, then retry.",
   "settings_personalDevices_roster_error": "Could not load connected devices. Try again.",
   "settings_personalDevices_copy_label": "Copy pairing link",
-  "settings_personalDevices_copied_label": "Link copied"
+  "settings_personalDevices_copied_label": "Link copied",
+  "devConsole_payload_search_label": "Search",
+  "devConsole_payload_collapse_label": "Collapse all",
+  "devConsole_payload_expand_label": "Expand all",
+  "devConsole_payload_load_error": "Could not load the viewer. The captured text is shown below."
 }
