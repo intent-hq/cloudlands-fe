@@ -60,7 +60,7 @@ function trimOutputBuffer(buffer: ScriptOutputBuffer): ScriptOutputBuffer {
     start += 1;
   }
   if (start === 0) return buffer;
-  return { chunks: chunks.slice(start), dropped: buffer.dropped + start };
+  return { ...buffer, chunks: chunks.slice(start), dropped: buffer.dropped + start };
 }
 
 const initialState: ScriptsState = {
@@ -73,8 +73,25 @@ const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(em
 // Actions
 // ============================================================================
 
+export const setScriptListState =
+  createAction<[wsId: string, loading: boolean, error?: string, supported?: boolean]>(
+    'scripts/setListState',
+  );
+export const scriptArchiveRequested = createAction<
+  [wsId: string, scriptIds: string[], operation: 'archive' | 'restore']
+>('scripts/archiveRequested');
+export const scriptArchiveFinished =
+  createAction<
+    [
+      wsId: string,
+      result: { error?: string; changed?: number; skipped?: number },
+      generation?: number,
+    ]
+  >('scripts/archiveFinished');
+
 /** Refresh scripts for a workspace (triggers saga) */
-export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
+export const refreshScripts =
+  createAction<[wsId: string, invalidateHistory?: boolean]>('scripts/refreshScripts');
 
 export const startScriptRequested = createAction<[wsId: string, scriptId: string]>(
   'scripts/startScriptRequested',
@@ -108,6 +125,16 @@ export const setScriptsData = createAction(
   (wsId: string, scripts: ScriptWithState[]) => ({ wsId, scripts }),
 );
 
+export const setActiveScriptsData =
+  createAction<[wsId: string, scripts: ScriptWithState[]]>('scripts/setActiveData');
+export const setArchivedScriptsData =
+  createAction<[wsId: string, scripts: ScriptWithState[], version: number]>(
+    'scripts/setArchivedData',
+  );
+export const setScriptHistoryLoadState = createAction<
+  [wsId: string, loading: boolean, error?: string]
+>('scripts/setHistoryLoadState');
+
 /** Upsert a single script definition */
 export const upsertScript =
   createAction<[wsId: string, script: WorkspaceScript]>('scripts/upsertScript');
@@ -124,6 +151,15 @@ export const updateRuntimeState = createAction(
     partial,
   }),
 );
+
+/** Viewer-owned historical read; releasing it cancels late snapshot publication. */
+export const scriptOutputRequested =
+  createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputRequested');
+export const scriptOutputReleased =
+  createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputReleased');
+export const scriptOutputSnapshotReceived = createAction<
+  [wsId: string, scriptId: string, viewerId: string, text: string]
+>('scripts/outputSnapshotReceived');
 
 /** Append one raw output chunk for a script */
 export const appendScriptOutput =
@@ -176,12 +212,16 @@ scriptsReducer.with(
 );
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
-  if (Object.keys(ws.operations).length === 0) return state;
-  return setWorkspaceState(state, wsId, { ...ws, operations: {} });
+  if (Object.keys(ws.operations).length === 0 && !ws.archiveOperation) return state;
+  return setWorkspaceState(state, wsId, { ...ws, operations: {}, archiveOperation: undefined });
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, initialized });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    initialized,
+    ...(initialized ? {} : { historyVersion: (ws.historyVersion ?? 0) + 1 }),
+  });
 });
 scriptsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -189,7 +229,13 @@ scriptsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
   for (const script of scripts) {
     scriptsById[script.id] = script;
   }
-  return setWorkspaceState(state, wsId, { ...ws, scripts: scriptsById });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: scriptsById,
+    activeScriptIds: undefined,
+    archivedScriptIds: undefined,
+    historyInitialized: false,
+  });
 });
 scriptsReducer.with(upsertScript, (state, { payload: [wsId, script] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -203,7 +249,16 @@ scriptsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
   const ws = getWorkspaceState(state, wsId);
   const { [scriptId]: _s, ...scripts } = ws.scripts;
   const { [scriptId]: _o, ...outputBuffers } = ws.outputBuffers;
-  return setWorkspaceState(state, wsId, { ...ws, scripts, outputBuffers });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts,
+    outputBuffers,
+    retainedOutputs: Object.fromEntries(
+      Object.entries(ws.retainedOutputs ?? {}).filter(([, output]) => output.scriptId !== scriptId),
+    ),
+    activeScriptIds: ws.activeScriptIds?.filter((id) => id !== scriptId),
+    archivedScriptIds: ws.archivedScriptIds?.filter((id) => id !== scriptId),
+  });
 });
 scriptsReducer.with(updateRuntimeState, (state, { payload: { wsId, scriptId, partial } }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -218,10 +273,47 @@ scriptsReducer.with(updateRuntimeState, (state, { payload: { wsId, scriptId, par
     },
   });
 });
+scriptsReducer.with(scriptOutputRequested, (state, { payload: [wsId, scriptId, viewerId] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (!ws?.scripts[scriptId]) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    retainedOutputs: { ...ws.retainedOutputs, [viewerId]: { scriptId, status: 'loading' } },
+  });
+});
+scriptsReducer.with(scriptOutputReleased, (state, { payload: [wsId, scriptId, viewerId] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (ws?.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
+  const { [viewerId]: _released, ...retainedOutputs } = ws.retainedOutputs;
+  return setWorkspaceState(state, wsId, { ...ws, retainedOutputs });
+});
+scriptsReducer.with(
+  scriptOutputSnapshotReceived,
+  (state, { payload: [wsId, scriptId, viewerId, text] }) => {
+    const ws = state.byWorkspaceId[wsId];
+    if (!ws?.scripts[scriptId] || ws.retainedOutputs?.[viewerId]?.scriptId !== scriptId)
+      return state;
+    // This is a formatted, capped poll response, not raw PTY bytes. Even a
+    // successful read has no cursor with which to join delayed stream events.
+    const available = !!text && text !== 'No output yet.'; // daemon wire sentinel
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      retainedOutputs: {
+        ...ws.retainedOutputs,
+        [viewerId]: {
+          scriptId,
+          status: available ? 'available' : 'unavailable',
+          ...(available ? { text: text.slice(-MAX_OUTPUT_CHARS) } : {}),
+        },
+      },
+    });
+  },
+);
 scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chunk] }) => {
   const ws = getWorkspaceState(state, wsId);
   const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
   const combined = trimOutputBuffer({
+    ...current,
     chunks: [...current.chunks, chunk],
     dropped: current.dropped,
   });
@@ -230,3 +322,64 @@ scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chun
     outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
   });
 });
+
+scriptsReducer.with(
+  setScriptListState,
+  (state, { payload: [wsId, loading, loadError, supported] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      loading,
+      loadError,
+      ...(supported !== undefined ? { lifecycleSupported: supported } : {}),
+    });
+  },
+);
+scriptsReducer.with(scriptArchiveRequested, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    archiveGeneration: (ws.archiveGeneration ?? 0) + 1,
+    archiveOperation: { pending: true },
+  });
+});
+scriptsReducer.with(scriptArchiveFinished, (state, { payload: [wsId, result, generation] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (generation !== undefined && generation !== (ws.archiveGeneration ?? 0)) return state;
+  return setWorkspaceState(state, wsId, { ...ws, archiveOperation: { pending: false, ...result } });
+});
+
+scriptsReducer.with(refreshScripts, (state, { payload: [wsId, invalidateHistory] }) => {
+  if (!invalidateHistory) return state;
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, historyVersion: (ws.historyVersion ?? 0) + 1 });
+});
+scriptsReducer.with(setActiveScriptsData, (state, { payload: [wsId, entries] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const incoming = Object.fromEntries(entries.map((script) => [script.id, script]));
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: { ...ws.scripts, ...incoming },
+    activeScriptIds: entries.map((script) => script.id),
+    archivedScriptIds: ws.archivedScriptIds?.filter((id) => !incoming[id]),
+  });
+});
+scriptsReducer.with(setArchivedScriptsData, (state, { payload: [wsId, entries, version] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const incoming = Object.fromEntries(entries.map((script) => [script.id, script]));
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: { ...ws.scripts, ...incoming },
+    archivedScriptIds: entries.map((script) => script.id),
+    activeScriptIds: ws.activeScriptIds?.filter((id) => !incoming[id]),
+    historyInitialized: true,
+    historyLoadedVersion: version,
+  });
+});
+scriptsReducer.with(
+  setScriptHistoryLoadState,
+  (state, { payload: [wsId, historyLoading, historyError] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, { ...ws, historyLoading, historyError });
+  },
+);

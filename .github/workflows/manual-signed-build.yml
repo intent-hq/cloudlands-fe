@@ -15,7 +15,7 @@ name: Manual Signed Build
 #   - per-platform opt-in inputs and a sign input (default on)
 #   - a -manual.<run_number> version suffix so an installed manual build is
 #     never version-equal to a real release
-#   - one minimal artifact per installer kind (manual-macos-dmg,
+#   - one minimal artifact per installer kind (manual-macos-dmg-<arch>,
 #     manual-windows-exe, manual-linux-{appimage,deb}-<arch>) so downloading
 #     one installer never pulls the rest; no mac .zip archive and no
 #     .blockmap files (both are auto-updater material, dead weight in manual
@@ -32,10 +32,23 @@ on:
   workflow_dispatch:
     inputs:
       build_macos:
-        description: 'Build macOS (arm64 DMG/zip)'
+        description: 'Build macOS (Apple Silicon + Intel DMG/zip)'
         required: false
         type: boolean
         default: false
+      smoke_macos:
+        description: 'Run fixture-only packaged journeys on a separate disposable macOS runner (requires build_macos and sign)'
+        required: false
+        type: boolean
+        default: false
+      smoke_macos_scope:
+        description: 'Full fixture suite, or the mock-provider/worktree-capture follow-up only'
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - fixture-correction
       build_windows:
         description: 'Build Windows (x64 NSIS installer)'
         required: false
@@ -68,11 +81,81 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  smoke-inputs:
+    if: ${{ inputs.smoke_macos }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require a signed macOS artifact
+        env:
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          SIGN: ${{ inputs.sign }}
+        run: test "$BUILD_MACOS" = true && test "$SIGN" = true
+
+  smoke-macos:
+    if: ${{ inputs.smoke_macos }}
+    needs: [build-macos, smoke-inputs]
+    runs-on: macos-15-xlarge
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+    # 9 minutes setup + 45 tests + 4 upload = 58; 2 reserved for postlude.
+    steps:
+      - uses: actions/checkout@v7
+        timeout-minutes: 1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        timeout-minutes: 1
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v7
+        timeout-minutes: 1
+        with:
+          node-version: '22'
+      - name: Install test dependencies
+        timeout-minutes: 4
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v8
+        timeout-minutes: 2
+        with:
+          name: manual-macos-dmg
+          path: smoke-artifact
+      - name: Test the signed artifact with disposable fixture state
+        timeout-minutes: 45
+        env:
+          BUILD_SMOKE_MACOS_SCOPE: ${{ inputs.smoke_macos_scope }}
+        run: python3 scripts/run-packaged-macos-smoke.py smoke-artifact
+      - name: Upload journey results and process receipts
+        timeout-minutes: 4
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-macos-smoke
+          path: e2e-reports/
+          retention-days: 7
+          if-no-files-found: error
+
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
     if: ${{ inputs.build_macos }}
-    runs-on: macos-15-xlarge
+    name: macOS (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            label: Apple Silicon
+            runner: macos-15-xlarge
+            intentd_target: aarch64-apple-darwin
+          - arch: x64
+            label: Intel
+            runner: macos-15-large
+            intentd_target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    env:
+      INTENTD_TARGET: ${{ matrix.intentd_target }}
     # 120 min: 90 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold ~15-min cargo build.
     timeout-minutes: 120
@@ -118,6 +201,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '22'
+
+      - name: Verify native Mac runner
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e 'if (process.platform !== "darwin" || process.arch !== process.env.EXPECTED_ARCH) throw new Error("Mac runner architecture mismatch"); console.log(process.platform, process.arch)'
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -166,15 +254,13 @@ jobs:
       # Bare `rustup toolchain install` inside intentd-src reads the channel
       # pinned by its rust-toolchain.toml, so the toolchain always matches the
       # checked-out intentd ref (the runner's preinstalled default may drift).
-      # The aarch64-apple-darwin target is the arm64 host's default, but add
-      # it explicitly so the build is self-documenting and resilient to a
-      # runner-arch change.
+      # Install the native target for this matrix CPU explicitly.
       - name: Install pinned Rust toolchain (intentd)
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
         run: |
           rustup toolchain install --no-self-update
-          rustup target add aarch64-apple-darwin
+          rustup target add "$INTENTD_TARGET"
           rustup show active-toolchain
 
       # Keyed per target so a cache saved by another leg's target can never be
@@ -187,10 +273,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: intentd-src
-          key: aarch64-apple-darwin
+          key: ${{ matrix.intentd_target }}
           cache-on-failure: true
 
-      # Native build on the arm64 host (no --target), so the binary lands at
+      # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
@@ -280,7 +366,7 @@ jobs:
       - name: Generate i18n catalog
         run: pnpm run generate:i18n
 
-      # dist:mac runs scripts/fetch-tailcat.cjs --targets=darwin-arm64, which
+      # dist:mac stages tailcat for the matrix CPU, which
       # builds the tailcat tunnel client from source (tailcat publishes no
       # prebuilt macOS assets) and needs a Go toolchain — the hosted
       # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
@@ -313,7 +399,7 @@ jobs:
             # Remove signing inputs entirely for an unsigned package.
             unset CSC_LINK CSC_KEY_PASSWORD
           fi
-          pnpm run dist:mac --publish never
+          pnpm run dist:mac --${{ matrix.arch }} --publish never
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
@@ -359,15 +445,20 @@ jobs:
           REQUIRE_SHARED_KEYCHAIN_GROUP: ${{ inputs.sign && '1' || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify packaged Mac build
+        id: verify
+        run: bash scripts/verify-macos-build.sh "${{ matrix.arch }}" "${{ inputs.sign }}"
+
       - name: List built artifacts
         run: |
           echo "Built artifacts:"
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" \) -exec ls -lh {} \;
 
       - name: Upload macOS DMG artifact
+        id: upload
         uses: actions/upload-artifact@v7
         with:
-          name: manual-macos-dmg
+          name: manual-macos-dmg-${{ matrix.arch }}
           # DMG only — the mac .zip and .blockmap files exist solely for the
           # auto-updater feed, which manual builds never publish (no
           # latest-mac.yml leaves this workflow), so they are dead weight
@@ -381,10 +472,14 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Manual macOS Build"
+            echo "## Manual macOS Build (${{ matrix.label }} / ${{ matrix.arch }})"
             echo ""
             if [ "${{ steps.build.outcome }}" != "success" ]; then
               echo "❌ Build failed."
+            elif [ "${{ steps.verify.outcome }}" != "success" ]; then
+              echo "❌ Packaged app verification failed; no installer uploaded."
+            elif [ "${{ steps.upload.outcome }}" != "success" ]; then
+              echo "❌ Installer upload failed; no download is available."
             elif [ "${{ inputs.sign }}" != "true" ]; then
               echo "⚠️ Unsigned build completed (sign=false)."
             else
@@ -403,8 +498,10 @@ jobs:
               echo "intentd sidecar: pinned release v$(grep -v '^#' intentd.version | grep -m1 .)"
             fi
             echo ""
-            echo "Artifacts (manual-macos-dmg):"
-            find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            if [ "${{ steps.upload.outcome }}" = "success" ]; then
+              echo "[Download manual-macos-dmg-${{ matrix.arch }}](${{ steps.upload.outputs.artifact-url }})"
+              find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           INTENTD_REF: ${{ inputs.intentd_ref }}

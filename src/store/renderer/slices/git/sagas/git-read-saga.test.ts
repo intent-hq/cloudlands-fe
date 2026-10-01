@@ -19,6 +19,7 @@ import {
   setSecondaryRootCommitFiles,
 } from '../git-slice';
 import { gitReadSaga } from './git-read-saga';
+import { reserveGitMutation } from '../../../utils/worktree-mutation-queue';
 
 const settle = async () => {
   await Promise.resolve();
@@ -32,6 +33,83 @@ describe('gitReadSaga', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('waits for the mutation tail before fulfilling a status request', async () => {
+    const status: GitStatus = {
+      branch: 'fresh',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    };
+    vi.spyOn(appClient.git, 'status').mockResolvedValue(status);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const lease = reserveGitMutation('ws-1');
+    try {
+      await lease.ready;
+      channel.put(loadGitStatus('ws-1', true));
+      await settle();
+      expect(appClient.git.status).not.toHaveBeenCalled();
+      await lease.release();
+      await vi.waitFor(() => expect(actions).toContainEqual(setGitStatus('ws-1', status)));
+      expect(appClient.git.status).toHaveBeenCalledExactlyOnceWith('ws-1', { forceRefresh: true });
+    } finally {
+      await lease.release();
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('retries a secondary-root snapshot that overlaps a mutation instead of leaving loading stuck', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof gitClient.getStatus>>) => void;
+    const first = new Promise<Awaited<ReturnType<typeof gitClient.getStatus>>>((done) => {
+      resolve = done;
+    });
+    const status: GitStatus = {
+      branch: 'fresh',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    };
+    vi.spyOn(gitClient, 'getStatus')
+      .mockReturnValueOnce(first)
+      .mockResolvedValue({ ok: true, data: status });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    const lease = reserveGitMutation('ws-1', 'root-1');
+    try {
+      await lease.ready;
+      resolve({ ok: true, data: { ...status, branch: 'obsolete' } });
+      await settle();
+      expect(
+        actions.filter((action) => (action as { type: string }).type === setSecondaryRootGit.type),
+      ).toEqual([]);
+      await lease.release();
+      await vi.waitFor(() =>
+        expect(actions).toContainEqual(
+          expect.objectContaining({
+            type: setSecondaryRootGit.type,
+            payload: expect.objectContaining({ data: expect.objectContaining({ status }) }),
+          }),
+        ),
+      );
+      expect(gitClient.getStatus).toHaveBeenCalledTimes(2);
+    } finally {
+      await lease.release();
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('does not paginate history when the registration boundary is unknown', async () => {
@@ -468,7 +546,7 @@ describe('gitReadSaga', () => {
 
     expect(appClient.git.status).toHaveBeenCalledTimes(2);
     expect(appClient.git.status).toHaveBeenNthCalledWith(1, 'ws-1');
-    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1');
+    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1', { forceRefresh: true });
     expect(actions).toHaveLength(2);
     task.cancel();
     await task.toPromise();
