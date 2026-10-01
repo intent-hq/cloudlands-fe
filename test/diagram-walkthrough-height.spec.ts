@@ -373,3 +373,40 @@ test('walkthrough settles a resize while its ancestor moves', async ({ page }, t
   await root.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
 });
+
+// Reusing the mounted scene exposes resize delivery races that a fresh page can miss.
+test('walkthrough repeated resizing keeps painted content contained', async ({
+  page,
+}, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  const rounds = [];
+  for (let round = 0; round < 3; round += 1) {
+    for (const index of [1, 2, 0]) await sampleChange(root, index);
+    await sampleChange(root, 1, undefined, true);
+    const segments = [];
+    for (const [index, width] of [
+      [1, 420],
+      [2, 960],
+      [0, 662],
+    ]) {
+      segments.push({ index, width, samples: await sampleChange(root, index, width) });
+    }
+    rounds.push(segments);
+  }
+  await testInfo.attach('repeated-resize-geometry', {
+    body: JSON.stringify(rounds, null, 2),
+    contentType: 'application/json',
+  });
+  for (const segments of rounds) {
+    for (const { index, samples } of segments) {
+      expect(Math.max(...samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      expect(samples.every((sample) => sample.finitePaint)).toBe(true);
+      expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+      const final = samples.at(-1)!;
+      expect(final.settled).toBe(true);
+      expect(final.nodes).toEqual(states[index].nodes);
+      expect(final.edges).toEqual(states[index].edges);
+      expect(final.labels).toEqual(states[index].edges);
+    }
+  }
+});
