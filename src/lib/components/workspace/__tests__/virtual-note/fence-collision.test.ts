@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { SourceJournal } from './source-journal';
 import { DocumentSession } from './document-session';
+import { escapeHtmlTags } from '$lib/utils/markdown-processor';
 
 for (const marker of ['`', '~'])
   it(`safely frames literal ${marker} closing lines with one source/history mutation`, async () => {
@@ -10,10 +11,10 @@ for (const marker of ['`', '~'])
     const source = opening + body + ending;
     const service = new SourceJournal(() => source, 1);
     const p = new DocumentSession(service, document.createElement('div'));
-    const extra = marker === '`' ? 2 : 1;
+    const extra = 1;
     const at = 30000,
       inserted = '\n' + marker.repeat(4) + '\n';
-    // Independent expected serialization: grow both enclosing markers to six backticks/five tildes,
+    // Independent expected serialization: grow both enclosing markers to five markers,
     // preserving every body byte, info suffix, closer whitespace and following prose.
     const expected =
       marker.repeat(extra) +
@@ -68,7 +69,7 @@ for (const marker of ['`', '~']) {
             : source.indexOf('X\n');
       const inserted = edge === 'split-line' ? '' : '\n' + marker.repeat(4) + '\n';
       const removed = edge === 'split-line' ? 1 : 0;
-      const extra = edge === 'split-line' ? (marker === '`' ? 11 : 9) : marker === '`' ? 2 : 1;
+      const extra = edge === 'split-line' ? 9 : 1;
       const expected =
         marker.repeat(extra) +
         source.slice(0, at) +
@@ -155,9 +156,9 @@ for (const marker of ['`', '~'])
     const source = opening + 'raw code\n'.repeat(12000) + ending;
     const service = new SourceJournal(() => source, 1),
       p = new DocumentSession(service, document.createElement('div'));
-    const firstGrowth = marker === '`' ? 2 : 1;
+    const firstGrowth = 1;
     const first = '\n' + marker.repeat(4) + '\n',
-      second = '\n' + marker.repeat(7) + '\n';
+      second = '\n' + marker.repeat(10) + '\n';
     const one =
       marker.repeat(firstGrowth) +
       source.slice(0, 30000) +
@@ -167,11 +168,11 @@ for (const marker of ['`', '~'])
       ending;
     const at = 30000 + first.length + firstGrowth;
     const two =
-      marker.repeat(3) +
+      marker.repeat(6) +
       one.slice(0, at) +
       second +
       one.slice(at, -(ending.length + firstGrowth)) +
-      marker.repeat(firstGrowth + 3) +
+      marker.repeat(firstGrowth + 6) +
       ending;
     try {
       await p.seek(30000);
@@ -181,7 +182,7 @@ for (const marker of ['`', '~'])
       p.editor!.view.dispatch(p.editor!.state.tr.insertText(second).setTime(2000));
       expect(p.error).toBe('');
       expect(service.region(0)).toBe(two);
-      expect(p.selection.head).toBe(at + second.length + 3);
+      expect(p.selection.head).toBe(at + second.length + 6);
       expect(service.depth).toBe(2);
       p.save();
       await p.seek(70000);
@@ -196,8 +197,23 @@ for (const marker of ['`', '~'])
       expect(p.selection.head).toBe(at);
       await p.history(true);
       expect(service.region(0)).toBe(two);
-      expect(p.selection.head).toBe(at + second.length + 3);
+      expect(p.selection.head).toBe(at + second.length + 6);
     } finally {
       p.destroy();
     }
   });
+
+// The unchanged production preprocessor is an independent oracle boundary.
+// This valid fence encloses all shorter marker lines and has no HTML to escape.
+it('actual Markdown preprocessing preserves literal fences without leaking placeholders', () => {
+  const source =
+    '`'.repeat(13) +
+    'text\n`x`\n' +
+    '`'.repeat(12) +
+    '\n' +
+    '`'.repeat(6) +
+    '\n`y`\n' +
+    '`'.repeat(13) +
+    '\n';
+  expect(escapeHtmlTags(source)).toBe(source);
+});

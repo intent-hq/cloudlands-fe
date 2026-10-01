@@ -472,19 +472,20 @@ export class SourceJournal {
         for (const match of body.matchAll(candidates))
           length = Math.max(length, match[1].length + 1);
         if (length === marker.length) continue;
-        // The actual Markdown preprocessor protects triple-backtick spans before
-        // inline code. Complete groups avoid a leftover inline delimiter spanning
-        // its placeholders when an enclosing backtick fence has to grow.
-        if (marker[0] === '`') length = Math.ceil(length / 3) * 3;
         repairs.push({
           from: fence.from,
           to: fence.from,
           insert: marker[0].repeat(length - marker.length),
         });
         const close = fence.closing.match(/(?:^|\n)(`{3,}|~{3,})[ \t]*(?:\n|$)/);
-        if (close && close[1].length < length) {
+        const closeLength = Math.max(length, close?.[1].length ?? 0);
+        if (close && close[1].length < closeLength) {
           const at = fence.bodyTo + close.index! + (close[0][0] === '\n' ? 1 : 0);
-          repairs.push({ from: at, to: at, insert: marker[0].repeat(length - close[1].length) });
+          repairs.push({
+            from: at,
+            to: at,
+            insert: marker[0].repeat(closeLength - close[1].length),
+          });
         }
       }
       // Descending source order preserves coordinates for every independent fence.

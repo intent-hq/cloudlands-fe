@@ -3,22 +3,32 @@ import Harness from './ParagraphProofHarness.svelte';
 import { focus, settled, type Host } from './paragraph-browser';
 
 for (const marker of ['`', '~'])
-  for (const edge of ['middle', 'opening', 'closing', 'continuation'] as const)
+  for (const edge of [
+    'original',
+    'repeat',
+    'middle',
+    'opening',
+    'closing',
+    'continuation',
+  ] as const)
     test(`literal ${marker} ${edge} closing-marker paste keeps canonical code, reload caret and history`, async ({
       mount,
       page,
       context,
     }, info) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-      const opening = marker.repeat(4) + 'text extra-info\n';
+      const original = edge === 'original' || edge === 'repeat';
+      const opening = marker.repeat(4) + (original ? 'text\n' : 'text extra-info\n');
       const body = '\tconst café = "**literal** [link](url) `code` \\escape 🌍";  \n'.repeat(1600);
-      const ending = marker.repeat(4) + '  \n\nAfter prose';
+      const ending = marker.repeat(4) + (original ? '\n\nAfter prose' : '  \n\nAfter prose');
       const source = opening + body + ending;
-      const extra = edge === 'continuation' ? (marker === '`' ? 11 : 9) : marker === '`' ? 2 : 1;
+      const extra = edge === 'continuation' ? 9 : 1;
       const inserted =
         edge === 'continuation'
           ? '\n   ' + marker.repeat(12) + ' \n' + marker.repeat(6) + '\n'
-          : '\n' + marker.repeat(4) + '\n';
+          : edge === 'repeat'
+            ? '\n' + marker.repeat(4) + '\n' + marker.repeat(4) + '\n'
+            : '\n' + marker.repeat(4) + '\n';
       let at =
         edge === 'opening'
           ? opening.length
