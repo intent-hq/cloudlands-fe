@@ -144,3 +144,50 @@ it('retains the complete fitting paragraph window through 5000-byte paste undo a
     session.destroy();
   }
 });
+
+it('pages a pending Unicode input backlog outside the renderer and drains it in order', () => {
+  const service = new SourceJournal(() => 'plain paragraph', 1);
+  const text = 'ab🌍'.repeat(5000);
+  service.enqueueInput({
+    command: 'insertText',
+    time: 1234,
+    text,
+    selection: { anchor: 3, head: 3, affinity: 1, revision: 1 },
+  });
+  expect(service.pendingInputs).toBeGreaterThan(4);
+  expect(service.stats.backingInputBytes).toBeGreaterThan(16384);
+  let replayed = '',
+    count = 0;
+  while (service.pendingInputs) {
+    const input = service.readInput();
+    expect(input.time).toBe(1234);
+    expect(input.selection !== undefined).toBe(count === 0);
+    expect(input.text!.endsWith('\ud83c')).toBe(false);
+    replayed += input.text;
+    count++;
+    service.acknowledgeInput();
+  }
+  expect(replayed).toBe(text);
+  expect(service.stats.maxInputRead).toBeLessThanOrEqual(4096);
+  expect(service.stats.backingInputBytes).toBe(0);
+});
+
+it('rebases pending input bookmarks atomically without losing the unacknowledged operation', () => {
+  const service = new SourceJournal(() => 'plain paragraph', 1);
+  service.enqueueInput({
+    command: 'delete',
+    time: 1234,
+    selection: { anchor: 7, head: 7, affinity: 1, revision: 1 },
+  });
+  const input = service.readInput();
+  expect(() =>
+    service.atomic(() => {
+      service.apply({ from: 0, to: 0, insert: 'new ' });
+      throw new Error('admission failed');
+    }),
+  ).toThrow('admission failed');
+  expect(service.readInput()).toEqual(input);
+  expect(service.pendingInputs).toBe(1);
+  service.apply({ from: 0, to: 0, insert: 'new ' });
+  expect(service.readInput().selection).toMatchObject({ anchor: 11, head: 11, revision: 2 });
+});

@@ -29,6 +29,11 @@ export class DocumentSession {
   maxInFlightBytes = 0;
   acceptedRoots = 0;
   acceptedAppended = 0;
+  private drainingInput = false;
+  private replayingInput = false;
+  private replayTime?: number;
+  private residentInputBytes = 0;
+  private maxResidentInputBytes = 0;
   private windowEnd = 0;
   private continuation = false;
   private selectionGeneration = 0;
@@ -101,8 +106,92 @@ export class DocumentSession {
       position,
     );
   }
+  private deferInput(command: string, text?: string) {
+    this.service.enqueueInput({
+      command,
+      text,
+      time: Date.now(),
+      selection: this.service.pendingInputs ? undefined : { ...this.selection },
+    });
+    void this.drainInput();
+    this.changed();
+  }
+  private async drainInput() {
+    if (this.drainingInput) return;
+    this.drainingInput = true;
+    try {
+      while (this.service.pendingInputs && this.editor && !this.editor.isDestroyed) {
+        const input = this.service.readInput();
+        this.residentInputBytes = bytes(JSON.stringify(input));
+        this.maxResidentInputBytes = Math.max(this.maxResidentInputBytes, this.residentInputBytes);
+        const target = input.selection?.head ?? this.selection.head;
+        // Share the outstanding fetch, but retain the input if navigation becomes stale.
+        if (!(await this.show(this.active, true, target, true))) {
+          if (!this.editor || this.editor.isDestroyed || this.editor.view.composing) break;
+          continue;
+        }
+        // show rejects revision changes, so this bounded record is still current.
+        const current = input;
+        if (current.selection) {
+          this.selection = { ...current.selection };
+          this.suppress = true;
+          this.renderSelection();
+          this.suppress = false;
+        }
+        if (current.command !== 'selection') {
+          this.editor.view.focus();
+          this.replayingInput = true;
+          this.replayTime = current.time;
+          // Chromium performs the actual character/grapheme operation on bounded context.
+          // MutationObserver delivers its transaction before the next input task.
+          let accepted = true;
+          if (current.command === 'undo' || current.command === 'redo')
+            await this.history(current.command === 'redo');
+          else if (/^(move|extend)(Forward|Backward)$/.test(current.command)) {
+            const selection = window.getSelection()!;
+            selection.modify(
+              current.command.startsWith('extend') ? 'extend' : 'move',
+              current.command.endsWith('Backward') ? 'backward' : 'forward',
+              'character',
+            );
+            const view = this.editor.view;
+            view.dispatch(
+              view.state.tr.setSelection(
+                TextSelection.create(
+                  view.state.doc,
+                  view.posAtDOM(selection.anchorNode!, selection.anchorOffset),
+                  view.posAtDOM(selection.focusNode!, selection.focusOffset),
+                ),
+              ),
+            );
+          } else accepted = document.execCommand(current.command, false, current.text);
+          await Promise.resolve();
+          this.replayingInput = false;
+          this.replayTime = undefined;
+          if (!accepted || this.error) throw new Error(this.error || 'Native input replay failed');
+        }
+        this.service.acknowledgeInput();
+        this.residentInputBytes = 0;
+      }
+    } catch (error) {
+      // Unacknowledged intent remains in the backing inbox for inspection/recovery.
+      this.error = String(error);
+    } finally {
+      this.replayingInput = false;
+      this.replayTime = undefined;
+      this.residentInputBytes = 0;
+      this.drainingInput = false;
+      this.changed();
+    }
+  }
   private continueNearEdge() {
-    if (!this.continuation || this.continuationQueued || !this.editor || this.editor.view.composing)
+    if (
+      this.drainingInput ||
+      !this.continuation ||
+      this.continuationQueued ||
+      !this.editor ||
+      this.editor.view.composing
+    )
       return;
     const p = this.projection!,
       head = this.selection.head;
@@ -117,7 +206,7 @@ export class DocumentSession {
     this.continuationQueued = true;
     queueMicrotask(() => {
       this.continuationQueued = false;
-      if (!this.editor || this.editor.view.composing) return;
+      if (this.drainingInput || !this.editor || this.editor.view.composing) return;
       void this.show(this.active, true, this.selection.head, true);
     });
   }
@@ -254,15 +343,68 @@ export class DocumentSession {
           this.accept([transaction, ...(appendedTransactions ?? [])]),
         editorProps: {
           ...config.editorProps,
+          handleDOMEvents: {
+            ...config.editorProps?.handleDOMEvents,
+            beforeinput: (_view, event) => {
+              if (!this.service.pendingInputs || this.replayingInput || !event.cancelable)
+                return false;
+              const commands: Record<string, string> = {
+                insertText: 'insertText',
+                insertParagraph: 'insertParagraph',
+                deleteContentBackward: 'delete',
+                deleteContentForward: 'forwardDelete',
+              };
+              const command = commands[event.inputType];
+              if (!command) return false;
+              event.preventDefault();
+              this.deferInput(command, event.data ?? undefined);
+              return true;
+            },
+          },
           handleKeyDown: (_view, event) => {
+            if (
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey &&
+              (event.key === 'Delete' || event.key === 'Backspace')
+            ) {
+              const backward = event.key === 'Backspace';
+              const atBoundary =
+                this.selection.anchor === this.selection.head &&
+                (backward
+                  ? this.selection.head === this.projection!.start &&
+                    this.projection!.start > this.service.start(this.active)
+                  : this.selection.head === this.windowEnd &&
+                    this.windowEnd < this.service.start(this.active + 1));
+              if (this.service.pendingInputs || atBoundary) {
+                event.preventDefault();
+                this.deferInput(backward ? 'delete' : 'forwardDelete');
+                return true;
+              }
+            }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
               event.preventDefault();
-              void this.history(event.shiftKey);
+              if (this.service.pendingInputs) this.deferInput(event.shiftKey ? 'redo' : 'undo');
+              else void this.history(event.shiftKey);
               return true;
             }
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
               event.preventDefault();
               this.selectAll();
+              return true;
+            }
+            if (
+              this.service.pendingInputs &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey &&
+              (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+            ) {
+              event.preventDefault();
+              this.deferInput(
+                (event.shiftKey ? 'extend' : 'move') +
+                  (event.key === 'ArrowLeft' ? 'Backward' : 'Forward'),
+              );
               return true;
             }
             const p = this.projection!;
@@ -297,6 +439,7 @@ export class DocumentSession {
       const dispatch = this.editor.view.props.dispatchTransaction!;
       this.editor.view.setProps({
         dispatchTransaction: (tr) => {
+          if (this.replayTime !== undefined) tr.setTime(this.replayTime);
           this.rollbackState = this.editor!.state;
           try {
             dispatch.call(this.editor!.view, tr);
@@ -377,6 +520,12 @@ export class DocumentSession {
             if (tr.selectionSet) {
               this.selection = this.fromPM(tr.selection);
               this.selectionGeneration++;
+              if (this.service.pendingInputs && !this.replayingInput)
+                this.service.enqueueInput({
+                  command: 'selection',
+                  time: tr.time,
+                  selection: { ...this.selection },
+                });
             }
             continue;
           }
@@ -558,6 +707,8 @@ export class DocumentSession {
       return value;
     });
     return {
+      residentInputBytes: this.residentInputBytes,
+      maxResidentInputBytes: this.maxResidentInputBytes,
       continuation: this.continuation,
       windowFrom: this.projection?.start,
       windowTo: this.windowEnd,

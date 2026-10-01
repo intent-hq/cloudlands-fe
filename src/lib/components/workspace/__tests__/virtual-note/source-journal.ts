@@ -13,6 +13,12 @@ export const LIMITS = {
 export const fixture = (id: number) =>
   `Region ${String(id).padStart(4, '0')} — café 🌍. repeated repeated [link](https://example.test).\n\n`;
 export type Selection = { anchor: number; head: number; affinity: -1 | 1; revision: number };
+export type DeferredInput = {
+  command: string;
+  time: number;
+  selection?: Selection;
+  text?: string;
+};
 export type Splice = { from: number; to: number; insert: string };
 export type Change = Splice & { removed: string };
 export type Anchor = { id: string; from: number; to: number; alive: boolean };
@@ -46,6 +52,40 @@ export class SourceJournal {
   private receipts = new Map<string, { payload: string; revision: number }>();
   private events: Array<{ meta: Omit<Event, 'changes'>; pages: string[] }> = [];
   private stagedPages: string[] = [];
+  // Fake durable input inbox: renderer drains one bounded record, never the backlog.
+  private inputInbox: string[] = [];
+  maxInputRead = 0;
+  enqueueInput(input: DeferredInput) {
+    const text = input.text;
+    if (text && text.length > 512) {
+      for (let from = 0; from < text.length;) {
+        let to = Math.min(from + 512, text.length);
+        if (to < text.length && /[\uD800-\uDBFF]/.test(text[to - 1])) to--;
+        this.enqueueInput({
+          ...input,
+          selection: from ? undefined : input.selection,
+          text: text.slice(from, to),
+        });
+        from = to;
+      }
+      return;
+    }
+    const encoded = JSON.stringify(input);
+    if (bytes(encoded) > LIMITS.request) throw new Error('Input record exceeds budget');
+    this.inputInbox.push(encoded);
+  }
+  get pendingInputs() {
+    return this.inputInbox.length;
+  }
+  readInput(): DeferredInput {
+    const page = this.inputInbox[0];
+    this.maxInputRead = Math.max(this.maxInputRead, bytes(page));
+    return JSON.parse(page);
+  }
+  acknowledgeInput() {
+    this.inputInbox.shift();
+  }
+
   maxBackingAdmissionBytes = 0;
   private baseLengths: number[];
   cursor = 0;
@@ -180,6 +220,15 @@ export class SourceJournal {
       alive: a.alive && !(splice.from <= a.from && splice.to >= a.to && splice.to > splice.from),
     }));
     this.revision++;
+    this.inputInbox = this.inputInbox.map((encoded) => {
+      const input: DeferredInput = JSON.parse(encoded);
+      return input.selection
+        ? JSON.stringify({
+            ...input,
+            selection: mapSelection(input.selection, splice, this.revision),
+          })
+        : encoded;
+    });
     return { ...splice, removed };
   }
   commit(operationId: string, expectedRevision: number, splice: Splice) {
@@ -250,11 +299,13 @@ export class SourceJournal {
       maxSpliceBytes: this.maxSpliceBytes,
       logs: this.logs.slice(),
       stagedPages: this.stagedPages,
+      inputInbox: this.inputInbox,
     };
     try {
       return run();
     } catch (error) {
       this.stagedPages = state.stagedPages;
+      this.inputInbox = state.inputInbox;
       this.regions = regions;
       this.events = events;
       this.revision = state.revision;
@@ -401,6 +452,9 @@ export class SourceJournal {
   }
   get stats() {
     return {
+      pendingInputs: this.pendingInputs,
+      backingInputBytes: this.inputInbox.reduce((n, page) => n + bytes(page), 0),
+      maxInputRead: this.maxInputRead,
       draftWrites: this.draftWrites,
       maxSpliceBytes: this.maxSpliceBytes,
       contextReads: this.contextReads,

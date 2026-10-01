@@ -212,46 +212,51 @@ test('native differential: typing and bold undo grouping and selection restorati
   }
 });
 
-test('native differential: clipboard paste and cut across the seam', async ({
-  mount,
-  page,
-  context,
-}) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await mount(Harness);
-  await expect(page.getByTestId('bounded').locator('.tiptap')).toContainText('Region 0001');
-  const edge = await seam(page);
-  const copied: string[] = [],
-    cut: string[] = [];
-  for (const side of ['native', 'bounded']) {
-    await select(page, side, edge - 4, edge + 5);
-    await page.keyboard.press('Control+c');
-    copied.push(await page.evaluate(() => navigator.clipboard.readText()));
-    await page.keyboard.press('Control+x');
-    cut.push(await page.evaluate(() => navigator.clipboard.readText()));
-  }
-  expect(copied[0].length).toBeGreaterThan(0);
-  expect(copied[1]).toBe(copied[0]);
-  expect(cut[1]).toBe(cut[0]);
-  await same(page);
-  await page
-    .getByTestId('bounded')
-    .getByTestId('proof')
-    .evaluate((el) => (el as Host).proof.show(0, true));
-  await same(page);
-  for (const side of ['native', 'bounded']) {
-    await page.evaluate(() => navigator.clipboard.writeText('paste 🌍\n\nsecond'));
-    await focus(page, side);
-    await page.keyboard.press('Control+v');
-    await expect(page.getByTestId(side).locator('.tiptap')).toContainText('paste 🌍');
-  }
-  await same(page);
-  for (const side of ['native', 'bounded']) {
-    await focus(page, side);
-    await page.keyboard.press('Control+z');
-  }
-  await same(page);
-});
+for (const historyGap of [100, 1000])
+  test(`native differential: clipboard paste and cut across the seam with ${historyGap}ms history gap`, async ({
+    mount,
+    page,
+    context,
+  }) => {
+    const cutTime = new Date('2026-10-01T12:00:00Z').getTime();
+    await page.clock.setFixedTime(cutTime);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await mount(Harness);
+    await expect(page.getByTestId('bounded').locator('.tiptap')).toContainText('Region 0001');
+    const edge = await seam(page);
+    const copied: string[] = [],
+      cut: string[] = [];
+    for (const side of ['native', 'bounded']) {
+      await select(page, side, edge - 4, edge + 5);
+      await page.keyboard.press('Control+c');
+      copied.push(await page.evaluate(() => navigator.clipboard.readText()));
+      await page.keyboard.press('Control+x');
+      cut.push(await page.evaluate(() => navigator.clipboard.readText()));
+    }
+    expect(copied[0].length).toBeGreaterThan(0);
+    expect(copied[1]).toBe(copied[0]);
+    expect(cut[1]).toBe(cut[0]);
+    await same(page);
+    await page
+      .getByTestId('bounded')
+      .getByTestId('proof')
+      .evaluate((el) => (el as Host).proof.show(0, true));
+    await same(page);
+    // Date controls transaction grouping; browser timers and input remain native.
+    await page.clock.setFixedTime(cutTime + historyGap);
+    for (const side of ['native', 'bounded']) {
+      await page.evaluate(() => navigator.clipboard.writeText('paste 🌍\n\nsecond'));
+      await focus(page, side);
+      await page.keyboard.press('Control+v');
+      await expect(page.getByTestId(side).locator('.tiptap')).toContainText('paste 🌍');
+    }
+    await same(page);
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+z');
+    }
+    await same(page);
+  });
 
 test('native differential: real pointer drag across the seam preserves direction', async ({
   mount,
