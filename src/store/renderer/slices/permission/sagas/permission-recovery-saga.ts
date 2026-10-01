@@ -22,7 +22,7 @@ import {
 } from '../permission-slice';
 
 /** Recover once per admitted subscription; live events own subsequent updates. */
-export function* recoverPendingPermissions(): SagaGenerator<void> {
+function* recoverPendingPermissions(): SagaGenerator<void> {
   const context = yield* selectPermissionRecoveryScope.effect();
   if (!context) return;
   const pending = new Map<string, PermissionRequest>();
