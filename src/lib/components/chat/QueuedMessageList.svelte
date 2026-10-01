@@ -111,6 +111,7 @@
   const previewHeight = new Spring(0, 'moderate');
   let heightInitialized = false;
   const clipped = $derived(!showAll && bodyHeight > viewportHeight + 1);
+  let sendStates = $state<Record<string, 'sending' | QueuedMessageSendOutcome | undefined>>({});
   let bulkAction = $state<'send' | 'clear' | null>(null);
   let bulkError = $state<string | null>(null);
   const busy = $derived(
@@ -130,7 +131,6 @@
       : m.chat_queuedMessages_header_many({ count: formatInteger(messages.length) }),
   );
   const rowElements = new Map<string, HTMLElement>();
-  let sendStates = $state<Record<string, 'sending' | QueuedMessageSendOutcome | undefined>>({});
   let sendErrors = $state<Record<string, string | undefined>>({});
   const sendingIds = new Set<string>();
 
