@@ -167,7 +167,9 @@ async function sampleChange(
     async (element, { source, index, resizeWidth, interrupt }) => {
       const read = new Function(`return (${source})`)() as typeof geometry;
       const samples = [read(element)];
-      let frameSample = samples[0];
+      let observedFrame: number | undefined;
+      let probeWidth = 1;
+      let probeFrame: number | undefined;
       // A non-painted probe requests an observation every frame, even when only a
       // transform changes. Register after the renderer's observer so its synchronous
       // refit and all rAF callbacks are included before paint.
@@ -180,12 +182,27 @@ async function sampleChange(
       }
       const observer = resizeWidth
         ? new ResizeObserver(() => {
-            frameSample = read(element);
+            const frame = Number(document.timeline.currentTime);
+            const sample = read(element);
+            // Multiple observer deliveries can refine one not-yet-painted frame.
+            // A later frame gets its own entry, even if our timer task is delayed.
+            if (frame === observedFrame) samples[samples.length - 1] = sample;
+            else samples.push(sample);
+            observedFrame = frame;
           })
         : undefined;
       if (frameProbe) observer?.observe(frameProbe);
       observer?.observe(element.querySelector('.diagram-scroll-container')!);
+      const requestProbeFrame = () => {
+        if (!frameProbe) return;
+        probeFrame = requestAnimationFrame(() => {
+          frameProbe.style.width = `${probeWidth}px`;
+          probeWidth = probeWidth === 1 ? 2 : 1;
+          requestProbeFrame();
+        });
+      };
       try {
+        requestProbeFrame();
         element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
         if (resizeWidth) {
           const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
@@ -193,17 +210,12 @@ async function sampleChange(
         }
         const start = performance.now();
         do {
-          await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => {
-              if (frameProbe) frameProbe.style.width = `${(samples.length % 2) + 1}px`;
-              resolve();
-            }),
-          );
-          // Deliver the frame after ResizeObserver has updated it. Remeasuring in
-          // this task can advance the catalog's 0.01ms ancestor width transition
-          // between paints, before the renderer receives that new lane width.
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          // Let ResizeObserver record this frame. Remeasuring in this task can
+          // advance the catalog's 0.01ms ancestor width transition between paints,
+          // before the renderer receives that new lane width.
           if (resizeWidth) await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          samples.push(resizeWidth ? frameSample : read(element));
+          else samples.push(read(element));
           if (interrupt && samples.length === 3) {
             element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[2].click();
             element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].click();
@@ -213,6 +225,7 @@ async function sampleChange(
           performance.now() - start < 4_000
         );
       } finally {
+        if (probeFrame !== undefined) cancelAnimationFrame(probeFrame);
         observer?.disconnect();
         frameProbe?.remove();
       }
