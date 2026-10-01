@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.196.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.195.0...v2.196.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* show personal pairing and signed-in devices ([#3038](https://github.com/intent-hq/cloudlands-fe/issues/3038)) ([ee4c1b6](https://github.com/intent-hq/cloudlands-fe/commit/ee4c1b689d12c3b8f07808be5ecfb897af5b8395))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.133 ([#3075](https://github.com/intent-hq/cloudlands-fe/issues/3075)) ([e251120](https://github.com/intent-hq/cloudlands-fe/commit/e251120c5c3b9338fa98ef67cd2eba4ceefb4eb2))
+* honor mid-stream chat transcript resets ([#2604](https://github.com/intent-hq/cloudlands-fe/issues/2604)) ([60bb0b3](https://github.com/intent-hq/cloudlands-fe/commit/60bb0b3444a4e1a0e5f8404d3e54f64d70269eb6))
+
 ## [2.195.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.194.0...v2.195.0) (2026-10-01)
 
 
