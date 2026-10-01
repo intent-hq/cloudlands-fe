@@ -1,7 +1,7 @@
-import type { ScriptWithState } from '../types';
+import type { ScriptWithState } from '$features/scripts/types';
 
 /** Synthetic equivalent of the approved 984-command / 19-service scale fixture. */
-export function makeScriptHistoryFixture(): ScriptWithState[] {
+export function makeScriptsFixture(): ScriptWithState[] {
   return Array.from({ length: 1003 }, (_, index) => ({
     id: `synthetic-${index}`,
     workspaceId: 'synthetic-history',

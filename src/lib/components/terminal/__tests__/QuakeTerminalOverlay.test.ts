@@ -117,18 +117,6 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
     selectAllWorkspaceScriptEntries: Object.assign(() => readable(() => scriptEntries.value), {
       select: () => scriptEntries.value,
     }),
-    selectScriptManagerEntries: () => ({
-      subscribe: (run: (value: never[]) => void) => {
-        run([]);
-        return () => {};
-      },
-    }),
-    selectScriptHistoryState: () => ({
-      subscribe: (run: (value: object) => void) => {
-        run({});
-        return () => {};
-      },
-    }),
     selectWorkspaceScriptEntries: Object.assign(() => readable(() => scriptEntries.value), {
       select: () => scriptEntries.value,
     }),

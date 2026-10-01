@@ -11,9 +11,12 @@ vi.mock('$lib/client', async () => {
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: {} }));
 import { store } from '../../../store';
 import { scriptsOperationSaga } from './scripts-operation-saga';
+import { lifecycleReadSaga } from '../../workspace-lifecycle/sagas/lifecycle-read-saga';
+import { selectScriptEntries, selectWorkspaceScriptEntries } from '../scripts-selectors';
 import {
   scriptsReducer,
   setScriptsData,
+  refreshScripts,
   appendScriptOutput,
   removeScript,
   updateRuntimeState,
@@ -40,9 +43,10 @@ function deferred<T>() {
   const promise = new Promise<T>((r) => (resolve = r));
   return { promise, resolve };
 }
-function start() {
+function start(seedDefinition = true, includeLifecycle = false) {
   const channel = stdChannel();
   const state = withLegacyPrincipal({
+    tabState: { currentTabId: WS },
     workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
     scripts: scriptsReducer(undefined, { type: '@@init' }),
   });
@@ -62,6 +66,7 @@ function start() {
       },
     ]),
   );
+  if (!seedDefinition) state.scripts = scriptsReducer(undefined, { type: '@@init' });
   const actions: any[] = [];
   const dispatch = (a: any) => {
     state.scripts = scriptsReducer(state.scripts, a);
@@ -69,6 +74,8 @@ function start() {
     channel.put(a);
   };
   tasks.push(runSaga({ channel, dispatch, getState: () => state }, scriptsOperationSaga));
+  if (includeLifecycle)
+    tasks.push(runSaga({ channel, dispatch, getState: () => state }, lifecycleReadSaga));
   const text = () =>
     state.scripts.byWorkspaceId[WS]?.outputBuffers[ID]?.chunks.map((c) => c.text).join('') ?? '';
   const retained = (viewerId = 'viewer-1') =>
@@ -88,6 +95,232 @@ afterEach(async () => {
   store.dispose();
 });
 describe('retained script output hydration', () => {
+  it.each([ID, 'second-script'])(
+    'retains runtime for %s when the first viewer releases a shared definition read',
+    async (targetId) => {
+      const list = deferred<{ scripts: unknown[] }>();
+      const runtime = { status: 'exited' as const, exitCode: 1, restartCount: 0 };
+      transport.request.mockImplementation(async (method) => {
+        if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+        if (method === 'script.list') return list.promise;
+        return 'failure output';
+      });
+      const run = start(false);
+      run.dispatch(request('first'));
+      await settle();
+      run.dispatch(updateRuntimeState(WS, targetId, runtime));
+      run.dispatch({ ...request('second'), payload: [WS, targetId, 'second'] });
+      await settle();
+      run.dispatch(release('first'));
+      list.resolve({
+        scripts: [{ id: targetId, runtime: { status: 'running', restartCount: 0 } }],
+      });
+      await settle();
+      expect(
+        transport.request.mock.calls.filter(([method]) => method === 'script.list'),
+      ).toHaveLength(1);
+      expect(run.retained('first')).toBeUndefined();
+      expect(run.retained('second')?.text).toBe('failure output');
+      expect(run.state.scripts.byWorkspaceId[WS].scripts[targetId].runtime).toMatchObject(runtime);
+    },
+  );
+
+  it('starts a fresh definition read after all viewers release the old read', async () => {
+    const stale = deferred<{ scripts: unknown[] }>();
+    const fresh = deferred<{ scripts: unknown[] }>();
+    let lists = 0;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list') return ++lists === 1 ? stale.promise : fresh.promise;
+      return 'new output';
+    });
+    const run = start(false);
+    run.dispatch(request('old'));
+    await settle();
+    run.dispatch(release('old'));
+    run.dispatch(updateRuntimeState(WS, ID, { status: 'exited', exitCode: 1 }));
+    run.dispatch(request('fresh'));
+    await settle();
+    expect(lists).toBe(2);
+    fresh.resolve({
+      scripts: [{ id: ID, runtime: { status: 'exited', exitCode: 1, restartCount: 0 } }],
+    });
+    await settle();
+    stale.resolve({ scripts: [{ id: ID, runtime: { status: 'running', restartCount: 0 } }] });
+    await settle();
+    expect(run.retained('fresh')?.text).toBe('new output');
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[ID].runtime.status).toBe('exited');
+  });
+
+  it.each([
+    {
+      status: 'exited' as const,
+      startedAt: 'earlier',
+      stoppedAt: 'now',
+      exitCode: 1,
+      restartCount: 0,
+    },
+    { status: 'running' as const, startedAt: 'new run', restartCount: 1 },
+  ])('preserves a $status event arriving before a demand-loaded definition', async (runtime) => {
+    const all = deferred<{ scripts: unknown[] }>();
+    const run = start(false, true);
+    transport.request.mockImplementation(async (method, params) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list')
+        return (params as { archive: string }).archive === 'all' ? all.promise : { scripts: [] };
+      if (method === 'script.status') return runtime;
+      if (method === 'script.output') return 'current output';
+      throw new Error('Unexpected method ' + method);
+    });
+    run.dispatch(request());
+    await settle();
+    run.dispatch(updateRuntimeState(WS, ID, runtime));
+    run.dispatch(refreshScripts(WS));
+    await settle();
+    expect(run.state.scripts.byWorkspaceId[WS].activeScriptIds).toEqual([]);
+    all.resolve({
+      scripts: [
+        {
+          id: ID,
+          workspaceId: WS,
+          name: 'One-off output',
+          command: 'false',
+          mode: 'command',
+          purpose: 'oneOff',
+          source: 'user',
+          createdAt: '2026-09-30T00:00:00Z',
+          runtime: { status: 'running', startedAt: 'earlier', restartCount: 0 },
+        },
+      ],
+    });
+    await settle();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[ID].runtime).toMatchObject(runtime);
+    expect(run.retained()?.text).toBe('current output');
+    expect(transport.request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([
+      ['script.list', { workspaceId: WS, archive: 'all' }],
+      ['script.list', { workspaceId: WS, archive: 'active' }],
+    ]);
+  });
+
+  it('keeps recovered output out of initial membership until an authoritative list includes it', async () => {
+    const definition = {
+      id: ID,
+      workspaceId: WS,
+      name: 'Retired command',
+      command: 'false',
+      mode: 'command' as const,
+      source: 'user' as const,
+      createdAt: '2026-09-30T00:00:00Z',
+      archivedAt: '2026-09-30T00:01:00Z',
+      runtime: { status: 'exited' as const, exitCode: 1, restartCount: 0 },
+    };
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list') return { scripts: [definition] };
+      return 'retained output';
+    });
+    const run = start(false);
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()?.text).toBe('retained output');
+    expect(selectWorkspaceScriptEntries.select(run.state as never, WS)).toEqual([]);
+    expect(selectScriptEntries.select(run.state as never, WS)).toEqual([]);
+    const saved = { ...definition, id: 'saved', archivedAt: undefined };
+    run.dispatch(setScriptsData(WS, [saved]));
+    expect(selectWorkspaceScriptEntries.select(run.state as never, WS)).toEqual([saved]);
+    expect(selectScriptEntries.select(run.state as never, WS)).toEqual([saved]);
+  });
+
+  it('recovers only mounted archived output definitions and coalesces concurrent reads', async () => {
+    const list = deferred<{ scripts: unknown[] }>();
+    const run = start(false);
+    const archived = {
+      id: ID,
+      workspaceId: WS,
+      name: 'Retired command',
+      command: 'false',
+      mode: 'command',
+      source: 'user',
+      createdAt: '2026-09-30T00:00:00Z',
+      archivedAt: '2026-09-30T00:01:00Z',
+      runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+    };
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list') return list.promise;
+      if (method === 'script.output') return 'retained failure';
+      throw new Error('Unexpected mutation');
+    });
+    run.dispatch(request('a'));
+    run.dispatch(request('b'));
+    await settle();
+    expect(transport.request.mock.calls).toEqual([
+      ['client.hello', {}],
+      ['script.list', { workspaceId: WS, archive: 'all' }],
+    ]);
+    list.resolve({ scripts: [archived, { ...archived, id: 'unopened' }] });
+    await settle();
+    expect(Object.keys(run.state.scripts.byWorkspaceId[WS].scripts)).toEqual([ID]);
+    expect(run.retained('a')?.text).toBe('retained failure');
+    expect(run.retained('b')?.text).toBe('retained failure');
+    run.dispatch(request('reopen'));
+    await settle();
+    expect(
+      transport.request.mock.calls.filter(([method]) => method === 'script.list'),
+    ).toHaveLength(1);
+    expect(run.retained('reopen')?.text).toBe('retained failure');
+  });
+
+  it.each(['viewer', 'workspace', 'removed', 'authority', 'backend', 'store'] as const)(
+    'does not recover a definition after %s invalidation',
+    async (kind) => {
+      const pending = deferred<{ scripts: unknown[] }>();
+      transport.request.mockImplementation(async (method) =>
+        method === 'client.hello'
+          ? { server: { capabilities: { scriptLifecycle: 1 } } }
+          : pending.promise,
+      );
+      const run = start(false);
+      run.dispatch(request());
+      await settle();
+      run.dispatch(updateRuntimeState(WS, ID, { status: 'exited', exitCode: 1 }));
+      if (kind === 'viewer') run.dispatch(release());
+      if (kind === 'workspace') run.dispatch(workspaceUnmounted(WS));
+      if (kind === 'removed') run.dispatch(removeScript(WS, ID));
+      if (kind === 'authority') run.state.principal.status = 'loading';
+      if (kind === 'backend') run.state.connections.windowBackendId = 'replacement';
+      if (kind === 'store') {
+        store.dispose();
+        store.init();
+      }
+      pending.resolve({ scripts: [{ id: ID, runtime: { status: 'idle', restartCount: 0 } }] });
+      await settle();
+      expect(run.state.scripts.byWorkspaceId[WS]?.scripts[ID]).toBeUndefined();
+      expect(transport.request.mock.calls.map(([method]) => method)).toEqual([
+        'client.hello',
+        'script.list',
+      ]);
+      expect(run.retained()?.status).not.toBe('available');
+    },
+  );
+
+  it('keeps a missing or failed recovery unavailable and permits a later retry', async () => {
+    const run = start(false);
+    transport.request.mockRejectedValueOnce(new Error('offline'));
+    run.dispatch(request());
+    await settle();
+    expect(run.retained()?.status).toBe('unavailable');
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
+      if (method === 'script.list') return { scripts: [] };
+      return 'No output yet.';
+    });
+    run.dispatch(request('retry'));
+    await settle();
+    expect(run.retained('retry')?.status).toBe('unavailable');
+    expect(run.state.scripts.byWorkspaceId[WS].scripts).toEqual({});
+  });
+
   it('reads an archived command after reload without restoring or rerunning it', async () => {
     transport.request.mockResolvedValue('[2 lines]\nFAILURE-RETAINED-OUTPUT\r\n');
     const run = start();

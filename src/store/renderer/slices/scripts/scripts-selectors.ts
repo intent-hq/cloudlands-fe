@@ -22,11 +22,11 @@ export const selectScriptsInitialized = store.createSelector(
   },
 );
 
-/** Normal list: archived entries are hidden only after capability negotiation. */
+/** Normal list membership excludes definitions recovered only for output viewers. */
 export const selectScriptEntries = store.createSelector(
   (state, wsId: string | null): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    if (ws.lifecycleSupported && ws.activeScriptIds) {
+    if (ws.activeScriptIds) {
       return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
     }
     return Object.values(ws.scripts).filter(
@@ -84,7 +84,7 @@ export const selectWorkspaceScriptsInitialized = store.createSelector(
 export const selectWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    if (ws.lifecycleSupported && ws.activeScriptIds) {
+    if (ws.activeScriptIds) {
       return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
     }
     return Object.values(ws.scripts).filter(
@@ -109,16 +109,13 @@ export const selectWorkspaceScriptRuntime = store.createSelector(
 export const selectAllWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => Object.values(getWs(state, wsId).scripts),
 );
-export const selectScriptHistoryState = store.createSelector((state, wsId: string) =>
-  getWs(state, wsId),
-);
 
-/** Rows in the active or archived lists; retained output-only rows stay outside the manager. */
-export const selectScriptManagerEntries = store.createSelector(
+/** Definitions in mounted output viewers, including rows no longer in the active list. */
+export const selectViewedScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => {
     const ws = getWs(state, wsId);
-    if (!ws.lifecycleSupported || !ws.activeScriptIds) return Object.values(ws.scripts);
-    const ids = [...ws.activeScriptIds, ...(ws.archivedScriptIds ?? [])];
-    return ids.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+    return [
+      ...new Set(Object.values(ws.retainedOutputs ?? {}).map((output) => output.scriptId)),
+    ].flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
   },
 );

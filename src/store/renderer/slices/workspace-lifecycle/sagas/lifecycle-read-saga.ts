@@ -1,4 +1,4 @@
-import { selectScriptHistoryState } from '../../scripts/scripts-selectors';
+import { selectScriptById, selectViewedScriptEntries } from '../../scripts/scripts-selectors';
 import { buffers } from 'redux-saga';
 import {
   selectPrincipalActionContext,
@@ -77,8 +77,7 @@ import {
   setScriptsInitialized,
   setScriptListState,
   setActiveScriptsData,
-  setArchivedScriptsData,
-  setScriptHistoryLoadState,
+  updateRuntimeState,
 } from '../../scripts/scripts-slice';
 import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
@@ -1161,26 +1160,20 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
     yield* put(setScriptListState(workspaceId, false, undefined, supported));
     if (supported) {
       yield* put(setActiveScriptsData(workspaceId, scripts));
-      const cache = yield* selectScriptHistoryState.effect(workspaceId);
-      const version = cache.historyVersion ?? 0;
-      if (!cache.historyInitialized || cache.historyLoadedVersion !== version) {
-        yield* put(setScriptHistoryLoadState(workspaceId, true));
-        try {
-          const archived = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
-            archive: 'archived' as const,
-          });
-          if (!(yield* isCurrent())) return;
-          yield* put(setArchivedScriptsData(workspaceId, archived, version));
-          yield* put(setScriptHistoryLoadState(workspaceId, false));
-        } catch (error) {
-          if (!(yield* isCurrent())) return;
-          yield* put(
-            setScriptHistoryLoadState(
-              workspaceId,
-              false,
-              error instanceof Error ? error.message : String(error),
-            ),
-          );
+      // Reconnect can miss the final state of a retired command. Refresh only
+      // mounted output viewers absent from the active response, not all history.
+      const activeIds = new Set(scripts.map((script) => script.id));
+      for (const viewed of yield* selectViewedScriptEntries.effect(workspaceId)) {
+        if (activeIds.has(viewed.id)) continue;
+        const runtime = yield* call(
+          [appClient.scripts, appClient.scripts.status],
+          workspaceId,
+          viewed.id,
+        );
+        if (!(yield* isCurrent())) return;
+        const current = yield* selectScriptById.effect(workspaceId, viewed.id);
+        if (runtime && current?.runtime === viewed.runtime) {
+          yield* put(updateRuntimeState(workspaceId, viewed.id, runtime));
         }
       }
     } else {

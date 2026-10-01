@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ScriptHistory from '$features/scripts/components/ScriptHistory.svelte';
   import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
@@ -1519,7 +1518,6 @@
 
         <!-- Right Actions -->
         <div class="flex items-center gap-1">
-          {#if isRealWorkspace && workspaceId}<ScriptHistory {workspaceId} />{/if}
           {#if isRealWorkspace && $scriptsInitialized$ && $scriptEntries$.length === 0}
             <Button
               variant="ghost-light"
