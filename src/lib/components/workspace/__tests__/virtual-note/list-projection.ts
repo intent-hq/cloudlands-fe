@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import { Mapping, type Step } from '@tiptap/pm/transform';
+import { Mapping, ReplaceStep, type Step } from '@tiptap/pm/transform';
 import {
   SourceProjection,
   openMark,
@@ -8,7 +8,8 @@ import {
   type Mark,
   type InlineContext,
 } from './source-projection';
-import type { ListItem } from './list-context';
+import type { Transaction } from '@tiptap/pm/state';
+import type { ListItem, ListSeam } from './list-context';
 import type { Splice } from './source-journal';
 
 type Entry = {
@@ -26,6 +27,7 @@ const size = (node: JSONContent): number =>
 
 /** Structural ancestors contain no invented text. Only loaded source tokens receive caret provenance. */
 export class ListProjection {
+  readonly seams: ListSeam[] = [];
   readonly indentation: Array<{ from: number; after: number; delta: number }> = [];
   readonly content: JSONContent = { type: 'doc', content: [] };
   readonly entries: Entry[] = [];
@@ -49,6 +51,7 @@ export class ListProjection {
   ) {
     const parents = new Map<number, JSONContent>();
     const lists = new Map<number, JSONContent>();
+    const groups = new Map<number, number | undefined>();
     const end = start + source.length;
     let cursor = start;
     const addProse = (from: number, to: number) => {
@@ -104,7 +107,8 @@ export class ListProjection {
       cursor = Math.max(cursor, Math.min(end, item.to));
       const parent = parents.get(item.parent) ?? this.content;
       let list = lists.get(item.parent);
-      if (!list || list.type !== item.kind) {
+      if (!list || list.type !== item.kind || groups.get(item.parent) !== item.group) {
+        groups.set(item.parent, item.group);
         list = {
           type: item.kind,
           ...(item.kind === 'orderedList' ? { attrs: { start: item.ordinal } } : {}),
@@ -186,6 +190,18 @@ export class ListProjection {
         visit(child, next);
         next += size(child);
       }
+      if (entry || ['bulletList', 'orderedList', 'taskList'].includes(node.type!)) {
+        const end = this.boundaries.get(next);
+        if (end !== undefined)
+          this.boundaries.set(
+            pm + size(node),
+            Math.max(this.boundaries.get(pm + size(node)) ?? this.start, end),
+          );
+        if (!entry) {
+          const from = this.boundaries.get(pm + 1);
+          if (from !== undefined) this.boundaries.set(pm, from);
+        }
+      }
     };
     let pm = 0;
     for (const node of this.content.content!) {
@@ -200,17 +216,60 @@ export class ListProjection {
     this.boundaries.set(0, start);
     this.boundaries.set(pm, end);
   }
+  translateTransaction(tr: Transaction) {
+    // TipTap's native cut command deletes and reinserts an identical immutable slice.
+    // Carry that slice's exact token provenance, without searching document substrings.
+    let tokens = this.tokens.map((t) => ({ ...t }));
+    let cut: { step: ReplaceStep; doc: PMNode; tokens: typeof tokens } | undefined;
+    for (let n = 0; n < tr.steps.length; n++) {
+      const step = tr.steps[n],
+        map = step.getMap();
+      const survivors: typeof tokens = [];
+      const removed: typeof tokens = [];
+      for (const token of tokens) {
+        const a = map.mapResult(token.pm, 1),
+          b = map.mapResult(token.pm + 1, -1);
+        if (!a.deleted && !b.deleted && b.pos === a.pos + 1)
+          survivors.push({ ...token, pm: a.pos });
+        else removed.push(token);
+      }
+      if (
+        step instanceof ReplaceStep &&
+        step.from === step.to &&
+        cut &&
+        step.slice.eq(cut.doc.slice(cut.step.from, cut.step.to))
+      ) {
+        survivors.push(...cut.tokens.map((t) => ({ ...t, pm: step.from + t.pm - cut!.step.from })));
+        cut = undefined;
+      } else
+        cut =
+          step instanceof ReplaceStep && !step.slice.size && removed.length
+            ? { step, doc: tr.docs[n], tokens: removed }
+            : undefined;
+      tokens = survivors;
+    }
+    return this.translateDocument(tr.doc, tr.mapping, new Map(tokens.map((t) => [t.pm, t])));
+  }
   translate(step: Step, before: PMNode) {
     const result = step.apply(before);
     if (!result.doc) throw new Error(result.failed ?? 'Invalid list step');
     return this.translateDocument(result.doc, new Mapping([step.getMap()]));
   }
-  translateDocument(doc: PMNode, mapping: Mapping) {
+  translateDocument(
+    doc: PMNode,
+    mapping: Mapping,
+    moved?: Map<number, SourceProjection['tokens'][number]>,
+  ) {
+    this.seams.length = 0;
     const survivors = new Map<number, SourceProjection['tokens'][number]>();
     for (const t of this.tokens) {
       const a = mapping.mapResult(t.pm, 1),
         b = mapping.mapResult(t.pm + 1, -1);
       if (!a.deleted && !b.deleted && b.pos === a.pos + 1) survivors.set(a.pos, t);
+    }
+    if (moved) {
+      survivors.clear();
+      for (const [pos, token] of moved) survivors.set(pos, token);
     }
     const entries = new Map(this.entries.map((e) => [mapping.map(e.pm, -1), e]));
     const paragraphs = new Map(this.entries.map((e) => [mapping.map(e.paragraphPM, -1), e]));
@@ -253,7 +312,16 @@ export class ListProjection {
       return out;
     };
     const used = new Set<Entry>();
+    const boundary = (node: PMNode) => {
+      if (output) output += '\n';
+      this.seams.push({
+        from: this.start + output.length,
+        kind: node.type.name as ListItem['kind'],
+        start: node.attrs.start ?? 1,
+      });
+    };
     const list = (node: PMNode, pm: number, indent: number) => {
+      let previous: Entry | undefined;
       node.forEach((item, inner, index) => {
         const pos = pm + 1 + inner;
         let old = entries.get(pos);
@@ -270,6 +338,30 @@ export class ListProjection {
                 );
               }),
           );
+        if (
+          old &&
+          previous &&
+          previous.item.to >= this.start &&
+          old.item.from >= previous.item.to
+        ) {
+          const gap = this.source.slice(previous.item.to - this.start, old.item.from - this.start);
+          if (/^\n+$/.test(gap)) output += gap;
+        }
+        previous = old;
+        if (
+          index === 0 &&
+          old &&
+          (old.item.group === old.item.from ||
+            (node.type.name === 'orderedList' && old.item.ordinal !== node.attrs.start))
+        ) {
+          const from = this.start + output.length;
+          if (!this.seams.some((s) => s.from === from))
+            this.seams.push({
+              from,
+              kind: node.type.name as ListItem['kind'],
+              start: node.attrs.start ?? 1,
+            });
+        }
         if (old) {
           used.add(old);
           if (old.item.indent !== indent)
@@ -289,7 +381,7 @@ export class ListProjection {
           prefix = canonical;
         else if (node.type.name === 'taskList')
           prefix = prefix!.replace(/\[[ xX/]\]/, `[${status}]`);
-        item.forEach((child, offset) => {
+        item.forEach((child, offset, childIndex) => {
           const at = pos + 1 + offset;
           if (child.type.name === 'paragraph') {
             const origin = paragraphs.get(at) ?? old;
@@ -304,7 +396,11 @@ export class ListProjection {
             if (partial && prefix !== origin.item.prefix)
               external.push({ from: origin.item.from, to: origin.item.body, insert: prefix! });
             output += (partial ? '' : prefix) + text(child, at) + (tail ? '' : '\n');
-          } else list(child, at, indent + marker.length);
+          } else {
+            if (childIndex > 0 && child.type.name === item.child(childIndex - 1).type.name)
+              boundary(child);
+            list(child, at, indent + marker.length);
+          }
         });
       });
     };
@@ -313,7 +409,10 @@ export class ListProjection {
         if (index === doc.childCount - 1 && !node.content.size && this.context.documentEnd) return;
         const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
         output += (old?.prefix ?? '\n') + text(node, pm) + (old?.suffix ?? '\n\n');
-      } else list(node, pm, 0);
+      } else {
+        if (index > 0 && node.type.name === doc.child(index - 1).type.name) boundary(node);
+        list(node, pm, 0);
+      }
     });
     if (!this.source.endsWith('\n') && output.endsWith('\n')) output = output.slice(0, -1);
     let from = 0,

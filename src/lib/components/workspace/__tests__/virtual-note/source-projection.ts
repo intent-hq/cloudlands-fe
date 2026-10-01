@@ -3,7 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { Transform, type Step } from '@tiptap/pm/transform';
 import type { Splice } from './source-journal';
 import { scanFences, type Fence } from './fence-context';
-import type { ListItem } from './list-context';
+import type { ListItem, ListSeam } from './list-context';
 import { ListProjection } from './list-projection';
 
 export type Mark = { type: string; attrs?: Record<string, unknown> };
@@ -17,6 +17,7 @@ export type InlineContext = {
   after: Mark[];
   fences?: Fence[];
   lists?: ListItem[];
+  seams?: ListSeam[];
   documentEnd?: boolean;
 };
 export const openMark = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');

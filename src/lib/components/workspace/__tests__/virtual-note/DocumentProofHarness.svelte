@@ -69,6 +69,12 @@
         const editor = proof?.editor ?? native;
         return { html, doc: DOMParser.fromSchema(editor.schema).parse(element).toJSON() };
       },
+      reopenProof: async (source: string) => {
+        proof.destroy();
+        proof = new DocumentSession(new SourceJournal(() => source, 1), host, publish);
+        Object.assign(root, { proof });
+        await proof.show(0);
+      },
       nativeMarkdown: () => processHTMLToMarkdown(native.getHTML(), { preserveAnchors: true }),
       reloadNative: async (source: string) => {
         const content = await processMarkdownToHTML(source);

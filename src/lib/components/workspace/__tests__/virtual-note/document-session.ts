@@ -26,6 +26,10 @@ export class DocumentSession {
   parsedBytes = 0;
   maxParsedBytes = 0;
   maxProjectionInputBytes = 0;
+  maxSourceContextBytes = 0;
+  maxSeamMetadataBytes = 0;
+  maxSeamAdmissionBytes = 0;
+  maxResidentAndInFlightSeamBytes = 0;
   maxHighlightBytes = 0;
   highlightCalls = 0;
   inFlightBytes = 0;
@@ -82,12 +86,27 @@ export class DocumentSession {
     const context = this.service.inlineContext(start, start + source.length);
     if (context.revision !== this.service.revision)
       throw new Error('Stale inline context response');
+    this.maxSourceContextBytes = Math.max(
+      this.maxSourceContextBytes,
+      bytes(source) + bytes(JSON.stringify(context)),
+    );
+    this.maxSeamMetadataBytes = Math.max(
+      this.maxSeamMetadataBytes,
+      bytes(JSON.stringify(context.seams ?? [])),
+    );
+    this.maxResidentAndInFlightSeamBytes = Math.max(
+      this.maxResidentAndInFlightSeamBytes,
+      bytes(JSON.stringify(context.seams ?? [])) +
+        bytes(JSON.stringify(this.projection?.context?.seams ?? [])) +
+        bytes(JSON.stringify(this.projection?.list?.seams ?? [])),
+    );
     // The parser adds only this metadata-derived envelope, never a source prefix.
     this.maxProjectionInputBytes = Math.max(
       this.maxProjectionInputBytes,
       bytes(source) +
         bytes(JSON.stringify(context.fences ?? [])) +
         bytes(JSON.stringify(context.lists ?? [])) +
+        bytes(JSON.stringify(context.seams ?? [])) +
         bytes(context.before.map(openMark).join('') + context.after.map(closeMark).join('')),
     );
     return new SourceProjection(source, start, context);
@@ -684,10 +703,15 @@ export class DocumentSession {
             // Native joins may have intermediate structures with no Markdown representation.
             // Admit the final list document atomically using every step's token mapping.
             const splices = listBatch
-              ? this.projection!.list!.translateDocument(tr.doc, tr.mapping)
+              ? this.projection!.list!.translateTransaction(tr)
               : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
                   fences = next;
                 });
+            const listSeams = this.projection!.list?.seams;
+            this.maxSeamAdmissionBytes = Math.max(
+              this.maxSeamAdmissionBytes,
+              bytes(JSON.stringify(listSeams ?? [])),
+            );
             this.service.stageProjection(
               splices,
               fences,
@@ -704,14 +728,23 @@ export class DocumentSession {
                   ];
               },
             );
+            if (listSeams)
+              this.service.setSeams(
+                oldStart,
+                this.windowEnd,
+                listSeams,
+                this.service.revision,
+                history,
+              );
             this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
             if (
               this.projection.list &&
               !this.editor!.schema.nodeFromJSON(this.projection.content).eq(
                 listBatch ? tr.doc : tr.steps[n].apply(tr.docs[n]).doc!,
               )
-            )
+            ) {
               throw new Error('Translated list source differs from accepted document');
+            }
           }
           const after = this.fromPM(tr.selection);
           const composition = tr.getMeta('composition');
@@ -767,12 +800,7 @@ export class DocumentSession {
     const event = this.service.event(index);
     this.service.atomic(() => {
       this.service.bookmark(index, redo ? 'before' : 'after', this.selection);
-      for (const change of this.service.changes(index, !redo))
-        this.service.apply(
-          redo
-            ? change
-            : { from: change.from, to: change.from + change.insert.length, insert: change.removed },
-        );
+      for (const change of this.service.changes(index, !redo)) this.service.replay(change, redo);
       this.service.anchors = structuredClone(redo ? event.anchorsAfter : event.anchorsBefore);
       this.service.cursor += redo ? 1 : -1;
     });
@@ -881,6 +909,11 @@ export class DocumentSession {
       return value;
     });
     return {
+      maxSourceContextBytes: this.maxSourceContextBytes,
+      maxSeamMetadataBytes: this.maxSeamMetadataBytes,
+      maxSeamAdmissionBytes: this.maxSeamAdmissionBytes,
+      maxResidentAndInFlightSeamBytes: this.maxResidentAndInFlightSeamBytes,
+      seamMetadataBytes: bytes(JSON.stringify(this.projection?.context?.seams ?? [])),
       listMetadataBytes: bytes(JSON.stringify(this.projection?.context?.lists ?? [])),
       syntheticListParents: this.projection?.list?.synthetic.length ?? 0,
       listProjectionPayloadBytes: bytes(

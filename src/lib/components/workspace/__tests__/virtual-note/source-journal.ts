@@ -2,7 +2,7 @@
 import { bytes } from './bounded-note-service';
 import { SourceProjection, type InlineContext } from './source-projection';
 import { scanFences, type Fence } from './fence-context';
-import { scanLists, type ListItem } from './list-context';
+import { scanLists, type ListItem, type ListSeam } from './list-context';
 export const LIMITS = {
   request: 4096,
   active: 16384,
@@ -23,7 +23,10 @@ export type DeferredInput = {
   text?: string;
 };
 export type Splice = { from: number; to: number; insert: string };
-export type Change = Splice & { removed: string };
+export type Change = Splice & {
+  removed: string;
+  seam?: { before: ListSeam | null; after: ListSeam | null };
+};
 export type Anchor = { id: string; from: number; to: number; alive: boolean };
 export type Event = {
   changes: Change[];
@@ -51,6 +54,122 @@ export class SourceJournal {
   generation = 1;
   commentRevision = 1;
   private regions = new Map<number, string>();
+  // Mock backing session state. Seam journal entries occupy individual bounded pages.
+  private seams = new Map<number, ListSeam>();
+  private atomicDepth = 0;
+  backingSeamScannedBytes = 0;
+  maxBackingSeamSourceBytes = 0;
+  private mappedSeams(splice: Splice, validate = true) {
+    const next = new Map<number, ListSeam>();
+    if (!this.seams.size) return next;
+    if (!validate)
+      return new Map(
+        [...this.seams.values()].map((s) => {
+          const from = mapPoint(s.from, splice, 1);
+          return [from, { ...s, from }];
+        }),
+      );
+    const source = this.slice(0, splice.from) + splice.insert + this.slice(splice.to, this.length);
+    this.backingSeamScannedBytes += bytes(source);
+    this.maxBackingSeamSourceBytes = Math.max(this.maxBackingSeamSourceBytes, bytes(source));
+    for (const seam of this.seams.values()) {
+      if (splice.from <= seam.from && splice.to > seam.from) continue;
+      const from = mapPoint(seam.from, splice, 1);
+      if (from && source[from - 1] !== '\n') continue;
+      const match = source.slice(from, from + 128).match(/^( *)([-+*]|\d+[.)]) (?:\[([ xX/])\] )?/);
+      const kind =
+        match &&
+        (match[3] !== undefined ? 'taskList' : /^\d/.test(match[2]) ? 'orderedList' : 'bulletList');
+      if (kind === seam.kind) next.set(from, { ...seam, from });
+    }
+    return next;
+  }
+  private seamChange(before: ListSeam | null, after: ListSeam | null, history: boolean) {
+    const change: Change = { from: 0, to: 0, insert: '', removed: '', seam: { before, after } };
+    const page = JSON.stringify(change);
+    if (bytes(page) > LIMITS.journalPage) throw new Error('Seam journal page exceeds budget');
+    const seams = new Map(this.seams);
+    if (before) seams.delete(before.from);
+    if (after) seams.set(after.from, { ...after });
+    this.seams = seams;
+    this.revision++;
+    if (history) this.stagedPages.push(page);
+  }
+  /** Replace only the loaded source interval; unrelated and inherited boundaries remain backing-owned. */
+  setSeams(from: number, to: number, seams: ListSeam[], revision = this.revision, history = true) {
+    if (revision !== this.revision) throw new Error('Stale list seam revision');
+    if (bytes(JSON.stringify(seams)) > LIMITS.request)
+      throw new Error('Seam payload exceeds budget');
+    return this.atomic(() => {
+      const desired = new Map(seams.map((s) => [s.from, s]));
+      for (const seam of this.seams.values()) {
+        if (seam.from < from || seam.from >= to) continue;
+        if (JSON.stringify(seam) !== JSON.stringify(desired.get(seam.from)))
+          this.seamChange(seam, null, history);
+      }
+      for (const seam of seams) {
+        if (!Number.isSafeInteger(seam.from) || !Number.isSafeInteger(seam.start) || seam.start < 0)
+          throw new Error('Invalid list seam coordinates');
+        if (seam.from < from || seam.from >= to) throw new Error('Seam outside admission range');
+        // Validate new records independently of the existing index.
+        const line = this.slice(seam.from, Math.min(this.length, seam.from + 128));
+        const match = line.match(/^( *)([-+*]|\d+[.)]) (?:\[([ xX/])\] )?/);
+        const kind =
+          match &&
+          (match[3] !== undefined
+            ? 'taskList'
+            : /^\d/.test(match[2])
+              ? 'orderedList'
+              : 'bulletList');
+        if (kind !== seam.kind || (seam.from && this.slice(seam.from - 1, seam.from) !== '\n'))
+          throw new Error('Invalid list seam');
+        if (JSON.stringify(this.seams.get(seam.from)) !== JSON.stringify(seam))
+          this.seamChange(null, seam, history);
+      }
+    });
+  }
+  replay(change: Change, redo: boolean) {
+    if (!this.atomicDepth) throw new Error('History replay requires atomic admission');
+    if (change.seam)
+      this.seamChange(
+        redo ? change.seam.before : change.seam.after,
+        redo ? change.seam.after : change.seam.before,
+        false,
+      );
+    else
+      this.apply(
+        redo
+          ? change
+          : { from: change.from, to: change.from + change.insert.length, insert: change.removed },
+        false,
+      );
+  }
+  private listItems(id: number): ListItem[] {
+    this.spans(id);
+    const start = this.start(id),
+      active = new Map<number, { seam: ListSeam; ordinal: number }>();
+    const previous = new Map<number, ListItem>();
+    return this.inlineIndex.get(id)!.lists.map((item) => {
+      const prior = previous.get(item.parent);
+      if (
+        prior &&
+        this.region(id)
+          .slice(prior.to, item.from)
+          .split('\n')
+          .some((line) => line.trim() && line.search(/\S/) <= item.indent)
+      )
+        active.delete(item.parent);
+      previous.set(item.parent, item);
+      const seam = this.seams.get(item.from + start);
+      if (seam) active.set(item.parent, { seam, ordinal: seam.start });
+      const group = active.get(item.parent);
+      if (!group || group.seam.kind !== item.kind) {
+        active.delete(item.parent);
+        return item;
+      }
+      return { ...item, group: group.seam.from, ordinal: group.ordinal++ };
+    });
+  }
   // Mock backing index only. Rebuilt lazily per revision; no full projection/token map retained.
   private inlineIndex = new Map<
     number,
@@ -152,7 +271,7 @@ export class SourceJournal {
     for (let id = this.locate(from).id; id <= this.locate(to).id; id++) {
       this.spans(id);
       const start = this.start(id);
-      const all = this.inlineIndex.get(id)!.lists;
+      const all = this.listItems(id);
       const included = new Map<number, ListItem>();
       const visible = all.filter((i) => i.from + start < to && i.to + start > from);
       const first = visible[0];
@@ -193,7 +312,15 @@ export class SourceJournal {
       to,
       before,
       after,
-      ...(lists.length ? { lists, documentEnd: to === this.length } : {}),
+      ...(lists.length
+        ? {
+            lists,
+            seams: [
+              ...new Set(lists.map((i) => i.group).filter((p): p is number => p !== undefined)),
+            ].map((p) => this.seams.get(p)!),
+            documentEnd: to === this.length,
+          }
+        : {}),
       ...(fences.length ? { fences, documentEnd: to === this.length } : {}),
     };
     const size = bytes(JSON.stringify(context));
@@ -345,9 +472,10 @@ export class SourceJournal {
     }
     return value;
   }
-  apply(splice: Splice): Change {
+  apply(splice: Splice, validateSeams = true): Change {
     if (splice.from < 0 || splice.to < splice.from || splice.to > this.length)
       throw new Error('Invalid source range');
+    const nextSeams = this.mappedSeams(splice, validateSeams);
     const removed = this.slice(splice.from, splice.to);
     this.draftWrites++;
     this.maxSpliceBytes = Math.max(this.maxSpliceBytes, bytes(JSON.stringify(splice)));
@@ -374,6 +502,7 @@ export class SourceJournal {
       to: mapPoint(a.to, splice, -1),
       alive: a.alive && !(splice.from <= a.from && splice.to >= a.to && splice.to > splice.from),
     }));
+    this.seams = nextSeams;
     this.revision++;
     this.inputInbox = this.inputInbox.map((encoded) => {
       const input: DeferredInput = JSON.parse(encoded);
@@ -453,13 +582,25 @@ export class SourceJournal {
       draftWrites: this.draftWrites,
       maxSpliceBytes: this.maxSpliceBytes,
       logs: this.logs.slice(),
-      stagedPages: this.stagedPages,
+      stagedPages: this.stagedPages.slice(),
+      seams: this.seams,
       inputInbox: this.inputInbox,
     };
+    this.atomicDepth++;
     try {
-      return run();
+      const result = run();
+      if (
+        this.atomicDepth === 1 &&
+        ([...this.seams.values()].some(
+          (s) => !Number.isSafeInteger(s.from) || !Number.isSafeInteger(s.start) || s.start < 0,
+        ) ||
+          this.mappedSeams({ from: 0, to: 0, insert: '' }).size !== this.seams.size)
+      )
+        throw new Error('Invalid final source and list seam state');
+      return result;
     } catch (error) {
       this.stagedPages = state.stagedPages;
+      this.seams = state.seams;
       this.inputInbox = state.inputInbox;
       this.regions = regions;
       this.events = events;
@@ -470,6 +611,8 @@ export class SourceJournal {
       this.maxSpliceBytes = state.maxSpliceBytes;
       this.logs.splice(0, this.logs.length, ...state.logs);
       throw error;
+    } finally {
+      this.atomicDepth--;
     }
   }
   private pages(change: Change): string[] {
@@ -606,10 +749,17 @@ export class SourceJournal {
     const pages = this.pages(change);
     for (const page of pages) {
       const bounded: Change = JSON.parse(page);
+      const mapped = this.mappedSeams(bounded);
+      for (const seam of this.seams.values())
+        if (
+          (bounded.from <= seam.from && bounded.to > seam.from) ||
+          !mapped.has(mapPoint(seam.from, bounded, 1))
+        )
+          this.seamChange(seam, null, history);
       this.apply(bounded);
       if (!history) this.rebase(bounded);
+      if (history) this.stagedPages.push(page);
     }
-    if (history) this.stagedPages.push(...pages);
   }
   record(event: Event, group: boolean) {
     // Admission precedes mutation, including truncating the redo branch.
@@ -653,6 +803,18 @@ export class SourceJournal {
       anchorsBefore: anchors(e.anchorsBefore, before),
       anchorsAfter: anchors(e.anchorsAfter, after),
     });
+    const mapSeamChange = (change: Change, through: Splice): Change => {
+      const map = (seam: ListSeam | null) => {
+        if (!seam) return null;
+        if (through.from <= seam.from && through.to > seam.from)
+          throw new Error('Conflict: retained list seam history');
+        return { ...seam, from: mapPoint(seam.from, through, 1) };
+      };
+      return {
+        ...change,
+        seam: { before: map(change.seam!.before), after: map(change.seam!.after) },
+      };
+    };
     let remote = splice;
     for (let i = this.cursor - 1; i >= 0; i--) {
       const event = this.events[i],
@@ -661,6 +823,10 @@ export class SourceJournal {
       for (let n = event.pages.length - 1; n >= 0; n--) {
         const c: Change = JSON.parse(event.pages[n]),
           inv = inverse(c);
+        if (c.seam) {
+          pages[n] = JSON.stringify(mapSeamChange(c, remote));
+          continue;
+        }
         if (remote.from < inv.to && remote.to > inv.from)
           throw new Error('Conflict: retained draft and journal');
         const before = mapSplice(remote, inv);
@@ -679,6 +845,10 @@ export class SourceJournal {
         pages: string[] = [];
       for (const page of event.pages) {
         const c: Change = JSON.parse(page);
+        if (c.seam) {
+          pages.push(JSON.stringify(mapSeamChange(c, remote)));
+          continue;
+        }
         if (remote.from < c.to && remote.to > c.from)
           throw new Error('Conflict: retained redo and journal');
         pages.push(JSON.stringify(mapSplice(c, remote)));
@@ -696,6 +866,10 @@ export class SourceJournal {
   }
   get stats() {
     return {
+      backingSeamScannedBytes: this.backingSeamScannedBytes,
+      maxBackingSeamSourceBytes: this.maxBackingSeamSourceBytes,
+      backingSeamCount: this.seams.size,
+      backingSeamBytes: bytes(JSON.stringify([...this.seams.values()])),
       backingListRepairs: this.backingListRepairs,
       maxListRepairRead: this.maxListRepairRead,
       backingIndexBuilds: this.backingIndexBuilds,

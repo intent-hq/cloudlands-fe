@@ -9,6 +9,7 @@ export type ListItem = {
   ordinal: number;
   kind: 'bulletList' | 'orderedList' | 'taskList';
   prefix: string;
+  group?: number;
 };
 export function scanLists(source: string): ListItem[] {
   const result: ListItem[] = [];
@@ -46,3 +47,5 @@ export function scanLists(source: string): ListItem[] {
   }
   return result;
 }
+
+export type ListSeam = { from: number; kind: ListItem['kind']; start: number };
