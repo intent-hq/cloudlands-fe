@@ -16,8 +16,11 @@
   import AIBehaviorEditor from './AIBehaviorEditor.svelte';
   import type { SpecialistDef } from '$lib/client/app-client';
   import { setupWorkspaceSpecialists } from './__tests__/specialist-workspace.fixture';
-  let { launchError = '', definition }: { launchError?: string; definition?: SpecialistDef } =
-    $props();
+  let {
+    launchError = '',
+    definition,
+    locality = 'local',
+  }: { launchError?: string; definition?: SpecialistDef; locality?: 'local' | 'remote' } = $props();
   const specialistId = $derived(definition?.id ?? 'shared');
   let workspaceId = $state<string | undefined>('project-a');
   let values = $state<Record<string, string>>({});
@@ -32,6 +35,7 @@
     workspaceId = id;
     await fixture.load(id);
   }
+  $effect(() => fixture.setLocality(locality));
   void fixture.load(workspaceId);
   onDestroy(fixture.dispose);
 </script>

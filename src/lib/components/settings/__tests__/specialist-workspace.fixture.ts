@@ -186,6 +186,21 @@ export function setupWorkspaceSpecialists(
   const stopCatalog = store.runSaga(workspaceCatalogSaga);
   const stopSpecialists = definition ? store.runSaga(specialistsSaga) : undefined;
   return {
+    setLocality(locality: 'local' | 'remote') {
+      for (const id of ['project-a', 'project-b']) {
+        const workspace = getItems(store.state.workspace.workspaces).find((w) => w.id === id);
+        if (workspace)
+          store.dispatch(
+            setWorkspaceEntity({
+              ...workspace,
+              environmentConfig:
+                locality === 'remote'
+                  ? { type: 'remote', ssh: { host: 'example.com', user: 'dev' } }
+                  : undefined,
+            }),
+          );
+      }
+    },
     async load(id?: string, mode?: 'fail' | 'empty') {
       fail = mode === 'fail';
       empty = mode === 'empty';

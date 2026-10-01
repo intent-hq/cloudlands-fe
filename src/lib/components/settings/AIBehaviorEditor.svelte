@@ -881,7 +881,11 @@
           {/if}
           {#if specialistFilePath}
             <div class="ml-auto shrink-0">
-              <OpenComboButton filePath={specialistFilePath} isDirectory={false} />
+              <OpenComboButton
+                filePath={specialistFilePath}
+                isDirectory={false}
+                workspaceId={routeWorkspaceId ?? undefined}
+              />
             </div>
           {/if}
         </div>

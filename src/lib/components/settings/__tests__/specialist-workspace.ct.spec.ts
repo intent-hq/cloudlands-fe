@@ -119,3 +119,41 @@ for (const message of [
     });
   });
 }
+
+test('detail Open follows remote and local workspace locality reactively', async ({
+  mount,
+  page,
+  context,
+}, info) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const view = await mount(Preview, { props: { locality: 'remote' } });
+  const detail = view.locator('[data-editor]');
+  const path = '/tmp/project-a/.claude/agents/shared.md';
+  await expect(detail.getByRole('heading', { name: 'Project A' })).toBeVisible();
+  await expect(detail.getByRole('textbox')).toHaveAttribute('readonly', '');
+  await expect(detail.getByRole('button', { name: 'Open', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Open in...' })).toHaveCount(0);
+  await detail.getByRole('button', { name: 'Copy path', exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+  await expect(view.getByTestId('opens')).toHaveCount(0);
+  await info.attach('remote-detail-copy-only', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await view.update({ props: { locality: 'local' } });
+  await detail.getByRole('button', { name: 'Open', exact: true }).click();
+  await expect
+    .poll(async () => JSON.parse(await view.getByTestId('opens').innerText()))
+    .toEqual({
+      channel: 'vscode:open',
+      args: [{ folder: '/tmp/project-a/.claude/agents', file: path }],
+    });
+  await info.attach('local-detail-editor', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await view.update({ props: { locality: 'remote' } });
+  await expect(detail.getByRole('button', { name: 'Open', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Copy path', exact: true })).toBeVisible();
+  await expect(detail.getByRole('textbox')).toHaveAttribute('readonly', '');
+});
