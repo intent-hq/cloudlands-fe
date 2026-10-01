@@ -5,18 +5,49 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createServer as createPortProbe } from 'node:net';
+
+async function availableLoopbackPort(port = 0) {
+  const probe = createPortProbe();
+  await new Promise<void>((done, reject) => {
+    probe.once('error', reject);
+    probe.listen(port, '127.0.0.1', done);
+  });
+  const address = probe.address();
+  await new Promise<void>((done, reject) =>
+    probe.close((error) => (error ? reject(error) : done())),
+  );
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port');
+  return address.port;
+}
 
 test('Dev Console native renderer inspects traffic through authorized preload and clears on reopen', async () => {
   test.setTimeout(180000);
   execFileSync('pnpm', ['run', 'build:preload'], { stdio: 'pipe' });
   const root = await mkdtemp(join(tmpdir(), 'intent-console-ui-'));
-  const server = process.env.DEV_CONSOLE_TEST_URL
-    ? undefined
-    : await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
+  let server: Awaited<ReturnType<typeof createServer>> | undefined;
+  let ownedPort: number | undefined;
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
   try {
+    if (!process.env.DEV_CONSOLE_TEST_URL) {
+      // Vite treats port 0 as its default port, already occupied by the parent harness.
+      server = await createServer({
+        server: {
+          host: '127.0.0.1',
+          port: await availableLoopbackPort(),
+          strictPort: true,
+          hmr: false,
+        },
+        logLevel: 'error',
+      });
+    }
     await server?.listen();
     const address = server?.httpServer?.address();
+    if (address && typeof address !== 'string') {
+      ownedPort = address.port;
+      expect(address.address).toBe('127.0.0.1');
+      expect(address.port).not.toBe(5173);
+    }
     const url =
       process.env.DEV_CONSOLE_TEST_URL ??
       (address && typeof address !== 'string'
@@ -153,8 +184,15 @@ test('Dev Console native renderer inspects traffic through authorized preload an
       ),
     ).toEqual([]);
   } finally {
-    await application?.close();
-    await server?.close();
-    await rm(root, { recursive: true, force: true });
+    try {
+      await application?.close();
+    } finally {
+      try {
+        await server?.close();
+        if (ownedPort !== undefined) expect(await availableLoopbackPort(ownedPort)).toBe(ownedPort);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
   }
 });
