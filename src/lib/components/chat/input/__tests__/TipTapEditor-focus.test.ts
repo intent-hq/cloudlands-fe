@@ -107,6 +107,40 @@ describe('TipTapEditor deferred focus ownership', () => {
       else Reflect.deleteProperty(Range.prototype, key);
     }
   });
+  it.each(['before request', 'before callback'] as const)(
+    'preserves the native caret when the user focuses the editor %s',
+    async (when) => {
+      const view = render(TipTapEditor, { value: 'draft' });
+      const editor = await waitFor(() => {
+        const element = view.container.querySelector('.ProseMirror') as HTMLElement | null;
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      try {
+        if (when === 'before request') editor.focus();
+        view.component.focus();
+        if (when === 'before callback') editor.focus();
+        const text = editor.querySelector('p')!.firstChild!;
+        // Native mouse/End navigation updates the DOM selection before the
+        // asynchronous selectionchange event synchronizes ProseMirror's state.
+        const selection = window.getSelection()!;
+        selection.setBaseAndExtent(text, 5, text, 5);
+        for (const callback of frames.splice(0)) callback(performance.now());
+        expect(document.activeElement).toBe(editor);
+        expect(selection.anchorNode).toBe(text);
+        expect(selection.anchorOffset).toBe(5);
+        expect(selection.focusOffset).toBe(5);
+      } finally {
+        raf.mockRestore();
+      }
+    },
+  );
+
   it.each(['input', 'textarea', 'contenteditable'] as const)(
     'does not steal %s focus acquired after the composer focus request',
     async (kind) => {
