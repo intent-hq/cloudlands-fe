@@ -81,6 +81,36 @@
           },
         },
       },
+      'gitlab-device': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            phase: 'device',
+            user: null,
+            requestedScopes: ['api'],
+            grantedScopes: null,
+            device: { userCode: 'WXYZ-1234', verificationUri: 'https://gitlab.com/oauth/device' },
+          },
+        },
+      },
+      'gitlab-account': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            user: { id: '4711', login: 'mara.dev' },
+            requestedScopes: ['api'],
+            grantedScopes: ['api'],
+          },
+        },
+      },
       loading: { setup, props: { static: true, view: { ...base, phase: 'loading', user: null } } },
       'account-error': {
         setup,
