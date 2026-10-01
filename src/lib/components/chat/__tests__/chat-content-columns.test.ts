@@ -325,15 +325,18 @@ describe('chat content column contracts', () => {
     expect(classTokens(host).has('chat-content-measure')).toBe(false);
   });
 
-  it('renders queued-message surfaces inside the composer lane', async () => {
+  it('renders queued messages before subscriptions and outside the composer', async () => {
     scaffold.queuedMessages = [queuedMessage];
     const container = await renderPanel();
 
     const queue = byTestId(container, 'queued-messages-container')!;
-    expect(byTestId(container, 'mock-queue-region')!.contains(queue)).toBe(true);
-    expect(byTestId(container, 'chat-composer-lane')!.contains(queue)).toBe(true);
-    expect(byTestId(container, 'queued-message-utility-area')).toBeNull();
-    expect(container.querySelector('.queued-message-utility-wide')).toBeNull();
+    const utilities = byTestId(container, 'transcript-utility-stack')!;
+    const subscriptions = byTestId(container, 'mock-transcript-utility')!;
+    expect(utilities.contains(queue)).toBe(true);
+    expect(
+      queue.compareDocumentPosition(subscriptions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(byTestId(container, 'chat-composer-shell')!.contains(queue)).toBe(false);
   });
 
   it('opens a blank Chief thread on the starter prompts instead of an empty state', async () => {

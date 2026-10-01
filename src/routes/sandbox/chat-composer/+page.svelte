@@ -55,6 +55,14 @@
     aria-label="Chat composer preview"
     data-testid="chat-composer-showcase"
   >
+    <div class="pb-2">
+      <QueuedMessageList
+        {messages}
+        onedit={editMessage}
+        onremove={removeMessage}
+        onsendnow={removeMessage}
+      />
+    </div>
     <SimpleRichInput
       bind:value
       bind:contextItems
@@ -69,16 +77,7 @@
       onsubmit={() => {}}
       onforcesubmit={() => {}}
       onstop={() => {}}
-    >
-      {#snippet queueRegion()}
-        <QueuedMessageList
-          {messages}
-          onedit={editMessage}
-          onremove={removeMessage}
-          onsendnow={removeMessage}
-        />
-      {/snippet}
-    </SimpleRichInput>
+    />
   </section>
 </article>
 

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   queue: vi.fn(),
   hydrateQueue: vi.fn(async () => undefined),
   sendQueuedNow: vi.fn(),
+  sendQueuedMessagesNow: vi.fn(),
   removeQueued: vi.fn(),
   stop: vi.fn(),
   rename: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('$lib/client', () => ({
     agents: {
       queue: mocks.queue,
       sendQueuedNow: mocks.sendQueuedNow,
+      sendQueuedMessagesNow: mocks.sendQueuedMessagesNow,
       removeQueued: mocks.removeQueued,
       stop: mocks.stop,
       rename: mocks.rename,
@@ -95,6 +97,8 @@ import {
   refreshChatTranscriptRequested,
   sendMessage,
   sendQueuedMessageNowRequested,
+  sendQueuedMessagesNowRequested,
+  clearQueuedMessagesRequested,
   streamActivityReceived,
   streamStatusReceived,
   transcriptHydrationSettled,
@@ -537,6 +541,79 @@ describe('chatSendSaga', () => {
       await run.task.toPromise();
     },
   );
+
+  it.each([
+    { result: { success: true, queued: false, turnId: 'batch-turn' }, outcome: 'delivered' },
+    { result: { success: true, queued: true }, outcome: 'queued' },
+    { result: { success: true, queued: true, quarantined: true }, outcome: 'quarantined' },
+  ])('acknowledges one bulk send as $outcome', async ({ result, outcome }) => {
+    mocks.sendQueuedMessagesNow.mockResolvedValue(result);
+    const run = harness();
+    const action = sendQueuedMessagesNowRequested(AGENT, WS, ['one', 'two']);
+    run.channel.put(action);
+    await expect(action.promise).resolves.toBe(outcome);
+    expect(mocks.sendQueuedMessagesNow).toHaveBeenCalledExactlyOnceWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageIds: ['one', 'two'],
+    });
+    expect(mocks.sendQueuedNow).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.removeQueued).not.toHaveBeenCalled();
+    expect(
+      run.dispatch.mock.calls.some(([sent]) => sent.type === 'transientUi/clearChatDraft'),
+    ).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('clears only acknowledged snapshot IDs and stops on failure', async () => {
+    let acknowledge!: (value: { success: boolean }) => void;
+    mocks.removeQueued
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ success: false, error: 'permission denied' });
+    const run = harness();
+    const action = clearQueuedMessagesRequested(AGENT, WS, ['one', 'two', 'three']);
+    run.channel.put(action);
+    await settle();
+    expect(
+      run.dispatch.mock.calls.some(([sent]) => sent.type === 'agentQueue/removeQueuedMessage'),
+    ).toBe(false);
+    acknowledge({ success: true });
+    await expect(action.promise).rejects.toThrow('permission denied');
+    expect(mocks.removeQueued.mock.calls).toEqual([
+      [AGENT, 'one', WS],
+      [AGENT, 'two', WS],
+    ]);
+    const removed = run.dispatch.mock.calls.filter(
+      ([sent]) => sent.type === 'agentQueue/removeQueuedMessage',
+    );
+    expect(removed).toHaveLength(1);
+    expect(removed[0][0].payload).toEqual([AGENT, 'one']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects active and pending bulk commands on cancellation', async () => {
+    mocks.sendQueuedMessagesNow.mockReturnValue(new Promise(() => {}));
+    const run = harness();
+    const send = sendQueuedMessagesNowRequested(AGENT, WS, ['one']);
+    const clear = clearQueuedMessagesRequested(AGENT, WS, ['two']);
+    run.channel.put(send);
+    run.channel.put(clear);
+    const rejected = Promise.all([
+      expect(send.promise).rejects.toThrow('cancelled'),
+      expect(clear.promise).rejects.toThrow('cancelled'),
+    ]);
+    run.task.cancel();
+    await rejected;
+    await run.task.toPromise();
+    expect(mocks.removeQueued).not.toHaveBeenCalled();
+  });
 
   it('rejects failed and cancelled send-now requests without retrying or dropping the queued item', async () => {
     mocks.sendQueuedNow.mockResolvedValueOnce({ success: false, error: 'already drained' });

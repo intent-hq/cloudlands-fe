@@ -43,6 +43,16 @@ function buttonTooltips(container: HTMLElement): string[] {
 }
 
 describe('QueuedMessageList', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
   it('keeps a member readable while editing and releases its original identity on cancel', async () => {
     const payload = {
       label: 'alice.dev_ops-team',
@@ -310,12 +320,9 @@ describe('QueuedMessageList', () => {
       const disclosure = screen.getByTestId('queued-messages-disclosure');
       const content = screen.getByTestId('queued-messages-content');
       const container = screen.getByTestId('queued-messages-container');
-      const label = screen.getByTestId('queued-messages-label');
-      const chevron = screen.getByTestId('queued-messages-chevron').querySelector('svg')!;
       expect(disclosure.getAttribute('aria-expanded')).toBe('true');
       expect(disclosure.getAttribute('aria-controls')).toBe(content.id);
-      expect(chevron.classList.contains('rotate-90')).toBe(false);
-      expect(label.textContent?.trim()).toMatch(/^1\b/);
+      expect(disclosure.getAttribute('aria-label')).toMatch(/^1\b/);
       expect(container.className).not.toContain('before:');
       expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
     });
@@ -328,12 +335,6 @@ describe('QueuedMessageList', () => {
       await fireEvent.click(disclosure);
       await tick();
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
-      expect(
-        screen
-          .getByTestId('queued-messages-chevron')
-          .querySelector('svg')
-          ?.classList.contains('rotate-90'),
-      ).toBe(true);
       expect(screen.queryByTestId('queued-messages-content')).toBeNull();
       expect(screen.queryByTestId('queued-message-row')).toBeNull();
       expect(document.activeElement).toBe(disclosure);
@@ -341,7 +342,7 @@ describe('QueuedMessageList', () => {
       await view.rerender({
         messages: [queued({}), queued({ id: 'q-2', content: 'second', position: 1 })],
       });
-      expect(screen.getByTestId('queued-messages-label').textContent?.trim()).toMatch(/^2\b/);
+      expect(disclosure.getAttribute('aria-label')).toMatch(/^2\b/);
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
       expect(screen.queryByTestId('queued-message-row')).toBeNull();
 
@@ -648,11 +649,6 @@ describe('QueuedMessageList', () => {
   });
 
   it('lets the canonical follow authority pin bottom and preserve an unlocked viewport', async () => {
-    class ResizeObserverStub {
-      observe() {}
-      disconnect() {}
-    }
-    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     const view = render(QueuedMessageEditMotionHost);
     const transcript = screen.getByTestId('queued-edit-transcript');
     let expandedHeight = 900;

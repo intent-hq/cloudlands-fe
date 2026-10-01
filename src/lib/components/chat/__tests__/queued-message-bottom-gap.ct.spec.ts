@@ -32,24 +32,6 @@ async function visibleComposerGap(component: Locator) {
   });
 }
 
-async function rowGeometry(component: Locator) {
-  return component
-    .getByTestId('queued-message-row')
-    .first()
-    .evaluate((row) => {
-      const style = getComputedStyle(row);
-      const list = row.parentElement!;
-      return {
-        paddingTop: style.paddingTop,
-        paddingBottom: style.paddingBottom,
-        rowGap: getComputedStyle(list).rowGap,
-        containerPaddingBottom: getComputedStyle(
-          row.closest('[data-testid="queued-messages-container"]')!,
-        ).paddingBottom,
-      };
-    });
-}
-
 test('keeps the edge gap at zero for empty, one, and many queues in every display matrix', async ({
   mount,
   page,
@@ -90,12 +72,6 @@ test('keeps the edge gap at zero for empty, one, and many queues in every displa
           );
           expect(await outerGap(component)).toBeCloseTo(0, 5);
           expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
-          expect(await rowGeometry(component)).toEqual({
-            paddingTop: '0px',
-            paddingBottom: '0px',
-            rowGap: 'normal',
-            containerPaddingBottom: '0px',
-          });
         }
       }
     }

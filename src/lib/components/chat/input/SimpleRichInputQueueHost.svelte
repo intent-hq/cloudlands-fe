@@ -8,6 +8,7 @@
   } from '$store/renderer/slices/principal/principal-slice';
   import SimpleRichInput from './SimpleRichInput.svelte';
   import QueuedMessageList from '../QueuedMessageList.svelte';
+  import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 
   let {
     streaming = false,
@@ -44,20 +45,26 @@
   );
 </script>
 
-<div class="group/panel" style="height: 240px;" style:width="{width}px">
-  <SimpleRichInput
-    bind:value
-    workspace={null}
-    isStreaming={streaming}
-    isResponding={streaming}
-    onsubmit={() => (lastAction = 'sent')}
-    onstop={() => (lastAction = 'stopped')}
-  >
-    {#snippet queueRegion()}
-      {#if messages.length > 0}
-        <QueuedMessageList {messages} />
-      {/if}
-    {/snippet}
-  </SimpleRichInput>
+<div class="group/panel flex flex-col" style="height: 560px;" style:width="{width}px">
+  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div class="mt-auto" style:--queued-messages-max-height="280px">
+      <div class="has-[>_*]:pb-2"><QueuedMessageList {messages} /></div>
+      <EventSubscriptionsCard
+        workspaceId="queue-test"
+        agentId="queue-test"
+        isolatedPreview={{ count: 2, initiallyExpanded: false }}
+      />
+    </div>
+  </div>
+  <div class="shrink-0">
+    <SimpleRichInput
+      bind:value
+      workspace={null}
+      isStreaming={streaming}
+      isResponding={streaming}
+      onsubmit={() => (lastAction = 'sent')}
+      onstop={() => (lastAction = 'stopped')}
+    />
+  </div>
 </div>
 <output>{lastAction}</output>

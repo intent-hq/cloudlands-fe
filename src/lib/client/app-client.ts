@@ -145,6 +145,8 @@ export interface MutationResult {
   /** sendQueuedMessageNow may restore the entry instead of delivering it (§5.5). */
   queued?: boolean;
   quarantined?: boolean;
+  /** IDs acknowledged by an explicit queued batch send. */
+  messageIds?: string[];
   /**
    * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
    * daemon returns one by the seam mutations that extract it: `queueMessage`
@@ -758,6 +760,12 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     messageId: string;
+  }): Promise<MutationResult>;
+  /** Send exactly the selected ready entries together in one interrupt turn. */
+  sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
   }): Promise<MutationResult>;
   /**
    * Read the agent's persisted message queue (`agent.getQueue`, §5.5/§6.6).

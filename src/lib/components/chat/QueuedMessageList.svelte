@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { COMPOSER_INSET_CLASS } from './composer-inset';
+  import { USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
   /**
    * QueuedMessageList Component
@@ -14,12 +14,13 @@
     faTimes,
     faRotateRight,
     faFile,
-    faChevronDown,
     faArrowUp,
   } from '@fortawesome/free-solid-svg-icons';
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
+  import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
   import { tick } from 'svelte';
+  import { Spring } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
@@ -57,6 +58,8 @@
     onsendnow?: (
       messageId: string,
     ) => QueuedMessageSendOutcome | void | Promise<QueuedMessageSendOutcome | void>;
+    onsendall?: (messageIds: string[]) => Promise<QueuedMessageSendOutcome | void>;
+    onclearall?: (messageIds: string[]) => Promise<void>;
     ondone?: () => void;
     /**
      * Queue-surface attribution (multiplayer w2). `null` = off (single-member
@@ -78,6 +81,8 @@
     onedit,
     onremove,
     onsendnow,
+    onsendall,
+    onclearall,
     ondone,
     authors = null,
     ownPrincipalId = null,
@@ -99,6 +104,24 @@
   let activeEditOperation: { messageId: string } | null = null;
   let pendingFocusRestore: { messageId: string; element: HTMLElement } | null = null;
   let expanded = $state(true);
+  let showAll = $state(false);
+  let bodyHeight = $state(0);
+  let viewportHeight = $state(0);
+  let viewport = $state<HTMLDivElement>();
+  const previewHeight = new Spring(0, 'moderate');
+  let heightInitialized = false;
+  const clipped = $derived(!showAll && bodyHeight > viewportHeight + 1);
+  let bulkAction = $state<'send' | 'clear' | null>(null);
+  let bulkError = $state<string | null>(null);
+  const busy = $derived(
+    bulkAction !== null ||
+      Object.values(sendStates).some((state) => state === 'sending' || state === 'delivered'),
+  );
+  const readyIds = $derived(
+    messages
+      .filter((message) => !message.editing && message.id !== editingId && !isSending(message.id))
+      .map((message) => message.id),
+  );
   let previousMessageCount = $state(0);
   const contentId = $derived(`queued-messages-content-${messages[0]?.id ?? 'empty'}`);
   const headerLabel = $derived(
@@ -106,15 +129,67 @@
       ? m.chat_queuedMessages_header_one()
       : m.chat_queuedMessages_header_many({ count: formatInteger(messages.length) }),
   );
-  const hasBatch = $derived(messages.length > 1);
-  const lastReadyIndex = $derived(
-    messages.findLastIndex((message) => !message.editing && message.id !== editingId),
-  );
-  const rowInset = $derived(hasBatch ? 'pl-7.5! pr-2!' : COMPOSER_INSET_CLASS);
   const rowElements = new Map<string, HTMLElement>();
   let sendStates = $state<Record<string, 'sending' | QueuedMessageSendOutcome | undefined>>({});
   let sendErrors = $state<Record<string, string | undefined>>({});
   const sendingIds = new Set<string>();
+
+  $effect(() => {
+    if (!bodyHeight) return;
+    void previewHeight.set(showAll ? bodyHeight : Math.min(bodyHeight, 144), {
+      instant: !heightInitialized,
+    });
+    heightInitialized = true;
+  });
+
+  function expandPreview() {
+    showAll = true;
+  }
+
+  function revealFocusedMessage(event: FocusEvent) {
+    if (!clipped) return;
+    showAll = true;
+    const target = event.target as HTMLElement;
+    void tick().then(() => {
+      if (viewport && target.isConnected) {
+        viewport.scrollTop += Math.max(
+          0,
+          target.getBoundingClientRect().bottom - viewport.getBoundingClientRect().bottom,
+        );
+      }
+    });
+  }
+
+  async function handleBulkAction(action: 'send' | 'clear') {
+    if (disabled || busy || (action === 'send' ? !onsendall : !onclearall)) return;
+    const ids = action === 'send' ? [...readyIds] : messages.map((message) => message.id);
+    if (!ids.length) return;
+    bulkAction = action;
+    bulkError = null;
+    if (action === 'send') for (const id of ids) sendStates[id] = 'sending';
+    try {
+      if (action === 'send') {
+        const outcome = await onsendall!(ids);
+        for (const id of ids)
+          if (messages.some((entry) => entry.id === id)) sendStates[id] = outcome ?? undefined;
+        if (outcome === 'queued' || outcome === 'quarantined') expanded = true;
+      } else {
+        await onclearall!(ids);
+      }
+    } catch (error) {
+      for (const id of ids) if (action === 'send') delete sendStates[id];
+      bulkError =
+        action === 'send'
+          ? m.chat_queuedMessages_sendFailed_error({
+              error: error instanceof Error ? error.message : String(error),
+            })
+          : m.chat_queuedMessages_clearFailed_error({
+              error: error instanceof Error ? error.message : String(error),
+            });
+    } finally {
+      bulkAction = null;
+    }
+  }
 
   function isSending(id: string) {
     return sendStates[id] === 'sending' || sendStates[id] === 'delivered';
@@ -135,6 +210,7 @@
     if (
       !onsendnow ||
       disabled ||
+      bulkAction ||
       !message ||
       message.editing ||
       editingId === id ||
@@ -228,7 +304,11 @@
   // preserve the user's disclosure choice, including while collapsed.
   $effect(() => {
     const count = messages.length;
-    if (previousMessageCount === 0 && count > 0) expanded = true;
+    if (previousMessageCount === 0 && count > 0) {
+      expanded = true;
+      showAll = false;
+      bulkError = null;
+    }
     previousMessageCount = count;
   });
 
@@ -398,8 +478,16 @@
   });
 
   async function startEdit(message: QueuedMessage, programmatic = false) {
-    if (disabled || isSending(message.id) || activeEditOperation || editingId === message.id)
+    if (
+      disabled ||
+      bulkAction ||
+      isSending(message.id) ||
+      activeEditOperation ||
+      editingId === message.id
+    )
       return;
+    expanded = true;
+    showAll = true;
     const operation = beginEditOperation(message.id);
     await animateRowMutation(message.id, () => {
       editStartedProgrammatically = programmatic;
@@ -510,7 +598,7 @@
   }
 
   function handleRemove(id: string) {
-    if (disabled || isSending(id) || sendingIds.has(id)) return;
+    if (disabled || bulkAction || isSending(id) || sendingIds.has(id)) return;
     onremove?.(id);
   }
 
@@ -552,7 +640,7 @@
 
 {#snippet imageThumbnails(message: QueuedMessage)}
   {#if message.imageBlocks && message.imageBlocks.length > 0}
-    <div class="inline-flex items-center gap-1 shrink-0">
+    <div class="inline-flex max-w-full flex-wrap items-center gap-1">
       {#each message.imageBlocks as block, i (i)}
         {@const src = queuedImageSrc(block)}
         <Button
@@ -593,12 +681,12 @@
 
 {#snippet fileChips(message: QueuedMessage)}
   {#if message.fileBlocks && message.fileBlocks.length > 0}
-    <div class="inline-flex items-center gap-1 shrink-0">
+    <div class="inline-flex max-w-full flex-wrap items-center gap-1">
       {#each message.fileBlocks as block, i (i)}
         <Button
           type="button"
           variant="plain"
-          class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-[0.7rem] text-muted-foreground hover:text-foreground cursor-pointer"
+          class="inline-flex max-w-full min-w-0 items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-[0.7rem] text-muted-foreground hover:text-foreground cursor-pointer"
           data-testid="queued-file-chip"
           onclick={(e) => {
             e.stopPropagation();
@@ -616,40 +704,70 @@
 
 {#if messages.length > 0}
   <div
-    class="queued-messages-surface relative z-20 border-b border-border bg-transparent"
-    class:pt-1={expanded}
+    class="queued-messages-surface relative z-20 mt-auto w-full min-w-0 rounded-xl bg-sidebar p-1.5"
     data-testid="queued-messages-container"
-    transition:safeDisclosureTransition={{ tier: 'moderate' }}
+    transition:safeDisclosureTransition|global={{ tier: 'moderate' }}
   >
-    <Button
-      type="button"
-      variant="plain"
-      size="compact"
-      class="type-caption relative flex w-full cursor-pointer items-center rounded-(--radius-medium) border-0 bg-transparent px-3.5! py-0 text-left text-subtle {expanded
-        ? 'pt-1!'
-        : ''}"
-      aria-expanded={expanded}
-      aria-controls={contentId}
-      title={headerLabel}
-      data-testid="queued-messages-disclosure"
-      onclick={() => (expanded = !expanded)}
+    <div
+      class="queued-messages-header sticky top-0 z-10 flex min-w-0 items-center bg-sidebar"
+      data-testid="queued-messages-header"
     >
-      <span class="min-w-0 flex-1 truncate" aria-live="polite" data-testid="queued-messages-label">
-        {headerLabel}
-      </span>
-      <span
-        class="ml-auto inline-flex h-4 w-4 shrink-0 items-center justify-center"
-        data-testid="queued-messages-chevron"
-        aria-hidden="true"
+      <Button
+        type="button"
+        variant="plain"
+        size="compact"
+        class="type-caption flex min-h-8 min-w-0 flex-1 cursor-pointer items-center rounded-lg border-0 bg-sidebar px-1.5! py-1 text-left text-muted-foreground"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        aria-label={headerLabel}
+        aria-live="polite"
+        title={headerLabel}
+        data-testid="queued-messages-disclosure"
+        onclick={() => {
+          expanded = !expanded;
+          if (expanded) showAll = false;
+        }}
       >
-        <Fa
-          icon={faChevronDown}
-          class="h-4! w-4! opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none {expanded
-            ? ''
-            : 'rotate-90'}"
-        />
-      </span>
-    </Button>
+        <span class="min-w-0 flex-1 truncate" data-testid="queued-messages-label">
+          {m.chat_queuedMessages_sendingWhenIdle_label()}
+        </span>
+      </Button>
+      {#if !disabled}
+        {#if onclearall}
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            iconOnly
+            aria-label={m.chat_queuedMessages_clearAll_ariaLabel()}
+            tooltip={m.chat_queuedMessages_clearAll_label()}
+            disabled={busy}
+            loading={bulkAction === 'clear'}
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={() => handleBulkAction('clear')}
+          >
+            <TrashIcon size={14} aria-hidden="true" />
+          </Button>
+        {/if}
+        {#if onsendall}
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            iconOnly
+            aria-label={m.chat_queuedMessages_sendAll_ariaLabel()}
+            tooltip={m.chat_queuedMessages_sendAll_label()}
+            disabled={busy || readyIds.length === 0}
+            loading={bulkAction === 'send'}
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={() => handleBulkAction('send')}
+          >
+            <Fa icon={faArrowUp} class="h-3 w-3" />
+          </Button>
+        {/if}
+      {/if}
+    </div>
+    {#if bulkError}
+      <div class="type-caption px-1.5 pb-1 text-warning-ink" role="alert">{bulkError}</div>
+    {/if}
 
     {#if expanded}
       <div
@@ -657,219 +775,241 @@
         data-testid="queued-messages-content"
         transition:safeDisclosureTransition={{ tier: 'moderate' }}
       >
-        <div class="flex flex-col">
-          {#each messages as message, index (message.id)}
-            {@const sending = sendStates[message.id] === 'sending'}
-            {@const held = message.editing || editingId === message.id}
-            <div
-              class="group relative type-caption flex min-h-(--control-height-compact) select-none items-center gap-2 rounded-(--radius-medium) bg-transparent {rowInset} font-normal! text-muted-foreground {message.editing
-                ? 'opacity-60'
-                : ''}"
-              data-testid="queued-message-row"
-              data-message-id={message.id}
-              aria-busy={sending || undefined}
-              use:registerRow={message.id}
-              transition:queuedMessageRowTransition
-              title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
-            >
-              {#if hasBatch && lastReadyIndex >= index}
-                <span
-                  class="pointer-events-none absolute left-4 top-0 border-l border-border {index ===
-                  lastReadyIndex
-                    ? 'h-1/2'
-                    : 'h-full'}"
-                  aria-hidden="true"
-                ></span>
-                {#if !held}
-                  <span
-                    class="pointer-events-none absolute left-4 top-1/2 w-1.5 border-t border-border"
-                    aria-hidden="true"
-                  ></span>
-                {/if}
-              {/if}
-              {#if editingId === message.id}
-                <!-- Edit mode -->
+        <div class="relative overflow-hidden rounded-lg bg-background">
+          <div
+            bind:this={viewport}
+            bind:clientHeight={viewportHeight}
+            class="queued-messages-viewport min-w-0 overscroll-contain {showAll
+              ? 'overflow-y-auto'
+              : 'overflow-hidden'}"
+            style:height={bodyHeight > 0 ? `${previewHeight.current}px` : undefined}
+            data-testid="queued-messages-viewport"
+            onfocusin={revealFocusedMessage}
+          >
+            <div class="flex min-w-0 flex-col py-2" bind:clientHeight={bodyHeight}>
+              {#each messages as message (message.id)}
+                {@const sending = sendStates[message.id] === 'sending'}
                 <div
-                  class="col-span-full row-span-full min-w-0 flex flex-1 gap-2 py-1"
-                  data-testid="queued-message-edit-mode"
+                  class="group relative type-body flex min-h-(--control-height-compact) select-none items-start gap-2 px-3 py-1 font-normal! text-secondary-foreground {message.editing
+                    ? 'opacity-60'
+                    : ''}"
+                  data-testid="queued-message-row"
+                  data-message-id={message.id}
+                  aria-busy={sending || undefined}
+                  use:registerRow={message.id}
+                  transition:queuedMessageRowTransition
+                  title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
                 >
-                  {#if editHasMembers}
+                  {#if editingId === message.id}
+                    <!-- Edit mode -->
                     <div
-                      bind:this={editRichContainer}
-                      class="min-w-0 flex-1 text-foreground"
-                      role="group"
-                      onfocusout={handleEditBlur}
+                      class="col-span-full row-span-full min-w-0 flex flex-1 gap-2 py-1"
+                      data-testid="queued-message-edit-mode"
                     >
-                      <TipTapEditor
-                        bind:this={editRichEditor}
-                        value={editContent}
-                        onUpdate={(content) => (editContent = content)}
-                        onSubmit={saveEdit}
-                        onForceSubmit={saveEdit}
-                        onEscape={cancelEdit}
-                        minHeight={0}
-                        editorClassName="type-caption! p-0! font-normal!"
-                      />
-                    </div>
-                  {:else}
-                    <Textarea
-                      bind:ref={editTextarea}
-                      bind:value={editContent}
-                      onkeydown={handleKeydown}
-                      onblur={handleEditBlur}
-                      rows={1}
-                      noFocusStyle
-                      class="type-caption min-h-0 min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 font-normal! text-foreground shadow-none hover:bg-transparent focus:outline-none focus:ring-0 focus-visible:outline-none"
-                      autocorrect="off"
-                      autocapitalize="off"
-                      spellcheck="false"
-                    />
-                  {/if}
-                  <Button
-                    variant="ghost-light"
-                    size="icon-xs"
-                    class="-my-1"
-                    onclick={saveEdit}
-                    onpointerdown={(event) => event.preventDefault()}
-                    tooltip={m.chat_queuedMessages_save_tooltip()}
-                  >
-                    <Fa icon={faCheck} class="w-3 h-3" />
-                  </Button>
-                  <Button
-                    variant="ghost-light"
-                    size="icon-xs"
-                    class="-my-1"
-                    onclick={cancelEdit}
-                    onpointerdown={(event) => event.preventDefault()}
-                    tooltip={m.chat_queuedMessages_cancel_tooltip()}
-                  >
-                    <Fa icon={faTimes} class="w-3 h-3" />
-                  </Button>
-                </div>
-              {:else}
-                {@const queuedAuthor = getQueuedMessageAuthor(message, authors, ownPrincipalId)}
-                {@const queuedAuthorLabel = queuedAuthor
-                  ? getMessageAuthorLabel(queuedAuthor)
-                  : null}
-                <!-- Display mode -->
-                <div class="col-span-full row-span-full flex min-w-0 flex-1 items-center gap-2">
-                  {#if message.requeuedAfterFailure}
-                    <div
-                      class="type-caption flex shrink-0 items-center gap-1 text-warning-ink"
-                      title={m.chat_queuedMessages_failedWillRetry_label()}
-                    >
-                      <div aria-hidden="true">
-                        <Fa icon={faRotateRight} class="w-3 h-3" />
-                      </div>
-                      <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
-                    </div>
-                  {/if}
-                  {@render imageThumbnails(message)}
-                  {@render fileChips(message)}
-                  <Button
-                    variant="plain"
-                    size="compact"
-                    class="min-w-0 flex-1 cursor-default justify-start text-left font-normal!"
-                    data-testid="queued-message-content"
-                    data-mode="display"
-                    aria-label={memberMentionsToText(message.content)}
-                    ondblclick={() => startEdit(message)}
-                    onkeydown={(event) => handleDisplayKeydown(event, message)}
-                  >
-                    {#if queuedAuthor}
-                      <span
-                        class="type-caption mb-0.5 flex min-w-0 items-center gap-1.5 text-subtle"
-                        data-testid="queued-message-author"
-                        data-principal-id={queuedAuthor.principalId}
-                        aria-label={m.chat_queuedMessages_author_ariaLabel({
-                          name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                        })}
-                      >
-                        <PrincipalAvatar
-                          avatarUrl={queuedAuthor.avatarUrl}
-                          label={queuedAuthorLabel ?? ''}
-                          size={16}
-                          class="font-medium leading-none text-muted-foreground"
-                          referrerpolicy="no-referrer"
-                          testid="queued-message-author-avatar"
+                      {#if editHasMembers}
+                        <div
+                          bind:this={editRichContainer}
+                          class="min-w-0 flex-1 text-foreground"
+                          role="group"
+                          onfocusout={handleEditBlur}
+                        >
+                          <TipTapEditor
+                            bind:this={editRichEditor}
+                            value={editContent}
+                            onUpdate={(content) => (editContent = content)}
+                            onSubmit={saveEdit}
+                            onForceSubmit={saveEdit}
+                            onEscape={cancelEdit}
+                            minHeight={0}
+                            editorClassName="type-body! p-0! font-normal!"
+                          />
+                        </div>
+                      {:else}
+                        <Textarea
+                          bind:ref={editTextarea}
+                          bind:value={editContent}
+                          onkeydown={handleKeydown}
+                          onblur={handleEditBlur}
+                          rows={1}
+                          noFocusStyle
+                          class="type-body min-h-0 min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 font-normal! text-foreground shadow-none hover:bg-transparent focus:outline-none focus:ring-0 focus-visible:outline-none"
+                          autocorrect="off"
+                          autocapitalize="off"
+                          spellcheck="false"
                         />
-                        <span class="truncate" data-testid="queued-message-author-name"
-                          >{queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
-                        >
-                      </span>
-                    {/if}
-                    <span class="block truncate" data-testid="queued-message-text">
-                      {message.requeuedAfterFailure
-                        ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
-                        : ''}{memberMentionsToText(message.content)}
-                    </span>
-                  </Button>
-                  {#if !disabled}
-                    <div class={QUEUE_ACTION_CLUSTER_CLASS} data-testid="queued-message-actions">
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        iconOnly
-                        class="-my-1"
-                        aria-label={m.chat_queuedMessages_edit_tooltip()}
-                        disabled={isSending(message.id)}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={(event) => {
-                          event.stopPropagation();
-                          void startEdit(message);
-                        }}
-                        tooltip={m.chat_queuedMessages_edit_tooltip()}
-                      >
-                        <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
-                      </Button>
-                      {#if onsendnow}
-                        <Button
-                          variant="ghost-light"
-                          size="icon-xs"
-                          iconOnly
-                          class="-my-1"
-                          aria-label={sending
-                            ? m.chat_queuedMessages_sending_label()
-                            : m.chat_queuedMessages_sendImmediately_label()}
-                          loading={sending}
-                          disabled={isSending(message.id) || message.editing}
-                          onpointerdown={(event) => event.stopPropagation()}
-                          onclick={() => handleSendNow(message.id)}
-                          tooltip={m.chat_queuedMessages_sendNow_tooltip()}
-                        >
-                          <Fa icon={faArrowUp} class="w-3 h-3" />
-                        </Button>
                       {/if}
                       <Button
                         variant="ghost-light"
                         size="icon-xs"
-                        iconOnly
                         class="-my-1"
-                        aria-label={m.chat_queuedMessages_remove_tooltip()}
-                        disabled={isSending(message.id)}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={() => handleRemove(message.id)}
-                        tooltip={m.chat_queuedMessages_remove_tooltip()}
+                        onclick={saveEdit}
+                        onpointerdown={(event) => event.preventDefault()}
+                        tooltip={m.chat_queuedMessages_save_tooltip()}
                       >
-                        <XIcon size={13} weight="regular" aria-hidden="true" />
+                        <Fa icon={faCheck} class="w-3 h-3" />
                       </Button>
+                      <Button
+                        variant="ghost-light"
+                        size="icon-xs"
+                        class="-my-1"
+                        onclick={cancelEdit}
+                        onpointerdown={(event) => event.preventDefault()}
+                        tooltip={m.chat_queuedMessages_cancel_tooltip()}
+                      >
+                        <Fa icon={faTimes} class="w-3 h-3" />
+                      </Button>
+                    </div>
+                  {:else}
+                    {@const queuedAuthor = getQueuedMessageAuthor(message, authors, ownPrincipalId)}
+                    {@const queuedAuthorLabel = queuedAuthor
+                      ? getMessageAuthorLabel(queuedAuthor)
+                      : null}
+                    <!-- Display mode -->
+                    <div class="queued-message-display flex min-w-0 flex-1 items-start gap-2">
+                      <div class="queued-message-body min-w-0 flex-1">
+                        {#if message.requeuedAfterFailure}
+                          <div
+                            class="type-caption flex shrink-0 items-center gap-1 text-warning-ink"
+                            title={m.chat_queuedMessages_failedWillRetry_label()}
+                          >
+                            <div aria-hidden="true">
+                              <Fa icon={faRotateRight} class="w-3 h-3" />
+                            </div>
+                            <span class="sr-only"
+                              >{m.chat_queuedMessages_failedWillRetry_label()}</span
+                            >
+                          </div>
+                        {/if}
+                        {@render imageThumbnails(message)}
+                        {@render fileChips(message)}
+                        <Button
+                          variant="plain"
+                          size="compact"
+                          class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
+                          truncateLabel={false}
+                          labelClass="block!"
+                          data-testid="queued-message-content"
+                          data-mode="display"
+                          aria-label={memberMentionsToText(message.content)}
+                          ondblclick={() => startEdit(message)}
+                          onkeydown={(event) => handleDisplayKeydown(event, message)}
+                        >
+                          {#if queuedAuthor}
+                            <span
+                              class="type-caption mb-0.5 flex min-w-0 items-center gap-1.5 text-subtle"
+                              data-testid="queued-message-author"
+                              data-principal-id={queuedAuthor.principalId}
+                              aria-label={m.chat_queuedMessages_author_ariaLabel({
+                                name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                              })}
+                            >
+                              <PrincipalAvatar
+                                avatarUrl={queuedAuthor.avatarUrl}
+                                label={queuedAuthorLabel ?? ''}
+                                size={16}
+                                class="font-medium leading-none text-muted-foreground"
+                                referrerpolicy="no-referrer"
+                                testid="queued-message-author-avatar"
+                              />
+                              <span class="truncate" data-testid="queued-message-author-name"
+                                >{queuedAuthorLabel ??
+                                  m.chat_chatMessage_authorUnknown_label()}</span
+                              >
+                            </span>
+                          {/if}
+                          <span
+                            class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
+                            data-testid="queued-message-text"
+                          >
+                            {message.requeuedAfterFailure
+                              ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
+                              : ''}{memberMentionsToText(message.content)}
+                          </span>
+                        </Button>
+                      </div>
+                      {#if !disabled}
+                        <div
+                          class="queued-message-actions {QUEUE_ACTION_CLUSTER_CLASS}"
+                          data-testid="queued-message-actions"
+                        >
+                          <Button
+                            variant="ghost-light"
+                            size="icon-xs"
+                            iconOnly
+                            class="-my-1"
+                            aria-label={m.chat_queuedMessages_edit_tooltip()}
+                            disabled={bulkAction !== null || isSending(message.id)}
+                            onpointerdown={(event) => event.stopPropagation()}
+                            onclick={(event) => {
+                              event.stopPropagation();
+                              void startEdit(message);
+                            }}
+                            tooltip={m.chat_queuedMessages_edit_tooltip()}
+                          >
+                            <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
+                          </Button>
+                          {#if onsendnow}
+                            <Button
+                              variant="ghost-light"
+                              size="icon-xs"
+                              iconOnly
+                              class="-my-1"
+                              aria-label={sending
+                                ? m.chat_queuedMessages_sending_label()
+                                : m.chat_queuedMessages_sendImmediately_label()}
+                              loading={sending}
+                              disabled={bulkAction !== null ||
+                                isSending(message.id) ||
+                                message.editing}
+                              onpointerdown={(event) => event.stopPropagation()}
+                              onclick={() => handleSendNow(message.id)}
+                              tooltip={m.chat_queuedMessages_sendNow_tooltip()}
+                            >
+                              <Fa icon={faArrowUp} class="w-3 h-3" />
+                            </Button>
+                          {/if}
+                          <Button
+                            variant="ghost-light"
+                            size="icon-xs"
+                            iconOnly
+                            class="-my-1"
+                            aria-label={m.chat_queuedMessages_remove_tooltip()}
+                            disabled={bulkAction !== null || isSending(message.id)}
+                            onpointerdown={(event) => event.stopPropagation()}
+                            onclick={() => handleRemove(message.id)}
+                            tooltip={m.chat_queuedMessages_remove_tooltip()}
+                          >
+                            <XIcon size={13} weight="regular" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 </div>
-              {/if}
+                {#if sendErrors[message.id] || sendStates[message.id] === 'queued' || sendStates[message.id] === 'quarantined'}
+                  <div
+                    class="type-caption px-3 pb-1 text-warning-ink"
+                    role={sendErrors[message.id] ? 'alert' : 'status'}
+                  >
+                    {sendErrors[message.id] ??
+                      (sendStates[message.id] === 'quarantined'
+                        ? m.chat_queuedMessages_quarantined_description()
+                        : m.chat_queuedMessages_stillQueued_description())}
+                  </div>
+                {/if}
+              {/each}
             </div>
-            {#if sendErrors[message.id] || sendStates[message.id] === 'queued' || sendStates[message.id] === 'quarantined'}
-              <div
-                class="type-caption {rowInset} text-warning-ink"
-                role={sendErrors[message.id] ? 'alert' : 'status'}
-              >
-                {sendErrors[message.id] ??
-                  (sendStates[message.id] === 'quarantined'
-                    ? m.chat_queuedMessages_quarantined_description()
-                    : m.chat_queuedMessages_stillQueued_description())}
-              </div>
-            {/if}
-          {/each}
+          </div>
+          {#if clipped}
+            <Button
+              variant="plain"
+              size="icon-compact"
+              iconOnly
+              class="absolute inset-x-0 bottom-0 h-10 w-full cursor-pointer items-end justify-center rounded-none border-0 bg-linear-to-b from-transparent to-background to-85% pb-1 text-muted-foreground"
+              aria-label={m.chat_queuedMessages_expand_ariaLabel()}
+              onclick={expandPreview}
+            />
+          {/if}
         </div>
       </div>
     {/if}
@@ -883,3 +1023,31 @@
   imageName={lightboxImageName}
   openerElement={lightboxOpenerElement}
 />
+
+<style>
+  .queued-messages-surface {
+    container: queued-messages / inline-size;
+  }
+
+  .queued-messages-viewport {
+    max-height: max(48px, calc(var(--queued-messages-max-height, 50vh) - 44px));
+  }
+
+  @container queued-messages (max-width: 280px) {
+    .queued-message-display {
+      flex-wrap: wrap;
+    }
+
+    .queued-message-body {
+      flex-basis: 100%;
+    }
+
+    .queued-message-actions {
+      position: absolute;
+      top: 0.25rem;
+      right: 0.375rem;
+      border-radius: var(--radius-medium);
+      background: hsl(var(--background));
+    }
+  }
+</style>

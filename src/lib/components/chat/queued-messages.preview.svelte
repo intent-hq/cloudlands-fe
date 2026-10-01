@@ -3,6 +3,8 @@
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
+  import SimpleRichInput from './input/SimpleRichInput.svelte';
 
   interface Props {
     messageCount?: number;
@@ -14,6 +16,8 @@
     contentKind?: 'plain' | 'multiline' | 'attachments' | 'attachments-only' | 'member';
     showAuthors?: boolean;
     sendOutcome?: QueuedMessageSendOutcome | 'pending' | 'failed';
+    clearFails?: boolean;
+    docked?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -25,6 +29,7 @@
       single: { props: { messageCount: 1 } },
       multiple: { props: { messageCount: 3 } },
       many: { props: { messageCount: 12 } },
+      docked: { props: { messageCount: 12, docked: true } },
       'single-held': { props: { messageCount: 1, heldCount: 1 } },
       'held-for-editing': { props: { messageCount: 3, heldCount: 1 } },
       'held-in-middle': { props: { messageCount: 3, heldCount: 1, heldStart: 1 } },
@@ -43,6 +48,7 @@
       'recovery-required': { props: { messageCount: 2, sendOutcome: 'quarantined' } },
       'send-failed': { props: { messageCount: 2, sendOutcome: 'failed' } },
       'awaiting-removal': { props: { messageCount: 2, sendOutcome: 'delivered' } },
+      'clear-failed': { props: { messageCount: 3, clearFails: true } },
     },
   });
 </script>
@@ -58,6 +64,8 @@
     contentKind = 'plain',
     showAuthors = false,
     sendOutcome,
+    clearFails = false,
+    docked = false,
   }: Props = $props();
   const people: MessageAuthor[] = [
     { principalId: 'preview-self', login: 'you', displayName: 'You', avatarUrl: null },
@@ -119,6 +127,7 @@
   }
 
   let messages = $state<QueuedMessage[]>([]);
+  let draft = $state('');
   $effect(() => {
     messages = Array.from({ length: messageCount }, (_, i) => ({
       id: `preview-queue-${i}`,
@@ -142,19 +151,58 @@
     if (sendOutcome) return sendOutcome;
     remove(id);
   }
+
+  async function sendAll(ids: string[]): Promise<QueuedMessageSendOutcome | void> {
+    if (sendOutcome === 'pending') return new Promise(() => undefined);
+    if (sendOutcome === 'failed') throw new Error('Connection unavailable');
+    if (sendOutcome) return sendOutcome;
+    messages = messages.filter((message) => !ids.includes(message.id));
+  }
+
+  async function clearAll(ids: string[]) {
+    if (clearFails) throw new Error('Connection unavailable');
+    messages = messages.filter((message) => !ids.includes(message.id));
+  }
 </script>
 
-<QueuedMessageList
-  {messages}
-  {disabled}
-  {authors}
-  ownPrincipalId="preview-self"
-  onedit={async (id, content, editing) => {
-    messages = messages.map((message) =>
-      message.id === id ? { ...message, content, editing } : message,
-    );
-    return { success: true };
-  }}
-  onremove={remove}
-  onsendnow={sendNow}
-/>
+{#snippet queue()}
+  <QueuedMessageList
+    {messages}
+    {disabled}
+    {authors}
+    ownPrincipalId="preview-self"
+    onedit={async (id, content, editing) => {
+      messages = messages.map((message) =>
+        message.id === id ? { ...message, content, editing } : message,
+      );
+      return { success: true };
+    }}
+    onremove={remove}
+    onsendnow={sendNow}
+    onsendall={sendAll}
+    onclearall={clearAll}
+  />
+{/snippet}
+
+{#if docked}
+  <div
+    class="group/panel flex h-[560px] w-full flex-col justify-end"
+    data-testid="queued-messages-docked-preview"
+  >
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div class="mt-auto" style:--queued-messages-max-height="280px">
+        <div class="has-[>_*]:pb-2">{@render queue()}</div>
+        <EventSubscriptionsCard
+          workspaceId="queue-preview"
+          agentId="queue-preview"
+          isolatedPreview={{ count: 2, initiallyExpanded: false }}
+        />
+      </div>
+    </div>
+    <div class="shrink-0">
+      <SimpleRichInput bind:value={draft} workspace={null} />
+    </div>
+  </div>
+{:else}
+  {@render queue()}
+{/if}

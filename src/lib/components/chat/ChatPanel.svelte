@@ -116,6 +116,8 @@
   import {
     sendMessage,
     sendQueuedMessageNowRequested,
+    sendQueuedMessagesNowRequested,
+    clearQueuedMessagesRequested,
     initializeChatRequested,
     refreshChatTranscriptRequested,
     chatRebindStarted,
@@ -1134,9 +1136,7 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      // The queue now lives in the composer, so the transcript always owns its
-      // normal trailing inset.
-      showQueue: false,
+      showQueue: queuedMessagesVisibility.showQueue,
     }),
   );
 
@@ -5124,6 +5124,28 @@
     return outcome;
   }
 
+  async function handleSendAllQueuedMessages(messageIds: string[]) {
+    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace.id;
+    const outcome = await appStore.dispatch(
+      sendQueuedMessagesNowRequested(originAgentId, originWorkspaceId, [...messageIds]),
+    );
+    if (
+      outcome === 'delivered' &&
+      agentId === originAgentId &&
+      workspace?.id === originWorkspaceId
+    ) {
+      void performLocalSendCleanup({ clearInput: false, followBottom: true });
+    }
+    return outcome;
+  }
+
+  async function handleClearAllQueuedMessages(messageIds: string[]) {
+    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+    await appStore.dispatch(clearQueuedMessagesRequested(agentId, workspace.id, [...messageIds]));
+  }
+
   // Build workspace context string for agent messages
   function buildWorkspaceContextString(items: ContextItem[] = []): string {
     const parts: string[] = [];
@@ -7096,6 +7118,25 @@
         <!-- The utility stack owns short-chat surplus through its auto margin.
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
+          {#if queuedMessagesVisibility.showQueue}
+            <div
+              class="pb-2"
+              style:--queued-messages-max-height="{Math.max(120, containerHeight / 2)}px"
+            >
+              <QueuedMessageList
+                bind:this={queuedMessageListRef}
+                messages={visibleQueuedMessages}
+                authors={queuedMessageAuthors}
+                ownPrincipalId={$presenceOwnPrincipalId$}
+                onedit={handleEditQueuedMessage}
+                onremove={handleRemoveQueuedMessage}
+                onsendnow={handleSendQueuedMessageNow}
+                onsendall={handleSendAllQueuedMessages}
+                onclearall={handleClearAllQueuedMessages}
+                ondone={() => inputComponent?.focus?.()}
+              />
+            </div>
+          {/if}
           <!-- {#key} forces a full remount when workspace or agent changes,
              preventing stale utility UI from leaking across switches.
              Hidden until transcript hydration settles; the workspace-task
@@ -7280,22 +7321,7 @@
                   externalDropTarget
                   requiresModelSwitchConfirmation={!canChangeProvider}
                   providerId={inputProviderId}
-                >
-                  {#snippet queueRegion()}
-                    {#if queuedMessagesVisibility.showQueue}
-                      <QueuedMessageList
-                        bind:this={queuedMessageListRef}
-                        messages={visibleQueuedMessages}
-                        authors={queuedMessageAuthors}
-                        ownPrincipalId={$presenceOwnPrincipalId$}
-                        onedit={handleEditQueuedMessage}
-                        onremove={handleRemoveQueuedMessage}
-                        onsendnow={handleSendQueuedMessageNow}
-                        ondone={() => inputComponent?.focus?.()}
-                      />
-                    {/if}
-                  {/snippet}
-                </SimpleRichInput>
+                />
               {/if}
             </QuestionComposer>
           {/if}
