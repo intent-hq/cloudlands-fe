@@ -6921,5 +6921,6 @@
   "terminal_scriptOutput_retained_description": "Momentaufnahme der temporären Ausgabe, begrenzt auf 10.000 Zeilen. Die Live-Ausgabe wird separat angezeigt.",
   "terminal_scriptOutput_retainedLoading_label": "Gespeicherte Ausgabe wird geladen…",
   "terminal_scriptOutput_retainedUnavailable_label": "Die gespeicherte Ausgabe ist nicht verfügbar.",
-  "terminal_scriptOutput_live_label": "Live-Ausgabe"
+  "terminal_scriptOutput_live_label": "Live-Ausgabe",
+  "files_secondaryRoot_unsupported_error": "Dieser Daemon kann keine Dateien aus sekundären Git-Verzeichnissen lesen. Aktualisieren Sie ihn und verbinden Sie sich erneut."
 }

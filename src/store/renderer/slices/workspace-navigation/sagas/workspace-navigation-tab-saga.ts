@@ -104,7 +104,16 @@ function* openFile(action: ReturnType<typeof openWorkspaceFile>): SagaGenerator<
       filePath: parsed.path,
       workspaceId,
       closable: true,
-      ...(line !== undefined ? { data: { line, jumpTimestamp: Date.now() } } : {}),
+      ...(line !== undefined || options?.gitRootId
+        ? {
+            data: {
+              ...(line !== undefined ? { line, jumpTimestamp: Date.now() } : {}),
+              ...(options?.gitRootId
+                ? { gitRootId: options.gitRootId, gitRootPath: options.gitRootPath }
+                : {}),
+            },
+          }
+        : {}),
     },
     options?.openInAdjacentPanel ?? false,
     options?.sourcePanelId,

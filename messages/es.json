@@ -6921,5 +6921,6 @@
   "terminal_scriptOutput_retained_description": "Instantánea de la salida temporal, limitada a 10.000 líneas. La salida en directo se muestra por separado.",
   "terminal_scriptOutput_retainedLoading_label": "Cargando salida conservada…",
   "terminal_scriptOutput_retainedUnavailable_label": "La salida conservada no está disponible.",
-  "terminal_scriptOutput_live_label": "Salida en directo"
+  "terminal_scriptOutput_live_label": "Salida en directo",
+  "files_secondaryRoot_unsupported_error": "Este daemon no puede leer archivos de raíces Git secundarias. Actualízalo y vuelve a conectarte."
 }

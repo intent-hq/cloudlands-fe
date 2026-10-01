@@ -104,6 +104,45 @@ describe('filesReadSaga', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps root-scoped reads separate and never suffix-resolves a root read failure', async () => {
+    vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+      const { gitRootId } = params as { gitRootId?: string };
+      if (gitRootId === 'missing-root') throw new Error('Unknown git root: missing-root');
+      return gitRootId === 'root-a' ? 'root A' : 'primary';
+    });
+    const h = startStatefulSaga();
+    try {
+      h.send(loadFileContentRequested('ws-1', 'new.md', '/repo/new.md'));
+      h.send(
+        loadFileContentRequested('ws-1', 'root-a-cache', '/external/a/new.md', {
+          gitRoot: { id: 'root-a', relativePath: 'new.md' },
+        }),
+      );
+      h.send(
+        loadFileContentRequested('ws-1', 'missing-root-cache', '/external/missing/new.md', {
+          gitRoot: { id: 'missing-root', relativePath: 'new.md' },
+        }),
+      );
+      await settle();
+      expect(h.entry('ws-1', 'new.md')?.originalContent).toBe('primary');
+      expect(h.entry('ws-1', 'root-a-cache')?.originalContent).toBe('root A');
+      expect(h.entry('ws-1', 'missing-root-cache')?.error).toContain('Unknown git root');
+      expect(
+        vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'file.read'),
+      ).toHaveLength(3);
+      expect(backendRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'ws-1',
+        path: 'new.md',
+        gitRootId: 'root-a',
+      });
+      expect(backendRequest).not.toHaveBeenCalledWith('search.fileNames', expect.anything());
+      expect(h.actions.some((action) => action.type === updateFileTabPath.type)).toBe(false);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
   it('uses the exact request and maps only runtime content fields', async () => {
     vi.spyOn(appClient.files, 'read').mockResolvedValue({
       path: 'src/a.ts',
