@@ -150,18 +150,6 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
       return () => {};
     },
   }),
-  selectScriptManagerEntries: () => ({
-    subscribe: (run: (value: never[]) => void) => {
-      run([]);
-      return () => {};
-    },
-  }),
-  selectScriptHistoryState: () => ({
-    subscribe: (run: (value: object) => void) => {
-      run({});
-      return () => {};
-    },
-  }),
   selectWorkspaceScriptEntries: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({

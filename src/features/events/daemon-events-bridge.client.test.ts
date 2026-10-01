@@ -4847,7 +4847,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
 
       capturedHandlers[0]!(notification('script:changed', { scriptId: SCRIPT_ID, action }));
 
-      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts(WS, true));
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts(WS));
       dispatchGetterSpy.mockRestore();
     },
   );
@@ -11224,15 +11224,16 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
-  it('invalidates cached script history for tracked workspaces on reconnect', async () => {
-    const { refreshScripts } = await import('$store/renderer/slices/scripts/scripts-slice');
-    appStore.dispatch(refreshScripts('tracked-script-history', true));
+  it('refreshes active scripts once per tracked workspace on reconnect', async () => {
+    const { refreshScripts, setScriptsInitialized } =
+      await import('$store/renderer/slices/scripts/scripts-slice');
+    appStore.dispatch(setScriptsInitialized('tracked-scripts', true));
     const dispatchSpy = vi.fn(appStore.dispatch);
     const spy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
     try {
       await refreshDaemonEventsAfterReconnect(WS);
-      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts(WS, true));
-      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts('tracked-script-history', true));
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts(WS));
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts('tracked-scripts'));
       expect(
         dispatchSpy.mock.calls.filter(
           ([action]) => action.type === refreshScripts.type && action.payload[0] === WS,

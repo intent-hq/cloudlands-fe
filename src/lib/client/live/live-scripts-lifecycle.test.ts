@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./backend-transport', () => ({ backendRequest: vi.fn() }));
 import { backendRequest } from './backend-transport';
 import { LiveScriptsClient } from './live-scripts-client';
-import { makeScriptHistoryFixture } from '$features/scripts/components/script-history-fixture';
+import { makeScriptsFixture } from '../../../test/fixtures/scripts';
 const request = vi.mocked(backendRequest);
 let supported = true;
-const rows = makeScriptHistoryFixture().map((s, index) =>
+const rows = makeScriptsFixture().map((s, index) =>
   index < 3 ? { ...s, archivedAt: '2026-09-30T12:00:00Z' } : s,
 );
 beforeEach(() => {
