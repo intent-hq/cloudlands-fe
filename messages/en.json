@@ -6990,5 +6990,15 @@
   "settings_aiBehavior_importDetails": "Details",
   "settings_aiBehavior_importUnreadable": "Cannot read agent file",
   "settings_aiBehavior_importedClaude_readOnly": "Read-only in Intent. Open the original file to make changes.",
-  "settings_aiBehavior_importedClaude_title": "Imported from Claude Code"
+  "settings_aiBehavior_importedClaude_title": "Imported from Claude Code",
+  "collaborationAuth_pinned_description": "This invitation requires a specific {provider} account on {host}.",
+  "collaborationAuth_githubConsent_description": "Uses gist permission to publish a public snippet that verifies your identity.",
+  "collaborationAuth_gitlabConsent_description": "Uses GitLab API access to publish a public snippet that verifies your identity.",
+  "collaborationAuth_customInstance_label": "Use another GitLab instance",
+  "collaborationAuth_useInstance_label": "Use this instance",
+  "collaborationAuth_loading_label": "Checking your account…",
+  "collaborationAuth_changeAccount_label": "Change account",
+  "collaborationAuth_details_label": "Sign-in details",
+  "collaborationAuth_tokenSignIn_label": "Sign in with token",
+  "collaborationAuth_providerSignIn_label": "Sign in with {provider}"
 }

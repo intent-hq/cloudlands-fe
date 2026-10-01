@@ -6990,5 +6990,15 @@
   "settings_aiBehavior_importDetails": "詳細資訊",
   "settings_aiBehavior_importUnreadable": "無法讀取代理檔案",
   "settings_aiBehavior_importedClaude_readOnly": "在 Intent 中為唯讀。請開啟原始檔案進行修改。",
-  "settings_aiBehavior_importedClaude_title": "從 Claude Code 匯入"
+  "settings_aiBehavior_importedClaude_title": "從 Claude Code 匯入",
+  "collaborationAuth_pinned_description": "此邀請需要 {host} 上的特定 {provider} 帳號。",
+  "collaborationAuth_githubConsent_description": "使用 gist 權限發佈用於驗證你身分的公開程式碼片段。",
+  "collaborationAuth_gitlabConsent_description": "使用 GitLab API 存取權限發佈用於驗證你身分的公開程式碼片段。",
+  "collaborationAuth_customInstance_label": "使用其他 GitLab 執行個體",
+  "collaborationAuth_useInstance_label": "使用此執行個體",
+  "collaborationAuth_loading_label": "正在檢查你的帳號…",
+  "collaborationAuth_changeAccount_label": "切換帳號",
+  "collaborationAuth_details_label": "登入詳細資料",
+  "collaborationAuth_tokenSignIn_label": "使用權杖登入",
+  "collaborationAuth_providerSignIn_label": "使用 {provider} 登入"
 }

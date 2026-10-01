@@ -6990,5 +6990,15 @@
   "settings_aiBehavior_importDetails": "详细信息",
   "settings_aiBehavior_importUnreadable": "无法读取智能体文件",
   "settings_aiBehavior_importedClaude_readOnly": "在 Intent 中为只读。请打开原始文件进行修改。",
-  "settings_aiBehavior_importedClaude_title": "从 Claude Code 导入"
+  "settings_aiBehavior_importedClaude_title": "从 Claude Code 导入",
+  "collaborationAuth_pinned_description": "此邀请需要 {host} 上的特定 {provider} 帐号。",
+  "collaborationAuth_githubConsent_description": "使用 gist 权限发布用于验证你身份的公开代码片段。",
+  "collaborationAuth_gitlabConsent_description": "使用 GitLab API 访问权限发布用于验证你身份的公开代码片段。",
+  "collaborationAuth_customInstance_label": "使用其他 GitLab 实例",
+  "collaborationAuth_useInstance_label": "使用此实例",
+  "collaborationAuth_loading_label": "正在检查你的帐号…",
+  "collaborationAuth_changeAccount_label": "切换帐号",
+  "collaborationAuth_details_label": "登录详情",
+  "collaborationAuth_tokenSignIn_label": "使用令牌登录",
+  "collaborationAuth_providerSignIn_label": "使用 {provider} 登录"
 }

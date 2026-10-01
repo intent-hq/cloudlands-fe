@@ -6990,5 +6990,15 @@
   "settings_aiBehavior_importDetails": "詳細",
   "settings_aiBehavior_importUnreadable": "エージェントファイルを読み取れません",
   "settings_aiBehavior_importedClaude_readOnly": "Intent では読み取り専用です。変更するには元のファイルを開いてください。",
-  "settings_aiBehavior_importedClaude_title": "Claude Code からインポート"
+  "settings_aiBehavior_importedClaude_title": "Claude Code からインポート",
+  "collaborationAuth_pinned_description": "この招待には {host} の特定の {provider} アカウントが必要です。",
+  "collaborationAuth_githubConsent_description": "gist 権限を使用して、本人確認のための公開スニペットを作成します。",
+  "collaborationAuth_gitlabConsent_description": "GitLab API アクセスを使用して、本人確認のための公開スニペットを作成します。",
+  "collaborationAuth_customInstance_label": "別の GitLab インスタンスを使用",
+  "collaborationAuth_useInstance_label": "このインスタンスを使用",
+  "collaborationAuth_loading_label": "アカウントを確認中…",
+  "collaborationAuth_changeAccount_label": "アカウントを変更",
+  "collaborationAuth_details_label": "サインインの詳細",
+  "collaborationAuth_tokenSignIn_label": "トークンでサインイン",
+  "collaborationAuth_providerSignIn_label": "{provider} でサインイン"
 }

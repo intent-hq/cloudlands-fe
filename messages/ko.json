@@ -6990,5 +6990,15 @@
   "settings_aiBehavior_importDetails": "세부 정보",
   "settings_aiBehavior_importUnreadable": "에이전트 파일을 읽을 수 없음",
   "settings_aiBehavior_importedClaude_readOnly": "Intent에서는 읽기 전용입니다. 변경하려면 원본 파일을 여세요.",
-  "settings_aiBehavior_importedClaude_title": "Claude Code에서 가져옴"
+  "settings_aiBehavior_importedClaude_title": "Claude Code에서 가져옴",
+  "collaborationAuth_pinned_description": "이 초대에는 {host}의 특정 {provider} 계정이 필요합니다.",
+  "collaborationAuth_githubConsent_description": "gist 권한을 사용하여 신원을 확인하는 공개 스니펫을 게시합니다.",
+  "collaborationAuth_gitlabConsent_description": "GitLab API 액세스를 사용하여 신원을 확인하는 공개 스니펫을 게시합니다.",
+  "collaborationAuth_customInstance_label": "다른 GitLab 인스턴스 사용",
+  "collaborationAuth_useInstance_label": "이 인스턴스 사용",
+  "collaborationAuth_loading_label": "계정 확인 중…",
+  "collaborationAuth_changeAccount_label": "계정 변경",
+  "collaborationAuth_details_label": "로그인 세부 정보",
+  "collaborationAuth_tokenSignIn_label": "토큰으로 로그인",
+  "collaborationAuth_providerSignIn_label": "{provider}(으)로 로그인"
 }

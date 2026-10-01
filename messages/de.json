@@ -6990,5 +6990,15 @@
   "settings_aiBehavior_importDetails": "Einzelheiten",
   "settings_aiBehavior_importUnreadable": "Agentendatei kann nicht gelesen werden",
   "settings_aiBehavior_importedClaude_readOnly": "In Intent schreibgeschützt. Öffne die Originaldatei, um Änderungen vorzunehmen.",
-  "settings_aiBehavior_importedClaude_title": "Aus Claude Code importiert"
+  "settings_aiBehavior_importedClaude_title": "Aus Claude Code importiert",
+  "collaborationAuth_pinned_description": "Diese Einladung erfordert ein bestimmtes {provider}-Konto auf {host}.",
+  "collaborationAuth_githubConsent_description": "Verwendet die gist-Berechtigung, um deine Identität mit einem öffentlichen Snippet zu bestätigen.",
+  "collaborationAuth_gitlabConsent_description": "Verwendet GitLab-API-Zugriff, um deine Identität mit einem öffentlichen Snippet zu bestätigen.",
+  "collaborationAuth_customInstance_label": "Andere GitLab-Instanz verwenden",
+  "collaborationAuth_useInstance_label": "Diese Instanz verwenden",
+  "collaborationAuth_loading_label": "Konto wird geprüft…",
+  "collaborationAuth_changeAccount_label": "Konto wechseln",
+  "collaborationAuth_details_label": "Anmeldedetails",
+  "collaborationAuth_tokenSignIn_label": "Mit Token anmelden",
+  "collaborationAuth_providerSignIn_label": "Mit {provider} anmelden"
 }
