@@ -26,7 +26,7 @@ export interface IndexedNoteSearchResponse {
 export type NoteSearchWorkspace = NonNullable<Parameters<typeof buildMessageTitleSegments>[0]>;
 
 /** Presentation data only: navigation must use workspaceId + noteId, never id. */
-export interface NoteQueryItem {
+interface NoteQueryItem {
   id: string;
   type: 'note';
   noteId: string;
