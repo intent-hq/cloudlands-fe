@@ -91,9 +91,13 @@ test('preserves the empty composer and insets prompt text below expanded and col
   expect(await typedTextInset()).toBe(expandedTypedInset);
   expect((await header.boundingBox())!.height).toBe(28);
   const collapsedHeaderBox = (await header.boundingBox())!;
+  const collapsedDeliveryBox = (await queue.getByTestId('queued-messages-delivery').boundingBox())!;
   const collapsedEditorBox = (await input.locator('.editor-wrapper').boundingBox())!;
   expect(collapsedHeaderBox.y).toBe(await surfaceInnerTop());
-  expect(collapsedEditorBox.y - collapsedHeaderBox.y - collapsedHeaderBox.height).toBe(9);
+  expect(collapsedDeliveryBox.y).toBeGreaterThanOrEqual(
+    collapsedHeaderBox.y + collapsedHeaderBox.height,
+  );
+  expect(collapsedEditorBox.y - collapsedDeliveryBox.y - collapsedDeliveryBox.height).toBe(9);
   // Refocus before selecting through ProseMirror's keyboard transaction path.
   await editor.focus();
   await expect(editor).toBeFocused();

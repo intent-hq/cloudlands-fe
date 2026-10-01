@@ -620,6 +620,7 @@
         : ''}"
       aria-expanded={expanded}
       aria-controls={contentId}
+      aria-describedby={`${contentId}-delivery`}
       data-testid="queued-messages-disclosure"
       onclick={() => (expanded = !expanded)}
     >
@@ -641,6 +642,14 @@
         />
       </span>
     </Button>
+
+    <p
+      id={`${contentId}-delivery`}
+      class="type-caption px-3.5 pb-1 text-subtle"
+      data-testid="queued-messages-delivery"
+    >
+      {m.chat_queuedMessages_batchDelivery_description()}
+    </p>
 
     {#if expanded}
       <div
