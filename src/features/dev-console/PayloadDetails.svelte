@@ -44,8 +44,12 @@
   <header>
     <strong>{row.method}</strong><span
       >{m.devConsole_connection_label()}: {row.connectionId} / {row.connectionGeneration}</span
-    ><Button size="compact" variant="ghost" wrapContent={false} class="payload-control" onclick={onclose}
-      >{m.devConsole_closeDetails_label()}</Button
+    ><Button
+      size="compact"
+      variant="ghost"
+      wrapContent={false}
+      class="payload-control"
+      onclick={onclose}>{m.devConsole_closeDetails_label()}</Button
     >
   </header>
   <div class="capture">
