@@ -35,6 +35,7 @@ describe('renderer app saga registry', () => {
       'agentCreationSaga',
       'backgroundExecutorSaga',
       'agentMutationSaga',
+      'agentModelSaga',
       'editRegenerateSaga',
       'regenerateFromMessageSaga',
       'agentFailureToastSaga',

@@ -4,7 +4,9 @@
  * first-class `agent.update` `reasoningEffort` wire and the legacy
  * compound-model `agent.setModel` wire.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
 
 const mockSetReasoningEffort = vi.hoisted(() =>
   vi.fn(
@@ -42,14 +44,43 @@ vi.mock('$lib/client', () => ({
   appClient: { agents: { setReasoningEffort: mockSetReasoningEffort } },
 }));
 vi.mock('./agent.client', () => ({ agentClient: { setModel: mockSetModel } }));
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: mockDispatch,
-    get state() {
-      return storeState;
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const module = createAppStoreMockModule({
+    state: () =>
+      withLegacyPrincipal({
+        ...storeState,
+        agentModel: mutationState,
+        agentSessions: {
+          byAgentId: {
+            'agent-1': { workspaceId: 'ws-1', ...storeState.agentSessions.byAgentId['agent-1'] },
+          },
+        },
+        connections: { hasReceivedList: true, windowBackendId: 'local' },
+        guestSessions: { hasReceivedList: true, sessions: { ids: [], map: {} } },
+        workspace: {
+          workspaces: { ids: ['ws-1'], map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } } },
+        },
+      }),
+    dispatch: (action) => {
+      mutationState = agentModelReducer(mutationState, action);
+      if (action.type === updateSession.type) mockDispatch(action);
+      channel.put(action);
+      return action;
     },
-  },
-}));
+  });
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (fn) => {
+    const selector = createSelector(fn);
+    selector.effect = function* (...args) {
+      return yield select(fn, ...args);
+    };
+    return selector;
+  };
+  return module;
+});
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentProvider: {
     select: (_state: unknown, agentId: string) => {
@@ -71,12 +102,28 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mockToastError } }));
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { agentModelReducer } from '$store/renderer/slices/agent-model/agent-model-slice';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
+import { store } from '$store/renderer/store';
 import {
   applyReasoningEffort,
   markReasoningEffortIntent,
   reconcileAgentReasoningEffort,
   releaseReasoningEffortIntent,
 } from './reasoning-effort';
+
+let channel: ReturnType<typeof stdChannel>;
+let task: Task;
+let mutationState = agentModelReducer(undefined, { type: 'init' });
+beforeEach(() => {
+  mutationState = agentModelReducer(undefined, { type: 'init' });
+  channel = stdChannel();
+  task = runSaga(
+    { channel, dispatch: store.dispatch, getState: () => store.state },
+    agentModelSaga,
+  );
+});
+afterEach(() => task.cancel());
 
 function setStoredEffort(agentId: string, effort: string | null) {
   storeState.agentSessions.byAgentId[agentId] = {

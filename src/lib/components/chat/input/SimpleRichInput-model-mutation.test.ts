@@ -99,10 +99,16 @@ import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalo
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import {
+  agentModelReducer,
+  agentModelMutationRequested,
+} from '$store/renderer/slices/agent-model/agent-model-slice';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
 import SimpleRichInput from './SimpleRichInput.svelte';
 
 let catalogChannel: ReturnType<typeof stdChannel> | undefined;
 let catalogTask: Task | undefined;
+let mutationTask: Task | undefined;
 
 const workspace = { id: 'model-tests', path: '/tmp/model-tests', name: 'Models' } as Workspace;
 const emitState = () => (store as typeof store & { emitState(): void }).emitState();
@@ -177,6 +183,7 @@ async function confirm() {
 beforeEach(() => {
   vi.clearAllMocks();
   fixture.state = {
+    agentModel: agentModelReducer.initialState,
     agentSessions: {
       ...sessionInitial,
       byAgentId: {
@@ -237,6 +244,7 @@ beforeEach(() => {
   };
   fixture.state = withLegacyPrincipal(fixture.state);
   fixture.dispatch.mockImplementation((action) => {
+    fixture.state.agentModel = agentModelReducer(fixture.state.agentModel, action);
     fixture.state.agentSessions = agentSessionReducer(fixture.state.agentSessions, action);
     fixture.state.model = modelReducer(fixture.state.model, action);
     fixture.state.providerModels = providerModelsReducer(fixture.state.providerModels, action);
@@ -266,16 +274,22 @@ beforeEach(() => {
     modelReloadSaga,
   );
   expect(catalogTask.isRunning()).toBe(true);
+  mutationTask = runSaga(
+    { channel: catalogChannel, dispatch: fixture.dispatch, getState: () => store.state },
+    agentModelSaga,
+  );
 });
 
 afterEach(async () => {
   try {
     cleanup();
   } finally {
+    mutationTask?.cancel();
     catalogTask?.cancel();
     catalogChannel?.close();
     catalogChannel = undefined;
     unregisterMockIpcHandler(AGENT_CHANNELS.SET_MODEL);
+    await mutationTask?.toPromise();
     await catalogTask?.toPromise();
     expect(catalogTask?.isCancelled()).toBe(true);
     expect(catalogTask?.isRunning()).toBe(false);
@@ -653,7 +667,7 @@ describe('real composer model mutation ownership', () => {
     expect(fixture.setModel).toHaveBeenCalledTimes(1);
   });
 
-  it('prevents a queued effort reconciliation from reaching the wire after permission loss', async () => {
+  it('prevents a queued model and its effort reconciliation from reaching the wire after permission loss', async () => {
     const { applyReasoningEffort } = await import('$features/agent/reasoning-effort');
     let finish!: (value: { success: boolean }) => void;
     fixture.setEffort.mockImplementationOnce(
@@ -666,15 +680,21 @@ describe('real composer model mutation ownership', () => {
     await waitFor(() => expect(fixture.setEffort).toHaveBeenCalledTimes(1));
     mount({ requiresModelSwitchConfirmation: false });
     await pick('codex', 'codex shared');
-    await waitFor(() =>
-      expect(session()).toMatchObject({ provider: 'codex', reasoningEffort: 'medium' }),
-    );
+    await waitFor(() => {
+      const operations = fixture.dispatch.mock.calls
+        .filter(([action]) => action.type === agentModelMutationRequested.type)
+        .map(([action]) => action.payload[0].operation.kind);
+      expect(operations).toEqual(['effort', 'model']);
+    });
+    expect(fixture.setModel).not.toHaveBeenCalled();
+    expect(session()).toMatchObject({ provider: 'auggie', reasoningEffort: 'low' });
     losePermission();
     finish({ success: true });
     await existingWrite;
-    await tick();
+    await waitFor(() => expect(fixture.state.agentModel.mutations.ids).toHaveLength(0));
     expect(fixture.setEffort).toHaveBeenCalledTimes(1);
-    expect(fixture.setModel).toHaveBeenCalledExactlyOnceWith(modelRequest('codex', 'shared-model'));
+    expect(fixture.setModel).not.toHaveBeenCalled();
+    expect(session()).toMatchObject({ provider: 'auggie', reasoningEffort: 'low' });
   });
 
   it('keeps an accepted model when effort reconciliation is rejected', async () => {

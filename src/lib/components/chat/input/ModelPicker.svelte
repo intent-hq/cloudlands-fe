@@ -32,7 +32,15 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
-  import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
+  import { createAgentModelMutator } from './agent-model-mutator';
+  import {
+    selectAgentModelMutationPending,
+    selectAgentModelMutations,
+  } from '$store/renderer/slices/agent-model/agent-model-selectors';
+  import {
+    agentModelMutationRequested,
+    agentModelMutationConsumed,
+  } from '$store/renderer/slices/agent-model/agent-model-slice';
 
   import {
     selectAvailableModels,
@@ -349,7 +357,11 @@
     connection: string | null;
   };
   let pendingModelUpdate = $state<ModelChange | null>(null);
-  let isApplyingModelUpdate = $state(false);
+  const mutationConsumerId = crypto.randomUUID();
+  const mutationPending$ = selectAgentModelMutationPending(mutationConsumerId);
+  const mutations$ = selectAgentModelMutations(mutationConsumerId);
+  let submittedModelChange = $state<{ requestId: string; change: ModelChange } | null>(null);
+  const isApplyingModelUpdate = $derived($mutationPending$);
   let localPickedProviderId = $state<string | null>(null);
   let modelChangeRevision = 0;
   let confirmationRevision = 0;
@@ -359,6 +371,10 @@
     modelChangeRevision++;
     confirmationRevision++;
     pendingModelUpdate = null;
+    if (submittedModelChange)
+      appStore.dispatch(
+        agentModelMutationConsumed(submittedModelChange.requestId, mutationConsumerId),
+      );
   });
 
   // Provider from the prop or agent session, or null when neither determines
@@ -389,9 +405,12 @@
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
   const effectiveLocked = $derived(isLocked || isGuestLocked);
-  // Every agent-session mutation goes through this funnel; it re-reads the
-  // live lock on each call, so no call site needs to re-check after an await.
-  const mutate = createAgentModelMutator({ isLocked: () => effectiveLocked || destroyed });
+  // Effort callbacks retain the compatibility lock funnel. Model intents below
+  // carry the same live lease to the shared saga owner.
+  const mutate = createAgentModelMutator({
+    isLocked: () => effectiveLocked || destroyed,
+    consumerId: mutationConsumerId,
+  });
 
   import { store as appStore } from '$store/renderer/store';
 
@@ -698,65 +717,58 @@
     );
   }
 
-  async function applyBackendModelUpdate(change: ModelChange) {
+  function applyBackendModelUpdate(change: ModelChange) {
     if (!isCurrentModelChange(change) || isApplyingModelUpdate) return;
     if (!hasResolvedProvider(change.pick.providerId)) {
       restoreLocalSelection(change);
       return;
     }
-    isApplyingModelUpdate = true;
-    let modelAccepted = false;
-    try {
-      const { providerId: pickedProviderId, modelId } = change.pick;
-      const result = await mutate.setModel(
-        change.agentId,
-        modelId,
-        change.workspaceId,
-        pickedProviderId,
-      );
-      if (!isCurrentModelChange(change)) return;
-      if (isSkippedMutation(result)) {
-        restoreLocalSelection(change);
-        return;
-      }
-      if (!result.ok || !result.data.success) {
-        restoreLocalSelection(change);
-        const error = result.ok ? result.data.error : result.error;
-        if (error) notify.error(error, { duration: 6000 });
-        return;
-      }
-      // Only the accepted selection reaches shared session state. Failed or
-      // deferred picks stay local, so they cannot leave a partial provider/model.
-      if (!mutate.setSessionModel(change.agentId, modelId, pickedProviderId)) {
-        restoreLocalSelection(change);
-        return;
-      }
-      modelAccepted = true;
-      const targetOption = findCatalogOption(modelId, pickedProviderId);
-      const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
-      const currentEffort = selectAgentReasoningEffort.select(appStore.state, change.agentId);
-      await mutate.reconcileEffort(
-        change.agentId,
-        change.workspaceId,
-        currentEffort,
-        supportedEfforts,
-        () => isCurrentModelChange(change),
-      );
-    } catch (error) {
-      if (!isCurrentModelChange(change)) return;
-      if (!modelAccepted) restoreLocalSelection(change);
-      logger.error('Error updating agent model:', { agentId: change.agentId, error });
-      notify.error(
-        error instanceof Error
-          ? error.message
-          : m.chat_richInput_switchFailed_error({
-              provider: providerDisplayName(change.pick.providerId),
-            }),
-      );
-    } finally {
-      isApplyingModelUpdate = false;
-    }
+    const requestId = crypto.randomUUID();
+    submittedModelChange = { requestId, change };
+    const canWrite = () =>
+      isCurrentModelChange(change) &&
+      !effectiveLocked &&
+      hasResolvedProvider(change.pick.providerId) &&
+      canUseProviderModels(change.pick.providerId);
+    const action = agentModelMutationRequested(
+      {
+        requestId,
+        consumerId: mutationConsumerId,
+        agentId: change.agentId,
+        workspaceId: change.workspaceId,
+        connection: change.connection,
+        operation: {
+          kind: 'model',
+          model: change.pick.modelId,
+          providerId: change.pick.providerId,
+          commit: true,
+        },
+      },
+      { canSend: canWrite, canMutate: canWrite },
+    );
+    // The correlated selector result below owns presentation, not this Promise.
+    void appStore.dispatch(action).catch(() => {});
   }
+
+  $effect(() => {
+    const submitted = submittedModelChange;
+    if (!submitted) return;
+    const outcome = $mutations$.find((entry) => entry.requestId === submitted.requestId);
+    if (!outcome || outcome.status === 'pending') return;
+    untrack(() => {
+      submittedModelChange = null;
+      appStore.dispatch(agentModelMutationConsumed(outcome.requestId, mutationConsumerId));
+      if (!isCurrentModelChange(submitted.change)) return;
+      if (
+        outcome.status === 'cancelled' ||
+        (outcome.status === 'failure' && !outcome.modelAccepted)
+      ) {
+        restoreLocalSelection(submitted.change);
+        if (outcome.status === 'failure' && outcome.error && !effectiveLocked)
+          notify.error(outcome.error, { duration: 6000 });
+      }
+    });
+  });
 
   async function handleModelSelect(model: string | undefined, picked?: ModelPick) {
     if (effectiveLocked || destroyed || isApplyingModelUpdate) {

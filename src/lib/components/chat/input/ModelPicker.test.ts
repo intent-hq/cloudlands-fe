@@ -137,6 +137,21 @@ vi.mock('$store/renderer/store', async () => {
       model: { defaultProviderId: mockModelState.defaultProviderId },
       // Selector-channel memoization needs immutable snapshots like real Redux.
       providerModels: { ...mockProviderModelsState },
+      agentModel: mutationState,
+      agentSessions: {
+        byAgentId: {
+          'agent-1': {
+            id: 'agent-1',
+            workspaceId: 'ws-1',
+            model: mockModelState.selectedModel,
+            provider: mockModelState.defaultProviderId,
+            ...get(mockAgentSession$),
+            reasoningEffort: get(reasoningEffort$),
+            ...mutationSession,
+          },
+        },
+      },
+      daemonHealth: {},
       ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
@@ -166,6 +181,19 @@ const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
+    if (action.type?.startsWith('agentModel/')) {
+      mutationState = agentModelReducer(
+        mutationState,
+        action as Parameters<typeof agentModelReducer>[1],
+      );
+      (mockAppStore as unknown as { emitState: () => void }).emitState();
+    }
+    if (action.type === 'agentSession/updateSession') {
+      Object.assign(
+        mutationSession,
+        (action.payload as { fields: Record<string, unknown> }).fields,
+      );
+    }
     if (action.type?.startsWith('providerModels/') || action.type === 'hostExecution/invalidated') {
       Object.assign(
         mockProviderModelsState,
@@ -215,12 +243,27 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
   selectAgentSession.select = vi.fn(() => undefined);
   const selectAgentReasoningEffort = vi.fn(() => reasoningEffort$);
   selectAgentReasoningEffort.select = vi.fn(() => get(reasoningEffort$));
-  return { selectAgentSession, selectAgentReasoningEffort };
+  return {
+    selectAgentSession,
+    selectAgentReasoningEffort,
+    selectAgentProvider: {
+      select: (
+        state: { agentSessions: { byAgentId: Record<string, { provider: string }> } },
+        id: string,
+      ) => state.agentSessions.byAgentId[id]?.provider,
+    },
+  };
 });
 
 vi.mock('$features/agent/reasoning-effort', () => ({
   applyReasoningEffort: applyReasoningEffortMock,
   reconcileAgentReasoningEffort: reconcileAgentReasoningEffortMock,
+  markReasoningEffortIntent: vi.fn(() => ++effortIntent),
+}));
+let effortIntent = 0;
+const setReasoningEffortMock = vi.hoisted(() => vi.fn(async () => ({ success: true })));
+vi.mock('$lib/client', () => ({
+  appClient: { agents: { setReasoningEffort: setReasoningEffortMock } },
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
@@ -247,7 +290,9 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => readable(mockModelState.loadError),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => providerStaleFlags$,
-  selectAgentModelEffortLevels: () => agentModelEffortLevels$,
+  selectAgentModelEffortLevels: Object.assign(() => agentModelEffortLevels$, {
+    select: () => get(agentModelEffortLevels$),
+  }),
 }));
 
 const hasCheckedOnce$ = writable(true);
@@ -328,6 +373,8 @@ import {
   initialState as providerModelsInitialState,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
+import { agentModelReducer } from '$store/renderer/slices/agent-model/agent-model-slice';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
@@ -339,7 +386,12 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 
 let catalogChannel: ReturnType<typeof stdChannel> | undefined;
 let catalogTask: Task;
+let mutationTask: Task;
+let mutationState = agentModelReducer(undefined, { type: 'init' });
+let mutationSession: Record<string, unknown> = {};
 beforeEach(() => {
+  mutationState = agentModelReducer(undefined, { type: 'init' });
+  mutationSession = {};
   mockRoleState.current = withLegacyPrincipal(
     mockRoleState.reset(),
   ) as unknown as typeof mockRoleState.current;
@@ -349,6 +401,10 @@ beforeEach(() => {
     map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } },
   };
   catalogChannel = stdChannel();
+  mutationTask = runSaga(
+    { channel: catalogChannel, dispatch: mockSvelteDispatch, getState: () => mockAppStore.state },
+    agentModelSaga,
+  );
   catalogTask = runSaga(
     {
       channel: catalogChannel,
@@ -368,6 +424,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   catalogTask.cancel();
+  mutationTask.cancel();
   catalogChannel = undefined;
   Object.assign(mockProviderModelsState, providerModelsInitialState);
   availableProviderOverride$.set(null);
@@ -4272,13 +4329,11 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith(
-        'agent-1',
-        'ws-1',
-        'xhigh',
-        ['low', 'high'],
-        { canMutate: expect.any(Function), canSend: expect.any(Function) },
-      );
+      expect(setReasoningEffortMock).toHaveBeenCalledWith({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        reasoningEffort: 'high',
+      });
     });
   });
 
