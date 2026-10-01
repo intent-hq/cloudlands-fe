@@ -10,8 +10,9 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createConnection } from 'node:net';
-import { createWriteStream, writeFileSync } from 'node:fs';
+import { createWriteStream, writeFileSync, constants as fsConstants } from 'node:fs';
 import {
+  open,
   copyFile,
   cp,
   chmod,
@@ -122,7 +123,7 @@ const companionDiagnosticEnvelopeRoot =
   '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/native-fixture-metadata-6328';
 const companionDiagnosticInheritedRoot =
   '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-companion-clock-6328';
-const companionDiagnosticIdentity = {
+const companionMetadataIdentity = {
   sourceCommit: '692a771667212edfd1040665f76a80ba348acc4f',
   parent: '581a3c62a784e6803301b316a2bf7f8c018efb35',
   sourceTree: '8121211b5668ba3c29e5624a07c4d88ed16402fa',
@@ -132,6 +133,23 @@ const companionDiagnosticIdentity = {
   bytes: 269130632,
   basename: 'e2e-native-review-wire-692a7716-x86_64-unknown-linux-gnu',
 };
+const companionStartupRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-milestones-692a';
+const companionStartupArtifactRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-artifact-26c32c9c';
+const companionStartupEnvelope =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/native-startup-milestones-26c32c9c';
+const companionDiagnosticIdentity = {
+  sourceCommit: '26c32c9c9582e6ed72099677ff5c07bfee6f0c3f',
+  parent: '692a771667212edfd1040665f76a80ba348acc4f',
+  sourceTree: '6a08e4330b71366b146eeb7fb7ca40c740714ee9',
+  driverBlob: '51cb104282afd94cc09ddaf22eb859f7829a59eb',
+  sourceSha256: '5be8eda1a5300950bd8409b1e8dee64b18096ea89c7f61c03e2ae2944ad22518',
+  executableSha256: '71a0c3494e0141bfa5166293d01fd679c810ece7d4521f7a5cd0768df0a62b7e',
+  bytes: 270077464,
+  basename: 'e2e-native-review-wire-26c32c9c-x86_64-unknown-linux-gnu',
+};
+
 export function companionDiagnosticMode(env: NodeJS.ProcessEnv): boolean {
   const value = env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328;
   if (value === undefined) return false;
@@ -144,9 +162,9 @@ export async function assertCompanionDiagnosticIdentity(
   artifactPath: string,
 ) {
   if (
-    driverSource !== join(companionDiagnosticRoot, 'packages/intentd') ||
+    driverSource !== join(companionStartupRoot, 'packages/intentd') ||
     artifactPath !==
-      join(companionDiagnosticArtifactRoot, 'artifact', companionDiagnosticIdentity.basename)
+      join(companionStartupArtifactRoot, 'artifact', companionDiagnosticIdentity.basename)
   )
     throw new Error('Unreleased diagnostic source or executable locator');
   const git = (...args: string[]) =>
@@ -253,28 +271,29 @@ export async function assertCompanionDiagnosticIdentity(
   const sourceHandoff = JSON.parse(await readFile(sourceHandoffPath, 'utf8'));
   const metadata = JSON.parse(await readFile(metadataContractPath, 'utf8'));
   if (
-    handoff.source.head !== pin.sourceCommit ||
-    handoff.source.parent !== pin.parent ||
-    handoff.source.tree !== pin.sourceTree ||
-    handoff.source.root !== driverSource ||
+    handoff.source.head !== companionMetadataIdentity.sourceCommit ||
+    handoff.source.parent !== companionMetadataIdentity.parent ||
+    handoff.source.tree !== companionMetadataIdentity.sourceTree ||
+    handoff.source.root !== join(companionDiagnosticRoot, 'packages/intentd') ||
     handoff.source.acceptedSourceEnvelope !== companionDiagnosticEnvelopeRoot ||
     handoff.source.acceptedSourceHandoffSha256 !== sourceHandoffSha256 ||
-    handoff.artifact.path !== artifactPath ||
-    handoff.artifact.sha256 !== pin.executableSha256 ||
-    handoff.artifact.bytes !== pin.bytes ||
+    handoff.artifact.path !==
+      join(companionDiagnosticArtifactRoot, 'artifact', companionMetadataIdentity.basename) ||
+    handoff.artifact.sha256 !== companionMetadataIdentity.executableSha256 ||
+    handoff.artifact.bytes !== companionMetadataIdentity.bytes ||
     handoff.artifact.mode !== '0o555' ||
-    sourceHandoff.head !== pin.sourceCommit ||
-    sourceHandoff.parent !== pin.parent ||
-    sourceHandoff.tree !== pin.sourceTree ||
-    sourceHandoff.checkout !== driverSource ||
+    sourceHandoff.head !== companionMetadataIdentity.sourceCommit ||
+    sourceHandoff.parent !== companionMetadataIdentity.parent ||
+    sourceHandoff.tree !== companionMetadataIdentity.sourceTree ||
+    sourceHandoff.checkout !== join(companionDiagnosticRoot, 'packages/intentd') ||
     sourceHandoff.contract !== 'CONTRACT.json' ||
     metadata.version !== 'owned-fixture-metadata/1' ||
-    metadata.sourceHead !== pin.sourceCommit ||
-    metadata.parent !== pin.parent ||
-    metadata.sourceTree !== pin.sourceTree ||
+    metadata.sourceHead !== companionMetadataIdentity.sourceCommit ||
+    metadata.parent !== companionMetadataIdentity.parent ||
+    metadata.sourceTree !== companionMetadataIdentity.sourceTree ||
     metadata.partition[fixture].post.mode !== '100644' ||
-    metadata.partition[fixture].post.blob !== pin.driverBlob ||
-    metadata.partition[fixture].post.sha256 !== pin.sourceSha256 ||
+    metadata.partition[fixture].post.blob !== companionMetadataIdentity.driverBlob ||
+    metadata.partition[fixture].post.sha256 !== companionMetadataIdentity.sourceSha256 ||
     metadata.fixtureRegistration.system !== 'StatusOnly' ||
     metadata.fixtureRegistration.pairing !== 'LocalInfoOnly' ||
     JSON.stringify(metadata.fixtureRegistration.methods) !==
@@ -283,11 +302,77 @@ export async function assertCompanionDiagnosticIdentity(
       '10.13/nativeReviewCompanion:1; native/control/observer DTOs unchanged'
   )
     throw new Error('Diagnostic handoff binding mismatch');
+  const startupSourcePath = join(companionStartupEnvelope, 'HANDOFF.json');
+  const startupArtifactPath = join(companionStartupArtifactRoot, 'HANDOFF.json');
+  const startupContractPath = join(companionStartupEnvelope, 'CONTRACT-v1.json');
+  const startupSourceProofPath =
+    '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-startup-26c3-r3z9hk9y/proof.json';
+  const startupArtifactProofPath =
+    '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-artifact-71a0-a741tt1/proof.json';
+  const startupContracts = [
+    [startupSourcePath, 'cec7b4e0e64679a06d40a5ed00b2057297c23d607b8ca465cad6447c137fd74d'],
+    [
+      join(companionStartupEnvelope, 'MANIFEST.json'),
+      '6593f775c54da54a4a610722ca448f4eb1e73ecb040d59d8561a58de44fde2ba',
+    ],
+    [startupContractPath, '239409338ba1fa59134475a7a242ec12ceeecaea77b0902dc473d581f7daf14e'],
+    [
+      join(companionStartupEnvelope, 'CONSUMER-CONTRACT.md'),
+      'f89c54d1a3ead3cf3464739934ca16f887e2033c801c24d43f80f7e7c348feb3',
+    ],
+    [startupArtifactPath, '5e93e4acbbe6b9cb529926adfd8df700b060b03595c27eb99d25a65aa6f33967'],
+    [
+      join(companionStartupArtifactRoot, 'MANIFEST.json'),
+      '7725032190cbce93728e7b914e9e57289ae2723334d6259cf6013e1adcc7367c',
+    ],
+    [startupSourceProofPath, 'd1bff03e755cd7560e83181bfcf14c5574863431a089380b4d5dc3bd718a13ed'],
+    [startupArtifactProofPath, '5cbcb271c6ee03ef50f33a91a9544dfe619d41e7c9c2590a21c0c67c08110ab1'],
+  ];
+  for (const [path, expected] of startupContracts)
+    if (hash(await readFile(path)) !== expected)
+      throw new Error('Startup provenance hash mismatch');
+  const startupSource = JSON.parse(await readFile(startupSourcePath, 'utf8'));
+  const startupArtifact = JSON.parse(await readFile(startupArtifactPath, 'utf8'));
+  const startupContract = JSON.parse(await readFile(startupContractPath, 'utf8'));
+  const artifactProof = JSON.parse(await readFile(startupArtifactProofPath, 'utf8'));
+  if (
+    startupSource.sourceRoot !== driverSource ||
+    startupSource.source.head !== pin.sourceCommit ||
+    startupSource.source.parent !== pin.parent ||
+    startupSource.source.tree !== pin.sourceTree ||
+    startupSource.source.postimage.blob !== pin.driverBlob ||
+    startupSource.source.postimage.sha256 !== pin.sourceSha256 ||
+    startupArtifact.source.head !== pin.sourceCommit ||
+    startupArtifact.source.parent !== pin.parent ||
+    startupArtifact.source.tree !== pin.sourceTree ||
+    startupArtifact.source.root !== driverSource ||
+    startupArtifact.source.sourceHandoff.path !== startupSourcePath ||
+    startupArtifact.source.sourceHandoff.sha256 !== startupContracts[0][1] ||
+    startupArtifact.artifact.path !== artifactPath ||
+    startupArtifact.artifact.sha256 !== pin.executableSha256 ||
+    startupArtifact.artifact.bytes !== pin.bytes ||
+    startupArtifact.artifact.mode !== '0o555' ||
+    startupContract.version !== 1 ||
+    startupContract.basename !== 'native-startup-milestones-v1.jsonl' ||
+    !isDeepStrictEqual(startupContract.caps, {
+      records: 96,
+      bytes: 49152,
+      frameBytes: 1024,
+      reservedConsumerRecords: 32,
+      reservedConsumerBytes: 16384,
+    }) ||
+    artifactProof.verdict !== 'APPROVED' ||
+    artifactProof.source !== pin.sourceCommit ||
+    artifactProof.tree !== pin.sourceTree
+  )
+    throw new Error('Startup provenance shape mismatch');
+  contracts.push(...startupContracts);
+
   return {
     pin,
     contracts,
     qualification:
-      '52 staged metadata controls on recorded v2/v3 inputs; inherited four b908 + A-prime 3feca + B 581a; post-project comparator UNTESTED; historical pending wording unchanged; no native-runtime claim',
+      'Startup source 4 inherited46c755 controls plus1 corrected5be8 control; reviewed no-run71a0 artifact; six prelaunch and thirteen postbuild sealing mode changes retained. Inherited692a metadata52 staged v2/v3 and older four b908 + A-prime3feca + B581a remain separate; post-project comparator UNTESTED; no native-runtime claim',
   };
 }
 
@@ -742,6 +827,1052 @@ export async function archiveCompanionFiles(
   if (rows.some((row) => row.incomplete))
     throw new Error('Diagnostic originals missing or archive incomplete');
   return rows;
+}
+
+// Private startup evidence: neither these IDs nor a completed span grant authority.
+const startupPhases = [
+  'process',
+  'validation',
+  'tls',
+  'observer',
+  'runtime',
+  'loop',
+  'host',
+  'repositories',
+  'provider',
+  'provider-endpoints',
+  'store',
+  'roles',
+  'services',
+  'wss',
+  'uds',
+  'credentials',
+  'control',
+  'identity-commit',
+  'identity-tree',
+  'identity-source',
+  'identity-executable',
+  'publication',
+  'file-open',
+  'serialize',
+  'sync',
+  'link',
+  'unlink',
+  'binding',
+  'child',
+];
+const startupOutcomes = [
+  'enter',
+  'return',
+  'error',
+  'unwind',
+  'abandoned',
+  'allocated',
+  'waited',
+  'bound',
+  'reached',
+  'complete',
+];
+type StartupBinding = {
+  run: string;
+  descriptor: string;
+  artifact: string;
+  source: string;
+  commit: string;
+  tree: string;
+};
+type StartupFrame = {
+  v: bigint;
+  pid: bigint;
+  parent: bigint;
+  wallMs: bigint;
+  clock: string;
+  seq: bigint;
+  ns: bigint;
+  phase: string;
+  outcome: string;
+  span: bigint | null;
+  host: 'a' | 'b' | null;
+  child: bigint | null;
+  code: bigint | null;
+  signal: bigint | null;
+  binding: StartupBinding | null;
+  counts: Record<string, bigint> | null;
+};
+type StartupSpan = {
+  open: StartupFrame;
+  end?: StartupFrame;
+  children: StartupSpan[];
+  links: StartupFrame[];
+};
+function startupRequire(value: unknown, category: string): asserts value {
+  if (!value) throw new Error('Startup evidence: ' + category);
+}
+/** Separate lossless scalar grammar; the older companion JSON grammar is unchanged. */
+export function startupJson(bytes: Buffer, limit = 1024): any {
+  startupRequire(bytes.length <= limit, 'frame bound');
+  const input = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  let i = 0,
+    nodes = 0;
+  const space = () => {
+    while (i < input.length && /[ \t\r\n]/.test(input[i]!)) i++;
+  };
+  const string = () => {
+    const start = i++;
+    while (i < input.length) {
+      if (input[i++] === '"') {
+        const result = JSON.parse(input.slice(start, i)) as string;
+        startupRequire(
+          !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(result),
+          'unicode scalar',
+        );
+        return result;
+      }
+      if (input[i - 1] === '\\') i++;
+    }
+    throw new Error('Startup evidence: string');
+  };
+  const value = (depth: number): any => {
+    space();
+    startupRequire(++nodes <= 8192 && depth <= 12, 'structure bound');
+    if (input[i] === '"') return string();
+    if (input[i] === '{') {
+      i++;
+      space();
+      const out: Record<string, unknown> = Object.create(null);
+      if (input[i] === '}') {
+        i++;
+        return out;
+      }
+      while (i < input.length) {
+        space();
+        startupRequire(input[i] === '"', 'key');
+        const key = string();
+        space();
+        startupRequire(!Object.hasOwn(out, key) && input[i++] === ':', 'duplicate key');
+        out[key] = value(depth + 1);
+        space();
+        const end = input[i++];
+        if (end === '}') return out;
+        startupRequire(end === ',', 'object');
+      }
+    }
+    if (input[i] === '[') {
+      i++;
+      space();
+      const out: unknown[] = [];
+      if (input[i] === ']') {
+        i++;
+        return out;
+      }
+      while (i < input.length) {
+        out.push(value(depth + 1));
+        space();
+        const end = input[i++];
+        if (end === ']') return out;
+        startupRequire(end === ',', 'array');
+      }
+    }
+    for (const [text, result] of [
+      ['null', null],
+      ['true', true],
+      ['false', false],
+    ] as const)
+      if (input.startsWith(text, i)) {
+        i += text.length;
+        return result;
+      }
+    const number = /^-?(?:0|[1-9][0-9]*)/.exec(input.slice(i));
+    if (number) {
+      startupRequire(number[0] !== '-0', 'negative zero');
+      i += number[0].length;
+      return BigInt(number[0]);
+    }
+    throw new Error('Startup evidence: JSON');
+  };
+  const result = value(0);
+  space();
+  startupRequire(i === input.length, 'trailing JSON');
+  return result;
+}
+function startupInteger(value: unknown, bits: number, signed = false): value is bigint {
+  return (
+    typeof value === 'bigint' &&
+    value >= (signed ? -(1n << BigInt(bits - 1)) : 0n) &&
+    value < 1n << BigInt(signed ? bits - 1 : bits)
+  );
+}
+function startupBinding(value: any): asserts value is StartupBinding {
+  companionKeys(value, ['run', 'descriptor', 'artifact', 'source', 'commit', 'tree']);
+  startupRequire(
+    typeof value.run === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.run) &&
+      value.run !== '00000000-0000-0000-0000-000000000000',
+    'run',
+  );
+  for (const key of ['descriptor', 'artifact', 'source', 'commit', 'tree'])
+    startupRequire(
+      typeof value[key] === 'string' &&
+        new RegExp('^[0-9a-f]{' + (['commit', 'tree'].includes(key) ? 40 : 64) + '}$', 'i').test(
+          value[key],
+        ),
+      'digest',
+    );
+}
+export function readStartupProducer(bytes: Buffer) {
+  const frames: StartupFrame[] = [],
+    roots: StartupSpan[] = [],
+    stack: StartupSpan[] = [];
+  let state: 'absent' | 'partial' | 'truncated' | 'malformed' | 'lost' | 'complete' = 'partial';
+  let binding: StartupBinding | null = null,
+    loss = false,
+    ended = false,
+    publication = false;
+  const children = new Map<bigint, string>();
+  try {
+    startupRequire(bytes.length <= 49152, 'byte bound');
+    if (!bytes.length) return { state: 'absent' as const, complete: false, frames, roots, binding };
+    const terminated = bytes.at(-1) === 10;
+    const lines: Buffer[] = [];
+    let start = 0;
+    for (let i = 0; i < bytes.length; i++)
+      if (bytes[i] === 10) {
+        lines.push(bytes.subarray(start, i));
+        start = i + 1;
+      }
+    startupRequire(lines.length + (terminated ? 0 : 1) <= 96, 'record bound');
+    for (const line of lines) {
+      startupRequire(
+        line.length > 0 && line.length + 1 <= 1024 && !ended,
+        'frame or trailing record',
+      );
+      const f = startupJson(line) as StartupFrame;
+      companionKeys(f, [
+        'v',
+        'pid',
+        'parent',
+        'wallMs',
+        'clock',
+        'seq',
+        'ns',
+        'phase',
+        'outcome',
+        'span',
+        'host',
+        'child',
+        'code',
+        'signal',
+        'binding',
+        'counts',
+      ]);
+      startupRequire(
+        f.v === 1n &&
+          startupInteger(f.pid, 32) &&
+          f.pid > 0n &&
+          startupInteger(f.parent, 32) &&
+          f.parent > 0n &&
+          startupInteger(f.wallMs, 64) &&
+          f.wallMs > 0n &&
+          f.clock === 'worker-instant',
+        'identity',
+      );
+      for (const key of ['seq', 'ns'] as const) startupRequire(startupInteger(f[key], 64), 'u64');
+      startupRequire(f.span === null || startupInteger(f.span, 64), 'span scalar');
+      startupRequire(
+        f.child === null || (startupInteger(f.child, 32) && f.child > 0n),
+        'child scalar',
+      );
+      startupRequire(f.code === null || startupInteger(f.code, 32, true), 'code');
+      startupRequire(f.signal === null || startupInteger(f.signal, 32, true), 'signal');
+      startupRequire(
+        startupPhases.includes(f.phase) &&
+          startupOutcomes.includes(f.outcome) &&
+          [null, 'a', 'b'].includes(f.host),
+        'enum',
+      );
+      const previous = frames.at(-1);
+      startupRequire(
+        f.seq === (previous?.seq ?? 0n) + 1n && f.ns >= (previous?.ns ?? 0n),
+        'sequence or clock',
+      );
+      if (previous)
+        startupRequire(
+          f.pid === previous.pid && f.parent === previous.parent && f.wallMs === previous.wallMs,
+          'changed identity',
+        );
+      else
+        startupRequire(
+          f.phase === 'process' && f.outcome === 'enter' && f.span === 1n && f.host === null,
+          'process opening',
+        );
+      startupRequire(f.phase === 'binding' || f.binding === null, 'binding location');
+      startupRequire(
+        f.phase === 'child' || (f.child === null && f.code === null && f.signal === null),
+        'child location',
+      );
+      startupRequire(f.phase === 'process' || f.counts === null, 'counter location');
+      if (f.outcome === 'enter') {
+        startupRequire(
+          f.span === f.seq &&
+            stack.length < 32 &&
+            f.counts === null &&
+            f.binding === null &&
+            f.child === null,
+          'opening',
+        );
+        const node: StartupSpan = { open: f, children: [], links: [] };
+        if (stack.length) stack.at(-1)!.children.push(node);
+        else roots.push(node);
+        stack.push(node);
+      } else if (f.span !== null) {
+        startupRequire(
+          ['return', 'error', 'unwind', 'abandoned', 'complete'].includes(f.outcome),
+          'terminal',
+        );
+        const node = stack.pop();
+        startupRequire(
+          node &&
+            node.open.seq === f.span &&
+            node.open.phase === f.phase &&
+            node.open.host === f.host,
+          'pair',
+        );
+        node.end = f;
+        if (f.phase === 'publication' && f.outcome === 'return') publication = true;
+        loss ||= !['return', 'complete'].includes(f.outcome);
+        if (f.phase === 'process') {
+          ended = true;
+          startupRequire(stack.length === 0 && f.counts !== null, 'final counters');
+          companionKeys(f.counts, [
+            'observed',
+            'written',
+            'dropped',
+            'overflow',
+            'io',
+            'unmatched',
+          ]);
+          for (const count of Object.values(f.counts))
+            startupRequire(startupInteger(count, 64), 'counter scalar');
+          loss ||=
+            f.outcome !== 'complete' ||
+            f.counts.observed !== f.seq ||
+            f.counts.written !== BigInt(frames.length) ||
+            ['dropped', 'overflow', 'io', 'unmatched'].some((k) => f.counts![k] !== 0n);
+        } else startupRequire(f.outcome !== 'complete' && f.counts === null, 'terminal kind');
+      } else {
+        startupRequire(stack.length > 0 && f.counts === null, 'link scope');
+        stack.at(-1)!.links.push(f);
+        if (f.phase === 'binding' && f.outcome === 'bound') {
+          startupRequire(!binding, 'duplicate binding');
+          startupBinding(f.binding);
+          binding = f.binding;
+        } else if (f.phase === 'loop' && f.outcome === 'reached')
+          startupRequire(f.host === null && f.binding === null, 'loop');
+        else if (f.phase === 'child' && ['allocated', 'waited', 'error'].includes(f.outcome)) {
+          startupRequire(f.child !== null && f.host !== null, 'child binding');
+          if (f.outcome === 'allocated') {
+            startupRequire(
+              !children.has(f.child) &&
+                ![...children.values()].includes(f.host) &&
+                f.code === null &&
+                f.signal === null,
+              'duplicate child',
+            );
+            children.set(f.child, f.host);
+          } else {
+            startupRequire(children.get(f.child) === f.host, 'foreign child');
+            loss ||= f.outcome === 'error';
+          }
+        } else throw new Error('Startup evidence: link');
+      }
+      frames.push(f);
+    }
+    state = !terminated
+      ? 'truncated'
+      : loss
+        ? 'lost'
+        : ended && binding && publication && roots.length === 1
+          ? 'complete'
+          : 'partial';
+  } catch {
+    state = 'malformed';
+  }
+  return { state, complete: state === 'complete', frames, roots, binding };
+}
+type StartupOriginals = {
+  run: string;
+  descriptor: string;
+  artifact: string;
+  source: string;
+  commit: string;
+  tree: string;
+  consumerPid: number;
+  helperPid: number;
+  worker: any;
+  supervisor: any;
+  allocation: any;
+  owned: any[];
+  wait: any;
+  helper: any;
+  stopped: any;
+  ready: any;
+  joined: boolean;
+};
+export function assertStartupNative(bytes: Buffer, o: StartupOriginals) {
+  const p = readStartupProducer(bytes);
+  startupRequire(p.complete && p.binding, 'producer incomplete');
+  const expected: StartupBinding = {
+    run: o.run,
+    descriptor: o.descriptor,
+    artifact: o.artifact,
+    source: o.source,
+    commit: o.commit,
+    tree: o.tree,
+  };
+  startupRequire(
+    Object.entries(expected).every(
+      ([key, value]) => p.binding![key as keyof StartupBinding] === value,
+    ),
+    'foreign binding',
+  );
+  startupRequire(
+    o.joined &&
+      o.worker?.owner === 'supervisor' &&
+      o.worker?.allocation === 'pidfd' &&
+      Number.isSafeInteger(o.worker.pid) &&
+      o.worker.pid > 0,
+    'original worker',
+  );
+  const first = p.frames[0]!;
+  startupRequire(
+    first.pid === BigInt(o.worker.pid) &&
+      first.parent === BigInt(o.supervisor.pid) &&
+      o.supervisor.runId === o.run &&
+      o.supervisor.pid === o.allocation.supervisorPid &&
+      o.allocation.controllerPid === o.helperPid,
+    'original parent',
+  );
+  startupRequire(
+    o.owned.filter((r) => r.kind === 'enrolled' && r.role === 'worker' && r.pid === o.worker.pid)
+      .length === 1,
+    'original enrollment',
+  );
+  startupRequire(
+    o.wait.supervisorPid === o.supervisor.pid &&
+      o.wait.waitedOriginalChild === true &&
+      o.wait.returnCode === 0 &&
+      o.wait.code === 0 &&
+      o.wait.signal === null &&
+      o.wait.failure === null &&
+      o.helper.code === 0 &&
+      o.helper.signal === null &&
+      o.stopped.success === true &&
+      o.stopped.ownership.complete === true &&
+      o.stopped.ownership.failed === false,
+    'original joined cleanup',
+  );
+  startupRequire(
+    o.ready?.pid === o.worker.pid &&
+      o.ready?.runId === o.run &&
+      isDeepStrictEqual(o.ready.identity, {
+        sourceCommit: o.commit,
+        sourceTree: o.tree,
+        sourceSha256: o.source,
+        executableSha256: o.artifact,
+      }),
+    'original ready identity',
+  );
+  const root = p.roots[0]!;
+  const ids = ['identity-commit', 'identity-tree', 'identity-source', 'identity-executable'];
+  const phases = (nodes: StartupSpan[]) => nodes.map((n) => n.open.phase);
+  const exact = (nodes: StartupSpan[], names: string[]) =>
+    startupRequire(isDeepStrictEqual(phases(nodes), names), 'native stage coverage');
+  exact(root.children, [
+    'validation',
+    'tls',
+    'validation',
+    'observer',
+    'runtime',
+    'host',
+    'host',
+    'credentials',
+    'control',
+    ...ids,
+    'publication',
+  ]);
+  for (const node of root.children)
+    startupRequire(node.end?.outcome === 'return', 'native terminal');
+  for (const node of root.children.filter((_, i) => i !== 5 && i !== 6))
+    startupRequire(node.open.host === null, 'non-host scope');
+  for (const index of [0, 2]) {
+    const n = root.children[index]!;
+    exact(n.children, ids);
+    startupRequire(
+      n.children.every(
+        (c) =>
+          c.open.host === null &&
+          c.end?.outcome === 'return' &&
+          c.children.length === 0 &&
+          c.links.length === 0,
+      ),
+      'validation identity',
+    );
+  }
+  startupRequire(
+    root.children[0]!.links.length === 1 &&
+      root.children[0]!.links[0]!.phase === 'binding' &&
+      root.children[2]!.links.length === 0,
+    'validation binding seam',
+  );
+  startupRequire(
+    root.links.length === 1 &&
+      root.links[0]!.phase === 'loop' &&
+      root.links[0]!.seq > root.children[4]!.end!.seq &&
+      root.links[0]!.seq < root.children[5]!.open.seq,
+    'original loop entry',
+  );
+  for (const [index, host] of ['a', 'b'].entries()) {
+    const n = root.children[5 + index]!;
+    startupRequire(n.open.host === host && n.links.length === 0, 'host scope');
+    exact(n.children, ['repositories', 'provider', 'store', 'roles', 'services', 'wss', 'uds']);
+    for (const c of n.children)
+      startupRequire(c.open.host === host && c.end?.outcome === 'return', 'host terminal');
+    const provider = n.children[1]!;
+    exact(provider.children, ['provider-endpoints']);
+    startupRequire(
+      provider.children[0]!.open.host === host &&
+        provider.children[0]!.end?.outcome === 'return' &&
+        provider.children[0]!.children.length === 0 &&
+        provider.children[0]!.links.length === 0,
+      'endpoints',
+    );
+    startupRequire(
+      provider.links.length === 1 &&
+        provider.links[0]!.outcome === 'allocated' &&
+        provider.links[0]!.host === host &&
+        provider.links[0]!.seq < provider.children[0]!.open.seq,
+      'original allocation seam',
+    );
+    const child = provider.links[0]!.child;
+    startupRequire(
+      child !== null &&
+        o.ready.hosts?.length === 2 &&
+        Number.isSafeInteger(o.ready.hosts[index].fixturePid) &&
+        child === BigInt(o.ready.hosts[index].fixturePid),
+      'host original child',
+    );
+    for (const c of n.children.filter((_, i) => i !== 1))
+      startupRequire(c.children.length === 0 && c.links.length === 0, 'host leaf');
+  }
+  const publication = root.children.at(-1)!;
+  exact(publication.children, ['file-open', 'serialize', 'sync', 'link', 'unlink']);
+  startupRequire(publication.links.length === 0, 'publication links');
+  for (const n of publication.children)
+    startupRequire(
+      n.end?.outcome === 'return' &&
+        n.children.length === 0 &&
+        n.links.length === 0 &&
+        n.open.host === null,
+      'publication leaf',
+    );
+  for (const n of root.children.filter((_, i) => ![0, 2, 5, 6, 13].includes(i)))
+    startupRequire(
+      n.children.length === 0 && n.links.length === 0 && n.open.host === null,
+      'native leaf',
+    );
+  return {
+    complete: true,
+    records: p.frames.length,
+    worker: o.worker.pid,
+    scope: 'original startup only; final native predicates remain independent',
+  };
+}
+const startupEvents = [
+  'read-enoent',
+  'read-error',
+  'parse-error',
+  'read-parsed',
+  'ready-accepted',
+  'helper-terminal',
+  'deadline',
+  'helper-wait',
+] as const;
+type StartupEvent = (typeof startupEvents)[number];
+type StartupConsumer = ReturnType<typeof createStartupConsumer>;
+export function createStartupConsumer(binding: StartupBinding, helper: number) {
+  const origin = process.hrtime.bigint(),
+    wallMs = Date.now();
+  const rows: Array<{
+    kind: StartupEvent;
+    firstNs: string;
+    lastNs: string;
+    count: number;
+    worker: number | null;
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }> = [];
+  let observed = 0,
+    coalesced = 0,
+    dropped = 0,
+    overflow = 0,
+    io = 0,
+    fault = false,
+    waited = false;
+  const header = {
+    v: 1,
+    kind: 'consumer',
+    pid: process.pid,
+    helper,
+    wallMs,
+    clock: 'consumer-hrtime',
+    binding,
+  };
+  const fail = () => {
+    fault = true;
+  };
+  const observe = (
+    kind: StartupEvent,
+    detail: { worker?: number; code?: number | null; signal?: NodeJS.Signals | null } = {},
+  ) => {
+    try {
+      observed++;
+      const ns = (process.hrtime.bigint() - origin).toString();
+      startupRequire(
+        startupEvents.includes(kind) && observed <= 1_000_000,
+        'consumer category or count',
+      );
+      const worker = detail.worker ?? null,
+        code = detail.code ?? null,
+        signal = detail.signal ?? null;
+      startupRequire(
+        worker === null || (Number.isSafeInteger(worker) && worker > 0 && worker <= 0xffffffff),
+        'consumer worker',
+      );
+      startupRequire(
+        code === null || (Number.isSafeInteger(code) && code >= -2147483648 && code <= 2147483647),
+        'consumer exit',
+      );
+      startupRequire(
+        signal === null ||
+          [
+            'SIGHUP',
+            'SIGINT',
+            'SIGQUIT',
+            'SIGILL',
+            'SIGTRAP',
+            'SIGABRT',
+            'SIGBUS',
+            'SIGFPE',
+            'SIGKILL',
+            'SIGUSR1',
+            'SIGSEGV',
+            'SIGUSR2',
+            'SIGPIPE',
+            'SIGALRM',
+            'SIGTERM',
+            'SIGCHLD',
+            'SIGCONT',
+            'SIGSTOP',
+            'SIGTSTP',
+            'SIGTTIN',
+            'SIGTTOU',
+            'SIGURG',
+            'SIGXCPU',
+            'SIGXFSZ',
+            'SIGVTALRM',
+            'SIGPROF',
+            'SIGWINCH',
+            'SIGIO',
+            'SIGPWR',
+            'SIGSYS',
+          ].includes(signal),
+        'consumer signal',
+      );
+      if (kind === 'helper-wait') {
+        startupRequire(!waited, 'duplicate original wait');
+        waited = true;
+      }
+      const last = rows.at(-1);
+      if (kind === 'read-enoent' && last?.kind === kind) {
+        last.count++;
+        last.lastNs = ns;
+        coalesced++;
+        return;
+      }
+      if (rows.length >= 30) {
+        dropped++;
+        overflow++;
+        return;
+      }
+      rows.push({ kind, firstNs: ns, lastNs: ns, count: 1, worker, code, signal });
+    } catch {
+      dropped++;
+      fault = true;
+    }
+  };
+  const snapshot = (stage: 'partial' | 'final') => {
+    const terminal = {
+      v: 1,
+      kind: 'consumer-snapshot',
+      stage,
+      observed,
+      written: rows.length,
+      coalesced,
+      dropped,
+      overflow,
+      io,
+      fault,
+      waited,
+    };
+    const bytes = Buffer.from(
+      [header, ...rows, terminal].map((x) => JSON.stringify(x)).join('\n') + '\n',
+    );
+    startupRequire(bytes.length <= 16384, 'consumer byte bound');
+    return bytes;
+  };
+  return {
+    observe,
+    fail,
+    snapshot,
+    writeFailed: () => {
+      io++;
+      fault = true;
+    },
+  };
+}
+function observeStartup(
+  consumer: StartupConsumer | undefined,
+  kind: StartupEvent,
+  detail?: Parameters<StartupConsumer['observe']>[1],
+) {
+  try {
+    consumer?.observe(kind, detail);
+  } catch {
+    try {
+      consumer?.fail();
+    } catch {
+      /* Observation never replaces original work. */
+    }
+  }
+}
+/** Keep the actual first thrown value, including undefined, while attempting the added evidence. */
+export async function retainStartupAfter<T>(
+  original: () => Promise<T>,
+  observation: () => Promise<unknown>,
+  onObservationFailure?: () => void,
+): Promise<T> {
+  let failed = false,
+    first: unknown,
+    result!: T;
+  try {
+    result = await original();
+  } catch (error) {
+    failed = true;
+    first = error;
+  }
+  try {
+    await observation();
+  } catch (error) {
+    try {
+      onObservationFailure?.();
+    } catch {
+      /* Evidence failure cannot replace the original. */
+    }
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  }
+  if (failed) throw first;
+  return result;
+}
+async function startupDirectory(path: string) {
+  startupRequire(resolve(path) === path && (await realpath(path)) === path, 'canonical directory');
+  const handle = await open(
+    path,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    const stat = await handle.stat();
+    startupRequire(
+      stat.isDirectory() && stat.uid === process.geteuid!() && (stat.mode & 0o777) === 0o700,
+      'private directory',
+    );
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+export async function startupHelperEnvironment(enabled: boolean, path: string) {
+  if (!enabled) return {};
+  const handle = await startupDirectory(path);
+  await handle.close();
+  return { NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328: '1', NATIVE_REVIEW_EVIDENCE_DIR: path };
+}
+async function startupReadAt(
+  directory: Awaited<ReturnType<typeof startupDirectory>>,
+  name: string,
+  limit: number,
+) {
+  const handle = await open(
+    `/proc/self/fd/${directory.fd}/${name}`,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+  );
+  try {
+    const before = await handle.stat();
+    startupRequire(
+      before.isFile() &&
+        before.nlink === 1 &&
+        before.uid === process.geteuid!() &&
+        (before.mode & 0o777) === 0o600 &&
+        before.size <= limit,
+      'private bounded file',
+    );
+    const buffer = Buffer.alloc(limit + 1),
+      read = await handle.read(buffer, 0, buffer.length, 0),
+      after = await handle.stat();
+    startupRequire(
+      read.bytesRead <= limit &&
+        after.size <= limit &&
+        after.nlink === 1 &&
+        (after.mode & 0o777) === 0o600 &&
+        after.uid === before.uid,
+      'file changed or bound',
+    );
+    return {
+      bytes: buffer.subarray(0, read.bytesRead),
+      stable: before.size === after.size && read.bytesRead === after.size,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+async function startupWriteAt(
+  directory: Awaited<ReturnType<typeof startupDirectory>>,
+  name: string,
+  bytes: Buffer,
+) {
+  const handle = await open(
+    `/proc/self/fd/${directory.fd}/${name}`,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    const stat = await handle.stat();
+    startupRequire(
+      stat.isFile() &&
+        stat.nlink === 1 &&
+        stat.uid === process.geteuid!() &&
+        (stat.mode & 0o777) === 0o600,
+      'private destination',
+    );
+    await handle.writeFile(bytes);
+  } finally {
+    await handle.close();
+  }
+}
+export async function archiveStartup(
+  root: string,
+  destination: string,
+  stage: 'partial' | 'final',
+  consumer: StartupConsumer,
+  expected: StartupBinding,
+) {
+  // The journal belongs to the configured evidence root, never to the temporary driver directory.
+  let source: Awaited<ReturnType<typeof startupDirectory>> | undefined;
+  let target: Awaited<ReturnType<typeof startupDirectory>> | undefined;
+  try {
+    source = await startupDirectory(root);
+    target = await startupDirectory(destination);
+    let state: string = 'absent',
+      size = 0,
+      digest: string | null = null,
+      stable = false;
+    let original: Awaited<ReturnType<typeof startupReadAt>> | undefined;
+    try {
+      original = await startupReadAt(source, 'native-startup-milestones-v1.jsonl', 49152);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT')
+        throw new Error('Startup evidence: producer read failed');
+    }
+    if (original) {
+      const parsed = readStartupProducer(original.bytes);
+      state = parsed.state;
+      stable = original.stable;
+      if (
+        parsed.binding &&
+        !Object.entries(expected).every(
+          ([k, v]) => parsed.binding![k as keyof StartupBinding] === v,
+        )
+      )
+        state = 'foreign';
+      size = original.bytes.length;
+      digest = hash(original.bytes);
+      await startupWriteAt(target, stage + '-native-startup-milestones-v1.jsonl', original.bytes);
+    }
+    const snapshot = consumer.snapshot(stage);
+    await startupWriteAt(target, stage + '-native-startup-consumer-v1.jsonl', snapshot);
+    await startupWriteAt(
+      target,
+      stage + '-startup-archive.json',
+      Buffer.from(
+        JSON.stringify({
+          v: 1,
+          state,
+          stable,
+          bytes: size,
+          sha256: digest,
+          consumerBytes: snapshot.length,
+          consumerSha256: hash(snapshot),
+          scope: 'startup only',
+        }) + '\n',
+      ),
+    );
+  } catch (error) {
+    consumer.writeFailed();
+    throw error;
+  } finally {
+    await target?.close();
+    await source?.close();
+  }
+}
+export function assertStartupConsumer(bytes: Buffer, o: StartupOriginals) {
+  startupRequire(
+    bytes.length > 0 && bytes.length <= 16384 && bytes.at(-1) === 10,
+    'consumer framing',
+  );
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+    lines = text.trimEnd().split('\n');
+  startupRequire(lines.length >= 2 && lines.length <= 32, 'consumer records');
+  const all = lines.map((line) => startupJson(Buffer.from(line), 16384)),
+    header = all[0],
+    end = all.at(-1),
+    rows = all.slice(1, -1);
+  companionKeys(header, ['v', 'kind', 'pid', 'helper', 'wallMs', 'clock', 'binding']);
+  startupBinding(header.binding);
+  startupRequire(
+    header.v === 1n &&
+      header.kind === 'consumer' &&
+      header.pid === BigInt(o.consumerPid) &&
+      header.helper === BigInt(o.helperPid) &&
+      startupInteger(header.wallMs, 64) &&
+      header.wallMs > 0n &&
+      header.clock === 'consumer-hrtime',
+    'consumer identity',
+  );
+  for (const key of ['run', 'descriptor', 'artifact', 'source', 'commit', 'tree'] as const)
+    startupRequire(header.binding[key] === o[key], 'consumer binding');
+  companionKeys(end, [
+    'v',
+    'kind',
+    'stage',
+    'observed',
+    'written',
+    'coalesced',
+    'dropped',
+    'overflow',
+    'io',
+    'fault',
+    'waited',
+  ]);
+  startupRequire(
+    end.v === 1n &&
+      end.kind === 'consumer-snapshot' &&
+      end.stage === 'final' &&
+      end.fault === false &&
+      end.waited === true &&
+      end.dropped === 0n &&
+      end.overflow === 0n &&
+      end.io === 0n,
+    'consumer incomplete',
+  );
+  let count = 0n,
+    previous = 0n;
+  for (const row of rows) {
+    companionKeys(row, ['kind', 'firstNs', 'lastNs', 'count', 'worker', 'code', 'signal']);
+    startupRequire(
+      startupEvents.includes(row.kind) &&
+        typeof row.firstNs === 'string' &&
+        typeof row.lastNs === 'string' &&
+        /^(0|[1-9][0-9]{0,19})$/.test(row.firstNs) &&
+        /^(0|[1-9][0-9]{0,19})$/.test(row.lastNs),
+      'consumer category or clock',
+    );
+    const first = BigInt(row.firstNs),
+      last = BigInt(row.lastNs);
+    startupRequire(first >= previous && last >= first && last < 1n << 64n, 'consumer monotonic');
+    previous = last;
+    startupRequire(
+      startupInteger(row.count, 32) &&
+        row.count > 0n &&
+        (row.kind === 'read-enoent' || row.count === 1n),
+      'consumer coalescing',
+    );
+    count += row.count;
+    startupRequire(
+      row.worker === null || (startupInteger(row.worker, 32) && row.worker > 0n),
+      'consumer worker scalar',
+    );
+    startupRequire(row.code === null || startupInteger(row.code, 32, true), 'consumer exit scalar');
+  }
+  startupRequire(
+    end.observed === count &&
+      end.written === BigInt(rows.length) &&
+      end.coalesced === count - BigInt(rows.length),
+    'consumer counters',
+  );
+  const kinds = rows.map((r) => r.kind),
+    missing = kinds[0] === 'read-enoent' ? 1 : 0;
+  startupRequire(
+    isDeepStrictEqual(kinds.slice(missing), ['read-parsed', 'ready-accepted', 'helper-wait']),
+    'original consumer sequence',
+  );
+  startupRequire(
+    rows
+      .slice(0, missing + 1)
+      .every((r) => r.worker === null && r.code === null && r.signal === null),
+    'read metadata',
+  );
+  const accepted = rows[missing + 1],
+    wait = rows[missing + 2];
+  startupRequire(
+    accepted.worker === BigInt(o.worker.pid) &&
+      accepted.code === null &&
+      accepted.signal === null &&
+      wait.worker === null &&
+      wait.code === 0n &&
+      wait.signal === null &&
+      o.joined,
+    'accepted ready and original helper wait',
+  );
+  return {
+    complete: true,
+    records: lines.length,
+    observed: String(count),
+    coalesced: String(end.coalesced),
+    clock: 'consumer-hrtime; no cross-clock ordering',
+  };
+}
+export async function validateStartupArchive(destination: string, o: StartupOriginals) {
+  const dir = await startupDirectory(destination);
+  try {
+    const producer = await startupReadAt(dir, 'final-native-startup-milestones-v1.jsonl', 49152),
+      consumer = await startupReadAt(dir, 'final-native-startup-consumer-v1.jsonl', 16384);
+    startupRequire(producer.stable && consumer.stable, 'final snapshot changed');
+    const report = {
+      producer: assertStartupNative(producer.bytes, o),
+      consumer: assertStartupConsumer(consumer.bytes, o),
+    };
+    await startupWriteAt(
+      dir,
+      'startup-validation.json',
+      Buffer.from(JSON.stringify(report) + '\n'),
+    );
+    return report;
+  } finally {
+    await dir.close();
+  }
 }
 
 export function correlateCompanionDiagnostics(
@@ -3734,18 +4865,37 @@ function control(ready: Ready, action: unknown): Promise<any> {
     });
   });
 }
-async function waitFile(path: string, child: ChildProcess) {
+async function waitFile(path: string, child: ChildProcess, startup?: StartupConsumer) {
   const deadline = Date.now() + 25000;
   while (Date.now() < deadline) {
+    let read = false;
     try {
-      return JSON.parse(await readFile(path, 'utf8'));
+      const bytes = await readFile(path, 'utf8');
+      read = true;
+      const value = JSON.parse(bytes);
+      observeStartup(startup, 'read-parsed');
+      return value;
     } catch (error) {
+      observeStartup(
+        startup,
+        (error as NodeJS.ErrnoException)?.code === 'ENOENT'
+          ? 'read-enoent'
+          : read
+            ? 'parse-error'
+            : 'read-error',
+      );
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    if (child.exitCode !== null || child.signalCode !== null)
+    if (child.exitCode !== null || child.signalCode !== null) {
+      observeStartup(startup, 'helper-terminal', {
+        code: child.exitCode,
+        signal: child.signalCode,
+      });
       throw new Error('Original driver exited before ready');
+    }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }
+  observeStartup(startup, 'deadline');
   throw new Error('Original driver ready deadline');
 }
 type Main = Fixture;
@@ -4007,7 +5157,11 @@ async function withDriver(
     [join(bundle, 'pipe-controller.py'), executable!, dir, runId, descriptorHash, executableHash],
     {
       cwd: source!,
-      env: { ...environment(home), INTENT_REVIEW_DRIVER_DESCRIPTOR: join(dir, 'descriptor.json') },
+      env: {
+        ...environment(home),
+        INTENT_REVIEW_DRIVER_DESCRIPTOR: join(dir, 'descriptor.json'),
+        ...(diagnosticMode ? await startupHelperEnvironment(true, evidence!) : {}),
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     },
   );
@@ -4068,6 +5222,19 @@ async function withDriver(
   let app: ElectronApplication | undefined;
   let ready: Ready | undefined;
   let success = false;
+  const startupBindingCurrent: StartupBinding = {
+    run: runId,
+    descriptor: descriptorHash,
+    artifact: executableHash,
+    source: identity.sourceSha256,
+    commit: identity.sourceCommit,
+    tree: identity.sourceTree,
+  };
+  const startup = diagnosticMode
+    ? createStartupConsumer(startupBindingCurrent, child.pid ?? 0)
+    : undefined;
+  let startupJoined = false;
+  let startupHelperWait: { code: number | null; signal: NodeJS.Signals | null } | undefined;
   const packet = async (name: string, value?: unknown) => {
     const result = {
       value,
@@ -4091,11 +5258,14 @@ async function withDriver(
           name: 'body',
           run: async () => {
             try {
-              ready = await waitFile(join(dir, 'ready.json'), child);
+              ready = await waitFile(join(dir, 'ready.json'), child, startup);
               expect(ready!.identity).toEqual(identity);
               expect(ready!.runId).toBe(runId);
               expect(ready!.hosts[0].workspaceId).toBe(ready!.hosts[1].workspaceId);
               expect(ready!.hosts[0].registeredRootId).toBe(ready!.hosts[1].registeredRootId);
+              observeStartup(startup, 'ready-accepted', {
+                worker: (ready as unknown as { pid: number }).pid,
+              });
               app = await electron.launch({
                 args: [
                   join(bundle, 'main.mjs'),
@@ -4284,10 +5454,24 @@ async function withDriver(
           name: 'partial-before-failure-cleanup',
           run: async () => {
             if (!success)
-              await archiveCompanionFiles(
-                dir,
-                join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
-                'partial',
+              await retainStartupAfter(
+                () =>
+                  archiveCompanionFiles(
+                    dir,
+                    join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                    'partial',
+                  ),
+                () =>
+                  archiveStartup(
+                    evidence!,
+                    join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                    'partial',
+                    startup!,
+                    startupBindingCurrent,
+                  ),
+                () => {
+                  observationErrors.push('startup-partial-archive');
+                },
               );
           },
         },
@@ -4296,6 +5480,9 @@ async function withDriver(
           run: async () => {
             if (!success) child.stdin!.end();
             const result = await exited;
+            startupJoined = true;
+            startupHelperWait = result;
+            observeStartup(startup, 'helper-wait', result);
             record(dir, 'controller-final-wait', { ...result, success });
             record(dir, 'controller-protocol-observed', {
               lifecycle,
@@ -4330,131 +5517,179 @@ async function withDriver(
         {
           name: 'final-original-archive',
           run: async () => {
-            await archiveCompanionFiles(
-              dir,
-              join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
-              'final',
+            await retainStartupAfter(
+              () =>
+                archiveCompanionFiles(
+                  dir,
+                  join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                  'final',
+                ),
+              () =>
+                archiveStartup(
+                  evidence!,
+                  join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                  'final',
+                  startup!,
+                  startupBindingCurrent,
+                ),
+              () => {
+                observationErrors.push('startup-final-archive');
+              },
             );
           },
         },
         {
           name: 'diagnostic-validation',
           run: async () => {
-            const destination = join(
-              evidence!,
-              `group-${diagnosticProfile!.index + 1}`,
-              'diagnostics',
-            );
-            let mainCoverage: unknown;
-            let coverageFailed = false;
-            let coverageError: unknown;
-            try {
-              const activation = companionMainObject(
-                JSON.parse(await readFile(join(destination, 'final-electron.json'), 'utf8')),
-                ['outer', 'observed'],
-              );
-              const outer = companionMainObject(activation.outer, [
-                'runId',
-                'workerPid',
-                'mainPid',
-              ]);
-              companionMainRequire(
-                outer.runId === runId &&
-                  outer.workerPid === process.pid &&
-                  outer.mainPid === observedMainPid,
-                'original activation binding',
-              );
-              const active = assertCompanionMainActivation(
-                activation.observed,
-                observedMainPid ?? 0,
-                process.pid,
-              );
-              const ownership = assertCompanionMainOwnership(
-                JSON.parse(
-                  await readFile(
-                    join(destination, 'final-sidebar-main-ownership-final.json'),
-                    'utf8',
-                  ),
-                ),
-                JSON.parse(await readFile(join(destination, 'final-ui-quiescence.json'), 'utf8')),
-                activation.observed.statusProducers,
-                diagnosticProfile!.memberTransition
-                  ? {
-                      disposal: await retainCompanionMemberDisposal(evidence!, destination),
-                      member: await readCompanionPacket(dir, 'sidebar-member-reused'),
-                      before: await readCompanionPacket(dir, 'sidebar-guest-before'),
-                      denied: await readCompanionPacket(dir, 'sidebar-guest-denied'),
-                    }
-                  : undefined,
-              );
-              mainCoverage = { activation: active, ownership };
-            } catch (error) {
-              coverageFailed = true;
-              coverageError = error;
-              mainCoverage = { complete: false, error: String(error) };
-            }
-            record(destination, 'main-coverage', mainCoverage);
-            const worker = JSON.parse(await readFile(join(dir, 'worker.json'), 'utf8'));
-            const supervisor = JSON.parse(await readFile(join(dir, 'supervisor.json'), 'utf8'));
-            const owned = (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
-              .trim()
-              .split('\n')
-              .map((line) => JSON.parse(line));
-            if (
-              supervisor.runId !== runId ||
-              supervisor.pid !== lifecycle[0]?.details.supervisorPid ||
-              worker.owner !== 'supervisor' ||
-              worker.allocation !== 'pidfd' ||
-              owned.filter(
-                (row) => row.kind === 'enrolled' && row.role === 'worker' && row.pid === worker.pid,
-              ).length !== 1
-            )
-              throw new Error('Original worker enrollment missing');
-            const parsed = readCompanionDiagnostics(
-              await readFile(join(destination, 'final-companion-preparation-v1.jsonl')),
-              await readFile(join(destination, 'final-companion-preparation-v1-final.json')),
-              worker.pid,
-            );
-            record(destination, 'reader', parsed);
-            let correlation: unknown = null;
-            try {
-              const observed =
-                finalSource ??
-                JSON.parse(await readFile(join(dir, 'failure-packet.json'), 'utf8')).source;
-              const parent = companionDiagnosticParent(
-                diagnosticProfile!,
-                await readCompanionPacket(dir, diagnosticProfile!.parentPacket),
-              );
-              correlation = correlateCompanionDiagnostics(parsed.frames, observed, parent);
-              if (diagnosticProfile!.index !== 9)
-                record(
-                  destination,
-                  'case-outcome',
-                  assertCompanionDiagnosticOutcome(
-                    diagnosticProfile!,
-                    await readCompanionPacket(dir, diagnosticProfile!.outcomePacket),
-                    parent,
-                    correlation as ReturnType<typeof correlateCompanionDiagnostics>,
-                  ),
+            await retainStartupAfter(
+              async () => {
+                const destination = join(
+                  evidence!,
+                  `group-${diagnosticProfile!.index + 1}`,
+                  'diagnostics',
                 );
-              record(destination, 'correlation', correlation);
-            } catch (error) {
-              record(destination, 'correlation-failure', String(error));
-              throw error;
-            }
-            record(destination, 'disposition', {
-              bodyFailed,
-              mainCoverage,
-              ownedCleanup: success,
-              readerValid: parsed.valid,
-              readerComplete: parsed.complete,
-              correlated: !!correlation,
-              nativeCompletion: 'original stop inventory only',
-              historicalCause: false,
-            });
-            if (coverageFailed) throw coverageError;
-            if (!parsed.complete || !success)
-              throw new Error('Diagnostic trace or original lifecycle incomplete');
+                let mainCoverage: unknown;
+                let coverageFailed = false;
+                let coverageError: unknown;
+                try {
+                  const activation = companionMainObject(
+                    JSON.parse(await readFile(join(destination, 'final-electron.json'), 'utf8')),
+                    ['outer', 'observed'],
+                  );
+                  const outer = companionMainObject(activation.outer, [
+                    'runId',
+                    'workerPid',
+                    'mainPid',
+                  ]);
+                  companionMainRequire(
+                    outer.runId === runId &&
+                      outer.workerPid === process.pid &&
+                      outer.mainPid === observedMainPid,
+                    'original activation binding',
+                  );
+                  const active = assertCompanionMainActivation(
+                    activation.observed,
+                    observedMainPid ?? 0,
+                    process.pid,
+                  );
+                  const ownership = assertCompanionMainOwnership(
+                    JSON.parse(
+                      await readFile(
+                        join(destination, 'final-sidebar-main-ownership-final.json'),
+                        'utf8',
+                      ),
+                    ),
+                    JSON.parse(
+                      await readFile(join(destination, 'final-ui-quiescence.json'), 'utf8'),
+                    ),
+                    activation.observed.statusProducers,
+                    diagnosticProfile!.memberTransition
+                      ? {
+                          disposal: await retainCompanionMemberDisposal(evidence!, destination),
+                          member: await readCompanionPacket(dir, 'sidebar-member-reused'),
+                          before: await readCompanionPacket(dir, 'sidebar-guest-before'),
+                          denied: await readCompanionPacket(dir, 'sidebar-guest-denied'),
+                        }
+                      : undefined,
+                  );
+                  mainCoverage = { activation: active, ownership };
+                } catch (error) {
+                  coverageFailed = true;
+                  coverageError = error;
+                  mainCoverage = { complete: false, error: String(error) };
+                }
+                record(destination, 'main-coverage', mainCoverage);
+                const worker = JSON.parse(await readFile(join(dir, 'worker.json'), 'utf8'));
+                const supervisor = JSON.parse(await readFile(join(dir, 'supervisor.json'), 'utf8'));
+                const owned = (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
+                  .trim()
+                  .split('\n')
+                  .map((line) => JSON.parse(line));
+                if (
+                  supervisor.runId !== runId ||
+                  supervisor.pid !== lifecycle[0]?.details.supervisorPid ||
+                  worker.owner !== 'supervisor' ||
+                  worker.allocation !== 'pidfd' ||
+                  owned.filter(
+                    (row) =>
+                      row.kind === 'enrolled' && row.role === 'worker' && row.pid === worker.pid,
+                  ).length !== 1
+                )
+                  throw new Error('Original worker enrollment missing');
+                const parsed = readCompanionDiagnostics(
+                  await readFile(join(destination, 'final-companion-preparation-v1.jsonl')),
+                  await readFile(join(destination, 'final-companion-preparation-v1-final.json')),
+                  worker.pid,
+                );
+                record(destination, 'reader', parsed);
+                let correlation: unknown = null;
+                try {
+                  const observed =
+                    finalSource ??
+                    JSON.parse(await readFile(join(dir, 'failure-packet.json'), 'utf8')).source;
+                  const parent = companionDiagnosticParent(
+                    diagnosticProfile!,
+                    await readCompanionPacket(dir, diagnosticProfile!.parentPacket),
+                  );
+                  correlation = correlateCompanionDiagnostics(parsed.frames, observed, parent);
+                  if (diagnosticProfile!.index !== 9)
+                    record(
+                      destination,
+                      'case-outcome',
+                      assertCompanionDiagnosticOutcome(
+                        diagnosticProfile!,
+                        await readCompanionPacket(dir, diagnosticProfile!.outcomePacket),
+                        parent,
+                        correlation as ReturnType<typeof correlateCompanionDiagnostics>,
+                      ),
+                    );
+                  record(destination, 'correlation', correlation);
+                } catch (error) {
+                  record(destination, 'correlation-failure', String(error));
+                  throw error;
+                }
+                record(destination, 'disposition', {
+                  bodyFailed,
+                  mainCoverage,
+                  ownedCleanup: success,
+                  readerValid: parsed.valid,
+                  readerComplete: parsed.complete,
+                  correlated: !!correlation,
+                  nativeCompletion: 'original stop inventory only',
+                  historicalCause: false,
+                });
+                if (coverageFailed) throw coverageError;
+                if (!parsed.complete || !success)
+                  throw new Error('Diagnostic trace or original lifecycle incomplete');
+              },
+              async () => {
+                const read = async (name: string) =>
+                  JSON.parse(await readFile(join(dir, name + '.json'), 'utf8'));
+                await validateStartupArchive(
+                  join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                  {
+                    ...startupBindingCurrent,
+                    consumerPid: process.pid,
+                    helperPid: child.pid ?? 0,
+                    worker: await read('worker'),
+                    supervisor: await read('supervisor'),
+                    allocation: lifecycle[0]?.details,
+                    owned: (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
+                      .trim()
+                      .split('\n')
+                      .map((line) => JSON.parse(line)),
+                    wait: lifecycle[1]?.details,
+                    helper: startupHelperWait,
+                    stopped: await read('stopped'),
+                    ready,
+                    joined: startupJoined,
+                  },
+                );
+              },
+              () => {
+                observationErrors.push('startup-validation');
+              },
+            );
           },
         },
       ],
