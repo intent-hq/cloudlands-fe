@@ -38,6 +38,54 @@
     defaultState: 'github-consent',
     states: {
       'github-consent': { setup, props: { view: base, static: true } },
+      'github-choice': {
+        setup,
+        props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },
+      },
+      'gitlab-device-ready': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            user: null,
+            requestedScopes: ['api'],
+            grantedScopes: null,
+          },
+        },
+      },
+      'gitlab-device-ready-live': {
+        setup,
+        props: {
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            user: null,
+            requestedScopes: ['api'],
+            grantedScopes: null,
+          },
+        },
+      },
+      'github-device': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            phase: 'device',
+            user: null,
+            device: { userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device' },
+          },
+        },
+      },
+      loading: { setup, props: { static: true, view: { ...base, phase: 'loading', user: null } } },
+      'account-error': {
+        setup,
+        props: { static: true, view: { ...base, phase: 'error', error: 'identity-mismatch' } },
+      },
       'gitlab-pat': {
         setup,
         props: {

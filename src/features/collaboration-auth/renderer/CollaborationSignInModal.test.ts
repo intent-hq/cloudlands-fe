@@ -42,7 +42,8 @@ describe('collaboration account consent controls', () => {
     render(CollaborationSignInModal, { view: base, onAction });
     await fireEvent.click(screen.getByRole('button', { name: /^GitLab$/ }));
     expect(onAction).toHaveBeenCalledExactlyOnceWith({
-      type: 'choose', target: { provider: 'gitlab', host: 'gitlab.com' },
+      type: 'choose',
+      target: { provider: 'gitlab', host: 'gitlab.com' },
     });
     cleanup();
     onAction.mockClear();
@@ -100,7 +101,6 @@ describe('collaboration account consent controls', () => {
   });
 });
 
-
 describe('progressive collaboration sign-in', () => {
   it('keeps GitHub free of GitLab fields and starts device sign-in only on an explicit action', async () => {
     const onAction = vi.fn();
@@ -114,8 +114,9 @@ describe('progressive collaboration sign-in', () => {
 
   it('defaults supported GitLab to device sign-in and reveals token entry only on request', async () => {
     const onAction = vi.fn();
-    render(CollaborationSignInModal, {
-      view: { ...base, target: { provider: 'gitlab', host: 'gitlab.com' }, user: null }, onAction,
+    const mounted = render(CollaborationSignInModal, {
+      view: { ...base, target: { provider: 'gitlab', host: 'gitlab.com' }, user: null },
+      onAction,
     });
     expect(screen.queryByLabelText(/personal access token/)).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Sign in with GitLab' }));
@@ -124,20 +125,37 @@ describe('progressive collaboration sign-in', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Use a token instead' }));
     expect(onAction).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Sign in with GitLab' })).toBeNull();
-    await fireEvent.input(screen.getByLabelText(/personal access token/), { target: { value: 'fixture-token' } });
+    await fireEvent.input(screen.getByLabelText(/personal access token/), {
+      target: { value: 'fixture-token' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Sign in with token' }));
     expect(onAction).toHaveBeenCalledExactlyOnceWith({ type: 'connect', token: 'fixture-token' });
-    expect((screen.getByLabelText(/personal access token/) as HTMLInputElement).value).toBe('');
+    expect(screen.queryByLabelText(/personal access token/)).toBeNull();
+    await mounted.rerender({
+      view: { ...base, target: { provider: 'gitlab', host: 'gitlab.com' } },
+      onAction,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue as @teammate' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'confirm' });
   });
 
   it('uses token fallback for the actual unsupported-device error without starting another flow', async () => {
     const onAction = vi.fn();
     render(CollaborationSignInModal, {
-      view: { ...base, target: { provider: 'gitlab', host: 'gitlab.company' }, user: null,
-        phase: 'error', error: 'device-grant-unsupported', deviceGrantSupported: false }, onAction,
+      view: {
+        ...base,
+        target: { provider: 'gitlab', host: 'gitlab.company' },
+        user: null,
+        phase: 'error',
+        error: 'device-grant-unsupported',
+        deviceGrantSupported: false,
+      },
+      onAction,
     });
     expect(onAction).not.toHaveBeenCalled();
-    await fireEvent.input(screen.getByLabelText(/personal access token/), { target: { value: 'fallback-token' } });
+    await fireEvent.input(screen.getByLabelText(/personal access token/), {
+      target: { value: 'fallback-token' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Sign in with token' }));
     expect(onAction).toHaveBeenCalledExactlyOnceWith({ type: 'connect', token: 'fallback-token' });
   });
@@ -145,20 +163,29 @@ describe('progressive collaboration sign-in', () => {
   it('routes the device-card action through the guarded caller and still allows cancellation', async () => {
     const onAction = vi.fn();
     render(CollaborationSignInModal, {
-      view: { ...base, phase: 'device', user: null,
-        device: { userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device' } }, onAction,
+      view: {
+        ...base,
+        phase: 'device',
+        user: null,
+        device: { userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device' },
+      },
+      onAction,
     });
     expect(onAction).not.toHaveBeenCalled();
     await fireEvent.click(screen.getByRole('button', { name: 'Open sign-in page' }));
     expect(onAction).toHaveBeenLastCalledWith({ type: 'open-browser' });
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Cancel', exact: true }).at(-1)!);
     expect(onAction).toHaveBeenLastCalledWith({ type: 'cancel' });
   });
 
   it('keeps a pinned account immutable and confirms only the displayed account', async () => {
     const onAction = vi.fn();
     render(CollaborationSignInModal, {
-      view: { ...base, request: { scope: 'host', pinIdentity: { ...base.target, externalUserId: '21' } } }, onAction,
+      view: {
+        ...base,
+        request: { scope: 'host', pinIdentity: { ...base.target, externalUserId: '21' } },
+      },
+      onAction,
     });
     expect(screen.queryByRole('button', { name: /^GitHub$/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /^GitLab$/ })).toBeNull();
@@ -168,11 +195,20 @@ describe('progressive collaboration sign-in', () => {
 
   it('discards draft credentials when the request changes and does not authenticate while loading', async () => {
     const onAction = vi.fn();
-    const view: CollaborationView = { ...base, target: { provider: 'gitlab', host: 'gitlab.com' }, user: null };
+    const view: CollaborationView = {
+      ...base,
+      target: { provider: 'gitlab', host: 'gitlab.com' },
+      user: null,
+    };
     const mounted = render(CollaborationSignInModal, { view, onAction });
     await fireEvent.click(screen.getByRole('button', { name: 'Use a token instead' }));
-    await fireEvent.input(screen.getByLabelText(/personal access token/), { target: { value: 'discard-me' } });
-    await mounted.rerender({ view: { ...view, requestId: 'another-request', phase: 'loading' }, onAction });
+    await fireEvent.input(screen.getByLabelText(/personal access token/), {
+      target: { value: 'discard-me' },
+    });
+    await mounted.rerender({
+      view: { ...view, requestId: 'another-request', phase: 'loading' },
+      onAction,
+    });
     expect(screen.queryByLabelText(/personal access token/)).toBeNull();
     expect(onAction).not.toHaveBeenCalled();
     await mounted.rerender({ view: { ...view, requestId: 'another-request' }, onAction });
