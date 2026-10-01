@@ -1,5 +1,5 @@
 import { isCollaborationIdentity } from '../collaboration-auth/identity';
-import type { CommentAttribution } from '$shared/types/comment.types';
+import type { CommentAttribution, NoteComment } from '$shared/types/comment.types';
 import { m } from '$shared/paraglide/messages.js';
 
 /** Project only the daemon's human creator fields. Local ids are not portable identities. */
@@ -21,7 +21,9 @@ export function projectCommentAttribution(raw: {
 }
 
 /** Every field belongs to the same selected latest row, including authoritative omissions. */
-export function projectLatestCommentAuthor(raw: Record<string, unknown>) {
+export function projectLatestCommentAuthor(
+  raw: Record<string, unknown>,
+): Partial<Pick<NoteComment, 'author' | 'authorType' | 'authorPrincipalId' | 'authorIdentity'>> {
   const authorType =
     raw.latestCommentAuthorType === 'user' || raw.latestCommentAuthorType === 'agent'
       ? raw.latestCommentAuthorType
