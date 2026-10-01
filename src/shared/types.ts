@@ -1,3 +1,4 @@
+import type { AgentPlacement } from './types/agent-node';
 /**
  * Unified Type Definitions
  *
@@ -423,6 +424,7 @@ export interface Workspace {
   /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
   /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
+  defaultAgentPlacement?: AgentPlacement;
   checkoutMode?: 'cow' | 'worktree' | 'direct';
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
   diskUsage?: WorkspaceDiskUsage;
@@ -1649,6 +1651,7 @@ export interface CreateWorkspaceRequest {
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
   initialAgent?: {
+    placement?: AgentPlacement;
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on
      * the `workspace.create` result (`initialAgent.id`). Clients must no
@@ -1700,6 +1703,7 @@ export interface CreateWorkspaceRequest {
 }
 
 export interface UpdateWorkspaceRequest {
+  defaultAgentPlacement?: AgentPlacement | null;
   id: WorkspaceId;
   title?: string;
   branch?: string;

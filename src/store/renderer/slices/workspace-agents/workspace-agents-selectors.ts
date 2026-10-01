@@ -414,3 +414,14 @@ export const selectDiskMessageCount = store.createSelector(
     return getWorkspaceAgentState(state, wsId).diskMessageCounts[agentId] ?? 0;
   },
 );
+
+const noNodeSupport = { agentNodes: false, localNodeIsolation: false };
+export const selectNodeCapabilities = store.createSelector((state) => {
+  const support = state.workspaceAgents.nodeSupport;
+  return support?.generation === state.daemonHealth.connectionGeneration
+    ? support.capabilities
+    : noNodeSupport;
+});
+export const selectNodeOperationBusy = store.createSelector(
+  (state) => state.workspaceAgents.nodeOperationBusy === true,
+);

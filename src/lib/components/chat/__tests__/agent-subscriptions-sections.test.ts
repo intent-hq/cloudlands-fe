@@ -928,6 +928,54 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(navigateToRouteSpy).toHaveBeenCalledWith(`/workspace/${wsId}`);
   });
 
+  it.each([
+    ['input', 0],
+    ['textarea', 0],
+    ['select', 0],
+    ['contenteditable', 0],
+    ['input', 150],
+    ['textarea', 150],
+    ['select', 150],
+    ['contenteditable', 150],
+  ] as const)(
+    'preserves %s focus acquired after %dms of watched-agent reveal',
+    async (kind, elapsed) => {
+      const wsId = `ws-agent-panel-editable-${kind}-${elapsed}`;
+      seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
+      await renderWithSnapshot(
+        wsId,
+        snapshot([oneShotSubscription('watch-target', wsId, ['agent-target'])]),
+      );
+      seedWorkspace(wsId);
+      seedPanelLayout(wsId, { parent: { id: 'parent', tabs: [], activeTabId: null } }, 'parent');
+      await expandWaitingAgents();
+      const focusEvents: CustomEvent[] = [];
+      const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
+      const control = document.createElement(kind === 'contenteditable' ? 'div' : kind);
+      if (kind === 'contenteditable') {
+        control.setAttribute('contenteditable', 'true');
+        control.tabIndex = 0;
+      }
+      document.body.append(control);
+      window.addEventListener('panel:focus-content', onFocus);
+      vi.useFakeTimers();
+      try {
+        await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
+        await vi.advanceTimersByTimeAsync(elapsed);
+        expect(focusEvents).toHaveLength(elapsed === 0 ? 0 : 1);
+        control.focus();
+        expect(document.activeElement).toBe(control);
+        await vi.advanceTimersByTimeAsync(600 - elapsed);
+        expect(focusEvents).toHaveLength(elapsed === 0 ? 0 : 1);
+        expect(document.activeElement).toBe(control);
+      } finally {
+        control.remove();
+        vi.useRealTimers();
+        window.removeEventListener('panel:focus-content', onFocus);
+      }
+    },
+  );
+
   it('cancels delayed focus when navigation makes the watched workspace stale', async () => {
     const wsId = 'ws-agent-panel-stale-focus';
     seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);

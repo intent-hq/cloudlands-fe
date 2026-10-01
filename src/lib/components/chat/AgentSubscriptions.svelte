@@ -646,6 +646,17 @@
         ) {
           return;
         }
+        // These are automatic reveal retries, not a new user focus request.
+        // Preserve a Find field, composer, or other editable control the user
+        // has focused since opening the watched agent (intent-hq/intent#6395).
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLElement &&
+          activeElement.closest('input, textarea, select, [contenteditable="true"]')
+        ) {
+          clearWatchedAgentFocusTimers();
+          return;
+        }
         dispatchWindowEvent('panel:focus-content', {
           tabType: 'agent',
           agentId: owner.watchedAgentId,

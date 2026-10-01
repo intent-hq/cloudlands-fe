@@ -6988,5 +6988,18 @@
   "settings_personalDevices_pairing_error": "暫時無法配對。請檢查連線和存取權限，然後重試。",
   "settings_personalDevices_roster_error": "無法載入已連線的裝置。請重試。",
   "settings_personalDevices_copy_label": "複製配對連結",
-  "settings_personalDevices_copied_label": "連結已複製"
+  "settings_personalDevices_copied_label": "連結已複製",
+  "agent_placement_unavailable": "此常駐程式不支援節點執行。",
+  "agent_placement_labsRequired": "開始遠端工作前，請在 Labs 中啟用遠端代理程式。",
+  "agent_hub_merge": "合併檢查點",
+  "agent_hub_discard": "捨棄隔離工作",
+  "agent_hub_discardDescription": "停止此代理程式並捨棄其隔離簽出和復原參照？",
+  "agent_hub_discarded": "已捨棄隔離工作。",
+  "agent_hub_checkpointRequired": "合併前需要成功的檢查點。",
+  "agent_hub_merged": "已合併檢查點。",
+  "agent_hub_blocked": "合併需要處理：{detail}",
+  "agent_placement_retiredIsolation": "已停止支援個別代理的 CoW 隔離。",
+  "agent_placement_incompatibleIsolation": "部署位置不能與舊版隔離設定同時使用。",
+  "agent_placement_specialistUnavailable": "所選專家無法使用。請重新選擇專家。",
+  "agent_placement_backendChanged": "準備請求時後端發生了變化。請重試。"
 }

@@ -6988,5 +6988,18 @@
   "settings_personalDevices_pairing_error": "Kopplung nicht verfügbar. Prüfen Sie Verbindung und Zugriffsrechte und versuchen Sie es erneut.",
   "settings_personalDevices_roster_error": "Verbundene Geräte konnten nicht geladen werden. Versuchen Sie es erneut.",
   "settings_personalDevices_copy_label": "Kopplungslink kopieren",
-  "settings_personalDevices_copied_label": "Link kopiert"
+  "settings_personalDevices_copied_label": "Link kopiert",
+  "agent_placement_unavailable": "Knotenausführung ist auf diesem Daemon nicht verfügbar.",
+  "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten.",
+  "agent_hub_merge": "Prüfpunkt zusammenführen",
+  "agent_hub_discard": "Isolierte Arbeit verwerfen",
+  "agent_hub_discardDescription": "Diesen Agenten stoppen und seine isolierte Arbeitskopie und Wiederherstellungsreferenzen verwerfen?",
+  "agent_hub_discarded": "Isolierte Arbeit verworfen.",
+  "agent_hub_checkpointRequired": "Vor dem Zusammenführen ist ein erfolgreicher Prüfpunkt erforderlich.",
+  "agent_hub_merged": "Prüfpunkt zusammengeführt.",
+  "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
+  "agent_placement_retiredIsolation": "CoW-Isolation für einzelne Agenten wird nicht mehr unterstützt.",
+  "agent_placement_incompatibleIsolation": "Die Platzierung kann nicht mit der bisherigen Isolation kombiniert werden.",
+  "agent_placement_specialistUnavailable": "Der ausgewählte Spezialist ist nicht verfügbar. Wähle erneut einen Spezialisten aus.",
+  "agent_placement_backendChanged": "Das Backend hat sich während der Vorbereitung der Anfrage geändert. Versuche es erneut."
 }

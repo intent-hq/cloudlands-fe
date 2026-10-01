@@ -6988,5 +6988,18 @@
   "settings_personalDevices_pairing_error": "Pairing is unavailable. Check your connection and access, then retry.",
   "settings_personalDevices_roster_error": "Could not load connected devices. Try again.",
   "settings_personalDevices_copy_label": "Copy pairing link",
-  "settings_personalDevices_copied_label": "Link copied"
+  "settings_personalDevices_copied_label": "Link copied",
+  "agent_placement_unavailable": "Node execution is unavailable on this daemon.",
+  "agent_placement_labsRequired": "Enable Remote agents in Labs before starting remote work.",
+  "agent_hub_merge": "Merge checkpoint",
+  "agent_hub_discard": "Discard isolated work",
+  "agent_hub_discardDescription": "Stop this agent and discard its isolated checkout and recovery refs?",
+  "agent_hub_discarded": "Isolated work discarded.",
+  "agent_hub_checkpointRequired": "A successful checkpoint is required before merging.",
+  "agent_hub_merged": "Checkpoint merged.",
+  "agent_hub_blocked": "Merge needs attention: {detail}",
+  "agent_placement_retiredIsolation": "Per-agent CoW isolation is retired.",
+  "agent_placement_incompatibleIsolation": "Placement cannot be combined with legacy isolation.",
+  "agent_placement_specialistUnavailable": "The selected specialist is unavailable. Select a specialist again.",
+  "agent_placement_backendChanged": "Backend changed while preparing the request. Try again."
 }

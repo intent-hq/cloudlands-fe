@@ -1,3 +1,4 @@
+import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
   ScriptArchiveFilter,
   ScriptArchiveResult,
@@ -191,6 +192,7 @@ export interface MutationResult {
  *   `name`-present ⇒ explicitly set.
  */
 export interface AgentCreateRequest {
+  placement?: AgentPlacement;
   workspaceId: string;
   prompt?: string;
   model?: string;
@@ -1939,6 +1941,7 @@ export interface SkillsClient {
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
 export interface SpecialistDef {
+  runsOn?: AgentPlacement;
   /** Original Claude definition; read-only in Intent. */
   importedFrom?: 'claude-code';
   /** Unsupported settings that prevent launching this imported definition. */

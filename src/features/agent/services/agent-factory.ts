@@ -456,6 +456,7 @@ export class UnifiedAgentFactory {
           provider,
           normalized.skipInitialPrompt,
           normalized.nameExplicitlySet,
+          normalized.placement,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
         // A late acknowledgement belongs to the original connection, not the
@@ -713,6 +714,7 @@ export class UnifiedAgentFactory {
 
     return {
       name: normalizedName,
+      placement: config.placement,
       nameExplicitlySet: config.nameExplicitlySet, // Wire `nameExplicitlySet` — false marks a generated placeholder name
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
@@ -767,6 +769,7 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
+    placement?: import('$shared/types/agent-node').AgentPlacement,
   ): Promise<{
     success: boolean;
     agentId?: string;
@@ -778,6 +781,7 @@ export class UnifiedAgentFactory {
   }> {
     try {
       const request = {
+        ...(placement ? { placement } : {}),
         workspaceId: String(agent.workspaceId),
         workspacePath,
         name: agent.name,
