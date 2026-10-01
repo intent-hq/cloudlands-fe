@@ -6920,5 +6920,6 @@
   "terminal_scriptOutput_retained_description": "暫存輸出快照，最多 10,000 行。即時輸出會分開顯示。",
   "terminal_scriptOutput_retainedLoading_label": "正在載入保留的輸出…",
   "terminal_scriptOutput_retainedUnavailable_label": "保留的輸出無法使用。",
-  "terminal_scriptOutput_live_label": "即時輸出"
+  "terminal_scriptOutput_live_label": "即時輸出",
+  "files_secondaryRoot_unsupported_error": "此守護程序無法讀取次要 Git 根目錄中的檔案。請更新後重新連線。"
 }

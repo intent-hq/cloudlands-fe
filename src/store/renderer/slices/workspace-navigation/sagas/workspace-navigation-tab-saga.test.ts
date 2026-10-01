@@ -363,6 +363,80 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
+  it('preserves selected-root metadata on a literal file tab', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      channel.put(
+        openWorkspaceFile('ws-1', '/external/repo/new.md:17', {
+          filePathIsLiteral: true,
+          gitRootId: 'root-a',
+          gitRootPath: '/external/repo',
+        }),
+      );
+      await settle();
+      expect(dispatch.mock.calls[0]?.[0].payload.tab).toMatchObject({
+        type: 'file',
+        filePath: '/external/repo/new.md:17',
+        data: { gitRootId: 'root-a', gitRootPath: '/external/repo' },
+      });
+      expect(dispatch.mock.calls[0]?.[0].payload.tab.data).not.toHaveProperty('line');
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('reuses file tabs within a root without conflating identical paths across roots', async () => {
+    const channel = stdChannel();
+    let panelLayout: PanelLayoutSliceState = {
+      byWorkspaceId: {
+        'ws-1': {
+          ...emptyWorkspaceState,
+          root: { type: 'panel', panelId: 'panel-1' },
+          focusedPanelId: 'panel-1',
+          panels: { 'panel-1': { id: 'panel-1', tabs: [], activeTabId: null } },
+        },
+      },
+    };
+    const task = runSaga(
+      {
+        channel,
+        getState: () => ({ ...ownerWindowSlices, panelLayout }),
+        dispatch: (action) => {
+          panelLayout = reducePanelAction(panelLayout, action);
+        },
+      },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      for (const [filePath, gitRootId] of [
+        ['/repo/packages/a/new.md', undefined],
+        ['/repo/packages/a/new.md', 'root-a'],
+        ['/repo/packages/b/new.md', 'root-b'],
+        ['/repo/packages/a/new.md', 'root-a'],
+      ] as const) {
+        channel.put(openWorkspaceFile('ws-1', filePath, { filePathIsLiteral: true, gitRootId }));
+        await settle();
+      }
+      const panel = panelLayout.byWorkspaceId['ws-1'].panels['panel-1'];
+      expect(panel.tabs.map((tab) => tab.filePath)).toEqual([
+        '/repo/packages/a/new.md',
+        '/repo/packages/a/new.md',
+        '/repo/packages/b/new.md',
+      ]);
+      expect(panel.tabs.map((tab) => tab.data?.gitRootId)).toEqual([undefined, 'root-a', 'root-b']);
+      expect(panel.activeTabId).toBe(panel.tabs[1].id);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
   it.each([
     ['docs/chl-spec.md:2471', undefined, 'docs/chl-spec.md', 'chl-spec.md', 2471],
     ['src/a.ts:10:5', undefined, 'src/a.ts', 'a.ts', 10],

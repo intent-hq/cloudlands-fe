@@ -13,6 +13,7 @@
 import type { FileGitStatus, FileNode } from '$shared/types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
+import { requireRootFileSupport } from './require-root-file-support';
 import { backendRequest } from './backend-transport';
 import { newIdempotencyKey, runMutation } from './live-support';
 
@@ -86,9 +87,18 @@ export class LiveFilesClient implements FilesClient {
     return [];
   }
 
-  async read(workspaceId: string, path: string): Promise<FileContentEntry | null> {
+  async read(
+    workspaceId: string,
+    path: string,
+    options?: { gitRootId: string },
+  ): Promise<FileContentEntry | null> {
     try {
-      const result = await backendRequest<unknown>('file.read', { workspaceId, path });
+      if (options?.gitRootId) await requireRootFileSupport();
+      const result = await backendRequest<unknown>('file.read', {
+        workspaceId,
+        path,
+        ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
+      });
       const content =
         typeof result === 'string'
           ? result
@@ -97,7 +107,8 @@ export class LiveFilesClient implements FilesClient {
             : null;
       if (content === null) return null;
       return toFileContentEntry(path, content);
-    } catch {
+    } catch (error) {
+      if (options?.gitRootId) throw error;
       return null;
     }
   }

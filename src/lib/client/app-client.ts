@@ -1298,7 +1298,11 @@ export interface SettingsClient {
 
 export interface FilesClient {
   list(workspaceId: string): Promise<FileContentEntry[]>;
-  read(workspaceId: string, path: string): Promise<FileContentEntry | null>;
+  read(
+    workspaceId: string,
+    path: string,
+    options?: { gitRootId: string },
+  ): Promise<FileContentEntry | null>;
   /** Root node of the workspace file tree, or `null` when no tree is available. */
   explorerTree(workspaceId: string): Promise<FileNode | null>;
   /**

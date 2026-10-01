@@ -1,3 +1,4 @@
+import { requireRootFileSupport } from '$lib/client/live/require-root-file-support';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
@@ -15,7 +16,10 @@ export async function readPdf(
   workspaceId: string,
   path: string,
   signal: AbortSignal,
+  gitRootId?: string,
 ): Promise<Uint8Array<ArrayBuffer>> {
+  signal.throwIfAborted();
+  if (gitRootId) await requireRootFileSupport();
   let data: Uint8Array<ArrayBuffer> | undefined;
   let offset = 0;
   do {
@@ -27,6 +31,7 @@ export async function readPdf(
         path,
         offset,
         length: CHUNK_BYTES,
+        ...(gitRootId ? { gitRootId } : {}),
       });
     } catch (error) {
       // file.readChunk uses the daemon's generic internal-error code for I/O.
