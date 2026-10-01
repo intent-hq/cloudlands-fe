@@ -114,7 +114,7 @@
   <div class="toolbar">
     <div role="tablist" aria-label={m.devConsole_title_label()}>
       {#each tabs as value}<Button
-          size="xs"
+          size="compact"
           variant="ghost"
           wrapContent={false}
           class="inspector-control"
@@ -156,7 +156,7 @@
       placeholder={m.devConsole_filter_label()}
       bind:value={filter}
     /><Button
-      size="xs"
+      size="compact"
       variant="ghost"
       wrapContent={false}
       class="inspector-control"
@@ -169,7 +169,7 @@
           )})</summary
         >{#each consoleState.update.fullCapture as choice}<div class="choice">
             <code>{choice.direction} / {choice.kind} / {choice.method}</code><Button
-              size="xs"
+              size="compact"
               variant="ghost"
               wrapContent={false}
               class="inspector-control"

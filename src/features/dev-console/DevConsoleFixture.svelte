@@ -10,7 +10,7 @@
 
 <div class="fixture">
   <span>{m.devConsole_fixture_label()}</span><Button
-    size="xs"
+    size="compact"
     variant="ghost"
     wrapContent={false}
     class="fixture-control"

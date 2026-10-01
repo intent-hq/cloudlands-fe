@@ -44,7 +44,7 @@
   <header>
     <strong>{row.method}</strong><span
       >{m.devConsole_connection_label()}: {row.connectionId} / {row.connectionGeneration}</span
-    ><Button size="xs" variant="ghost" wrapContent={false} class="payload-control" onclick={onclose}
+    ><Button size="compact" variant="ghost" wrapContent={false} class="payload-control" onclick={onclose}
       >{m.devConsole_closeDetails_label()}</Button
     >
   </header>
@@ -70,7 +70,7 @@
                 : formatInteger(payload.originalBytes),
           })}</span
         ><Button
-          size="xs"
+          size="compact"
           variant="ghost"
           wrapContent={false}
           class="payload-control"

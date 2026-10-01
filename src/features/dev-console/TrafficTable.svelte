@@ -114,7 +114,7 @@
 <div class="traffic-table">
   <div class="follow">
     <span>{following ? m.devConsole_following_label() : m.devConsole_paused_label()}</span><Button
-      size="xs"
+      size="compact"
       variant="ghost"
       wrapContent={false}
       class="table-control"
@@ -129,7 +129,7 @@
             aria-sort={column === id ? (descending ? 'descending' : 'ascending') : 'none'}
           >
             <Button
-              size="xs"
+              size="compact"
               variant="ghost"
               wrapContent={false}
               class="table-control"
