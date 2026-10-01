@@ -1,3 +1,5 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 /**
  * Wire-contract tests for the daemon-backed diff batcher (D2).
  *
@@ -284,7 +286,13 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     new Error('Root reads unsupported'),
     Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
     Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
-    Object.assign(new Error('Permission denied (os error 13)'), { rpcCode: -32603 }),
+    new BackendError(
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Permission denied (os error 13)',
+      }).toErrorPayload(),
+    ),
   ])('rejects scoped working-tree failures instead of fabricating deletion: %s', async (error) => {
     mockedRequest.mockImplementation(async (method) => {
       if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
@@ -304,7 +312,13 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     mockedRequest.mockImplementation(async (method) => {
       if (method === 'git.diffs') return [{ path: 'gone.txt', hunks: [HUNK] }];
       if (method === 'git.showFile') return { content: 'INDEX' };
-      throw Object.assign(new Error('No such file or directory (os error 2)'), { rpcCode: -32603 });
+      throw new BackendError(
+        new JsonRpcError({
+          code: -32603,
+          message: 'Internal error',
+          data: 'No such file or directory (os error 2)',
+        }).toErrorPayload(),
+      );
     });
     const pending = batchedGitDiff('scoped-deleted', false, 'gone.txt', {
       gitRootId: 'external-root',

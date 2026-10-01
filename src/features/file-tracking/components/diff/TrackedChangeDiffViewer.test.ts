@@ -1,3 +1,5 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { fileContentKey } from '$features/file/utils/file-content-key';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
@@ -351,7 +353,13 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
     new Error('Root reads unsupported'),
     Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
     Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
-    Object.assign(new Error('Permission denied (os error 13)'), { rpcCode: -32603 }),
+    new BackendError(
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Permission denied (os error 13)',
+      }).toErrorPayload(),
+    ),
   ])('shows scoped fallback read errors without a deletion diff: %s', async (error) => {
     testState.batchedGitDiffMock.mockResolvedValue({
       file: 'tracked.txt',
@@ -381,7 +389,13 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
     });
     testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'INDEX' });
     vi.mocked(backendRequest).mockRejectedValue(
-      Object.assign(new Error('No such file or directory (os error 2)'), { rpcCode: -32603 }),
+      new BackendError(
+        new JsonRpcError({
+          code: -32603,
+          message: 'Internal error',
+          data: 'No such file or directory (os error 2)',
+        }).toErrorPayload(),
+      ),
     );
     render(TrackedChangeDiffViewer, {
       props: {
