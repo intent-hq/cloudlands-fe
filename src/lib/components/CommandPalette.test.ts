@@ -1038,7 +1038,7 @@ describe('CommandPalette indexed notes', () => {
 
   it('does not query notes under another class filter or after unmount', async () => {
     const view = render(CommandPalette, {
-      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '@needle', onClose: vi.fn() },
+      props: { isOpen: true, workspaceId: 'ws-1', initialQuery: '?needle', onClose: vi.fn() },
     });
     await waitFor(() =>
       expect(backendRequestMock).toHaveBeenCalledWith('search.messages', expect.anything()),
@@ -1095,6 +1095,184 @@ describe('CommandPalette transcript search lifecycle', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  const remoteSearches = ['search.fileNames', 'search.messages', 'search.notes'] as const;
+  const callsFor = (method: string) =>
+    backendRequestMock.mock.calls.filter(([name]) => name === method);
+  const expectedParams = (method: string, workspaceId: string, term = 'dev con') =>
+    method === 'search.fileNames'
+      ? { workspaceId, pattern: term, limit: 50 }
+      : {
+          query: term,
+          limit: 10,
+          preferWorkspaceId: workspaceId,
+          ...(method === 'search.notes' ? { includeArchived: false } : {}),
+        };
+
+  it.each(remoteSearches)(
+    '%s stays quiet when mounted hidden and after close/workspace churn',
+    async (method) => {
+      const view = render(CommandPalette, {
+        props: {
+          isOpen: false,
+          workspaceId: 'tiny-owl',
+          initialQuery: 'dev con',
+          onClose: vi.fn(),
+        },
+      });
+      refreshWorkspaces();
+      await settleDebounce();
+      expect(callsFor(method)).toEqual([]);
+      await view.rerender({ isOpen: true });
+      await settleDebounce();
+      expect(callsFor(method)).toEqual([[method, expectedParams(method, 'tiny-owl')]]);
+      await view.rerender({ isOpen: false });
+      await view.rerender({ workspaceId: 'other' });
+      refreshWorkspaces();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(callsFor(method)).toHaveLength(1);
+      await view.rerender({ isOpen: true });
+      await settleDebounce();
+      expect(callsFor(method)[1]).toEqual([method, expectedParams(method, 'other')]);
+    },
+  );
+
+  it.each(remoteSearches)(
+    '%s does not repeat unchanged searches on metadata churn or idle',
+    async (method) => {
+      const view = render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'dev con', onClose: vi.fn() },
+      });
+      await settleDebounce();
+      for (let i = 0; i < 3; i++) {
+        refreshWorkspaces();
+        await settleDebounce();
+      }
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(callsFor(method)).toEqual([[method, expectedParams(method, 'tiny-owl')]]);
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'fresh query' } });
+      await settleDebounce();
+      expect(callsFor(method)[1]).toEqual([
+        method,
+        expectedParams(method, 'tiny-owl', 'fresh query'),
+      ]);
+      await view.rerender({ workspaceId: 'other' });
+      await settleDebounce();
+      expect(callsFor(method)[2]).toEqual([method, expectedParams(method, 'other', 'fresh query')]);
+    },
+  );
+
+  it.each(remoteSearches)('%s cancels a pending debounce on close', async (method) => {
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'dev con', onClose: vi.fn() },
+    });
+    await view.rerender({ isOpen: false });
+    await settleDebounce();
+    expect(callsFor(method)).toEqual([]);
+  });
+
+  it.each([
+    ['search.fileNames', '/'],
+    ['search.messages', '?'],
+    ['search.notes', '#'],
+  ])('%s searches deliberately when its filter is selected', async (method, prefix) => {
+    render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: '@ dev con', onClose: vi.fn() },
+    });
+    await settleDebounce();
+    expect(callsFor(method)).toEqual([]);
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: prefix + ' dev con' } });
+    await settleDebounce();
+    expect(callsFor(method)).toEqual([[method, expectedParams(method, 'tiny-owl')]]);
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: '@ dev con' } });
+    await settleDebounce();
+    expect(callsFor(method)).toHaveLength(1);
+  });
+
+  it('updates remote result labels from workspace metadata without another search', async () => {
+    workspaceItemsState.value = [
+      { id: 'tiny-owl', title: 'Original workspace', repositoryName: 'original-repo' },
+    ];
+    backendRequestMock.mockImplementation(async (method) => {
+      if (method === 'search.messages')
+        return {
+          matches: [
+            {
+              agentId: 'agent-1',
+              messageId: 'message-1',
+              workspaceId: 'tiny-owl',
+              agentName: 'dev con agent',
+              role: 'assistant',
+              preview: 'dev con',
+              timestamp: '2026-10-01T01:00:00Z',
+            },
+          ],
+        };
+      if (method === 'search.notes')
+        return {
+          indexed: true,
+          requestId: 'r',
+          matches: [
+            {
+              workspaceId: 'tiny-owl',
+              noteId: 'spec',
+              title: 'dev con plan',
+              preview: 'dev con',
+              score: 2,
+              updatedAt: '2026-10-01T00:00:00Z',
+              isArchived: false,
+              workspaceArchived: false,
+            },
+          ],
+        };
+      return { files: [] };
+    });
+    render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'dev con', onClose: vi.fn() },
+    });
+    await settleDebounce();
+    expect(screen.getByRole('button', { name: /dev con agent/ }).textContent).toContain(
+      'Original workspace',
+    );
+    expect(screen.getByRole('button', { name: /dev con plan/ }).textContent).toContain(
+      'Original workspace',
+    );
+    const initialCalls = backendRequestMock.mock.calls.slice();
+    workspaceItemsState.value = [
+      { id: 'tiny-owl', title: 'Renamed workspace', repositoryName: 'renamed-repo' },
+    ];
+    for (const subscriber of workspaceItemsState.subscribers) subscriber(workspaceItemsState.value);
+    await settleDebounce();
+    for (const label of ['dev con agent', 'dev con plan']) {
+      const row = screen.getByRole('button', { name: new RegExp(label) });
+      expect(row.textContent).toContain('Renamed workspace');
+      expect(row.textContent).toContain('renamed-repo');
+      expect(row.textContent).not.toContain('Original workspace');
+    }
+    expect(backendRequestMock.mock.calls).toEqual(initialCalls);
+  });
+
+  it('discards a file response received while closed instead of leaking it into reopening', async () => {
+    let complete!: (value: any) => void;
+    backendRequestMock.mockImplementation((method) =>
+      method === 'search.fileNames'
+        ? new Promise((resolve) => {
+            complete = resolve;
+          })
+        : Promise.resolve({ indexed: true, requestId: 'r', matches: [] }),
+    );
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'obsolete', onClose: vi.fn() },
+    });
+    await settleDebounce();
+    await view.rerender({ isOpen: false });
+    complete({ files: ['obsolete-file.ts'] });
+    await settleDebounce();
+    await view.rerender({ isOpen: true });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(screen.queryByRole('button', { name: /obsolete-file/ })).toBeNull();
+    expect(callsFor('search.fileNames')).toHaveLength(1);
   });
 
   it('does not repeat a retained search after closing, workspace refreshes or workspace switches', async () => {
