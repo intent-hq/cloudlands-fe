@@ -337,6 +337,8 @@ for (const kind of ['literal', 'bold-end', 'partial-bold', 'bold-link', 'bold-sp
         await page.keyboard.press('Control+b');
         if (kind === 'bold-end') {
           await page.keyboard.press('ArrowRight');
+          await settled(page);
+          expect((await state(page, side)).selection).toEqual({ type: 'text', anchor: 7, head: 7 });
           await page.keyboard.type('Z');
         } else if (kind === 'partial-bold') {
           await select(page, side, 3, 5);
@@ -524,7 +526,7 @@ test('rapid seam selection preserves every native keyboard movement after repeat
   await mount(Harness);
   await expect(page.getByTestId('bounded').locator('.tiptap')).toContainText('Region 0001');
   const edge = await seam(page);
-  // Repeated native bursts expose a redraw racing the browser selectionchange task.
+  // Repeated native bursts preserve every endpoint after focus recovery has completed.
   for (let attempt = 0; attempt < 20; attempt++) {
     for (const side of ['native', 'bounded']) {
       await select(page, side, edge - 3);
