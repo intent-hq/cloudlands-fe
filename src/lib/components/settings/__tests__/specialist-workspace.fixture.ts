@@ -19,7 +19,12 @@ import {
   workspaceCatalogRequested,
   workspaceCatalogInvalidated,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
-import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
+import {
+  setFileSpecialists,
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+} from '$store/renderer/slices/specialists/specialists-slice';
+import { specialistsSaga } from '$store/renderer/slices/specialists/sagas/specialists-saga';
 import {
   fetchEditorsSuccess,
   setEditorOrder,
@@ -30,6 +35,7 @@ import type { SpecialistDef } from '$lib/client/app-client';
 export function setupWorkspaceSpecialists(
   record: (key: string, value: string) => void,
   launchError: string,
+  definition?: SpecialistDef,
 ) {
   const previous = store.state;
   admitLegacyPrincipal();
@@ -43,18 +49,23 @@ export function setupWorkspaceSpecialists(
   const requests: unknown[] = [];
   let fail = false;
   let empty = false;
-  const defs = (id?: string): SpecialistDef[] => [
-    {
-      id: 'shared',
-      name: id === 'project-a' ? 'Project A' : id === 'project-b' ? 'Project B' : 'User shared',
-      description: 'Imported review specialist',
-      source: id ? 'project' : 'user',
-      importedFrom: 'claude-code',
-      prompt: id === 'project-a' ? 'Prompt A' : id === 'project-b' ? 'Prompt B' : 'User prompt',
-      path: `/tmp/${id ?? 'user'}/.claude/agents/shared.md`,
-      ...(id === 'project-b' ? { unsupportedFields: ['permissionMode'] } : {}),
-    },
-  ];
+  const defs = (id?: string): SpecialistDef[] =>
+    definition
+      ? [definition]
+      : [
+          {
+            id: 'shared',
+            name:
+              id === 'project-a' ? 'Project A' : id === 'project-b' ? 'Project B' : 'User shared',
+            description: 'Imported review specialist',
+            source: id ? 'project' : 'user',
+            importedFrom: 'claude-code',
+            prompt:
+              id === 'project-a' ? 'Prompt A' : id === 'project-b' ? 'Prompt B' : 'User prompt',
+            path: `/tmp/${id ?? 'user'}/.claude/agents/shared.md`,
+            ...(id === 'project-b' ? { unsupportedFields: ['permissionMode'] } : {}),
+          },
+        ];
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
@@ -98,8 +109,21 @@ export function setupWorkspaceSpecialists(
               },
             };
           }
+          if (req.method === 'specialist.delete' && definition) {
+            record('delete-request', JSON.stringify(req.params));
+            definition = {
+              ...definition,
+              source: 'bundled',
+              prompt: 'Restored default prompt.',
+              path: undefined,
+            };
+            return { ok: true, result: { success: true } };
+          }
           return { ok: true, result: { providers: [], settings: [], servers: [] } };
         }
+        if (channel === 'backend:subscribe')
+          return { ok: true, result: { subscriptionId: 'workspace-specialists-preview' } };
+        if (channel === 'backend:unsubscribe') return { ok: true, result: {} };
         record('opens', JSON.stringify({ channel, args }));
         return { success: true };
       },
@@ -160,6 +184,7 @@ export function setupWorkspaceSpecialists(
   }) as typeof notify.error;
   const stop = store.runSaga(agentCreationSaga);
   const stopCatalog = store.runSaga(workspaceCatalogSaga);
+  const stopSpecialists = definition ? store.runSaga(specialistsSaga) : undefined;
   return {
     async load(id?: string, mode?: 'fail' | 'empty') {
       fail = mode === 'fail';
@@ -178,9 +203,12 @@ export function setupWorkspaceSpecialists(
       restoreEditorLaunch();
       stop();
       stopCatalog();
+      stopSpecialists?.();
       agentFactory.createAgent = oldCreate;
       notify.error = oldNotify;
       store.dispatch(setFileSpecialists(getItems(previous.specialists.fileSpecialists)));
+      store.dispatch(setBundledSpecialists(previous.specialists.bundledSpecialists));
+      store.dispatch(setBundledSpecialistsLoaded(previous.specialists.bundledSpecialistsLoaded));
       store.dispatch(
         fetchEditorsSuccess(
           getItems(previous.externalEditors.editors),

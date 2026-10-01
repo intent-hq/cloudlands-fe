@@ -297,7 +297,7 @@ describe('authoritative provider alias identity', () => {
   );
 });
 
-it('retains only scoped MCP identity during refresh and clears it across connection and workspace lifetimes', async () => {
+it('retains workspace snapshots during refresh and clears them across connection and workspace lifetimes', async () => {
   const { workspaceCatalogReceived, workspaceCatalogInvalidated } =
     await import('./provider-catalog-slice');
   const { selectWorkspaceMcpServerName } = await import('../mcp-settings/mcp-settings-selectors');
@@ -317,7 +317,7 @@ it('retains only scoped MCP identity during refresh and clears it across connect
   );
   current = providerCatalogReducer(current, workspaceCatalogReceived('B', snapshot('B-server'), 0));
   const refreshing = providerCatalogReducer(current, workspaceCatalogInvalidated());
-  expect(refreshing.byWorkspaceId).toEqual({});
+  expect(refreshing.byWorkspaceId).toEqual(current.byWorkspaceId);
   expect(selectWorkspaceMcpServerName.select(storeWith(refreshing), 'A', 'shared-id')).toBe(
     'A-server',
   );

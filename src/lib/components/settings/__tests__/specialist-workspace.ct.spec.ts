@@ -1,5 +1,66 @@
 import { expect, test } from '../../../../test/ct-test';
 import Preview from '../specialist-workspace.preview.svelte';
+import type { SpecialistDef } from '$lib/client/app-client';
+
+const userOverride: SpecialistDef = {
+  id: 'implementor',
+  name: 'Customized implementor',
+  description: 'A native user override of a built-in agent.',
+  source: 'user',
+  prompt: 'Use the custom implementation instructions.',
+  path: '/tmp/user/.intent/specialists/implementor.md',
+};
+
+test('workspace built-in user overrides reset without deleting the catalog entry', async ({
+  mount,
+  page,
+}, info) => {
+  const view = await mount(Preview, { props: { definition: userOverride } });
+  await expect(view.getByRole('heading', { name: userOverride.name })).toBeVisible();
+  const reset = view.getByRole('button', { name: 'Reset', exact: true });
+  await expect(reset).toBeVisible();
+  await expect(view.getByRole('button', { name: 'Delete specialist' })).toHaveCount(0);
+  await info.attach('builtin-override-before-reset', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await reset.click();
+  await expect(view.getByTestId('delete-request')).toHaveText(
+    JSON.stringify({ id: 'implementor', scope: 'user' }),
+  );
+  await view.getByTestId('switch-b').click();
+  await expect(view.getByRole('textbox')).toHaveValue('Restored default prompt.');
+  await expect(reset).toHaveCount(0);
+  await expect(view.getByRole('button', { name: 'Delete specialist' })).toHaveCount(0);
+  await info.attach('builtin-override-after-reset', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await view.getByTestId('empty-refresh').click();
+  await expect(view.getByRole('heading', { name: userOverride.name })).toHaveCount(0);
+  await expect(view.getByRole('button', { name: userOverride.name, exact: true })).toHaveCount(0);
+});
+
+for (const definition of [
+  { ...userOverride, source: 'project' as const },
+  { ...userOverride, importedFrom: 'claude-code' as const },
+  { ...userOverride, id: 'custom-reviewer' },
+]) {
+  test(`workspace built-in identity excludes ${definition.importedFrom ?? definition.source} ${definition.id}`, async ({
+    mount,
+  }) => {
+    const view = await mount(Preview, { props: { definition } });
+    await expect(view.getByTestId('refresh-status')).toHaveText('loaded');
+    await expect(view.getByRole('button', { name: 'Reset', exact: true })).toHaveCount(0);
+    if (definition.importedFrom) {
+      await expect(view.getByRole('textbox')).toHaveValue(definition.prompt ?? '');
+      await expect(view.getByRole('textbox')).toHaveAttribute('readonly', '');
+      await expect(view.getByRole('button', { name: 'Delete specialist' })).toHaveCount(0);
+    } else {
+      await expect(view.getByRole('button', { name: 'Delete specialist' })).toBeVisible();
+    }
+  });
+}
 
 test('Settings resolves project catalogs independently and keeps global discovery global', async ({
   mount,

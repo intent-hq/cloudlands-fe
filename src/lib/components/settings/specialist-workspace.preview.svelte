@@ -14,13 +14,20 @@
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import AIBehaviorSidebar from './AIBehaviorSidebar.svelte';
   import AIBehaviorEditor from './AIBehaviorEditor.svelte';
+  import type { SpecialistDef } from '$lib/client/app-client';
   import { setupWorkspaceSpecialists } from './__tests__/specialist-workspace.fixture';
-  let { launchError = '' }: { launchError?: string } = $props();
+  let { launchError = '', definition }: { launchError?: string; definition?: SpecialistDef } =
+    $props();
+  const specialistId = $derived(definition?.id ?? 'shared');
   let workspaceId = $state<string | undefined>('project-a');
   let values = $state<Record<string, string>>({});
-  const fixture = setupWorkspaceSpecialists((key, value) => {
-    values = { ...values, [key]: value };
-  }, launchError);
+  const fixture = setupWorkspaceSpecialists(
+    (key, value) => {
+      values = { ...values, [key]: value };
+    },
+    launchError,
+    definition,
+  );
   async function change(id?: string) {
     workspaceId = id;
     await fixture.load(id);
@@ -46,13 +53,13 @@
   <Button data-testid="launch" onclick={fixture.launch}>Launch</Button>
   <AIBehaviorSidebar
     {workspaceId}
-    activeView={{ type: 'specialist', id: 'shared' }}
+    activeView={{ type: 'specialist', id: specialistId }}
     onSelect={() => {}}
   />
   <div data-editor>
     <AIBehaviorEditor
       workspaceId={workspaceId ? WorkspaceId(workspaceId) : null}
-      activeView={{ type: 'specialist', id: 'shared' }}
+      activeView={{ type: 'specialist', id: specialistId }}
     />
   </div>
   {#each Object.entries(values) as [key, value] (key)}<output

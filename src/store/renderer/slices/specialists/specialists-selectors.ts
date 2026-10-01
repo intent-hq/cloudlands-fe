@@ -376,12 +376,17 @@ function isKnownBuiltIn(specialistId: string, bundledSpecialists: Specialist[]):
 /** Check if a specialist is built-in (bundled or shipped in the catalog) */
 export const selectIsBuiltIn = store.createSelector(
   (state, specialistId: string, workspaceId?: string): boolean => {
-    if (workspaceId)
-      return (
-        state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.some(
-          (s) => s.id === specialistId && s.source === 'bundled',
-        ) ?? false
+    if (workspaceId) {
+      const specialist = state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.find(
+        (s) => s.id === specialistId,
       );
+      if (!specialist || specialist.importedFrom) return false;
+      return (
+        specialist.source === 'bundled' ||
+        (specialist.source === 'user' &&
+          isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists))
+      );
+    }
     return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
   },
 );
