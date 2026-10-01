@@ -37,7 +37,7 @@ test('Dev Console virtualizes 10000 records and holds reading position during ap
   );
   await rows.first().click();
   await expect(page.getByRole('checkbox')).toBeVisible();
-  await page.getByRole('checkbox').check();
+  await page.getByRole('checkbox').click();
   await expect(page.getByRole('checkbox')).toBeChecked();
   await rows.first().focus();
   await page.keyboard.press('ArrowDown');

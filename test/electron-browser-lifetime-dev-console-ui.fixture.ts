@@ -91,15 +91,15 @@ test('Dev Console native renderer inspects traffic through authorized preload an
     );
     await page.getByRole('cell', { name: 'workspace.list', exact: true }).click();
     await expect(page.locator('pre').first()).toContainText('"nativeFixture": true');
-    await page.getByRole('checkbox').check();
+    await page.getByRole('checkbox').click();
+    await expect(page.getByRole('checkbox')).toBeChecked();
     await expect
       .poll(() =>
         app.evaluate(
-          () =>
-            (globalThis as any).fixture.capture.openSession('fixture-native').fullCapture.length,
+          () => (globalThis as any).fixture.capture.openSession('fixture-native').fullCapture,
         ),
       )
-      .toBe(1);
+      .toEqual([{ direction: 'outbound', kind: 'request', method: 'workspace.list' }]);
     await app.evaluate(() =>
       (globalThis as any).fixture.emit({
         type: 'response',
