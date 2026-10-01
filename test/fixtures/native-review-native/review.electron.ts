@@ -136,7 +136,7 @@ const companionMetadataIdentity = {
 const companionStartupRoot =
   '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-milestones-692a';
 const companionStartupArtifactRoot =
-  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-artifact-26c32c9c';
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-opt1-artifact-26c32c9c';
 const companionStartupEnvelope =
   '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/native-startup-milestones-26c32c9c';
 const companionDiagnosticIdentity = {
@@ -145,9 +145,9 @@ const companionDiagnosticIdentity = {
   sourceTree: '6a08e4330b71366b146eeb7fb7ca40c740714ee9',
   driverBlob: '51cb104282afd94cc09ddaf22eb859f7829a59eb',
   sourceSha256: '5be8eda1a5300950bd8409b1e8dee64b18096ea89c7f61c03e2ae2944ad22518',
-  executableSha256: '71a0c3494e0141bfa5166293d01fd679c810ece7d4521f7a5cd0768df0a62b7e',
-  bytes: 270077464,
-  basename: 'e2e-native-review-wire-26c32c9c-x86_64-unknown-linux-gnu',
+  executableSha256: '3a8e07fa3cd5789009c1b7c1ef85f07d248a156b2d87b35c5b48f02b9b6aaecb',
+  bytes: 235779064,
+  basename: 'e2e-native-review-wire-26c32c9c-opt1-x86_64-unknown-linux-gnu',
 };
 
 export function companionDiagnosticMode(env: NodeJS.ProcessEnv): boolean {
@@ -308,7 +308,7 @@ export async function assertCompanionDiagnosticIdentity(
   const startupSourceProofPath =
     '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-startup-26c3-r3z9hk9y/proof.json';
   const startupArtifactProofPath =
-    '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-artifact-71a0-a741tt1/proof.json';
+    '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-opt1-26c3-mhcyalmf/proof.json';
   const startupContracts = [
     [startupSourcePath, 'cec7b4e0e64679a06d40a5ed00b2057297c23d607b8ca465cad6447c137fd74d'],
     [
@@ -320,13 +320,13 @@ export async function assertCompanionDiagnosticIdentity(
       join(companionStartupEnvelope, 'CONSUMER-CONTRACT.md'),
       'f89c54d1a3ead3cf3464739934ca16f887e2033c801c24d43f80f7e7c348feb3',
     ],
-    [startupArtifactPath, '5e93e4acbbe6b9cb529926adfd8df700b060b03595c27eb99d25a65aa6f33967'],
+    [startupArtifactPath, '596c4a8a4de107d4e94478c41c109abe98ce268f6739a63653d03ff36d89bd2c'],
     [
       join(companionStartupArtifactRoot, 'MANIFEST.json'),
-      '7725032190cbce93728e7b914e9e57289ae2723334d6259cf6013e1adcc7367c',
+      '4cad66bcbac8d648c17cb0450d6eafbb58b1dbf79a70ce8247de44ca0f272381',
     ],
     [startupSourceProofPath, 'd1bff03e755cd7560e83181bfcf14c5574863431a089380b4d5dc3bd718a13ed'],
-    [startupArtifactProofPath, '5cbcb271c6ee03ef50f33a91a9544dfe619d41e7c9c2590a21c0c67c08110ab1'],
+    [startupArtifactProofPath, '02eb6432755bf5fc8e1bf6d2180d95951f17ca933922ccd8c188a5566d39a304'],
   ];
   for (const [path, expected] of startupContracts)
     if (hash(await readFile(path)) !== expected)
@@ -348,10 +348,55 @@ export async function assertCompanionDiagnosticIdentity(
     startupArtifact.source.root !== driverSource ||
     startupArtifact.source.sourceHandoff.path !== startupSourcePath ||
     startupArtifact.source.sourceHandoff.sha256 !== startupContracts[0][1] ||
+    startupArtifact.source.sourceReview.path !== startupSourceProofPath ||
+    startupArtifact.source.sourceReview.sha256 !== startupContracts[6][1] ||
+    startupArtifact.source.startupContract.basename !== 'native-startup-milestones-v1.jsonl' ||
+    startupArtifact.source.startupContract.sha256 !== startupContracts[2][1] ||
+    startupArtifact.contract.literalFilename !== 'native-startup-milestones-v1.jsonl' ||
+    startupArtifact.contract.sha256 !== startupContracts[2][1] ||
     startupArtifact.artifact.path !== artifactPath ||
     startupArtifact.artifact.sha256 !== pin.executableSha256 ||
     startupArtifact.artifact.bytes !== pin.bytes ||
     startupArtifact.artifact.mode !== '0o555' ||
+    startupArtifact.sourceEdits !== 0 ||
+    startupArtifact.actualBuildCount !== 1 ||
+    startupArtifact.copyIdentity.regular !== true ||
+    startupArtifact.copyIdentity.distinctInode !== true ||
+    startupArtifact.copyExecuted !== false ||
+    startupArtifact.frontendExecuted !== false ||
+    startupArtifact.loaderExecuted !== false ||
+    startupArtifact.normalBinaryExecuted !== false ||
+    startupArtifact.originalExecution.executedCases !== 5 ||
+    startupArtifact.controls.passCount !== 5 ||
+    startupArtifact.controls.retries !== 0 ||
+    startupArtifact.originalOutput.path !==
+      join(
+        companionStartupArtifactRoot,
+        '.dev/artifact-target/debug/deps/e2e_native_review_wire-48bdc984553a985c',
+      ) ||
+    startupArtifact.originalOutput.sha256 !== pin.executableSha256 ||
+    startupArtifact.originalOutput.bytes !== pin.bytes ||
+    startupArtifact.originalOutput.mode !== '0o775' ||
+    startupArtifact.originalOutput.cargo.executable !== startupArtifact.originalOutput.path ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.filenames, [
+      startupArtifact.originalOutput.path,
+    ]) ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.features, ['default']) ||
+    startupArtifact.originalOutput.cargo.target.name !== 'e2e_native_review_wire' ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.target.kind, ['test']) ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.profile, {
+      debug_assertions: true,
+      debuginfo: 'line-tables-only',
+      opt_level: '1',
+      overflow_checks: true,
+      test: true,
+    }) ||
+    startupArtifact.requestedProfile.name !== 'test' ||
+    startupArtifact.requestedProfile.optLevel !== 1 ||
+    startupArtifact.requestedProfile.debugAssertions !== true ||
+    startupArtifact.requestedProfile.overflowChecks !== true ||
+    startupArtifact.requestedProfile.defaultsEnabled !== true ||
+    !isDeepStrictEqual(startupArtifact.requestedProfile.explicitFeatures, []) ||
     startupContract.version !== 1 ||
     startupContract.basename !== 'native-startup-milestones-v1.jsonl' ||
     !isDeepStrictEqual(startupContract.caps, {
@@ -362,8 +407,19 @@ export async function assertCompanionDiagnosticIdentity(
       reservedConsumerBytes: 16384,
     }) ||
     artifactProof.verdict !== 'APPROVED' ||
-    artifactProof.source !== pin.sourceCommit ||
-    artifactProof.tree !== pin.sourceTree
+    artifactProof.head !== pin.sourceCommit ||
+    artifactProof.tree !== pin.sourceTree ||
+    artifactProof.artifactSha256 !== pin.executableSha256 ||
+    artifactProof.artifactBytes !== pin.bytes ||
+    artifactProof.artifactMode !== '0555' ||
+    artifactProof.originalMode !== '0775' ||
+    artifactProof.originalExecutedLogicalCases !== 5 ||
+    artifactProof.originalOwnedTLSChildExecutions !== 2 ||
+    artifactProof.copyExecuted !== false ||
+    artifactProof.builds !== 1 ||
+    artifactProof.retries !== 0 ||
+    artifactProof.sourceChanges !== 0 ||
+    artifactProof.profileCounts.unchangedOtherSignatures !== true
   )
     throw new Error('Startup provenance shape mismatch');
   contracts.push(...startupContracts);
@@ -372,7 +428,7 @@ export async function assertCompanionDiagnosticIdentity(
     pin,
     contracts,
     qualification:
-      'Startup source 4 inherited46c755 controls plus1 corrected5be8 control; reviewed no-run71a0 artifact; six prelaunch and thirteen postbuild sealing mode changes retained. Inherited692a metadata52 staged v2/v3 and older four b908 + A-prime3feca + B581a remain separate; post-project comparator UNTESTED; no native-runtime claim',
+      'Startup source 4 inherited46c755 controls plus1 corrected5be8 control remain historical. Reviewed26c32 opt1 original0775 output ran5 source controls once, including2 owned TLS child executions; distinct copied0555 artifact remains unexecuted. Actual emitted test profile retains debug assertions and overflow checks. Prior71a0 six prelaunch/thirteen postbuild sealing mode changes and opt1 preparation/attribution failures remain separate. Inherited692a metadata52 staged v2/v3 and older four b908 + A-prime3feca + B581a remain separate; post-project comparator UNTESTED; no native-runtime, timing-cause or performance claim',
   };
 }
 
