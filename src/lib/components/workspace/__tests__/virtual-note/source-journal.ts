@@ -58,6 +58,9 @@ export class SourceJournal {
   backingIndexBuilds = 0;
   backingIndexScannedBytes = 0;
   maxBackingIndexSourceBytes = 0;
+  backingFenceScannedBytes = 0;
+  maxBackingFenceScanBytes = 0;
+  maxFenceRepairBytes = 0;
   inlineContextReads = 0;
   maxInlineContextBytes = 0;
   private spans(id: number) {
@@ -448,6 +451,49 @@ export class SourceJournal {
   beginChanges() {
     this.stagedPages = [];
   }
+  /** Mock backing admission: literal code and its framing form one atomic edit.
+   * Full body scans are backing work, never renderer reads or parser inputs.
+   */
+  stageProjection(splices: Splice[], fences: Fence[], revision: number, history = true) {
+    if (revision !== this.revision) throw new Error('Stale code admission revision');
+    return this.atomic(() => {
+      for (const splice of splices) this.stage(splice, history);
+      const repairs: Splice[] = [];
+      for (const fence of fences) {
+        const marker = fence.opening.match(/^(`{3,}|~{3,})/)![0];
+        const body = this.slice(fence.bodyFrom, fence.bodyTo);
+        const size = bytes(body);
+        this.backingFenceScannedBytes += size;
+        this.maxBackingFenceScanBytes = Math.max(this.maxBackingFenceScanBytes, size);
+        // Markdown permits up to three leading spaces and trailing horizontal
+        // whitespace on closing lines. Include the real first/last body lines.
+        const candidates = new RegExp(`^ {0,3}(${marker[0]}{${marker.length},})[ \\t]*$`, 'gm');
+        let length = marker.length;
+        for (const match of body.matchAll(candidates))
+          length = Math.max(length, match[1].length + 1);
+        if (length === marker.length) continue;
+        // The actual Markdown preprocessor protects triple-backtick spans before
+        // inline code. Complete groups avoid a leftover inline delimiter spanning
+        // its placeholders when an enclosing backtick fence has to grow.
+        if (marker[0] === '`') length = Math.ceil(length / 3) * 3;
+        repairs.push({
+          from: fence.from,
+          to: fence.from,
+          insert: marker[0].repeat(length - marker.length),
+        });
+        const close = fence.closing.match(/(?:^|\n)(`{3,}|~{3,})[ \t]*(?:\n|$)/);
+        if (close && close[1].length < length) {
+          const at = fence.bodyTo + close.index! + (close[0][0] === '\n' ? 1 : 0);
+          repairs.push({ from: at, to: at, insert: marker[0].repeat(length - close[1].length) });
+        }
+      }
+      // Descending source order preserves coordinates for every independent fence.
+      repairs.sort((a, b) => b.from - a.from);
+      this.maxFenceRepairBytes = Math.max(this.maxFenceRepairBytes, bytes(JSON.stringify(repairs)));
+      for (const splice of repairs) this.stage(splice, history);
+      return [...splices, ...repairs];
+    });
+  }
   /** Admission and inverse paging live in the mock backing service, not a renderer change array. */
   stage(splice: Splice, history = true) {
     const change = { ...splice, removed: this.slice(splice.from, splice.to) };
@@ -551,6 +597,9 @@ export class SourceJournal {
       backingIndexBuilds: this.backingIndexBuilds,
       backingIndexScannedBytes: this.backingIndexScannedBytes,
       maxBackingIndexSourceBytes: this.maxBackingIndexSourceBytes,
+      backingFenceScannedBytes: this.backingFenceScannedBytes,
+      maxBackingFenceScanBytes: this.maxBackingFenceScanBytes,
+      maxFenceRepairBytes: this.maxFenceRepairBytes,
       backingIndexPayloadBytes: [...this.inlineIndex.values()].reduce(
         (n, i) => n + bytes(JSON.stringify({ spans: i.spans, fences: i.fences })),
         0,

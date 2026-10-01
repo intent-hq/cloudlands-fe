@@ -11,7 +11,7 @@ import {
   type Selection,
   type Splice,
 } from './source-journal';
-import { SourceProjection, openMark, closeMark } from './source-projection';
+import { SourceProjection, openMark, closeMark, type InlineContext } from './source-projection';
 import { continuationWindow, CONTINUATION } from './continuation-window';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
@@ -641,10 +641,19 @@ export class DocumentSession {
             tr.getMeta('addToHistory') !== false &&
             transactions[0].getMeta('addToHistory') !== false;
           this.service.beginChanges();
-          const oldStart = this.projection!.start;
+          let oldStart = this.projection!.start;
           for (let n = 0; n < tr.steps.length; n++) {
-            for (const splice of this.projection!.translate(tr.steps[n], tr.docs[n])) {
-              this.service.stage(splice, history);
+            let fences: NonNullable<InlineContext['fences']> = [];
+            const splices = this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
+              fences = next;
+            });
+            for (const splice of this.service.stageProjection(
+              splices,
+              fences,
+              this.projection!.context!.revision,
+              history,
+            )) {
+              oldStart = mapPoint(oldStart, splice, -1);
               this.windowEnd = mapPoint(this.windowEnd, splice);
               if (!history && this.prevRange)
                 this.prevRange = [

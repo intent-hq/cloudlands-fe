@@ -306,7 +306,7 @@ export class SourceProjection {
     }
     return nearest;
   }
-  translate(step: Step, before: PMNode): Splice[] {
+  translate(step: Step, before: PMNode, codeContext?: (fences: Fence[]) => void): Splice[] {
     const applied = step.apply(before);
     if (!applied.doc) throw new Error(applied.failed ?? 'Invalid proof step');
     const after = canonicalBold(applied.doc, this.context),
@@ -408,6 +408,9 @@ export class SourceProjection {
       ).content,
     );
     if (!projected.eq(after)) throw new Error('Translated source differs from accepted document');
+    // These describe the intended native code bodies, before Markdown framing is
+    // checked by the backing service. A raw body may itself contain closing syntax.
+    codeContext?.(nextFences);
     return from === oldEnd && from === newEnd
       ? []
       : [{ from: this.start + from, to: this.start + oldEnd, insert: source.slice(from, newEnd) }];
