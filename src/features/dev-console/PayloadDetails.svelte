@@ -1,5 +1,6 @@
 <script lang="ts">
-  /* eslint-disable intent/no-raw-controls -- Dense developer console explicitly approved by the user. */
+  import { Button } from '$lib/components/ui/button';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import { formatInteger } from '$lib/i18n/format';
   import type {
     DevConsolePayload,
@@ -43,18 +44,17 @@
   <header>
     <strong>{row.method}</strong><span
       >{m.devConsole_connection_label()}: {row.connectionId} / {row.connectionGeneration}</span
-    ><button onclick={onclose}>{m.devConsole_closeDetails_label()}</button>
+    ><Button size="xs" variant="ghost" wrapContent={false} class="payload-control" onclick={onclose}
+      >{m.devConsole_closeDetails_label()}</Button
+    >
   </header>
   <div class="capture">
     <label
-      ><input
-        type="checkbox"
-        checked={full}
-        onchange={(event) => {
-          const enabled = event.currentTarget.checked;
-          event.currentTarget.checked = full;
-          ontoggle(enabled);
-        }}
+      ><Checkbox
+        size="sm"
+        class="payload-checkbox"
+        ariaLabel={m.devConsole_full_label()}
+        bind:checked={() => full, ontoggle}
       />{m.devConsole_full_label()}</label
     ><span>{m.devConsole_prospective_label()}</span>
   </div>
@@ -69,8 +69,13 @@
                 ? m.devConsole_unknown_label()
                 : formatInteger(payload.originalBytes),
           })}</span
-        ><button disabled={!payload.text} onclick={() => copy(payload.text)}
-          >{m.devConsole_copy_label()}</button
+        ><Button
+          size="xs"
+          variant="ghost"
+          wrapContent={false}
+          class="payload-control"
+          disabled={!payload.text}
+          onclick={() => copy(payload.text)}>{m.devConsole_copy_label()}</Button
         >
       </div>
       <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable payload must be keyboard reachable.) -->
@@ -116,7 +121,7 @@
   header span {
     color: hsl(var(--muted-foreground));
   }
-  button {
+  .details :global(.payload-control) {
     margin-left: auto;
     white-space: nowrap;
     font: inherit;
@@ -124,12 +129,12 @@
     border: 1px solid hsl(var(--border));
     border-radius: 3px;
   }
-  button:focus-visible,
+  .details :global(.payload-control):focus-visible,
   pre:focus-visible,
-  input:focus-visible {
+  .details :global(.payload-checkbox):focus-visible {
     outline: 2px solid hsl(var(--ring));
   }
-  button:disabled {
+  .details :global(.payload-control):disabled {
     opacity: 0.5;
   }
   .capture {
@@ -175,5 +180,17 @@
   }
   .truncated {
     color: hsl(var(--danger));
+  }
+  .details :global(.payload-control) {
+    height: auto;
+    min-height: 0;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+  }
+  .details :global(.payload-checkbox) {
+    width: 13px;
+    height: 13px;
+    padding: 0;
   }
 </style>

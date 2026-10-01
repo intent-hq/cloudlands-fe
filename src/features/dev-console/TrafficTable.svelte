@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* eslint-disable intent/no-raw-controls -- User-approved dense diagnostic table with native keyboard controls. */
+  import { Button } from '$lib/components/ui/button';
   import { formatInteger, formatNumber, formatDatePattern } from '$lib/i18n/format';
   import { tick, untrack } from 'svelte';
   import type { DevConsoleRow } from '$shared/types/dev-console';
@@ -112,8 +112,12 @@
 
 <div class="traffic-table">
   <div class="follow">
-    <span>{following ? m.devConsole_following_label() : m.devConsole_paused_label()}</span><button
-      onclick={live}>{m.devConsole_live_label()}</button
+    <span>{following ? m.devConsole_following_label() : m.devConsole_paused_label()}</span><Button
+      size="xs"
+      variant="ghost"
+      wrapContent={false}
+      class="table-control"
+      onclick={live}>{m.devConsole_live_label()}</Button
     >
   </div>
   <div class="viewport" bind:this={viewport} bind:clientHeight={height} onscroll={scroll}>
@@ -123,8 +127,13 @@
             role="columnheader"
             aria-sort={column === id ? (descending ? 'descending' : 'ascending') : 'none'}
           >
-            <button onclick={() => onsort(id, column === id ? !descending : false)}
-              >{label}{column === id ? (descending ? ' ↓' : ' ↑') : ''}</button
+            <Button
+              size="xs"
+              variant="ghost"
+              wrapContent={false}
+              class="table-control"
+              onclick={() => onsort(id, column === id ? !descending : false)}
+              >{label}{column === id ? (descending ? ' ↓' : ' ↑') : ''}</Button
             >
           </div>{/each}
       </div>
@@ -192,14 +201,14 @@
     border-bottom: 1px solid hsl(var(--border));
     color: hsl(var(--muted-foreground));
   }
-  button {
+  .traffic-table :global(.table-control) {
     font: inherit;
     color: inherit;
     cursor: pointer;
     padding: 2px 6px;
     border-radius: 3px;
   }
-  button:focus-visible,
+  .traffic-table :global(.table-control):focus-visible,
   .record:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: -2px;
@@ -224,8 +233,9 @@
     background: hsl(var(--muted));
     border-bottom: 1px solid hsl(var(--border));
   }
-  .header button {
+  .header :global(.table-control) {
     text-align: left;
+    justify-content: flex-start;
     width: 100%;
     white-space: nowrap;
   }
@@ -262,5 +272,12 @@
   .empty {
     padding: 24px;
     color: hsl(var(--muted-foreground));
+  }
+  .traffic-table :global(.table-control) {
+    height: auto;
+    min-height: 0;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
   }
 </style>

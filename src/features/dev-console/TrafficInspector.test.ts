@@ -153,7 +153,7 @@ it('keeps a rejected full-capture checkbox off and reports the control error', a
   );
   await fireEvent.click(view.getByRole('checkbox'));
   await waitFor(() => expect(view.getByRole('alert')).toBeTruthy());
-  expect((view.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+  expect(view.getByRole('checkbox').getAttribute('aria-checked')).toBe('false');
 });
 
 it('shows bridge connection failures without inventing an active session', async () => {

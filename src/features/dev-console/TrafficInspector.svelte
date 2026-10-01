@@ -1,5 +1,6 @@
 <script lang="ts">
-  /* eslint-disable intent/no-raw-controls -- User-approved dense diagnostic controls; scoped to this console. */
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { onDestroy } from 'svelte';
   import { formatInteger } from '$lib/i18n/format';
   import type { DevConsoleState } from '$store/renderer/dev-console/dev-console-slice';
@@ -112,7 +113,11 @@
 <div class="inspector">
   <div class="toolbar">
     <div role="tablist" aria-label={m.devConsole_title_label()}>
-      {#each tabs as value}<button
+      {#each tabs as value}<Button
+          size="xs"
+          variant="ghost"
+          wrapContent={false}
+          class="inspector-control"
           role="tab"
           id={`tab-${value}`}
           aria-controls="traffic-panel"
@@ -134,7 +139,7 @@
               tab(next);
               document.getElementById(`tab-${next}`)?.focus();
             }
-          }}>{tabLabel(value)}</button
+          }}>{tabLabel(value)}</Button
         >{/each}
     </div>
     <span class="connection"
@@ -144,19 +149,31 @@
     >
   </div>
   <div class="tools">
-    <input
+    <Input
+      size="compact"
+      class="inspector-input"
       aria-label={m.devConsole_filter_label()}
       placeholder={m.devConsole_filter_label()}
       bind:value={filter}
-    /><button onclick={clear}>{m.devConsole_clear_label()}</button>
+    /><Button
+      size="xs"
+      variant="ghost"
+      wrapContent={false}
+      class="inspector-control"
+      onclick={clear}>{m.devConsole_clear_label()}</Button
+    >
     {#if consoleState.update?.fullCapture.length}<details>
         <summary
           >{m.devConsole_captureChoices_label()} ({formatInteger(
             consoleState.update.fullCapture.length,
           )})</summary
         >{#each consoleState.update.fullCapture as choice}<div class="choice">
-            <code>{choice.direction} / {choice.kind} / {choice.method}</code><button
-              onclick={() => toggle(choice, false)}>{m.devConsole_removeChoice_label()}</button
+            <code>{choice.direction} / {choice.kind} / {choice.method}</code><Button
+              size="xs"
+              variant="ghost"
+              wrapContent={false}
+              class="inspector-control"
+              onclick={() => toggle(choice, false)}>{m.devConsole_removeChoice_label()}</Button
             >
           </div>{/each}
       </details>{/if}
@@ -235,24 +252,24 @@
     display: flex;
     align-self: stretch;
   }
-  button {
+  .inspector :global(.inspector-control) {
     cursor: pointer;
     font: inherit;
     padding: 3px 8px;
     border: 1px solid hsl(var(--border));
     border-radius: 3px;
   }
-  [role='tab'] {
+  .toolbar :global([role='tab']) {
     border: 0;
     border-radius: 0;
     padding: 6px 12px;
   }
-  [aria-selected='true'] {
+  .toolbar :global([aria-selected='true']) {
     box-shadow: inset 0 -2px hsl(var(--ring));
     background: hsl(var(--accent));
   }
-  button:focus-visible,
-  input:focus-visible,
+  .inspector :global(.inspector-control):focus-visible,
+  .inspector :global(.inspector-input):focus-visible,
   summary:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: -2px;
@@ -266,7 +283,7 @@
     flex-wrap: wrap;
     padding-block: 4px;
   }
-  input {
+  .inspector :global(.inspector-input) {
     border: 1px solid hsl(var(--border));
     border-radius: 3px;
     padding: 4px 7px;
@@ -303,5 +320,16 @@
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 4px 16px;
+  }
+  .inspector :global(.inspector-control) {
+    height: auto;
+    min-height: 0;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+  }
+  .inspector :global(.inspector-input) {
+    height: auto;
+    min-height: 0;
   }
 </style>

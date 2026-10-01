@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* eslint-disable intent/no-raw-controls -- Fixture-only controls for the explicitly dense console preview. */
+  import { Button } from '$lib/components/ui/button';
   import { untrack } from 'svelte';
   import DevConsoleShell from './DevConsoleShell.svelte';
   import { createTrafficFixture } from './traffic-fixture';
@@ -9,8 +9,12 @@
 </script>
 
 <div class="fixture">
-  <span>{m.devConsole_fixture_label()}</span><button onclick={() => fixture.append(300)}
-    >{m.devConsole_append_label()}</button
+  <span>{m.devConsole_fixture_label()}</span><Button
+    size="xs"
+    variant="ghost"
+    wrapContent={false}
+    class="fixture-control"
+    onclick={() => fixture.append(300)}>{m.devConsole_append_label()}</Button
   >
 </div>
 <DevConsoleShell connect={fixture.connect} />
@@ -27,8 +31,15 @@
     font: 11px monospace;
     color: hsl(var(--muted-foreground));
   }
-  button {
+  .fixture :global(.fixture-control) {
     border: 1px solid hsl(var(--border));
     padding: 2px 5px;
+  }
+  .fixture :global(.fixture-control) {
+    height: auto;
+    min-height: 0;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
   }
 </style>
