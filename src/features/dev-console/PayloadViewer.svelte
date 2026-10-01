@@ -114,32 +114,34 @@
 </script>
 
 <section class="viewer" data-payload-viewer aria-label={label}>
-  <div class="controls">
-    <Button size="compact" variant="ghost" disabled={!editor} onclick={() => run('actions.find')}>
-      {m.devConsole_payload_search_label()}
-    </Button>
-    <Button
-      size="compact"
-      variant="ghost"
-      disabled={!editor || !richView}
-      onclick={() => run('editor.foldAll')}
-    >
-      {m.devConsole_payload_collapse_label()}
-    </Button>
-    <Button
-      size="compact"
-      variant="ghost"
-      disabled={!editor || !richView}
-      onclick={() => run('editor.unfoldAll')}
-    >
-      {m.devConsole_payload_expand_label()}
-    </Button>
-  </div>
-  {#if !richView}<span class="limitation" role="status"
-      >{m.devConsole_payload_large_description()}</span
-    >{/if}
-  {#if !editor}
+  <div class="viewer-toolbar" data-payload-toolbar>
+    <div class="controls">
+      <Button size="compact" variant="ghost" disabled={!editor} onclick={() => run('actions.find')}>
+        {m.devConsole_payload_search_label()}
+      </Button>
+      <Button
+        size="compact"
+        variant="ghost"
+        disabled={!editor || !richView}
+        onclick={() => run('editor.foldAll')}
+      >
+        {m.devConsole_payload_collapse_label()}
+      </Button>
+      <Button
+        size="compact"
+        variant="ghost"
+        disabled={!editor || !richView}
+        onclick={() => run('editor.unfoldAll')}
+      >
+        {m.devConsole_payload_expand_label()}
+      </Button>
+    </div>
+    {#if !richView}<span class="limitation" role="status"
+        >{m.devConsole_payload_large_description()}</span
+      >{/if}
     {#if failed}<span role="status">{m.devConsole_payload_load_error()}</span>{/if}
+  </div>
+  {#if !editor}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (Fallback payload must be keyboard reachable.) -->
     <pre tabindex="0">{content.text}</pre>
   {/if}
@@ -162,13 +164,16 @@
     gap: 2px;
     padding: 2px;
   }
+  .viewer-toolbar {
+    flex-shrink: 0;
+  }
   .editor {
     flex: 1;
     min-height: 0;
     min-width: 0;
   }
   .limitation {
-    flex-shrink: 0;
+    display: block;
     padding: 2px 8px;
     color: var(--muted-foreground);
   }

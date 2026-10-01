@@ -167,10 +167,6 @@ it('rejects a late payload from a formerly selected row', async () => {
 });
 
 it('moves keyboard focus into compact details and back to the selected record on close', async () => {
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn(() => ({ matches: true })),
-  );
   const { request, view } = setup();
   request('a', 'first');
   request('b', 'second');

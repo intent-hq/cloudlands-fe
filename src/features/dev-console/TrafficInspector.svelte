@@ -45,6 +45,20 @@
   );
   const selectedRow = $derived(selected ? (consoleState.rows[selected] ?? null) : null);
   let panel: HTMLDivElement;
+  let panelHeight = $state(0);
+  let minimumDetailsHeight = $state(0);
+  const compact = $derived(panelHeight < minimumDetailsHeight + 100);
+  $effect.pre(() => {
+    if (
+      compact &&
+      selectedRow &&
+      panel?.querySelector('.traffic-table')?.contains(document.activeElement)
+    ) {
+      void tick().then(() =>
+        panel.querySelector<HTMLButtonElement>('[data-close-details]')?.focus(),
+      );
+    }
+  });
   let table = $state.raw<{ focusRecord: (id: string) => Promise<void> }>();
   const reader = selectedPayloadReader(
     async (id) => bridge?.record(id) ?? null,
@@ -81,7 +95,7 @@
     selected = id;
     error = '';
     await tick();
-    if (selected === id && window.matchMedia('(max-height: 500px)').matches) {
+    if (selected === id && compact) {
       panel.querySelector<HTMLButtonElement>('[data-close-details]')?.focus();
     }
   }
@@ -200,7 +214,9 @@
     id="traffic-panel"
     aria-labelledby={`tab-${direction}`}
     class:inspecting={!!selectedRow}
+    class:compact
     bind:this={panel}
+    bind:clientHeight={panelHeight}
   >
     {#key direction}<TrafficTable
         bind:this={table}
@@ -215,6 +231,10 @@
           row={selectedRow}
           {record}
           {full}
+          height={compact ? panelHeight : Math.max(panelHeight * 0.38, minimumDetailsHeight)}
+          onminimumheight={(height) => {
+            minimumDetailsHeight = height;
+          }}
           ontoggle={(enabled) => toggle(selectedRow, enabled)}
           onclose={closeDetails}
         />{/key}
@@ -241,10 +261,8 @@
 </div>
 
 <style>
-  @media (max-height: 500px) {
-    .inspecting :global(.traffic-table) {
-      display: none;
-    }
+  .inspecting.compact :global(.traffic-table) {
+    display: none;
   }
   .inspector {
     display: flex;

@@ -23,6 +23,13 @@ vi.mock('./payload-monaco', () => ({ initializePayloadMonaco: () => initializePa
 beforeEach(() => {
   resetMonaco();
   richViewSupported.mockReset().mockReturnValue(true);
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
 });
 afterEach(() => {
   cleanup();
