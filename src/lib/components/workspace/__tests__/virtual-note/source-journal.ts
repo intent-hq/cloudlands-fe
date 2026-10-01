@@ -153,10 +153,11 @@ export class SourceJournal {
       const prior = previous.get(item.parent);
       if (
         prior &&
-        this.region(id)
-          .slice(prior.to, item.from)
-          .split('\n')
-          .some((line) => line.trim() && line.search(/\S/) <= item.indent)
+        (prior.marker !== item.marker ||
+          this.region(id)
+            .slice(prior.to, item.from)
+            .split('\n')
+            .some((line) => line.trim() && line.search(/\S/) <= item.indent))
       )
         active.delete(item.parent);
       previous.set(item.parent, item);
@@ -828,7 +829,13 @@ export class SourceJournal {
     const mapSeamChange = (change: Change, through: Splice): Change => {
       const map = (seam: ListSeam | null) => {
         if (!seam) return null;
-        if (through.from <= seam.from && through.to > seam.from)
+        if (
+          (through.from <= seam.from && through.to > seam.from) ||
+          (through.from === seam.from &&
+            through.to === seam.from &&
+            through.insert &&
+            !through.insert.endsWith('\n'))
+        )
           throw new Error('Conflict: retained list seam history');
         return { ...seam, from: mapPoint(seam.from, through, 1) };
       };

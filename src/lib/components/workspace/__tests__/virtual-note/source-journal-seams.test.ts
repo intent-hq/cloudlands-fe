@@ -234,3 +234,29 @@ it('a remote marker removal invalidates its boundary while retaining unrelated l
   expect(s.region(0)).toBe('- before\n\n# after');
   expect(s.stats.backingSeamCount).toBe(0);
 });
+
+it('rejects a zero-width remote insertion that invalidates retained boundary history at admission', () => {
+  const source = '- before\n\n- after',
+    s = new SourceJournal(() => source, 1);
+  s.beginChanges();
+  s.setSeams(0, s.length, [{ from: 10, kind: 'bulletList', start: 1 }]);
+  record(s);
+  const revision = s.revision;
+  expect(() =>
+    s.atomic(() => {
+      const remote = { from: 10, to: 10, insert: 'prefix' };
+      s.apply(remote);
+      s.rebase(remote);
+    }),
+  ).toThrow('Conflict');
+  expect(s.region(0)).toBe(source);
+  expect(s.revision).toBe(revision);
+  expect(s.depth).toBe(1);
+  s.atomic(() => {
+    for (const c of s.changes(0, true)) s.replay(c, false);
+  });
+  s.atomic(() => {
+    for (const c of s.changes(0)) s.replay(c, true);
+  });
+  expect(seams(s)).toEqual([{ from: 10, kind: 'bulletList', start: 1 }]);
+});

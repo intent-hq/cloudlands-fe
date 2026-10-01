@@ -9,6 +9,7 @@ export type ListItem = {
   ordinal: number;
   kind: 'bulletList' | 'orderedList' | 'taskList';
   prefix: string;
+  marker: string;
   group?: number;
 };
 export function scanLists(source: string): ListItem[] {
@@ -20,6 +21,7 @@ export function scanLists(source: string): ListItem[] {
     const previous = stack.at(-1)?.indent === indent ? stack.pop() : undefined;
     const kind =
       match[3] !== undefined ? 'taskList' : /^\d/.test(match[2]) ? 'orderedList' : 'bulletList';
+    const marker = /^\d/.test(match[2]) ? match[2].slice(-1) : match[2];
     const prefix = match[0].slice(0, match[0].length - match[4].length - match[5].length);
     const item: ListItem = {
       from: match.index!,
@@ -31,6 +33,7 @@ export function scanLists(source: string): ListItem[] {
       ordinal:
         previous &&
         previous.kind === kind &&
+        previous.marker === marker &&
         !source
           .slice(previous.to, match.index)
           .split('\n')
@@ -41,6 +44,7 @@ export function scanLists(source: string): ListItem[] {
             : 1,
       kind,
       prefix,
+      marker,
     };
     result.push(item);
     stack.push(item);

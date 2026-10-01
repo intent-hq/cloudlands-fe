@@ -150,12 +150,22 @@ export class DocumentSession {
     );
   }
   private deferInput(command: string, text?: string) {
-    this.service.enqueueInput({
-      command,
-      text,
-      time: Date.now(),
-      selection: this.service.pendingInputs ? undefined : { ...this.selection },
-    });
+    const chunks: Array<string | undefined> = [];
+    if (this.projection?.list && text && text.length > 128) {
+      for (let from = 0; from < text.length;) {
+        let to = Math.min(from + 128, text.length);
+        if (to < text.length && /[\uD800-\uDBFF]/.test(text[to - 1])) to--;
+        chunks.push(text.slice(from, to));
+        from = to;
+      }
+    } else chunks.push(text);
+    for (const chunk of chunks)
+      this.service.enqueueInput({
+        command,
+        text: chunk,
+        time: Date.now(),
+        selection: this.service.pendingInputs ? undefined : { ...this.selection },
+      });
     void this.drainInput();
     this.changed();
   }
@@ -422,8 +432,15 @@ export class DocumentSession {
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
             beforeinput: (_view, event) => {
-              if (!this.service.pendingInputs || this.replayingInput || !event.cancelable)
-                return false;
+              if (this.replayingInput || !event.cancelable) return false;
+              const p = this.projection!;
+              const needsWindow =
+                p.list &&
+                event.inputType === 'insertText' &&
+                (bytes(event.data ?? '') > 128 ||
+                  bytes(p.source) + bytes(JSON.stringify(p.context)) + 2 * bytes(event.data ?? '') >
+                    LIMITS.request - 128);
+              if (!this.service.pendingInputs && !needsWindow) return false;
               const commands: Record<string, string> = {
                 insertText: 'insertText',
                 insertParagraph: 'insertParagraph',

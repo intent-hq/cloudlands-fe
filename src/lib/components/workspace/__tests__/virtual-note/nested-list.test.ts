@@ -434,3 +434,31 @@ it('preserves a zero-based ordered list ordinal through native editing', async (
     p.destroy();
   }
 });
+
+for (const source of ['- first\n+ second\n* third', '17. first\n18) second']) {
+  it(`preserves canonical mixed marker groups: ${source}`, async () => {
+    const service = new SourceJournal(() => source, 1),
+      session = new DocumentSession(service, document.createElement('div'));
+    try {
+      await session.seek(source.indexOf('second'));
+      const html = document.createElement('div');
+      html.innerHTML = await processMarkdownToHTML(source);
+      const canonical = DOMParser.fromSchema(session.editor!.schema).parse(html);
+      const actual = session.editor!.getJSON();
+      expect(actual.content!.at(-1)).toEqual({ type: 'paragraph' });
+      expect({ ...actual, content: actual.content!.slice(0, -1) }).toEqual(canonical.toJSON());
+      session.editor!.commands.setTextSelection(
+        session.projection!.pmAt(source.indexOf('second') + 3),
+      );
+      session.editor!.commands.insertContent('Z');
+      expect(session.error).toBe('');
+      expect(service.region(0)).toBe(source.replace('second', 'secZond'));
+      session.save();
+      await session.seek(0);
+      await session.history();
+      expect(service.region(0)).toBe(source);
+    } finally {
+      session.destroy();
+    }
+  });
+}

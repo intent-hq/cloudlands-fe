@@ -52,6 +52,7 @@ export class ListProjection {
     const parents = new Map<number, JSONContent>();
     const lists = new Map<number, JSONContent>();
     const groups = new Map<number, number | undefined>();
+    const markers = new Map<number, string>();
     const end = start + source.length;
     let cursor = start;
     const addProse = (from: number, to: number) => {
@@ -107,8 +108,14 @@ export class ListProjection {
       cursor = Math.max(cursor, Math.min(end, item.to));
       const parent = parents.get(item.parent) ?? this.content;
       let list = lists.get(item.parent);
-      if (!list || list.type !== item.kind || groups.get(item.parent) !== item.group) {
+      if (
+        !list ||
+        list.type !== item.kind ||
+        groups.get(item.parent) !== item.group ||
+        markers.get(item.parent) !== item.marker
+      ) {
         groups.set(item.parent, item.group);
+        markers.set(item.parent, item.marker);
         list = {
           type: item.kind,
           ...(item.kind === 'orderedList' ? { attrs: { start: item.ordinal } } : {}),
@@ -312,7 +319,15 @@ export class ListProjection {
       return out;
     };
     const used = new Set<Entry>();
-    const boundary = (node: PMNode) => {
+    const boundary = (node: PMNode, pm: number) => {
+      const old = entries.get(pm + 1);
+      const prior =
+        old &&
+        this.entries
+          .filter((e) => e.item.parent === old.item.parent && e.item.from < old.item.from)
+          .at(-1);
+      // A surviving marker change already encodes this canonical boundary exactly.
+      if (old && prior && old.item.marker !== prior.item.marker) return;
       if (output) output += '\n';
       this.seams.push({
         from: this.start + output.length,
@@ -398,7 +413,7 @@ export class ListProjection {
             output += (partial ? '' : prefix) + text(child, at) + (tail ? '' : '\n');
           } else {
             if (childIndex > 0 && child.type.name === item.child(childIndex - 1).type.name)
-              boundary(child);
+              boundary(child, at);
             list(child, at, indent + marker.length);
           }
         });
@@ -410,7 +425,7 @@ export class ListProjection {
         const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
         output += (old?.prefix ?? '\n') + text(node, pm) + (old?.suffix ?? '\n\n');
       } else {
-        if (index > 0 && node.type.name === doc.child(index - 1).type.name) boundary(node);
+        if (index > 0 && node.type.name === doc.child(index - 1).type.name) boundary(node, pm);
         list(node, pm, 0);
       }
     });

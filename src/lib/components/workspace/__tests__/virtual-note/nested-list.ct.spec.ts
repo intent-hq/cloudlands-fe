@@ -896,3 +896,208 @@ test('repeated native list joins bound session metadata and preserve older bound
     contentType: 'application/json',
   });
 });
+
+for (const mode of ['insert700', 'type700']) {
+  test(`ordinary nested list ${mode} stays bounded during edits and eviction history`, async ({
+    mount,
+    page,
+  }, info) => {
+    const prefix = '- outer\n  17. parent\n      - ',
+      source = prefix + 'abcdefghijklmnopqrstuvwxy'.repeat(4000) + '\n- after',
+      at = 30000;
+    await mount(Harness, { props: { sourceOverride: source } });
+    await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+    const root = page.getByTestId('bounded').getByTestId('proof');
+    await root.evaluate((el, at) => (el as Host).proof.seek(at), at);
+    for (const side of ['native', 'bounded']) {
+      await selectItem(page, side, at, 'abcdef', at - prefix.length);
+      if (mode === 'insert700') await page.keyboard.insertText('Z'.repeat(700));
+      else await page.keyboard.type('Z'.repeat(700));
+      await settled(page);
+    }
+    const expected = source.slice(0, at) + 'Z'.repeat(700) + source.slice(at);
+    const stats = await compare(page, expected, at + 700);
+    await info.attach(mode + '-bounds', {
+      body: JSON.stringify(stats),
+      contentType: 'application/json',
+    });
+    await root.evaluate(async (el) => {
+      const p = (el as Host).proof,
+        old = p.editor!;
+      p.save();
+      await p.seek(0);
+      if (!old.isDestroyed) throw Error('view not destroyed');
+    });
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+z');
+    }
+    await compare(page, source, at);
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+Shift+z');
+    }
+    await compare(page, expected, at + 700);
+  });
+}
+
+for (const action of ['mouse', 'keyboard']) {
+  test(`ordinary task three-state ${action} cycle preserves source and eviction history`, async ({
+    mount,
+    page,
+  }) => {
+    const original = '- [ ] task **bold** and tail';
+    await mount(Harness, { props: { sourceOverride: original } });
+    await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+    const root = page.getByTestId('bounded').getByTestId('proof');
+    const states = [
+      ['/', 'in-progress', 'mixed'],
+      ['x', 'done', 'true'],
+      [' ', 'todo', 'false'],
+    ];
+    for (let i = 0; i < states.length; i++) {
+      const [marker, status, aria] = states[i];
+      for (const side of ['native', 'bounded']) {
+        await selectItem(page, side, 8, 'task', 2);
+        await page.clock.setFixedTime(new Date(Date.UTC(2026, 9, 1, 12, 0, i)));
+        if (action === 'mouse') await page.getByTestId(side).getByRole('checkbox').click();
+        else await page.keyboard.press('Control+Enter');
+        await expect(page.getByTestId(side).getByRole('checkbox')).toHaveAttribute(
+          'aria-checked',
+          aria,
+        );
+        await expect(page.getByTestId(side).locator('li[data-type="taskItem"]')).toHaveAttribute(
+          'data-status',
+          status,
+        );
+      }
+      const source = original.replace('[ ]', `[${marker}]`);
+      await compare(page, source, 8);
+      const saved = await page
+        .getByTestId('native')
+        .getByTestId('proof')
+        .evaluate((el) => (el as Host & { nativeMarkdown: () => string }).nativeMarkdown());
+      expect(saved.trim()).toBe(source);
+      await root.evaluate(async (el) => {
+        const p = (el as Host).proof,
+          old = p.editor!;
+        p.save();
+        await p.seek(0);
+        if (!old.isDestroyed) throw Error('view not destroyed');
+      });
+      await compare(page, source, 8);
+    }
+    for (let i = 1; i >= 0; i--) {
+      for (const side of ['native', 'bounded']) {
+        await focus(page, side);
+        await page.keyboard.press('Control+z');
+      }
+      await compare(page, original.replace('[ ]', `[${states[i][0]}]`), 8);
+    }
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+z');
+    }
+    await compare(page, original, 8);
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+Shift+z');
+    }
+    await compare(page, original.replace('[ ]', '[/]'), 8);
+    const progress = original.replace('[ ]', '[/]');
+    await page
+      .getByTestId('native')
+      .getByTestId('proof')
+      .evaluate(
+        (el, source) => (el as Host & { reloadNative: (s: string) => void }).reloadNative(source),
+        progress,
+      );
+    await expect(page.getByTestId('native').getByRole('checkbox')).toHaveAttribute(
+      'aria-checked',
+      'mixed',
+    );
+  });
+}
+
+for (const source of ['- first\n+ second\n* third', '17. first\n18) second']) {
+  test(`mixed marker groups match native spacing and canonical reload: ${source}`, async ({
+    mount,
+    page,
+  }) => {
+    await mount(Harness, { props: { sourceOverride: source } });
+    await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+    await compareLiveLists(page);
+    const at = source.indexOf('second') + 3;
+    for (const side of ['native', 'bounded']) {
+      await selectItem(page, side, at, 'second', 3);
+      await page.keyboard.insertText('Z');
+    }
+    await compare(page, source.replace('second', 'secZond'), at + 1);
+    await compareLiveLists(page);
+    await page
+      .getByTestId('bounded')
+      .getByTestId('proof')
+      .evaluate(async (el) => {
+        const p = (el as Host).proof,
+          old = p.editor!;
+        p.save();
+        await p.seek(0);
+        if (!old.isDestroyed) throw Error('view not destroyed');
+      });
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+z');
+    }
+    await compare(page, source, at);
+    await compareLiveLists(page);
+  });
+}
+
+test('remote insertion at a native join boundary rejects before changing retained history', async ({
+  mount,
+  page,
+}) => {
+  await mount(Harness, { props: { sourceOverride: '- before\n- item\n- after' } });
+  await expect(page.getByTestId('native').locator('.tiptap')).toHaveCount(1);
+  for (const side of ['native', 'bounded']) {
+    await selectItem(page, side, 11, 'item', 0);
+    await page.keyboard.press('Backspace');
+    await settled(page);
+    await page.keyboard.press('Backspace');
+    await settled(page);
+  }
+  await compare(page, '- beforeitem\n\n- after', 8, true);
+  const result = await page
+    .getByTestId('bounded')
+    .getByTestId('proof')
+    .evaluate((el) => {
+      const p = (el as Host).proof;
+      const snap = () => ({
+        source: p.service.region(0),
+        revision: p.service.revision,
+        selection: p.selection,
+        depth: p.service.depth,
+        cursor: p.service.cursor,
+        doc: p.editor!.getJSON(),
+      });
+      const before = snap();
+      let error = '';
+      try {
+        p.remote({ from: 14, to: 14, insert: 'prefix' });
+      } catch (e) {
+        error = String(e);
+      }
+      return { before, after: snap(), error };
+    });
+  expect(result.error).toContain('Conflict');
+  expect(result.after).toEqual(result.before);
+  for (const side of ['native', 'bounded']) {
+    await focus(page, side);
+    await page.keyboard.press('Control+z');
+  }
+  for (const side of ['native', 'bounded']) {
+    await focus(page, side);
+    await page.keyboard.press('Control+Shift+z');
+  }
+  await compare(page, '- beforeitem\n\n- after', 8, true);
+});
