@@ -360,8 +360,9 @@ export class DocumentSession {
         }
       });
       this.error = '';
-      // Decoration props requery source anchors after all accepted appended transactions.
-      this.editor?.view.setProps({});
+      // Only source changes invalidate anchors. Refreshing during a selectionchange can
+      // race the browser's next native selection update.
+      if (transactions.some((tr) => tr.docChanged)) this.editor?.view.setProps({});
       this.changed();
     } catch (error) {
       Object.assign(this, old);

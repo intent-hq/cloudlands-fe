@@ -19,6 +19,14 @@ async function state(page: Page, side: string) {
     });
 }
 async function settled(page: Page) {
+  // Input acknowledgement can precede selectionchange/paint. Agreement at that instant
+  // may still be the previous selection; allow the browser to finish before polling.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -479,4 +487,22 @@ test('review regression: rejected journal admission rolls back the editor, sourc
   expect(result.error).toContain('Injected journal admission failure');
   await page.keyboard.press('Control+Shift+z');
   await expect(page.getByTestId('bounded').locator('.tiptap')).toContainText('ARegion');
+});
+
+test('rapid seam selection preserves every native keyboard movement after repeated selection updates', async ({
+  mount,
+  page,
+}) => {
+  await mount(Harness);
+  await expect(page.getByTestId('bounded').locator('.tiptap')).toContainText('Region 0001');
+  const edge = await seam(page);
+  // Repeated native bursts expose a redraw racing the browser selectionchange task.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    for (const side of ['native', 'bounded']) {
+      await select(page, side, edge - 3);
+      for (let n = 0; n < 7; n++) await page.keyboard.press('Shift+ArrowRight');
+      await settled(page);
+    }
+    await same(page);
+  }
 });
