@@ -5,6 +5,7 @@ import {
   openGoToLine,
   openPalette,
   paletteReducer,
+  recordPaletteMruItem,
   togglePalette,
 } from './palette-slice';
 
@@ -35,4 +36,14 @@ describe('paletteReducer', () => {
     expect(paletteReducer(opened, openPalette())).toEqual({ ...before, isOpen: true, query: '' });
     expect(paletteReducer(opened, closePalette())).toEqual(before);
   });
+});
+
+it('persists composite note MRU IDs independently while retaining old entries', () => {
+  let state = paletteReducer(initialState, recordPaletteMruItem('note', 'spec', 1));
+  state = paletteReducer(state, recordPaletteMruItem('note', JSON.stringify(['a', 'spec']), 2));
+  state = paletteReducer(state, recordPaletteMruItem('note', JSON.stringify(['b', 'spec']), 3));
+  expect(Object.values(state.mruEntriesByKey).map((entry) => entry.id)).toEqual(
+    expect.arrayContaining(['spec', JSON.stringify(['a', 'spec']), JSON.stringify(['b', 'spec'])]),
+  );
+  expect(state.mruEntryIds).toHaveLength(3);
 });

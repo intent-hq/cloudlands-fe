@@ -4150,7 +4150,7 @@ export function routeDaemonEventsNotification(
     if (data?.action === 'removed' && typeof data.scriptId === 'string') {
       appStore.dispatch(removeScript(workspaceId, data.scriptId));
     }
-    appStore.dispatch(refreshScripts(workspaceId, true));
+    appStore.dispatch(refreshScripts(workspaceId));
     // fall through so the activity timeline records the mutation
   }
   if (type === 'script:output') {
@@ -4396,13 +4396,12 @@ export async function refreshDaemonEventsAfterReconnect(
       byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
     };
   };
-  // Script history is cached between ordinary refreshes. Recover missed archive
-  // and restore events once on reconnect for every workspace holding script state.
+  // Recover missed active-list changes on reconnect for workspaces holding scripts.
   for (const workspaceId of new Set([
     ...Object.keys(state.scripts?.byWorkspaceId ?? {}),
     ...(activeWorkspaceId ? [activeWorkspaceId] : []),
   ])) {
-    appStore.dispatch(refreshScripts(workspaceId, true));
+    appStore.dispatch(refreshScripts(workspaceId));
   }
   if (activeWorkspaceId) {
     appStore.dispatch(hydrateAgentsRequested(activeWorkspaceId));
