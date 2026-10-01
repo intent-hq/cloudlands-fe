@@ -30,17 +30,26 @@
   let contentElement: HTMLDivElement | undefined = $state();
   let noteWidth = $state<number>();
   let controlsWidth = $state<number>();
+  // Renderer settlement covers its scene. Note consumers also need the queued
+  // presentation measurement and its Svelte style update to have completed.
+  let presentationSettled = $state(false);
 
   onMount(() => {
     const lane = contentElement?.closest<HTMLElement>('.node-mermaidBlock, .node-diagram_block');
     const prose = lane?.parentElement;
-    if (!lane || !prose?.matches('.tiptap-editor.ProseMirror') || !contentElement) return;
+    if (!lane || !prose?.matches('.tiptap-editor.ProseMirror') || !contentElement) {
+      presentationSettled = true;
+      return;
+    }
     const content = contentElement;
     let intrinsic = 0;
+    let revision = 0;
+    let disposed = false;
     let cancelRead: (() => void) | undefined;
     let cancelWrite: (() => void) | undefined;
     const measureWidth = () => {
       cancelRead = undefined;
+      const measuredRevision = revision;
       const custom = content.querySelector<HTMLElement>('[data-diagram-intrinsic-width]');
       const svg = content.querySelector<SVGSVGElement>('.mermaid-svg > svg');
       // Read authored/layout dimensions, never the fitted screen rectangle: fitting
@@ -56,13 +65,25 @@
       const proseWidth = prose.clientWidth;
       const nextNoteWidth = Math.min(laneWidth, Math.max(proseWidth, intrinsic));
       const nextControlsWidth = Math.min(laneWidth, proseWidth);
+      const childSettled = custom
+        ? custom.dataset.diagramSettled === 'true'
+        : svg
+          ? svg.dataset.layoutSettled === 'true'
+          : !content.querySelector('[data-render-settled="false"]');
       cancelWrite = scheduleLayoutWrite(() => {
+        if (disposed || revision !== measuredRevision) return;
         cancelWrite = undefined;
         noteWidth = nextNoteWidth;
         controlsWidth = nextControlsWidth;
+        // Publish the marker in the same Svelte DOM flush as these dimensions.
+        presentationSettled = childSettled;
       });
     };
     const updateWidth = () => {
+      revision += 1;
+      presentationSettled = false;
+      cancelWrite?.();
+      cancelWrite = undefined;
       // SVG mutations arrive throughout layout. Measure once with the other
       // note diagrams, before any presentation writes dirty the document again.
       cancelRead ??= scheduleLayoutRead(measureWidth);
@@ -75,10 +96,16 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-diagram-settled', 'data-layout-settled'],
+      attributeFilter: [
+        'data-diagram-settled',
+        'data-diagram-intrinsic-width',
+        'data-layout-settled',
+        'data-render-settled',
+      ],
     });
     updateWidth();
     return () => {
+      disposed = true;
       resize.disconnect();
       mutation.disconnect();
       cancelRead?.();
@@ -92,6 +119,7 @@
   class:selected
   class:renderer-owns-actions={rendererOwnsActions}
   data-diagram-presentation
+  data-diagram-presentation-settled={presentationSettled}
   data-diagram-kind={kind}
   style:width={noteWidth === undefined ? undefined : `${noteWidth}px`}
   style:min-width={noteWidth === undefined ? undefined : '0'}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
-import { scheduleLayoutRead } from '$lib/utils/layout-phases';
+import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
+import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
 import DiagramPresentation from '../DiagramPresentation.svelte';
 
 let frames: FrameRequestCallback[];
@@ -143,4 +143,121 @@ it('cancels the style write when unmounted after measurement but before the writ
   frame();
   expect(laneRead).toHaveBeenCalledTimes(1);
   expect(write).not.toHaveBeenCalled();
+});
+
+function presentation(lane: HTMLElement) {
+  return lane.querySelector<HTMLElement>('[data-diagram-presentation]')!;
+}
+
+function ready(lane: HTMLElement) {
+  return (
+    presentation(lane).dataset.diagramPresentationSettled === 'true' &&
+    lane.querySelector('[data-diagram-settled]')?.getAttribute('data-diagram-settled') === 'true'
+  );
+}
+
+it('keeps consumer readiness false until resized presentation geometry is applied', async () => {
+  const { lane, laneRead, proseRead, content } = noteDiagram();
+  laneRead.mockReturnValue(960);
+  proseRead.mockReturnValue(864);
+  expect(ready(lane)).toBe(false);
+  frame();
+  await tick();
+  expect(presentation(lane).style.width).toBe('960px');
+  expect(ready(lane)).toBe(true);
+
+  laneRead.mockReturnValue(312);
+  proseRead.mockReturnValue(224);
+  content.setAttribute('data-diagram-settled', 'false');
+  resizeCallbacks.forEach((callback) => callback());
+  await tick();
+  frame();
+  await tick();
+  expect(ready(lane)).toBe(false);
+  content.setAttribute('data-diagram-intrinsic-width', '234');
+  content.setAttribute('data-diagram-settled', 'true');
+  await tick();
+  expect(presentation(lane).style.width).toBe('312px');
+  expect(ready(lane)).toBe(false);
+  frame();
+  await tick();
+  expect(presentation(lane).style.width).toBe('234px');
+  expect(ready(lane)).toBe(true);
+});
+
+it('invalidates readiness for intrinsic-only changes and coalesces the latest width', async () => {
+  const { lane, laneRead, proseRead, content } = noteDiagram();
+  laneRead.mockReturnValue(960);
+  proseRead.mockReturnValue(224);
+  frame();
+  await tick();
+  expect(ready(lane)).toBe(true);
+  content.setAttribute('data-diagram-intrinsic-width', '400');
+  await tick();
+  content.setAttribute('data-diagram-intrinsic-width', '300');
+  await tick();
+  expect(ready(lane)).toBe(false);
+  frame();
+  await tick();
+  expect(presentation(lane).style.width).toBe('300px');
+  expect(ready(lane)).toBe(true);
+});
+
+it('does not publish readiness for a stale write when a write-phase resize queues another read', async () => {
+  const { lane, laneRead, proseRead } = noteDiagram();
+  laneRead.mockReturnValue(960);
+  proseRead.mockReturnValue(864);
+  scheduleLayoutWrite(() => {
+    laneRead.mockReturnValue(312);
+    proseRead.mockReturnValue(224);
+    resizeCallbacks.forEach((callback) => callback());
+  });
+  frame();
+  await tick();
+  expect(ready(lane)).toBe(false);
+  frame();
+  await tick();
+  expect(presentation(lane).style.width).toBe('312px');
+  expect(ready(lane)).toBe(true);
+});
+
+it('cannot mark a detached presentation ready when unmounted between read and write', async () => {
+  const { lane, app } = noteDiagram();
+  const element = presentation(lane);
+  scheduleLayoutRead(() => {
+    void unmount(app);
+    applications = applications.filter((candidate) => candidate !== app);
+  });
+  frame();
+  await tick();
+  expect(element.dataset.diagramPresentationSettled).toBe('false');
+  expect(element.style.width).toBe('');
+});
+
+it('settles collapsed or error content at prose width and measures a replacement on expansion', async () => {
+  const { lane, laneRead, proseRead, content } = noteDiagram();
+  laneRead.mockReturnValue(960);
+  proseRead.mockReturnValue(224);
+  frame();
+  await tick();
+  const host = content.parentElement!;
+  content.remove();
+  const error = document.createElement('p');
+  error.textContent = 'Invalid diagram';
+  host.append(error);
+  await tick();
+  expect(presentation(lane).dataset.diagramPresentationSettled).toBe('false');
+  frame();
+  await tick();
+  expect(presentation(lane).style.width).toBe('224px');
+  expect(presentation(lane).dataset.diagramPresentationSettled).toBe('true');
+  expect(error.textContent).toBe('Invalid diagram');
+  error.replaceWith(content);
+  content.setAttribute('data-diagram-intrinsic-width', '400');
+  await tick();
+  expect(ready(lane)).toBe(false);
+  frame();
+  await tick();
+  expect(presentation(lane).style.width).toBe('400px');
+  expect(ready(lane)).toBe(true);
 });
