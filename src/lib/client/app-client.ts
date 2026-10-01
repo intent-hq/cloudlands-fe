@@ -1988,7 +1988,11 @@ export interface SpecialistCatalog {
 
 export interface SpecialistsClient {
   /** Additive catalog view; legacy list/subscribe consumers keep their array API. */
-  listCatalog?(provider?: string, workspaceId?: string): Promise<SpecialistCatalog>;
+  listCatalog?(
+    provider?: string,
+    workspaceId?: string,
+    options?: { includeProject?: boolean },
+  ): Promise<SpecialistCatalog>;
   subscribeCatalog?(handler: SubscriptionHandler<SpecialistCatalog>): Unsubscribe;
   /**
    * Merged bundled + user definitions (`specialist.list`, PROTOCOL

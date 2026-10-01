@@ -2,8 +2,8 @@
  * Live specialists domain backed by the intentd daemon (PROTOCOL §5.11).
  *
  * `specialist.list` returns the resolved user and bundled view. Optional
- * workspaceId selects routing context without adding project definitions — as `{ specialists:
- * SpecialistDef[] }`. The defs are surfaced verbatim; splitting bundled vs
+ * workspaceId selects routing context. Project definitions require the explicit
+ * listCatalog includeProject option; ordinary list/subscriptions remain global. The defs are surfaced verbatim; splitting bundled vs
  * file-backed entries into their store slices happens in the seeder. Reads
  * fold transport failures to an empty list so the specialist picker falls
  * back to the hardcoded `SPECIALISTS` constant instead of breaking.
@@ -48,15 +48,20 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * transient failure keeps the last known-good view instead of wiping the
    * store (#610).
    */
-  async listCatalog(provider?: string, workspaceId?: string): Promise<SpecialistCatalog> {
+  async listCatalog(
+    provider?: string,
+    workspaceId?: string,
+    options?: { includeProject?: boolean },
+  ): Promise<SpecialistCatalog> {
     // Preview context belongs to this request; global subscriptions keep
     // using the daemon's default context rather than the last picker choice.
     const result =
-      provider === undefined && workspaceId === undefined
+      provider === undefined && workspaceId === undefined && !options?.includeProject
         ? await backendRequest<SpecialistCatalog>('specialist.list')
         : await backendRequest<SpecialistCatalog>('specialist.list', {
             ...(provider ? { provider } : {}),
             ...(workspaceId ? { workspaceId } : {}),
+            ...(options?.includeProject ? { includeProject: true } : {}),
           });
     return {
       specialists: Array.isArray(result?.specialists) ? result.specialists : [],

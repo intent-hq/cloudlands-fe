@@ -43,7 +43,7 @@ function* readCatalog(action: CatalogAction) {
           appClient.providers.catalog(workspaceId),
           appClient.settings.list(workspaceId),
           appClient.specialists.listCatalog
-            ? appClient.specialists.listCatalog(undefined, workspaceId)
+            ? appClient.specialists.listCatalog(undefined, workspaceId, { includeProject: true })
             : appClient.specialists
                 .list(undefined, workspaceId)
                 .then((specialists) => ({ specialists, importDiagnostics: undefined })),

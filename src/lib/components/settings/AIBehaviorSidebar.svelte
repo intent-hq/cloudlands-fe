@@ -30,7 +30,7 @@
 
   let { activeView, onSelect, isActive = true, workspaceId }: Props = $props();
 
-  const specialists = selectSpecialists();
+  const specialists = $derived(selectSpecialists(workspaceId));
   const fileSpecialists$ = selectFileSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
@@ -49,7 +49,7 @@
 
   function getHasOverrides(id: string): boolean {
     void $fileSpecialists$; // track file specialist changes for reactivity
-    return selectHasOverrides.select(appStore.state, id);
+    return selectHasOverrides.select(appStore.state, id, workspaceId);
   }
 
   // Check if item is selected
@@ -68,7 +68,11 @@
 <!-- Specialists -->
 {#each visibleSpecialists as specialist (specialist.id)}
   {@const hasOverrides = getHasOverrides(specialist.id)}
-  {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
+  {@const sourceLabel = selectSpecialistSourceLabel.select(
+    appStore.state,
+    specialist.id,
+    workspaceId,
+  )}
 
   <Button
     bind:ref={specialistButtonRefs[specialist.id]}
