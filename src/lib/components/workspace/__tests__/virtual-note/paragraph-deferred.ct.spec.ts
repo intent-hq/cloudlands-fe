@@ -1,6 +1,7 @@
 import { test, expect } from '../../../../../test/ct-test';
+import type { Page } from '@playwright/test';
 import Pair from './ParagraphProofHarness.svelte';
-import { focus, selectSource, settled, sameSaved, type Host } from './paragraph-browser';
+import { focus, selectSource, settled, sameSaved, logical, type Host } from './paragraph-browser';
 
 for (const action of ['Shift+ArrowLeft', 'Control+z', 'typing after history timeout'])
   test(`deferred boundary input preserves subsequent ${action}`, async ({ mount, page }, info) => {
@@ -64,6 +65,56 @@ for (const action of ['Shift+ArrowLeft', 'Control+z', 'typing after history time
     });
   });
 
+/** Enter conserves a space before the new separator; Markdown parsing trims it.
+ * Compare live native windows verbatim and parse the independently expected source.
+ */
+async function sameSplit(page: Page, expected: string) {
+  await settled(page);
+  const result = await page.evaluate(async (expectedSource) => {
+    const bounded = document.querySelector('[data-testid="bounded"] [data-testid="proof"]') as Host;
+    const native = document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host;
+    const proof = bounded.proof;
+    const doc = native.native.state.doc;
+    const position = (source: number) => {
+      let start = 0,
+        result = 1;
+      doc.forEach((node, offset) => {
+        if (source >= start && source <= start + node.textContent.length)
+          result = offset + 1 + source - start;
+        start += node.textContent.length + 2;
+      });
+      return result;
+    };
+    proof.save();
+    const source = proof.service.region(0);
+    const parsed = (await bounded.parseSource(source)).doc;
+    const expectedDoc = (await bounded.parseSource(expectedSource)).doc;
+    return {
+      exactSource: source === expectedSource,
+      error: proof.error,
+      live: proof.editor!.getJSON(),
+      nativeWindow: {
+        type: 'doc',
+        content: doc
+          .slice(
+            position(proof.projection!.start),
+            position(proof.projection!.start + proof.projection!.source.length),
+          )
+          .content.toJSON(),
+      },
+      parsed,
+      expectedDoc,
+      nativeParagraphs: doc.childCount,
+    };
+  }, expected);
+  expect(result.exactSource).toBe(true);
+  expect(result.error).toBe('');
+  expect(result.live).toEqual(result.nativeWindow);
+  expect(result.parsed).toEqual(result.expectedDoc);
+  expect(result.parsed.content).toHaveLength(result.nativeParagraphs);
+  expect(await logical(page, 'bounded')).toEqual(await logical(page, 'native'));
+}
+
 for (const backward of [false, true])
   test(`deferred Enter after ${backward ? 'Backspace' : 'Delete'} preserves the split and both history events`, async ({
     mount,
@@ -118,7 +169,7 @@ for (const backward of [false, true])
     expect(after.maxSourceRead).toBeLessThanOrEqual(4096);
     expect(after.maxResidentInputBytes).toBeLessThanOrEqual(4096);
     expect(after.backingInputBytes).toBe(0);
-    await sameSaved(page);
+    await sameSplit(page, split);
     for (const [key, expected] of [
       ['Control+z', deletion],
       ['Control+z', original],
@@ -132,6 +183,6 @@ for (const backward of [false, true])
       expect((await root.evaluate((el) => (el as Host).proof.service.region(0))) === expected).toBe(
         true,
       );
-      await sameSaved(page);
+      await sameSplit(page, expected);
     }
   });
