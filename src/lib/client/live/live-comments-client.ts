@@ -296,11 +296,28 @@ export class LiveCommentsClient implements CommentsClient {
             },
           }),
     };
-    return createDeltaSubscription<CommentV2>({
+    // §6.9 snapshots and deltas contain complete thread summaries, not flat
+    // CommentWire rows. Reconcile by threadId before flattening: replacement
+    // must drop replies absent from the new thread while retaining other threads.
+    return createDeltaSubscription<CommentV2[]>({
       channel,
-      getId: (raw) => String(raw.id ?? ''),
-      normalize: (raw) => normalizeComment(raw, noteId, channelWorkspaceId),
-      handler,
+      getId: (raw) => (typeof raw.threadId === 'string' ? raw.threadId : ''),
+      normalize: (raw) => {
+        if (raw.noteId !== noteId || !Array.isArray(raw.comments)) return null;
+        return raw.comments.flatMap((value: unknown) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+          const comment = value as Record<string, unknown>;
+          if (
+            typeof comment.id !== 'string' ||
+            !comment.id ||
+            comment.threadId !== raw.threadId ||
+            (comment.noteId !== undefined && comment.noteId !== noteId)
+          )
+            return [];
+          return [normalizeComment(comment, noteId, channelWorkspaceId)];
+        });
+      },
+      handler: (threads) => handler(threads.flat()),
     });
   }
 }
