@@ -227,6 +227,8 @@ function inlineChannelConsumers(pattern, bindings, resolveType) {
       return base && `${base}${node.questionDotToken ? '?.' : '.'}${node.name.text}`;
     }
     if (ts.isElementAccessExpression(node) && literal(unwrap(node.argumentExpression))) {
+      // Bracket spelling must not bypass the dedicated owner/type analysis.
+      if (literal(unwrap(node.argumentExpression)).value === 'type') return undefined;
       const base = valueKey(node.expression);
       return base && `${base}[${valueKey(node.argumentExpression)}]`;
     }
@@ -255,6 +257,23 @@ function inlineChannelConsumers(pattern, bindings, resolveType) {
       return parts.every(Boolean) ? JSON.stringify([node.operatorToken.kind, ...parts]) : undefined;
     }
     return undefined;
+  };
+  // Compound values require evaluation, not opaque equality facts: for example
+  // `(enabled && false) === true` cannot be credited as an unknown owner guard.
+  // Refuse them here rather than attempting general boolean/value reasoning.
+  const comparisonKey = (input) => {
+    const node = expand(input);
+    if (ts.isTypeOfExpression(node)) {
+      const operand = comparisonKey(node.expression);
+      return operand && `typeof:${operand}`;
+    }
+    if (
+      ts.isBinaryExpression(node) ||
+      ts.isConditionalExpression(node) ||
+      ts.isPrefixUnaryExpression(node)
+    )
+      return undefined;
+    return valueKey(node);
   };
   let returned = predicate.body;
   if (ts.isBlock(returned)) {
@@ -355,8 +374,8 @@ function inlineChannelConsumers(pattern, bindings, resolveType) {
         op === ts.SyntaxKind.EqualsEqualsEqualsToken ||
         op === ts.SyntaxKind.ExclamationEqualsEqualsToken
       ) {
-        const left = valueKey(node.left);
-        const right = valueKey(node.right);
+        const left = comparisonKey(node.left);
+        const right = comparisonKey(node.right);
         if (!left || !right) return undefined;
         const a = literal(expand(node.left));
         const b = literal(expand(node.right));
