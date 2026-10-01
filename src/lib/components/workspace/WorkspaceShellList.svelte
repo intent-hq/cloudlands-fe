@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ScriptHistory from '$features/scripts/components/ScriptHistory.svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
@@ -202,6 +203,7 @@
       expanded={scriptsExpanded}
       onclick={() => (scriptsExpanded = !scriptsExpanded)}
     />
+    <ScriptHistory {workspaceId} />
     {#if scriptsExpanded}
       <div class="flex flex-col gap-0">
         {#each orderedScripts as script (script.id)}

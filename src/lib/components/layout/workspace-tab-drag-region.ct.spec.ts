@@ -121,11 +121,36 @@ test('overflowing tabs leave the empty left titlebar gap draggable after scrolli
 test('non-overflowing tabs keep their controls inside the bounded no-drag region', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1200, height: 400 });
   const component = await mount(WorkspaceTabDragRegionHarness);
-  const geometry = await dragRegionGeometry(component.locator('.window-title-bar'));
+  const titlebar = component.locator('.window-title-bar');
+  // Sidebar selectors and overflow sizing can settle after the capture frames.
+  // Wait for the non-overflow layout, as the narrow-viewport case does above.
+  await expect.poll(async () => (await dragRegionGeometry(titlebar)).overflow).toBe(false);
+  const geometry = await dragRegionGeometry(titlebar);
+  // A percentage width cap combined with the fitting strip's negative margin
+  // can toggle overflow on every ResizeObserver frame. A single settled-frame
+  // measurement (or a poll that eventually sees false) misses that feedback loop.
+  const frames = await component.locator('[data-workspace-tab-strip]').evaluate(async (strip) => {
+    const widths = [];
+    for (let frame = 0; frame < 4; frame++) {
+      await new Promise(requestAnimationFrame);
+      widths.push({ scrollWidth: strip.scrollWidth, clientWidth: strip.clientWidth });
+    }
+    return widths;
+  });
+  await testInfo.attach('non-overflowing-tab-frames', {
+    body: JSON.stringify(frames, null, 2),
+    contentType: 'application/json',
+  });
+  expect(frames.map(({ scrollWidth, clientWidth }) => scrollWidth > clientWidth)).toEqual([
+    false,
+    false,
+    false,
+    false,
+  ]);
   expect(geometry.overflow).toBe(false);
   expect(geometry.scrollerRegion).toBe('no-drag');
   expect(geometry.descendantRegions).toEqual(['none']);

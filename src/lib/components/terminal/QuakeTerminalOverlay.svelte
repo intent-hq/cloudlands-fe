@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ScriptHistory from '$features/scripts/components/ScriptHistory.svelte';
   import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
@@ -79,6 +80,7 @@
 
   import {
     selectWorkspaceScriptEntries,
+    selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
@@ -116,6 +118,7 @@
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
+  const allScriptEntries$ = selectAllWorkspaceScriptEntries(workspaceIdStore);
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
@@ -391,7 +394,7 @@
 
   const selectedScript = $derived(
     selectedScriptId
-      ? ($scriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
+      ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
@@ -1516,6 +1519,7 @@
 
         <!-- Right Actions -->
         <div class="flex items-center gap-1">
+          {#if isRealWorkspace && workspaceId}<ScriptHistory {workspaceId} />{/if}
           {#if isRealWorkspace && $scriptsInitialized$ && $scriptEntries$.length === 0}
             <Button
               variant="ghost-light"

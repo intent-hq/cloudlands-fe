@@ -24,6 +24,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { binaryMatchesArchitecture } = require('./macos-native.cjs');
 
 const FE_DIR = path.resolve(__dirname, '..');
 const sourceFile = path.join(FE_DIR, 'resources/keychain/sync-helper.swift');
@@ -49,6 +50,7 @@ try {
 
 if (
   fs.existsSync(destBin) &&
+  binaryMatchesArchitecture(destBin, process.arch) &&
   fs.existsSync(bundlePlist) &&
   fs.statSync(destBin).mtimeMs > fs.statSync(sourceFile).mtimeMs &&
   fs.statSync(destBin).mtimeMs > fs.statSync(infoPlist).mtimeMs &&
