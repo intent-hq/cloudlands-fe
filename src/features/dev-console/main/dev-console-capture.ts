@@ -6,6 +6,7 @@ import type {
   DevConsolePayload,
   DevConsoleRecord,
   DevConsoleSnapshot,
+  DevConsoleUpdate,
 } from '$shared/types/dev-console';
 
 interface CaptureOptions {
@@ -24,6 +25,7 @@ interface Entry {
   record: DevConsoleRecord;
   registrationId: string;
   startedAt: number;
+  revision: number;
 }
 type CaptureListener = () => void | Promise<void>;
 
@@ -139,6 +141,40 @@ export class DevConsoleCaptureService {
     return session ? this.snapshot(backendId, session) : null;
   }
 
+  /** Payload-free delta; no retained payload strings are copied or sent on live updates. */
+  getUpdate(backendId: string, sessionId: string, afterRevision: number): DevConsoleUpdate | null {
+    const session = this.session(backendId, sessionId);
+    if (!session) return null;
+    const entries = [...session.records.values()];
+    return {
+      ...this.metadata(backendId, session),
+      recordIds: entries.map(({ record }) => record.id),
+      upserts: entries
+        .filter((entry) => entry.revision > afterRevision)
+        .map(({ record }) => {
+          const { text: _payloadText, ...payload } = record.payload;
+          const response = record.response
+            ? (({ text: _text, ...meta }) => meta)(record.response)
+            : undefined;
+          return { ...record, payload, response };
+        }),
+    };
+  }
+
+  getRecord(backendId: string, sessionId: string, recordId: string): DevConsoleRecord | null {
+    const session = this.session(backendId, sessionId);
+    const record =
+      session &&
+      [...session.records.values()].find((entry) => entry.record.id === recordId)?.record;
+    return record
+      ? {
+          ...record,
+          payload: { ...record.payload },
+          response: record.response ? { ...record.response } : undefined,
+        }
+      : null;
+  }
+
   /** Invalidation only: window IPC should coalesce these signals before reading a snapshot. */
   subscribe(backendId: string, sessionId: string, listener: CaptureListener): () => void {
     const session = this.session(backendId, sessionId);
@@ -222,6 +258,7 @@ export class DevConsoleCaptureService {
         entry.record.response = response;
         session.retainedBytes += response.retainedBytes;
         this.complete(entry, event.status);
+        entry.revision = session.revision + 1;
         this.enforceLimits(session);
       }
       this.changed(session);
@@ -256,7 +293,12 @@ export class DevConsoleCaptureService {
       status: event.type === 'request' ? 'pending' : 'received',
       payload,
     };
-    session.records.set(key, { record, registrationId: registration.id, startedAt: this.now() });
+    session.records.set(key, {
+      record,
+      registrationId: registration.id,
+      startedAt: this.now(),
+      revision: session.revision + 1,
+    });
     session.retainedBytes += payload.retainedBytes;
     this.enforceLimits(session);
     this.changed(session);
@@ -314,6 +356,7 @@ export class DevConsoleCaptureService {
     for (const entry of session.records.values()) {
       if (entry.registrationId === registration.id && entry.record.status === 'pending') {
         this.complete(entry, 'disconnected');
+        entry.revision = session.revision + 1;
         changed = true;
       }
     }
@@ -353,14 +396,20 @@ export class DevConsoleCaptureService {
 
   private snapshot(backendId: string, session: Session): DevConsoleSnapshot {
     return {
-      backendId,
-      sessionId: session.id,
-      revision: session.revision,
+      ...this.metadata(backendId, session),
       records: [...session.records.values()].map(({ record }) => ({
         ...record,
         payload: { ...record.payload },
         response: record.response ? { ...record.response } : undefined,
       })),
+    };
+  }
+
+  private metadata(backendId: string, session: Session): Omit<DevConsoleSnapshot, 'records'> {
+    return {
+      backendId,
+      sessionId: session.id,
+      revision: session.revision,
       fullCapture: [...session.fullCapture.values()].map((selection) => ({ ...selection })),
       retainedPayloadBytes: session.retainedBytes,
       evictedRecords: session.evicted,

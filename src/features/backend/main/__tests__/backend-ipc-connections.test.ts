@@ -489,6 +489,23 @@ describe('openBackendWindow connect-before-open', () => {
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
   });
 
+  it('registers pooled clients for capture and releases registrations on disposal and replacement', async () => {
+    const { devConsoleCapture } = await import('../../../dev-console/main/dev-console-service');
+    const release = vi.fn();
+    const register = vi.spyOn(devConsoleCapture, 'registerClient').mockReturnValue(release);
+    const mod = await import('../backend.ipc');
+    const first = mod.getLocalBackendClient();
+    expect(register).toHaveBeenCalledWith('local', 'local', first);
+    mod.disconnectBackendClient('local');
+    expect(release).toHaveBeenCalledTimes(1);
+    const replacement = mod.getLocalBackendClient();
+    expect(replacement).not.toBe(first);
+    expect(register).toHaveBeenLastCalledWith('local', 'local', replacement);
+    mod.disposeAllBackendClients();
+    expect(release).toHaveBeenCalledTimes(2);
+    register.mockRestore();
+  });
+
   it('rechecks an invitation lifetime after its queued open is released', async () => {
     guestStore.list.mockResolvedValue([GUEST]);
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));

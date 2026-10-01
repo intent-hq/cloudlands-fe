@@ -39,6 +39,7 @@ import {
   type BackendConnectionConfig,
   type HostCertMismatch,
 } from './backend-connection';
+import { devConsoleCapture } from '../../dev-console/main/dev-console-service';
 import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
 import {
   disposeTransferConnectionsForBackend,
@@ -362,6 +363,7 @@ function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string):
     });
 }
 const backendClients = new Map<string, JsonRpcClient>();
+const captureRegistrations = new Map<string, () => void>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 /**
  * Per-id credential generation, bumped whenever the durable credential for
@@ -927,6 +929,8 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   backendClients.delete(id);
+  captureRegistrations.get(id)?.();
+  captureRegistrations.delete(id);
   invitedConnectionGuards.delete(id);
   if (id === LOCAL_CONNECTION_ID) {
     localIdentityGeneration++;
@@ -1426,6 +1430,7 @@ function createAdditionalBackendClient(
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
+  captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   instance.start();
   return instance;
 }
@@ -4161,6 +4166,8 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 export function disposeAllBackendClients(): void {
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
+    captureRegistrations.get(id)?.();
+    captureRegistrations.delete(id);
     if (id === LOCAL_CONNECTION_ID) {
       localIdentityGeneration++;
       localCollaborationIdentitySupported = false;

@@ -52,3 +52,15 @@ export interface DevConsoleSnapshot {
   oversizePayloads: number;
   limits: { maxRecords: number; maxPayloadBytes: number; previewBytes: number };
 }
+
+/** Live rows omit payload text. Fetch a selected record explicitly. */
+export type DevConsoleRow = Omit<DevConsoleRecord, 'payload' | 'response'> & {
+  payload: Omit<DevConsolePayload, 'text'>;
+  response?: Omit<DevConsolePayload, 'text'>;
+};
+export interface DevConsoleUpdate extends Omit<DevConsoleSnapshot, 'records'> {
+  /** Authoritative arrival order; also removes evicted or cleared rows. */
+  recordIds: string[];
+  /** Only rows changed since the requested revision (all rows on first read). */
+  upserts: DevConsoleRow[];
+}

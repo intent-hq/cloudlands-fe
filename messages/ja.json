@@ -1,4 +1,5 @@
 {
+  "devConsole_title_label": "開発コンソール",
   "ui_viewSettings_font_label": "フォント",
   "chat_taskProgress_menu_label": "タスク",
   "chat_messageNavigator_menu_label": "プロンプト",

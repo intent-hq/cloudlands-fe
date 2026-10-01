@@ -1,4 +1,5 @@
 {
+  "devConsole_title_label": "개발 콘솔",
   "ui_viewSettings_font_label": "글꼴",
   "chat_taskProgress_menu_label": "작업",
   "chat_messageNavigator_menu_label": "프롬프트",
