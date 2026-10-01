@@ -2,7 +2,6 @@
   /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import { notify } from '$lib/components/patterns/notify';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Input } from '$lib/components/ui/input';

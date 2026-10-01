@@ -145,9 +145,9 @@ describe('UnifiedAgentFactory', () => {
       expect(agentsApi.create).toHaveBeenCalledWith(
         expect.objectContaining({ workspacePath: '/test/workspace', placement }),
       );
-      response.resolve({ id: 'isolated-shared-agent', workspaceId: mockWorkspace.id });
+      response.resolve({ id: 'agent-isolated-shared', workspaceId: mockWorkspace.id });
       const [a, b] = await Promise.all([first, second]);
-      expect(a).toMatchObject({ success: true, agentId: 'isolated-shared-agent' });
+      expect(a).toMatchObject({ success: true, agentId: 'agent-isolated-shared' });
       expect(b).toBe(a);
     });
 
