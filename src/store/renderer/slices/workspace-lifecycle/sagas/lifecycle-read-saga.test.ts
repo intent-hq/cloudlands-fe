@@ -1,5 +1,5 @@
 import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
-import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -108,7 +108,6 @@ import {
 import {
   loadWorkspacesRequested,
   refreshWorkspaceMembershipRequested,
-  replaceWorkspaceList,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import { consoleOwnerChanged } from '../../hardware-console/hardware-console-slice';
@@ -574,74 +573,22 @@ describe('lifecycleReadSaga', () => {
     });
   });
 
-  describe('attention reconciliation on focus / console-owner acquisition', () => {
-    const wireWorkspace = (attention: 'none' | 'unread') =>
-      ({ id: WS, branch: 'main', attention }) as unknown as import('$shared/types').Workspace;
-
-    it('refetches the workspace list when the window regains focus and converges stale attention', async () => {
+  describe('healthy window transitions', () => {
+    it('does not reload workspaces on focus, blur, or console ownership changes', async () => {
       const run = startWithLoopback();
-      // Seed a stale snapshot: attention raised before the window lost focus,
-      // then cleared daemon-side while this window missed the deltas.
-      run.dispatch(replaceWorkspaceList([wireWorkspace('unread')]));
-      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
-
-      mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [wireWorkspace('none')] });
-      window.dispatchEvent(new Event('focus'));
+      run.channel.put(loadWorkspacesRequested());
       await settle();
-      await settle();
-
       expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
-      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('none');
-      await stop(run.task);
-    });
+      mocks.workspaceServiceList.mockClear();
 
-    it('coalesces a focus burst into one in-flight fetch plus one trailing refetch', async () => {
-      const resolvers: ((value: { ok: true; data: unknown[] }) => void)[] = [];
-      mocks.workspaceServiceList.mockImplementation(
-        () =>
-          new Promise<{ ok: true; data: unknown[] }>((done) => {
-            resolvers.push(done);
-          }),
-      );
-      const run = startWithLoopback();
-      window.dispatchEvent(new Event('focus'));
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
-
-      window.dispatchEvent(new Event('focus'));
-      window.dispatchEvent(new Event('focus'));
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
-
-      resolvers[0]!({ ok: true, data: [] });
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
-
-      resolvers[1]!({ ok: true, data: [] });
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
-      await stop(run.task);
-    });
-
-    it('refetches on console-owner acquisition and converges stale attention', async () => {
-      const run = startWithLoopback();
-      run.dispatch(replaceWorkspaceList([wireWorkspace('none')]));
-
-      mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [wireWorkspace('unread')] });
-      run.channel.put(consoleOwnerChanged(true));
-      await settle();
-      await settle();
-
-      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
-      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
-      await stop(run.task);
-    });
-
-    it('does not refetch when console ownership is lost', async () => {
-      const run = startWithLoopback();
-      run.channel.put(consoleOwnerChanged(false));
-      await settle();
-      await settle();
+      for (let i = 0; i < 3; i++) {
+        window.dispatchEvent(new Event('blur'));
+        run.channel.put(consoleOwnerChanged(false));
+        window.dispatchEvent(new Event('focus'));
+        run.channel.put(consoleOwnerChanged(true));
+        await settle();
+      }
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mocks.workspaceServiceList.mock.calls).toEqual([]);
       await stop(run.task);
     });

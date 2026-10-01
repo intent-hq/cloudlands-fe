@@ -31,7 +31,6 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
-import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import {
   takeLeadingByAgent,
@@ -62,7 +61,6 @@ import {
 } from '../../changes/changes-slice';
 import { selectShouldRequestAgentLineStats } from '../../changes/changes-selectors';
 import { hydrateContextItems, initContextForWorkspace } from '../../context/context-slice';
-import { consoleOwnerChanged } from '../../hardware-console/hardware-console-slice';
 import { prBranchLookupSucceeded } from '../../pr-branch-lookup/pr-branch-lookup-slice';
 import type { PrBranchLookupPayload } from '../../pr-branch-lookup/pr-branch-lookup-types';
 import { selectPRStatusLastRefreshTime } from '../../pr-status/pr-status-selectors';
@@ -1537,26 +1535,6 @@ function* clearUnmountedInitializedContext(
   initializedContexts.delete(action.payload[0]);
 }
 
-/**
- * Attention-flag reconciliation (PROTOCOL §9.9): a window that missed
- * `workspace:attention-changed` / `workspace:waiting-changed` /
- * `workspace:displayStatus-changed` deltas while unfocused (raise or clear
- * from another window / the daemon) must converge before its store answers
- * hardware key presses. Both triggers funnel into `loadWorkspacesRequested`, whose worker
- * is single-flight with trailing coalesce — a burst of focus/owner flips
- * collapses into at most one trailing `workspace.list` refetch, never an
- * O(workspaces) fan-out.
- */
-function* windowFocusReconcileWorker() {
-  yield* put(loadWorkspacesRequested());
-}
-
-function* consoleOwnerReconcileWorker(action: ReturnType<typeof consoleOwnerChanged>) {
-  // Only acquisition needs a reconcile: this window is about to answer
-  // hardware key presses from its own store. Losing ownership needs nothing.
-  if (action.payload[0]) yield* put(loadWorkspacesRequested());
-}
-
 export function* lifecycleReadSaga(): SagaGenerator<void> {
   const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
@@ -1573,10 +1551,8 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // in flight must queue one trailing refetch — takeLeading would drop it
       // and the fetched snapshot could predate the create.
       takeSingleFlightInContext(loadWorkspacesRequested, () => 'workspaces', loadWorkspacesWorker),
-      // Reconcile missed attention deltas: refocus and console-owner
-      // acquisition both re-request the list (coalesced by the worker above).
-      takeEveryFromWindowEvent('focus', windowFocusReconcileWorker),
-      takeEvery(consoleOwnerChanged, consoleOwnerReconcileWorker),
+      // Attention events stay subscribed while unfocused. Reconcile missed
+      // events on transport recovery, not focus or console ownership changes.
       fork(backendReconnectWorkspacesWatcher),
       takeSingleFlightInContext(
         [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
