@@ -1,5 +1,6 @@
+import type { StoreState } from '../../../types';
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, delay, fork, put, race, select, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
@@ -11,7 +12,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
-import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  selectHostRole,
+  selectPrincipalAdmissionContext,
+} from '../../principal/principal-selectors';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import {
@@ -326,13 +331,32 @@ function* refreshPrStatus(workspaceId: string, force: boolean): SagaGenerator<vo
  * Broad refreshes own the Changes slice. Git status is read here only as
  * reconciliation input; gitReadSaga is the sole owner of Git-slice updates.
  */
+function* admittedWorkspaceRead(workspaceId: string): SagaGenerator<string | null> {
+  const state: StoreState = yield* select();
+  const context = selectPrincipalAdmissionContext.select(state);
+  const role = selectHostRole.select(state);
+  if (
+    !context ||
+    (role !== 'owner' && role !== 'member') ||
+    (role === 'member' && workspaceId === CHIEF_WORKSPACE_ID) ||
+    !selectWorkspaceById.select(state, workspaceId) ||
+    !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
+    state.workspace.loadedPrincipalContext !== context
+  )
+    return null;
+  return context;
+}
+
 function* refreshChanges(workspaceId: string): SagaGenerator<void> {
+  const context = yield* admittedWorkspaceRead(workspaceId);
+  if (!context) return;
   const { status, trackedChanges, commitsEnvelope } = yield* all({
     status: call([appClient.git, appClient.git.status], workspaceId),
     trackedChanges: call([appClient.git, appClient.git.trackedChanges], workspaceId),
     commitsEnvelope: call([appClient.git, appClient.git.commitsWithBoundary], workspaceId),
   });
-  if (!status || trackedChanges === null) return;
+  if ((yield* admittedWorkspaceRead(workspaceId)) !== context || !status || trackedChanges === null)
+    return;
   const changes = reconcileGitStatusChanges(status.files, trackedChanges);
   yield* put(setChangesData(workspaceId, changes, false, changes.length));
   yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
@@ -340,6 +364,8 @@ function* refreshChanges(workspaceId: string): SagaGenerator<void> {
 }
 
 function* refreshOlderCommits(workspaceId: string): SagaGenerator<void> {
+  const context = yield* admittedWorkspaceRead(workspaceId);
+  if (!context) return;
   yield* put(setLoadingOlderCommits(workspaceId, true));
   try {
     const envelope: Awaited<ReturnType<typeof appClient.git.commitsWithBoundary>> = yield* call(
@@ -347,9 +373,11 @@ function* refreshOlderCommits(workspaceId: string): SagaGenerator<void> {
       workspaceId,
       true,
     );
-    yield* put(appendOlderCommits(workspaceId, envelope.commits));
+    if ((yield* admittedWorkspaceRead(workspaceId)) === context)
+      yield* put(appendOlderCommits(workspaceId, envelope.commits));
   } finally {
-    yield* put(setLoadingOlderCommits(workspaceId, false));
+    if ((yield* admittedWorkspaceRead(workspaceId)) === context)
+      yield* put(setLoadingOlderCommits(workspaceId, false));
   }
 }
 

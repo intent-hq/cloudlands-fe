@@ -116,13 +116,30 @@ export function createRepositorySelectionFeed(client: JsonRpcClient) {
     for (const op of [...f.owned]) if (n.selectionIds.includes(op.id)) op.retire('admission');
     for (const p of f.pending) p.wake?.();
   });
-  async function releaseWire(connection: RepositoryConnection, query: object, selectionId: string) {
+  function requestOriginal(
+    connection: object,
+    method: string,
+    params: unknown,
+    options: { timeoutMs: number },
+    producer?: object,
+  ): Promise<unknown> {
+    return producer === undefined
+      ? client.requestOnCapturedConnection(connection, method, params, options)
+      : client.requestOnCapturedConnection(connection, method, params, options, producer);
+  }
+  async function releaseWire(
+    connection: RepositoryConnection,
+    query: object,
+    selectionId: string,
+    producer?: object,
+  ) {
     try {
-      const raw = await client.requestOnCapturedConnection(
+      const raw = await requestOriginal(
         connection,
         PREFIX + 'release',
         { ...query, selectionId },
         { timeoutMs: 5_000 },
+        producer,
       );
       z.object({ released: z.literal(true) })
         .strict()
@@ -155,6 +172,19 @@ export function createRepositorySelectionFeed(client: JsonRpcClient) {
       }),
     );
     const started = Date.now();
+    const producer = client.beginOriginalProducer?.();
+    let acquisitionEnded = false,
+      cleanupEnded = false,
+      producerEnded = false;
+    const finishProducer = () => {
+      if (!acquisitionEnded || !cleanupEnded || producerEnded) return;
+      producerEnded = true;
+      client.finishOriginalProducer?.(producer);
+    };
+    const cleanupFinished = () => {
+      cleanupEnded = true;
+      finishProducer();
+    };
     const p: Pending = { connection: original, abandoned: false, ids: new Set() };
     f.pending.add(p);
     let knownId: string | undefined,
@@ -163,8 +193,13 @@ export function createRepositorySelectionFeed(client: JsonRpcClient) {
     let deadline: ReturnType<typeof setTimeout> | undefined;
     const originalNow = () =>
       !disposed && !f.dead && !p.abandoned && client.getRepositoryConnection() === original;
-    const work = client
-      .requestOnCapturedConnection(original, PREFIX + 'capture', query, { timeoutMs: 35_000 })
+    const work = requestOriginal(
+      original,
+      PREFIX + 'capture',
+      query,
+      { timeoutMs: 35_000 },
+      producer,
+    )
       .then(async (raw) => {
         const reference = z
           .object({ selectionId: SelectionCaptureSchema.shape.selectionId })
@@ -215,8 +250,9 @@ export function createRepositorySelectionFeed(client: JsonRpcClient) {
                 )
               : Promise.resolve()
           )
-            .then(() => releaseWire(original, query, selectionId))
+            .then(() => releaseWire(original, query, selectionId, producer))
             .finally(() => f.owned.delete(op));
+          if (producer) void releaseTask.then(cleanupFinished, cleanupFinished);
           return releaseTask;
         };
         const op: Owned = {
@@ -258,11 +294,12 @@ export function createRepositorySelectionFeed(client: JsonRpcClient) {
           pending = task; // Reserve before synchronous socket callbacks can reenter.
           void (async () => {
             try {
-              const raw = await client.requestOnCapturedConnection(
+              const raw = await requestOriginal(
                 original,
                 PREFIX + method,
                 { ...query, selectionId, ...extra },
                 { timeoutMs: 10_000 },
+                producer,
               );
               const result = SelectionAttemptSchema.parse(raw);
               if (
@@ -359,9 +396,26 @@ export function createRepositorySelectionFeed(client: JsonRpcClient) {
       })
       .finally(() => {
         if (knownId && !adopted)
-          void releaseWire(original, query, knownId).finally(() => f.pending.delete(p));
-        else f.pending.delete(p);
+          void releaseWire(original, query, knownId, producer).finally(() => {
+            f.pending.delete(p);
+            cleanupFinished();
+          });
+        else {
+          f.pending.delete(p);
+          if (!adopted) cleanupFinished();
+        }
       });
+    if (producer)
+      void work.then(
+        () => {
+          acquisitionEnded = true;
+          finishProducer();
+        },
+        () => {
+          acquisitionEnded = true;
+          finishProducer();
+        },
+      );
     void work.then(
       (op) => {
         if (p.abandoned) void op.release();

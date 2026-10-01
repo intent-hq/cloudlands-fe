@@ -759,6 +759,8 @@ describe('actual main finalization fence and original pool', () => {
 function fixtureFinalization(
   lifecycle: ReturnType<Pool['enrollBackendClientLifecycle']>,
   sidebarMode: boolean,
+  member?: JsonRpcClient,
+  journal?: DirectJournal,
 ) {
   const filename = path.resolve('test/fixtures/native-review-native/main.ts');
   const text = readFileSync(filename, 'utf8');
@@ -766,7 +768,13 @@ function fixtureFinalization(
   const run = source.statements.find(
     (n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && n.name?.text === 'run',
   )!;
-  const names = ['poolRetirement', 'finalRootsJoined', 'finalQuiescence', 'finalShutdown'];
+  const names = [
+    'poolRetirement',
+    'finalRootsJoined',
+    'finalQuiescence',
+    'finalShutdown',
+    'memberQuiescence',
+  ];
   const variables = run.body!.statements.filter(
     (n): n is ts.VariableStatement =>
       ts.isVariableStatement(n) &&
@@ -782,7 +790,8 @@ function fixtureFinalization(
     .find((n) => n.name.getText(source) === 'fixture')!.initializer as ts.ObjectLiteralExpression;
   const methods = fixture.properties.filter(
     (n): n is ts.MethodDeclaration =>
-      ts.isMethodDeclaration(n) && ['quiesceUi', 'shutdown'].includes(n.name.getText(source)),
+      ts.isMethodDeclaration(n) &&
+      ['quiesceUi', 'shutdown', 'role'].includes(n.name.getText(source)),
   );
   const helpers = source.statements.filter(
     (n): n is ts.FunctionDeclaration =>
@@ -791,7 +800,7 @@ function fixtureFinalization(
         n.name?.text ?? '',
       ),
   );
-  expect([variables.length, bodies.length, methods.length, helpers.length]).toEqual([4, 2, 2, 4]);
+  expect([variables.length, bodies.length, methods.length, helpers.length]).toEqual([5, 2, 3, 4]);
   const fragments = [...helpers, ...variables, ...bodies].map((n) => n.getText(source)).join('\n');
   const code = ts.transpileModule(
     fragments + '\nreturn {' + methods.map((n) => n.getText(source)).join(',') + '};',
@@ -815,10 +824,14 @@ function fixtureFinalization(
     lifecycle,
     completions: ledger,
     sidebarMode,
-    windows: new Map([['controlled', window]]),
+    windows: new Map([['host-A', window]]),
+    clients: new Map(member ? [['host-A', member]] : []),
+    backendIds: new Map([['host-A', 'remote-A']]),
+    remote: async () => ({ id: 'remote-B', client: await pool!.connectBackendClient('remote-B') }),
+    stampWindowWithBackend: vi.fn(),
     uiMode: true,
     diagnosticOwnership: true,
-    statusProducers: { record: vi.fn() },
+    statusProducers: journal ?? { record: vi.fn() },
     pending: new Set(),
     faults: [],
     wireBoundaries: [],
@@ -828,7 +841,11 @@ function fixtureFinalization(
   const actual = new Function('exports', ...Object.keys(params), code)(
     {},
     ...Object.values(params),
-  ) as { quiesceUi(seal?: boolean): Promise<unknown>; shutdown(): Promise<void> };
+  ) as {
+    quiesceUi(seal?: boolean): Promise<unknown>;
+    shutdown(): Promise<void>;
+    role(role: 'owner' | 'member' | 'guest'): Promise<void>;
+  };
   const receipt = {
     route: { startupSettled: true, closed: true },
     producersClosed: true,
@@ -1155,6 +1172,7 @@ async function loadDirect(observer?: (event: DirectEvent) => void) {
     journal,
     calls,
     retire,
+    stopObservation: () => spy.mockRestore(),
     async cleanup() {
       try {
         await Promise.allSettled(calls.map((call) => call.promise));
@@ -1818,4 +1836,455 @@ describe('direct status owner consumer', () => {
       expect(caught).toBe(original);
       expect(reached).toEqual(['close', 'archive']);
     });
+});
+
+describe('M real pool member retirement', () => {
+  it('M6 joins a real native route execute and its late original release acknowledgment', async () => {
+    const root = { workspaceId: 'controlled-workspace', kind: 'primary' as const };
+    const operationId = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const preparation = {
+      ...nativeFixture.prepare.reviewPreparation,
+      root,
+      operationId,
+      scope: {
+        daemonId: 'controlled-daemon',
+        authorityScopeId: operationId,
+        authorityGeneration: '1',
+      },
+      contextRevision: { epoch: operationId, sequence: '1' },
+    };
+    const terminal = deferred<unknown>(),
+      releaseAck = deferred<unknown>();
+    edge.respond = (_socket, frame) => {
+      if (frame.method === 'accept-changes.prepare')
+        return {
+          ...nativeFixture.prepare,
+          reviewPreparation: preparation,
+          reviewOperation: { operationId, root, retirementSequence: '0', expiresAfterMs: 300000 },
+        };
+      if (frame.method === 'accept-changes.execute') return terminal.promise;
+      if (frame.method === 'accept-changes.release') return releaseAck.promise;
+      return defaultReply(frame);
+    };
+    const { pool, lifecycle } = await load();
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    const { event } = await localWindow();
+    const channels = IPC_CHANNELS.BACKEND.NATIVE_REVIEW;
+    const prepared = (await invoke(channels.PREPARE, event, {
+      input: {
+        workspaceId: root.workspaceId,
+        action: 'create-pr',
+        review: { root, choice: { kind: 'saved' } },
+      },
+    })) as { ok: boolean; result: { id: string } };
+    expect(prepared.ok).toBe(true);
+    const reached = nextFrame('accept-changes.execute');
+    const executing = invoke(channels.EXECUTE, event, {
+      root,
+      id: prepared.result.id,
+      command: { prTitle: 'control' },
+    });
+    await reached;
+    const released = nextFrame('accept-changes.release');
+    await invoke(channels.RELEASE, event, { root, id: prepared.result.id });
+    const boundary = fence(false);
+    const joined = lifecycle.retireMember(client, boundary);
+    let finished = false;
+    void joined.then(() => {
+      finished = true;
+    });
+    terminal.resolve({
+      operationId,
+      root,
+      state: 'settled',
+      success: true,
+      steps: [],
+      reviewExecution: {
+        ...nativeFixture.execute.reviewExecution,
+        preparation,
+        requestId: operationId,
+      },
+    });
+    await executing;
+    await released;
+    boundary.set(true);
+    await settledTurn();
+    expect(finished).toBe(false);
+    expect(edge.sockets[0]!.destroyed).toBe(false);
+    releaseAck.resolve({ released: true });
+    const result = await joined;
+    expect(result.outcome).toBe('clean');
+    expect(lifecycle.admissionOpen()).toBe(true);
+    expect(lifecycle.retireMember(client, boundary)).toBe(joined);
+    const next = await pool.connectBackendClient('remote-A');
+    await connection(next);
+    expect(next).not.toBe(client);
+    expect((await lifecycle.retire(fence())).outcome).toBe('clean');
+    expect(
+      edge.sockets[0]!.frames.filter((f) => f.method === 'accept-changes.execute'),
+    ).toHaveLength(1);
+    expect(
+      edge.sockets[0]!.frames.filter((f) => f.method === 'accept-changes.release'),
+    ).toHaveLength(1);
+  });
+
+  it('M7 joins a held original hello/store continuation before admitting replacement', async () => {
+    const held = deferred<unknown>(),
+      entered = deferred();
+    edge.findGuest = () => {
+      entered.resolve();
+      return held.promise;
+    };
+    const { pool, lifecycle } = await load();
+    const client = await pool.connectBackendClient('remote-A');
+    await entered.promise;
+    const originalFence = fence();
+    const retired = lifecycle.retireMember(client, originalFence);
+    let complete = false;
+    void retired.then(() => {
+      complete = true;
+    });
+    await settledTurn();
+    expect(complete).toBe(false);
+    expect(edge.sockets[0]!.destroyed).toBe(false);
+    held.resolve(null);
+    const result = await retired;
+    expect(result.outcome).toBe('clean');
+    expect(lifecycle.retireMember(client, originalFence)).toBe(retired);
+    const replacement = await pool.connectBackendClient('remote-A');
+    await connection(replacement);
+    expect(replacement).not.toBe(client);
+    expect((await lifecycle.retire(fence())).outcome).toBe('clean');
+  });
+  it('M8 rejects independent work and keeps its fault after the member drained', async () => {
+    const { pool, lifecycle } = await load();
+    const client = await pool.connectBackendClient('remote-A');
+    await connection(client);
+    await settledTurn();
+    const boundary = fence(false);
+    const retired = lifecycle.retireMember(client, boundary);
+    await expect(client.request('host.status')).rejects.toThrow('producer');
+    boundary.set(true);
+    expect((await retired).outcome).toBe('ownership-fault');
+    expect((await lifecycle.retire(fence())).outcome).toBe('ownership-fault');
+  });
+  it('M9 global stop takes the atomic barrier from an in-progress member and forbids Guest', async () => {
+    const { pool, lifecycle } = await load();
+    const first = await pool.connectBackendClient('remote-A');
+    const local = pool.getLocalBackendClient();
+    await Promise.all([connection(first), connection(local)]);
+    await settledTurn();
+    const originalFence = fence(false);
+    const member = lifecycle.retireMember(first, originalFence);
+    const globalFence = fence(false);
+    const all = lifecycle.retire(globalFence);
+    expect(lifecycle.admissionOpen()).toBe(false);
+    originalFence.set(true);
+    await settledTurn();
+    expect(edge.sockets.every((s) => !s.destroyed)).toBe(true);
+    globalFence.set(true);
+    expect((await all).outcome).toBe('clean');
+    expect((await member).outcome).toBe('clean');
+    await expect(pool.connectBackendClient('guest-after-stop')).rejects.toThrow();
+    expect(edge.sockets).toHaveLength(2);
+  });
+  it('M10 refuses foreign clients and changed original fences without choosing an ordinal', async () => {
+    const { pool, lifecycle } = await load();
+    const client = await pool.connectBackendClient('remote-A');
+    await connection(client);
+    await settledTurn();
+    expect(() => lifecycle.retireMember({} as JsonRpcClient, fence())).toThrow();
+    const boundary = fence(false),
+      original = lifecycle.retireMember(client, boundary);
+    expect(() => lifecycle.retireMember(client, fence())).toThrow('fence changed');
+    boundary.set(true);
+    expect((await original).outcome).toBe('ownership-fault');
+    await lifecycle.retire(fence());
+  });
+});
+
+describe('M genuine delayed feed producers', () => {
+  const root = { kind: 'primary' as const, workspaceId: 'workspace-1' };
+  async function realFeed<T>(factory: (client: JsonRpcClient) => T) {
+    const { JsonRpcClient: ActualClient } = await import('../json-rpc-client');
+    const client = new ActualClient({
+      lifecycle: { scope: Symbol('feed-original'), generation: 1 },
+      helloParams: () => ({ clientId: 'original-feed' }),
+    });
+    const feed = factory(client);
+    client.start();
+    await connection(client);
+    return { client, feed };
+  }
+  function retireClient(client: JsonRpcClient) {
+    const ticket = client.beginMemberRetirement();
+    return (async () => {
+      if (!ticket.isDrained())
+        await new Promise<void>((resolve) => {
+          const off = ticket.subscribeChanged(() => {
+            if (ticket.isDrained()) {
+              off();
+              resolve();
+            }
+          });
+        });
+      return ticket.seal().finish();
+    })();
+  }
+  const selection = () => ({
+    selectionId: 'original-selection',
+    scope: {
+      daemonId: 'controlled',
+      authorityScopeId: 'original-selection',
+      authorityGeneration: '1',
+    },
+    root,
+    snapshot: {
+      root,
+      rootIncarnation: '1',
+      selectionRevision: '1',
+      selection: { kind: 'neverSaved' },
+    },
+    retirementSequence: '0',
+    expiresAfterMs: 300000,
+  });
+  it.each([false, true])(
+    'M11 joins real delayed selection release; independent identical request=%s is separate',
+    async (independent) => {
+      const action = deferred<unknown>(),
+        release = deferred<unknown>();
+      edge.respond = (_socket, frame) =>
+        frame.method === 'workspace.repositorySelection.capture'
+          ? selection()
+          : frame.method === 'workspace.repositorySelection.save'
+            ? action.promise
+            : frame.method === 'workspace.repositorySelection.release'
+              ? release.promise
+              : defaultReply(frame);
+      const { createRepositorySelectionFeed } = await import('../repository-selection-feed');
+      const { client: local, feed: originalFeed } = await realFeed(createRepositorySelectionFeed);
+      const captured = local.getRepositoryConnection()!;
+      const op = await originalFeed.capture(captured, root);
+      const saving = op.confirm({
+        kind: 'save',
+        choice: { mode: 'explicit-remote', remoteName: 'origin' },
+      });
+      const cleanup = op.release();
+      expect(op.isAdmitted()).toBe(false);
+      expect(edge.writes.filter((w) => w.endsWith('repositorySelection.release'))).toHaveLength(0);
+      const retired = retireClient(local);
+      if (independent)
+        await expect(
+          local.requestOnCapturedConnection(
+            captured,
+            'workspace.repositorySelection.release',
+            { workspaceId: root.workspaceId, selectionId: 'original-selection' },
+            { timeoutMs: 5000 },
+          ),
+        ).rejects.toThrow('producer');
+      action.resolve({
+        selectionId: 'original-selection',
+        root,
+        attempt: {
+          status: 'settled',
+          receipt: {
+            result: { kind: 'failed', code: 'admission-retired' },
+            persistence: { kind: 'committed', selectionRevision: '2' },
+          },
+        },
+      });
+      await saving;
+      await settledTurn();
+      expect(edge.writes.filter((w) => w.endsWith('repositorySelection.release'))).toHaveLength(1);
+      expect(edge.sockets.find((s) => s.owner === 'local')!.destroyed).toBe(false);
+      release.resolve({ released: true });
+      await cleanup;
+      originalFeed.dispose();
+      expect((await retired).outcome).toBe(independent ? 'ownership-fault' : 'clean');
+    },
+  );
+  it('M12 joins original authority read continuation and release before actual member close', async () => {
+    const read = deferred<unknown>(),
+      release = deferred<unknown>();
+    edge.respond = (_socket, frame) =>
+      frame.method === 'workspace.repositoryContext.capture'
+        ? {
+            lifetimeId: 'original-authority',
+            scope: { daemonId: 'controlled', authorityScopeId: 'native', authorityGeneration: '1' },
+            coverage: { kind: 'workspaceInventory', workspaceId: root.workspaceId },
+            retirementSequence: '0',
+            expiresAfterMs: 300000,
+          }
+        : frame.method === 'workspace.repositoryContext'
+          ? read.promise
+          : frame.method === 'workspace.repositoryContext.release'
+            ? release.promise
+            : defaultReply(frame);
+    const { createRepositoryAuthorityFeed } = await import('../repository-authority-feed');
+    const { client, feed } = await realFeed(createRepositoryAuthorityFeed);
+    const op = await feed.capture(client.getRepositoryConnection()!, root);
+    const original = op.request('workspace.repositoryContext', { workspaceId: root.workspaceId });
+    const observed = original.catch((error) => error);
+    op.dispose();
+    const retired = retireClient(client);
+    release.resolve({ released: true });
+    await settledTurn();
+    expect(edge.sockets[0]!.destroyed).toBe(false);
+    const context = (await import('$shared/types/__fixtures__/repository-context.json')).default;
+    read.resolve({
+      ...context,
+      scope: { daemonId: 'controlled', authorityScopeId: 'native', authorityGeneration: '1' },
+      revision: { epoch: 'original-authority', sequence: '1' },
+    });
+    await observed;
+    feed.dispose();
+    expect((await retired).outcome).toBe('clean');
+  });
+  it('M13 retains abandoned selection capture through its genuine late release', async () => {
+    const capture = deferred<unknown>(),
+      release = deferred<unknown>();
+    edge.respond = (_socket, frame) =>
+      frame.method === 'workspace.repositorySelection.capture'
+        ? capture.promise
+        : frame.method === 'workspace.repositorySelection.release'
+          ? release.promise
+          : defaultReply(frame);
+    const { createRepositorySelectionFeed } = await import('../repository-selection-feed');
+    const { client, feed } = await realFeed(createRepositorySelectionFeed);
+    const original = feed.capture(client.getRepositoryConnection()!, root);
+    const observed = original.catch((error) => error);
+    feed.dispose();
+    const retired = retireClient(client);
+    capture.resolve(selection());
+    await observed;
+    await settledTurn();
+    expect(edge.sockets[0]!.destroyed).toBe(false);
+    expect(edge.writes.filter((w) => w.endsWith('repositorySelection.release'))).toHaveLength(1);
+    release.resolve({ released: true });
+    expect((await retired).outcome).toBe('clean');
+  });
+});
+
+describe('M actual fixture original Member fence', () => {
+  it('M24 shares original intermediate quiescence and admits Guest only after its member closes', async () => {
+    const observed = await loadDirect();
+    const { pool, lifecycle } = observed;
+    const client = await pool.connectBackendClient('remote-A');
+    await connection(client);
+    await settledTurn();
+    const initialSockets = [...edge.sockets];
+    const memberSocket = edge.sockets.find((socket) => socket.owner === 'remote-A.test')!;
+    const f = fixtureFinalization(lifecycle, true, client, observed.journal);
+    const original = f.actual.quiesceUi(false);
+    expect(f.actual.quiesceUi(false)).toBe(original);
+    let changed = false;
+    const originalRole = f.actual.role('guest');
+    expect(f.actual.role('guest')).toBe(originalRole);
+    await expect(f.actual.role('owner')).rejects.toThrow('Original role transition changed');
+    const role = originalRole.then(() => {
+      changed = true;
+    });
+    await settledTurn();
+    expect(changed).toBe(false);
+    expect(edge.sockets).toEqual(initialSockets);
+    f.roots.resolve(f.receipt);
+    await original;
+    await role;
+    expect(memberSocket.destroyed).toBe(true);
+    expect(edge.sockets.find((socket) => socket.owner === 'remote-B.test')).toBeDefined();
+    await f.actual.quiesceUi();
+    await f.actual.shutdown();
+    const snapshot = observed.journal.snapshot(lifecycle.observationFailures());
+    const rows = snapshot.rows as Array<Record<string, any>>;
+    const calls = new Map(
+      rows.filter((r) => r.phase === 'request-enter').map((r) => [r.callId, r]),
+    );
+    expect(snapshot.recordingComplete).toBe(true);
+    const originalId = observed.journal.memberId(client);
+    expect(
+      rows.filter((r) => r.phase === 'direct-member-retired' && r.clientId === originalId),
+    ).toHaveLength(1);
+    directConsumers().assertDirectStatusOwners!(rows, calls);
+    observed.stopObservation();
+  });
+  it.each([new Error('original roots'), undefined, 'original-value'])(
+    'M25 preserves original fence rejection %s and admits nothing',
+    async (error) => {
+      const { pool, lifecycle } = await load();
+      const client = await pool.connectBackendClient('remote-A');
+      await connection(client);
+      await settledTurn();
+      const initialSockets = [...edge.sockets];
+      const memberSocket = edge.sockets.find((socket) => socket.owner === 'remote-A.test')!;
+      const f = fixtureFinalization(lifecycle, true, client);
+      const original = f.actual.quiesceUi(false);
+      const seen = original.catch((value) => ({ value }));
+      const role = f.actual.role('guest');
+      const denied = role.catch((value) => ({ value }));
+      f.roots.reject(error);
+      expect(((await seen) as { value: unknown }).value).toBe(error);
+      expect(((await denied) as { value: unknown }).value).toBe(error);
+      expect(edge.sockets).toEqual(initialSockets);
+      expect(memberSocket.destroyed).toBe(false);
+    },
+  );
+});
+
+describe('M original admission races', () => {
+  it('M26 joins held original hello and its actual descendants before member close', async () => {
+    const hello = deferred<unknown>(),
+      entered = deferred();
+    edge.respond = (socket, frame) => {
+      if (socket.owner === 'remote-A.test' && frame.method === 'client.hello') {
+        entered.resolve();
+        return hello.promise;
+      }
+      return defaultReply(frame);
+    };
+    const { pool, lifecycle } = await load();
+    const client = await pool.connectBackendClient('remote-A');
+    await entered.promise;
+    const retired = lifecycle.retireMember(client, fence());
+    let completed = false;
+    void retired.then(() => {
+      completed = true;
+    });
+    await settledTurn();
+    expect(completed).toBe(false);
+    hello.resolve(defaultReply({ id: 1, method: 'client.hello' }));
+    expect((await retired).outcome).toBe('clean');
+    expect((await lifecycle.retire(fence())).outcome).toBe('clean');
+  });
+  it('M27 preserves pending other-member allocation through global admission closure', async () => {
+    const { pool, lifecycle } = await load();
+    const client = await pool.connectBackendClient('remote-A');
+    await connection(client);
+    await settledTurn();
+    const allocation = deferred<unknown[]>(),
+      entered = deferred();
+    edge.list = () => {
+      entered.resolve();
+      return allocation.promise;
+    };
+    const pending = pool.connectBackendClient('remote-B');
+    await entered.promise;
+    const member = lifecycle.retireMember(client, fence());
+    const global = lifecycle.retire(fence());
+    allocation.resolve([
+      {
+        id: 'remote-B',
+        host: 'remote-B.test',
+        hosts: ['remote-B.test'],
+        port: 443,
+        fingerprint: 'ab'.repeat(32),
+      },
+    ]);
+    const remote = await pending;
+    expect(remote).not.toBe(client);
+    const final = await global;
+    expect(final.failures.map((f) => ({ kind: f.kind, error: f.error }))).toEqual([]);
+    expect(final.outcome).toBe('clean');
+    expect((await member).outcome).toBe('clean');
+  });
 });

@@ -1103,6 +1103,14 @@ async function run() {
     return { producers, joined };
   }
   let finalQuiescence: ReturnType<typeof quiesceUi> | undefined;
+  let memberQuiescence:
+    | {
+        client: typeof clients extends Map<string, infer C> ? C : never;
+        result: ReturnType<typeof quiesceUi>;
+        transition?: { role: 'owner' | 'member' | 'guest'; result: Promise<void> };
+        fence?: { ready(): boolean; subscribeChanged: typeof completions.subscribeChanged };
+      }
+    | undefined;
   async function shutdown() {
     await Promise.allSettled([...pending]);
     if (lifecycle) {
@@ -1157,16 +1165,63 @@ async function run() {
       await Promise.allSettled([...pending]);
     },
     quiesceUi(seal = true) {
-      if (!lifecycle || !seal) return quiesceUi(seal);
+      if (!lifecycle) return quiesceUi(seal);
+      if (!seal) {
+        const client = clients.get('host-A')!;
+        if (memberQuiescence?.client === client) return memberQuiescence.result;
+        const result = quiesceUi(false);
+        memberQuiescence = { client, result };
+        return result;
+      }
       return (finalQuiescence ??= quiesceUi(seal));
     },
-    async role(role: 'owner' | 'member' | 'guest') {
-      backend.disconnectBackendClient(backendIds.get('host-A')!);
-      const next = await remote(role);
-      clients.set('host-A', next.client);
-      backendIds.set('host-A', next.id);
-      const window = windows.get('host-A')!;
-      stampWindowWithBackend(window, next.id);
+    role(role: 'owner' | 'member' | 'guest') {
+      const original = lifecycle ? memberQuiescence : undefined;
+      if (lifecycle && (!original || original.client !== clients.get('host-A')))
+        return Promise.reject(new Error('Original member renderer fence is missing'));
+      if (original?.transition) {
+        if (original.transition.role !== role)
+          return Promise.reject(new Error('Original role transition changed'));
+        return original.transition.result;
+      }
+      const result = (async () => {
+        if (original && lifecycle) {
+          const joined = await original.result;
+          if (joined.joined.sealed || !joined.joined.producersClosed || joined.joined.pending !== 0)
+            throw new Error('Original member renderer fence is incomplete');
+          original.fence ??= {
+            ready: () => {
+              if (
+                completions.faults.length ||
+                faults.length ||
+                wireBoundaries.some((complete) => !complete())
+              )
+                throw new Error('Original member completion failed');
+              return (
+                completions.pending.size === 0 &&
+                pending.size === 0 &&
+                disposalComplete(completions.rows)
+              );
+            },
+            subscribeChanged: completions.subscribeChanged,
+          };
+          const retired = await lifecycle.retireMember(original.client, original.fence);
+          if (
+            retired.outcome !== 'clean' ||
+            !retired.ownersJoined ||
+            !retired.admissionSealed ||
+            !lifecycle.admissionOpen()
+          )
+            throw new Error('Original member retirement did not permit another admission');
+        } else backend.disconnectBackendClient(backendIds.get('host-A')!);
+        const next = await remote(role);
+        clients.set('host-A', next.client);
+        backendIds.set('host-A', next.id);
+        const window = windows.get('host-A')!;
+        stampWindowWithBackend(window, next.id);
+      })();
+      if (original) original.transition = { role, result };
+      return result;
     },
     async duplicateWindow() {
       return open('other-A', backendIds.get('host-A')!);

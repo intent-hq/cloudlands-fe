@@ -141,11 +141,26 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
     for (const op of [...f.owned]) if (n.operationIds.includes(op.id)) op.retire('admission');
     for (const p of f.pending) p.wake?.();
   });
-  async function releaseWire(connection: RepositoryConnection, query: object) {
+  function requestOriginal(
+    connection: object,
+    method: string,
+    params: unknown,
+    options: { timeoutMs: number },
+    producer?: object,
+  ): Promise<unknown> {
+    return producer === undefined
+      ? client.requestOnCapturedConnection(connection, method, params, options)
+      : client.requestOnCapturedConnection(connection, method, params, options, producer);
+  }
+  async function releaseWire(connection: RepositoryConnection, query: object, producer?: object) {
     try {
-      const raw = await client.requestOnCapturedConnection(connection, PREFIX + 'release', query, {
-        timeoutMs: 5_000,
-      });
+      const raw = await requestOriginal(
+        connection,
+        PREFIX + 'release',
+        query,
+        { timeoutMs: 5_000 },
+        producer,
+      );
       z.object({ released: z.literal(true) })
         .strict()
         .parse(raw);
@@ -163,6 +178,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
     connection: object,
     query: NativeReviewInput | CompanionInput,
     parentDeadline?: number,
+    parentProducer?: object,
   ): Promise<NativeReviewLifetime> {
     const original = client.getRepositoryConnection(),
       f = feed;
@@ -184,6 +200,19 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
     const started = Date.now();
     const acquireDeadline = Math.min(started + 5_000, parentDeadline ?? Infinity);
     if (started >= acquireDeadline) throw unavailable();
+    const producer = client.beginOriginalProducer?.(parentProducer);
+    let acquisitionEnded = false,
+      cleanupEnded = false,
+      producerEnded = false;
+    const finishProducer = () => {
+      if (!acquisitionEnded || !cleanupEnded || producerEnded) return;
+      producerEnded = true;
+      client.finishOriginalProducer?.(producer);
+    };
+    const cleanupFinished = () => {
+      cleanupEnded = true;
+      finishProducer();
+    };
     const p: Pending = { connection: original, abandoned: false, ids: new Set() };
     f.pending.add(p);
     let knownId: string | undefined,
@@ -192,8 +221,13 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
     let deadline: ReturnType<typeof setTimeout> | undefined;
     const originalNow = () =>
       !disposed && !f.dead && !p.abandoned && client.getRepositoryConnection() === original;
-    const work = client
-      .requestOnCapturedConnection(original, PREFIX + 'prepare', query, { timeoutMs: 35_000 })
+    const work = requestOriginal(
+      original,
+      PREFIX + 'prepare',
+      query,
+      { timeoutMs: 35_000 },
+      producer,
+    )
       .then(async (raw) => {
         const reference = z
           .object({ reviewOperation: z.object({ operationId: z.string().min(1).max(4096) }) })
@@ -259,7 +293,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
           if (releaseTask) return releaseTask;
           // Release immediately to stop future stages. The outstanding original completion
           // remains privately owned; a release reply does not assert that it stopped.
-          releaseTask = releaseWire(original, bound);
+          releaseTask = releaseWire(original, bound, producer);
           const childCleanup = companionTask?.then(
             (captured) => captured.release(),
             () => {},
@@ -269,7 +303,10 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
             ...(pending ? [pending] : []),
             ...(observation ? [observation.done] : []),
             ...(childCleanup ? [childCleanup] : []),
-          ]).then(() => f.owned.delete(op));
+          ]).then(() => {
+            f.owned.delete(op);
+            cleanupFinished();
+          });
           return releaseTask;
         };
         const op: Owned = {
@@ -321,7 +358,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
           if (method === 'execute' && observation) observation.issued = true;
           void (async () => {
             try {
-              const raw = await client.requestOnCapturedConnection(
+              const raw = await requestOriginal(
                 original,
                 PREFIX + method,
                 method === 'execute'
@@ -333,6 +370,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
                     }
                   : bound,
                 { timeoutMs: method === 'execute' ? 375_000 : 10_000 },
+                producer,
               );
               const result: NativeReviewExecuteResult | NativeReviewReconcileResult =
                 method === 'execute'
@@ -431,6 +469,7 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
                         },
                       },
                       started + reviewOperation.expiresAfterMs,
+                      producer,
                     );
                     if (!isLive() || Date.now() >= started + reviewOperation.expiresAfterMs) {
                       await captured.release();
@@ -521,13 +560,34 @@ export function createNativeReviewFeed(client: JsonRpcClient) {
       })
       .finally(() => {
         if (knownId && !adopted)
-          void releaseWire(original, {
-            workspaceId: root.workspaceId,
-            operationId: knownId,
-            root,
-          }).finally(() => f.pending.delete(p));
-        else f.pending.delete(p);
+          void releaseWire(
+            original,
+            {
+              workspaceId: root.workspaceId,
+              operationId: knownId,
+              root,
+            },
+            producer,
+          ).finally(() => {
+            f.pending.delete(p);
+            cleanupFinished();
+          });
+        else {
+          f.pending.delete(p);
+          if (!adopted) cleanupFinished();
+        }
       });
+    if (producer)
+      void work.then(
+        () => {
+          acquisitionEnded = true;
+          finishProducer();
+        },
+        () => {
+          acquisitionEnded = true;
+          finishProducer();
+        },
+      );
     void work.then(
       (op) => {
         if (p.abandoned) void op.release();

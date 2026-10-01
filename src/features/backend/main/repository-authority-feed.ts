@@ -161,19 +161,33 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
     for (const acquisition of current.pending) acquisition.wake?.();
   });
 
+  function requestOriginal(
+    connection: object,
+    method: string,
+    params: unknown,
+    options: { timeoutMs: number },
+    producer?: object,
+  ): Promise<unknown> {
+    return producer === undefined
+      ? client.requestOnCapturedConnection(connection, method, params, options)
+      : client.requestOnCapturedConnection(connection, method, params, options, producer);
+  }
   function release(
     connection: RepositoryConnection,
     query: z.infer<typeof querySchema>,
     id: string,
+    producer?: object,
+    readDone?: Promise<void>,
+    terminal?: () => void,
   ) {
     // This path deliberately has no ensureConnected/retry/fallback.
-    void client
-      .requestOnCapturedConnection(
-        connection,
-        RELEASE,
-        { ...query, repositoryLifetimeId: id },
-        { timeoutMs: 5_000 },
-      )
+    const cleanup = requestOriginal(
+      connection,
+      RELEASE,
+      { ...query, repositoryLifetimeId: id },
+      { timeoutMs: 5_000 },
+      producer,
+    )
       .then((value) => {
         z.object({ released: z.literal(true) })
           .strict()
@@ -181,6 +195,11 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
       })
       .catch(() => {
         /* Original session gone: daemon expiry/disconnect owns cleanup. */
+      });
+    if (producer)
+      void cleanup.then(() => {
+        if (readDone) void readDone.then(() => terminal?.());
+        else terminal?.();
       });
   }
 
@@ -205,6 +224,19 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
       }),
     );
     const started = Date.now();
+    const producer = client.beginOriginalProducer?.();
+    let acquisitionEnded = false,
+      cleanupEnded = false,
+      producerEnded = false;
+    const finishProducer = () => {
+      if (!acquisitionEnded || !cleanupEnded || producerEnded) return;
+      producerEnded = true;
+      client.finishOriginalProducer?.(producer);
+    };
+    const cleanupFinished = () => {
+      cleanupEnded = true;
+      finishProducer();
+    };
     const acquisition: Acquisition = { connection: original, retired: new Set(), abandoned: false };
     current.pending.add(acquisition);
     let delivered = false;
@@ -217,8 +249,13 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
       !acquisition.abandoned &&
       client.getRepositoryConnection() === original;
 
-    const work = client
-      .requestOnCapturedConnection(original, CAPTURE, query, { timeoutMs: CLEANUP_RESPONSE_MS })
+    const work = requestOriginal(
+      original,
+      CAPTURE,
+      query,
+      { timeoutMs: CLEANUP_RESPONSE_MS },
+      producer,
+    )
       .then(async (raw) => {
         // A malformed response can still name a lease requiring original-session disposal.
         const reference = z.object({ lifetimeId: captureSchema.shape.lifetimeId }).safeParse(raw);
@@ -248,6 +285,7 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
         let retired = false;
         let reads = 0;
         let inFlight = false;
+        let readDone: Promise<void> | undefined;
         const listeners = new Set<() => void>();
         const lease: Lease = {
           id: result.lifetimeId,
@@ -257,7 +295,7 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
             retired = true;
             clearTimeout(expiry);
             current.leases.delete(lease);
-            release(original, query, result.lifetimeId);
+            release(original, query, result.lifetimeId, producer, readDone, cleanupFinished);
             for (const listener of [...listeners]) {
               try {
                 listener();
@@ -317,12 +355,18 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
             }
             reads += 1;
             inFlight = true;
+            let joined: (() => void) | undefined;
+            if (producer)
+              readDone = new Promise<void>((resolve) => {
+                joined = resolve;
+              });
             try {
-              const rawContext = await client.requestOnCapturedConnection(
+              const rawContext = await requestOriginal(
                 original,
                 READ,
                 { ...query, repositoryLifetimeId: result.lifetimeId },
                 { timeoutMs: 10_000 },
+                producer,
               );
               const context = RepositoryContextSchema.parse(rawContext);
               if (
@@ -339,15 +383,29 @@ export function createRepositoryAuthorityFeed(client: JsonRpcClient) {
               throw error;
             } finally {
               inFlight = false;
+              joined?.();
             }
           },
         };
       })
       .finally(() => {
         current.pending.delete(acquisition);
-        if (knownId && !owned) release(original, query, knownId);
+        if (knownId && !owned)
+          release(original, query, knownId, producer, undefined, cleanupFinished);
+        else if (!owned) cleanupFinished();
       });
     // Attach disposal before racing: a late successful acquisition is never published.
+    if (producer)
+      void work.then(
+        () => {
+          acquisitionEnded = true;
+          finishProducer();
+        },
+        () => {
+          acquisitionEnded = true;
+          finishProducer();
+        },
+      );
     void work.then(
       (lifetime) => {
         if (acquisition.abandoned) lifetime.dispose();

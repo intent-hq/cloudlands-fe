@@ -1871,3 +1871,131 @@ describe('JsonRpcClient opt-in original lifecycle', () => {
     expect(result.failures.some((f) => f.error === original)).toBe(true);
   });
 });
+
+describe('M original producer admission and member drain', () => {
+  const clients: JsonRpcClient[] = [];
+  function make(options: ConstructorParameters<typeof JsonRpcClient>[0] = {}) {
+    const socket = new LifecycleSocket();
+    const client = new JsonRpcClient({
+      socketFactory: () => socket,
+      lifecycle: { scope: Symbol('member-control'), generation: 1 },
+      ...options,
+    });
+    clients.push(client);
+    client.start();
+    socket.emit('connect');
+    return { client, socket };
+  }
+  afterEach(() => {
+    for (const client of clients.splice(0)) client.dispose();
+    vi.useRealTimers();
+  });
+  it('M1 holds a real parent until delayed original request, result and close join', async () => {
+    const { client, socket } = make();
+    socket.holdClose = true;
+    const parent = client.beginOriginalProducer()!;
+    const ticket = client.beginMemberRetirement();
+    expect(ticket.isDrained()).toBe(false);
+    const original = client.request('controlled.release', { same: 'arguments' }, undefined, parent);
+    const frame = socket.frames.at(-1)!;
+    const value = { released: true };
+    socket.reply(frame.id, value);
+    expect(await original).toEqual(value);
+    const received = await original;
+    expect(await original).toBe(received);
+    expect(ticket.isDrained()).toBe(false);
+    client.finishOriginalProducer(parent);
+    await lifecycleDrained(ticket);
+    const finish = ticket.seal().finish();
+    expect(ticket.seal().finish()).toBe(finish);
+    let ended = false;
+    void finish.then(() => {
+      ended = true;
+    });
+    await Promise.resolve();
+    expect(ended).toBe(false);
+    socket.closeOriginal!();
+    expect((await finish).outcome).toBe('clean');
+  });
+  it.each(['independent', 'forged', 'foreign', 'finished'] as const)(
+    'M2 rejects %s despite identical arguments',
+    async (kind) => {
+      const { client, socket } = make();
+      const parent = client.beginOriginalProducer()!;
+      const foreign = make().client.beginOriginalProducer()!;
+      if (kind === 'finished') client.finishOriginalProducer(parent);
+      const ticket = client.beginMemberRetirement();
+      const before = socket.frames.length;
+      const wrong =
+        kind === 'independent'
+          ? undefined
+          : kind === 'forged'
+            ? {}
+            : kind === 'foreign'
+              ? foreign
+              : parent;
+      await expect(
+        client.request('controlled.release', { same: 'arguments' }, undefined, wrong),
+      ).rejects.toThrow();
+      expect(socket.frames).toHaveLength(before);
+      expect(() => client.beginOriginalProducer()).toThrow();
+      if (kind !== 'finished') client.finishOriginalProducer(parent);
+      await lifecycleDrained(ticket);
+      expect((await ticket.seal().finish()).outcome).toBe('ownership-fault');
+    },
+  );
+  it('M3 closes parent admission at its actual terminal boundary', async () => {
+    const { client, socket } = make();
+    const parent = client.beginOriginalProducer()!;
+    const child = client.beginOriginalProducer(parent)!;
+    client.finishOriginalProducer(parent);
+    const ticket = client.beginMemberRetirement();
+    expect(() => client.beginOriginalProducer(parent)).toThrow();
+    const original = client.request('controlled.child', undefined, undefined, child);
+    socket.reply(socket.frames.at(-1)!.id, undefined);
+    await original;
+    client.finishOriginalProducer(child);
+    await lifecycleDrained(ticket);
+    expect((await ticket.seal().finish()).outcome).toBe('ownership-fault');
+  });
+  it('M4 distinguishes real health request settlement from its held callback/full chain', async () => {
+    vi.useFakeTimers();
+    const outer = lifecycleDeferred();
+    const inner = lifecycleDeferred();
+    let client!: JsonRpcClient;
+    const made = make({
+      heartbeatIntervalMs: 10,
+      healthCheck: async (parent) => {
+        await client.request('host.status', undefined, undefined, parent);
+        inner.resolve();
+        await outer.promise;
+      },
+    });
+    client = made.client;
+    vi.advanceTimersByTime(10);
+    const ticket = client.beginMemberRetirement();
+    made.socket.reply(made.socket.frames.at(-1)!.id, { hostname: 'controlled' });
+    await inner.promise;
+    expect(ticket.isDrained()).toBe(false);
+    outer.resolve();
+    await lifecycleDrained(ticket);
+    vi.useRealTimers();
+    expect((await ticket.seal().finish()).outcome).toBe('clean');
+  });
+  it('M5 preserves ordinary-off request arguments and actual rejection identity', async () => {
+    const { client, socket } = make({ lifecycle: undefined });
+    expect(client.beginOriginalProducer()).toBeUndefined();
+    const original = client.request('ordinary', { value: 1 });
+    const frame = socket.frames.at(-1)!;
+    socket.emit(
+      'data',
+      Buffer.from(
+        JSON.stringify({ id: frame.id, error: { code: -32000, message: 'controlled' } }) + '\n',
+      ),
+    );
+    const caught = await original.catch((error) => error);
+    expect(caught).toBeInstanceOf(JsonRpcError);
+    expect(frame.params).toEqual({ value: 1 });
+    expect(() => client.beginMemberRetirement()).toThrow('not enrolled');
+  });
+});

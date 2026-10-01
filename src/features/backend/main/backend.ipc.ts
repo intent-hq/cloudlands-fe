@@ -437,6 +437,8 @@ interface PoolOwner {
   kind: string;
   parent?: PoolOwner;
   client?: JsonRpcClient;
+  producer?: object;
+  backendId?: string;
 }
 interface OriginalWorkFence {
   ready(): boolean;
@@ -451,11 +453,20 @@ interface PoolRetirementResult {
   excludedOwners: readonly string[];
   failures: readonly { kind: string; error: unknown }[];
 }
+interface PoolMember {
+  id: string;
+  ticket?: JsonRpcRetirement;
+  finish?: Promise<JsonRpcRetirementResult>;
+  retirement?: Promise<PoolRetirementResult>;
+  fence?: OriginalWorkFence;
+  disconnectJoined?: boolean;
+}
 interface PoolLifecycle {
   scope: symbol;
   phase: 'active' | 'stopping' | 'sealed' | 'finished';
   owners: Set<PoolOwner>;
-  members: Map<JsonRpcClient, { id: string; ticket?: JsonRpcRetirement }>;
+  members: Map<JsonRpcClient, PoolMember>;
+  retiringIds: Set<string>;
   listeners: Set<() => void>;
   failures: Array<{ kind: string; error: unknown }>;
   exclusions: Set<string>;
@@ -562,6 +573,7 @@ function poolWork<T>(
   parent: PoolOwner | undefined,
   invoke: (owner?: PoolOwner) => T,
   originalCallback?: JsonRpcClient,
+  callbackParent?: object,
 ): T {
   const scope = poolLifecycle;
   if (!scope) return invoke();
@@ -579,7 +591,11 @@ function poolWork<T>(
     poolChanged(scope);
     return rejected as T;
   }
-  const owner: PoolOwner = { scope, kind, parent, client: originalCallback };
+  const owner: PoolOwner = { scope, kind, parent };
+  if (originalCallback) {
+    owner.client = originalCallback;
+    owner.producer = originalCallback.beginOriginalProducer(callbackParent);
+  }
   scope.owners.add(owner);
   observePool(scope, {
     phase: 'owner-enter',
@@ -597,6 +613,7 @@ function poolWork<T>(
       state: failure ? (thrown ? 'thrown' : 'rejected') : 'fulfilled',
     });
     if (failure) scope.failures.push({ kind: 'original', error: failure.error });
+    owner.client?.finishOriginalProducer(owner.producer);
     scope.owners.delete(owner);
     poolChanged(scope);
   };
@@ -642,9 +659,186 @@ function poolClient(owner: PoolOwner | undefined, client: JsonRpcClient): JsonRp
       });
       throw new Error('Original pool client changed');
     }
+    if (!owner.client) {
+      const ancestor = owner.parent;
+      owner.producer = client.beginOriginalProducer(
+        ancestor?.client === client ? ancestor.producer : undefined,
+      );
+    }
     owner.client = client;
   }
   return client;
+}
+
+function poolRequest<T = unknown>(
+  owner: PoolOwner | undefined,
+  client: JsonRpcClient,
+  ...args: [method: string, params?: unknown, options?: { timeoutMs?: number }]
+): Promise<T> {
+  poolClient(owner, client);
+  return Reflect.apply(
+    client.request,
+    client,
+    owner?.producer ? [args[0], args[1], args[2], owner.producer] : args,
+  ) as Promise<T>;
+}
+
+function finishPoolMember(
+  scope: PoolLifecycle,
+  client: JsonRpcClient,
+  member: PoolMember,
+  sealed: ReturnType<JsonRpcRetirement['seal']>,
+): Promise<JsonRpcRetirementResult> {
+  return (member.finish ??= observeMemberRetirement(scope, client, member.ticket!, sealed));
+}
+
+/** Captures one real member; global retirement still owns the independent all-member barrier. */
+function retireOriginalMember(
+  scope: PoolLifecycle,
+  client: JsonRpcClient,
+  fence: OriginalWorkFence,
+): Promise<PoolRetirementResult> {
+  const member = scope.members.get(client);
+  const refuse = (message: string): never => {
+    const error = new Error(message);
+    scope.failures.push({ kind: 'late', error });
+    poolChanged(scope);
+    throw error;
+  };
+  if (
+    !member ||
+    (!member.retirement && (scope.phase !== 'active' || backendClients.get(member.id) !== client))
+  )
+    // i18n-ignore: private lifecycle invariant, never rendered.
+    return refuse('Original member is not admitted');
+  if (member.retirement) {
+    // i18n-ignore: private lifecycle invariant, never rendered.
+    if (member.fence !== fence) refuse('Original member fence changed');
+    return member.retirement;
+  }
+  member.fence = fence;
+  member.disconnectJoined = false;
+  scope.retiringIds.add(member.id);
+  let resolve!: (result: PoolRetirementResult) => void;
+  let reject!: (error: unknown) => void;
+  member.retirement = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  member.ticket = client.beginMemberRetirement();
+  const ticket = member.ticket;
+  let prepared = false,
+    checking = false,
+    finishing = false;
+  const unsubscribers: Array<() => void> = [];
+  const leave = () => {
+    scope.listeners.delete(wake);
+    for (const unsubscribe of unsubscribers) unsubscribe();
+  };
+  const belongs = (owner: PoolOwner): boolean =>
+    owner.client === client ||
+    owner.backendId === member.id ||
+    !!(owner.parent && belongs(owner.parent));
+  const wake = () => {
+    if (!prepared || checking || finishing) return;
+    checking = true;
+    try {
+      if (
+        [...scope.owners].some(belongs) ||
+        !fence.ready() ||
+        !member.disconnectJoined ||
+        !ticket.isDrained()
+      )
+        return;
+      for (const kind of ticket.excludedOwners()) scope.exclusions.add(kind);
+      if (scope.exclusions.size) throw new Error('Original member has unjoined auxiliary owners');
+      // A global stop takes over sealing; never close this member ahead of its all-member barrier.
+      if (scope.phase !== 'active' && !member.finish) return;
+      if (backendClients.get(member.id) === client) backendClients.delete(member.id);
+      const original = member.finish ?? finishPoolMember(scope, client, member, ticket.seal());
+      finishing = true;
+      void original.then(
+        (result) => {
+          leave();
+          const failures = [...scope.failures, ...ticket.failures()];
+          const outcome =
+            result.outcome !== 'clean'
+              ? result.outcome
+              : failures.some((f) => f.kind !== 'original')
+                ? 'ownership-fault'
+                : failures.length
+                  ? 'original-failure'
+                  : 'clean';
+          if (outcome === 'clean' && scope.phase === 'active') scope.retiringIds.delete(member.id);
+          resolve(
+            Object.freeze({
+              scope: scope.scope,
+              ownersJoined: true,
+              admissionSealed: true,
+              outcome,
+              clients: [result],
+              excludedOwners: [...scope.exclusions],
+              failures,
+            }),
+          );
+          poolChanged(scope);
+        },
+        (error) => {
+          leave();
+          reject(error);
+        },
+      );
+    } catch (error) {
+      leave();
+      scope.failures.push({ kind: 'retirement', error });
+      reject(error);
+    } finally {
+      checking = false;
+    }
+  };
+  try {
+    repositoryRoutes?.retireBackend(member.id);
+    selectionRoutes?.retireBackend(member.id);
+    nativeReviewRoutes?.retireBackend(member.id);
+    // Original disconnect side effects run once while the transport and admitted releases remain alive.
+    invitedConnectionGuards.delete(member.id);
+    if (member.id === LOCAL_CONNECTION_ID) {
+      localIdentityGeneration++;
+      localCollaborationIdentitySupported = false;
+    }
+    connectedDaemonVersions.delete(member.id);
+    connectedProtocolVersions.delete(member.id);
+    clearPendingDaemonUpdate(member.id);
+    clearBackendFailureState(member.id);
+    disposeTransferConnectionsForBackend(member.id);
+    const cancelled = cancelInflightHostExecStreamsForBackendSwitch(client);
+    void cancelled.then(
+      () => {
+        member.disconnectJoined = true;
+        wake();
+        poolChanged(scope);
+      },
+      (error: unknown) => {
+        scope.failures.push({ kind: 'original', error });
+        member.disconnectJoined = true;
+        wake();
+        poolChanged(scope);
+      },
+    );
+    app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, client);
+    repositoryFeeds.get(client)?.dispose();
+    selectionFeeds.get(client)?.dispose();
+    nativeReviewFeeds.get(client)?.dispose();
+    scope.listeners.add(wake);
+    unsubscribers.push(ticket.subscribeChanged(wake), fence.subscribeChanged(wake));
+    prepared = true;
+    wake();
+  } catch (error) {
+    leave();
+    scope.failures.push({ kind: 'retirement', error });
+    reject(error);
+  }
+  return member.retirement;
 }
 
 /** Enroll before handlers or allocation. This joins only the declared main pool owners. */
@@ -662,6 +856,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
     phase: 'active',
     owners: new Set(),
     members: new Map(),
+    retiringIds: new Set(),
     listeners: new Set(),
     failures: [],
     exclusions: new Set(),
@@ -674,6 +869,9 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
   return Object.freeze({
     scope: scope.scope,
     observationFailures: () => scope.observationFailures,
+    admissionOpen: () => scope.phase === 'active',
+    retireMember: (client: JsonRpcClient, fence: OriginalWorkFence) =>
+      retireOriginalMember(scope, client, fence),
     retire(fence: OriginalWorkFence): Promise<PoolRetirementResult> {
       if (scope.retirement) {
         if (scope.fence !== fence) throw new Error('Original retirement fence changed');
@@ -703,6 +901,9 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
           if (
             scope.owners.size ||
             !fence.ready() ||
+            [...scope.members.values()].some(
+              (m) => m.disconnectJoined === false || (m.fence && !m.fence.ready()),
+            ) ||
             [...scope.members.values()].some((m) => !m.ticket!.isDrained())
           )
             return;
@@ -723,11 +924,13 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
             clearBackendFailureState(member.id);
           }
           void Promise.all(
-            sealed.map(({ client, ticket, sealed }) =>
-              observeMemberRetirement(scope, client, ticket, sealed),
+            sealed.map(({ client, sealed }) =>
+              finishPoolMember(scope, client, scope.members.get(client)!, sealed),
             ),
           ).then((clients) => {
+            poolChanged(scope);
             scope.phase = 'finished';
+            poolChanged(scope);
             for (const unsubscribe of unsubscribers) unsubscribe();
             scope.listeners.delete(wake);
             const failed = clients.find((client) => client.outcome !== 'clean');
@@ -770,6 +973,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
       for (const [client, member] of scope.members) {
         member.ticket = client.beginRetirement();
         unsubscribers.push(member.ticket.subscribeChanged(wake));
+        if (member.fence) unsubscribers.push(member.fence.subscribeChanged(wake));
       }
       try {
         keychainSyncLifecycle?.dispose();
@@ -1367,6 +1571,9 @@ function connectBackendClientOriginal(
   owner?: PoolOwner,
 ): Promise<JsonRpcClient> {
   poolOwnershipStarted = true;
+  if (owner) owner.backendId = id;
+  if (poolLifecycle?.retiringIds.has(id))
+    return Promise.reject(new Error('Original member is retiring'));
   const existing = backendClients.get(id);
   if (existing) return Promise.resolve(existing);
   const pending = backendClientConnects.get(id);
@@ -1569,6 +1776,7 @@ function createAdditionalBackendClient(
   const refreshInvited = (parent?: PoolOwner) =>
     poolWork('invited-principal', parent, async (owner) => {
       if (!invitedCredential) return;
+      poolClient(owner, instance);
       if (refreshPending) {
         refreshAgain = true;
         return;
@@ -1587,7 +1795,7 @@ function createAdditionalBackendClient(
             { credential: invitedCredential },
           );
           invitedConnectionGuards.delete(id);
-          const principal = await instance.request('principal.me');
+          const principal = await poolRequest(owner, instance, 'principal.me');
           if (!current()) continue;
           const snapshot = parsePrincipalSnapshot(latestHello, principal);
           const role = snapshot && invitedRole(snapshot);
@@ -1660,9 +1868,13 @@ function createAdditionalBackendClient(
     // probe (PROTOCOL.md §5.14) — answered on BOTH UDS and WSS.
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     healthCheckFailureThreshold: 2,
-    healthCheck: () =>
+    healthCheck: (producer) =>
       observeHealth(async (owner) => {
-        await observeStatus(instance, 'healthCheck', owner, () => instance.request('host.status'));
+        await observeStatus(instance, 'healthCheck', owner, () =>
+          producer
+            ? instance.request('host.status', undefined, undefined, producer)
+            : instance.request('host.status'),
+        );
       }),
     // §5.17 stable identity: present the persisted clientId on every
     // (re)connect so daemon-side client-scoped state (`drafts.*`, §5.16)
@@ -1672,7 +1884,7 @@ function createAdditionalBackendClient(
     // host identification (the auxiliary setup/transfer/quit clients stay
     // clientId-only).
     helloParams: async () => ({ ...(await buildMainClientHelloParams()) }),
-    onHelloResult: (result) =>
+    onHelloResult: (result, producer) =>
       poolWork(
         'hello-result',
         undefined,
@@ -1763,6 +1975,7 @@ function createAdditionalBackendClient(
           }
         },
         instance,
+        producer,
       ),
   });
   // Subscribe before start/hello. Older test doubles have no private source feed.
@@ -2250,7 +2463,7 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
     const result = await observeStatus(client, 'captureRemoteHostname', owner, () =>
-      client.request('host.status'),
+      poolRequest(owner, client, 'host.status'),
     );
     const hostname = extractHostname(result);
     const deviceKind = extractDeviceKind(result);
@@ -2361,7 +2574,7 @@ async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Pr
         guestMembershipEpochs.get(id) === epoch,
       { credential: guard.credential },
     );
-    const result = await client.request('workspace.list');
+    const result = await poolRequest(owner, client, 'workspace.list');
     if (!stillValid()) return;
     const refs = extractWorkspaceRefs(result);
     if (refs === null) {
@@ -2449,9 +2662,10 @@ async function subscribeGuestWorkspaceEventsOriginal(
   owner?: PoolOwner,
 ): Promise<string | undefined> {
   try {
+    poolClient(owner, client);
     if ((await guestSessionsStore.findById(id)) === null) return undefined;
     if (!isCurrent()) return undefined;
-    const result = (await client.request('events.subscribe', {
+    const result = (await poolRequest(owner, client, 'events.subscribe', {
       eventTypes: hostMembership
         ? [...GUEST_WORKSPACE_EVENT_TYPES, 'workspace:created', 'host:members-changed']
         : GUEST_WORKSPACE_EVENT_TYPES,
@@ -2523,7 +2737,7 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
     const result = await observeStatus(client, 'captureLocalDeviceKind', owner, () =>
-      client.request('host.status'),
+      poolRequest(owner, client, 'host.status'),
     );
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
     const identityChanged = setLocalHostIdentity(result);
@@ -2535,7 +2749,7 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
     if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
       // The pooled client merges the persisted identity + capabilities into
       // every caller-issued hello, so this presents the full REV-2 params.
-      await client.request('client.hello', {});
+      await poolRequest(owner, client, 'client.hello', {});
     }
   } catch (error) {
     recordPoolError(owner, error);
@@ -2631,7 +2845,7 @@ async function captureRemoteUpdateSupportedOriginal(id: string, owner?: PoolOwne
     const guard = invitedConnectionGuards.get(id);
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
-    const result = await client.request('system.status');
+    const result = await poolRequest(owner, client, 'system.status');
     const supported =
       result &&
       typeof result === 'object' &&
@@ -2724,6 +2938,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
     // against a stale capture after the client is disposed/replaced.
     const client = backendClients.get(LOCAL_CONNECTION_ID);
     if (!client) return;
+    poolClient(owner, client);
     if (getConnectionMode() !== 'external' || client.getConfig().transport !== 'uds') {
       if (getLocalUpdateSupported() !== null) {
         setLocalUpdateSupported(null);
@@ -2739,7 +2954,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
       setLocalUpdateSupported(null);
       await broadcastConnectionsChangedOwned(owner);
     }
-    const result = await client.request('system.status');
+    const result = await poolRequest(owner, client, 'system.status');
     const supported = extractUpdateSupported(result);
     // Drop the result when the local client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
@@ -2844,7 +3059,7 @@ async function refreshRemoteHostsOriginal(id: string, owner?: PoolOwner): Promis
     // Invited routes come from authenticated system.status, never owner-only pairingInfo.
     if (isGuest) return;
     if (!isGuest && !(await connectionsStore.getDetectHosts(id))) return;
-    const result = await client.request('server.pairingInfo');
+    const result = await poolRequest(owner, client, 'server.pairingInfo');
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
@@ -2894,8 +3109,13 @@ function getLiveSelfFingerprintOriginal(
   if (cachedLiveSelfFingerprint !== null) return Promise.resolve(cachedLiveSelfFingerprint);
   if (liveSelfFingerprintProbe) return liveSelfFingerprintProbe;
   const localClient = getLocalBackendClientOwned(owner);
-  const probe: Promise<string | null> = localClient
-    .request('server.pairingInfo', undefined, { timeoutMs })
+  const probe: Promise<string | null> = poolRequest(
+    owner,
+    localClient,
+    'server.pairingInfo',
+    undefined,
+    { timeoutMs },
+  )
     .then(
       (result) => normalizeFingerprint(extractSelfPairingInfo(result)?.certFingerprint ?? null),
       () => null,
@@ -2985,6 +3205,8 @@ async function listConnectionsOriginal(
   windowBackendId: string = LOCAL_CONNECTION_ID,
   owner?: PoolOwner,
 ): Promise<ConnectionsListResult> {
+  const originalLocal = backendClients.get(LOCAL_CONNECTION_ID);
+  if (originalLocal) poolClient(owner, originalLocal);
   const [connections, activeId, storedFingerprint] = await Promise.all([
     connectionsStore.list(),
     connectionsStore.getActiveId(),

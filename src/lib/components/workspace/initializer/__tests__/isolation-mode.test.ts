@@ -10,6 +10,15 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const admission = vi.hoisted(() => ({
+  role: 'owner' as string | null,
+  context: 'owner-1' as string | null,
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectHostRole: { select: () => admission.role },
+  selectPrincipalAdmissionContext: { select: () => admission.context },
+}));
+
 const { mockSettingsGet } = vi.hoisted(() => ({
   mockSettingsGet: vi.fn(),
 }));
@@ -49,6 +58,8 @@ describe('isolationNoun', () => {
 
 describe('resolveEffectiveIsolationMode', () => {
   beforeEach(() => {
+    admission.role = 'owner';
+    admission.context = 'owner-1';
     mockSettingsGet.mockReset();
     mockSelectItems.mockReset();
     mockSelectItems.mockReturnValue([]);
@@ -102,6 +113,8 @@ describe('resolveEffectiveIsolationMode', () => {
 
 describe('cow-isolation-setting cache', () => {
   beforeEach(() => {
+    admission.role = 'owner';
+    admission.context = 'owner-1';
     mockSettingsGet.mockReset();
     invalidateCowIsolationSetting();
   });
@@ -135,6 +148,59 @@ describe('cow-isolation-setting cache', () => {
 
     mockSettingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
     await expect(readCowIsolationSetting()).resolves.toBe(true);
+    expect(mockSettingsGet).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('caller admission regression: isolation', () => {
+  beforeEach(() => {
+    mockSettingsGet.mockReset();
+    invalidateCowIsolationSetting();
+    admission.role = 'owner';
+    admission.context = 'owner-1';
+  });
+  it('does not read an Owner setting for an admitted Member', async () => {
+    admission.role = 'member';
+    mockSettingsGet.mockResolvedValue({ value: true });
+    expect(await resolveEffectiveIsolationMode([{ cowSupported: true } as never])).toBe('worktree');
+    expect(mockSettingsGet).not.toHaveBeenCalled();
+  });
+});
+
+describe('M Owner setting context fences', () => {
+  beforeEach(() => {
+    mockSettingsGet.mockReset();
+    invalidateCowIsolationSetting();
+    admission.role = 'owner';
+    admission.context = 'owner-1';
+  });
+  it.each(['guest', 'member', null])('M14 no restricted read for %s', async (role) => {
+    admission.role = role;
+    expect(await resolveEffectiveIsolationMode([{ cowSupported: true }])).toBe('worktree');
+    expect(mockSettingsGet).not.toHaveBeenCalled();
+  });
+  it.each(['actor', 'connection', 'revoked'] as const)(
+    'M15 discards a held original setting after %s',
+    async (change) => {
+      let resolve!: (value: { value: boolean }) => void;
+      mockSettingsGet.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const original = resolveEffectiveIsolationMode([{ cowSupported: true }]);
+      if (change === 'revoked') admission.role = null;
+      else admission.context = change;
+      resolve({ value: true });
+      expect(await original).toBe('worktree');
+      expect(mockSettingsGet).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('M16 does not reuse a former Owner setting for a new admission', async () => {
+    mockSettingsGet.mockResolvedValueOnce({ value: true }).mockResolvedValueOnce({ value: false });
+    expect(await resolveEffectiveIsolationMode([{ cowSupported: true }])).toBe('cow');
+    admission.context = 'owner-2';
+    expect(await resolveEffectiveIsolationMode([{ cowSupported: true }])).toBe('worktree');
     expect(mockSettingsGet).toHaveBeenCalledTimes(2);
   });
 });

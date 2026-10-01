@@ -11,6 +11,10 @@
 import { store as appStore } from '$store/renderer/store';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
+import {
+  selectHostRole,
+  selectPrincipalAdmissionContext,
+} from '$store/renderer/slices/principal/principal-selectors';
 import { readCowIsolationSetting } from './cow-isolation-setting';
 
 export type IsolationMode = 'worktree' | 'cow';
@@ -40,8 +44,15 @@ export function isolationNoun(mode: IsolationMode): string {
 export async function resolveEffectiveIsolationMode(
   workspaces?: ReadonlyArray<{ cowSupported?: boolean }>,
 ): Promise<IsolationMode> {
+  const context = selectPrincipalAdmissionContext.select(appStore.state);
+  if (!context || selectHostRole.select(appStore.state) !== 'owner') return 'worktree';
   try {
-    const settingOn = await readCowIsolationSetting();
+    const settingOn = await readCowIsolationSetting(context);
+    if (
+      selectPrincipalAdmissionContext.select(appStore.state) !== context ||
+      selectHostRole.select(appStore.state) !== 'owner'
+    )
+      return 'worktree';
     if (!settingOn) return 'worktree';
     const items = workspaces ?? selectWorkspaceItems.select(appStore.state);
     const cowSupported = items.some((workspace) => workspace.cowSupported === true);

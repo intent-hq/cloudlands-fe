@@ -91,7 +91,7 @@ export interface JsonRpcClientOptions {
   /** Liveness heartbeat interval in ms. `0` disables the heartbeat. */
   heartbeatIntervalMs?: number;
   /** Optional async liveness probe invoked on each heartbeat tick. */
-  healthCheck?: () => Promise<void>;
+  healthCheck?: (parent?: object) => Promise<void>;
   /** Consecutive failed liveness probes required before reconnecting. Defaults to 1. */
   healthCheckFailureThreshold?: number;
   /**
@@ -108,7 +108,7 @@ export interface JsonRpcClientOptions {
    * Observer for every `client.hello` result (handshake and caller-issued) —
    * used to persist a daemon-minted clientId when ours was omitted (§5.17).
    */
-  onHelloResult?: (result: unknown) => void;
+  onHelloResult?: (result: unknown, parent?: object) => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -166,6 +166,8 @@ export class JsonRpcClient extends EventEmitter {
   private readonly lifecycle?: {
     identity: RetirementIdentity;
     stopping: boolean;
+    independentClosed: boolean;
+    producers: WeakSet<object>;
     sealed: boolean;
     finishing: boolean;
     active: Set<object>;
@@ -183,10 +185,10 @@ export class JsonRpcClient extends EventEmitter {
   private readonly reconnectDelayMs: number;
   private readonly maxReconnectDelayMs: number;
   private readonly heartbeatIntervalMs: number;
-  private readonly healthCheck?: () => Promise<void>;
+  private readonly healthCheck?: (parent?: object) => Promise<void>;
   private readonly healthCheckFailureThreshold: number;
   private readonly helloParams?: () => Promise<Record<string, unknown>> | Record<string, unknown>;
-  private readonly onHelloResult?: (result: unknown) => void;
+  private readonly onHelloResult?: (result: unknown, parent?: object) => void;
 
   private socket: Duplex | null = null;
   private socketIncarnation: object | null = null;
@@ -230,6 +232,8 @@ export class JsonRpcClient extends EventEmitter {
       this.lifecycle = {
         identity: Object.freeze({ ...options.lifecycle, instance: Symbol('JsonRpcClient') }),
         stopping: false,
+        independentClosed: false,
+        producers: new WeakSet(),
         sealed: false,
         finishing: false,
         active: new Set(),
@@ -292,6 +296,70 @@ export class JsonRpcClient extends EventEmitter {
       },
     });
     return owned.ticket;
+  }
+
+  /** Main-private original continuation. It conveys no connection or command authority. */
+  beginOriginalProducer(parent?: object): object | undefined {
+    const owned = this.lifecycle;
+    if (!owned) return undefined;
+    if (owned.sealed || (parent ? !owned.active.has(parent) : owned.independentClosed)) {
+      const error = new Error('Original producer admission is closed');
+      owned.failures.push({ owner: parent ?? null, kind: 'late', error });
+      this.lifecycleChanged();
+      throw error;
+    }
+    const producer = Object.freeze({});
+    owned.producers.add(producer);
+    owned.active.add(producer);
+    return producer;
+  }
+
+  /** End only the captured producer, after its original continuation and cleanup. */
+  finishOriginalProducer(producer: object | undefined): void {
+    if (!producer || !this.lifecycle) return;
+    const owned = this.lifecycle;
+    if (!owned.producers.has(producer) || !owned.active.delete(producer)) {
+      const error = new Error('Original producer is foreign or already finished');
+      owned.failures.push({ owner: producer, kind: 'late', error });
+    }
+    this.lifecycleChanged();
+  }
+
+  /** Explicit member retirement closes independent admission before joining descendants. */
+  beginMemberRetirement(): JsonRpcRetirement {
+    if (!this.lifecycle) throw new Error('Client lifecycle was not enrolled');
+    this.lifecycle.independentClosed = true;
+    return this.beginRetirement();
+  }
+
+  private refuseIndependent(parent?: object): Error | undefined {
+    const owned = this.lifecycle;
+    if (!owned || (!parent && !owned.independentClosed)) return this.refuseSealed();
+    if (!owned.sealed && parent && owned.producers.has(parent) && owned.active.has(parent))
+      return undefined;
+    const error = new Error('Request lacks a live original client producer');
+    owned.failures.push({ owner: parent ?? null, kind: 'late', error });
+    this.lifecycleChanged();
+    return error;
+  }
+
+  private originalCallback<T>(parent: object | undefined, invoke: (producer?: object) => T): T {
+    const producer = this.beginOriginalProducer(parent);
+    if (producer === undefined) return invoke();
+    let result: T;
+    try {
+      result = invoke(producer);
+    } catch (error) {
+      this.finishOriginalProducer(producer);
+      throw error;
+    }
+    if (result instanceof Promise)
+      void result.then(
+        () => this.finishOriginalProducer(producer),
+        () => this.finishOriginalProducer(producer),
+      );
+    else this.finishOriginalProducer(producer);
+    return result;
   }
 
   private lifecycleChanged(): void {
@@ -434,8 +502,9 @@ export class JsonRpcClient extends EventEmitter {
     method: string,
     params?: unknown,
     options?: { timeoutMs?: number },
+    parent?: object,
   ): Promise<T> {
-    const refused = this.refuseSealed();
+    const refused = this.refuseIndependent(parent);
     if (refused) return Promise.reject(refused);
     return this.own('captured-request', () =>
       this.requestOnCapturedConnectionOriginal<T>(captured, method, params, options),
@@ -622,18 +691,22 @@ export class JsonRpcClient extends EventEmitter {
     method: string,
     params?: unknown,
     options?: { timeoutMs?: number },
+    parent?: object,
   ): Promise<T> {
     if (method === 'host.execStream' || method.startsWith('host.execStream.'))
       this.lifecycle?.exclusions.add('host-exec');
-    const refused = this.refuseSealed();
+    const refused = this.refuseIndependent(parent);
     if (refused) return Promise.reject(refused);
-    return this.own('request', () => this.requestOriginal<T>(method, params, options));
+    return this.originalCallback(parent, (producer) =>
+      this.own('request', () => this.requestOriginal<T>(method, params, options, producer)),
+    );
   }
 
   private requestOriginal<T = unknown>(
     method: string,
     params?: unknown,
     options?: { timeoutMs?: number },
+    parent?: object,
   ): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
     const override = options?.timeoutMs;
@@ -646,7 +719,7 @@ export class JsonRpcClient extends EventEmitter {
     // handshake — an anonymous re-hello would mint a fresh clientId and
     // orphan the previous identity's scoped state (`drafts.*`, §5.16).
     if (method === HELLO_METHOD && (this.helloParams || this.onHelloResult)) {
-      return this.requestHello(params, timeoutMs) as Promise<T>;
+      return this.requestHello(params, timeoutMs, parent) as Promise<T>;
     }
     if (this.status === 'connected') {
       return this.sendNow<T>(method, params, timeoutMs);
@@ -685,7 +758,11 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   /** Caller-issued `client.hello`: merge in the persisted identity and observe the result. */
-  private async requestHello(params: unknown, timeoutMs: number): Promise<unknown> {
+  private async requestHello(
+    params: unknown,
+    timeoutMs: number,
+    parent?: object,
+  ): Promise<unknown> {
     this.beginHello();
     const merged = await this.mergedHelloParams(params);
     if (this.status !== 'connected') await this.ensureConnected();
@@ -696,7 +773,11 @@ export class JsonRpcClient extends EventEmitter {
     const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
     if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
       return result;
-    this.own('hello-result', () => this.onHelloResult?.(result));
+    this.own('hello-result', () =>
+      this.originalCallback(parent, (parent) =>
+        parent === undefined ? this.onHelloResult?.(result) : this.onHelloResult?.(result, parent),
+      ),
+    );
     this.confirmHello(attempt, result);
     return result;
   }
@@ -807,7 +888,13 @@ export class JsonRpcClient extends EventEmitter {
         Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS),
       );
       if (this.disposed || this.socket !== socket || this.helloAttempt !== attempt) return;
-      this.own('hello-result', () => this.onHelloResult?.(result));
+      this.own('hello-result', () =>
+        this.originalCallback(this.connectionOwner, (parent) =>
+          parent === undefined
+            ? this.onHelloResult?.(result)
+            : this.onHelloResult?.(result, parent),
+        ),
+      );
       this.confirmHello(attempt, result);
     } catch (error) {
       this.lifecycle?.failures.push({
@@ -1060,7 +1147,11 @@ export class JsonRpcClient extends EventEmitter {
       const socket = this.socket;
       this.heartbeatInFlight = true;
       void this.own('health-chain', () =>
-        this.own('health-result', () => this.healthCheck!())
+        this.own('health-result', () =>
+          this.originalCallback(undefined, (parent) =>
+            parent === undefined ? this.healthCheck!() : this.healthCheck!(parent),
+          ),
+        )
           .then(() => {
             if (this.disposed || this.socket !== socket) return;
             this.consecutiveHealthCheckFailures = 0;
