@@ -7,7 +7,11 @@
   import { DocumentSession } from './document-session';
   import { SourceJournal, fixture } from './source-journal';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
-  let { oracle = false, small = false }: { oracle?: boolean; small?: boolean } = $props();
+  let {
+    oracle = false,
+    small = false,
+    paragraphRepeats = 0,
+  }: { oracle?: boolean; small?: boolean; paragraphRepeats?: number } = $props();
   let host: HTMLDivElement;
   let root: HTMLDivElement;
   let proof: DocumentSession;
@@ -19,7 +23,13 @@
   };
   onMount(() => {
     let disposed = false;
-    const service = new SourceJournal(fixture, small ? 2 : 10000);
+    // Deliberately unbounded MOCK BACKING fixture, separate from renderer windows.
+    const paragraphSource = 'repeated café 🌍 text repeated. '.repeat(paragraphRepeats);
+    const paragraph = () => paragraphSource;
+    const service = new SourceJournal(
+      paragraphRepeats ? paragraph : fixture,
+      paragraphRepeats ? 1 : small ? 2 : 10000,
+    );
     if (oracle) {
       const config = createEditorConfig({
         element: host,
@@ -30,19 +40,25 @@
         enableMentions: false,
         onUpdate: () => {},
       });
-      void processMarkdownToHTML(fixture(0) + fixture(1)).then((content) => {
-        if (disposed) return;
-        native = new Editor({ ...config, content, onUpdate: () => {} });
-        Object.assign(root, { native });
-        native.view.focus();
-      });
+      void processMarkdownToHTML(paragraphRepeats ? paragraph() : fixture(0) + fixture(1)).then(
+        (content) => {
+          if (disposed) return;
+          native = new Editor({ ...config, content, onUpdate: () => {} });
+          Object.assign(root, { native });
+          native.view.focus();
+        },
+      );
     } else {
       proof = new DocumentSession(service, host, publish);
-      void proof.show(0);
+      void proof.show(0).catch((error) => {
+        proof.error = String(error);
+        publish();
+      });
     }
     Object.assign(root, {
       proof: proof ?? null,
       native: native ?? null,
+      mockBackingFixtureBytes: new TextEncoder().encode(paragraphSource).byteLength,
       parseSource: async (source: string) => {
         const html = await processMarkdownToHTML(source);
         const element = document.createElement('div');

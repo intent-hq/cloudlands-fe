@@ -51,6 +51,8 @@ export class SourceJournal {
   cursor = 0;
   readonly logs: { method: string; from: number; bytes: number }[] = [];
   reads = 0;
+  contextReads = 0;
+  maxContextPayloadBytes = 0;
   maxRead = 0;
   journalReads = 0;
   maxJournalRead = 0;
@@ -109,6 +111,16 @@ export class SourceJournal {
   private log(method: string, from: number, size: number) {
     this.logs.push({ method, from, bytes: size });
     if (this.logs.length > LIMITS.log) this.logs.shift();
+  }
+  /** Mock backing index: one boolean response, at most two inspected UTF-16 units. */
+  splitsSurrogate(position: number) {
+    const pair = this.slice(Math.max(0, position - 1), Math.min(this.length, position + 1));
+    const result = /^[\uD800-\uDBFF][\uDC00-\uDFFF]$/.test(pair);
+    this.contextReads++;
+    const size = bytes(JSON.stringify(result));
+    this.maxContextPayloadBytes = Math.max(this.maxContextPayloadBytes, size);
+    this.log('context', position, size);
+    return result;
   }
   read(from: number, to: number, revision = this.revision) {
     if (revision !== this.revision) throw new Error('Stale source revision');
@@ -382,6 +394,8 @@ export class SourceJournal {
     return {
       draftWrites: this.draftWrites,
       maxSpliceBytes: this.maxSpliceBytes,
+      contextReads: this.contextReads,
+      maxContextPayloadBytes: this.maxContextPayloadBytes,
       backingStagedJournalBytes: this.stagedPages.reduce((n, p) => n + bytes(p), 0),
       maxBackingAdmissionBytes: this.maxBackingAdmissionBytes,
       backingSourceBytes: [...this.regions.values()].reduce((n, s) => n + bytes(s), 0),

@@ -12,6 +12,7 @@ import {
   type Splice,
 } from './source-journal';
 import { SourceProjection } from './source-projection';
+import { continuationWindow, CONTINUATION } from './continuation-window';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
@@ -28,7 +29,18 @@ export class DocumentSession {
   maxInFlightBytes = 0;
   acceptedRoots = 0;
   acceptedAppended = 0;
-  private endId = 0;
+  private windowEnd = 0;
+  private continuation = false;
+  private selectionGeneration = 0;
+  private pointerSelecting = false;
+  private continuationQueued = false;
+  private pointerDown = () => {
+    this.pointerSelecting = true;
+  };
+  private pointerUp = () => {
+    this.pointerSelecting = false;
+    this.continueNearEdge();
+  };
   private cache = new Map<string, string>();
   private navigation = 0;
   private suppress = false;
@@ -43,7 +55,10 @@ export class DocumentSession {
     readonly service: SourceJournal,
     private host: HTMLElement,
     private changed = () => {},
-  ) {}
+  ) {
+    host.addEventListener('pointerdown', this.pointerDown);
+    document.addEventListener('pointerup', this.pointerUp);
+  }
   private project(source: string, start: number) {
     if (bytes(source) > LIMITS.active)
       throw new Error('Proof projection exceeds experiment budget');
@@ -51,16 +66,13 @@ export class DocumentSession {
     this.maxParsedBytes = Math.max(this.maxParsedBytes, bytes(source));
     return new SourceProjection(source, start);
   }
-  private readWindow(id: number) {
-    const from = this.service.start(id),
-      endId = Math.min(id + 2, this.service.count),
-      to = this.service.start(endId);
+  private readRange(from: number, to: number) {
+    if (to - from > LIMITS.active) throw new Error('Unbounded source range');
     let source = '';
     for (let offset = from; offset < to;) {
       // UTF-16 span capped at 1024 => at most 4096 UTF-8 bytes, without splitting a surrogate.
       let end = Math.min(offset + 1024, to);
-      const boundary = this.service.slice(end - 1, end + (end < to ? 1 : 0));
-      if (end < to && /[\uD800-\uDBFF]/.test(boundary[0])) end--;
+      if (end < to && this.service.splitsSurrogate(end)) end--;
       const key = `${this.service.revision}:${offset}:${end}`;
       const page = this.cache.get(key) ?? this.service.read(offset, end).source;
       this.cache.delete(key);
@@ -72,11 +84,44 @@ export class DocumentSession {
       if (bytes(source) > LIMITS.active)
         throw new Error('Proof projection exceeds experiment budget');
     }
+    return source;
+  }
+  private readWindow(id: number, position?: number) {
+    const bounds = continuationWindow(this.service, id, position);
+    const source = this.readRange(bounds.from, bounds.to);
     this.inFlightBytes += bytes(source);
     this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
-    return { source, from, endId };
+    return { ...bounds, source };
   }
-  async show(id: number, restore = false) {
+  /** A source coordinate identifies a continuation; page edges never enter the source. */
+  seek(position: number, restore = true) {
+    return this.show(
+      Math.min(this.service.locate(position).id, Math.max(0, this.service.count - 2)),
+      restore,
+      position,
+    );
+  }
+  private continueNearEdge() {
+    if (!this.continuation || this.continuationQueued || !this.editor || this.editor.view.composing)
+      return;
+    const p = this.projection!,
+      head = this.selection.head;
+    if (head < p.start || head > this.windowEnd) return;
+    const first = this.service.start(this.active),
+      last = this.service.start(this.active + 1);
+    if (!(
+      (p.start > first && head < p.start + CONTINUATION.margin) ||
+      (this.windowEnd < last && head > this.windowEnd - CONTINUATION.margin)
+    ))
+      return;
+    this.continuationQueued = true;
+    queueMicrotask(() => {
+      this.continuationQueued = false;
+      if (!this.editor || this.editor.view.composing) return;
+      void this.show(this.active, true, this.selection.head, this.pointerSelecting);
+    });
+  }
+  async show(id: number, restore = false, position?: number, preserveView = false) {
     if (this.editor?.view.composing) {
       this.error = 'Composition pins current view';
       this.changed();
@@ -84,6 +129,7 @@ export class DocumentSession {
     }
     const ticket = ++this.navigation;
     const revision = this.service.revision;
+    const selectionGeneration = this.selectionGeneration;
     // One shared pending request, with latest navigation winning before any payload is captured.
     if (this.delayFetch) {
       this.pendingNavigation?.(false);
@@ -109,19 +155,57 @@ export class DocumentSession {
     if (
       ticket !== this.navigation ||
       revision !== this.service.revision ||
+      selectionGeneration !== this.selectionGeneration ||
+      (this.pointerSelecting && !preserveView) ||
       this.editor?.view.composing
     ) {
       this.error = 'Stale or composing view pinned';
       this.changed();
       return false;
     }
-    const window = this.readWindow(id);
+    const window = this.readWindow(id, position);
     try {
+      const next = this.project(window.source, window.from);
+      if (preserveView && this.editor) {
+        // Keep Chromium's active mouse gesture attached to the same view/DOM node.
+        // Only the bounded projection is replaced; durable source/history are untouched.
+        const editor = this.editor;
+        const before = editor.view.coordsAtPos(editor.state.selection.head).top;
+        let scroller = this.host.parentElement;
+        while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY))
+          scroller = scroller.parentElement;
+        this.projection = next;
+        this.windowEnd = window.to;
+        this.suppress = true;
+        try {
+          const tr = editor.state.tr.replaceWith(
+            0,
+            editor.state.doc.content.size,
+            editor.schema.nodeFromJSON(next.content).content,
+          );
+          tr.setSelection(
+            TextSelection.create(
+              tr.doc,
+              next.pmAt(this.selection.anchor, this.selection.affinity),
+              next.pmAt(this.selection.head, this.selection.affinity),
+            ),
+          );
+          editor.view.dispatch(tr.setMeta('addToHistory', false));
+        } finally {
+          this.suppress = false;
+        }
+        if (scroller)
+          scroller.scrollTop += editor.view.coordsAtPos(editor.state.selection.head).top - before;
+        this.error = '';
+        this.changed();
+        return true;
+      }
       this.editor?.destroy();
       if (this.editor) this.destroyed++;
       this.active = id;
-      this.endId = window.endId;
-      this.projection = this.project(window.source, window.from);
+      this.windowEnd = window.to;
+      this.continuation = window.continuation;
+      this.projection = next;
       const decorations = (state: EditorState) => {
         const p = this.projection!;
         const result = this.service.annotations(
@@ -277,6 +361,7 @@ export class DocumentSession {
     if (this.suppress) return;
     const old = {
       projection: this.projection,
+      windowEnd: this.windowEnd,
       selection: this.selection,
       prevTime: this.prevTime,
       prevComposition: this.prevComposition,
@@ -289,7 +374,10 @@ export class DocumentSession {
         for (let index = 0; index < transactions.length; index++) {
           const tr = transactions[index];
           if (!tr.docChanged) {
-            if (tr.selectionSet) this.selection = this.fromPM(tr.selection);
+            if (tr.selectionSet) {
+              this.selection = this.fromPM(tr.selection);
+              this.selectionGeneration++;
+            }
             continue;
           }
           let nodes = 0;
@@ -316,16 +404,14 @@ export class DocumentSession {
           for (let n = 0; n < tr.steps.length; n++) {
             for (const splice of this.projection!.translate(tr.steps[n], tr.docs[n])) {
               this.service.stage(splice, history);
+              this.windowEnd = mapPoint(this.windowEnd, splice);
               if (!history && this.prevRange)
                 this.prevRange = [
                   mapPoint(this.prevRange[0], splice),
                   mapPoint(this.prevRange[1], splice),
                 ];
             }
-            this.projection = this.project(
-              this.service.slice(oldStart, this.service.start(this.endId)),
-              oldStart,
-            );
+            this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
           }
           const after = this.fromPM(tr.selection);
           const composition = tr.getMeta('composition');
@@ -356,6 +442,7 @@ export class DocumentSession {
             if (composition !== undefined) this.prevComposition = composition;
           }
           this.selection = after;
+          this.selectionGeneration++;
           this.cache.clear();
         }
       });
@@ -364,6 +451,7 @@ export class DocumentSession {
       // race the browser's next native selection update.
       if (transactions.some((tr) => tr.docChanged)) this.editor?.view.setProps({});
       this.changed();
+      this.continueNearEdge();
     } catch (error) {
       Object.assign(this, old);
       if (this.rollbackState) this.editor!.view.updateState(this.rollbackState);
@@ -389,10 +477,7 @@ export class DocumentSession {
     this.selection = { ...(redo ? event.after : event.before), revision: this.service.revision };
     this.prevTime = 0;
     this.cache.clear();
-    await this.show(
-      Math.min(this.service.locate(this.selection.head).id, this.service.count - 2),
-      true,
-    );
+    await this.seek(this.selection.head);
     return true;
   }
   save() {
@@ -435,7 +520,7 @@ export class DocumentSession {
     this.selection = after;
     this.prevTime = 0;
     this.cache.clear();
-    await this.show(this.service.locate(from).id, true);
+    await this.seek(from);
   }
   remote(splice: Splice) {
     const oldStart = this.projection!.start;
@@ -444,18 +529,16 @@ export class DocumentSession {
       this.service.rebase(splice);
     });
     this.selection = mapSelection(this.selection, splice, this.service.revision);
+    this.windowEnd = mapPoint(this.windowEnd, splice);
     if (this.prevRange)
       this.prevRange = [mapPoint(this.prevRange[0], splice), mapPoint(this.prevRange[1], splice)];
     this.cache.clear();
     if (splice.to <= oldStart) {
       const start = mapPoint(oldStart, splice);
-      this.projection = this.project(
-        this.service.slice(start, this.service.start(this.endId)),
-        start,
-      );
+      this.projection = this.project(this.readRange(start, this.windowEnd), start);
       this.editor?.view.setProps({});
       this.changed();
-    } else void this.show(this.active, true);
+    } else void this.seek(this.selection.head);
   }
   snapshot() {
     let nodes = 0;
@@ -475,6 +558,19 @@ export class DocumentSession {
       return value;
     });
     return {
+      continuation: this.continuation,
+      windowFrom: this.projection?.start,
+      windowTo: this.windowEnd,
+      continuationMetadataBytes: bytes(
+        JSON.stringify({
+          from: this.projection?.start,
+          to: this.windowEnd,
+          region: this.active,
+          revision: this.service.revision,
+        }),
+      ),
+      retainedEditorStates: Number(!!this.rollbackState),
+      pointerSelecting: this.pointerSelecting,
       pluginStateFields: pluginStates.length,
       pluginStatePayloadBytes: bytes(pluginPayload),
       tokenProvenancePayloadBytes: bytes(JSON.stringify(this.projection?.tokens ?? [])),
@@ -486,6 +582,17 @@ export class DocumentSession {
       selection: this.selection,
       source: this.projection?.source,
       reads: this.service.reads,
+      maxSourceRead: this.service.maxRead,
+      // Count duplicated source/text representations explicitly; these are serialized payload
+      // counts, not a heap measurement. Mock backing source and oracle live elsewhere.
+      sourceReplicaPayloadBytes:
+        bytes(this.projection?.source ?? '') +
+        [...this.cache.values()].reduce((n, page) => n + bytes(page), 0) +
+        this.inFlightBytes +
+        (this.projection?.tokens.reduce((n, t) => n + bytes(t.raw) + bytes(t.text), 0) ?? 0) +
+        bytes(JSON.stringify(this.projection?.content ?? {})) +
+        bytes(JSON.stringify(this.editor?.getJSON() ?? {})) +
+        bytes(JSON.stringify(this.editor?.options.content ?? {})),
       calls: this.service.logs,
       created: this.created,
       destroyed: this.destroyed,
@@ -519,6 +626,8 @@ export class DocumentSession {
   }
   destroy() {
     this.navigation++;
+    this.host.removeEventListener('pointerdown', this.pointerDown);
+    document.removeEventListener('pointerup', this.pointerUp);
     this.pendingNavigation?.(false);
     this.pendingNavigation = undefined;
     this.editor?.destroy();
