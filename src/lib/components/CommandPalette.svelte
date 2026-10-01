@@ -470,8 +470,12 @@
     });
   });
 
-  // Keep transcript group in sync with current query.
+  // Keep transcript group in sync only while the palette is visible.
   $effect(() => {
+    if (!isOpen) {
+      transcriptQuery.clear();
+      return;
+    }
     const term = parsedQuery.searchTerm;
     const wsId = workspaceId;
     const wsItems = $workspaceItems || [];

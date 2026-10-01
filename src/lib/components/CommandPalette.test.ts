@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceStatus } from '$shared/types';
 
 const {
@@ -42,7 +42,7 @@ const {
     invokeMock: vi.fn().mockResolvedValue({ files: [] }),
     openMessageMock: vi.fn().mockResolvedValue(undefined),
     backendRequestMock: vi.fn(async () => ({ files: [], matches: [] })),
-    workspaceItemsState: { value: [] as any[] },
+    workspaceItemsState: { value: [] as any[], subscribers: new Set<(items: any[]) => void>() },
     sessionSessions: { value: [] as any[] },
     localNotes: { value: [] as any[] },
     reduxDispatchMock: vi.fn(),
@@ -104,8 +104,11 @@ vi.mock('$store/renderer/slices/palette/palette-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
     subscribe: (fn: (value: any[]) => void) => {
+      workspaceItemsState.subscribers.add(fn);
       fn(workspaceItemsState.value);
-      return () => {};
+      return () => {
+        workspaceItemsState.subscribers.delete(fn);
+      };
     },
   }),
   selectIsWorkspaceCollaborator: (workspaceIdArg: any) =>
@@ -1065,5 +1068,107 @@ describe('CommandPalette indexed notes', () => {
     await view.rerender({ isOpen: true, initialQuery: '' });
     expect(screen.queryByRole('button', { name: /Remote plan/ })).toBeNull();
     view.unmount();
+  });
+});
+
+describe('CommandPalette transcript search lifecycle', () => {
+  const searches = () =>
+    backendRequestMock.mock.calls.filter(([method]) => method === 'search.messages');
+  const refreshWorkspaces = () => {
+    workspaceItemsState.value = [{ id: 'tiny-owl', title: 'Updated workspace' }];
+    for (const subscriber of workspaceItemsState.subscribers) subscriber(workspaceItemsState.value);
+  };
+  const settleDebounce = async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    workspaceItemsState.value = [];
+    localNotes.value = [];
+    sessionSessions.value = [];
+    browserRecentUrls.value = [];
+    paletteMruEntries.value = [];
+    paletteFileMru.value = {};
+    backendRequestMock.mockImplementation(async () => ({ files: [], matches: [] }));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('does not repeat a retained search after closing, workspace refreshes or workspace switches', async () => {
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'dev con', onClose: vi.fn() },
+    });
+    await settleDebounce();
+    expect(searches()).toEqual([
+      ['search.messages', { query: 'dev con', limit: 10, preferWorkspaceId: 'tiny-owl' }],
+    ]);
+    await view.rerender({ isOpen: false });
+    refreshWorkspaces();
+    await settleDebounce();
+    expect(searches()).toHaveLength(1);
+    await view.rerender({ workspaceId: 'other' });
+    refreshWorkspaces();
+    await settleDebounce();
+    expect(searches()).toHaveLength(1);
+
+    await view.rerender({ isOpen: true });
+    await settleDebounce();
+    expect(searches()).toHaveLength(2);
+    expect(searches()[1]).toEqual([
+      'search.messages',
+      { query: 'dev con', limit: 10, preferWorkspaceId: 'other' },
+    ]);
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'fresh query' } });
+    await settleDebounce();
+    expect(searches()[2]).toEqual([
+      'search.messages',
+      { query: 'fresh query', limit: 10, preferWorkspaceId: 'other' },
+    ]);
+  });
+
+  it('cancels the pending debounce when closed before the request starts', async () => {
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'dev con', onClose: vi.fn() },
+    });
+    await view.rerender({ isOpen: false });
+    await settleDebounce();
+    expect(searches()).toEqual([]);
+  });
+
+  it('does not show an in-flight result completed after closing when reopened', async () => {
+    let complete!: (value: any) => void;
+    backendRequestMock.mockImplementation((method: string) =>
+      method === 'search.messages'
+        ? new Promise((resolve) => {
+            complete = resolve;
+          })
+        : Promise.resolve({ files: [], matches: [] }),
+    );
+    const view = render(CommandPalette, {
+      props: { isOpen: true, workspaceId: 'tiny-owl', initialQuery: 'dev con', onClose: vi.fn() },
+    });
+    await settleDebounce();
+    expect(complete).toBeDefined();
+    await view.rerender({ isOpen: false });
+    complete({
+      matches: [
+        {
+          agentId: 'agent-1',
+          messageId: 'message-1',
+          workspaceId: 'tiny-owl',
+          agentName: 'Obsolete result',
+          role: 'assistant',
+          preview: 'dev con',
+          timestamp: '2026-10-01T01:00:00Z',
+        },
+      ],
+    });
+    await settleDebounce();
+    await view.rerender({ isOpen: true });
+    expect(screen.queryByRole('button', { name: /Obsolete result/ })).toBeNull();
+    expect(searches()).toHaveLength(1);
   });
 });
