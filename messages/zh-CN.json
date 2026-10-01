@@ -3450,6 +3450,7 @@
   "tiptap_taskItem_assignToAgent_tooltip": "分配给智能体",
   "tiptap_taskItem_convertToTaskNote_tooltip": "转换为任务笔记",
   "tiptap_taskItem_waitsOn_label": "等待 {count} 项",
+  "tiptap_taskItem_afterPrevious_label": "在上一项之后",
   "tiptap_taskItem_waitsOnList_label": "等待中",
   "tiptap_taskItem_conflicts_label": "冲突 {count}",
   "tiptap_taskItem_conflictsList_label": "可能冲突",
