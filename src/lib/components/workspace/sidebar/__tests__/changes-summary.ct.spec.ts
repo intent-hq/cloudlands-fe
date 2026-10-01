@@ -123,3 +123,45 @@ for (const { width, locked } of [
     expect((await refresh.boundingBox())!.y).toBe((await close.boundingBox())!.y);
   });
 }
+
+test('secondary file buttons retain native and modifier activation inside the Changes panel', async ({
+  mount,
+  page,
+}) => {
+  const actions: Array<{ type: string; payload: unknown }> = [];
+  await mount(Preview, {
+    props: {
+      secondaryFiles: true,
+      onNavigation: (action: { type: string; payload: unknown }) => actions.push(action),
+    },
+  });
+  await page.getByRole('combobox', { name: 'Select git root' }).click();
+  await page.getByRole('option', { name: 'packages/component' }).click();
+  const file = page.getByTestId('secondary-root-file-open').filter({ hasText: 'collision.md' });
+  const tracked = page.getByTestId('secondary-root-file-open').filter({ hasText: 'tracked.txt' });
+  await file.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({
+    type: 'workspaceNavigation/openWorkspaceFile',
+    payload: [
+      'changes-summary-preview',
+      '/preview/workspace/packages/component/collision.md',
+      { gitRootId: 'summary-root', gitRootPath: '/preview/workspace/packages/component' },
+    ],
+  });
+  await page.keyboard.press('Space');
+  await expect.poll(() => actions.length).toBe(2);
+  expect(actions[1]).toEqual(actions[0]);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect.poll(() => actions.length).toBe(3);
+  expect(actions[2]).toMatchObject({
+    payload: [expect.anything(), expect.anything(), { openInAdjacentPanel: true }],
+  });
+  await tracked.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => actions.length).toBe(4);
+  expect(actions[3].type).toBe('workspaceNavigation/openWorkspaceDiff');
+  await tracked.click({ modifiers: ['ControlOrMeta'] });
+  await expect.poll(() => actions.length).toBe(5);
+});

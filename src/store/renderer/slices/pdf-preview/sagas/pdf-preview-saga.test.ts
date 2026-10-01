@@ -105,3 +105,15 @@ describe('PDF read lifecycle', () => {
     expect(revokeUrl.mock.calls).toEqual([['blob:one'], ['blob:two']]);
   });
 });
+
+it('uses the selected root and media MIME while preserving Blob lease cleanup', async () => {
+  read.mockResolvedValue(new Uint8Array([1, 2, 3]));
+  channel.put(
+    request('view', 'request', 'ws', 'movie.mp4', { gitRootId: 'root-a', mimeType: 'video/mp4' }),
+  );
+  await settle();
+  expect(read).toHaveBeenCalledWith('ws', 'movie.mp4', expect.any(AbortSignal), 'root-a');
+  expect(createUrl.mock.calls[0][0]).toMatchObject({ type: 'video/mp4', size: 3 });
+  channel.put(release('view', 'request'));
+  expect(revokeUrl).toHaveBeenCalledWith('blob:pdf');
+});

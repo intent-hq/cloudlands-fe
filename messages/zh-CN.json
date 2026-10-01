@@ -6973,5 +6973,6 @@
   "devConsole_captureChoices_label": "完整捕获选项",
   "devConsole_removeChoice_label": "禁用完整捕获",
   "devConsole_unknown_label": "未知",
-  "devConsole_events_label": "事件列表"
+  "devConsole_events_label": "事件列表",
+  "files_secondaryRoot_unsupported_error": "此守护进程无法读取次要 Git 根目录中的文件。请更新后重新连接。"
 }

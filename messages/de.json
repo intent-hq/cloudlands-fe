@@ -6973,5 +6973,6 @@
   "devConsole_captureChoices_label": "Vollständige Erfassungsauswahl",
   "devConsole_removeChoice_label": "Vollständige Erfassung deaktivieren",
   "devConsole_unknown_label": "Unbekannt",
-  "devConsole_events_label": "Ereignisse"
+  "devConsole_events_label": "Ereignisse",
+  "files_secondaryRoot_unsupported_error": "Dieser Daemon kann keine Dateien aus sekundären Git-Verzeichnissen lesen. Aktualisieren Sie ihn und verbinden Sie sich erneut."
 }

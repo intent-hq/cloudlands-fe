@@ -12,6 +12,7 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
+import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import { Logger } from '$shared/logger';
 import type { RpcTrafficMessage, RpcTrafficObserver } from './rpc-traffic';
 import { JsonRpcError, type JsonRpcErrorShape } from './json-rpc-errors';
@@ -134,6 +135,7 @@ export class JsonRpcClient extends EventEmitter {
   private readonly onHelloResult?: (result: unknown) => void;
 
   private socket: Duplex | null = null;
+  private protocolVersion: unknown;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -364,8 +366,10 @@ export class JsonRpcClient extends EventEmitter {
    * usable: either `status === 'connected'` or the §5.17 handshake window.
    */
   private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
+    const socket = this.socket;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
+      assertScopedFileReadSupport(method, params, this.protocolVersion);
       const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
       this.observeOutboundRequest(id, method, payload);
       const timeout = setTimeout(() => {
@@ -381,11 +385,17 @@ export class JsonRpcClient extends EventEmitter {
       this.pending.set(id, {
         method,
         timeout,
-        resolve: (result) => resolve(result as T),
+        resolve: (result) => {
+          if (method === HELLO_METHOD && this.socket === socket) {
+            this.protocolVersion = (result as { protocolVersion?: unknown } | null)
+              ?.protocolVersion;
+          }
+          resolve(result as T);
+        },
         reject,
       });
       try {
-        this.socket?.write(payload);
+        socket?.write(payload);
       } catch (error) {
         clearTimeout(timeout);
         this.pending.delete(id);
@@ -781,6 +791,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
+    this.protocolVersion = undefined;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

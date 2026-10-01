@@ -6973,5 +6973,6 @@
   "devConsole_captureChoices_label": "Full capture choices",
   "devConsole_removeChoice_label": "Disable full capture",
   "devConsole_unknown_label": "Unknown",
-  "devConsole_events_label": "Events"
+  "devConsole_events_label": "Events",
+  "files_secondaryRoot_unsupported_error": "This daemon cannot read files from secondary Git roots. Update it and reconnect."
 }

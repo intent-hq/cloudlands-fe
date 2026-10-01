@@ -6973,5 +6973,6 @@
   "devConsole_captureChoices_label": "Choix de capture complète",
   "devConsole_removeChoice_label": "Désactiver la capture complète",
   "devConsole_unknown_label": "Inconnu",
-  "devConsole_events_label": "Événements"
+  "devConsole_events_label": "Événements",
+  "files_secondaryRoot_unsupported_error": "Ce daemon ne peut pas lire les fichiers des racines Git secondaires. Mettez-le à jour et reconnectez-vous."
 }

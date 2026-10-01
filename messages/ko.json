@@ -6973,5 +6973,6 @@
   "devConsole_captureChoices_label": "전체 캡처 선택",
   "devConsole_removeChoice_label": "전체 캡처 비활성화",
   "devConsole_unknown_label": "알 수 없음",
-  "devConsole_events_label": "이벤트 목록"
+  "devConsole_events_label": "이벤트 목록",
+  "files_secondaryRoot_unsupported_error": "이 데몬은 보조 Git 루트에서 파일을 읽을 수 없습니다. 업데이트한 후 다시 연결하세요."
 }

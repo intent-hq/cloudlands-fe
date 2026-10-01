@@ -36,7 +36,11 @@ export function panelTabsAreEquivalent(
       return !!requested.noteId && existing.noteId === requested.noteId;
     case 'file': {
       const path = canonicalWorkspacePath(requested.filePath);
-      return !!path && canonicalWorkspacePath(existing.filePath) === path;
+      return (
+        !!path &&
+        canonicalWorkspacePath(existing.filePath) === path &&
+        existing.data?.gitRootId === requested.data?.gitRootId
+      );
     }
     case 'terminal':
       return requested.scriptId
