@@ -118,13 +118,19 @@ async function showCreationError(error: unknown): Promise<void> {
 }
 
 async function showConsumerCreationError(error: Error, source?: string): Promise<void> {
-  if (source !== 'chief-card' && source !== 'agent-action-block') return showCreationError(error);
+  if (
+    (source !== 'chief-card' && source !== 'agent-action-block') ||
+    isForbiddenErrorResponse(error) ||
+    isProviderModelMismatch(error)
+  ) {
+    return showCreationError(error);
+  }
   try {
     const { notify } = await import('$lib/components/patterns/notify');
+    const message = cleanErrorMessage(error.message);
     notify.error(
-      source === 'chief-card'
-        ? m.layout_chiefCard_startFailed_error({ message: error.message })
-        : error.message,
+      source === 'chief-card' ? m.layout_chiefCard_startFailed_error({ message }) : message,
+      { description: m.agent_creation_failed_description() },
     );
   } catch (toastError) {
     logger.error('Failed to surface agent creation error', toastError);

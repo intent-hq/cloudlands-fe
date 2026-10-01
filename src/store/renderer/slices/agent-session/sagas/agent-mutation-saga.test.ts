@@ -52,6 +52,7 @@ import {
   clearPendingAgentDeletions,
   getPendingAgentDeletion,
   listPendingAgentDeletions,
+  removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { agentAttentionToastId } from '$features/agent/agent-attention-toast-service';
@@ -928,6 +929,33 @@ describe('agentMutationSaga', () => {
       }
     },
   );
+
+  it('accepts an undo acknowledgement after the cancellation event has restored the agent', async () => {
+    const pending = Promise.withResolvers<{ success: true; cancelled: true }>();
+    mocks.cancelDelete.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState, dispatched } = start(undefined, { live: true });
+    const snapshot = session() as StoredAgentSession;
+    setPendingAgentDeletion({ wsId: WS, agentId: A1, snapshot });
+    dispatch(removeSession(A1));
+    const undo = undoAgentDeletionRequested(WS, A1);
+    dispatch(undo);
+    expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith(A1, WS);
+
+    // The delete-cancelled bridge can restore/refetch before the RPC settles.
+    removePendingAgentDeletion(A1);
+    dispatch(restoreStoredSessions([snapshot]));
+    dispatch(updateSession(A1, { name: 'Reconciled after cancellation' }));
+    pending.resolve({ success: true, cancelled: true });
+
+    await expect(undo.promise).resolves.toBe(true);
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(getPendingAgentDeletion(A1)).toBeUndefined();
+    expect(getState().agentSessions.byAgentId[A1]?.name).toBe('Reconciled after cancellation');
+    expect(dispatched.filter((action) => action.type === restoreStoredSessions.type)).toHaveLength(
+      1,
+    );
+    await stop(task);
+  });
 
   it('never applies an undo acknowledgement to a newer deletion entry', async () => {
     const pending = Promise.withResolvers<{ success: true; cancelled: true }>();

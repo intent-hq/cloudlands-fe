@@ -894,22 +894,26 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
       logger.error('agent.cancelDelete failed', { agentId, error });
       cancel = { success: false as const };
     }
-    if (cancel.success && cancel.cancelled && getPendingAgentDeletion(agentId) === pending) {
-      removePendingAgentDeletion(agentId);
-      // This saga always registers entries with a snapshot; the guard covers
-      // the registry's snapshot-less entries (events-bridge-registered).
-      const current = yield* selectAgentSession.effect(agentId);
-      if (
-        pending.snapshot &&
-        pending.snapshot.workspaceId === wsId &&
-        (!current || current === pending.snapshot)
-      ) {
-        yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+    const currentPending = getPendingAgentDeletion(agentId);
+    if (cancel.success && cancel.cancelled && (!currentPending || currentPending === pending)) {
+      // The cancellation event may already have restored/refetched the row.
+      // Acknowledge success without replaying the old snapshot in that case.
+      if (currentPending === pending) {
+        removePendingAgentDeletion(agentId);
+        // Events-bridge entries may not have a snapshot.
+        const current = yield* selectAgentSession.effect(agentId);
+        if (
+          pending.snapshot &&
+          pending.snapshot.workspaceId === wsId &&
+          (!current || current === pending.snapshot)
+        ) {
+          yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+        }
       }
       yield* put(action.success(true));
     } else {
-      // Race-safe non-error: the daemon already committed (or the cancel RPC
-      // failed) — never resurrect the agent locally.
+      // Already committed, a failed cancel RPC, or a newer deletion — never
+      // resurrect the agent locally from this request's old snapshot.
       yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
       yield* put(action.success(false));
     }

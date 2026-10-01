@@ -3063,10 +3063,10 @@ function registerAgentDeleteTombstone(
  * Restore the soft-hidden session from the registry snapshot when one exists
  * (instant, mirrors the undo saga's `restoreHiddenSession`), then refetch the
  * canonical agent list — this also covers a window that filtered the pending
- * row out of a wire response before ever holding a snapshot. In the
- * originating window the undo saga restores its own snapshot; the registry
- * entry is already gone by the time this event lands, so only the reconcile
- * refetch runs there.
+ * row out of a wire response before ever holding a snapshot. This event or
+ * the originating undo saga may observe cancellation first; whichever still
+ * owns the registry entry restores the snapshot. If the saga was first,
+ * only the reconcile refetch runs here.
  */
 function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;

@@ -383,14 +383,71 @@ describe('agentCreationSaga', () => {
       );
       owner.dispatch(action);
       await expect(action.promise).rejects.toThrow('host unavailable');
-      expect(mocks.toastError).toHaveBeenCalledWith(
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
         source === 'chief-card'
           ? m.layout_chiefCard_startFailed_error({ message: 'host unavailable' })
           : 'host unavailable',
+        { description: m.agent_creation_failed_description() },
       );
       owner.task.cancel();
     },
   );
+
+  for (const source of ['chief-card', 'agent-action-block']) {
+    it.each(['provider-model', 'forbidden'] as const)(
+      `keeps actionable %s guidance in the single ${source} failure toast`,
+      async (kind) => {
+        const error =
+          kind === 'provider-model'
+            ? new Error('agent.create: model fable-5 does not belong to provider claude-code')
+            : Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+        mocks.createAgent.mockResolvedValue({ success: false, error: error.message, cause: error });
+        const owner = startConsumer();
+        const action = createAgentFromConfigRequested(
+          WS,
+          { workspaceId: WorkspaceId(WS), source },
+          { consumer: { id: 'card', resourceId: 'primitive' } },
+        );
+        owner.dispatch(action);
+        await expect(action.promise).rejects.toThrow();
+        expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+          kind === 'provider-model'
+            ? m.agent_creation_createFailed_error()
+            : m.agent_creation_notPermitted_error(),
+          {
+            description:
+              kind === 'provider-model'
+                ? m.agent_creation_providerModelMismatch_description()
+                : m.agent_creation_notPermitted_description(),
+          },
+        );
+        owner.task.cancel();
+      },
+    );
+
+    it(`cleans transport wrappers before showing the single ${source} failure toast`, async () => {
+      mocks.createAgent.mockResolvedValue({
+        success: false,
+        error:
+          "Error invoking remote method 'agent.create': Error: host unavailable\n    at invoke (transport.ts:12:3)",
+      });
+      const owner = startConsumer();
+      const action = createAgentFromConfigRequested(
+        WS,
+        { workspaceId: WorkspaceId(WS), source },
+        { consumer: { id: 'card', resourceId: 'primitive' } },
+      );
+      owner.dispatch(action);
+      await expect(action.promise).rejects.toThrow('host unavailable');
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+        source === 'chief-card'
+          ? m.layout_chiefCard_startFailed_error({ message: 'host unavailable' })
+          : 'host unavailable',
+        { description: m.agent_creation_failed_description() },
+      );
+      owner.task.cancel();
+    });
+  }
 
   it('reports a missing widget workspace without sending creation or requesting a selection', async () => {
     const { channel, dispatched, task } = start();
@@ -401,7 +458,10 @@ describe('agentCreationSaga', () => {
     channel.put(action);
     await expect(action.promise).rejects.toThrow(m.notes_agentActionBlock_noWorkspace_error());
     expect(mocks.createAgent).not.toHaveBeenCalled();
-    expect(mocks.toastError).toHaveBeenCalledWith(m.notes_agentActionBlock_noWorkspace_error());
+    expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+      m.notes_agentActionBlock_noWorkspace_error(),
+      { description: m.agent_creation_failed_description() },
+    );
     expect(dispatched).not.toContainEqual(
       expect.objectContaining({ type: openAgentTabRequested.type }),
     );
@@ -418,7 +478,10 @@ describe('agentCreationSaga', () => {
     );
     owner.dispatch(action);
     await expect(action.promise).rejects.toThrow(m.notes_agentActionBlock_unknown_error());
-    expect(mocks.toastError).toHaveBeenCalledWith(m.notes_agentActionBlock_unknown_error());
+    expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+      m.notes_agentActionBlock_unknown_error(),
+      { description: m.agent_creation_failed_description() },
+    );
     owner.task.cancel();
   });
 

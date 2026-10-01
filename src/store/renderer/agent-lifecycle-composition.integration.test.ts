@@ -10,6 +10,8 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { rememberNoteWorkspace } from '$lib/client/live/live-support';
 import { runAssignAgentTaskMenuAction } from '$lib/components/workspace/note-with-comments/task-menu-assign-agent-action';
 import { clearPendingAgentDeletions } from '$features/agent/utils/pending-agent-deletions';
+import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import { notify } from '$lib/components/patterns/notify';
 import { bulkUpsertSessions, updateSession } from './slices/agent-session/agent-session-slice';
 import {
   agentMutationUiConsumed,
@@ -460,6 +462,53 @@ describe('agent lifecycle production composition', () => {
       ['agent.rename', { agentId: AGENT, name: 'Same identity', workspaceId: WS }],
     ]);
   });
+
+  it.each(['event-first', 'response-first'] as const)(
+    'acknowledges undo through the live client when cancellation is %s',
+    async (order) => {
+      const cancellation = Promise.withResolvers<{ cancelled: true }>();
+      request.mockImplementation((method) => {
+        if (method === 'agent.delete')
+          return Promise.resolve({
+            success: true,
+            scheduled: true,
+            deleteAt: new Date(Date.now() + 15_000).toISOString(),
+          });
+        if (method === 'agent.cancelDelete') return cancellation.promise;
+        return new Promise(() => {});
+      });
+      await appStore.dispatch(deleteAgentWithUndoRequested(WS, AGENT));
+      expect(appStore.state.agentSessions.byAgentId[AGENT]).toBeUndefined();
+      const undo = undoAgentDeletionRequested(WS, AGENT);
+      appStore.dispatch(undo);
+      await vi.waitFor(() =>
+        expect(request).toHaveBeenCalledWith('agent.cancelDelete', {
+          agentId: AGENT,
+          workspaceId: WS,
+        }),
+      );
+      const emitCancellation = () =>
+        routeDaemonEventsNotification('events.event', {
+          event: {
+            id: `undo-${order}`,
+            workspaceId: WS,
+            timestamp: NOW,
+            type: 'agent:delete-cancelled',
+            actor: { type: 'user', id: 'u1' },
+            data: { agentId: AGENT, workspaceId: WS },
+          },
+        });
+      if (order === 'event-first') emitCancellation();
+      cancellation.resolve({ cancelled: true });
+      await expect(undo.promise).resolves.toBe(true);
+      if (order === 'response-first') emitCancellation();
+      expect(appStore.state.agentSessions.byAgentId[AGENT]?.name).toBe('Original identity');
+      expect(notify.error).not.toHaveBeenCalled();
+      expect(request.mock.calls.filter(([method]) => method === 'agent.cancelDelete')).toHaveLength(
+        1,
+      );
+    },
+  );
 
   it('keeps retirement separate from deletion and refuses resurrection after committed deletion', async () => {
     request.mockImplementation((method) => {
