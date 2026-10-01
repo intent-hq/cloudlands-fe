@@ -97,3 +97,24 @@ test('Dev Console resumes following from a sorted short list before it grows bey
     .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
     .toBeLessThan(25);
 });
+
+test('Dev Console keeps selected payload and counters separate at native minimum size', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 640, height: 400 });
+  await mount(Fixture);
+  await page.locator('[data-index]').last().click();
+  await expect(page.locator('pre').first()).toBeVisible();
+  await expect
+    .poll(async () => {
+      const details = await page.locator('.details').boundingBox();
+      const footer = await page.locator('footer').boundingBox();
+      return details!.y + details!.height - footer!.y;
+    })
+    .toBeLessThanOrEqual(0);
+  await expect(page.locator('footer')).toBeInViewport({ ratio: 1 });
+  await page.getByRole('button', { name: 'Copy payload' }).first().click();
+  await page.getByRole('button', { name: 'Close details' }).click();
+  await expect(page.locator('pre')).toHaveCount(0);
+});

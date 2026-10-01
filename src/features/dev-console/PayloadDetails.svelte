@@ -100,7 +100,7 @@
 <style>
   .details {
     flex: 0 0 38%;
-    min-height: 180px;
+    min-height: min(180px, 55%);
     max-height: 55%;
     display: flex;
     flex-direction: column;
