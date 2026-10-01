@@ -3450,6 +3450,7 @@
   "tiptap_taskItem_assignToAgent_tooltip": "에이전트에 할당",
   "tiptap_taskItem_convertToTaskNote_tooltip": "작업 노트로 변환",
   "tiptap_taskItem_waitsOn_label": "{count}개 대기 중",
+  "tiptap_taskItem_afterPrevious_label": "이전 작업 이후",
   "tiptap_taskItem_waitsOnList_label": "대기 중",
   "tiptap_taskItem_conflicts_label": "충돌 {count}",
   "tiptap_taskItem_conflictsList_label": "충돌 가능",

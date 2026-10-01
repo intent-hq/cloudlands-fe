@@ -3450,6 +3450,7 @@
   "tiptap_taskItem_assignToAgent_tooltip": "エージェントに割り当て",
   "tiptap_taskItem_convertToTaskNote_tooltip": "タスクノートに変換",
   "tiptap_taskItem_waitsOn_label": "{count}件待ち",
+  "tiptap_taskItem_afterPrevious_label": "直前のタスクの後",
   "tiptap_taskItem_waitsOnList_label": "待機中",
   "tiptap_taskItem_conflicts_label": "競合 {count}",
   "tiptap_taskItem_conflictsList_label": "競合の可能性",
