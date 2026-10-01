@@ -35,8 +35,8 @@ import {
 import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import {
   hydrateDefaultProvider,
-  loadDefaultReasoningEffortFromStorage,
   loadProviderModelsFromStorage,
+  loadDefaultReasoningEffortFromStorage,
 } from '$store/renderer/slices/model/model-slice';
 import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
 import { hydrateNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -47,16 +47,18 @@ export { BG_MODEL_MIGRATION_MARKER_KEY } from '$store/renderer/slices/background
 function applyOne(change: AppliedSettingChange, revision?: number): void {
   const { path, value } = change;
   switch (path) {
-    case 'notifications.volume': {
-      if (typeof value === 'number') appStore.dispatch(hydrateNotificationVolume(value, revision));
+    case 'model.defaultProvider': {
+      if (typeof value === 'string') appStore.dispatch(hydrateDefaultProvider(value));
+      else if (value === null) appStore.dispatch(hydrateDefaultProvider(''));
       return;
     }
-    case 'model.defaultProvider': {
-      // The reducer's pending-local-intent guard keeps a newer local pick
-      // over a stale snapshot/echo until the daemon confirms it.
-      if (typeof value === 'string' && value.length > 0) {
-        appStore.dispatch(hydrateDefaultProvider(value));
-      }
+    case 'model.providerDefaults': {
+      if (value && typeof value === 'object' && !Array.isArray(value))
+        appStore.dispatch(loadProviderModelsFromStorage(value as Record<string, string>));
+      return;
+    }
+    case 'notifications.volume': {
+      if (typeof value === 'number') appStore.dispatch(hydrateNotificationVolume(value, revision));
       return;
     }
     case 'providers.fastMode': {
@@ -88,12 +90,6 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
     }
     case 'mcp.enableUserServers': {
       if (typeof value === 'boolean') appStore.dispatch(setMcpEnabled(value));
-      return;
-    }
-    case 'model.providerDefaults': {
-      if (value && typeof value === 'object') {
-        appStore.dispatch(loadProviderModelsFromStorage(value as Record<string, string>));
-      }
       return;
     }
     case 'model.defaultReasoningEffort': {
@@ -128,15 +124,7 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>, revision?: num
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
-  // A delayed switch acknowledgement must not apply the outgoing provider's
-  // bundle while the model slice is protecting a newer provider choice.
   const incomingProvider = byPath.get('model.defaultProvider');
-  if (
-    !currentState.persistencePending &&
-    typeof incomingProvider === 'string' &&
-    incomingProvider !== appStore.state.model.defaultProviderId
-  )
-    return;
   const providerId =
     typeof incomingProvider === 'string'
       ? incomingProvider

@@ -551,8 +551,9 @@ describe('ModelPicker guest / collaborator lock', () => {
     };
   };
 
-  const renderAgentPicker = (selectedModel = 'auggie:sonnet4.6') =>
-    render(ModelPicker, {
+  const renderAgentPicker = (selectedModel = 'auggie:sonnet4.6') => {
+    mockAgentSession$.update((session) => session && { ...session, model: selectedModel });
+    return render(ModelPicker, {
       props: {
         selectedModel,
         agentId: 'agent-1',
@@ -561,6 +562,7 @@ describe('ModelPicker guest / collaborator lock', () => {
         portal: false,
       },
     });
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -803,6 +805,7 @@ describe('ModelPicker guest / collaborator lock', () => {
     withWorkspaceRole('owner');
     twoModelCatalog();
     mockModelState.availableModels = hostCatalog;
+    mockAgentSession$.update((session) => session && { ...session, model: 'auggie:sonnet4.6' });
     let resolveConfirm!: (confirmed: boolean) => void;
     const confirmModelChange = vi.fn(
       () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
@@ -4019,7 +4022,7 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     });
   });
 
-  it('holds the announcement and the auto-fallback until the bare re-homed model arrives', async () => {
+  it('announces the authoritative re-homed model without waiting for the parent prop', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const { notify } = await import('$lib/components/patterns/notify');
     enabledProvidersMap$.set({ auggie: true, codex: false });
@@ -4068,7 +4071,8 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     await tick();
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    expect(trigger.textContent).toContain('Sonnet 4.6');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
 
@@ -4335,6 +4339,61 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
         reasoningEffort: 'high',
       });
     });
+  });
+
+  it('renders a saga-accepted selection in an open observer before its parent prop catches up', async () => {
+    const { createAgentModelMutator } = await import('./agent-model-mutator');
+    const { agentClient } = await import('$features/agent/agent.client');
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'gpt5.4',
+    });
+    const models = [
+      { value: 'gpt5.4', label: 'GPT 5.4' },
+      { value: 'model-1', label: 'Model 1' },
+    ];
+    mockModelState.availableModels = models;
+    vi.mocked(getModelsForProvider).mockResolvedValue(models);
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        showReasoning: true,
+        portal: false,
+        onModelChange,
+      },
+    });
+    const trigger = screen.getByRole('button');
+    await fireEvent.click(trigger);
+    await screen.findByRole('option', { name: 'Model 1' });
+
+    const observer = mockAppStore.getReadableState().subscribe(() => {
+      const session = mockAppStore.state.agentSessions.byAgentId['agent-1'];
+      if (session) mockAgentSession$.set(session);
+    });
+    try {
+      const writer = createAgentModelMutator({ isLocked: () => false });
+      await writer.selectModel('agent-1', 'model-1', 'ws-1', 'auggie');
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'model-1',
+        'ws-1',
+        'auggie',
+      );
+      await waitFor(() => expect(trigger.textContent).toContain('Model 1'));
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByRole('option', { name: 'Model 1' }).getAttribute('aria-selected')).toBe(
+        'true',
+      );
+      expect(onModelChange).not.toHaveBeenCalled();
+    } finally {
+      observer();
+    }
   });
 
   it('cross-provider pick (intent-hq/monorepo#1657): session on claude-code, bare default-provider model → explicit providerId on the wire', async () => {

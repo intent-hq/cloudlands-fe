@@ -326,6 +326,35 @@ describe('real composer model mutation ownership', () => {
     expect(session().reasoningEffort).toBe('high');
   });
 
+  it("renders another consumer's accepted model in the still-open composer without a prop round-trip", async () => {
+    const { createAgentModelMutator } = await import('./agent-model-mutator');
+    mount({ requiresModelSwitchConfirmation: false });
+    await pick('auggie', 'auggie only');
+    await waitFor(() => expect(session().model).toBe('auggie-only'));
+    const trigger = document.querySelector(
+      '[data-chat-input-primary-actions] [data-slot="dropdown-root"] button',
+    )!;
+    await waitFor(() => expect(trigger.textContent).toContain('auggie only'));
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+    const writer = createAgentModelMutator({ isLocked: () => false });
+    await writer.selectModel('agent-1', 'codex-only', workspace.id, 'codex');
+    await waitFor(() =>
+      expect(session()).toMatchObject({ provider: 'codex', model: 'codex-only' }),
+    );
+    await waitFor(() => expect(trigger.textContent).toContain('codex only'));
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
+    expect(
+      screen.getByRole('option', { name: 'codex only', exact: true }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(fixture.setModel.mock.calls).toEqual([
+      [modelRequest('auggie', 'auggie-only')],
+      [modelRequest('codex', 'codex-only')],
+    ]);
+    expect(fixture.setEffort).not.toHaveBeenCalled();
+  });
+
   it('confirms the provider identity for a different bare model ID', async () => {
     mount();
     await pick('codex', 'codex only');

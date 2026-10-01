@@ -381,6 +381,10 @@
   // one (fetching then uses the active provider; the trigger icon prefers the
   // displayed model's provider).
   const explicitProviderId = $derived.by(() => {
+    if (updateGlobalStore) {
+      const selection = currentSessionSelection();
+      if (selection) return selection.providerId;
+    }
     if (providerId) return normalizeProviderId(providerId);
     if (agentId && workspaceId) {
       const session = $agentSession$;
@@ -603,14 +607,28 @@
 
   const USE_DEFAULT_VALUE = '__use_default__';
 
-  // undefined/null means "use default" and shows "Default model" instead of falling back to store
-  let localModel = $state<string | null | undefined>(untrack(() => selectedModel));
+  // Settings/spawn callers own their draft. Agent callers only use it while
+  // their optimistic/deferred request is live; accepted selections render
+  // directly from Redux, even if a parent's prop has not caught up yet.
+  let draftModel = $state<string | null | undefined>(
+    untrack(() => (updateGlobalDefault ? undefined : selectedModel)),
+  );
+  const localModel = $derived.by(() => {
+    // The global default owner already publishes its accepted/rolled-back
+    // selection through Redux. Never keep a competing draft for Settings.
+    if (updateGlobalDefault) return $selectedModel$;
+    const change = pendingModelUpdate ?? submittedModelChange?.change;
+    if (change && isCurrentModelChange(change)) return draftModel;
+    const selection = updateGlobalStore ? currentSessionSelection() : undefined;
+    return selection ? selection.model : draftModel;
+  });
   let userChangedModel = $state(false);
   let propModelAtLocalChange = $state<string | null | undefined>(undefined);
 
-  // Keep a local user selection until the parent prop catches up to localModel.
+  // Keep a draft selection until its owning parent catches up.
   $effect(() => {
-    if (selectedModel === localModel) {
+    if (updateGlobalDefault) return;
+    if (selectedModel === draftModel) {
       userChangedModel = false;
       propModelAtLocalChange = undefined;
       return;
@@ -623,7 +641,7 @@
       return;
     }
 
-    localModel = selectedModel;
+    draftModel = selectedModel;
     localPickedProviderId = null;
     pendingModelUpdate = null;
     modelChangeRevision++;
@@ -634,7 +652,8 @@
 
   function currentSessionSelection(): ModelChange['previous'] | undefined {
     const session = $agentSession$;
-    if (!agentId || !workspaceId || !session) return undefined;
+    if (!agentId || !workspaceId || session?.id !== agentId || session.workspaceId !== workspaceId)
+      return undefined;
     const provider = getAgentProvider(session, $defaultProviderId$);
     if (!provider) return undefined;
     // An omitted model on a present session is authoritative Auto, not missing data.
@@ -701,7 +720,7 @@
     // A rejected request must not restore an old snapshot over a newer
     // authoritative selection received while the request was in flight.
     const selection = currentSessionSelection() ?? change.previous;
-    localModel = selection.model;
+    draftModel = selection.model;
     localPickedProviderId = selection.providerId;
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -791,6 +810,14 @@
       appStore.dispatch(backgroundProviderSwitchBlocked(pick.providerId));
       return;
     }
+    if (updateGlobalDefault) {
+      // Defaults have one Redux-rendered selection. Dispatch before returning
+      // from the click; never stage a component draft or an agent request.
+      onModelChange?.(model ?? '', pick);
+      if (pick && !effectiveLocked && !destroyed && !$hostMember$)
+        appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+      return;
+    }
     const previous = pendingModelUpdate?.previous ?? {
       model: localModel,
       providerId: selectedModelProviderId || effectiveProviderId,
@@ -802,7 +829,7 @@
     }
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
-    localModel = model;
+    draftModel = model;
     localPickedProviderId = pick?.providerId ?? null;
 
     if (!pick || model === undefined) {
@@ -812,8 +839,6 @@
     }
     onModelChange?.(model, pick);
     if (effectiveLocked || destroyed) return;
-    if (updateGlobalDefault && !$hostMember$)
-      appStore.dispatch(selectModel(pick.modelId, pick.providerId));
     if (!updateGlobalStore || !agentId || !workspaceId) return;
     const change: ModelChange = {
       pick,
@@ -1020,6 +1045,7 @@
     // wait behind the disabled provider's catalog, which may never load.
     if (isSelectedModelProviderDisabled) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
+    if (selectedCatalogOption) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
     }
@@ -1284,10 +1310,18 @@
       activeBrowseProviderId !== selectedModelProviderId
     )
       return '';
-    return legacyDefaultMappedOption?.value ?? localModel ?? USE_DEFAULT_VALUE;
+    return (
+      (hasExplicitModel ? selectedCatalogOption?.value : undefined) ??
+      localModel ??
+      USE_DEFAULT_VALUE
+    );
   }
   $effect(() => {
-    dropdownValue = currentDropdownValue();
+    // A fast rejection can restore the same authoritative value within one
+    // render turn. Also observe the dropdown's attempted write so its row
+    // selection cannot outlive that rejected attempt.
+    const value = currentDropdownValue();
+    if (dropdownValue !== value) dropdownValue = value;
   });
 
   // Keep an explicit local choice until the daemon/parent has caught up.
@@ -1295,7 +1329,7 @@
   // another provider advertises the same model ID.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? (localPickedProviderId ??
+      ? ((updateGlobalDefault ? null : localPickedProviderId) ??
           normalizeProviderId(
             explicitProviderId ||
               splitLegacyCompoundId(localModel).providerId ||
@@ -1312,7 +1346,7 @@
     const legacyProviderId =
       hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
     return (
-      localPickedProviderId ??
+      (updateGlobalDefault ? null : localPickedProviderId) ??
       normalizeProviderId(explicitProviderId || legacyProviderId || effectiveProviderId)
     );
   });
