@@ -49,11 +49,40 @@ async function settled(page: Page) {
 }
 async function focus(page: Page, side: string) {
   await settled(page);
-  await page.getByTestId(side).locator('.tiptap').focus();
+  await expect(page.getByTestId(side).locator('.tiptap')).toHaveCount(1);
+  await page
+    .getByTestId(side)
+    .getByTestId('proof')
+    .evaluate(async (el) => {
+      const h = el as Host,
+        e = h.proof?.editor ?? h.native;
+      // Native focus schedules selection recovery. Finish that lifecycle before
+      // sending gestures so its callback cannot overwrite newer browser input.
+      const originalTimeout = window.setTimeout;
+      const pending: Promise<void>[] = [];
+      window.setTimeout = (handler, delay, ...args) => {
+        if (typeof handler !== 'function') return originalTimeout(handler, delay, ...args);
+        let done!: () => void;
+        pending.push(new Promise<void>((resolve) => (done = resolve)));
+        return originalTimeout(() => {
+          try {
+            handler(...args);
+          } finally {
+            done();
+          }
+        }, delay);
+      };
+      try {
+        e!.view.focus();
+      } finally {
+        window.setTimeout = originalTimeout;
+      }
+      await Promise.all(pending);
+    });
   await settled(page);
 }
 async function select(page: Page, side: string, anchor: number, head = anchor) {
-  await settled(page);
+  await focus(page, side);
   await expect(page.getByTestId(side).locator('.tiptap')).toHaveCount(1);
   await page
     .getByTestId(side)
@@ -62,7 +91,6 @@ async function select(page: Page, side: string, anchor: number, head = anchor) {
       (el, r) => {
         const h = el as Host,
           e = h.proof?.editor ?? h.native;
-        e!.view.focus();
         e!.commands.setTextSelection({ from: r.anchor, to: r.head });
       },
       { anchor, head },
