@@ -1,5 +1,6 @@
 /** Test-only backing store. Its Maps model disk/server state, NOT renderer caches. */
 import { bytes } from './bounded-note-service';
+import { SourceProjection, type InlineContext } from './source-projection';
 export const LIMITS = {
   request: 4096,
   active: 16384,
@@ -48,6 +49,56 @@ export class SourceJournal {
   generation = 1;
   commentRevision = 1;
   private regions = new Map<number, string>();
+  // Mock backing index only. Rebuilt lazily per revision; no full projection/token map retained.
+  private inlineIndex = new Map<number, { source: string; spans: SourceProjection['marks'] }>();
+  backingIndexBuilds = 0;
+  backingIndexScannedBytes = 0;
+  maxBackingIndexSourceBytes = 0;
+  inlineContextReads = 0;
+  maxInlineContextBytes = 0;
+  private spans(id: number) {
+    const source = this.region(id);
+    let index = this.inlineIndex.get(id);
+    if (!index || index.source !== source) {
+      const projection = new SourceProjection(source, 0, undefined, true);
+      index = { source, spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom) };
+      this.inlineIndex.set(id, index);
+      this.backingIndexBuilds++;
+      this.backingIndexScannedBytes += bytes(source);
+      this.maxBackingIndexSourceBytes = Math.max(this.maxBackingIndexSourceBytes, bytes(source));
+    }
+    return index.spans;
+  }
+  /** Never crop inside syntax: move inward, without transmitting that syntax. */
+  inlineBoundary(position: number, direction: -1 | 1) {
+    const { id, start } = this.locate(position);
+    let local = position - start;
+    for (const span of this.spans(id)) {
+      for (const [from, to] of [
+        [span.openFrom, span.contentFrom],
+        [span.contentTo, span.closeTo],
+      ])
+        if (local > from && local < to) local = direction > 0 ? to : from;
+    }
+    return start + local;
+  }
+  inlineContext(from: number, to: number, revision = this.revision): InlineContext {
+    if (revision !== this.revision) throw new Error('Stale inline context');
+    const stack = (position: number) => {
+      const { id, start } = this.locate(position);
+      const local = position - start;
+      return this.spans(id)
+        .filter((s) => s.openFrom < local && s.contentFrom <= local && local <= s.contentTo)
+        .map((s) => s.mark);
+    };
+    const context = { revision, from, to, before: stack(from), after: stack(to) };
+    const size = bytes(JSON.stringify(context));
+    if (size > LIMITS.request) throw new Error('Inline context exceeds experiment metadata budget');
+    this.inlineContextReads++;
+    this.maxInlineContextBytes = Math.max(this.maxInlineContextBytes, size);
+    this.log('inline-context', from, size);
+    return structuredClone(context);
+  }
   private persisted = new Map<number, string>();
   private receipts = new Map<string, { payload: string; revision: number }>();
   private events: Array<{ meta: Omit<Event, 'changes'>; pages: string[] }> = [];
@@ -452,6 +503,19 @@ export class SourceJournal {
   }
   get stats() {
     return {
+      backingIndexBuilds: this.backingIndexBuilds,
+      backingIndexScannedBytes: this.backingIndexScannedBytes,
+      maxBackingIndexSourceBytes: this.maxBackingIndexSourceBytes,
+      backingIndexPayloadBytes: [...this.inlineIndex.values()].reduce(
+        (n, i) => n + bytes(JSON.stringify(i.spans)),
+        0,
+      ),
+      backingIndexSourceBytes: [...this.inlineIndex.values()].reduce(
+        (n, i) => n + bytes(i.source),
+        0,
+      ),
+      inlineContextReads: this.inlineContextReads,
+      maxInlineContextBytes: this.maxInlineContextBytes,
       pendingInputs: this.pendingInputs,
       backingInputBytes: this.inputInbox.reduce((n, page) => n + bytes(page), 0),
       maxInputRead: this.maxInputRead,

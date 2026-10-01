@@ -11,7 +11,13 @@
     oracle = false,
     small = false,
     paragraphRepeats = 0,
-  }: { oracle?: boolean; small?: boolean; paragraphRepeats?: number } = $props();
+    sourceOverride,
+  }: {
+    oracle?: boolean;
+    small?: boolean;
+    paragraphRepeats?: number;
+    sourceOverride?: string;
+  } = $props();
   let host: HTMLDivElement;
   let root: HTMLDivElement;
   let proof: DocumentSession;
@@ -24,12 +30,11 @@
   onMount(() => {
     let disposed = false;
     // Deliberately unbounded MOCK BACKING fixture, separate from renderer windows.
-    const paragraphSource = 'repeated café 🌍 text repeated. '.repeat(paragraphRepeats);
+    const paragraphSource =
+      sourceOverride ?? 'repeated café 🌍 text repeated. '.repeat(paragraphRepeats);
+    const custom = sourceOverride !== undefined || paragraphRepeats > 0;
     const paragraph = () => paragraphSource;
-    const service = new SourceJournal(
-      paragraphRepeats ? paragraph : fixture,
-      paragraphRepeats ? 1 : small ? 2 : 10000,
-    );
+    const service = new SourceJournal(custom ? paragraph : fixture, custom ? 1 : small ? 2 : 10000);
     if (oracle) {
       const config = createEditorConfig({
         element: host,
@@ -40,14 +45,12 @@
         enableMentions: false,
         onUpdate: () => {},
       });
-      void processMarkdownToHTML(paragraphRepeats ? paragraph() : fixture(0) + fixture(1)).then(
-        (content) => {
-          if (disposed) return;
-          native = new Editor({ ...config, content, onUpdate: () => {} });
-          Object.assign(root, { native });
-          native.view.focus();
-        },
-      );
+      void processMarkdownToHTML(custom ? paragraph() : fixture(0) + fixture(1)).then((content) => {
+        if (disposed) return;
+        native = new Editor({ ...config, content, onUpdate: () => {} });
+        Object.assign(root, { native });
+        native.view.focus();
+      });
     } else {
       proof = new DocumentSession(service, host, publish);
       void proof.show(0).catch((error) => {

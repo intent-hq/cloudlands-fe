@@ -3,14 +3,23 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { Transform, type Step } from '@tiptap/pm/transform';
 import type { Splice } from './source-journal';
 
-type Mark = { type: string; attrs?: Record<string, unknown> };
+export type Mark = { type: string; attrs?: Record<string, unknown> };
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
 const key = (mark: Mark) => `${mark.type}:${mark.type === 'link' ? mark.attrs?.href : ''}`;
+export type InlineContext = {
+  revision: number;
+  from: number;
+  to: number;
+  before: Mark[];
+  after: Mark[];
+};
+export const openMark = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');
+export const closeMark = (mark: Mark) => (mark.type === 'bold' ? '**' : `](${mark.attrs?.href})`);
 const escape = (text: string) => text.replace(/[\\`*_[\]{}()#+.!>~-]/g, '\\$&');
 
 // Markdown strong delimiters cannot enclose boundary whitespace. Normalize only
 // those invisible marks; all text, positions, internal whitespace and other marks stay intact.
-function canonicalBold(doc: PMNode): PMNode {
+function canonicalBold(doc: PMNode, context?: InlineContext): PMNode {
   const tr = new Transform(doc);
   const bold = doc.type.schema.marks.bold;
   doc.forEach((paragraph, offset) => {
@@ -19,8 +28,16 @@ function canonicalBold(doc: PMNode): PMNode {
     const flush = () => {
       const leading = text.match(/^\s+/u)?.[0].length ?? 0;
       const trailing = text.match(/\s+$/u)?.[0].length ?? 0;
-      if (leading) tr.removeMark(from, from + leading, bold);
-      if (trailing) tr.removeMark(from + text.length - trailing, from + text.length, bold);
+      if (leading && !(from === 1 && context?.before.some((m) => m.type === 'bold')))
+        tr.removeMark(from, from + leading, bold);
+      if (
+        trailing &&
+        !(
+          from + text.length === doc.content.size - 1 &&
+          context?.after.some((m) => m.type === 'bold')
+        )
+      )
+        tr.removeMark(from + text.length - trailing, from + text.length, bold);
       text = '';
     };
     paragraph.forEach((node, inner) => {
@@ -46,13 +63,24 @@ export class SourceProjection {
     pmTo: number;
     openFrom: number;
     closeTo: number;
+    contentFrom: number;
+    contentTo: number;
+    mark: Mark;
   }> = [];
   private paragraphs: Array<{ end: number; next: number; separator: string }> = [];
   private trailing = '';
   constructor(
     readonly source: string,
     readonly start = 0,
+    readonly context?: InlineContext,
+    indexOnly = false,
   ) {
+    if (context && (context.from !== start || context.to !== start + source.length))
+      throw new Error('Context does not describe this source window');
+    const prefix = context?.before.map(openMark).join('') ?? '';
+    const suffix = context?.after.slice().reverse().map(closeMark).join('') ?? '';
+    source = prefix + source + suffix;
+    start -= prefix.length;
     let pm = 0;
     const paragraphs = /([^]*?)(\n[ \t]+\n+|\n\n|$)/g;
     let match: RegExpExecArray | null;
@@ -60,9 +88,13 @@ export class SourceProjection {
       const raw = match[1],
         base = start + match.index;
       pm++;
-      this.positions.set(pm, base);
+      if (!indexOnly) this.positions.set(pm, base);
       const nodes: JSONContent[] = [];
       const text = (value: string, from: number, to: number, stack: Mark[]) => {
+        if (indexOnly) {
+          pm += value.length;
+          return;
+        }
         const previous = nodes.at(-1);
         if (previous && JSON.stringify(previous.marks) === JSON.stringify(stack))
           previous.text += value;
@@ -131,6 +163,9 @@ export class SourceProjection {
               pmTo: pm,
               openFrom: base + i,
               closeTo: base + end,
+              contentFrom: base + contentFrom,
+              contentTo: base + contentTo,
+              mark,
             });
             i = end;
           } else {
@@ -140,9 +175,10 @@ export class SourceProjection {
         }
       };
       parse(0, raw.length, []);
-      this.positions.set(pm, base + raw.length);
-      this.paragraphs.push({ end: pm, next: pm + 2, separator: match[2] });
-      this.content.content!.push({ type: 'paragraph', content: nodes });
+      if (!indexOnly)
+        this.positions.set(pm, Math.min(this.start + this.source.length, base + raw.length));
+      if (!indexOnly) this.paragraphs.push({ end: pm, next: pm + 2, separator: match[2] });
+      if (!indexOnly) this.content.content!.push({ type: 'paragraph', content: nodes });
       pm++;
       this.trailing = match[2];
     }
@@ -172,7 +208,7 @@ export class SourceProjection {
   translate(step: Step, before: PMNode): Splice[] {
     const applied = step.apply(before);
     if (!applied.doc) throw new Error(applied.failed ?? 'Invalid proof step');
-    const after = canonicalBold(applied.doc),
+    const after = canonicalBold(applied.doc, this.context),
       mapping = step.getMap();
     const survivors = new Map<number, Token>();
     for (const token of this.tokens) {
@@ -191,9 +227,9 @@ export class SourceProjection {
     after.forEach((paragraph, offset, index) => {
       if (paragraph.type.name !== 'paragraph')
         throw new Error(`Unsupported proof node ${paragraph.type.name}`);
-      let active: Mark[] = [];
-      const close = (mark: Mark) => (mark.type === 'bold' ? '**' : `](${mark.attrs?.href})`);
-      const open = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');
+      let active: Mark[] = index === 0 ? (this.context?.before ?? []) : [];
+      const close = closeMark;
+      const open = openMark;
       const transition = (next: Mark[]) => {
         let shared = 0;
         while (
@@ -226,13 +262,17 @@ export class SourceProjection {
           source += token?.text === char ? token.raw : escape(char);
         }
       });
-      transition([]);
+      transition(index === after.childCount - 1 ? (this.context?.after ?? []) : []);
       const end = offset + paragraph.nodeSize - 1;
       source += index < after.childCount - 1 ? separators.get(end) || '\n\n' : this.trailing;
     });
     // Verify the entire bounded projection BEFORE admitting a source/journal mutation.
     const projected = before.type.schema.nodeFromJSON(
-      new SourceProjection(source, this.start).content,
+      new SourceProjection(
+        source,
+        this.start,
+        this.context && { ...this.context, to: this.start + source.length },
+      ).content,
     );
     if (!projected.eq(after)) throw new Error('Translated source differs from accepted document');
     let from = 0,

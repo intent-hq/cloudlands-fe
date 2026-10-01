@@ -11,7 +11,7 @@ import {
   type Selection,
   type Splice,
 } from './source-journal';
-import { SourceProjection } from './source-projection';
+import { SourceProjection, openMark, closeMark } from './source-projection';
 import { continuationWindow, CONTINUATION } from './continuation-window';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
@@ -25,6 +25,7 @@ export class DocumentSession {
   destroyed = 0;
   parsedBytes = 0;
   maxParsedBytes = 0;
+  maxProjectionInputBytes = 0;
   inFlightBytes = 0;
   maxInFlightBytes = 0;
   acceptedRoots = 0;
@@ -69,7 +70,16 @@ export class DocumentSession {
       throw new Error('Proof projection exceeds experiment budget');
     this.parsedBytes += bytes(source);
     this.maxParsedBytes = Math.max(this.maxParsedBytes, bytes(source));
-    return new SourceProjection(source, start);
+    const context = this.service.inlineContext(start, start + source.length);
+    if (context.revision !== this.service.revision)
+      throw new Error('Stale inline context response');
+    // The parser adds only this metadata-derived envelope, never a source prefix.
+    this.maxProjectionInputBytes = Math.max(
+      this.maxProjectionInputBytes,
+      bytes(source) +
+        bytes(context.before.map(openMark).join('') + context.after.map(closeMark).join('')),
+    );
+    return new SourceProjection(source, start, context);
   }
   private readRange(from: number, to: number) {
     if (to - from > LIMITS.active) throw new Error('Unbounded source range');
@@ -93,6 +103,8 @@ export class DocumentSession {
   }
   private readWindow(id: number, position?: number) {
     const bounds = continuationWindow(this.service, id, position);
+    bounds.from = this.service.inlineBoundary(bounds.from, 1);
+    bounds.to = this.service.inlineBoundary(bounds.to, -1);
     const source = this.readRange(bounds.from, bounds.to);
     this.inFlightBytes += bytes(source);
     this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
@@ -704,6 +716,25 @@ export class DocumentSession {
     if (splice.to <= oldStart) {
       const start = mapPoint(oldStart, splice);
       this.projection = this.project(this.readRange(start, this.windowEnd), start);
+      // A remote delimiter outside the crop can change its marks without changing its text.
+      const editor = this.editor!;
+      const doc = editor.schema.nodeFromJSON(this.projection.content);
+      if (!doc.eq(editor.state.doc)) {
+        this.suppress = true;
+        try {
+          const tr = editor.state.tr.replaceWith(0, editor.state.doc.content.size, doc.content);
+          tr.setSelection(
+            TextSelection.create(
+              tr.doc,
+              this.projection.pmAt(this.selection.anchor, this.selection.affinity),
+              this.projection.pmAt(this.selection.head, this.selection.affinity),
+            ),
+          );
+          editor.view.dispatch(tr.setMeta('addToHistory', false));
+        } finally {
+          this.suppress = false;
+        }
+      }
       this.editor?.view.setProps({});
       this.changed();
     } else void this.seek(this.selection.head);
@@ -731,6 +762,8 @@ export class DocumentSession {
       continuation: this.continuation,
       windowFrom: this.projection?.start,
       windowTo: this.windowEnd,
+      inlineContextBytes: bytes(JSON.stringify(this.projection?.context ?? {})),
+      maxProjectionInputBytes: this.maxProjectionInputBytes,
       continuationMetadataBytes: bytes(
         JSON.stringify({
           from: this.projection?.start,
