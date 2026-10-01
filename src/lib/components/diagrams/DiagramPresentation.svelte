@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
+  import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import DiagramActionsMenu from './DiagramActionsMenu.svelte';
 
   interface Props {
@@ -36,7 +37,10 @@
     if (!lane || !prose?.matches('.tiptap-editor.ProseMirror') || !contentElement) return;
     const content = contentElement;
     let intrinsic = 0;
-    const updateWidth = () => {
+    let cancelRead: (() => void) | undefined;
+    let cancelWrite: (() => void) | undefined;
+    const measureWidth = () => {
+      cancelRead = undefined;
       const custom = content.querySelector<HTMLElement>('[data-diagram-intrinsic-width]');
       const svg = content.querySelector<SVGSVGElement>('.mermaid-svg > svg');
       // Read authored/layout dimensions, never the fitted screen rectangle: fitting
@@ -48,8 +52,20 @@
       } else if (!custom && !svg) {
         intrinsic = 0;
       }
-      noteWidth = Math.min(lane.clientWidth, Math.max(prose.clientWidth, intrinsic));
-      controlsWidth = Math.min(lane.clientWidth, prose.clientWidth);
+      const laneWidth = lane.clientWidth;
+      const proseWidth = prose.clientWidth;
+      const nextNoteWidth = Math.min(laneWidth, Math.max(proseWidth, intrinsic));
+      const nextControlsWidth = Math.min(laneWidth, proseWidth);
+      cancelWrite = scheduleLayoutWrite(() => {
+        cancelWrite = undefined;
+        noteWidth = nextNoteWidth;
+        controlsWidth = nextControlsWidth;
+      });
+    };
+    const updateWidth = () => {
+      // SVG mutations arrive throughout layout. Measure once with the other
+      // note diagrams, before any presentation writes dirty the document again.
+      cancelRead ??= scheduleLayoutRead(measureWidth);
     };
     const resize = new ResizeObserver(updateWidth);
     resize.observe(lane);
@@ -65,6 +81,8 @@
     return () => {
       resize.disconnect();
       mutation.disconnect();
+      cancelRead?.();
+      cancelWrite?.();
     };
   });
 </script>
