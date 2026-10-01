@@ -1321,6 +1321,9 @@ export function assertStartupNative(bytes: Buffer, o: StartupOriginals) {
   startupRequire(
     root.children[0]!.links.length === 1 &&
       root.children[0]!.links[0]!.phase === 'binding' &&
+      root.children[0]!.links[0]!.host === null &&
+      root.children[0]!.children.every((c) => c.end!.seq < root.children[0]!.links[0]!.seq) &&
+      root.children[0]!.links[0]!.seq < root.children[0]!.end!.seq &&
       root.children[2]!.links.length === 0,
     'validation binding seam',
   );
