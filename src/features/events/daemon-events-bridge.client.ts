@@ -8,6 +8,7 @@ import {
   isAgentReadWorkspaceCurrent,
 } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -3473,7 +3474,7 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
   appStore.dispatch(invalidateWorkspaceTasks(workspaceId));
   // Listed workspaces can show progress even when no chat task list is open.
   // Reuse the aggregate read, targeting only the event's workspace, never a fan-out.
-  if (appStore.state.workspace.workspaces.ids.includes(workspaceId)) {
+  if (selectWorkspaceById.select(appStore.state, workspaceId)) {
     void reconcileWorkspaceAggregates(workspaceId);
   }
   const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
