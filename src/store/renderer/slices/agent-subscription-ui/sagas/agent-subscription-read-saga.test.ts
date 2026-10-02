@@ -25,6 +25,8 @@ import {
 
 import { initialState as workspaceEventsInitialState } from '../../workspace-events/workspace-events-slice';
 
+import { tabStateReducer } from '../../tab-state/tab-state-slice';
+
 const WS = 'ws-subscriptions';
 const AGENT = 'agent-parent';
 const CHILD = 'agent-child';
@@ -74,6 +76,7 @@ function harness(seed = initialState, extraState: Record<string, unknown> = {}) 
   const listeners = new Set<() => void>();
   const getState = () => ({
     agentSubscriptionUI: state,
+    tabState: tabStateReducer(undefined, { type: 'init' }),
     workspaceEvents: workspaceEventsInitialState,
     ...extraState,
   });
@@ -519,7 +522,10 @@ describe('agentSubscriptionReadSaga', () => {
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     run.channel.put(workspaceDeleted(WS, [AGENT]));
     await settle();
-    expect(run.state()).toEqual(seeded);
+    expect(run.state().entries[makeKey(WS, AGENT)]).toEqual({
+      ...seeded.entries[makeKey(WS, AGENT)],
+      snapshotStatus: 'loading',
+    });
 
     run.channel.put(workspaceUnmounted(WS));
     await settle();

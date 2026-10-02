@@ -30,8 +30,10 @@ import {
   resetSubscriptionUI,
   setSubscriptionSnapshot,
   subscriptionSnapshotFetchFailed,
+  subscriptionSnapshotFetchStarted,
 } from '../agent-subscription-ui-slice';
 import {
+  selectDisplayedSubscriptionTargets,
   selectTrackedAgentIds,
   selectWaitingState,
   selectSubscriptionSnapshotStatus,
@@ -60,6 +62,7 @@ interface WireResult {
 }
 
 interface ReadCoordinator {
+  displayed: Set<string>;
   contexts: Map<string, { wsId: string; agentId: string }>;
   reads: Map<string, Task>;
   completedCleanups: Map<string, Task>;
@@ -239,6 +242,7 @@ function* startSnapshotRead(
     return;
   }
   if (mode === 'snapshot') {
+    yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
     const cleanup = coordinator.completedCleanups.get(key);
     if (cleanup) yield* cancel(cleanup);
   }
@@ -262,7 +266,10 @@ function* requestSubscriptionFetchWorker(
 /** Mount demand joins current work; only invalidation requires a trailing read. */
 function* ensureSnapshotRead(coordinator: ReadCoordinator, wsId: string, agentId: string) {
   coordinator.contexts.set(makeKey(wsId, agentId), { wsId, agentId });
-  if (coordinator.reads.has(makeKey(wsId, agentId))) return;
+  if (coordinator.reads.has(makeKey(wsId, agentId))) {
+    yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
+    return;
+  }
   if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'ready') return;
   yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
 }
@@ -290,8 +297,39 @@ function* markAgentAsViewedPrefetchWorker(
   if (!agentId) return;
   const session = yield* selectAgentSession.effect(agentId);
   if (!session?.workspaceId) return;
-  if (coordinator.reads.has(makeKey(session.workspaceId, agentId))) return;
+  const key = makeKey(session.workspaceId, agentId);
+  // Selection already refreshed this visibility interval, even if the read
+  // completed before ChatPanel mounted. Failed prefetch still gets a retry.
+  if (coordinator.displayed.has(key)) {
+    yield* ensureSnapshotRead(coordinator, session.workspaceId, agentId);
+    return;
+  }
+  if (coordinator.reads.has(key)) {
+    yield* put(subscriptionSnapshotFetchStarted(session.workspaceId, agentId));
+    return;
+  }
   yield* startSnapshotRead(coordinator, session.workspaceId, agentId, 'snapshot');
+}
+
+/** Demand follows displayed conversations before their components mount. Leaving
+ * a target removes its visibility lease; revisiting refreshes cached snapshots.
+ */
+function* watchDisplayedSubscriptions(coordinator: ReadCoordinator): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectDisplayedSubscriptionTargets);
+  try {
+    while (true) {
+      const { payload: targets } = yield* take(channel);
+      const previous = coordinator.displayed;
+      coordinator.displayed = new Set(targets.map(({ wsId, agentId }) => makeKey(wsId, agentId)));
+      for (const { wsId, agentId } of targets) {
+        const key = makeKey(wsId, agentId);
+        if (previous.has(key) || coordinator.reads.has(key)) continue;
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+      }
+    }
+  } finally {
+    channel.close();
+  }
 }
 
 function* refreshWorkspaceSubscriptionsWorker(
@@ -345,6 +383,7 @@ function* watchSubscriptionGeneration(coordinator: ReadCoordinator): SagaGenerat
 
 export function* agentSubscriptionReadSaga() {
   const coordinator: ReadCoordinator = {
+    displayed: new Set(),
     contexts: new Map(),
     reads: new Map(),
     completedCleanups: new Map(),
@@ -362,5 +401,6 @@ export function* agentSubscriptionReadSaga() {
     ),
     takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker, coordinator),
     fork(watchSubscriptionGeneration, coordinator),
+    fork(watchDisplayedSubscriptions, coordinator),
   ]);
 }
