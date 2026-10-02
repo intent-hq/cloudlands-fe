@@ -1,6 +1,6 @@
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import { tableEditing, TableMap } from '@tiptap/pm/tables';
+import { tableEditing } from '@tiptap/pm/tables';
 import { bytes } from './bounded-note-service';
 import { clipboardCellSource, fitNativeTextPaste, type ClipboardValue } from './table-clipboard';
 import { tableRuns, type TableIndex, type TableCellSource } from './table-source';
@@ -69,7 +69,6 @@ export function planTableTextPaste(
   ]);
   const result = fitted.state.doc.firstChild!;
   if (result.type.name !== 'table') throw new Error('Cross-cell replacement removed the table');
-  const width = TableMap.get(result).width;
   let text = '';
   const states: Array<{ from: number; node: JSONContent }> = [];
   let point: TablePoint | undefined, caret: number | undefined;
@@ -117,17 +116,35 @@ export function planTableTextPaste(
     // Native rows with no physical cell are represented like the canonical serializer.
     text += old ? source.slice(old.from, old.to) : line + (row.childCount ? '' : '  |') + ending;
     if (r === 0) {
-      if (width === table.columns) text += source.slice(table.delimiter.from, table.delimiter.to);
-      else
-        text +=
-          '|' +
-          Array.from({ length: width }, (_, c) =>
-            c < table.delimiter.cells.length
-              ? source.slice(table.delimiter.cells[c].from, table.delimiter.cells[c].to)
-              : ' --- ',
-          ).join('|') +
-          '|' +
-          ending;
+      // Canonical Markdown takes alignment from physical first-row cells. A
+      // native range replacement can move their owners without changing width.
+      // Preserve framing, whitespace and dash spelling for every retained slot.
+      const delimiters: string[] = [];
+      row.forEach((cell, _offset, c) => {
+        const entry = table.delimiter.cells[c];
+        const raw = entry ? source.slice(entry.from, entry.to) : ' --- ';
+        const align = cell.attrs.align;
+        delimiters.push(
+          raw.replace(
+            /:?-+:?/,
+            (token) =>
+              (align === 'left' || align === 'center' ? ':' : '') +
+              token.replace(/:/g, '') +
+              (align === 'right' || align === 'center' ? ':' : ''),
+          ),
+        );
+      });
+      if (delimiters.length === table.delimiter.cells.length) {
+        let delimiter = source.slice(table.delimiter.from, table.delimiter.to);
+        for (let c = delimiters.length - 1; c >= 0; c--) {
+          const entry = table.delimiter.cells[c];
+          delimiter =
+            delimiter.slice(0, entry.from - table.delimiter.from) +
+            delimiters[c] +
+            delimiter.slice(entry.to - table.delimiter.from);
+        }
+        text += delimiter;
+      } else text += '|' + delimiters.join('|') + '|' + ending;
     }
   });
   if (!point || caret === undefined)

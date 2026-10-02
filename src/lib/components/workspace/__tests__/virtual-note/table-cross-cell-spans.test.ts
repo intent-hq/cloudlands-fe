@@ -140,6 +140,12 @@ for (const plain of [false, true])
           paste(old, true);
           expect(session.error).toBe('');
           const saved = service.region(0);
+          const savedTable = scanTables(saved)[0];
+          expect(saved.slice(savedTable.delimiter.from, savedTable.delimiter.to)).toBe(
+            mode === 'header'
+              ? '| --- | --- | :--- |\n'
+              : source.slice(table.delimiter.from, table.delimiter.to),
+          );
           expect(await processMarkdownToHTML(saved)).toBe(
             await processMarkdownToHTML(processHTMLToMarkdown(native.getHTML())),
           );
