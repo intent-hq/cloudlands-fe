@@ -77,6 +77,12 @@ vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOri
   };
 });
 
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { getPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-context';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 import GuestSessionsSettings from './GuestSessionsSettings.svelte';
 import { store as appStore } from '$store/renderer/store';
 import * as guestActions from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
@@ -1540,6 +1546,120 @@ describe('GuestSessionsSettings', () => {
       expect(mocks.signIn).toHaveBeenCalledOnce();
     });
   });
+  describe('instance-bound identity action', () => {
+    function admitInstance(remote: boolean, linked = true) {
+      const snapshot = appStore.state.principal.snapshot!;
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [
+            {
+              id: 'local',
+              label: 'Local machine',
+              isLocal: true,
+              host: null,
+              port: null,
+              fingerprint: null,
+            },
+            {
+              id: 'remote-host',
+              label: 'Remote host',
+              isLocal: false,
+              host: 'studio.example',
+              port: 8443,
+              fingerprint: 'AB:CD',
+            },
+          ],
+          // The active backend is not necessarily the backend bound to this window.
+          activeId: 'local',
+          windowBackendId: remote ? 'remote-host' : 'local',
+        }),
+      );
+      const context = getPrincipalConnectionContext(appStore.state)!;
+      appStore.dispatch(principalContextChanged(context));
+      const current = appStore.state.principal;
+      appStore.dispatch(
+        principalReceived(
+          {
+            context,
+            invalidation: current.invalidation,
+            presentationVersion: current.presentationVersion,
+          },
+          {
+            ...snapshot,
+            principal: {
+              ...snapshot.principal,
+              id: remote ? 'remote-member' : 'local-owner',
+              displayName: remote ? 'Remote Person' : 'Local Person',
+              login: remote ? 'remote-account' : 'local-account',
+              isAdministrator: !remote,
+              identity: linked
+                ? {
+                    provider: remote ? 'gitlab' : 'github',
+                    host: remote ? 'gitlab.example' : 'github.com',
+                    externalUserId: remote ? '84' : '42',
+                  }
+                : undefined,
+            },
+          },
+        ),
+      );
+    }
+
+    it('keeps remote identity truthful and blocks even a stale local action after a window rebind', async () => {
+      admitInstance(false);
+      render(GuestSessionsSettings);
+      const localAction = screen.getByRole('button', { name: 'Sign in or change account' });
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'Local Person',
+      );
+      await fireEvent.click(localAction);
+      expect(mocks.signIn).toHaveBeenCalledOnce();
+      mocks.signIn.mockClear();
+      admitInstance(true);
+      await fireEvent.click(localAction);
+      await waitFor(() =>
+        expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+          'Remote Person',
+        ),
+      );
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'gitlab.example',
+      );
+      expect(screen.getByTestId('collaboration-current-identity').textContent).not.toContain(
+        'Local Person',
+      );
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+      expect(mocks.signIn).not.toHaveBeenCalled();
+      admitInstance(false);
+      await fireEvent.click(
+        await screen.findByRole('button', { name: 'Sign in or change account' }),
+      );
+      expect(mocks.signIn).toHaveBeenCalledOnce();
+    });
+
+    it('does not tell an unlinked or unavailable remote user to sign in locally', async () => {
+      admitInstance(true, false);
+      render(GuestSessionsSettings);
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'No collaboration identity is linked to your user',
+      );
+      expect(screen.getByTestId('collaboration-current-identity').textContent).not.toContain(
+        'Sign in',
+      );
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+      const { principalContextChanged } =
+        await import('$store/renderer/slices/principal/principal-slice');
+      appStore.dispatch(principalContextChanged(null));
+      await waitFor(() =>
+        expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+          'unavailable until this connection is ready',
+        ),
+      );
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+      expect(mocks.signIn).not.toHaveBeenCalled();
+    });
+  });
+
   it('summarizes only the current principal identity, not another joined account or roster owner', async () => {
     const { principalReceived } = await import('$store/renderer/slices/principal/principal-slice');
     const current = appStore.state.principal;

@@ -45,7 +45,12 @@
     connectionWorkflowRequested,
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
-  import { selectConnectionWorkflow } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectConnectionWorkflow,
+    selectConnectionsLoaded,
+    selectCurrentConnectionId,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectGuestSessions,
     selectGuestLeaveConfirmations,
@@ -108,6 +113,12 @@
   const hosted$ = selectHostedWorkspaces();
   const canCreateWorkspace$ = selectCanCreateWorkspace();
   const ready$ = selectCollaborationReady();
+  const connectionId$ = selectCurrentConnectionId();
+  const connectionsLoaded$ = selectConnectionsLoaded();
+  // The sign-in IPC selects identity on the local daemon, never a remote host.
+  const localIdentityAction = $derived(
+    $connectionsLoaded$ && $connectionId$ === LOCAL_CONNECTION_ID,
+  );
   const currentIdentity = $derived($ready$ ? $principal$?.principal.identity : undefined);
   const hostContext$ = selectHostMembershipContext();
   const leavingIds$ = selectGuestLeavingIds();
@@ -302,7 +313,9 @@
           </p>
         {:else}
           <p class="type-body text-muted-foreground">
-            {m.settings_collaboration_identity_empty_description()}
+            {localIdentityAction
+              ? m.settings_collaboration_identity_empty_description()
+              : m.settings_collaboration_identity_remoteEmpty_description()}
           </p>
         {/if}
       </div>
@@ -313,16 +326,23 @@
       description={m.settings_collaboration_identity_description()}
     >
       {#snippet actions()}
-        <Button
-          variant="outline"
-          disabled={!$ready$}
-          onclick={() => {
-            if (actionReady()) appStore.dispatch(collaborationSignInRequested());
-          }}
-          >{currentIdentity
-            ? m.collaborationAuth_signIn_label()
-            : m.collaborationAuth_title()}</Button
-        >
+        {#if localIdentityAction}
+          <Button
+            variant="outline"
+            disabled={!$ready$}
+            onclick={() => {
+              if (
+                selectConnectionsLoaded.select(appStore.state) &&
+                selectCurrentConnectionId.select(appStore.state) === LOCAL_CONNECTION_ID &&
+                actionReady()
+              )
+                appStore.dispatch(collaborationSignInRequested());
+            }}
+            >{currentIdentity
+              ? m.collaborationAuth_signIn_label()
+              : m.collaborationAuth_title()}</Button
+          >
+        {/if}
       {/snippet}
       <SettingsForm
         schema={identitySchema}

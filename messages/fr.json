@@ -804,6 +804,7 @@
   "settings_collaboration_identity_description": "L’identité utilisée sur cette instance. Les comptes sur d’autres hôtes peuvent être différents.",
   "settings_collaboration_identity_unavailable_description": "Votre identité sera disponible lorsque cette connexion sera prête.",
   "settings_collaboration_identity_empty_description": "Aucune identité de collaboration sélectionnée sur cette instance. Connectez-vous pour choisir un compte.",
+  "settings_collaboration_identity_remoteEmpty_description": "Aucune identité de collaboration n’est liée à votre utilisateur sur cette instance.",
   "settings_collaboration_sharing_title": "Partager cette instance",
   "settings_collaboration_sharing_description": "Gérez les personnes qui peuvent accéder à cette instance.",
   "settings_collaboration_workspaces_title": "Espaces de travail partagés",

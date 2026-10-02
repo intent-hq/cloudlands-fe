@@ -9,6 +9,9 @@
     states: {
       'owner-empty': { props: {}, setup: () => setup('owner') },
       'owner-populated': { props: {}, setup: () => setup('owner', true) },
+      'remote-member': { props: {}, setup: () => setup('member', true, true, true) },
+      'remote-empty': { props: {}, setup: () => setup('member', false, true, true) },
+      'remote-unknown': { props: {}, setup: () => setup(null, false, true, true) },
       member: { props: {}, setup: () => setup('member', true) },
       unknown: { props: {}, setup: () => setup(null) },
       disabled: { props: {}, setup: () => setup('owner', false, false) },

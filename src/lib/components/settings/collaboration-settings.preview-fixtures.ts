@@ -1,4 +1,6 @@
 import { store } from '$store/renderer/store';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import {
@@ -25,10 +27,13 @@ export function setupCollaborationSettingsPreview(
   role: HostRole | null,
   populated = false,
   enabled = true,
+  remote = false,
 ) {
   const before = store.state;
   const originalClient = { ...hostMembershipClient };
-  const identity = { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
+  const identity = remote
+    ? { provider: 'gitlab' as const, host: 'gitlab.example', externalUserId: '84' }
+    : { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
   const members: HostMember[] = [
     {
       principalId: 'preview-owner',
@@ -77,6 +82,13 @@ export function setupCollaborationSettingsPreview(
     throw new Error('Preview does not revoke invitations');
   };
   store.dispatch(setLabsMultiplayerEnabled(enabled));
+  store.dispatch(
+    connectionsListReceived({
+      connections: getItems(before.connections.connections),
+      activeId: LOCAL_CONNECTION_ID,
+      windowBackendId: remote ? 'preview-remote' : LOCAL_CONNECTION_ID,
+    }),
+  );
   admitLegacyPrincipal();
   const context = store.state.principal.context;
   store.dispatch(principalContextChanged(context));
@@ -93,8 +105,8 @@ export function setupCollaborationSettingsPreview(
         {
           principal: {
             id: 'preview-current',
-            login: populated ? 'taylor' : null,
-            displayName: populated ? 'Taylor Chen' : null,
+            login: populated ? (remote ? 'robin-remote' : 'taylor') : null,
+            displayName: populated ? (remote ? 'Robin Patel' : 'Taylor Chen') : null,
             avatarUrl: null,
             isAdministrator: role === 'owner',
             hostRole: role,
@@ -182,6 +194,13 @@ export function setupCollaborationSettingsPreview(
   const stop = store.runSaga(hostMembershipSaga);
   return () => {
     stop();
+    store.dispatch(
+      connectionsListReceived({
+        connections: getItems(before.connections.connections),
+        activeId: before.connections.activeId,
+        windowBackendId: before.connections.windowBackendId,
+      }),
+    );
     Object.assign(hostMembershipClient, originalClient);
     store.dispatch(
       guestSessionsListReceived({

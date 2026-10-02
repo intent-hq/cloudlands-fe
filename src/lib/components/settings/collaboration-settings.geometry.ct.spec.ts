@@ -84,3 +84,23 @@ test('current identity remains distinct from the host roster and joined host ide
   await expect(page.getByTestId('guest-sessions-joined')).toContainText('taylor-work');
   await expect(page.getByRole('button', { name: 'Remove all guests', exact: true })).toBeVisible();
 });
+
+for (const state of ['remote-member', 'remote-empty', 'remote-unknown']) {
+  test(`${state} shows only this host identity without local sign-in`, async ({ mount, page }) => {
+    await mount(Preview, {
+      hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state } },
+    });
+    await expect(page.getByRole('button', { name: /Sign in/ })).toHaveCount(0);
+    const summary = page.getByTestId('collaboration-current-identity');
+    if (state === 'remote-member') {
+      await expect(summary).toContainText('Robin Patel');
+      await expect(summary).toContainText('gitlab.example');
+      await expect(summary).not.toContainText('Taylor Chen');
+    } else if (state === 'remote-empty') {
+      await expect(summary).toContainText('No collaboration identity is linked to your user');
+      await expect(summary).not.toContainText('Sign in');
+    } else {
+      await expect(summary).toContainText('unavailable until this connection is ready');
+    }
+  });
+}
