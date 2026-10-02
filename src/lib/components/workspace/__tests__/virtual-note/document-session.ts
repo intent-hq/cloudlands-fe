@@ -342,6 +342,9 @@ export class DocumentSession {
     this.tableOriginX = Math.max(0, this.tableOriginX + before.left - after.left);
     this.tableOriginY = Math.max(0, this.tableOriginY + before.top - after.top);
     editor.view.dom.style.paddingLeft = `${this.tableOriginX}px`;
+    // Keep the content box constant as the inset grows: the native wrapper is
+    // centered within it, so changing padding alone applies only half the offset.
+    editor.view.dom.style.width = `${this.projection!.table!.window.columns * this.tableColumnWidth + this.tableOriginX + this.tableViewport}px`;
     editor.view.dom.style.paddingTop = `${(this.projection!.table!.window.geometry?.top ?? 0) + this.tableOriginY}px`;
   }
   private tableScroll = () => {
