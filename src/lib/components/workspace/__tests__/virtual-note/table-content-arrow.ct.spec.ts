@@ -4,7 +4,14 @@ import { focus, settled, type Host } from './paragraph-browser';
 
 const source =
   '| H | R |\n| --- | --- |\n| ' + 'abcdefghij '.repeat(6000) + ' | neighbor |\n| tail | end |';
-for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'])
+for (const key of [
+  'ArrowRight',
+  'ArrowLeft',
+  'ArrowDown',
+  'ArrowUp',
+  'Shift+ArrowRight',
+  'Shift+ArrowLeft',
+])
   for (const delayed of [false, true])
     test(`native ${key} continues inside a cell fragment${delayed ? ' with delayed fetch' : ''}`, async ({
       mount,
@@ -23,7 +30,7 @@ for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'])
           const paragraphs = p.projection!.table!.paragraphs.filter(
             (q) => q.cell.from === entry.cell.from,
           );
-          const end = key === 'ArrowRight' || key === 'ArrowDown';
+          const end = key.endsWith('ArrowRight') || key.endsWith('ArrowDown');
           const q = end ? paragraphs.at(-1)! : paragraphs[0];
           return {
             point: p.projection!.table!.pointAt(end ? q.end : q.pm)!,
@@ -78,6 +85,11 @@ for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'])
             .toBe(true);
         }
         await page.keyboard.press(key);
+        if (key.startsWith('Shift+')) {
+          await page.keyboard.press(key);
+          await page.keyboard.press(key.endsWith('Right') ? 'Shift+ArrowLeft' : 'Shift+ArrowRight');
+          await page.keyboard.press(key);
+        }
         if (side === 'bounded' && delayed)
           await page
             .getByTestId(side)
@@ -110,6 +122,7 @@ for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'])
               if (!p)
                 return {
                   offset: editor!.state.selection.$head.parentOffset,
+                  anchorOffset: editor!.state.selection.$anchor.parentOffset,
                   block: editor!.state.selection.$head.index(3),
                 };
               const selection = structuredClone(p.selection.table!);
@@ -136,8 +149,10 @@ for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'])
       expect(bounded.source).toBe(source);
       expect(bounded.cell).toBe(fixture.point.cell);
       expect(bounded.block).toBe(native.block);
-      if (key === 'ArrowRight' || key === 'ArrowLeft') expect(bounded.offset).toBe(native.offset);
-      else if (key === 'ArrowDown') expect(bounded.offset).toBeGreaterThan(fixture.point.offset);
+      if (key.endsWith('ArrowRight') || key.endsWith('ArrowLeft')) {
+        expect(bounded.offset).toBe(native.offset);
+        expect(bounded.selection!.anchor.offset).toBe(native.anchorOffset);
+      } else if (key === 'ArrowDown') expect(bounded.offset).toBeGreaterThan(fixture.point.offset);
       else expect(bounded.offset).toBeLessThan(fixture.point.offset);
       expect(bounded.projected).toEqual(bounded.selection!.head);
       expect(bounded.destroyed).toBe(true);
