@@ -519,6 +519,8 @@
 
   let isInitialized = $state(false);
   let isInitializing = $state(true);
+  let isLayingOutDiagrams = $state(true);
+  let isNoteLoading = $derived(isInitializing || isLayingOutDiagrams);
 
   // Streaming-in animation state: triggers a cascading reveal
   // when a newly created note first loads
@@ -579,6 +581,45 @@
   let shouldShowRawNoteView = $derived(
     isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
   );
+
+  $effect(() => {
+    if (!element || isInitializing) {
+      isLayingOutDiagrams = true;
+      return;
+    }
+    if (isTooLargeForRichEditor || shouldShowRawNoteView) {
+      isLayingOutDiagrams = false;
+      return;
+    }
+
+    const observer = new MutationObserver(revealSettledNote);
+    function revealSettledNote() {
+      const diagrams = element.querySelectorAll('.node-mermaidBlock, .node-diagram_block');
+      const ready = [...diagrams].every(
+        (diagram) =>
+          diagram
+            .querySelector('[data-diagram-presentation]')
+            ?.getAttribute('data-diagram-presentation-settled') === 'true' &&
+          !diagram.querySelector('[data-render-settled="false"], [data-diagram-settled="false"]'),
+      );
+      if (!ready) return;
+      isLayingOutDiagrams = false;
+      // Later edits and panel resizing must not hide an already readable note.
+      observer.disconnect();
+    }
+    observer.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        'data-diagram-presentation-settled',
+        'data-render-settled',
+        'data-diagram-settled',
+      ],
+    });
+    revealSettledNote();
+    return () => observer.disconnect();
+  });
 
   // Reactive selector subscriptions at component init time
 
@@ -2165,8 +2206,8 @@
         {/if}
 
         <!-- Loading skeleton shown while editor content is being processed -->
-        {#if isInitializing}
-          <div class="w-full p-4 space-y-4">
+        {#if isNoteLoading}
+          <div class="absolute inset-x-0 top-0 p-4 space-y-4" aria-hidden="true">
             <Skeleton class="h-8 w-3/4" />
             <Skeleton class="h-4 w-full" />
             <Skeleton class="h-4 w-5/6" />
@@ -2211,10 +2252,12 @@
           class="tiptap-editor-wrapper justify-center pb-32!"
           class:with-comments={hasActiveComments}
           class:is-dragging={isDragging}
-          class:opacity-0={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
-          class:absolute={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
+          class:opacity-0={isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView}
+          class:absolute={isTooLargeForRichEditor || shouldShowRawNoteView}
           class:invisible={isTooLargeForRichEditor || shouldShowRawNoteView}
           class:streaming-in={isStreamingIn}
+          inert={isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView}
+          aria-busy={isNoteLoading}
           onpaste={handleImagePaste}
           ondrop={handleDrop}
           ondragenter={handleDragEnter}
