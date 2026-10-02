@@ -64,6 +64,22 @@ for (const fault of ['none', 'stage', 'record'] as const) {
       const saved = source.slice(0, table.from) + source.slice(table.to);
       expect(session.error).toBe('');
       expect(service.region(0)).toBe(saved);
+      const canonical = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: await processMarkdownToHTML(saved),
+          editable: true,
+          useMarkdown: true,
+          enableComments: false,
+          enableMentions: false,
+          onUpdate: () => {},
+        }),
+      );
+      try {
+        expect(canonical.getJSON()).toEqual(native.getJSON());
+      } finally {
+        canonical.destroy();
+      }
       const old = session.editor!;
       await session.seek(session.selection.head);
       expect(old.isDestroyed).toBe(true);
