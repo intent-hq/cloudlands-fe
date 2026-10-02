@@ -128,7 +128,7 @@ const GATE_VISIBLE_DELAY_MS = 500;
 
 const appStorePort = (): ChatDraftStorePort => ({
   dispatch: (action) => appStore.dispatch(action),
-  ownerView: (ownerId) => selectChatDraftOwnerView(ownerId),
+  ownerView: (ownerId) => selectChatDraftOwnerView.withStore(appStore)(ownerId),
 });
 
 export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDraftManager {

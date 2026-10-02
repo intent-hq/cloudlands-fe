@@ -169,7 +169,7 @@
     ),
   );
 
-  function requestMutation(
+  function dispatchMutation(
     messageId: string,
     operation: QueuedMessageMutationOperation,
   ): Promise<QueuedMessageMutationResult> {
@@ -201,7 +201,7 @@
     editing: boolean,
   ): Promise<{ success: boolean; error?: string }> {
     if (!storeBacked) return onedit ? onedit(messageId, content, editing) : { success: true };
-    const result = await requestMutation(messageId, { kind: 'edit', content, editing });
+    const result = await dispatchMutation(messageId, { kind: 'edit', content, editing });
     return {
       success: result.status === 'succeeded',
       ...(result.error !== undefined ? { error: result.error } : {}),
@@ -210,7 +210,7 @@
 
   async function runSendNow(messageId: string): Promise<QueuedMessageSendOutcome | void> {
     if (!storeBacked) return onsendnow?.(messageId);
-    const result = await requestMutation(messageId, { kind: 'sendNow' });
+    const result = await dispatchMutation(messageId, { kind: 'sendNow' });
     if (result.status === 'failed')
       throw new Error(result.error || m.agent_chatSend_sendNowRejected_error());
     return result.sendOutcome;
