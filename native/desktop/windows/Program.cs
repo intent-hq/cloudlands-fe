@@ -44,12 +44,20 @@ static class Program {
     sealed class Refusal(string code,string detail,string execution="not_started") : Exception(detail) { public string Code=code; public string Execution=execution; }
     static Refusal Unsupported(string detail) => new("desktop-unsupported-operation",detail);
     static void Main() {
-        // A Mutex must be released by its acquiring thread. The watchdog releases
-        // input only; the main loop releases the mutex when it observes expiry.
-        using var watchdog = new System.Threading.Timer(_ => { lock(gate) { if (owned && Environment.TickCount64-lastStep>=15000) ReleaseInput(); } },null,500,500);
+        // Only this thread owns/releases the Mutex. Read on a worker so an open
+        // but silent parent pipe cannot prevent lease cleanup on the owner thread.
+        // Console.In.ReadLineAsync may execute synchronously on its synchronized
+        // reader, so Task.Run is intentional here.
         try {
-            string? line;
-            while ((line=Console.ReadLine()) != null) {
+            Task<string?>? read=null;
+            while (true) {
+                read ??= Task.Run(() => Console.ReadLine());
+                if(!read.Wait(250)) {
+                    lock(gate) { if(owned && Environment.TickCount64-lastStep>=15000) Release(); }
+                    continue;
+                }
+                var line=read.GetAwaiter().GetResult(); read=null;
+                if(line is null) break;
                 long id=0;
                 try {
                     using var doc=JsonDocument.Parse(line); var p=doc.RootElement; id=p.GetProperty("id").GetInt64();
