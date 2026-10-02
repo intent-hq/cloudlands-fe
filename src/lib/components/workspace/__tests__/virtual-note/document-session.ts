@@ -25,6 +25,7 @@ import {
   mapSelection,
   mapPoint,
   type Selection,
+  type TablePoint,
   type Splice,
 } from './source-journal';
 import { SourceProjection, openMark, closeMark, type InlineContext } from './source-projection';
@@ -343,11 +344,14 @@ export class DocumentSession {
     return { ...bounds, source, table: undefined };
   }
   /** A source coordinate identifies a continuation; page edges never enter the source. */
-  seek(position: number, restore = true) {
+  seek(position: number, restore = true, anchorPoint = this.selection.table?.head) {
     return this.show(
       Math.min(this.service.locate(position).id, Math.max(0, this.service.count - 2)),
       restore,
       position,
+      false,
+      undefined,
+      anchorPoint,
     );
   }
   private deferInput(command: string, text?: string) {
@@ -860,6 +864,7 @@ export class DocumentSession {
     position?: number,
     preserveView = false,
     requestedSelection?: Selection,
+    anchorPoint: TablePoint | undefined = this.selection.table?.head,
   ) {
     if (this.editor?.view.composing) {
       this.error = 'Composition pins current view';
@@ -968,24 +973,24 @@ export class DocumentSession {
       // can contain many viewports of text. Keep only the encountered caret's
       // pixel coordinate while the old native view is still available.
       let restoreAnchor: { left: number; top: number } | undefined;
+      let restoreViewport: { left: number; top: number } | undefined;
       if (restore && next.table && this.projection?.table && this.editor) {
         const scroller = this.tableScroller ?? this.host.parentElement;
         const viewport = scroller?.getBoundingClientRect();
-        if (
-          scroller &&
-          viewport &&
-          scroller.clientHeight > 0 &&
-          this.projection.table.pointAt(this.editor.state.selection.head)
-        ) {
+        if (scroller && viewport && scroller.clientHeight > 0) {
+          restoreViewport = { left: scroller.scrollLeft, top: scroller.scrollTop };
+          const actual = this.projection.table.pointAt(this.editor.state.selection.head);
           // Detached or non-layout hosts have no encountered pixel anchor.
           // Do not ask native text geometry to measure an invisible viewport.
-          const caret = this.editor.view.coordsAtPos(this.editor.state.selection.head);
-          if (caret.top >= viewport.top && caret.bottom <= viewport.top + scroller.clientHeight)
-            restoreAnchor = { left: caret.left, top: caret.top };
+          if (actual && JSON.stringify(actual) === JSON.stringify(anchorPoint)) {
+            const caret = this.editor.view.coordsAtPos(this.editor.state.selection.head);
+            if (caret.top >= viewport.top && caret.bottom <= viewport.top + scroller.clientHeight)
+              restoreAnchor = { left: caret.left, top: caret.top };
+          }
         }
       }
-      if (restoreAnchor) {
-        const anchorBytes = bytes(JSON.stringify(restoreAnchor));
+      if (restoreViewport) {
+        const anchorBytes = bytes(JSON.stringify({ restoreAnchor, restoreViewport, anchorPoint }));
         const activeBytes =
           bytes(window.source) + bytes(JSON.stringify(next.context)) + anchorBytes;
         if (activeBytes > TABLE_ACTIVE_BYTES)
@@ -1544,10 +1549,17 @@ export class DocumentSession {
       } else this.renderSelection();
       this.suppress = false;
       if (this.projection.table?.window.trailing !== false) this.editor.view.focus();
-      if (restoreAnchor && this.projection.table) {
+      if (restoreViewport && this.projection.table && this.tableScroller) {
         const actual = this.projection.table.pointAt(this.editor.state.selection.head);
         if (JSON.stringify(actual) === JSON.stringify(this.selection.table?.head)) {
-          this.preserveTableAnchor(restoreAnchor);
+          if (restoreAnchor) this.preserveTableAnchor(restoreAnchor);
+          else {
+            // Reconstruct at the previous viewport before revealing the exact
+            // logical endpoint. A clamped old crop is never a caret anchor.
+            this.tableScroller.scrollLeft = restoreViewport.left;
+            this.tableScroller.scrollTop = restoreViewport.top;
+            this.revealTableCaret();
+          }
           this.rememberTableAnchor();
         }
       }
@@ -1564,6 +1576,32 @@ export class DocumentSession {
     } finally {
       this.inFlightBytes -= bytes(window.source);
     }
+  }
+  private revealTableCaret() {
+    const scroller = this.tableScroller!,
+      view = this.editor!.view;
+    const caret = view.coordsAtPos(view.state.selection.head, 1);
+    const viewport = scroller.getBoundingClientRect();
+    const threshold = view.someProp('scrollThreshold') || 0;
+    const margin = view.someProp('scrollMargin') || 5;
+    const side = (
+      value: number | { top: number; bottom: number; left: number; right: number },
+      key: 'top' | 'bottom' | 'left' | 'right',
+    ) => (typeof value === 'number' ? value : value[key]);
+    // Use native selection-reveal margins on the bounded table canvas. This
+    // changes only viewport geometry, without inventing an edit transaction or
+    // running appendTransaction while reconstructing a source-less terminal.
+    if (caret.top < viewport.top + side(threshold, 'top'))
+      scroller.scrollTop += caret.top - viewport.top - side(margin, 'top');
+    else if (caret.bottom > viewport.top + scroller.clientHeight - side(threshold, 'bottom'))
+      scroller.scrollTop +=
+        caret.bottom - viewport.top - scroller.clientHeight + side(margin, 'bottom');
+    if (caret.left < viewport.left + side(threshold, 'left'))
+      scroller.scrollLeft += caret.left - viewport.left - side(margin, 'left');
+    else if (caret.right > viewport.left + scroller.clientWidth - side(threshold, 'right'))
+      scroller.scrollLeft +=
+        caret.right - viewport.left - scroller.clientWidth + side(margin, 'right');
+    this.tableAnchoredScroll = { left: scroller.scrollLeft, top: scroller.scrollTop };
   }
   private renderSelection() {
     const p = this.projection!,
@@ -2019,6 +2057,7 @@ export class DocumentSession {
     const index = redo ? this.service.cursor : this.service.cursor - 1;
     if (index < 0 || index >= this.service.depth) return false;
     const event = this.service.event(index);
+    const anchorPoint = this.selection.table?.head;
     this.service.atomic(() => {
       this.service.bookmark(index, redo ? 'before' : 'after', this.selection);
       for (const change of this.service.changes(index, !redo)) this.service.replay(change, redo);
@@ -2028,7 +2067,7 @@ export class DocumentSession {
     this.selection = { ...(redo ? event.after : event.before), revision: this.service.revision };
     this.prevTime = 0;
     this.cache.clear();
-    await this.seek(this.selection.head);
+    await this.seek(this.selection.head, true, anchorPoint);
     return true;
   }
   save() {
@@ -2074,6 +2113,7 @@ export class DocumentSession {
     await this.seek(from);
   }
   remote(splice: Splice) {
+    const anchorPoint = this.selection.table?.head;
     const table = !!this.projection?.table;
     const oldStart = this.projection!.start;
     this.service.atomic(() => {
@@ -2087,7 +2127,7 @@ export class DocumentSession {
       this.prevRange = [mapPoint(this.prevRange[0], splice), mapPoint(this.prevRange[1], splice)];
     this.cache.clear();
     if (table) {
-      void this.seek(this.selection.head);
+      void this.seek(this.selection.head, true, anchorPoint);
       return;
     }
     if (splice.to <= oldStart) {
