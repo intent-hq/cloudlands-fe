@@ -80,12 +80,19 @@ vi.mock('../workspace-task-fallback', async (importOriginal) => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const [{ createAppStoreMockModule }, { initialState: chatDrafts }, { initialState: questionUi }] =
+    await Promise.all([
+      import('$store/renderer/utils/test-helpers/store-mock'),
+      import('$store/renderer/slices/chat-drafts/chat-drafts-slice'),
+      import('$store/renderer/slices/question-ui/question-ui-slice'),
+    ]);
   return createAppStoreMockModule({
     state: () => ({
       agentSubscriptionUI: { entries: {} },
       browser: { byWorkspaceId: {} },
+      chatDrafts,
+      chatPanelUi: { byWorkspaceId: {} },
+      questionUi,
     }),
     dispatch: testState.dispatch,
   });

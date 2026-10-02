@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, within, waitFor } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withHostPrincipal } from '../../../../test/fixtures/principal-state';
-import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage, QueuedMessage } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -354,7 +353,6 @@ describe('chat content column contracts', () => {
           messageMetadata: { fromPrincipalId: 'other' },
         },
       ];
-      vi.mocked(appClient.agents.editQueued).mockClear().mockResolvedValue({ success: true });
       const container = await renderPanel({
         id: 'ws-1',
         title: 'Workspace',
@@ -385,13 +383,26 @@ describe('chat content column contracts', () => {
       if (role) {
         await fireEvent.dblClick(own.getByTestId('queued-message-content'));
         await waitFor(() =>
-          expect(appClient.agents.editQueued).toHaveBeenCalledWith(
-            'agent-1',
-            queuedMessage.id,
-            'Own queue input',
-            true,
-            'ws-1',
+          expect(scaffold.dispatch).toHaveBeenCalledWith(
+            expect.objectContaining({
+              type: 'agentQueue/mutationRequested',
+              payload: [
+                expect.objectContaining({
+                  workspaceId: 'ws-1',
+                  agentId: 'agent-1',
+                  messageId: queuedMessage.id,
+                  operation: { kind: 'edit', content: 'Own queue input', editing: true },
+                }),
+              ],
+            }),
           ),
+        );
+        await waitFor(() =>
+          expect(
+            scaffold.dispatch.mock.calls.some(
+              ([action]) => action.type === 'agentQueue/mutationConsumed',
+            ),
+          ).toBe(true),
         );
         await fireEvent.keyDown(own.getByRole('textbox'), { key: 'Escape' });
         await waitFor(() => expect(own.queryByRole('textbox')).toBeNull());
@@ -400,8 +411,15 @@ describe('chat content column contracts', () => {
         );
         expect(scaffold.dispatch).toHaveBeenCalledWith(
           expect.objectContaining({
-            type: 'agentQueue/removeRequested',
-            payload: ['agent-1', queuedMessage.id],
+            type: 'agentQueue/mutationRequested',
+            payload: [
+              expect.objectContaining({
+                workspaceId: 'ws-1',
+                agentId: 'agent-1',
+                messageId: queuedMessage.id,
+                operation: { kind: 'remove' },
+              }),
+            ],
           }),
         );
         await fireEvent.click(
@@ -409,8 +427,15 @@ describe('chat content column contracts', () => {
         );
         expect(scaffold.dispatch).toHaveBeenCalledWith(
           expect.objectContaining({
-            type: 'chatState/sendQueuedMessageNowRequested',
-            payload: ['agent-1', 'ws-1', queuedMessage.id],
+            type: 'agentQueue/mutationRequested',
+            payload: [
+              expect.objectContaining({
+                workspaceId: 'ws-1',
+                agentId: 'agent-1',
+                messageId: queuedMessage.id,
+                operation: { kind: 'sendNow' },
+              }),
+            ],
           }),
         );
       }

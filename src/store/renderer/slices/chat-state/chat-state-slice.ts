@@ -2,7 +2,7 @@ import {
   buildQueuedRecordedAttempt,
   buildProcessedRecordedAttempt,
 } from '$features/agent/utils/build-recorded-attempt';
-import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -19,7 +19,6 @@ import type {
   ModelUnavailableInfo,
   QuotaExceededInfo,
   QueuedRetryRecord,
-  QueuedMessageSendOutcome,
   SendMessagePayload,
   InitializeChatOptions,
   PendingProposalRecovery,
@@ -294,7 +293,7 @@ function reduceAgentIdleReconcile(
  * attachments and contribution metadata. This preserves a merged send on retry;
  * an edit is reflected even when the save's self-drain (agent idle at save,
  * STAB-27 release awaits the drain BEFORE the RPC response returns) promotes
- * the record before ChatPanel's post-response `chatQueuedRetryRecordUpdated`
+ * the record before the edit saga's post-response `chatQueuedRetryRecordUpdated`
  * can run. Also covers edits made from another client/window. Present-entry
  * matching is turnId-aware: a terminal-failure requeue mints a NEW entry id
  * but keeps the original turnId, so the requeued entry still counts as
@@ -656,7 +655,7 @@ export const chatQueuedRetryRecordParked = createAction<
  * PRE-edit text. Only the text changes (the edit RPC carries no
  * model/noteIds/imageBlocks); `seq` and recorded options are preserved. A
  * no-op when nothing is parked under the id (e.g. the entry predates this
- * chat's records). Dispatched by ChatPanel's edit-queued handler.
+ * chat's records). Dispatched by the queued-edit saga from the daemon's echoed entry.
  */
 export const chatQueuedRetryRecordUpdated = createAction<
   [agentId: string, messageId: string, text: string]
@@ -949,6 +948,36 @@ export const pendingProposalRecoveryPruned = createAction<
   [agentId: string, keepMessageIds: string[]]
 >('chatState/pendingProposalRecoveryPruned');
 
+/**
+ * UI request: resolve the human predecessor of `currentMessageId`, which is
+ * outside the loaded transcript, with an anchored backward walk
+ * (`aroundMessageId`, then backward cursors). The saga reserves the shared
+ * seek slot, commits only the landing page, and holds the slot until
+ * `previousUserMessageLoadReleased` with the same `requestId`.
+ */
+export const previousUserMessageLoadRequested = createAction<
+  [wsId: string, agentId: string, requestId: string, currentMessageId: string]
+>('chatState/previousUserMessageLoadRequested');
+
+export const previousUserMessageLoadSettled = createAction<
+  [
+    agentId: string,
+    requestId: string,
+    outcome: 'found' | 'start' | 'error' | 'cancelled',
+    targetId?: string,
+  ]
+>('chatState/previousUserMessageLoadSettled');
+
+/** The requesting panel took the settled outcome for positioning. */
+export const previousUserMessageLoadConsumed = createAction<[agentId: string, requestId: string]>(
+  'chatState/previousUserMessageLoadConsumed',
+);
+
+/** The requesting panel finished or cancelled: drop the request and free the seek slot. */
+export const previousUserMessageLoadReleased = createAction<[agentId: string, requestId: string]>(
+  'chatState/previousUserMessageLoadReleased',
+);
+
 /** A scrollback page fetch entered flight for the given direction. */
 export const scrollbackFetchStarted = createAction<
   [agentId: string, direction: 'older' | 'gap' | 'seek']
@@ -1038,12 +1067,6 @@ export const sendMessage = createAction(
   'chatState/sendMessage',
   (agentId: string, payload: SendMessagePayload & { wsId: string }) => ({ agentId, payload }),
 );
-
-/** Acknowledged atomic send-now: never copies or removes the queued payload locally. */
-export const sendQueuedMessageNowRequested = createAsyncAction<
-  [agentId: string, wsId: string, messageId: string],
-  QueuedMessageSendOutcome
->('chatState/sendQueuedMessageNow', 'chatState/sendQueuedMessageNowRequested');
 
 // ============================================================================
 // Reducer
@@ -1528,6 +1551,50 @@ chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens
 );
 chatStateReducer.with(historySeekUnsupportedDetected, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { historySeekUnsupported: true }),
+);
+chatStateReducer.with(
+  previousUserMessageLoadRequested,
+  (state, { payload: [, agentId, requestId, currentMessageId] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      previousUserMessageLoad: { requestId, currentMessageId, status: 'loading' },
+    }),
+);
+chatStateReducer.with(
+  previousUserMessageLoadSettled,
+  (state, { payload: [agentId, requestId, outcome, targetId] }) => {
+    const agent = state.byAgentId[agentId];
+    const load = agent?.previousUserMessageLoad;
+    if (!load || load.requestId !== requestId || load.status !== 'loading') return state;
+    return updateAgent(state, agentId, {
+      previousUserMessageLoad: {
+        requestId,
+        currentMessageId: load.currentMessageId,
+        status: outcome,
+        ...(outcome === 'found' && targetId ? { targetId } : {}),
+        epoch: agent.scrollbackDiscardEpoch,
+      },
+    });
+  },
+);
+chatStateReducer.with(
+  previousUserMessageLoadConsumed,
+  (state, { payload: [agentId, requestId] }) => {
+    const load = state.byAgentId[agentId]?.previousUserMessageLoad;
+    if (!load || load.requestId !== requestId || load.status === 'loading' || load.consumed) {
+      return state;
+    }
+    return updateAgent(state, agentId, { previousUserMessageLoad: { ...load, consumed: true } });
+  },
+);
+chatStateReducer.with(
+  previousUserMessageLoadReleased,
+  (state, { payload: [agentId, requestId] }) => {
+    const agent = state.byAgentId[agentId];
+    if (agent?.previousUserMessageLoad?.requestId !== requestId) return state;
+    const { previousUserMessageLoad: _released, ...rest } = agent;
+    return setAgent(state, agentId, rest);
+  },
 );
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];

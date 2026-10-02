@@ -24,10 +24,22 @@
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
   import { tick } from 'svelte';
+  import { readable, writable } from 'svelte/store';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
-  import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
+  import type {
+    QueuedMessageMutation,
+    QueuedMessageMutationOperation,
+    QueuedMessageMutationResult,
+    QueuedMessageSendOutcome,
+  } from '$store/renderer/slices/agent-queue/agent-queue-types';
+  import {
+    queuedMessageMutationConsumed,
+    queuedMessageMutationRequested,
+    queuedMessageMutationsReleased,
+  } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+  import { selectQueuedMessageMutations } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
@@ -53,6 +65,15 @@
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
+    /**
+     * Agent owning the queue. When set, edit/remove/send-now dispatch correlated
+     * Redux requests and settle from selector outcomes; the callbacks below are
+     * only the fixture seam for store-less previews.
+     */
+    agentId?: string;
+    workspaceId?: string;
+    /** Local DOM cleanup after this list's send-now was delivered. */
+    onsenddelivered?: (messageId: string) => void;
     onedit?: (
       messageId: string,
       content: string,
@@ -85,6 +106,9 @@
   let {
     messages = [],
     disabled = false,
+    agentId,
+    workspaceId: queueWorkspaceId,
+    onsenddelivered,
     onedit,
     onremove,
     onsendnow,
@@ -97,6 +121,100 @@
   }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+
+  const storeBacked = agentId !== undefined;
+  const consumerId = crypto.randomUUID();
+  const agentIdStore = writable(agentId ?? '');
+  const queueWorkspaceIdStore = writable(queueWorkspaceId ?? '');
+  const mutations$ = storeBacked
+    ? selectQueuedMessageMutations(agentIdStore, queueWorkspaceIdStore)
+    : readable<QueuedMessageMutation[]>([]);
+  const continuations = new Map<string, (result: QueuedMessageMutationResult) => void>();
+  $effect(() => {
+    agentIdStore.set(agentId ?? '');
+  });
+  $effect(() => {
+    queueWorkspaceIdStore.set(queueWorkspaceId ?? '');
+  });
+  $effect(() => {
+    void agentId;
+    void queueWorkspaceId;
+    if (!storeBacked) return;
+    return () => {
+      appStore.dispatch(queuedMessageMutationsReleased(consumerId));
+      for (const resolve of continuations.values()) resolve({ status: 'cancelled' });
+      continuations.clear();
+    };
+  });
+  $effect(() => {
+    for (const entry of $mutations$) {
+      if (entry.consumerId !== consumerId || entry.status === 'pending') continue;
+      const resolve = continuations.get(entry.requestId);
+      continuations.delete(entry.requestId);
+      appStore.dispatch(queuedMessageMutationConsumed(consumerId, entry.requestId));
+      resolve?.({
+        status: entry.status,
+        ...(entry.sendOutcome ? { sendOutcome: entry.sendOutcome } : {}),
+        ...(entry.error !== undefined ? { error: entry.error } : {}),
+      });
+    }
+  });
+  // Send-now requests from every panel on this agent, so a second panel cannot
+  // fire a duplicate while the first is in flight.
+  const pendingSendIds = $derived(
+    new Set(
+      $mutations$
+        .filter((entry) => entry.kind === 'sendNow' && entry.status === 'pending')
+        .map((entry) => entry.messageId),
+    ),
+  );
+
+  function dispatchMutation(
+    messageId: string,
+    operation: QueuedMessageMutationOperation,
+  ): Promise<QueuedMessageMutationResult> {
+    const targetAgentId = agentId;
+    const targetWorkspaceId = queueWorkspaceId;
+    if (!targetAgentId || !targetWorkspaceId) return Promise.resolve({ status: 'cancelled' });
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve) => {
+      continuations.set(requestId, resolve);
+      appStore.dispatch(
+        queuedMessageMutationRequested({
+          requestId,
+          consumerId,
+          workspaceId: targetWorkspaceId,
+          agentId: targetAgentId,
+          messageId,
+          operation,
+        }),
+      );
+    });
+  }
+
+  const canMutateEdit = $derived(storeBacked || onedit !== undefined);
+  const canSendNow = $derived(storeBacked || onsendnow !== undefined);
+
+  async function runEdit(
+    messageId: string,
+    content: string,
+    editing: boolean,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!storeBacked) return onedit ? onedit(messageId, content, editing) : { success: true };
+    const result = await dispatchMutation(messageId, { kind: 'edit', content, editing });
+    return {
+      success: result.status === 'succeeded',
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    };
+  }
+
+  async function runSendNow(messageId: string): Promise<QueuedMessageSendOutcome | void> {
+    if (!storeBacked) return onsendnow?.(messageId);
+    const result = await dispatchMutation(messageId, { kind: 'sendNow' });
+    if (result.status === 'failed')
+      throw new Error(result.error || m.agent_chatSend_sendNowRejected_error());
+    return result.sendOutcome;
+  }
 
   function permissions(message: QueuedMessage | undefined) {
     return queuedMessagePermissions(message, ownPrincipalId, ownerPrincipalId, isHostOwner);
@@ -136,7 +254,7 @@
   const sendingIds = new Set<string>();
 
   function isSending(id: string) {
-    return sendStates[id] === 'sending' || sendStates[id] === 'delivered';
+    return sendStates[id] === 'sending' || sendStates[id] === 'delivered' || pendingSendIds.has(id);
   }
 
   $effect(() => {
@@ -152,7 +270,7 @@
   async function handleSendNow(id: string) {
     const message = messages.find((entry) => entry.id === id);
     if (
-      !onsendnow ||
+      !canSendNow ||
       disabled ||
       !message ||
       !permissions(message).sendNow ||
@@ -166,7 +284,8 @@
     sendStates[id] = 'sending';
     delete sendErrors[id];
     try {
-      const outcome = await onsendnow(id);
+      const outcome = await runSendNow(id);
+      if (outcome === 'delivered') onsenddelivered?.(id);
       if (messages.some((entry) => entry.id === id)) sendStates[id] = outcome ?? undefined;
     } catch (error) {
       if (messages.some((entry) => entry.id === id)) {
@@ -472,9 +591,9 @@
     // STAB-27: Engage hold immediately (editing:true) so the message isn't
     // dequeued mid-edit. If the message is already gone (race with drain),
     // the backend will error and we'll handle gracefully.
-    if (onedit) {
+    if (canMutateEdit) {
       try {
-        const result = await onedit(message.id, message.content, true);
+        const result = await runEdit(message.id, message.content, true);
         if (!result.success) {
           if (preserveServerConflict(result.error, operation)) return;
           // Message was already dequeued - clear edit state
@@ -506,9 +625,9 @@
 
     // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
     // so if the release fails, we stay in edit mode and the user can retry
-    if (onedit) {
+    if (canMutateEdit) {
       try {
-        const result = await onedit(operation.messageId, originalContent, false);
+        const result = await runEdit(operation.messageId, originalContent, false);
         if (!result.success) {
           if (preserveServerConflict(result.error, operation)) return;
           // Release failed - stay in edit mode
@@ -541,9 +660,9 @@
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
       // Do this BEFORE clearing edit state so if it fails, we stay in edit mode
-      if (onedit) {
+      if (canMutateEdit) {
         try {
-          const result = await onedit(operation.messageId, newContent, false);
+          const result = await runEdit(operation.messageId, newContent, false);
           if (!result.success) {
             if (preserveServerConflict(result.error, operation)) return;
             // Save failed - stay in edit mode
@@ -588,7 +707,8 @@
       sendingIds.has(id)
     )
       return;
-    onremove?.(id);
+    if (storeBacked) void dispatchMutation(id, { kind: 'remove' });
+    else onremove?.(id);
   }
 
   function handleDisplayKeydown(event: KeyboardEvent, message: QueuedMessage) {
@@ -763,7 +883,8 @@
       >
         <div class="flex flex-col">
           {#each messages as message (message.id)}
-            {@const sending = sendStates[message.id] === 'sending'}
+            {@const sending =
+              sendStates[message.id] === 'sending' || pendingSendIds.has(message.id)}
             <div
               class="group relative type-caption flex min-h-(--control-height-compact) select-none items-center gap-2 rounded-(--radius-medium) bg-transparent {COMPOSER_INSET_CLASS} font-normal! text-muted-foreground {message.editing
                 ? 'opacity-60'
@@ -916,7 +1037,7 @@
                           <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
                         </Button>
                       {/if}
-                      {#if onsendnow && permissions(message).sendNow}
+                      {#if canSendNow && permissions(message).sendNow}
                         <Button
                           variant="ghost-light"
                           size="icon-xs"

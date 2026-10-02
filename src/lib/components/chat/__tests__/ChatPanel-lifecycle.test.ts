@@ -12,10 +12,18 @@ import type { Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
+import { initialState as initialChatDrafts } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
+import { initialState as initialQuestionUi } from '$store/renderer/slices/question-ui/question-ui-slice';
+import {
+  createChatDraftStoreDriver,
+  type ChatDraftStoreDriver,
+} from './mocks/chat-draft-store-driver';
 import {
   animateScrollTo as animateScrollToUtil,
   followToBottom as scrollToBottomUtil,
 } from '$lib/utils/smartScroll';
+
+let draftDriver: ChatDraftStoreDriver | undefined;
 
 const mocks = vi.hoisted(() => {
   let activeReadableSubscriptions = 0;
@@ -38,6 +46,9 @@ const mocks = vi.hoisted(() => {
       set(next: T) {
         value = next;
         for (const subscriber of subscribers) subscriber(value);
+      },
+      get() {
+        return value;
       },
     };
   };
@@ -86,6 +97,24 @@ const mocks = vi.hoisted(() => {
     >(undefined),
     chatError: mutableReadable<string | null>(null),
     chatQuotaExceeded: mutableReadable<{ providerId: string } | null>(null),
+    userMessageIndexUi: mutableReadable<
+      | {
+          id: string;
+          requestId: string;
+          agentId: string;
+          epoch: number;
+          status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+          result?: { ok: true; items: unknown[]; total: number };
+        }
+      | undefined
+    >(undefined),
+    questionUiConsumer: mutableReadable<
+      | {
+          storageKey: string;
+          draft: { idx: number; answers: Array<{ sel: number[]; text: string; skipped: boolean }> };
+        }
+      | undefined
+    >(undefined),
     // Store state served by the app-store mock; tests seed real slice state
     // here when a code path reads the store directly through `select`.
     storeState: {} as unknown,
@@ -144,6 +173,8 @@ vi.mock('$store/renderer/store', async () => {
       git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
+      chatDrafts: draftDriver?.state ?? initialChatDrafts,
+      questionUi: initialQuestionUi,
       transientUi: mocks.transientUi,
     }),
     dispatch: mocks.dispatch,
@@ -190,6 +221,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatAgentState: mocks.selector({
     scrollbackOlderBlocked: false,
     scrollbackGapBlocked: false,
+    scrollbackDiscardEpoch: 0,
   }),
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
@@ -225,6 +257,17 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   }),
   selectTranscriptSnapshotMeta: Object.assign(() => mocks.transcriptSnapshotMeta, {
     select: () => undefined,
+  }),
+}));
+vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', () => ({
+  selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
+    select: () => mocks.userMessageIndexUi.get(),
+  }),
+  selectRetryAgentUi: mocks.selector(undefined),
+}));
+vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', () => ({
+  selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
+    select: () => mocks.questionUiConsumer.get(),
   }),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
@@ -411,7 +454,7 @@ vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../questions/QuestionWizard.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/QuestionWizardCapture.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
   default: (await import('./mocks/MockChatMessage.svelte')).default,
@@ -725,6 +768,13 @@ beforeEach(() => {
   clearAllChatInterestLeases();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
+  draftDriver?.stop();
+  draftDriver = createChatDraftStoreDriver({
+    get: (...args) => mocks.draftGet(...args),
+    set: (...args) => mocks.draftSet(...args),
+    clear: (...args) => mocks.draftClear(...args),
+  });
+  draftDriver.subscribe(() => (appStore as unknown as { emitState(): void }).emitState());
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
     delete mocks.agentSubscriptionUIEntries[key];
@@ -732,6 +782,7 @@ beforeEach(() => {
   mocks.transientUi = initialTransientUi;
   mocks.deferComposerEmits = false;
   mocks.dispatch.mockImplementation((action) => {
+    if (action?.type?.startsWith('chatDrafts/')) return draftDriver?.dispatch(action) ?? action;
     if (action?.type === 'transientUi/setComposerContextItems') {
       mocks.transientUi = transientUiReducer(
         mocks.transientUi as typeof initialTransientUi,
@@ -755,6 +806,8 @@ beforeEach(() => {
   mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
   mocks.chatQuotaExceeded.set(null);
+  mocks.userMessageIndexUi.set(undefined);
+  mocks.questionUiConsumer.set(undefined);
   mocks.storeState = {};
   mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
@@ -782,6 +835,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  draftDriver?.stop();
+  draftDriver = undefined;
   clearAllChatInterestLeases();
   Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
@@ -2143,6 +2198,24 @@ describe('ChatPanel mounted lifecycle', () => {
       'keep this draft',
     );
     expect(mocks.draftGet).toHaveBeenCalledOnce();
+  });
+
+  it('does not pass a replaced question set the preceding set draft', async () => {
+    mocks.pendingQuestions = { messageId: 'question-old', questions: [{}] };
+    mocks.questionUiConsumer.set({
+      storageKey: 'chat.questionWizardDraft/agent-a/question-old',
+      draft: { idx: 0, answers: [{ sel: [], text: 'old answer', skipped: false }] },
+    });
+    mocks.agentMessages.set([{ id: 'question-old' }]);
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('1');
+
+    mocks.pendingQuestions = { messageId: 'question-new', questions: [{}, {}] };
+    mocks.agentMessages.set([{ id: 'question-new' }]);
+    await tick();
+
+    expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('0');
   });
 
   it('retains the empty composer as noninteractive while questions are expanded and restores it when cleared', async () => {
@@ -4076,8 +4149,6 @@ describe('ChatPanel mounted lifecycle', () => {
         contentBlocks: [{ type: 'text', text: 'User prompt' }],
       },
     ]);
-    const pending = deferred<{ ok: true; items: unknown[]; total: number }>();
-    mocks.listUserMessages.mockReturnValue(pending.promise);
     const onNavigationStateChange = vi.fn();
     const view = render(ChatPanel, {
       props: {
@@ -4089,21 +4160,44 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
 
     view.component.refreshUserMessageIndex();
+    const request = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'chatPanelUi/userMessageIndexRequested');
+    expect(request?.payload).toEqual([
+      'workspace-a',
+      expect.any(String),
+      expect.any(String),
+      'agent-a',
+      0,
+    ]);
+    const [, consumerId, requestId] = request.payload as string[];
+    mocks.userMessageIndexUi.set({
+      id: consumerId,
+      requestId,
+      agentId: 'agent-a',
+      epoch: 0,
+      status: 'pending',
+    });
     await tick();
-    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a', undefined, 'workspace-a');
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ isLoadingUserMessageIndex: true }),
     );
 
-    pending.resolve({
-      ok: true,
-      items: [
-        { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
-        { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
-      ],
-      total: 2,
+    mocks.userMessageIndexUi.set({
+      id: consumerId,
+      requestId,
+      agentId: 'agent-a',
+      epoch: 0,
+      status: 'succeeded',
+      result: {
+        ok: true,
+        items: [
+          { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
+          { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+        ],
+        total: 2,
+      },
     });
-    await vi.advanceTimersByTimeAsync(0);
     await tick();
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -4117,8 +4211,6 @@ describe('ChatPanel mounted lifecycle', () => {
 
     // Reopen with a cached index: single-flight refresh must not re-report loading.
     onNavigationStateChange.mockClear();
-    mocks.listUserMessages.mockClear();
-    mocks.listUserMessages.mockReturnValue(new Promise(() => {}));
     view.component.refreshUserMessageIndex();
     await tick();
     expect(
@@ -4786,9 +4878,7 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    // The lightweight store mock reads selector-store arguments once, before
-    // EventSubscriptionsCard's effects populate the workspace and agent IDs.
-    mocks.agentSubscriptionUIEntries[':'] = {
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-a'] = {
       subscriptions: [],
       delegationGroups: [],
       agentStatuses: {},
