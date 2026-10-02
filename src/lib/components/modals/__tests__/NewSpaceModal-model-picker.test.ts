@@ -594,6 +594,8 @@ describe('NewSpaceModal model-picker composition', () => {
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
       expect(mocks.create.mock.calls[0][0].initialAgent).toEqual({
         name: 'Coordinator',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
         model: explicitModel ? 'gpt5.6' : undefined,
         provider: 'auggie',
         specialist: 'spec-writer',
