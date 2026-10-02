@@ -1,6 +1,10 @@
 import { actionChannel, call, put, select, take, type SagaGenerator } from 'typed-redux-saga';
 import { buffers } from 'redux-saga';
 import type { Action } from '@redux-saga/types';
+import {
+  setLabsMultiplayerEnabled,
+  toggleLabsMultiplayer,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectHomePersistenceScope, selectHomeWorkspaceView } from './home-workspaces-selectors';
 import {
   hydrateHomeWorkspaceSettings,
@@ -27,7 +31,19 @@ const persistedActions = new Set<string>([
 
 /** Serial storage work keeps identity changes and rapid configuration edits ordered. */
 export function* homeWorkspacePersistenceSaga(): SagaGenerator<void> {
-  const actions = yield* actionChannel<Action>('*', buffers.expanding<Action>(16));
+  // Only preferences and the identity/connection owners can change this storage scope.
+  const actions = yield* actionChannel<Action>(
+    (action: Action) =>
+      persistedActions.has(action.type) ||
+      action.type.startsWith('principal/') ||
+      action.type.startsWith('connections/') ||
+      action.type.startsWith('daemonHealth/') ||
+      action.type === 'workspaceEvents/daemonEventsSubscribed' ||
+      action.type === 'workspace-lifecycle/backendReconnected' ||
+      action.type === setLabsMultiplayerEnabled.type ||
+      action.type === toggleLabsMultiplayer.type,
+    buffers.expanding<Action>(16),
+  );
   let currentScope: string | null | undefined;
   let lastWritten: string | undefined;
   let action: Action | undefined;

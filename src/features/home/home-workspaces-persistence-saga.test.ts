@@ -38,7 +38,7 @@ function harness(scope: string | null) {
     state: () => state,
     scope: (scope: string | null) => {
       state = { ...state, scope };
-      dispatch({ type: 'test/scope' });
+      dispatch({ type: 'principal/received' });
     },
   };
 }
