@@ -38,7 +38,6 @@
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
-
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
@@ -1133,6 +1132,7 @@
           </span>
           <ModelPicker
             selectedModel={newModel}
+            providerId={$creation$.draft.codingAgent}
             onModelChange={handleCreateModelChange}
             showDefaultOption={true}
             defaultModelId={$selectedModel}

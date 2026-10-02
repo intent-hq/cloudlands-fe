@@ -376,5 +376,5 @@ it('restores the creation provider, model and effort after an acknowledged edit 
   await expectRestoredDraft(remounted.container);
   await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
   expect(store.state.specialists.creationByContext['workspace:workspace-a']).toBeUndefined();
-  expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('');
+  await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(''));
 });
