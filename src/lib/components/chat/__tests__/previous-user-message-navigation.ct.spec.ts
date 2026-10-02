@@ -143,12 +143,16 @@ test('previous-message action leaves bottom and stays at successive user message
         node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
       await scroll.elementHandle(),
     );
+    const position = await scroll.evaluate((node) => ({
+      scrollTop: node.scrollTop,
+      bottomDistance: node.scrollHeight - node.clientHeight - node.scrollTop,
+    }));
     await testInfo.attach(`previous-${current - 1}`, {
-      body: JSON.stringify({ offset, scrollTop: await scroll.evaluate((node) => node.scrollTop) }),
+      body: JSON.stringify({ offset, ...position }),
       contentType: 'application/json',
     });
     expect(Math.abs(offset)).toBeLessThanOrEqual(3);
-    await down.expectAtBottom(false);
+    expect(position.bottomDistance).toBeGreaterThan(2);
   }
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
   await component
