@@ -31,8 +31,10 @@ test('dense table typing and destroyed-view history preserve native text, marks 
       const rect = node.getBoundingClientRect();
       return rect.top > viewport.top + 150 && rect.bottom < viewport.top + 350;
     });
-    if (!strong?.firstChild) throw new Error('No visible dense marked target');
-    const pm = editor.view.posAtDOM(strong.firstChild, 2);
+    if (!strong) throw new Error('No visible dense marked target');
+    const text = document.createTreeWalker(strong, NodeFilter.SHOW_TEXT).nextNode();
+    if (text?.textContent !== 'bold') throw new Error('Native bold text leaf missing');
+    const pm = editor.view.posAtDOM(text, 2);
     return { source: p.projection!.sourceAt(pm), point: p.projection!.table!.pointAt(pm)! };
   });
   await component.unmount();
@@ -61,6 +63,7 @@ test('dense table typing and destroyed-view history preserve native text, marks 
     };
   });
   expect(native.offset).toBe(target.point.offset + 1);
+  expect(native.marks).toEqual([{ type: 'bold' }]);
   await component.unmount();
   component = await mount(Harness, { props: { sourceOverride: source } });
   await expect(root.locator('.tiptap')).toHaveCount(1);

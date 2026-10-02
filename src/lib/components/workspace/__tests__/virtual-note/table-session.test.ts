@@ -354,3 +354,28 @@ it('matches canonical URL sanitation for native table link marks', async () => {
     session.destroy();
   }
 });
+
+it('inserts native unmarked text outside a bold boundary without reversing source endpoints', async () => {
+  const source = '| H |\n| --- |\n| plain **bold** tail |';
+  const service = new SourceJournal(() => source, 1);
+  const session = new DocumentSession(service, document.createElement('div'));
+  try {
+    await session.seek(source.indexOf('bold'));
+    session.editor!.commands.setTextSelection(session.projection!.pmAt(source.indexOf('bold')));
+    expect(session.editor!.state.selection.$head.marks()).toHaveLength(0);
+    session.editor!.view.dispatch(session.editor!.state.tr.insertText('Z'));
+    expect(session.error).toBe('');
+    expect(service.region(0)).toBe(source.replace('**bold**', 'Z**bold**'));
+    const dom = document.createElement('div');
+    dom.innerHTML = await processMarkdownToHTML(service.region(0));
+    expect(DOMParser.fromSchema(session.editor!.schema).parse(dom).firstChild!.toJSON()).toEqual(
+      session.editor!.state.doc.firstChild!.toJSON(),
+    );
+    await session.history();
+    expect(service.region(0)).toBe(source);
+    await session.history(true);
+    expect(service.region(0)).toBe(source.replace('**bold**', 'Z**bold**'));
+  } finally {
+    session.destroy();
+  }
+});
