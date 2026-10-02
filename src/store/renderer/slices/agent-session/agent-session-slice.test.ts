@@ -1358,10 +1358,28 @@ describe('agent-session-slice reducer', () => {
             status: 'idle',
             waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }],
             waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }],
+            waitingOnScriptMonitors: [
+              {
+                monitorId: 's1',
+                scriptId: 'checks',
+                runId: 'run-1',
+                scriptName: 'Checks',
+                expiresAt: '2026-10-02T10:10:00Z',
+              },
+            ],
           },
         } as any),
       );
 
+      expect(state.byAgentId['a1'].waitingOnScriptMonitors).toEqual([
+        {
+          monitorId: 's1',
+          scriptId: 'checks',
+          runId: 'run-1',
+          scriptName: 'Checks',
+          expiresAt: '2026-10-02T10:10:00Z',
+        },
+      ]);
       expect(state.byAgentId['a1'].waitingOnHooks).toEqual([{ hookId: 'h1', name: 'watch-ci' }]);
       expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([
         { monitorId: 'm1', repo: 'o/r', prNumber: 1 },
@@ -1382,6 +1400,7 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state.byAgentId['a1'].waitingOnHooks).toEqual([]);
       expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([]);
+      expect(state.byAgentId['a1'].waitingOnScriptMonitors).toEqual([]);
     });
 
     it('folds the agent:subscriptions-changed waiting snapshot onto the session', () => {

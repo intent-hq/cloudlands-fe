@@ -1,3 +1,7 @@
+import {
+  getScriptMonitorWakeAttribution,
+  type ScriptMonitorWakeAttribution,
+} from '$lib/utils/script-monitor-wake-attribution';
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import {
@@ -14,6 +18,13 @@ import {
 import { getQueueInfo, stripDequeueWaitNote, type QueueInfo } from '$lib/utils/queue-info';
 
 export type AutomatedWakePresentation =
+  | {
+      kind: 'script';
+      attribution: ScriptMonitorWakeAttribution;
+      bodyText: string;
+      queueInfo: QueueInfo | null;
+      state: 'delivered';
+    }
   | {
       kind: 'hook';
       attribution: HookWakeAttribution;
@@ -51,18 +62,28 @@ export function getAutomatedWakePresentation(
   if (!message || String(message.role).toLowerCase() !== 'user') return null;
 
   const rawText = extractAllContent(message);
+  let script: ScriptMonitorWakeAttribution | null = null;
   let hook: HookWakeAttribution | null = null;
   let pr: PrMonitorWakeAttribution | null = null;
   for (const metadata of metadataCandidates(message)) {
+    script ??= getScriptMonitorWakeAttribution(metadata);
     hook ??= getHookWakeAttribution(metadata);
     pr ??= getPrMonitorWakeAttribution(metadata);
-    if (hook || pr) break;
+    if (hook || pr || script) break;
   }
   hook ??= getHookWakeAttribution(undefined, rawText);
   pr ??= hook ? null : getPrMonitorWakeAttribution(undefined, rawText);
 
   const queueInfo = getQueueInfo(message.metadata);
   const withoutQueueNote = queueInfo ? stripDequeueWaitNote(rawText) : rawText;
+  if (script)
+    return {
+      kind: 'script',
+      attribution: script,
+      bodyText: withoutQueueNote.trim(),
+      queueInfo,
+      state: 'delivered',
+    };
   if (hook) {
     return {
       kind: 'hook',
