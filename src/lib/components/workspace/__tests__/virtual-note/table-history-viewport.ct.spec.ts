@@ -51,7 +51,9 @@ async function frame(page: Page, side: string) {
         scroll: scroll.scrollTop,
         destroyed: p?.destroyed,
         source: p?.service.region(0),
-        nativeMarkdown: p ? undefined : h.nativeMarkdown(),
+        nativeMarkdown: p
+          ? undefined
+          : (h as Host & { nativeMarkdown: () => string }).nativeMarkdown(),
         selection: p?.selection,
         actual: p?.projection?.table?.pointAt(e!.state.selection.head),
         pm: e!.state.selection.head,
