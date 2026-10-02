@@ -23,6 +23,11 @@ for (const columns of [1, 6]) {
           (_, r) => '| ' + Array.from({ length: 8 }, (_, c) => `r${r}c${c}`).join(' | ') + ' |',
         ).join('\n');
       await mount(Pair, { props: { sourceOverride: source } });
+      await expect.poll(() => page.evaluate(() => {
+        const native = document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host;
+        const bounded = document.querySelector('[data-testid="bounded"] [data-testid="proof"]') as Host;
+        return !!native?.native?.isInitialized && !!bounded?.proof?.editor?.isInitialized;
+      })).toBe(true);
       const fixture = await page.evaluate(
         async ({ rows, columns, backward }) => {
           const host = (side: string) =>
