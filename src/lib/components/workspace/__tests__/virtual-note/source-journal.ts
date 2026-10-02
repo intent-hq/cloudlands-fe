@@ -2,6 +2,7 @@ import { planTableTextPaste } from './table-text-paste-plan';
 import { planTablePaste } from './table-paste-plan';
 import {
   ClipboardBacking,
+  CellSerializationWork,
   ExternalClipboardSink,
   serializeTableClipboard,
   parseTableClipboard,
@@ -105,6 +106,7 @@ export class SourceJournal {
   readonly clipboardSink = new ExternalClipboardSink();
   readonly clipboardInput = new ClipboardBacking();
   readonly clipboardInputSink = new ExternalClipboardSink();
+  readonly clipboardCellSerialization = new CellSerializationWork();
   maxClipboardInputDOM = 0;
   maxClipboardInputNodes = 0;
   maxClipboardRepeatedBytes = 0;
@@ -176,6 +178,7 @@ export class SourceJournal {
             const value = this.tableStates.get(`cell:${from + start}`);
             return value ? JSON.parse(value) : undefined;
           },
+          this.clipboardCellSerialization,
         );
         this.maxClipboardRangeFitNodes = Math.max(this.maxClipboardRangeFitNodes, plan.costs.nodes);
         this.maxClipboardRangeFitBytes = Math.max(
@@ -256,7 +259,7 @@ export class SourceJournal {
         fitted.costs.serializedBytes,
       );
       this.maxClipboardTextFitDOM = Math.max(this.maxClipboardTextFitDOM, fitted.costs.elements);
-      const inserted = clipboardCellSource(fitted.cell);
+      const inserted = clipboardCellSource(fitted.cell, this.clipboardCellSerialization);
       this.stageTableState(`cell:${head.from + start}`, JSON.stringify(fitted.cell.toJSON()));
       this.stage({ from: head.body + start, to: head.end + start, insert: inserted });
       let offset = fitted.point.offset;
@@ -312,6 +315,7 @@ export class SourceJournal {
           const value = this.tableStates.get(`cell:${from + start}`);
           return value ? JSON.parse(value) : undefined;
         },
+        this.clipboardCellSerialization,
       );
       this.maxClipboardPastePlanBytes = Math.max(
         this.maxClipboardPastePlanBytes,
@@ -364,7 +368,7 @@ export class SourceJournal {
         this.stage({
           from: cell.body + start,
           to: cell.end + start,
-          insert: clipboardCellSource(replacement),
+          insert: clipboardCellSource(replacement, this.clipboardCellSerialization),
         });
       }
     }

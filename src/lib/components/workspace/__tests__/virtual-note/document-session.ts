@@ -1713,6 +1713,7 @@ export class DocumentSession {
         publications: this.service.clipboardSink.publications,
       },
       externalClipboardInput: {
+        cellSerialization: { ...this.service.clipboardCellSerialization },
         ...this.service.clipboardInput.stats,
         retainedBytes: this.service.clipboardInput.retainedBytes,
         maxStagingBytes: this.service.clipboardInputSink.maxStagingBytes,

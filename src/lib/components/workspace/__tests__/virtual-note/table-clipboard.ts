@@ -87,13 +87,49 @@ export function parseTableClipboard(
   };
 }
 
+/** External backing diagnostics, not renderer residency or a JS heap bound.
+ * Counts the DOM owned here and encoded strings retained by this call. Internal
+ * canonical-parser DOM/clones and allocator/GC behavior are not measured. */
+export class CellSerializationWork {
+  calls = 0;
+  maxOwnedDOMElements = 0;
+  maxOwnedDOMNodes = 0;
+  maxCanonicalInputBytes = 0;
+  maxOutputBytes = 0;
+  maxEncodedStringBytes = 0;
+
+  observe(container: Element, cellHTML: string, html: string, markdown: string, output: string) {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_ALL);
+    let elements = 1,
+      nodes = 1,
+      node: Node | null;
+    while ((node = walker.nextNode())) {
+      nodes++;
+      if (node.nodeType === Node.ELEMENT_NODE) elements++;
+    }
+    this.calls++;
+    this.maxOwnedDOMElements = Math.max(this.maxOwnedDOMElements, elements);
+    this.maxOwnedDOMNodes = Math.max(this.maxOwnedDOMNodes, nodes);
+    this.maxCanonicalInputBytes = Math.max(this.maxCanonicalInputBytes, bytes(html));
+    this.maxOutputBytes = Math.max(this.maxOutputBytes, bytes(output));
+    this.maxEncodedStringBytes = Math.max(
+      this.maxEncodedStringBytes,
+      bytes(cellHTML) + bytes(html) + bytes(markdown) + bytes(output),
+    );
+  }
+}
+
 /** Serializes one externally owned pasted cell with the real canonical serializer. */
-export function clipboardCellSource(cell: PMNode) {
+export function clipboardCellSource(cell: PMNode, work?: CellSerializationWork) {
   const container = document.createElement('div');
   container.append(DOMSerializer.fromSchema(cell.type.schema).serializeNode(cell));
-  const markdown = processHTMLToMarkdown(`<table><tr>${container.innerHTML}</tr></table>`);
+  const cellHTML = container.innerHTML,
+    html = `<table><tr>${cellHTML}</tr></table>`,
+    markdown = processHTMLToMarkdown(html);
   const parsed = scanTables(markdown)[0].rows[0].cells[0];
-  return markdown.slice(parsed.body, parsed.end);
+  const output = markdown.slice(parsed.body, parsed.end);
+  work?.observe(container, cellHTML, html, markdown, output);
+  return output;
 }
 
 /** Whole-cell state here is externally owned mock backing, never a renderer

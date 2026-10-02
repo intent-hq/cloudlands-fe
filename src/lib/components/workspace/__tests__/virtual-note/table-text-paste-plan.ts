@@ -2,7 +2,12 @@ import type { Editor, JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { tableEditing } from '@tiptap/pm/tables';
 import { bytes } from './bounded-note-service';
-import { clipboardCellSource, fitNativeTextPaste, type ClipboardValue } from './table-clipboard';
+import {
+  clipboardCellSource,
+  fitNativeTextPaste,
+  type ClipboardValue,
+  type CellSerializationWork,
+} from './table-clipboard';
 import { tableRuns, type TableIndex, type TableCellSource } from './table-source';
 import type { TablePoint } from './source-journal';
 
@@ -19,6 +24,7 @@ export function planTableTextPaste(
   value: ClipboardValue,
   editor: Editor,
   stored: (from: number) => JSONContent | undefined,
+  serialization?: CellSerializationWork,
 ) {
   const schema = editor.schema;
   const origins = new Map<PMNode, TableCellSource>();
@@ -84,7 +90,9 @@ export function planTableTextPaste(
     let line = '|';
     row.forEach((cell, co, c) => {
       const origin = origins.get(cell);
-      const raw = origin ? source.slice(origin.from, origin.to) : ` ${clipboardCellSource(cell)} `;
+      const raw = origin
+        ? source.slice(origin.from, origin.to)
+        : ` ${clipboardCellSource(cell, serialization)} `;
       const from = table.from + text.length + (old ? old.cells[c].from - old.from : line.length);
       states.push({ from: from + start, node: cell.toJSON() });
       const nodePosition = 2 + ro + co;

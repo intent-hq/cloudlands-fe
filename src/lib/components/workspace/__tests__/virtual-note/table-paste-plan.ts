@@ -2,7 +2,7 @@ import type { JSONContent } from '@tiptap/core';
 import type { Fragment, Schema } from '@tiptap/pm/model';
 import { removeColSpan } from '@tiptap/pm/tables';
 import { bytes } from './bounded-note-service';
-import { clipboardCellSource } from './table-clipboard';
+import { clipboardCellSource, type CellSerializationWork } from './table-clipboard';
 import { tableCellAt, tableRuns, type TableCellSource, type TableIndex } from './table-source';
 
 type Cell = {
@@ -24,6 +24,7 @@ export function planTablePaste(
   input: { rows: Fragment[] },
   schema: Schema,
   stored: (cell: number) => JSONContent | undefined,
+  serialization?: CellSerializationWork,
 ) {
   const { top, bottom, left, right } = rect;
   const changed = new Set<number>();
@@ -177,7 +178,7 @@ export function planTablePaste(
         width,
         height,
         node: cell.toJSON(),
-        raw: ` ${clipboardCellSource(cell)} `,
+        raw: ` ${clipboardCellSource(cell, serialization)} `,
       });
       column += width;
     });

@@ -216,6 +216,7 @@ for (const mode of ['merged-input', 'crossing-target', 'combined'] as const) {
         expect(serialization.maxEncodedStringBytes).toBeGreaterThan(
           serialization.maxCanonicalInputBytes,
         );
+        console.log('EXTERNAL_CELL_SERIALIZATION', mode, serialization);
       } finally {
         restores.forEach((restore) => restore());
         native.destroy();
