@@ -1532,7 +1532,7 @@
         data-pane-stack-menu
       >
         <div class="overflow-y-auto overscroll-contain" data-pane-stack-list>
-          {#each tabs as tab (tab.id)}
+          {#each tabs.toReversed() as tab (tab.id)}
             {@const current = tab.id === activeTabId}
             <Menu.Item
               class="panel-selector-row"
