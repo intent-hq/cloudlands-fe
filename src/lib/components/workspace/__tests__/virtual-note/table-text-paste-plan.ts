@@ -82,10 +82,10 @@ export function planTableTextPaste(
         )
         .match(/\r?\n$/)?.[0] ?? '';
     let line = '|';
-    row.forEach((cell, co) => {
+    row.forEach((cell, co, c) => {
       const origin = origins.get(cell);
       const raw = origin ? source.slice(origin.from, origin.to) : ` ${clipboardCellSource(cell)} `;
-      const from = table.from + text.length + line.length;
+      const from = table.from + text.length + (old ? old.cells[c].from - old.from : line.length);
       states.push({ from: from + start, node: cell.toJSON() });
       const nodePosition = 2 + ro + co;
       const selection = fitted.state.selection.$head;
