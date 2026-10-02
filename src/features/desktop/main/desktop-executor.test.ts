@@ -116,6 +116,28 @@ function setup() {
 afterEach(() => vi.restoreAllMocks());
 
 describe('desktop executor authority and command tickets', () => {
+  it('binds a consent claimant to its own preparation and connection epoch', async () => {
+    const t = setup();
+    const claimant = { ...t.connection };
+    await t.handle({ operation: 'prepare', ...binding });
+    expect(t.native.acquire).not.toHaveBeenCalled();
+    expect(t.overlay.activate).not.toHaveBeenCalled();
+    // A fallback client's preparation cannot authorize the client that won Allow.
+    await expect(t.executor.handle(claimant, start)).rejects.toMatchObject(error('forbidden'));
+    await t.executor.handle(claimant, {
+      operation: 'prepare',
+      ...binding,
+      connectionEpoch: 'claimant-epoch',
+    });
+    await expect(t.executor.handle(claimant, start)).rejects.toMatchObject(error('forbidden'));
+    await expect(
+      t.executor.handle(claimant, { ...start, connectionEpoch: 'claimant-epoch' }),
+    ).resolves.toMatchObject({ ready: true });
+    await expect(
+      t.handle({ operation: 'renew', ...session, leaseMs: 15000 }),
+    ).rejects.toMatchObject(error('forbidden'));
+    await t.executor.invalidate('agent_end');
+  });
   it('keeps a successor blocked until cancelled native work has settled', async () => {
     const t = setup();
     await t.activate();
