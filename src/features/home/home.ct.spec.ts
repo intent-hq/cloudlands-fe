@@ -27,14 +27,17 @@ test('Home handles rapid tab and filter changes with motion enabled', async ({
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(Preview);
   for (const name of ['Pull requests', 'Linear issues', 'Workspaces']) {
-    await component.getByRole('tab', { name, exact: true }).click();
+    await component.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
   }
-  await component.getByRole('button', { name: /^Needs you/ }).click();
   await component
     .getByRole('group', { name: 'Status', exact: true })
-    .getByRole('button', { name: /^All workspaces/ })
+    .getByRole('button', { name: /^Needs you/ })
     .click();
-  const rows = component.getByRole('listbox', { name: 'Workspaces' }).getByRole('option');
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: /^All \d/ })
+    .click();
+  const rows = component.getByRole('option');
   await expect(rows).toHaveCount(6);
   await rows.first().focus();
   await page.keyboard.press('Enter');
@@ -53,7 +56,7 @@ test('Home filters and previews workspaces without entering them', async ({
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const component = await mount(Preview);
-  const list = component.getByRole('listbox', { name: 'Workspaces' });
+  const list = component.locator('.workspace-list');
   await expect(list.getByRole('option')).toHaveCount(6);
   await list.getByRole('option').first().click();
   await expect(component.locator('[data-home-detail]')).toBeVisible();
@@ -66,12 +69,15 @@ test('Home filters and previews workspaces without entering them', async ({
   );
   await expect(component.getByRole('tab', { name: 'Pull requests', exact: true })).toBeFocused();
   await page.keyboard.press('ArrowLeft');
-  await expect(component.getByRole('tab', { name: 'Workspaces', exact: true })).toHaveAttribute(
+  await expect(component.getByRole('tab', { name: /^Workspaces/ })).toHaveAttribute(
     'aria-selected',
     'true',
   );
   await expect(list.getByRole('option')).toHaveCount(6);
-  await component.getByRole('button', { name: /^Needs you/ }).click();
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: /^Needs you/ })
+    .click();
   await expect(list.getByRole('option')).toHaveCount(2);
   await list.getByRole('option').first().focus();
   await page.keyboard.press('Enter');
@@ -80,14 +86,11 @@ test('Home filters and previews workspaces without entering them', async ({
   await page.keyboard.press('Escape');
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
   await expect(list.getByRole('option').first()).toBeFocused();
-  await component.getByRole('button', { name: /^Unread/ }).click();
-  await expect(list.getByRole('option')).toHaveCount(1);
-  await expect(list).toContainText('Document the release process');
   await component.getByRole('button', { name: /^Archived/ }).click();
   await expect(list).toContainText('Explore alternative layouts');
   await component
     .getByRole('group', { name: 'Status', exact: true })
-    .getByRole('button', { name: /^All workspaces/ })
+    .getByRole('button', { name: /^All \d/ })
     .click();
   await component.getByRole('button', { name: 'acme/platform', exact: true }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
@@ -96,6 +99,59 @@ test('Home filters and previews workspaces without entering them', async ({
   await component.getByRole('button', { name: 'Clear filters' }).click();
   await expect(list.getByRole('option')).toHaveCount(6);
   await testInfo.attach('home-list', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('Home sections start open and all support collapse, expansion and keyboard focus', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview);
+  for (const label of ['Needs you', 'Running', 'Done & idle']) {
+    const toggle = component
+      .locator('[data-home-group]')
+      .getByRole('button', { name: label, exact: true });
+    const list = component.getByRole('listbox', { name: label, exact: true });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toHaveText(label);
+    await toggle.click();
+    await expect(list).toHaveCount(0);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('Enter');
+    await expect(list).toBeVisible();
+    await expect(toggle).toBeFocused();
+  }
+  const inactive = component.getByRole('listbox', { name: 'Done & idle', exact: true });
+  await expect(inactive.getByRole('option')).toHaveCount(3);
+  await inactive.getByRole('option').first().focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(inactive.getByRole('option').nth(1)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(inactive.getByRole('option').nth(1)).toBeFocused();
+});
+
+test('Home closes list sections while board columns stay expanded', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  await component
+    .locator('[data-home-board]')
+    .getByRole('button', { name: 'Polish settings accessibility', exact: true })
+    .click();
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await component.getByRole('button', { name: 'List view', exact: true }).click();
+  const inactive = component.getByRole('listbox', { name: 'Done & idle', exact: true });
+  await expect(inactive.getByRole('option')).toHaveCount(3);
+  await component.locator('[data-home-group="inactive"]').getByRole('button').click();
+  await expect(inactive).toHaveCount(0);
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await component.getByRole('button', { name: 'Board view', exact: true }).click();
+  const section = component
+    .locator('[data-home-board]')
+    .getByRole('region', { name: 'Done & idle', exact: true });
+  await expect(section.getByRole('button', { name: 'Done & idle', exact: true })).toHaveCount(0);
+  await expect(section.locator('[data-home-workspace]')).toHaveCount(3);
 });
 
 test('Home board uses the same scope and restores keyboard focus after narrow preview', async ({
@@ -109,7 +165,7 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
     'true',
   );
   const board = component.locator('[data-home-board]');
-  await expect(board.getByRole('button')).toHaveCount(6);
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
   const card = board.getByRole('button', { name: 'Review the new onboarding flow', exact: true });
   await card.focus();
   await page.keyboard.press('Enter');
@@ -122,10 +178,13 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
       .evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBe(true);
   await component.getByRole('button', { name: 'List view', exact: true }).click();
-  await expect(component.getByRole('listbox').getByRole('option')).toHaveCount(6);
+  await expect(component.getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
-  await component.getByRole('button', { name: /^Running/ }).click();
-  await expect(board.getByRole('button')).toHaveCount(1);
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: /^Running/ })
+    .click();
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
@@ -135,7 +194,7 @@ test('Home keeps Assistant and owner creation hidden for collaborators', async (
   await expect(component.getByRole('button', { name: 'New workspace', exact: true })).toHaveCount(
     0,
   );
-  await expect(component.getByRole('listbox').getByRole('option')).toHaveCount(6);
+  await expect(component.getByRole('option')).toHaveCount(6);
 });
 
 test('Home shows connection errors with a retry action', async ({ mount }) => {
@@ -183,4 +242,90 @@ test('Home preview resizes and board headers stay visible while scrolling', asyn
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+});
+
+test('Extra repositories remain visible while filtering', async ({ mount }) => {
+  const component = await mount(Preview);
+  await component.getByRole('button', { name: 'local-tools', exact: true }).click();
+  await expect(component.getByRole('option')).toHaveCount(0);
+  await expect(component.getByRole('button', { name: 'local-tools', exact: true })).toBeVisible();
+  await component
+    .getByRole('navigation', { name: 'Home', exact: true })
+    .getByRole('button', { name: /^All repos/ })
+    .click();
+  await expect(component.getByRole('option')).toHaveCount(6);
+});
+
+test('Home grouping switches between status, repository and ungrouped in both views', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview);
+  const done = component.locator('[data-home-group="inactive"]');
+  await expect(
+    component.getByRole('option', { name: /Polish settings accessibility/ }),
+  ).toBeVisible();
+  await done.getByRole('button').click();
+  await expect(
+    component.getByRole('option', { name: /Polish settings accessibility/ }),
+  ).toHaveCount(0);
+  async function groupBy(name: string) {
+    await component.getByRole('button', { name: 'View options', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Group by', exact: true }).click();
+    await page.getByRole('option', { name, exact: true }).click();
+    await page.keyboard.press('Escape');
+  }
+  await done.getByRole('button').click();
+  await groupBy('Repository');
+  await expect(component.locator('[data-home-group]')).toHaveCount(2);
+  await expect(component.getByRole('option')).toHaveCount(6);
+  await groupBy('None');
+  await expect(component.locator('[data-home-group]')).toHaveCount(0);
+  await expect(component.getByRole('option')).toHaveCount(6);
+  await component.getByRole('button', { name: 'Board view', exact: true }).click();
+  const board = component.locator('[data-home-board]');
+  await expect(board.locator('section')).toHaveCount(1);
+  await groupBy('Repository');
+  await expect(board.locator('section')).toHaveCount(2);
+  await component.getByRole('searchbox').fill('onboarding');
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await component.getByRole('searchbox').clear();
+  await groupBy('Status');
+  await expect(board.locator('section')).toHaveCount(3);
+  const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
+  await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
+  await expect(inactive.getByRole('img', { name: 'Done', exact: true })).toHaveCount(1);
+  await expect(inactive.getByRole('img', { name: 'Idle', exact: true })).toHaveCount(2);
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+});
+
+test('Home workspace menus pin without duplication and support right click and keyboard', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview);
+  const row = component.getByRole('option', { name: /Polish settings accessibility/ });
+  await row.click({ button: 'right' });
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+  const pinned = component.getByRole('listbox', { name: 'Pinned', exact: true });
+  await expect(pinned.getByRole('option')).toHaveCount(1);
+  await expect(component.getByRole('option')).toHaveCount(6);
+  await expect(component.locator('[data-home-group]').first()).toHaveAttribute(
+    'data-home-group',
+    'pinned',
+  );
+  await pinned.getByRole('button', { name: 'Workspace actions', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await pinned.getByRole('option').focus();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
+  await expect(pinned).toHaveCount(0);
+  await expect(component.getByRole('option')).toHaveCount(6);
+  await expect(
+    component
+      .getByRole('listbox', { name: 'Done & idle', exact: true })
+      .getByRole('option', { name: /Polish settings accessibility/ }),
+  ).toBeVisible();
 });

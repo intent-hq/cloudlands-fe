@@ -218,6 +218,17 @@
     previousBounds = (collapsed ? expandedElement : collapsedElement)?.getBoundingClientRect();
   });
 
+  /** Focus never selects an answer or changes the saved draft. */
+  export function focusQuestion(): boolean {
+    if (collapsed || completed || confirmingDismiss) return false;
+    const control = expandedElement?.querySelector<HTMLElement>(
+      '[role="radio"]:not([aria-disabled="true"]), [role="checkbox"]:not([aria-disabled="true"]), textarea:not(:disabled), button:not(:disabled)',
+    );
+    if (!control) return false;
+    control.focus({ preventScroll: true });
+    return document.activeElement === control;
+  }
+
   function enterState(node: HTMLElement, expanded: boolean) {
     // Svelte can reuse an outgoing branch when a disclosure is toggled rapidly.
     node.inert = false;

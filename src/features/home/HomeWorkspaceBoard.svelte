@@ -1,14 +1,13 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
-  import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
-  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
+  import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
+  import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
+  import HomeActivityTime from './HomeActivityTime.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
-  import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import { needsAttention } from './home-model';
+  import { getHomeTriageGroup } from './home-model';
   import { scrollFade } from '$lib/actions/scroll-fade';
 
   let {
@@ -16,37 +15,40 @@
     selectedId,
     onselect,
     archived = false,
+    showRepository = true,
+    groups,
   }: {
     workspaces: Workspace[];
     selectedId: string | null;
     onselect: (id: string) => void;
     archived?: boolean;
+    showRepository?: boolean;
+    groups?: { id: string; label: string; items: Workspace[] }[];
   } = $props();
   function column(workspace: Workspace): string {
     if (workspace.status === WorkspaceStatusEnum.Archived) return 'archived';
-    if (needsAttention(workspace)) return 'attention';
-    if (workspace.activity === 'agent_running' || workspace.displayStatus === 'in_progress')
-      return 'running';
-    if (
-      workspace.waiting ||
-      workspace.displayStatus === 'pr_queued' ||
-      workspace.displayStatus === 'pr_open'
-    )
-      return 'waiting';
-    if (workspace.displayStatus === 'complete' || workspace.displayStatus === 'pr_merged')
-      return 'complete';
-    return 'idle';
+    const group = getHomeTriageGroup(workspace);
+    return group === 'blocked'
+      ? 'needs-you'
+      : group === 'done' || group === 'idle'
+        ? 'inactive'
+        : group;
   }
   const columns = $derived(
     archived
       ? [{ id: 'archived', label: m.home_filter_archived() }]
       : [
-          { id: 'attention', label: m.home_filter_attention() },
+          { id: 'needs-you', label: m.home_filter_attention() },
           { id: 'running', label: m.home_filter_running() },
-          { id: 'waiting', label: m.home_board_waiting() },
-          { id: 'idle', label: m.home_board_idle() },
-          { id: 'complete', label: m.home_board_complete() },
+          { id: 'inactive', label: m.home_board_done_idle() },
         ],
+  );
+  const displayColumns = $derived(
+    groups ??
+      columns.map((group) => ({
+        ...group,
+        items: workspaces.filter((workspace) => column(workspace) === group.id),
+      })),
   );
 </script>
 
@@ -56,16 +58,17 @@
   use:scrollFade={{ axis: 'x' }}
   aria-label={m.home_board_view()}
 >
-  <div class="flex min-h-full w-max gap-4">
-    {#each columns as group (group.id)}
-      {@const items = workspaces.filter((workspace) => column(workspace) === group.id)}
-      <section class="flex w-64 shrink-0 flex-col self-stretch" aria-label={group.label}>
+  <div
+    class="grid min-h-full w-full gap-4"
+    style:grid-template-columns={`repeat(${displayColumns.length}, minmax(15rem, 1fr))`}
+  >
+    {#each displayColumns as group (group.id)}
+      {@const items = group.items}
+      <section class="flex min-w-0 flex-col self-stretch" aria-label={group.label}>
         <h3
           class="sticky top-0 z-20 flex items-center gap-2 bg-background px-2 py-3 type-caption font-medium"
         >
-          <span>{group.label}</span><span class="type-caption text-muted-foreground"
-            >{formatInteger(items.length)}</span
-          >
+          {group.label}
         </h3>
         <div class="flex flex-col gap-2 pb-2">
           {#each items as workspace (workspace.id)}
@@ -75,26 +78,49 @@
               active={selectedId === workspace.id}
               aria-pressed={selectedId === workspace.id}
               wrapContent={false}
-              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border/60 bg-muted/30 p-4 text-left"
+              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border/60 bg-background gap-0 p-4 text-left shadow-xs"
               onclick={() => onselect(workspace.id)}
               aria-label={workspace.title}
             >
-              <span class="flex items-start gap-2"
-                ><WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace)} /><span
-                  class="min-w-0 line-clamp-2 break-words font-medium"
-                  title={workspace.title}>{workspace.title}</span
-                ></span
-              >
-              {#if workspace.statusMessage}<span
-                  class="mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
-                  >{workspace.statusMessage}</span
-                >{/if}
+              <span class="flex items-start justify-between gap-3">
+                <span class="min-w-0 line-clamp-2 break-words font-medium" title={workspace.title}>
+                  {workspace.title}
+                </span>
+                <HomeWorkspaceStatus {workspace} class="mt-0.5" />
+              </span>
+              {#if workspace.statusMessage}
+                <span
+                  class="home-workspace-summary mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
+                >
+                  {workspace.statusMessage}
+                </span>
+              {/if}
               <span
-                class="mt-3 flex items-center justify-between gap-2 type-caption text-muted-foreground"
-                ><span class="truncate" title={workspace.branch}
-                  >{workspace.branch || workspace.repositoryName}</span
-                ><RelativeTime date={getWorkspaceActivityDisplayTime(workspace)} compact /></span
+                class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
               >
+                {#if showRepository && workspace.repositoryName}
+                  <span
+                    class="flex min-w-0 max-w-full items-center gap-1.5"
+                    title={[workspace.repositoryOwner, workspace.repositoryName]
+                      .filter(Boolean)
+                      .join('/')}
+                  >
+                    {#if workspace.repositoryOwner}
+                      <GitHubAvatar
+                        identity={workspace.repositoryOwner}
+                        class="shrink-0 rounded-sm"
+                      />
+                    {/if}
+                    <span class="truncate">{workspace.repositoryName}</span>
+                  </span>
+                {/if}
+                {#if workspace.pullRequests?.length || workspace.activePullRequest}
+                  <HomeWorkspacePullBadge {workspace} />
+                {/if}
+                <span class="ml-auto shrink-0">
+                  <HomeActivityTime {workspace} />
+                </span>
+              </span>
             </Button>
           {:else}
             <p class="sr-only">

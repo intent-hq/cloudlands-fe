@@ -120,6 +120,7 @@
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
   import { store } from '$store/renderer/store';
   import { startHomePreview } from './home-preview-lifecycle';
+  import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
     replaceWorkspaceList,
     setWorkspaceHasLoaded,
@@ -146,6 +147,7 @@
   store.dispatch(closePanel());
   store.dispatch(setShowCreateModal(false));
   $effect.pre(() => {
+    admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
       replaceWorkspaceList(
@@ -174,6 +176,12 @@
                 lastUsedAt: '2026-09-29',
               },
               {
+                path: '/repos/local-tools',
+                name: 'local-tools',
+                addedAt: '2026-09-01',
+                lastUsedAt: '2026-09-29',
+              },
+              {
                 path: '/repos/platform',
                 name: 'platform',
                 owner: 'acme',
@@ -183,7 +191,7 @@
             ],
       ),
     );
-    if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: 'board' }));
+    if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: scenario }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));

@@ -30,6 +30,7 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   const calls: HomeIntegrationWireCall[] = [];
   let releaseSearch = () => {};
   let pageFailed = false;
+  let filePageFailed = false;
   window.__homeIntegrationBrowser = {
     calls,
     releaseSearch: () => releaseSearch(),
@@ -89,6 +90,29 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
     }),
     'github.pulls.search': async (raw) => {
       const params = raw as Record<string, unknown>;
+      // Organization hits deliberately include a repo absent from Home's sidebar.
+      if (typeof params.org === 'string' && params.org.startsWith('legacy-'))
+        throw new Error('invalid params: Missing required parameter: owner');
+      if (params.org) {
+        if (params.query === 'stale') {
+          await new Promise<void>((resolve) => {
+            releaseSearch = resolve;
+          });
+        }
+        return {
+          pulls: [
+            {
+              ...pull,
+              number: params.nextToken ? 143 : pull.number,
+              owner: params.org,
+              repo: 'outside-sidebar',
+              htmlUrl: `https://github.com/${params.org}/outside-sidebar/pull/${params.nextToken ? 143 : pull.number}`,
+              title: params.query === 'stale' ? 'Stale search response' : pull.title,
+            },
+          ],
+          nextToken: params.nextToken || params.query ? null : 'org-page-two',
+        };
+      }
       if (params.query === 'stale') {
         await new Promise<void>((resolve) => {
           releaseSearch = resolve;
@@ -123,6 +147,18 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
         nextToken: params.nextToken || params.query ? null : 'page-two',
       };
     },
+    'github.repos.search': (raw) => {
+      const params = raw as Record<string, unknown>;
+      if (params.query === 'user:legacy-loop fork:true')
+        return { repos: [{ owner: 'legacy-loop', name: 'outside-sidebar' }], nextToken: 'repeat' };
+      const names = params.nextToken
+        ? ['repo7']
+        : ['outside-sidebar', 'repo2', 'repo3', 'repo4', 'repo5', 'repo6'];
+      return {
+        repos: names.map((name) => ({ owner: 'legacy-acme', name })),
+        nextToken: params.nextToken ? null : 'repos-two',
+      };
+    },
     'github.pulls.get': (raw) => {
       const params = raw as { owner: string; repo: string; number: number };
       return {
@@ -133,11 +169,82 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
         },
       };
     },
+    'github.pulls.checks': () => ({
+      headSha: 'abc123',
+      checks: [
+        {
+          name: 'Typecheck',
+          state: 'success',
+          url: 'https://github.com/acme/studio/actions/runs/1',
+        },
+        { name: 'Browser tests', state: 'pending', url: null },
+        { name: 'Lint', state: 'failure', url: 'https://github.com/acme/studio/actions/runs/2' },
+      ],
+    }),
+    'github.pulls.reviews': () => ({
+      reviews: [
+        {
+          id: 1,
+          author: 'jordan',
+          state: 'APPROVED',
+          body: 'Looks good after the **reconnect** fix.',
+          submittedAt: pull.updatedAt,
+          url: pull.htmlUrl + '#pullrequestreview-1',
+        },
+      ],
+      nextToken: null,
+    }),
+    'github.pulls.files': (raw) => {
+      const params = raw as { nextToken?: string };
+      if (params.nextToken && !filePageFailed) {
+        filePageFailed = true;
+        throw new Error('Fixture file page unavailable');
+      }
+      return params.nextToken
+        ? {
+            headSha: 'abc123',
+            truncated: false,
+            files: [
+              {
+                filename: 'assets/preview.png',
+                previousFilename: null,
+                status: 'modified',
+                additions: 0,
+                deletions: 0,
+                changes: 0,
+                patch: null,
+              },
+            ],
+            nextToken: null,
+          }
+        : {
+            headSha: 'abc123',
+            truncated: false,
+            files: [
+              {
+                filename: 'src/reconnect.ts',
+                previousFilename: 'src/connect.ts',
+                status: 'renamed',
+                additions: 2,
+                deletions: 1,
+                changes: 3,
+                patch:
+                  '@@ -1 +1,2 @@\n-const connected = false;\n+const connected = true;\n+refreshWorkspace();',
+              },
+            ],
+            nextToken: 'files-two',
+          };
+    },
     'github.listReviewComments': () => ({
       comments: [
         {
           id: 1,
-          body: 'Please preserve **focus** after refresh.',
+          body:
+            'Please preserve **focus** after refresh.\n\n<h2></h2>\n\n<h3>Bot findings</h3>\n\nLiteral `<h2></h2>` stays code.\n\n```html\n<h2>literal heading</h2>\n```\n\n<img src="x" onerror="window.__unsafeHomeHtml=true">\n\n' +
+            Array.from(
+              { length: 24 },
+              (_, i) => `Finding ${i + 1}: preserve reviewer context.`,
+            ).join('\n\n'),
           path: 'src/Home.svelte',
           line: 42,
           user: { login: 'jordan' },

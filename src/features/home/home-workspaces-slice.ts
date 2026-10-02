@@ -1,22 +1,21 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { HomeFilter } from './home-model';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import {
+  defaultHomeConfiguration,
+  type HomeConfiguration,
+  type HomePersistenceDocument,
+} from './home-workspaces-persistence';
 
-export interface HomeWorkspacesState {
-  repoKey: string | null;
-  filter: HomeFilter;
-  tab: 'workspaces' | 'prs' | 'linear';
-  query: string;
+export interface HomeWorkspacesState extends HomeConfiguration {
   selectedId: string | null;
-  view: 'list' | 'board';
+  persistenceScope: string | null;
+  persistenceError: boolean;
 }
 const initialState: HomeWorkspacesState = {
-  repoKey: null,
-  filter: 'all',
-  tab: 'workspaces',
-  query: '',
+  ...defaultHomeConfiguration(),
   selectedId: null,
-  view: 'list',
+  persistenceScope: null,
+  persistenceError: false,
 };
 export const updateHomeWorkspaceView = createAction<[changes: Partial<HomeWorkspacesState>]>(
   'homeWorkspaces/updateView',
@@ -27,4 +26,26 @@ homeWorkspacesReducer.with(updateHomeWorkspaceView, (state, { payload: [changes]
   ...state,
   ...changes,
 }));
-homeWorkspacesReducer.with(resetHomeWorkspaceView, () => initialState);
+homeWorkspacesReducer.with(resetHomeWorkspaceView, (state) => ({
+  ...initialState,
+  persistenceScope: state.persistenceScope,
+}));
+
+export const hydrateHomeWorkspaceSettings = createAction<
+  [scope: string | null, settings: HomePersistenceDocument]
+>('homeWorkspaces/hydrateSettings');
+export const setHomePersistenceError = createAction<[failed: boolean]>(
+  'homeWorkspaces/persistenceError',
+);
+homeWorkspacesReducer.with(
+  hydrateHomeWorkspaceSettings,
+  (state, { payload: [scope, settings] }) => ({
+    ...initialState,
+    ...settings.configuration,
+    persistenceScope: scope,
+  }),
+);
+homeWorkspacesReducer.with(setHomePersistenceError, (state, { payload: [failed] }) => ({
+  ...state,
+  persistenceError: failed,
+}));

@@ -1,28 +1,25 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import HomeWorkspaceChat from './HomeWorkspaceChat.svelte';
-  import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { selectWorkspaceDetailHydrated } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectActiveAgentId,
+    selectAllWorkspaceAgents,
+    resolveCanonicalInitialAgent,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
+  import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { ListRow } from '$lib/components/patterns/collection';
-  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
-  import {
-    getWorkspaceStatusPresentation,
-    resolveWorkspaceStatusState,
-  } from '$lib/components/workspace/utils/workspace-status-presentation';
+  import { faXmark, faChevronDown, faFolder } from '@fortawesome/free-solid-svg-icons';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store } from '$store/renderer/store';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
-  import { openHomeIntegrationUrl } from './home-integrations-slice';
-  import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
-  import { WorkspaceStatusEnum } from '$shared/types';
-  import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
 
   let {
     workspace,
@@ -33,8 +30,21 @@
     onclose: () => void;
     preview?: boolean;
   } = $props();
-  const status = $derived(resolveWorkspaceStatusState(workspace));
-  const presentation = $derived(getWorkspaceStatusPresentation(status));
+  // Home keys this panel by workspace ID, matching the chat's subscription lifetime.
+  const workspaceId = untrack(() => workspace.id);
+  const agents$ = selectAllWorkspaceAgents(workspaceId);
+  const activeId$ = selectActiveAgentId(workspaceId);
+  const agents = $derived(
+    $agents$.filter(
+      (agent) => !agent.retiredAt && !agent.pendingDeleteAt && agent.status !== 'deleted',
+    ),
+  );
+  const activeAgent = $derived(
+    agents.find((agent) => agent.id === $activeId$) ?? resolveCanonicalInitialAgent(agents),
+  );
+  const repositoryLabel = $derived(
+    [workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/'),
+  );
   let detailFailed = $state(false);
   async function loadDetail() {
     detailFailed = false;
@@ -59,20 +69,39 @@
   aria-label={m.home_workspace_details()}
   data-home-detail
 >
-  <header class="shrink-0 space-y-2 border-b border-border px-5 py-3">
-    <div class="flex items-start justify-between gap-3">
-      <div class="min-w-0 flex-1">
-        <h2 class="break-words text-base font-medium">{workspace.title}</h2>
-        <p
-          class="truncate type-caption text-muted-foreground"
-          title={[workspace.repositoryName, workspace.branch].filter(Boolean).join(' · ')}
+  <header class="shrink-0 border-b border-border px-4 py-2">
+    <div class="flex min-w-0 items-center gap-3">
+      <h2 class="-ml-2 min-w-0 flex-1">
+        <Button
+          variant="ghost"
+          class="type-title h-auto max-w-full justify-start px-2 py-1 text-left font-medium leading-snug"
+          wrapContent={false}
+          aria-label={m.home_open_workspace()}
+          title={workspace.title}
+          onclick={openWorkspace}
         >
-          {[workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/')}
-          {#if workspace.repositoryName && workspace.branch}
-            ·
-          {/if}{workspace.branch ?? ''}
-        </p>
-      </div>
+          <span class="min-w-0 line-clamp-2 break-words">{workspace.title}</span>
+        </Button>
+      </h2>
+      {#if repositoryLabel}
+        <div
+          class="flex min-w-0 max-w-[32%] items-center gap-1.5 type-caption text-muted-foreground"
+          data-home-detail-repository
+          title={repositoryLabel}
+          aria-label={repositoryLabel}
+        >
+          {#if workspace.repositoryOwner}
+            <GitHubAvatar
+              identity={workspace.repositoryOwner}
+              size={16}
+              class="shrink-0 rounded-sm"
+            />
+          {:else}
+            <Fa icon={faFolder} />
+          {/if}
+          <span class="home-detail-repository-name truncate">{repositoryLabel}</span>
+        </div>
+      {/if}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -81,98 +110,75 @@
         onclick={onclose}><Fa icon={faXmark} /></Button
       >
     </div>
-    <div class="flex items-center justify-between gap-3">
-      <div class="flex min-w-0 items-center gap-2 type-caption text-muted-foreground">
-        <WorkspaceStatusIcon {status} />
-        <span
-          >{workspace.status === WorkspaceStatusEnum.Archived
-            ? m.home_filter_archived()
-            : presentation.label}</span
-        >
-      </div>
-      <Button variant="primary" size="sm" onclick={openWorkspace}>{m.home_open_workspace()}</Button>
-    </div>
-    {#if workspace.statusMessage}<p
-        class="line-clamp-2 break-words type-caption text-muted-foreground"
+    {#if workspace.statusMessage}
+      <p
+        class="type-caption line-clamp-2 break-words leading-snug text-muted-foreground"
         title={workspace.statusMessage}
       >
         {workspace.statusMessage}
-      </p>{/if}
+      </p>
+    {/if}
+    {#if agents.length}
+      <div class="-ml-3 mt-2 min-w-0" data-home-agent-switcher>
+        <Select.Root
+          value={activeAgent?.id ?? ''}
+          onchange={(value) => {
+            const agent = agents.find((candidate) => candidate.id === value);
+            if (agent) store.dispatch(setActiveAgentId(workspaceId, agent.id));
+          }}
+        >
+          <Select.Trigger
+            variant="ghost"
+            class="h-8 w-fit max-w-full justify-start"
+            aria-label={m.home_agents()}
+          >
+            {#if activeAgent}
+              <AgentAvatar
+                agentId={activeAgent.id}
+                specialist={activeAgent.metadata?.specialist ??
+                  activeAgent.agentMetadata?.specialist}
+                variant="emphasized"
+              />
+            {/if}
+            <span class="min-w-0 truncate text-left">{activeAgent?.name}</span>
+            <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
+          </Select.Trigger>
+          <Select.Content portal>
+            {#each agents as agent (agent.id)}
+              <Select.Item value={agent.id} label={agent.name}>
+                <span class="flex min-w-0 items-center gap-2">
+                  <AgentAvatar
+                    agentId={agent.id}
+                    specialist={agent.metadata?.specialist ?? agent.agentMetadata?.specialist}
+                    variant="emphasized"
+                  />
+                  <span class="truncate">{agent.name}</span>
+                </span>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
+    {/if}
   </header>
-  <details class="shrink-0 border-b border-border" open={preview}>
-    <summary
-      class="cursor-pointer px-5 py-2 type-caption text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-      >{m.workspace_multiSelectSidebar_overviewTab_label()}</summary
-    >
-    <div class="max-h-64 space-y-4 overflow-y-auto px-5 pb-4">
-      {#if detailFailed}<div class="space-y-2 text-sm text-muted-foreground" role="status">
-          <p>{m.home_detail_unavailable()}</p>
-          <Button variant="outline" size="sm" onclick={loadDetail}>{m.home_retry()}</Button>
-        </div>{/if}
-      <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 type-caption">
-        {#if workspace.repositoryName}<dt class="text-muted-foreground">{m.home_repository()}</dt>
-          <dd class="break-words">
-            {[workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/')}
-          </dd>{/if}
-        {#if workspace.branch}<dt class="text-muted-foreground">{m.home_branch()}</dt>
-          <dd class="break-all font-mono">{workspace.branch}</dd>{/if}
-        {#if workspace.baseRef}<dt class="text-muted-foreground">{m.home_base_branch()}</dt>
-          <dd class="break-all font-mono">{workspace.baseRef}</dd>{/if}
-        <dt class="text-muted-foreground">{m.home_updated()}</dt>
-        <dd><RelativeTime date={getWorkspaceActivityDisplayTime(workspace)} /></dd>
-        {#if workspace.agentSummary}<dt class="text-muted-foreground">{m.home_agents()}</dt>
-          <dd>{formatInteger(workspace.agentSummary.agentIds.length)}</dd>{/if}
-        {#if workspace.taskStats}<dt class="text-muted-foreground">{m.home_tasks()}</dt>
-          <dd>
-            {m.home_task_progress({
-              done: formatInteger(workspace.taskStats.completed),
-              total: formatInteger(workspace.taskStats.total),
-            })}
-          </dd>{/if}
-        {#if workspace.path}<dt class="text-muted-foreground">{m.home_location()}</dt>
-          <dd class="break-all text-muted-foreground">{workspace.path}</dd>{/if}
-      </dl>
-      {#if workspace.tags?.length}<div class="flex flex-wrap gap-2">
-          {#each workspace.tags as tag}<span
-              class="rounded-md bg-muted px-2 py-1 type-caption text-muted-foreground">{tag}</span
-            >{/each}
-        </div>{/if}
-      {#if workspace.initialPrompt}<section class="space-y-2">
-          <h3 class="text-sm font-medium">{m.home_workspace_goal()}</h3>
-          <p class="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-            {workspace.initialPrompt}
-          </p>
-        </section>{/if}
-      {#if workspace.taskStats?.tasks?.length}
-        <section class="space-y-2">
-          <h3 class="text-sm font-medium">{m.home_tasks()}</h3>
-          {#each workspace.taskStats.tasks as task, index (index)}
-            <ListRow class="px-0">
-              {#snippet title()}{task.title}{/snippet}
-              {#snippet leading()}<TaskStatusIcon status={task.status} />{/snippet}
-            </ListRow>
-          {/each}
-        </section>
-      {/if}
-      {#if workspace.pullRequests?.length}
-        <section class="space-y-2">
-          <h3 class="text-sm font-medium">{m.home_tab_prs()}</h3>
-          {#each workspace.pullRequests as pr (pr.id)}
-            <Button
-              variant="ghost"
-              class="h-auto w-full justify-start py-2"
-              onclick={() => store.dispatch(openHomeIntegrationUrl(pr.url))}
-            >
-              <span class="min-w-0 truncate">#{pr.number} · {pr.title}</span>
-            </Button>
-          {/each}
-        </section>
-      {/if}
+  {#if detailFailed}
+    <div class="flex items-center gap-2 px-4 py-2 type-caption text-muted-foreground" role="status">
+      <p>{m.home_detail_unavailable()}</p>
+      <Button variant="outline" size="sm" onclick={loadDetail}>{m.home_retry()}</Button>
     </div>
-  </details>
+  {/if}
   <div class="min-h-0 min-w-0 flex-1">
-    {#key workspace.id}
-      <HomeWorkspaceChat {workspace} {preview} />
-    {/key}
+    {#key workspace.id}<HomeWorkspaceChat {workspace} {preview} />{/key}
   </div>
 </section>
+
+<style>
+  @container home-panel (max-width: 600px) {
+    .home-detail-repository-name {
+      display: none;
+    }
+    [data-home-detail-repository] {
+      flex-shrink: 0;
+    }
+  }
+</style>

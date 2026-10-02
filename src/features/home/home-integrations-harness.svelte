@@ -7,11 +7,21 @@
   import HomeIntegrations from './HomeIntegrations.svelte';
   import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
   import type { HomeIntegrationKind } from './home-integrations-types';
-  let { kind = 'prs', repoCount = 2 }: { kind?: HomeIntegrationKind; repoCount?: number } =
-    $props();
+  import type { Workspace } from '$shared/types';
+  let {
+    kind = 'prs',
+    organization,
+    repoCount = 2,
+    workspaces = [],
+  }: {
+    kind?: HomeIntegrationKind;
+    organization?: string;
+    repoCount?: number;
+    workspaces?: Workspace[];
+  } = $props();
   const dispose = startHomePreview(() => [setupHomeIntegrationsFixtures(store)]);
   store.dispatch(guestSessionsListUnavailable());
-  store.dispatch(replaceWorkspaceList([]));
+  store.dispatch(replaceWorkspaceList(workspaces));
   const repositories = $derived(
     Array.from({ length: repoCount }, (_, index) => ({
       key: `repo-${index}`,
@@ -23,5 +33,5 @@
 </script>
 
 <div class="h-[700px] w-full bg-background text-foreground">
-  <HomeIntegrations {kind} {repositories} workspaceId="home-route" />
+  <HomeIntegrations {organization} {kind} {repositories} workspaceId="home-route" />
 </div>

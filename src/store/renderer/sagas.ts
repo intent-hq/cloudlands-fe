@@ -1,3 +1,4 @@
+import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
@@ -121,6 +122,7 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
   homeIntegrationsSaga,
+  homeWorkspacesSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,

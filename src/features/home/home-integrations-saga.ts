@@ -22,9 +22,14 @@ import {
 import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
 import type {
   HomeIntegrationItem,
+  IntegrationRepository,
   HomeIntegrationsState,
   HomeReviewComment,
+  HomePullFile,
+  HomePullReview,
+  HomePullCheck,
 } from './home-integrations-types';
+import { selectHomeWorkspaceView } from './home-workspaces-selectors';
 import { selectHomeIntegrations } from './home-integrations-selectors';
 import {
   mountHomeIntegrations,
@@ -35,6 +40,9 @@ import {
   loadMoreHomeIntegrations,
   selectHomeIntegration,
   loadHomeReviewComments,
+  loadHomePullFiles,
+  loadHomePullReviewData,
+  loadHomePullChecks,
   startHomeIntegrationWorkspace,
   patchHomeIntegrations,
   openHomeIntegrationUrl,
@@ -75,9 +83,8 @@ function pullItem(pull: PullWire, owner: string, repo: string): HomeIntegrationI
     labels: pull.labels,
     headRef: pull.headRef,
     baseRef: pull.baseRef,
-    additions: pull.additions,
-    deletions: pull.deletions,
-    changedFiles: pull.changedFiles,
+    // Legacy pulls projections hardcode these statistics to zero. Real totals
+    // are only populated from a complete files read below.
   };
 }
 function issueItem(issue: LinearIssueResult): HomeIntegrationItem {
@@ -106,7 +113,9 @@ function isLinearNotConfigured(error: unknown): boolean {
 }
 function repositories(state: HomeIntegrationsState) {
   const unique = new Map<string, { owner: string; repo: string }>();
-  for (const repo of state.scope?.repositories ?? []) {
+  for (const repo of (state.organizationRepositories
+    ? Object.values(state.organizationRepositories)
+    : state.scope?.repositories) ?? []) {
     if (repo.owner)
       unique.set(`${repo.owner}/${repo.name}`.toLowerCase(), {
         owner: repo.owner,
@@ -118,7 +127,46 @@ function repositories(state: HomeIntegrationsState) {
     values.slice(index * 6, index * 6 + 6),
   );
 }
-async function fetchPage(state: HomeIntegrationsState, more: boolean) {
+async function organizationRepositories(
+  organization: string,
+  workspaceId: string | undefined,
+  isCurrent: () => boolean,
+): Promise<Record<string, IntegrationRepository>> {
+  if (!/^[A-Za-z0-9-]{1,39}$/.test(organization))
+    throw new Error(m.home_integrations_org_scope_incomplete());
+  const repos = new Map<string, IntegrationRepository>();
+  const seen = new Set<string>();
+  let nextToken: string | undefined;
+  let received = 0;
+  let pages = 0;
+  do {
+    if (!isCurrent()) throw new Error('Organization search cancelled');
+    const page = await backendRequest<{
+      repos: { owner: string; name: string }[];
+      nextToken?: string | null;
+    }>('github.repos.search', {
+      query: `user:${organization} fork:true`,
+      limit: 100,
+      workspaceId,
+      ...(nextToken ? { nextToken } : {}),
+    });
+    received += page.repos.length;
+    pages++;
+    for (const repo of page.repos) {
+      if (!repo.owner || !repo.name || repo.owner.toLowerCase() !== organization.toLowerCase())
+        throw new Error(m.home_integrations_org_scope_incomplete());
+      const key = `${repo.owner}/${repo.name}`.toLowerCase();
+      repos.set(key, { key, owner: repo.owner, name: repo.name });
+    }
+    nextToken = page.nextToken ?? undefined;
+    // GitHub search exposes at most 1000 hits, even if further repositories exist.
+    if (received >= 1000 || (nextToken && (seen.has(nextToken) || pages >= 10)))
+      throw new Error(m.home_integrations_org_scope_incomplete());
+    if (nextToken) seen.add(nextToken);
+  } while (nextToken);
+  return Object.fromEntries(repos);
+}
+async function fetchPage(state: HomeIntegrationsState, more: boolean, isCurrent: () => boolean) {
   const scope = state.scope!;
   const params = { workspaceId: scope.workspaceId, limit: 30 };
   if (scope.kind === 'linear') {
@@ -132,9 +180,34 @@ async function fetchPage(state: HomeIntegrationsState, more: boolean) {
     });
     return { items: response.issues.map(issueItem), cursors: [response.nextToken ?? null] };
   }
+  const organization = scope.organization?.trim();
+  if (organization && !state.organizationRepositories) {
+    try {
+      const response = await backendRequest<{ pulls: PullWire[]; nextToken?: string | null }>(
+        'github.pulls.search',
+        {
+          ...params,
+          org: organization,
+          filter: state.filter,
+          state: state.closed ? 'closed' : 'open',
+          query: state.query.trim() || undefined,
+          ...(more ? { nextToken: state.cursors[0] } : {}),
+        },
+      );
+      return {
+        items: response.pulls.map((pull) => pullItem(pull, organization, pull.repo ?? '')),
+        cursors: [response.nextToken ?? null],
+      };
+    } catch (error) {
+      if (!/Missing required parameter: owner(?:\b|$)/i.test(message(error))) throw error;
+      const complete = await organizationRepositories(organization, scope.workspaceId, isCurrent);
+      state = { ...state, organizationRepositories: complete };
+    }
+  }
   const items: HomeIntegrationItem[] = [];
   const cursors: (string | null)[] = [];
   for (const [index, batch] of repositories(state).entries()) {
+    if (!isCurrent()) throw new Error('Organization search cancelled');
     if (more && !state.cursors[index]) {
       cursors.push(null);
       continue;
@@ -155,8 +228,16 @@ async function fetchPage(state: HomeIntegrationsState, more: boolean) {
     items.push(...response.pulls.map((pull) => pullItem(pull, first.owner, first.repo)));
     cursors.push(response.nextToken ?? null);
   }
-  return { items, cursors };
+  return { items, cursors, organizationRepositories: state.organizationRepositories };
 }
+// Short-lived, account/connection-scoped list cache. Detail stays independently fetched.
+const listCache = new Map<
+  string,
+  {
+    at: number;
+    page: Pick<HomeIntegrationsState, 'items' | 'cursors' | 'organizationRepositories'>;
+  }
+>();
 function* listWorker(action: { type: string }): SagaGenerator<void> {
   if (action.type === unmountHomeIntegrations.type || action.type === suspendHomeIntegrations.type)
     return;
@@ -166,11 +247,43 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
   yield* call(integrationReconnectSettled);
   const context = captureIntegrationContext(state.scope.workspaceId);
   const more = action.type === loadMoreHomeIntegrations.type;
+  const preferences = yield* select(selectHomeWorkspaceView.select);
+  const cacheKey = JSON.stringify([
+    context.key,
+    preferences.persistenceScope,
+    state.scope,
+    state.query,
+    state.filter,
+    state.closed,
+  ]);
+  const cached = listCache.get(cacheKey);
+  if (
+    !more &&
+    action.type !== refreshHomeIntegrations.type &&
+    cached &&
+    Date.now() - cached.at < 120_000
+  ) {
+    yield* put(
+      patchHomeIntegrations(generation, {
+        ...cached.page,
+        status: 'ready',
+        loadingMore: false,
+        error: null,
+      }),
+    );
+    return;
+  }
+
   if (more && !state.cursors.some(Boolean)) return;
   if (more) yield* put(patchHomeIntegrations(generation, { loadingMore: true, error: null }));
   if (action.type === searchHomeIntegrations.type) yield* delay(350);
+  let active = true;
   try {
-    if (state.scope.kind === 'prs' && !repositories(state).length) {
+    if (
+      state.scope.kind === 'prs' &&
+      !state.scope.organization?.trim() &&
+      !repositories(state).length
+    ) {
       yield* put(
         patchHomeIntegrations(generation, {
           status: 'ready',
@@ -200,18 +313,30 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
       );
       return;
     }
-    const page = yield* call(fetchPage, state, more);
+    const page = yield* call(fetchPage, state, more, () => active && context.isCurrent());
     if (!context.isCurrent()) return;
     const items = [
       ...new Map(
         [...(more ? state.items : []), ...page.items].map((item) => [item.id, item]),
       ).values(),
     ].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+    listCache.delete(cacheKey);
+    listCache.set(cacheKey, {
+      at: Date.now(),
+      page: {
+        items,
+        cursors: page.cursors,
+        organizationRepositories: page.organizationRepositories,
+      },
+    });
+    if (listCache.size > 20) listCache.delete(listCache.keys().next().value!);
     yield* put(
       patchHomeIntegrations(generation, {
         status: 'ready',
         items,
         cursors: page.cursors,
+        organizationRepositories:
+          'organizationRepositories' in page ? page.organizationRepositories : undefined,
         loadingMore: false,
         error: null,
       }),
@@ -243,6 +368,8 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
           error: message(error),
         }),
       );
+  } finally {
+    active = false;
   }
 }
 function* commentsWorker(): SagaGenerator<void> {
@@ -326,6 +453,176 @@ function* detailWorker(action: { type: string }): SagaGenerator<void> {
       );
   }
 }
+const emptyReviewData = { headSha: '', checks: [], reviews: [], requestedReviewers: [] };
+function readError(error: unknown): string {
+  const text = message(error);
+  return /method not found|-32601|unsupported/i.test(text)
+    ? m.home_integrations_read_upgrade()
+    : text;
+}
+function pullAddress(state: HomeIntegrationsState) {
+  const item = state.items.find((entry) => entry.id === state.selectedId);
+  if (state.scope?.kind !== 'prs' || !item?.owner || !item.repo || !item.number) return null;
+  return {
+    owner: item.owner,
+    repo: item.repo,
+    number: item.number,
+    workspaceId: state.scope.workspaceId,
+  };
+}
+function* checksWorker(): SagaGenerator<void> {
+  const state = yield* select(selectHomeIntegrations.select);
+  const address = pullAddress(state);
+  if (!address) return;
+  const context = captureIntegrationContext(address.workspaceId);
+  yield* put(patchHomeIntegrations(state.generation, { checksLoading: true, checksError: null }));
+  try {
+    const response = yield* call(
+      backendRequest<{ headSha: string; checks: HomePullCheck[] }>,
+      'github.pulls.checks',
+      address,
+    );
+    if (!context.isCurrent()) return;
+    const current = yield* select(selectHomeIntegrations.select);
+    yield* put(
+      patchHomeIntegrations(state.generation, {
+        checksLoading: false,
+        reviewData: { ...(current.reviewData ?? emptyReviewData), ...response },
+      }),
+    );
+  } catch (error) {
+    if (context.isCurrent())
+      yield* put(
+        patchHomeIntegrations(state.generation, {
+          checksLoading: false,
+          checksError: readError(error),
+        }),
+      );
+  }
+}
+function* reviewsWorker(): SagaGenerator<void> {
+  const state = yield* select(selectHomeIntegrations.select);
+  const address = pullAddress(state);
+  if (!address) return;
+  const context = captureIntegrationContext(address.workspaceId);
+  yield* put(patchHomeIntegrations(state.generation, { reviewLoading: true, reviewError: null }));
+  try {
+    const response = yield* call(
+      backendRequest<{ reviews: HomePullReview[]; nextToken?: string | null }>,
+      'github.pulls.reviews',
+      { ...address, limit: 50, ...(state.reviewsCursor ? { nextToken: state.reviewsCursor } : {}) },
+    );
+    if (!context.isCurrent()) return;
+    const current = yield* select(selectHomeIntegrations.select);
+    const reviews = [
+      ...new Map(
+        [
+          ...(state.reviewsCursor ? (current.reviewData?.reviews ?? []) : []),
+          ...response.reviews,
+        ].map((review) => [review.id, review]),
+      ).values(),
+    ];
+    yield* put(
+      patchHomeIntegrations(state.generation, {
+        reviewLoading: false,
+        reviewsCursor: response.nextToken ?? null,
+        reviewData: { ...(current.reviewData ?? emptyReviewData), reviews },
+      }),
+    );
+  } catch (error) {
+    if (context.isCurrent())
+      yield* put(
+        patchHomeIntegrations(state.generation, {
+          reviewLoading: false,
+          reviewError: readError(error),
+        }),
+      );
+  }
+}
+function* filesWorker(): SagaGenerator<void> {
+  const state = yield* select(selectHomeIntegrations.select);
+  const address = pullAddress(state);
+  if (!address) return;
+  const context = captureIntegrationContext(address.workspaceId);
+  yield* put(patchHomeIntegrations(state.generation, { filesLoading: true, filesError: null }));
+  try {
+    const response = yield* call(
+      backendRequest<{
+        headSha: string;
+        truncated: boolean;
+        files: HomePullFile[];
+        nextToken?: string | null;
+      }>,
+      'github.pulls.files',
+      {
+        ...address,
+        limit: 50,
+        ...(state.filesCursor
+          ? { nextToken: state.filesCursor, expectedHeadSha: state.filesHeadSha }
+          : {}),
+      },
+    );
+    if (!context.isCurrent()) return;
+    const current = yield* select(selectHomeIntegrations.select);
+    if (state.filesHeadSha && response.headSha !== state.filesHeadSha) {
+      yield* put(
+        patchHomeIntegrations(state.generation, {
+          files: [],
+          filesCursor: null,
+          filesHeadSha: null,
+          filesLoading: false,
+          filesError: m.home_integrations_pr_head_changed(),
+        }),
+      );
+      return;
+    }
+    const files = [
+      ...new Map(
+        [...(state.filesCursor ? state.files : []), ...response.files].map((file) => [
+          file.filename,
+          file,
+        ]),
+      ).values(),
+    ];
+    const totals =
+      response.nextToken || response.truncated
+        ? {}
+        : {
+            additions: files.reduce((sum, file) => sum + file.additions, 0),
+            deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+            changedFiles: files.length,
+          };
+    yield* put(
+      patchHomeIntegrations(state.generation, {
+        files,
+        filesCursor: response.nextToken ?? null,
+        filesHeadSha: response.headSha,
+        filesTruncated: response.truncated,
+        filesLoading: false,
+        reviewData: { ...(current.reviewData ?? emptyReviewData), ...totals },
+        items: current.items.map((item) =>
+          item.id === state.selectedId ? { ...item, ...totals } : item,
+        ),
+      }),
+    );
+  } catch (error) {
+    if (context.isCurrent())
+      yield* put(
+        patchHomeIntegrations(
+          state.generation,
+          /conflict|head.*changed/i.test(message(error))
+            ? {
+                files: [],
+                filesCursor: null,
+                filesHeadSha: null,
+                filesLoading: false,
+                filesError: m.home_integrations_pr_head_changed(),
+              }
+            : { filesLoading: false, filesError: readError(error) },
+        ),
+      );
+  }
+}
 /** Selection owns both detail reads and its pagination watcher, so resets cancel all three. */
 function* selectionWorker(action: { type: string }): SagaGenerator<void> {
   if (action.type !== selectHomeIntegration.type) return;
@@ -334,10 +631,24 @@ function* selectionWorker(action: { type: string }): SagaGenerator<void> {
   yield* all([
     call(detailWorker, action),
     call(commentsWorker),
+    call(checksWorker),
+    call(reviewsWorker),
+    takeLatest(loadHomePullFiles, filesWorker),
+    takeLatest(loadHomePullReviewData, reviewsWorker),
+    takeLatest(loadHomePullChecks, checksWorker),
     takeLatest(loadHomeReviewComments, commentsWorker),
   ]);
 }
-function* invalidateWorker(action: { type: string }): SagaGenerator<void> {
+const authSnapshots = new Map<string, string>();
+function* invalidateWorker(action: { type: string; payload?: unknown }): SagaGenerator<void> {
+  if (action.type === setGitHubAuthState.type || action.type === setLinearAuthState.type) {
+    const snapshot = JSON.stringify(action.payload);
+    if (authSnapshots.get(action.type) === snapshot) return;
+    authSnapshots.set(action.type, snapshot);
+  } else {
+    authSnapshots.clear();
+  }
+  listCache.clear();
   const state = yield* select(selectHomeIntegrations.select);
   if (state.scope)
     yield* put(

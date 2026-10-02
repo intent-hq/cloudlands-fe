@@ -1,3 +1,10 @@
+/* Match workspace panel shells: surface and elevation provide separation. */
+.home-panel {
+  border: 0;
+  border-radius: calc(var(--radius-large) * 1.5);
+  box-shadow: var(--elevation-raised);
+}
+
 .home-choice-group {
   display: flex;
   align-items: center;
@@ -20,7 +27,12 @@
   box-shadow: none;
 }
 
+.workspace-list {
+  container-type: inline-size;
+}
+
 .home-list-row [data-slot='list-row-title'] {
+  width: 100%;
   font-size: 0.9375rem;
   line-height: 1.5;
   letter-spacing: -0.015em;
@@ -29,4 +41,91 @@
 .home-list-row [data-slot='list-row-leading'],
 .home-list-row [data-slot='list-row-trailing'] {
   min-height: 1.40625rem;
+  align-self: center;
+  height: auto;
+}
+
+.home-integration-row [data-slot='list-row-leading'],
+.home-integration-row [data-slot='list-row-trailing'] {
+  align-self: flex-start;
+}
+
+.home-needs-you-badge {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted));
+}
+
+.home-row-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.home-row-title {
+  flex: 0 1 auto;
+  max-width: 45%;
+}
+
+.home-row-description {
+  flex: 1;
+}
+
+@container (max-width: 700px) {
+  .home-row-line {
+    flex-direction: row;
+  }
+  .home-row-title {
+    max-width: 100%;
+  }
+  .home-row-description {
+    display: none;
+  }
+  .home-list-row .workspace-row-meta {
+    gap: 0.5rem;
+  }
+}
+
+@container (max-width: 480px) {
+  .home-header .home-tabs {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 0.5rem;
+  }
+}
+
+.home-workspace-summary {
+  color: hsl(var(--muted-foreground) / 0.8);
+  font-weight: 400;
+}
+
+.workspace-list [data-slot='sectioned-list'] > section + section {
+  padding-top: 0.75rem;
+}
+
+.home-panel {
+  container: home-panel / inline-size;
+}
+.home-control-fill {
+  background: hsl(var(--muted) / 0.55);
+}
+.home-workspace-filters-compact,
+.home-integration-filters-compact {
+  display: none;
+}
+@container home-panel (max-width: 1300px) {
+  .home-integration-filters-wide {
+    display: none;
+  }
+  .home-integration-filters-compact {
+    display: block;
+  }
+}
+@container home-panel (max-width: 850px) {
+  .home-workspace-filters-wide {
+    display: none;
+  }
+  .home-workspace-filters-compact {
+    display: block;
+  }
 }

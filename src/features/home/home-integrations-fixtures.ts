@@ -70,6 +70,39 @@ const prs: HomeIntegrationsState = {
   selectedId: pull.id,
   detail: pull,
   cursors: ['fixture-next-page'],
+  reviewData: {
+    headSha: 'fixture-head',
+    additions: 128,
+    deletions: 34,
+    changedFiles: 5,
+    requestedReviewers: ['sam'],
+    checks: [
+      { name: 'Typecheck', state: 'success', url: null },
+      { name: 'Browser tests', state: 'pending', url: null },
+    ],
+    reviews: [
+      {
+        id: 11,
+        author: 'jordan',
+        state: 'APPROVED',
+        body: 'Selection survives reconnect. Looks good!',
+        submittedAt: pull.updatedAt,
+        url: pull.url + '#pullrequestreview-11',
+      },
+    ],
+  },
+  filesHeadSha: 'fixture-head',
+  files: [
+    {
+      filename: 'src/reconnect.ts',
+      status: 'modified',
+      additions: 2,
+      deletions: 1,
+      patch:
+        '@@ -1 +1,2 @@\n-const connected = false;\n+const connected = true;\n+refreshWorkspace();',
+    },
+    { filename: 'assets/preview.png', status: 'modified', additions: 0, deletions: 0, patch: null },
+  ],
   comments: [
     {
       id: 1,

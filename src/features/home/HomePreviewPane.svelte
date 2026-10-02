@@ -7,7 +7,7 @@
 </script>
 
 <div
-  class="home-preview-pane min-h-0 min-w-0 shrink-0"
+  class="home-preview-pane min-h-0 min-w-0 shrink-0 bg-sidebar pl-3"
   transition:slide|global={{ axis: 'x', tier: 'fast' }}
 >
   <ResizablePanel
@@ -16,9 +16,12 @@
     minWidth={320}
     maxWidth={800}
     defaultWidth={460}
-    className="home-preview-resizable h-full max-w-full border-l border-border"
+    handleClassName="home-preview-resize-handle"
+    className="home-preview-resizable h-full max-w-full home-panel bg-background"
   >
-    {@render children()}
+    <div class="h-full min-h-0 overflow-hidden rounded-[inherit]">
+      {@render children()}
+    </div>
   </ResizablePanel>
 </div>
 
@@ -31,14 +34,36 @@
     min-width: 0 !important;
     max-width: 100% !important;
   }
-  @container (max-width: 1000px) {
+  .home-preview-pane :global(.home-preview-resize-handle) {
+    left: -0.75rem;
+    width: 0.75rem;
+    clip-path: none;
+  }
+  .home-preview-pane :global(.home-preview-resize-handle)::before {
+    left: 50%;
+    opacity: 0;
+  }
+  @container home-layout (max-width: 1000px) {
     .home-preview-pane {
       width: 100%;
       max-width: 100%;
+      padding-left: 0;
     }
     .home-preview-pane :global(.home-preview-resizable) {
       width: 100% !important;
-      border-left: 0;
+    }
+    .home-preview-pane :global(.resizable-panel-handle) {
+      display: none;
+    }
+  }
+  @container home-integrations (max-width: 1000px) {
+    .home-preview-pane {
+      width: 100%;
+      max-width: 100%;
+      padding-left: 0;
+    }
+    .home-preview-pane :global(.home-preview-resizable) {
+      width: 100% !important;
     }
     .home-preview-pane :global(.resizable-panel-handle) {
       display: none;

@@ -9,7 +9,11 @@
     selectAgentsLoaded,
     resolveCanonicalInitialAgent,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    hydrateAgentsRequested,
+    setActiveAgentId,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import type { ChatAttentionFocusRequest } from '$lib/components/chat/chat-attention-focus';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
 
@@ -28,6 +32,13 @@
     eligibleAgents.find((candidate) => candidate.id === $activeId$) ??
       resolveCanonicalInitialAgent(eligibleAgents),
   );
+  let attentionFocus = $state<ChatAttentionFocusRequest & { agentId: string }>();
+  let nextFocusRequest = 0;
+  export function focusAttention(agentId: string, questionMessageId?: string) {
+    if (preview || !eligibleAgents.some((candidate) => candidate.id === agentId)) return;
+    attentionFocus = { agentId, questionMessageId, requestId: ++nextFocusRequest };
+    store.dispatch(setActiveAgentId(workspaceId, agentId));
+  }
   let timedOut = $state(false);
   let timeout: ReturnType<typeof setTimeout> | undefined;
   function hydrate() {
@@ -60,6 +71,7 @@
         agentId={agent.id}
         agentName={agent.name}
         autoFocus={false}
+        attentionFocusRequest={attentionFocus?.agentId === agent.id ? attentionFocus : undefined}
         isInitialWorkspaceAgent={false}
       />
     {/key}
