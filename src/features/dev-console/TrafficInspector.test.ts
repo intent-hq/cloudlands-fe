@@ -209,7 +209,7 @@ it('shows bridge connection failures without inventing an active session', async
   expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
 });
 
-it('separates three tabs, keeps method filtering/counts scoped, and resets details on tab changes', async () => {
+it('combines all streams by default, separates dedicated tabs, keeps method filtering/counts scoped, and resets details on tab changes', async () => {
   const { request, emit, view } = setup();
   request('a', 'same.method');
   emit({
@@ -233,8 +233,18 @@ it('separates three tabs, keeps method filtering/counts scoped, and resets detai
     payload: { event: { type: 'other.event' } },
     connectionGeneration: 1,
   });
-  await waitFor(() => expect(view.getByRole('cell', { name: 'same.method' })).toBeTruthy());
-  expect(view.getAllByRole('tab')).toHaveLength(3);
+  await waitFor(() => expect(view.getAllByRole('cell', { name: 'same.method' })).toHaveLength(2));
+  expect(view.getByRole('tab', { name: 'All', exact: true }).getAttribute('aria-selected')).toBe(
+    'true',
+  );
+  expect(view.container.querySelector('footer')?.textContent).toContain('4 shown');
+  await fireEvent.input(view.getByRole('textbox'), { target: { value: 'same' } });
+  await waitFor(() =>
+    expect(view.container.querySelector('footer')?.textContent).toContain('3 shown'),
+  );
+  expect(view.queryByRole('cell', { name: 'other.event' })).toBeNull();
+  await fireEvent.input(view.getByRole('textbox'), { target: { value: '' } });
+  await fireEvent.click(view.getByRole('tab', { name: 'Outbound RPC', exact: true }));
   await fireEvent.click(view.getByRole('cell', { name: 'same.method' }));
   await waitFor(() =>
     expect(view.container.querySelector('[data-testid=payload-document]')?.textContent).toContain(
@@ -268,4 +278,68 @@ it('separates three tabs, keeps method filtering/counts scoped, and resets detai
   await fireEvent.click(view.getByRole('tab', { name: 'Outbound RPC', exact: true }));
   expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
   expect(view.getByRole('cell', { name: 'same.method' })).toBeTruthy();
+});
+
+it('keeps a selected request in its chronological position when a reply arrives among equal-time streams', async () => {
+  const { emit, request, view } = setup();
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+  try {
+    request('out', 'first.call');
+    emit({
+      type: 'notification',
+      method: 'events.event',
+      payload: { event: { type: 'second.event' } },
+      connectionGeneration: 1,
+    });
+    emit({
+      type: 'request',
+      direction: 'inbound',
+      key: 'in',
+      requestId: 2,
+      method: 'third.call',
+      payload: {},
+      connectionGeneration: 1,
+    });
+    clock.mockRestore();
+    const methods = () =>
+      Array.from(
+        view.container.querySelectorAll('[data-index] .method'),
+        (cell) => cell.textContent,
+      );
+    await waitFor(() => expect(methods()).toEqual(['first.call', 'second.event', 'third.call']));
+    await fireEvent.click(view.getByRole('cell', { name: 'first.call' }));
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-testid=payload-document]')?.textContent).toContain(
+        'out',
+      ),
+    );
+    emit({
+      type: 'response',
+      key: 'out',
+      status: 'success',
+      payload: { done: true },
+      connectionGeneration: 1,
+    });
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll('[data-testid=payload-document]')[1]?.textContent,
+      ).toContain('"done": true'),
+    );
+    expect(methods()).toEqual(['first.call', 'second.event', 'third.call']);
+    expect(
+      view.container.querySelector('[aria-selected="true"][data-index] .method')?.textContent,
+    ).toBe('first.call');
+    await fireEvent.click(view.getByRole('button', { name: 'Close details' }));
+    await fireEvent.click(view.getByRole('cell', { name: 'second.event' }));
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-testid=payload-document]')?.textContent).toContain(
+        'second.event',
+      ),
+    );
+    await fireEvent.click(view.getByRole('button', { name: 'Clear', exact: true }));
+    await waitFor(() => expect(methods()).toEqual([]));
+    expect(view.container.querySelector('[data-testid=payload-document]')).toBeNull();
+  } finally {
+    clock.mockRestore();
+  }
 });

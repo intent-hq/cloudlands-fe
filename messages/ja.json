@@ -6923,6 +6923,8 @@
   "terminal_scriptOutput_retainedLoading_label": "保持された出力を読み込み中…",
   "terminal_scriptOutput_retainedUnavailable_label": "保持された出力は利用できません。",
   "terminal_scriptOutput_live_label": "ライブ出力",
+  "devConsole_all_label": "すべて",
+  "devConsole_stream_label": "ストリーム",
   "devConsole_outbound_label": "送信 RPC",
   "devConsole_inbound_label": "受信 RPC",
   "devConsole_filter_label": "メソッドまたはイベントで絞り込み",

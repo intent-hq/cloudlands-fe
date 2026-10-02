@@ -6923,6 +6923,8 @@
   "terminal_scriptOutput_retainedLoading_label": "Gespeicherte Ausgabe wird geladen…",
   "terminal_scriptOutput_retainedUnavailable_label": "Die gespeicherte Ausgabe ist nicht verfügbar.",
   "terminal_scriptOutput_live_label": "Live-Ausgabe",
+  "devConsole_all_label": "Alle",
+  "devConsole_stream_label": "Datenstrom",
   "devConsole_outbound_label": "Ausgehende RPC",
   "devConsole_inbound_label": "Eingehende RPC",
   "devConsole_filter_label": "Methode oder Ereignis filtern",

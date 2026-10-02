@@ -83,7 +83,19 @@ test('Dev Console switches tabs by keyboard and inspects inbound and truncated p
   page,
 }) => {
   await mount(Fixture);
-  await page.getByRole('tab', { name: 'Outbound RPC', exact: true }).focus();
+  const all = page.getByRole('tab', { name: 'All', exact: true });
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await all.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Outbound RPC', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Inbound RPC', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.keyboard.press('Home');
+  await expect(all).toBeFocused();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Events' })).toHaveAttribute('aria-selected', 'true');
   await page
@@ -448,5 +460,42 @@ for (const scenario of ['nested', 'oversized'] as const) {
         }
       });
     }
+  });
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`Dev Console All keeps mixed stream labels and keyboard selection visible in ${theme} mode`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await mount(Fixture, { props: { count: 18 } });
+    await page.evaluate(
+      (theme) => document.documentElement.classList.toggle('dark', theme === 'dark'),
+      theme,
+    );
+    const rows = page.locator('[data-index]');
+    await expect(page.getByRole('table')).toHaveAttribute('aria-rowcount', '19');
+    await expect(
+      rows.first().getByRole('cell', { name: 'Inbound RPC', exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await expect(
+      rows.nth(1).getByRole('cell', { name: 'Outbound RPC', exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await expect(rows.nth(3).getByRole('cell', { name: 'Events', exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    await rows.nth(2).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(rows.nth(3)).toBeFocused();
+    await expect(rows.nth(3)).toHaveAttribute('aria-selected', 'true');
+    await ready(viewer(page, 'Event'));
+    await expect(lines(viewer(page, 'Event'))).toContainText('agent:message');
+    await page.getByRole('button', { name: 'Close details' }).click();
+    await expect(rows.nth(3)).toBeFocused();
+    await testInfo.attach(`all-streams-${theme}`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }

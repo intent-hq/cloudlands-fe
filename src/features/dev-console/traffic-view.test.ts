@@ -162,3 +162,33 @@ it('partitions outbound calls, reverse calls and events while retaining replies 
   ]);
   expect(orderTraffic(traffic, 'events', '', 'timestamp', false)).toHaveLength(2);
 });
+
+it('combines exactly the existing streams chronologically, with arrival-order ties and in-place completions', () => {
+  const traffic: DevConsoleRow[] = [
+    row('out', 'shared.call', 10),
+    {
+      ...row('event', 'shared.event', 10),
+      direction: 'inbound',
+      kind: 'notification',
+      status: 'received',
+    },
+    { ...row('in', 'shared.reverse', 10), direction: 'inbound' },
+    row('earlier', 'other.call', 9),
+    { ...row('excluded', 'shared.notification', 8), kind: 'notification' },
+  ];
+  const ids = (descending = false, filter = '') =>
+    orderTraffic(traffic, 'all', filter, 'timestamp', descending).map((record) => record.id);
+  expect(ids()).toEqual(['earlier', 'out', 'event', 'in']);
+  expect(ids(true)).toEqual(['out', 'event', 'in', 'earlier']);
+  expect(ids(false, ' SHARED. ')).toEqual(['out', 'event', 'in']);
+  traffic[0] = {
+    ...traffic[0],
+    status: 'success',
+    completedAt: 20,
+    durationMs: 10,
+    response: { state: 'complete', originalBytes: 42, retainedBytes: 42 },
+  };
+  expect(ids()).toEqual(['earlier', 'out', 'event', 'in']);
+  expect(orderTraffic(traffic, 'all', '', 'bytes', true)[0]).toBe(traffic[0]);
+  expect(traffic.map((record) => record.id)).toEqual(['out', 'event', 'in', 'earlier', 'excluded']);
+});

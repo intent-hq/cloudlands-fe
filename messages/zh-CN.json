@@ -6923,6 +6923,8 @@
   "terminal_scriptOutput_retainedLoading_label": "正在加载保留的输出…",
   "terminal_scriptOutput_retainedUnavailable_label": "保留的输出不可用。",
   "terminal_scriptOutput_live_label": "实时输出",
+  "devConsole_all_label": "全部",
+  "devConsole_stream_label": "流",
   "devConsole_outbound_label": "出站 RPC",
   "devConsole_inbound_label": "入站 RPC",
   "devConsole_filter_label": "筛选方法或事件",

@@ -11,3 +11,12 @@ export function statusLabel(status: DevConsoleRow['status']) {
     'send-error': m.devConsole_sendError_label,
   }[status]();
 }
+
+export function trafficTabLabel(tab: import('./traffic-view').TrafficTab) {
+  return {
+    all: m.devConsole_all_label,
+    outbound: m.devConsole_outbound_label,
+    inbound: m.devConsole_inbound_label,
+    events: m.devConsole_events_label,
+  }[tab]();
+}
