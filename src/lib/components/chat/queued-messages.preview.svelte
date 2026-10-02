@@ -98,6 +98,7 @@
 
 {#if scenario === 'edit-conflict'}
   <Button
+    onpointerdown={(event) => event.preventDefault()}
     onclick={() => {
       const first = messages[0];
       messages = [
