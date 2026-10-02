@@ -43,7 +43,7 @@ describe('durable local Stop reports', () => {
   it('retains encrypted credentials before activation and sends nothing until Stop', async () => {
     const filename = join(dir, 'reports');
     const store = new DesktopReportStore(() => filename);
-    const send = vi.fn(async () => ({ reported: true }));
+    const send = vi.fn(async () => ({ reported: true, revoked: true }));
     await store.retain(credential);
     store.connect('backend-a', 'human', send);
     await store.flush('backend-a');
@@ -64,7 +64,7 @@ describe('durable local Stop reports', () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const first = send.mock.calls[0];
     const replacement = new DesktopReportStore(() => filename);
-    const other = vi.fn(async () => ({ reported: true }));
+    const other = vi.fn(async () => ({ reported: true, revoked: true }));
     replacement.connect('backend-b', 'human', other);
     await replacement.flush('backend-b');
     expect(other).not.toHaveBeenCalled();
@@ -97,7 +97,7 @@ describe('durable local Stop reports', () => {
   it('does not send old Stop credentials through another principal on the same backend', async () => {
     const store = new DesktopReportStore(() => join(dir, 'reports'));
     await store.queue(credential);
-    const send = vi.fn(async () => ({ reported: true }));
+    const send = vi.fn(async () => ({ reported: true, revoked: true }));
     store.connect('backend-a', 'different-human', send);
     await store.flush('backend-a');
     expect(send).not.toHaveBeenCalled();
@@ -110,25 +110,81 @@ describe('durable local Stop reports', () => {
     await second.retain({ ...credential, sessionId: 'new-session' });
     await first.queue(credential);
     const restored = new DesktopReportStore(() => directory);
-    const send = vi.fn(async () => ({ reported: true }));
+    const send = vi.fn(async () => ({ reported: true, revoked: true }));
     restored.connect('backend-a', 'human', send);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(await savedFiles(directory)).toHaveLength(2);
   });
-  it('keeps denied reports, discards deleted sessions, and never manufactures new report IDs', async () => {
+  it.each(['forbidden', 'not-found'])(
+    'retains %s reports across restart and access restoration',
+    async (code) => {
+      const directory = join(dir, 'reports');
+      const store = new DesktopReportStore(() => directory);
+      await store.queue(credential);
+      const send = vi.fn(async () => {
+        throw { data: { code } };
+      });
+      store.connect('backend-a', 'human', send);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      await store.flush('backend-a');
+      expect(send.mock.calls[1]).toEqual(send.mock.calls[0]);
+      const restored = new DesktopReportStore(() => directory);
+      const success = vi.fn(async () => ({ revoked: false, reported: true }));
+      restored.connect('backend-a', 'human', success);
+      await vi.waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+      expect(success.mock.calls[0]).toEqual(send.mock.calls[0]);
+    },
+  );
+  it.each([{}, { reported: true }, { reported: 'true', revoked: false }, null])(
+    'retains malformed acknowledgement %j',
+    async (response) => {
+      const directory = join(dir, 'reports');
+      const store = new DesktopReportStore(() => directory);
+      await store.queue(credential);
+      const send = vi.fn(async () => response);
+      store.connect('backend-a', 'human', send);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      await store.flush('backend-a');
+      const restored = new DesktopReportStore(() => directory);
+      const retry = vi.fn(async () => ({ reported: false, revoked: false }));
+      restored.connect('backend-a', 'human', retry);
+      await vi.waitFor(() => expect(retry).toHaveBeenCalledTimes(1));
+      expect(retry.mock.calls[0]).toEqual(send.mock.calls[0]);
+    },
+  );
+  it('does not poll denied reports without a reconnect or explicit retry', async () => {
     const store = new DesktopReportStore(() => join(dir, 'reports'));
     await store.queue(credential);
+    const timer = vi.spyOn(globalThis, 'setTimeout');
     const send = vi.fn(async () => {
-      throw { data: { code: 'forbidden' } };
+      throw { data: { code: 'not-found' } };
     });
     store.connect('backend-a', 'human', send);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     await store.flush('backend-a');
-    expect(send.mock.calls[1]).toEqual(send.mock.calls[0]);
-    send.mockRejectedValue({ data: { code: 'not-found' } });
-    await store.flush('backend-a');
-    await store.flush('backend-a');
-    expect(send).toHaveBeenCalledTimes(3);
+    expect(timer.mock.calls.some((call) => call[1] === 30000)).toBe(false);
+  });
+  it('ignores a late ACK after its authenticated sender disconnects', async () => {
+    const directory = join(dir, 'reports');
+    const store = new DesktopReportStore(() => directory);
+    await store.queue(credential);
+    let resolve!: (result: unknown) => void;
+    const send = vi.fn(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    store.connect('backend-a', 'human', send);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    store.disconnect('backend-a', send);
+    resolve({ reported: true, revoked: false });
+    await new Promise((r) => setTimeout(r, 10));
+    const restored = new DesktopReportStore(() => directory);
+    const retry = vi.fn(async () => ({ reported: false, revoked: false }));
+    restored.connect('backend-a', 'human', retry);
+    await vi.waitFor(() => expect(retry).toHaveBeenCalledTimes(1));
+    expect(retry.mock.calls[0]).toEqual(send.mock.calls[0]);
   });
   it('fails readiness without protected storage, never writes plaintext fallback', async () => {
     storage.available = false;
@@ -148,7 +204,7 @@ describe('durable local Stop reports', () => {
     await expect(store.queue(credential)).rejects.toThrow('disk full');
     expect(failure).toHaveBeenCalled();
     spy.mockRestore();
-    const send = vi.fn(async () => ({ reported: true }));
+    const send = vi.fn(async () => ({ reported: true, revoked: true }));
     store.connect('backend-a', 'human', send);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   });

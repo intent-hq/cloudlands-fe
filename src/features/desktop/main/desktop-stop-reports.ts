@@ -41,7 +41,7 @@ export class DesktopReportStore implements DesktopStopReports {
   private writes = Promise.resolve();
   private senders = new Map<string, { principalId: string; send: SendReport }>();
   private flushing = new Set<string>();
-  private retry?: ReturnType<typeof setTimeout>;
+  private requested = new Set<string>();
   constructor(
     private readonly directory = () => join(app.getPath('userData'), 'desktop-stop-reports'),
     private readonly notifyFailure: () => void = () => {},
@@ -157,7 +157,11 @@ export class DesktopReportStore implements DesktopStopReports {
     if (this.senders.get(backendId)?.send === send) this.senders.delete(backendId);
   }
   async flush(backendId: string): Promise<void> {
-    if (this.flushing.has(backendId)) return;
+    if (!this.senders.has(backendId)) return;
+    if (this.flushing.has(backendId)) {
+      this.requested.add(backendId);
+      return;
+    }
     this.flushing.add(backendId);
     try {
       await this.load();
@@ -172,7 +176,7 @@ export class DesktopReportStore implements DesktopStopReports {
         )
           continue;
         try {
-          await sender.send({
+          const response = await sender.send({
             workspaceId: record.workspaceId,
             sessionId: record.sessionId,
             reason: 'user_stop',
@@ -183,11 +187,16 @@ export class DesktopReportStore implements DesktopStopReports {
               stopReportToken: record.stopReportToken,
             },
           });
-        } catch (error) {
-          const code = (error as { data?: { code?: string } }).data?.code;
-          if (code !== 'not-found') continue;
-          await fs.unlink(this.path(record));
-          this.records = this.records.filter((r) => r !== record);
+          // The JSON-RPC response belongs to this request, but a disconnected
+          // authenticated sender must not consume a report on a new connection.
+          if (
+            this.senders.get(backendId) !== sender ||
+            !z.object({ revoked: z.boolean(), reported: z.boolean() }).safeParse(response).success
+          )
+            continue;
+        } catch {
+          // Hidden and deleted targets intentionally share not-found. Keep the
+          // exact old tuple and UUID for an authenticated retry after access returns.
           continue;
         }
         record.acknowledged = true;
@@ -197,16 +206,9 @@ export class DesktopReportStore implements DesktopStopReports {
       this.notifyFailure();
     } finally {
       this.flushing.delete(backendId);
-      if (
-        !this.retry &&
-        this.records?.some((r) => r.reportId && !r.acknowledged && this.senders.has(r.backendId))
-      ) {
-        this.retry = setTimeout(() => {
-          this.retry = undefined;
-          for (const id of this.senders.keys()) void this.flush(id);
-        }, 30000);
-        this.retry.unref?.();
-      }
+      // Retries are driven by reconnect, queued Stop or explicit flush, never
+      // a timer that spins indefinitely while access is denied.
+      if (this.requested.delete(backendId)) void this.flush(backendId);
     }
   }
 }
