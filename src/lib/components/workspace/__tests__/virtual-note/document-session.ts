@@ -515,6 +515,7 @@ export class DocumentSession {
   private tableScroller?: HTMLElement;
   private tableScrollRequest?: { position: number; top: number; left: number };
   private tableFragmentScrollTop = 0;
+  private tableAnchoredScroll?: { left: number; top: number };
   private tableFont() {
     const style = getComputedStyle(this.editor?.view.dom ?? this.host);
     return [style.fontFamily, style.fontSize, style.lineHeight, style.letterSpacing].join('|');
@@ -557,11 +558,20 @@ export class DocumentSession {
     // centered within it, so changing padding alone applies only half the offset.
     editor.view.dom.style.width = `${this.projection!.table!.window.columns * this.tableColumnWidth + this.tableOriginX + this.tableViewport}px`;
     editor.view.dom.style.paddingTop = `${(this.projection!.table!.window.geometry?.top ?? 0) + this.tableOriginY}px`;
+    this.tableAnchoredScroll = { left: scroller.scrollLeft, top: scroller.scrollTop };
   }
   private tableScroll = () => {
     const table = this.projection?.table?.window,
       scroller = this.tableScroller;
     if (!table || !scroller || !this.tableColumnWidth || this.editor?.view.composing) return;
+    const anchored = this.tableAnchoredScroll;
+    this.tableAnchoredScroll = undefined;
+    if (anchored?.left === scroller.scrollLeft && anchored.top === scroller.scrollTop) {
+      // Layout corrected the caret's pixel anchor. This scroll acknowledges that
+      // correction; admitting a viewport crop here could evict the active paragraph.
+      this.tableFragmentScrollTop = scroller.scrollTop;
+      return;
+    }
     const key = {
       revision: this.service.revision,
       table: table.from,
