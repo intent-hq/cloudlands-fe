@@ -10,7 +10,7 @@ const request = vi.mocked(backendRequest);
 afterEach(() => vi.resetAllMocks());
 
 describe('registered-root file read support', () => {
-  it.each([undefined, '11.0', '10.99', '12.0', 'invalid'])(
+  it.each([undefined, '11.0', '10.99', '13.0', '12', '12.0-preview', 'invalid'])(
     'rejects unsupported or unknown sending connection %s for both readers',
     (protocolVersion) => {
       for (const method of ['file.read', 'file.readChunk']) {
@@ -20,8 +20,8 @@ describe('registered-root file read support', () => {
       }
     },
   );
-  it.each(['11.1', '11.2', '11.1.3'])(
-    'accepts supported same-generation sending connection %s',
+  it.each(['11.1', '11.2', '11.1.3', '12.0', '12.1', '12.0.1'])(
+    'accepts supported known-generation sending connection %s',
     (protocolVersion) => {
       for (const method of ['file.read', 'file.readChunk']) {
         expect(() =>
