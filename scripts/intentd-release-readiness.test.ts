@@ -37,6 +37,7 @@ function fixture() {
   return {
     pin: PIN,
     noPr: false,
+    paginateCommits: false,
     pins: {} as Record<string, string>,
     feTag: 'v3.0.0',
     feTagDate: '2026-09-26T05:50:00Z',
@@ -206,12 +207,17 @@ else if (endpoint === 'repos/${BE}/actions/runs/100') value = f.proof.run;
 else if (endpoint.includes('/actions/runs/100/attempts/1/jobs?')) value = {total_count: f.proof.jobs.length, jobs: f.proof.jobs};
 else if (endpoint.includes('/pulls?')) value = f.proof.prs;
 else { process.stderr.write('Unexpected gh: ' + JSON.stringify(a)); process.exit(2); }
+let payload = JSON.stringify(value);
+if (endpoint.startsWith('repos/${FE}/compare/') && f.paginateCommits) {
+  payload = (a.includes('--paginate') ? f.commits : f.commits.slice(0, 1))
+    .map(commit => JSON.stringify({commits: [commit]})).join('\\n');
+}
 const projection = a.indexOf('--jq');
 if (projection >= 0) {
-  const r = spawnSync('jq', ['-r', a[projection + 1]], {input: JSON.stringify(value), encoding: 'utf8'});
+  const r = spawnSync('jq', ['-r', a[projection + 1]], {input: payload, encoding: 'utf8'});
   process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status);
 }
-process.stdout.write(JSON.stringify(value));
+process.stdout.write(payload);
 `,
     { mode: 0o755 },
   );
@@ -578,6 +584,79 @@ describe('single-pass alpha cut', () => {
       expect(result.cut, result.output).toBe(true);
       expect(result.slept).toBe(false);
     });
+  });
+
+  describe('scheduled freshness', () => {
+    it.each(['pin', 'release metadata'])(
+      'keeps a deferred push blocked on stale %s until a scheduled retry sees the refresh',
+      (kind) => {
+        const data = pinFixture();
+        if (kind === 'pin') data.pins[data.pr.headRefName] = '0.9.109';
+        else data.prDate = '2026-09-26T05:00:00Z';
+        for (const event of ['push', 'schedule']) {
+          const result = runPinChain(data, event);
+          expect(result.cut, `${event}: ${result.output}`).toBe(false);
+          expect(result.slept).toBe(false);
+        }
+        data.pins[data.pr.headRefName] = PIN;
+        data.prDate = '2026-09-26T06:00:00Z';
+        const refreshed = runPinChain(data, 'schedule');
+        expect(refreshed.cut, refreshed.output).toBe(true);
+        expect(refreshed.slept).toBe(false);
+      },
+    );
+
+    it.each([
+      'fix: shipped behavior',
+      'feat(api)!: change contract',
+      'perf: improve startup',
+      'chore: change API\n\n' + 'BREAKING' + ' CHANGE: new contract',
+    ])('finds an unrefreshed %s before trailing docs/ci commits across pages', (message) => {
+      const data = pinFixture();
+      data.prDate = '2026-09-26T05:30:00Z';
+      data.paginateCommits = true;
+      data.commits = [
+        {
+          commit: { committer: { date: '2026-09-26T05:10:00Z' }, message: 'docs: earlier change' },
+        },
+        { commit: { committer: { date: '2026-09-26T05:40:00Z' }, message } },
+        { commit: { committer: { date: '2026-09-26T05:50:00Z' }, message: 'ci: update check' } },
+      ];
+      const stale = runPinChain(data, 'schedule');
+      expect(stale.cut, stale.output).toBe(false);
+      expect(stale.slept).toBe(false);
+      data.prDate = '2026-09-26T05:40:00Z';
+      expect(runPinChain(data, 'schedule').cut).toBe(true);
+    });
+
+    it('does not require a refresh for docs/ci-only changes', () => {
+      const data = pinFixture();
+      data.prDate = '2026-09-26T05:00:00Z';
+      data.commits[0].commit.message = 'docs: improve release guidance';
+      expect(runPinChain(data, 'schedule').cut).toBe(true);
+    });
+
+    it('keeps the explicit manual override for stale pin and release metadata', () => {
+      const data = pinFixture();
+      data.pins[data.pr.headRefName] = '0.9.109';
+      data.prDate = '2026-09-26T05:00:00Z';
+      expect(runPinChain(data, 'workflow_dispatch').cut).toBe(true);
+    });
+
+    it.each(['comparison', 'head date', 'main pin'])(
+      'retains the fail-open policy on unreadable %s',
+      (lookup) => {
+        const data = pinFixture();
+        data.fail = {
+          comparison: `repos/${FE}/compare/`,
+          'head date': `repos/${FE}/commits/${data.pr.headRefName}`,
+          'main pin': `repos/${FE}/contents/intentd.version?ref=heads/main`,
+        }[lookup]!;
+        if (lookup === 'main pin') data.pins[data.pr.headRefName] = '0.9.109';
+        else data.prDate = '2026-09-26T05:00:00Z';
+        expect(runPinChain(data, 'schedule').cut).toBe(true);
+      },
+    );
   });
 
   it('retains the explicit manual throttle and dependency override', () => {

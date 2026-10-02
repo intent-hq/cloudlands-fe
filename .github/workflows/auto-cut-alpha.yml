@@ -449,19 +449,18 @@ jobs:
             return 0
           }
 
-          # The pin the triggering push landed on main: the Release PR head
-          # must carry the same pin before the cut (i.e. release-please has
-          # refreshed the PR after a pin-bump push) so the alpha actually
-          # ships the new sidecar. For pushes that leave the pin untouched
-          # (fe-only changes) the PR head already carries the same pin and
-          # the gate passes trivially. Read failures fall back to
-          # the existing fail-open behavior.
-          push_pin=""
-          if [[ "$EVENT_NAME" == "push" ]]; then
-            push_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$PUSH_SHA" \
-              --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || push_pin=""
-            if [[ -z "$push_pin" ]]; then
-              echo "::warning::could not read intentd.version at $PUSH_SHA; proceeding without the pin freshness gate"
+          # Automated retries must not merge an old green PR while release-
+          # please is refreshing it. Pushes require their pushed pin; scheduled
+          # retries require the current main pin. Manual dispatch stays exempt.
+          # An unreadable source pin preserves the existing fail-open policy.
+          required_pin=""
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            pin_ref="heads/main"
+            if [[ "$EVENT_NAME" == "push" ]]; then pin_ref="$PUSH_SHA"; fi
+            required_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$pin_ref" \
+              --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || required_pin=""
+            if [[ -z "$required_pin" ]]; then
+              echo "::warning::could not read intentd.version at $pin_ref; proceeding without the pin freshness gate"
             fi
           fi
 
@@ -480,7 +479,7 @@ jobs:
           # `commits` at 20 entries, so a larger push is conservatively
           # treated as releasable (a stale head defers to a later attempt).
           releasable=false
-          push_epoch=""
+          required_epoch=""
           if [[ "$EVENT_NAME" == "push" ]]; then
             if jq -e '(.commits // []) as $c
                 | ($c | length) >= 20
@@ -493,18 +492,33 @@ jobs:
             fi
             push_ts=$(jq -r '.head_commit.timestamp // empty' "$GITHUB_EVENT_PATH") || push_ts=""
             if [[ -n "$push_ts" ]]; then
-              push_epoch=$(date -d "$push_ts" +%s 2>/dev/null) || push_epoch=""
+              required_epoch=$(date -d "$push_ts" +%s 2>/dev/null) || required_epoch=""
             fi
-            # head_commit.timestamp is the committer date, not the push
-            # time — clamp a future-skewed value to now so a bad clock
-            # cannot keep this attempt behind an impossible refresh date.
-            now=$(date +%s)
-            if [[ -n "$push_epoch" ]] && (( push_epoch > now )); then
-              push_epoch=$now
-            fi
-            if [[ "$releasable" == "true" && -z "$push_epoch" ]]; then
+            if [[ "$releasable" == "true" && -z "$required_epoch" ]]; then
               echo "::warning::could not read the push timestamp; proceeding without the refresh gate"
             fi
+          elif [[ "$EVENT_NAME" == "schedule" && -n "$THROTTLE_TAG" ]]; then
+            # Reconstruct the pending release work, not just main's latest
+            # subject: docs/ci commits can follow an unrefreshed feature/fix.
+            # Walk every page and require the newest releasable commit date.
+            # A lookup or date parsing error retains the fail-open policy.
+            required_epoch=$(gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/compare/$THROTTLE_TAG...main?per_page=250" \
+              | jq -rs '[.[].commits[]?
+                  | select(.commit.message
+                      | (split("\n")[0] | test("^(feat|fix|perf)(\\([^)]*\\))?!?: "))
+                        or test("(^|\n)(BREAKING[- ]CHANGE|Release-As):"; "i"))
+                  | .commit.committer.date | fromdateiso8601] | max // empty') || {
+              required_epoch=""
+              echo "::warning::could not read unshipped releasable commits; proceeding without the refresh gate"
+            }
+            if [[ -n "$required_epoch" ]]; then releasable=true; fi
+          fi
+          # Commit dates can be future-skewed; preserve the push gate's
+          # clamp so an impossible timestamp does not block this attempt.
+          now=$(date +%s)
+          if [[ -n "$required_epoch" ]] && (( required_epoch > now )); then
+            required_epoch=$now
           fi
 
           # Identify the open release-please Release PR: head branch
@@ -550,21 +564,21 @@ jobs:
             exit 0
           fi
 
-          # Chained-cut freshness gate (push runs only): the Release PR
-          # head must already contain the pin the push landed on main —
+          # Automated freshness gate: the Release PR head must contain
+          # the triggering push pin or the current main pin on a scheduled retry —
           # otherwise release-please has not refreshed the PR yet and
           # merging now would cut an alpha with the OLD sidecar.
-          if [[ -n "$push_pin" ]]; then
+          if [[ -n "$required_pin" ]]; then
             head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
             head_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$head_ref" \
               --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || head_pin=""
-            if [[ "$head_pin" != "$push_pin" ]]; then
-              skip "Release PR #$number head does not carry the pushed intentd pin yet (head: ${head_pin:-unreadable}, pushed: $push_pin)"
+            if [[ "$head_pin" != "$required_pin" ]]; then
+              skip "Release PR #$number head does not carry the required intentd pin yet (head: ${head_pin:-unreadable}, required: $required_pin)"
             fi
           fi
 
-          # Refresh gate (releasable push runs only): the Release PR head
-          # must have been rebuilt by release-please AFTER the push,
+          # Refresh gate: the Release PR head must have been rebuilt after
+          # the releasable push or newest unshipped releasable commit on main,
           # otherwise merging now would cut a version/changelog computed
           # without the pushed feat/fix commits (the tree would still
           # carry them, but the version bump and changelog entry would be
@@ -573,7 +587,7 @@ jobs:
           # refresh signal. Fail-open on read errors — this gate is an
           # ordering aid, not a hard guardrail, and the pushed change
           # ships either way.
-          if [[ "$releasable" == "true" && -n "$push_epoch" ]]; then
+          if [[ "$releasable" == "true" && -n "$required_epoch" ]]; then
             head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
             head_date=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head_ref" \
               --jq '.commit.committer.date' 2>/dev/null) || head_date=""
@@ -583,8 +597,8 @@ jobs:
             fi
             if [[ -z "$head_epoch" ]]; then
               echo "::warning::could not resolve the Release PR head commit date; proceeding without the refresh gate"
-            elif (( head_epoch < push_epoch )); then
-              skip "Release PR #$number head predates the triggering push (release-please has not refreshed it yet)"
+            elif (( head_epoch < required_epoch )); then
+              skip "Release PR #$number head predates releasable changes (release-please has not refreshed it yet)"
             fi
           fi
 
