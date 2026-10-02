@@ -74,3 +74,43 @@ it('includes the encountered-height page in a full viewport admission', () => {
   ).length;
   expect(bytes).toBeLessThanOrEqual(3072);
 });
+
+it('admits partial first and last columns without leaving a one-pixel viewport hole', () => {
+  const service = new SourceJournal(() => source, 1);
+  const address = service.tableAddress(0, 100, 40);
+  const window = service.tableViewportWindow(address.source, {
+    top: 4100,
+    left: 17465,
+    width: 1280,
+    height: 520,
+    font: 'sans-serif|14px|20px|normal',
+  })!;
+  expect(window.cells).toHaveLength(70);
+  expect(window.cells[0].column).toBe(40);
+  expect(window.cells.at(-1)!.column).toBe(44);
+  expect(
+    new TextEncoder().encode(JSON.stringify(window) + window.cells.map((c) => c.raw).join(''))
+      .length + 96,
+  ).toBeLessThanOrEqual(4096);
+});
+
+it('admits a wrapped-cell continuation alongside partial edge columns within the same hard budget', () => {
+  const rich = source.replace('r99c44', 'W'.repeat(1800));
+  const service = new SourceJournal(() => rich, 1);
+  const address = service.tableAddress(0, 100, 40);
+  const window = service.tableViewportWindow(address.source, {
+    top: 4100,
+    left: 17465,
+    width: 1280,
+    height: 520,
+    font: 'sans-serif|14px|20px|normal',
+  })!;
+  expect(window.cells).toHaveLength(70);
+  expect(
+    window.cells.find((c) => c.row === 100 && c.column === 44)!.raw.length,
+  ).toBeGreaterThanOrEqual(64);
+  expect(
+    new TextEncoder().encode(JSON.stringify(window) + window.cells.map((c) => c.raw).join(''))
+      .length + 96,
+  ).toBeLessThanOrEqual(4096);
+});

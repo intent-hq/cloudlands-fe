@@ -5,7 +5,7 @@ import type { TableFragment, TableWindow } from './table-source';
 type Extra = Partial<
   Omit<TableFragment, 'row' | 'column' | 'from' | 'to' | 'body' | 'raw' | 'align'>
 >;
-type CellData = [number, number, number, number, number, string, string | null, Extra?];
+type CellData = [number, number, number, number, number, string, (string | null)?, Extra?];
 class PackedCell implements TableFragment {
   constructor(readonly data: CellData) {}
   get row() {
@@ -27,7 +27,7 @@ class PackedCell implements TableFragment {
     return this.data[5];
   }
   get align() {
-    return this.data[6];
+    return this.data[6] ?? null;
   }
   get first() {
     return this.data[7]?.first ?? this.body;
@@ -82,8 +82,9 @@ export function packTableCell(c: TableFragment): TableFragment {
   if (!plain && (c.runs.length || c.raw)) extra.runs = c.runs;
   for (const key of ['span', 'blocks', 'blockCount', 'attrs', 'nodeType'] as const)
     if (c[key] !== undefined) Object.assign(extra, { [key]: c[key] });
-  const data: CellData = [c.row, c.column, c.from, c.body - c.from, c.to - c.from, c.raw, c.align];
-  if (Object.keys(extra).length) data.push(extra);
+  const data: CellData = [c.row, c.column, c.from, c.body - c.from, c.to - c.from, c.raw];
+  if (c.align !== null || Object.keys(extra).length) data[6] = c.align;
+  if (Object.keys(extra).length) data[7] = extra;
   return new PackedCell(data);
 }
 export function packTableWindow(w: TableWindow): TableWindow {
