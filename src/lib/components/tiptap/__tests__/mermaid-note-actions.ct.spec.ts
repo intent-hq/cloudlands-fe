@@ -86,6 +86,7 @@ for (const { name, hostWidth, editable } of [
       { timeout: 30_000 },
     );
     const surface = component.locator('[data-diagram-presentation]');
+    await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'true');
     await surface.scrollIntoViewIfNeeded();
     await page.mouse.move(0, 0);
     const initial = await measure(component);
@@ -116,6 +117,8 @@ for (const { name, hostWidth, editable } of [
       await expect(primary).toHaveAttribute('aria-pressed', 'false');
       await expect(component.getByRole('region', { name: 'View source' })).toHaveCount(0);
     }
+    // Source toggles queue presentation layout even when its dimensions are unchanged.
+    await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'true');
     await expect.poll(() => measure(component)).toEqual(initial);
 
     const fullscreen = component.getByRole('button', { name: 'Fullscreen', exact: true });

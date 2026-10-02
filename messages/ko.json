@@ -6923,6 +6923,8 @@
   "terminal_scriptOutput_retainedLoading_label": "보관된 출력 불러오는 중…",
   "terminal_scriptOutput_retainedUnavailable_label": "보관된 출력을 사용할 수 없습니다.",
   "terminal_scriptOutput_live_label": "실시간 출력",
+  "devConsole_all_label": "전체",
+  "devConsole_stream_label": "스트림",
   "devConsole_outbound_label": "발신 RPC",
   "devConsole_inbound_label": "수신 RPC",
   "devConsole_filter_label": "메서드 또는 이벤트 필터",

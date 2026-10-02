@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.197.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.196.1...v2.197.0) (2026-10-02)
+
+
+### 🚀 Features
+
+* add Collaboration settings and workspace participant roles ([#3042](https://github.com/intent-hq/cloudlands-fe/issues/3042)) ([b984d11](https://github.com/intent-hq/cloudlands-fe/commit/b984d1163b1cd560600e70ebcb8f70109110f7c4))
+* add combined dev console timeline ([#3087](https://github.com/intent-hq/cloudlands-fe/issues/3087)) ([d674400](https://github.com/intent-hq/cloudlands-fe/commit/d67440019eaf61bed183b597790562efa2294601))
+* add searchable JSON viewers to dev console payloads ([#3077](https://github.com/intent-hq/cloudlands-fe/issues/3077)) ([67abd29](https://github.com/intent-hq/cloudlands-fe/commit/67abd290c50d5b2fbd8318bf94e77c894bd9d8c3))
+
+
+### 🐛 Bug Fixes
+
+* batch diagram measurements and track presentation readiness ([#3080](https://github.com/intent-hq/cloudlands-fe/issues/3080)) ([e5075df](https://github.com/intent-hq/cloudlands-fe/commit/e5075df01b7cb80e03998203b7633aa8e65cef38))
+* bump intentd sidecar to v0.9.135 ([#3091](https://github.com/intent-hq/cloudlands-fe/issues/3091)) ([f8ffd87](https://github.com/intent-hq/cloudlands-fe/commit/f8ffd876e9c2380c40592ae4c0cd2b0c4f45795b))
+* coalesce repeated note task and subscription reads ([#3078](https://github.com/intent-hq/cloudlands-fe/issues/3078)) ([6ef7115](https://github.com/intent-hq/cloudlands-fe/commit/6ef71159ed5772d22d46c3f8cc6539ba48d6bfed))
+* restore assistant message sending for host owners ([#3083](https://github.com/intent-hq/cloudlands-fe/issues/3083)) ([a956380](https://github.com/intent-hq/cloudlands-fe/commit/a95638094e1f82c3fee9204f1834d56bcbd186a1))
+* show newest tabs first in the header dropdown ([#3084](https://github.com/intent-hq/cloudlands-fe/issues/3084)) ([6886651](https://github.com/intent-hq/cloudlands-fe/commit/6886651b2f08ef9ac0d40d43ae2a78428bebda8d))
+* use Collaboration in saved-session recovery guidance ([#3085](https://github.com/intent-hq/cloudlands-fe/issues/3085)) ([3da5cfd](https://github.com/intent-hq/cloudlands-fe/commit/3da5cfddef0ef448154502d66bdb187e0ecb5e50))
+
 ## [2.196.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.196.0...v2.196.1) (2026-10-01)
 
 

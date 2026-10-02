@@ -6923,6 +6923,8 @@
   "terminal_scriptOutput_retainedLoading_label": "Loading retained output…",
   "terminal_scriptOutput_retainedUnavailable_label": "Retained output is unavailable.",
   "terminal_scriptOutput_live_label": "Live output",
+  "devConsole_all_label": "All",
+  "devConsole_stream_label": "Stream",
   "devConsole_outbound_label": "Outbound RPC",
   "devConsole_inbound_label": "Inbound RPC",
   "devConsole_filter_label": "Filter method or event",

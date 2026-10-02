@@ -6923,6 +6923,8 @@
   "terminal_scriptOutput_retainedLoading_label": "Cargando salida conservada…",
   "terminal_scriptOutput_retainedUnavailable_label": "La salida conservada no está disponible.",
   "terminal_scriptOutput_live_label": "Salida en directo",
+  "devConsole_all_label": "Todo",
+  "devConsole_stream_label": "Flujo",
   "devConsole_outbound_label": "RPC salientes",
   "devConsole_inbound_label": "RPC entrantes",
   "devConsole_filter_label": "Filtrar método o evento",
