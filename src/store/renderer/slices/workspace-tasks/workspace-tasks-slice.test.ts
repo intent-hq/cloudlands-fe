@@ -17,6 +17,7 @@ import {
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
   workspaceTasksReducer,
+  workspaceTasksReadStarted,
 } from './workspace-tasks-slice';
 
 const WS = 'ws-1';
@@ -52,18 +53,18 @@ describe('workspaceTasksReducer', () => {
   });
 
   describe('loadWorkspaceTasksRequested', () => {
-    it('marks the workspace as loading and clears errors', () => {
+    it('marks stale without pretending a read was admitted', () => {
       const failed = workspaceTasksReducer(initialState, loadWorkspaceTasksFailed(WS, 'nope'));
       const state = workspaceTasksReducer(failed, loadWorkspaceTasksRequested(WS));
 
-      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: true, error: null });
+      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: false, stale: true, error: 'nope' });
     });
 
-    it('is a no-op when a request is already in flight', () => {
+    it('records invalidations even when a request is already in flight', () => {
       const loading = workspaceTasksReducer(initialState, loadWorkspaceTasksRequested(WS));
       const again = workspaceTasksReducer(loading, loadWorkspaceTasksRequested(WS));
 
-      expect(again).toBe(loading);
+      expect(again.byWorkspaceId[WS].revision).toBe(loading.byWorkspaceId[WS].revision + 1);
     });
   });
 
@@ -100,7 +101,7 @@ describe('workspaceTasksReducer', () => {
 
   describe('loadWorkspaceTasksFailed', () => {
     it('records the error and stops loading', () => {
-      const loading = workspaceTasksReducer(initialState, loadWorkspaceTasksRequested(WS));
+      const loading = workspaceTasksReducer(initialState, workspaceTasksReadStarted(WS));
       const state = workspaceTasksReducer(loading, loadWorkspaceTasksFailed(WS, 'boom'));
 
       expect(state.byWorkspaceId[WS]).toMatchObject({ loading: false, error: 'boom' });

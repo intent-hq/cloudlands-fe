@@ -150,16 +150,15 @@ import {
   olderEventsLoadFailed,
 } from '../../workspace-events/workspace-events-slice';
 import {
+  acquireWorkspaceTasksDemand,
+  clearWorkspaceTasks,
   ensureWorkspaceTasksLoaded,
   workspaceTasksReadStarted,
   loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
 } from '../../workspace-tasks/workspace-tasks-slice';
-import {
-  selectWorkspaceTasksInitialized,
-  selectWorkspaceTasksLoading,
-} from '../../workspace-tasks/workspace-tasks-selectors';
+import { selectWorkspaceTasksShouldLoad } from '../../workspace-tasks/workspace-tasks-selectors';
 import {
   bulkUpdateWorkspaceEntities,
   loadRecencyData,
@@ -302,12 +301,8 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   }
 }
 
-function* refreshTasks(workspaceId: string, guarded: boolean): SagaGenerator<void> {
-  if (guarded) {
-    const loading = yield* selectWorkspaceTasksLoading.effect(workspaceId);
-    const initialized = yield* selectWorkspaceTasksInitialized.effect(workspaceId);
-    if (loading || initialized) return;
-  }
+function* refreshTasks(workspaceId: string): SagaGenerator<void> {
+  if (!(yield* selectWorkspaceTasksShouldLoad.effect(workspaceId))) return;
   yield* put(workspaceTasksReadStarted(workspaceId));
   try {
     const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(
@@ -1292,42 +1287,32 @@ function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
 }
 
 type TasksReadAction = ReturnType<
-  typeof ensureWorkspaceTasksLoaded | typeof loadWorkspaceTasksRequested | typeof workspaceUnmounted
+  | typeof acquireWorkspaceTasksDemand
+  | typeof ensureWorkspaceTasksLoaded
+  | typeof loadWorkspaceTasksRequested
+  | typeof workspaceUnmounted
+  | typeof clearWorkspaceTasks
+  | typeof removeWorkspaceEntity
 >;
 
 type EventsReadAction = ReturnType<
   typeof loadEventsRequested | typeof loadOlderEventsRequested | typeof workspaceUnmounted
 >;
 
-function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadAction) {
+function tasksReadContext(action: TasksReadAction) {
   const workspaceId = action.payload[0];
-  if (isWorkspaceCleanupAction(action)) {
-    pendingForcedReads.delete(workspaceId);
+  if (
+    isWorkspaceCleanupAction(action) ||
+    action.type === clearWorkspaceTasks.type ||
+    action.type === removeWorkspaceEntity.type
+  ) {
     return { context: workspaceId, cancel: true as const };
-  }
-  if (workspaceId && action.type === loadWorkspaceTasksRequested.type) {
-    pendingForcedReads.add(workspaceId);
   }
   return workspaceId;
 }
 
-function* tasksWorker(
-  scheduler: WorkspaceReadScheduler,
-  pendingForcedReads: Set<string>,
-  action: TasksReadAction,
-) {
-  if (isWorkspaceCleanupAction(action)) return;
-  const workspaceId = action.payload[0];
-  const force = pendingForcedReads.delete(workspaceId);
-  yield* runWorkspaceRead(
-    scheduler,
-    'tasks',
-    workspaceId,
-    function* (id) {
-      yield* refreshTasks(id, !force);
-    },
-    false,
-  );
+function* tasksWorker(scheduler: WorkspaceReadScheduler, action: TasksReadAction) {
+  yield* runWorkspaceRead(scheduler, 'tasks', action.payload[0], refreshTasks, false);
 }
 
 function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
@@ -1546,7 +1531,6 @@ function* clearUnmountedInitializedContext(
 export function* lifecycleReadSaga(): SagaGenerator<void> {
   const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
-  const pendingForcedTaskReads = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
@@ -1563,11 +1547,17 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // events on transport recovery, not focus or console ownership changes.
       fork(backendReconnectWorkspacesWatcher),
       takeSingleFlightInContext(
-        [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
-        (action) => tasksReadContext(pendingForcedTaskReads, action),
+        [
+          acquireWorkspaceTasksDemand,
+          ensureWorkspaceTasksLoaded,
+          loadWorkspaceTasksRequested,
+          workspaceUnmounted,
+          clearWorkspaceTasks,
+          removeWorkspaceEntity,
+        ],
+        tasksReadContext,
         tasksWorker,
         scheduler,
-        pendingForcedTaskReads,
       ),
       takeSingleFlightInContext(
         [loadEventsRequested, loadOlderEventsRequested, workspaceUnmounted],
@@ -1653,7 +1643,6 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
     ]);
   } finally {
     initializedContexts.clear();
-    pendingForcedTaskReads.clear();
     pendingInitialEventReads.clear();
   }
 }

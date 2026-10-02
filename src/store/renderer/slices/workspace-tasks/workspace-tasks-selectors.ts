@@ -41,6 +41,14 @@ export const selectWorkspaceTasksInitialized = store.createSelector(
     state.workspaceTasks.byWorkspaceId[workspaceId]?.initialized ?? false,
 );
 
+/** Read admission must be checked after waiting for a scheduler slot. */
+export const selectWorkspaceTasksShouldLoad = store.createSelector(
+  (state, workspaceId: string): boolean => {
+    const ws = state.workspaceTasks.byWorkspaceId[workspaceId];
+    return !!ws?.demandIds.length && !ws.loading && (!ws.initialized || ws.stale);
+  },
+);
+
 // ============================================================================
 // Derived task selectors
 // ============================================================================

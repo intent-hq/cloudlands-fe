@@ -58,8 +58,8 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
- *      debounced `loadWorkspaceTasksRequested` refetch (initialized
- *      workspaces only) — task notes are plain notes, so a created/deleted
+ *      immediate invalidation and debounced refresh (visible
+ *      consumers only) — task notes are plain notes, so a created/deleted
  *      task note changes the BE-owned `task.list` stats rollup without a
  *      `task:status-changed` edge.
  *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on BOTH the
@@ -208,7 +208,8 @@ import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layo
 import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
 import {
   applyTaskStatusChanged,
-  loadWorkspaceTasksRequested,
+  invalidateWorkspaceTasks,
+  ensureWorkspaceTasksLoaded,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
@@ -3454,17 +3455,11 @@ function debouncedChangesRefresh(workspaceId: string): void {
   changesRefreshTimersByWorkspace.set(workspaceId, timer);
 }
 
-/**
- * Debounced workspace-tasks refetch for `note:*` events. A created/updated/
- * deleted note can change the BE-owned `task.list` stats rollup (task state
- * lives in note metadata), so refetch via `loadWorkspaceTasksRequested` —
- * but only for workspaces whose task list is loaded or currently loading.
- * Undemanded workspaces have never been viewed; eagerly loading their
- * tasks would fan out one `task.list` per note event across all workspaces.
- */
+/** Invalidate immediately, then debounce refreshes only for visible task consumers. */
 function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
+  appStore.dispatch(invalidateWorkspaceTasks(workspaceId));
   const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
-  if (!entry?.initialized && !entry?.loading) return;
+  if (!entry?.demandIds.length) return;
   const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
   if (existing) {
     clearTimeout(existing);
@@ -3474,8 +3469,8 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
     // Re-check at fire time: the slice may have been cleared (workspace
     // unmounted/deleted) during the debounce window.
     const current = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
-    if (!current?.initialized && !current?.loading) return;
-    appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+    if (!current?.demandIds.length) return;
+    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
   }, TASKS_REFRESH_DEBOUNCE_MS);
   tasksRefreshTimersByWorkspace.set(workspaceId, timer);
 }

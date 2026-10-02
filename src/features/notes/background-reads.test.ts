@@ -13,6 +13,7 @@ import { normalizeNote } from '$lib/client/live/live-notes-client';
 import { ensureNoteContentLoaded, __resetNotesReadServiceForTests } from './notes-read-service';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
+  acquireWorkspaceTasksDemand,
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
@@ -82,7 +83,10 @@ describe('background reads through the real store, sagas, clients and event brid
     backend = installMockBackend();
     backend.onRequest('agent.getSubscriptions', empty);
     backend.onRequest('note.get', () => ({ note: note() }));
-    backend.onRequest('task.list', () => ({ tasks: [], stats: { total: 1, completed: 1 } }));
+    backend.onRequest('task.list', () => ({
+      tasks: [],
+      stats: { total: 1, completed: 1, inProgress: 0 },
+    }));
     dispose = store.init();
     cancel.push(store.runSaga(agentSubscriptionReadSaga), store.runSaga(lifecycleReadSaga));
     store.dispatch(
@@ -470,14 +474,20 @@ describe('background reads through the real store, sagas, clients and event brid
   ] as const)(
     'retains task invalidations during first %s load with response delayed %i ms',
     async (trigger, delay) => {
-      const pending = deferred<{ tasks: []; stats: { total: number; completed: number } }>();
+      const pending = deferred<{
+        tasks: [];
+        stats: { total: number; completed: number; inProgress: number };
+      }>();
       let calls = 0;
       backend.onRequest('task.list', () =>
-        ++calls === 1 ? pending.promise : { tasks: [], stats: { total: 1, completed: 1 } },
+        ++calls === 1
+          ? pending.promise
+          : { tasks: [], stats: { total: 1, completed: 1, inProgress: 0 } },
       );
       store.dispatch(
         trigger === 'ensure' ? ensureWorkspaceTasksLoaded(WS) : loadWorkspaceTasksRequested(WS),
       );
+      store.dispatch(acquireWorkspaceTasksDemand(WS, 'visible-chat'));
       await settle();
       event('task:status-changed', {
         noteId: 'task-note',
@@ -486,7 +496,7 @@ describe('background reads through the real store, sagas, clients and event brid
       });
       event('note:updated', { noteId: 'task-note' });
       await vi.advanceTimersByTimeAsync(delay);
-      pending.resolve({ tasks: [], stats: { total: 1, completed: 0 } });
+      pending.resolve({ tasks: [], stats: { total: 1, completed: 0, inProgress: 1 } });
       await vi.advanceTimersByTimeAsync(2000);
       expect(reads('task.list')).toHaveLength(2);
       expect(store.state.workspaceTasks.byWorkspaceId[WS].stats.completed).toBe(1);
@@ -501,10 +511,13 @@ describe('background reads through the real store, sagas, clients and event brid
     backend.onRequest('task.list', () => {
       throw new Error('temporary failure');
     });
-    store.dispatch(ensureWorkspaceTasksLoaded(WS));
+    store.dispatch(acquireWorkspaceTasksDemand(WS, 'visible-chat'));
     await settle();
     expect(store.state.workspaceTasks.byWorkspaceId[WS].loading).toBe(false);
-    backend.onRequest('task.list', () => ({ tasks: [], stats: { total: 1, completed: 1 } }));
+    backend.onRequest('task.list', () => ({
+      tasks: [],
+      stats: { total: 1, completed: 1, inProgress: 0 },
+    }));
     store.dispatch(ensureWorkspaceTasksLoaded(WS));
     await settle();
     expect(reads('task.list')).toHaveLength(2);
@@ -512,23 +525,26 @@ describe('background reads through the real store, sagas, clients and event brid
   });
 
   it('drops pending initial task invalidations on unmount and permits the next demand', async () => {
-    const pending = deferred<{ tasks: []; stats: { total: number; completed: number } }>();
+    const pending = deferred<{
+      tasks: [];
+      stats: { total: number; completed: number; inProgress: number };
+    }>();
     backend.onRequest('task.list', () => pending.promise);
-    store.dispatch(ensureWorkspaceTasksLoaded(WS));
+    store.dispatch(acquireWorkspaceTasksDemand(WS, 'visible-chat'));
     await settle();
     event('task:status-changed', { noteId: 'task-note', newStatus: 'complete' });
     store.dispatch(workspaceUnmounted(WS));
-    pending.resolve({ tasks: [], stats: { total: 1, completed: 0 } });
+    pending.resolve({ tasks: [], stats: { total: 1, completed: 0, inProgress: 1 } });
     await vi.advanceTimersByTimeAsync(2000);
     expect(reads('task.list')).toHaveLength(1);
     expect(store.state.workspaceTasks.byWorkspaceId[WS]?.initialized).not.toBe(true);
-    store.dispatch(ensureWorkspaceTasksLoaded(WS));
+    store.dispatch(acquireWorkspaceTasksDemand(WS, 'returned-chat'));
     await settle();
     expect(reads('task.list')).toHaveLength(2);
   });
 
   it('coalesces paired task status and note events into one authoritative task-list refresh', async () => {
-    store.dispatch(ensureWorkspaceTasksLoaded(WS));
+    store.dispatch(acquireWorkspaceTasksDemand(WS, 'visible-chat'));
     await settle();
     const initial = reads('task.list').length;
     event('task:status-changed', {

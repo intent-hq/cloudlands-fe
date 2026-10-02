@@ -30,6 +30,10 @@ export const emptyWorkspaceTasksState: WorkspaceTasksWorkspaceState = {
   loading: false,
   error: null,
   initialized: false,
+  demandIds: [],
+  stale: true,
+  revision: 0,
+  readRevision: 0,
 };
 
 export const initialState: WorkspaceTasksState = {
@@ -43,7 +47,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 // Actions
 // ---------------------------------------------------------------------------
 
-/** Saga trigger: fetch the canonical task list for a workspace. */
+/** Invalidate and request a refresh, admitted only while visible demand exists. */
 export const loadWorkspaceTasksRequested = createAction<[workspaceId: string]>(
   'workspaceTasks/loadWorkspaceTasksRequested',
 );
@@ -53,13 +57,25 @@ export const workspaceTasksReadStarted = createAction<[workspaceId: string]>(
   'workspaceTasks/workspaceTasksReadStarted',
 );
 
-/**
- * Saga trigger (no reducer case): request tasks only when the workspace is
- * neither initialized nor loading. Safe to dispatch repeatedly from list
- * rows/hover surfaces; 'workspace:tasks-changed' keeps loaded state fresh.
- */
+/** Check missing/stale data for existing demand; this does not acquire demand. */
 export const ensureWorkspaceTasksLoaded = createAction<[workspaceId: string]>(
   'workspaceTasks/ensureWorkspaceTasksLoaded',
+);
+
+/**
+ * A visible chat dispatches acquire with a unique ID for each visibility lifetime,
+ * then releases that same ID on hide, workspace switch, or destroy. Do not acquire
+ * from hidden mounted components. Multiple consumers share one canonical read.
+ */
+export const acquireWorkspaceTasksDemand = createAction<[workspaceId: string, demandId: string]>(
+  'workspaceTasks/acquireWorkspaceTasksDemand',
+);
+export const releaseWorkspaceTasksDemand = createAction<[workspaceId: string, demandId: string]>(
+  'workspaceTasks/releaseWorkspaceTasksDemand',
+);
+/** Mark stale immediately; event bridges schedule a coalesced ensure separately. */
+export const invalidateWorkspaceTasks = createAction<[workspaceId: string]>(
+  'workspaceTasks/invalidateWorkspaceTasks',
 );
 
 /**
@@ -90,19 +106,38 @@ export const clearWorkspaceTasks = createAction<[workspaceId: string]>(
 // ---------------------------------------------------------------------------
 
 export const workspaceTasksReducer = createReducer<WorkspaceTasksState>(initialState);
-workspaceTasksReducer.with(loadWorkspaceTasksRequested, (state, { payload: [workspaceId] }) => {
+function invalidate(state: WorkspaceTasksState, workspaceId: string): WorkspaceTasksState {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, { ...ws, stale: true, revision: ws.revision + 1 });
+}
+workspaceTasksReducer.with(invalidateWorkspaceTasks, (state, { payload: [id] }) =>
+  invalidate(state, id),
+);
+workspaceTasksReducer.with(loadWorkspaceTasksRequested, (state, { payload: [id] }) =>
+  invalidate(state, id),
+);
+workspaceTasksReducer.with(acquireWorkspaceTasksDemand, (state, { payload: [id, demandId] }) => {
+  const ws = getWorkspaceState(state, id);
+  if (ws.demandIds.includes(demandId)) return state;
+  return setWorkspaceState(state, id, { ...ws, demandIds: [...ws.demandIds, demandId] });
+});
+workspaceTasksReducer.with(releaseWorkspaceTasksDemand, (state, { payload: [id, demandId] }) => {
+  const ws = state.byWorkspaceId[id];
+  if (!ws?.demandIds.includes(demandId)) return state;
+  return setWorkspaceState(state, id, {
+    ...ws,
+    demandIds: ws.demandIds.filter((value) => value !== demandId),
+  });
+});
+workspaceTasksReducer.with(workspaceTasksReadStarted, (state, { payload: [workspaceId] }) => {
   const ws = getWorkspaceState(state, workspaceId);
   if (ws.loading && ws.error === null) return state;
   return setWorkspaceState(state, workspaceId, {
     ...ws,
     loading: true,
     error: null,
+    readRevision: ws.revision,
   });
-});
-workspaceTasksReducer.with(workspaceTasksReadStarted, (state, { payload: [workspaceId] }) => {
-  const ws = getWorkspaceState(state, workspaceId);
-  if (ws.loading && ws.error === null) return state;
-  return setWorkspaceState(state, workspaceId, { ...ws, loading: true, error: null });
 });
 workspaceTasksReducer.with(
   loadWorkspaceTasksSucceeded,
@@ -115,6 +150,7 @@ workspaceTasksReducer.with(
       loading: false,
       error: null,
       initialized: true,
+      stale: ws.revision !== ws.readRevision,
     });
   },
 );
@@ -125,6 +161,7 @@ workspaceTasksReducer.with(loadWorkspaceTasksFailed, (state, { payload: [workspa
     ...ws,
     loading: false,
     error,
+    stale: true,
   });
 });
 workspaceTasksReducer.with(
@@ -145,7 +182,14 @@ workspaceTasksReducer.with(
 // Unmount cancels the owning saga read; release its loading state for future demand.
 workspaceTasksReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
   const ws = state.byWorkspaceId[workspaceId];
-  return ws?.loading ? setWorkspaceState(state, workspaceId, { ...ws, loading: false }) : state;
+  return ws
+    ? setWorkspaceState(state, workspaceId, {
+        ...ws,
+        loading: false,
+        demandIds: [],
+        stale: ws.stale || ws.loading,
+      })
+    : state;
 });
 workspaceTasksReducer.with(clearWorkspaceTasks, (state, { payload: [workspaceId] }) =>
   clearWorkspaceState(state, workspaceId),
