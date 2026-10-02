@@ -455,6 +455,27 @@ describe('web-notification-service', () => {
       );
     });
 
+    it('skips when the agent is waiting on active script monitors (event fast path, no idle-gate read)', async () => {
+      await handleWebAgentIdle(
+        makeIdleEvent({
+          waitingOnScriptMonitors: [
+            {
+              monitorId: 'mon-1',
+              scriptId: 'checks',
+              runId: 'run-1',
+              scriptName: 'Checks',
+              expiresAt: '2026-10-02T10:10:00Z',
+            },
+          ],
+        }),
+      );
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
+      );
+    });
+
     it('does not skip when waitingOnPrMonitors is empty', async () => {
       await handleWebAgentIdle(makeIdleEvent({ waitingOnPrMonitors: [] }));
 

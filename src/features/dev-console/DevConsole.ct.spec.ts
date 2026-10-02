@@ -572,7 +572,12 @@ test('Dev Console streams keep two searchable editors, preserve reading position
   await append.click();
   await expect(reading).toBeInViewport();
   await expect
-    .poll(async () => Math.abs((await reading.boundingBox())!.y - before))
+    .poll(async () => {
+      // Monaco can replace the virtual line between lookup and measurement during append.
+      // A missing box must fail this sample so polling waits for the rendered line.
+      const box = await reading.boundingBox();
+      return box ? Math.abs(box.y - before) : Infinity;
+    })
     .toBeLessThanOrEqual(1);
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.getByRole('button', { name: 'Copy payload' }).first().click();

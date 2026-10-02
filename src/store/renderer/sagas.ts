@@ -78,6 +78,7 @@ import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
+import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
@@ -207,6 +208,7 @@ export const sagas = [
   legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
+  scriptMonitorSaga,
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
