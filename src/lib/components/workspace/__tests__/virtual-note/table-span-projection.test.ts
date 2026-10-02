@@ -9,6 +9,7 @@ import { TableProjection } from './table-projection';
 import { encodeTablePages, decodeTablePages } from './table-transfer';
 import { bytes } from './bounded-note-service';
 import { packTableWindow } from './table-payload';
+import { SourceJournal } from './source-journal';
 
 beforeAll(() => store.init());
 afterAll(() => store.dispose());
@@ -104,6 +105,25 @@ it('admits one bounded logical owner continuation at vertical span origin, inter
       });
     }
     console.info('Bounded vertical span projection', JSON.stringify(records));
+    const service = new SourceJournal(() => saved, 1);
+    for (const [from, node] of metadata)
+      (service as unknown as { tableStates: Map<string, string> }).tableStates.set(`cell:${from}`, JSON.stringify(node));
+    const measuredVisits = [];
+    for (const row of [1, 50, 95, 118]) {
+      const window = service.tableViewportWindow(index.rows[row].cells.at(-1)!.body, {
+        top: row * 41, left: 0, width: 550, height: 520, font: 'sans-serif|16px|24px|normal',
+      })!;
+      const fragment = window.cells.find((c) => c.from === owner.from)!;
+      measuredVisits.push({ row, geometry: window.geometry, blocks: fragment.blocks, text: fragment.runs.map((r) => r.text).join('') });
+      // Unit measurement model; the independent browser probe measures actual
+      // paragraphs. A full owner's estimate must not be assigned to one row.
+      service.tableHeights.record(window.geometry!, window.geometry!.heights.map(() => 41));
+      service.tableHeights.measureCells(window, [{ cell: owner.from, height: fragment.blocks!.length * 40 - 16, padding: 17 }]);
+      expect(service.transferTable(window).length).toBeLessThanOrEqual(4);
+    }
+    console.info('Measured merged owner progression', JSON.stringify(measuredVisits));
+    expect(new Set(measuredVisits.map((v) => v.text)).size).toBe(measuredVisits.length);
+    expect(service.region(0)).toBe(saved);
   } finally {
     native.destroy();
   }
