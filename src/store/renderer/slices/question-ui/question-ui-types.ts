@@ -11,7 +11,7 @@ export interface QuestionWizardDraft {
   answers: QuestionWizardDraftAnswer[];
 }
 
-export interface QuestionUiConsumer {
+interface QuestionUiConsumer {
   id: string;
   requestId: string;
   storageKey: string | null;

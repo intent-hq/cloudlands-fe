@@ -3,7 +3,7 @@ import type { Collection } from '@themislib/themis/utils/collections/collection-
 
 export type ChatPanelUiStatus = 'pending' | 'succeeded' | 'failed' | 'cancelled';
 
-export interface UserMessageIndexUiEntry {
+interface UserMessageIndexUiEntry {
   id: string;
   requestId: string;
   agentId: string;
@@ -13,7 +13,7 @@ export interface UserMessageIndexUiEntry {
   error?: string;
 }
 
-export interface RetryAgentUiEntry {
+interface RetryAgentUiEntry {
   id: string;
   requestId: string;
   agentId: string;

@@ -21,7 +21,7 @@ import {
 } from '../question-ui-slice';
 import type { QuestionWizardDraft, QuestionWizardDraftAnswer } from '../question-ui-types';
 
-export const QUESTION_WIZARD_STORAGE_PREFIX = 'chat.questionWizardDraft/';
+const QUESTION_WIZARD_STORAGE_PREFIX = 'chat.questionWizardDraft/';
 const COLLAPSED_SUFFIX = '/collapsed';
 const VERSION = 1;
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
