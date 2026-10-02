@@ -3,6 +3,17 @@ import { bytes } from './bounded-note-service';
 import { SourceProjection, type InlineContext } from './source-projection';
 import { scanFences, type Fence } from './fence-context';
 import { scanLists, type ListItem, type ListSeam } from './list-context';
+import {
+  scanTables,
+  admitTableWindow,
+  type TableIndex,
+  type TableWindow,
+  type TableFragment,
+} from './table-source';
+import type { JSONContent } from '@tiptap/core';
+import { patchTableCell } from './table-state';
+import type { TableStructure } from './table-projection';
+import { tableCodeChanges, type TableCodeEdit } from './table-code';
 export const LIMITS = {
   request: 4096,
   active: 16384,
@@ -15,7 +26,14 @@ export const LIMITS = {
 };
 export const fixture = (id: number) =>
   `Region ${String(id).padStart(4, '0')} — café 🌍. repeated repeated [link](https://example.test).\n\n`;
-export type Selection = { anchor: number; head: number; affinity: -1 | 1; revision: number };
+export type TablePoint = { cell: number; block: number; offset: number };
+export type Selection = {
+  anchor: number;
+  head: number;
+  affinity: -1 | 1;
+  revision: number;
+  table?: { anchor: TablePoint; head: TablePoint; kind: 'text' | 'cell' };
+};
 export type DeferredInput = {
   command: string;
   time: number;
@@ -26,6 +44,7 @@ export type Splice = { from: number; to: number; insert: string };
 export type Change = Splice & {
   removed: string;
   seam?: { before: ListSeam | null; after: ListSeam | null };
+  tableState?: string;
 };
 export type Anchor = { id: string; from: number; to: number; alive: boolean };
 export type Event = {
@@ -46,9 +65,426 @@ export const mapSelection = (r: Selection, s: Splice, revision: number): Selecti
   anchor: mapPoint(r.anchor, s, r.affinity),
   head: mapPoint(r.head, s, r.affinity),
   revision,
+  ...(r.table
+    ? {
+        table: {
+          ...r.table,
+          anchor: { ...r.table.anchor, cell: mapPoint(r.table.anchor.cell, s, -1) },
+          head: { ...r.table.head, cell: mapPoint(r.table.head.cell, s, -1) },
+        },
+      }
+    : {}),
 });
 
 export class SourceJournal {
+  // These serialized blobs model backing-store records, never renderer caches.
+  private tableStates = new Map<string, string>();
+  private applyTableState(change: Splice & { tableState: string }) {
+    const prior = this.tableStates.get(change.tableState) ?? '';
+    if (change.to > prior.length) throw new Error('Invalid table metadata range');
+    const states = new Map(this.tableStates);
+    const next = prior.slice(0, change.from) + change.insert + prior.slice(change.to);
+    if (next) states.set(change.tableState, next);
+    else states.delete(change.tableState);
+    this.tableStates = states;
+    this.revision++;
+  }
+  private stageTableState(key: string, value: string, history = true) {
+    if (!this.atomicDepth) throw new Error('Table source and metadata require atomic admission');
+    const removed = this.tableStates.get(key) ?? '';
+    const pages = this.pages({
+      from: 0,
+      to: removed.length,
+      insert: value,
+      removed,
+      tableState: key,
+    });
+    for (const encoded of pages) {
+      const change: Change = JSON.parse(encoded);
+      this.applyTableState(change as Change & { tableState: string });
+      if (history) this.stagedPages.push(encoded);
+    }
+  }
+  maxTableWriteBytes = 0;
+  stageTableCell(fragment: TableFragment, node: JSONContent, history = true) {
+    const payload = bytes(JSON.stringify({ fragment, node }));
+    if (payload > LIMITS.request) throw new Error('Table fragment write exceeds budget');
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, payload);
+    const prior = this.tableStates.get(`cell:${fragment.from}`);
+    const merged =
+      fragment.first === fragment.body &&
+      fragment.last === fragment.end &&
+      (!fragment.blocks ||
+        (fragment.blocks[0].index === 0 && fragment.blocks.length === fragment.blockCount))
+        ? node
+        : patchTableCell(
+            this.slice(fragment.body, fragment.end),
+            fragment,
+            prior ? JSON.parse(prior) : undefined,
+            node,
+          );
+    this.stageTableState(`cell:${fragment.from}`, JSON.stringify(merged), history);
+    this.log('table-fragment-write', fragment.from, payload);
+  }
+  private mapTableKey(key: string, splice: Splice) {
+    return `cell:${mapPoint(Number(key.slice(5)), splice, -1)}`;
+  }
+  stageTableStructure(window: TableWindow, edit: TableStructure, history = true) {
+    if (edit.kind === 'split') return this.stageTableSplit(window, edit, history);
+    if (edit.kind === 'merge') return this.stageTableMerge(window, edit, history);
+    if (edit.kind === 'column') return this.stageTableColumns(window, edit, history);
+    if (window.revision !== this.revision) throw new Error('Stale table structural transaction');
+    if (bytes(JSON.stringify(edit)) > LIMITS.request)
+      throw new Error('Table structural request exceeds budget');
+    const { id, start } = this.locate(window.from);
+    const source = this.region(id),
+      table = this.tableIndex(source, start).find((t) => t.from + start === window.from)!;
+    if (edit.index === 0) throw new Error('Header row structural admission is not implemented');
+    const from = start + (table.rows[edit.index]?.from ?? table.to);
+    const to = edit.remove ? start + table.rows[edit.index + edit.remove - 1].to : from;
+    for (const key of this.tableStates.keys()) {
+      const at = Number(key.slice(5));
+      if (at >= from && at < to) this.stageTableState(key, '', history);
+    }
+    const rowText = '| ' + Array(table.columns).fill('').join(' | ') + ' |';
+    const prefix = edit.rows.length && from > 0 && this.slice(from - 1, from) !== '\n' ? '\n' : '';
+    const insert =
+      prefix +
+      edit.rows.map(() => rowText).join('\n') +
+      (edit.rows.length && to < this.length ? '\n' : '');
+    const splice = { from, to, insert };
+    this.stage(splice, history);
+    const updated = this.tableIndex(this.region(id), start).find(
+      (t) => t.from + start === window.from,
+    )!;
+    const column = Math.min(...window.cells.map((c) => c.column));
+    for (let r = 0; r < edit.rows.length; r++)
+      for (const cell of updated.rows[edit.index + r].cells) {
+        const native = edit.rows[r].content?.[cell.column - column] ?? {
+          ...edit.rows[r].content![0],
+          content: [{ type: 'paragraph' }],
+        };
+        this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(native), history);
+      }
+    const retained = structuredClone(window);
+    retained.cells = retained.cells
+      .filter((c) => c.row < edit.index || c.row >= edit.index + edit.remove)
+      .map((c) => ({
+        ...c,
+        row: c.row >= edit.index ? c.row + edit.rows.length - edit.remove : c.row,
+        first: mapPoint(c.first, splice, -1),
+        last: mapPoint(c.last, splice, 1),
+      }));
+    const columns = [...new Set(window.cells.map((c) => c.column))];
+    for (let r = 0; r < edit.rows.length; r++)
+      for (const column of columns) {
+        const cell = updated.rows[edit.index + r].cells[column];
+        retained.cells.push({
+          ...cell,
+          from: cell.from + start,
+          to: cell.to + start,
+          body: cell.body + start,
+          end: cell.end + start,
+          first: cell.body + start,
+          last: cell.end + start,
+          raw: '',
+          runs: [],
+        });
+      }
+    retained.cells.sort((a, b) => a.row - b.row || a.column - b.column);
+    return this.tableWindow(retained.cells[0].first, retained)!;
+  }
+  private stageTableColumns(
+    window: TableWindow,
+    edit: Extract<TableStructure, { kind: 'column' }>,
+    history: boolean,
+  ) {
+    if (window.revision !== this.revision) throw new Error('Stale table column transaction');
+    if (bytes(JSON.stringify(edit)) > LIMITS.request)
+      throw new Error('Table column request exceeds budget');
+    const { id, start } = this.locate(window.from),
+      table = this.tableIndex(this.region(id), start).find((t) => t.from + start === window.from)!;
+    const splices: Splice[] = [];
+    const moved: Array<{ from: number; value: string }> = [];
+    for (const row of [...table.rows, table.delimiter]) {
+      const delimiter = row === table.delimiter;
+      const cell = row.cells[Math.min(edit.index, row.cells.length - 1)];
+      if (edit.remove) {
+        const from = cell.from - (edit.index === row.cells.length - 1 ? 1 : 0) + start;
+        const to = (row.cells[edit.index + edit.remove]?.from ?? cell.to) + start;
+        for (const key of this.tableStates.keys())
+          if (Number(key.slice(5)) >= from && Number(key.slice(5)) < to)
+            this.stageTableState(key, '', history);
+        splices.push({ from, to, insert: '' });
+      } else {
+        const append = edit.index === row.cells.length;
+        const from = (append ? cell.to : cell.from) + start;
+        if (!append && this.tableStates.has(`cell:${from}`)) {
+          moved.push({ from, value: this.tableStates.get(`cell:${from}`)! });
+          this.stageTableState(`cell:${from}`, '', history);
+        }
+        splices.push({
+          from,
+          to: from,
+          insert: append ? (delimiter ? '| --- ' : '|  ') : delimiter ? ' --- |' : '  |',
+        });
+      }
+    }
+    splices.sort((a, b) => b.from - a.from);
+    for (const splice of splices) this.stage(splice, history);
+    for (const item of moved) {
+      let at = item.from;
+      for (const splice of splices) at = mapPoint(at, splice, 1);
+      this.stageTableState(`cell:${at}`, item.value, history);
+    }
+    const updated = this.tableIndex(this.region(id), start).find(
+      (t) => t.from + start === window.from,
+    )!;
+    if (edit.count)
+      for (const row of updated.rows) {
+        const native = edit.cells[row.cells[0].row - edit.row] ?? {
+          type: row.cells[0].row === 0 ? 'tableHeader' : 'tableCell',
+          attrs: { colspan: 1, rowspan: 1, colwidth: null, align: null },
+          content: [{ type: 'paragraph' }],
+        };
+        this.stageTableState(
+          `cell:${row.cells[edit.index].from + start}`,
+          JSON.stringify(native),
+          history,
+        );
+      }
+    const retained = structuredClone(window);
+    retained.cells = retained.cells
+      .filter((c) => c.column < edit.index || c.column >= edit.index + edit.remove)
+      .map((c) => {
+        for (const splice of splices) {
+          c.first = mapPoint(c.first, splice, -1);
+          c.last = mapPoint(c.last, splice, 1);
+        }
+        c.column += c.column >= edit.index ? edit.count - edit.remove : 0;
+        return c;
+      });
+    if (edit.count)
+      for (const row of new Set(window.cells.map((c) => c.row))) {
+        const cell = updated.rows[row].cells[edit.index];
+        retained.cells.push({
+          ...cell,
+          from: cell.from + start,
+          to: cell.to + start,
+          body: cell.body + start,
+          end: cell.end + start,
+          first: cell.body + start,
+          last: cell.end + start,
+          raw: '',
+          runs: [],
+        });
+      }
+    retained.cells.sort((a, b) => a.row - b.row || a.column - b.column);
+    return this.tableWindow(retained.cells[0].first, retained)!;
+  }
+  tableCodePatches(edits: TableCodeEdit[]) {
+    const changes = edits.flatMap((edit) =>
+      tableCodeChanges(this.slice(edit.code.from, edit.code.to), edit),
+    );
+    if (bytes(JSON.stringify(changes)) > LIMITS.request)
+      throw new Error('Table code patches exceed admission budget');
+    return changes.sort((a, b) => b.from - a.from);
+  }
+  tableAddress(from: number, row: number, column: number) {
+    const { id, start } = this.locate(from),
+      table = this.tableIndex(this.region(id), start).find((t) => t.from + start === from)!;
+    const cell = table.rows[row].cells.find(
+      (c) => c.column <= column && c.column + (c.span ?? 1) > column,
+    )!;
+    return {
+      source: cell.body + start,
+      point: { cell: cell.from + start, block: 0, offset: 0 },
+      revision: this.revision,
+    };
+  }
+  private stageTableSplit(
+    window: TableWindow,
+    edit: Extract<TableStructure, { kind: 'split' }>,
+    history: boolean,
+  ) {
+    if (window.revision !== this.revision) throw new Error('Stale table split');
+    if (bytes(JSON.stringify(edit)) > LIMITS.request)
+      throw new Error('Table split request exceeds budget');
+    const { id, start } = this.locate(window.from),
+      table = this.tableIndex(this.region(id), start).find((t) => t.from + start === window.from)!;
+    const cell = table.rows[edit.row].cells.find((c) => c.column === edit.column)!;
+    this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(edit.nodes[0]), history);
+    const splice = {
+      from: cell.to + start,
+      to: cell.to + start,
+      insert: '|  '.repeat(edit.width - 1),
+    };
+    this.stage(splice, history);
+    const updated = this.tableIndex(this.region(id), start).find(
+      (t) => t.from + start === window.from,
+    )!;
+    const retained = structuredClone(window);
+    for (const c of retained.cells) {
+      c.first = mapPoint(c.first, splice, -1);
+      c.last = mapPoint(c.last, splice, 1);
+    }
+    for (let n = 1; n < edit.width; n++) {
+      const next = updated.rows[edit.row].cells.find((c) => c.column === edit.column + n)!;
+      this.stageTableState(`cell:${next.from + start}`, JSON.stringify(edit.nodes[n]), history);
+      retained.cells.push({
+        ...next,
+        from: next.from + start,
+        to: next.to + start,
+        body: next.body + start,
+        end: next.end + start,
+        first: next.body + start,
+        last: next.end + start,
+        raw: '',
+        runs: [],
+      });
+    }
+    retained.cells.sort((a, b) => a.row - b.row || a.column - b.column);
+    return this.tableWindow(cell.body + start, retained)!;
+  }
+  validateTableRemote(splice: Splice) {
+    for (const key of this.tableStates.keys()) {
+      const at = Number(key.slice(5)),
+        { id, start } = this.locate(at);
+      const cell = this.tableIndex(this.region(id), start)
+        .flatMap((t) => t.rows.flatMap((r) => r.cells))
+        .find((c) => c.from + start === at);
+      if (!cell) throw new Error('Conflict: invalidated table metadata');
+      const from = cell.from + start,
+        to = cell.to + start;
+      if (
+        (splice.from < to && splice.to > from) ||
+        (splice.from === splice.to && splice.from > from && splice.from < to)
+      )
+        throw new Error('Conflict: remote source overlaps live table structure');
+    }
+  }
+  private tableIndex(source: string, start: number) {
+    return scanTables(source, (from) => {
+      const value = this.tableStates.get(`cell:${from + start}`);
+      return value ? JSON.parse(value) : undefined;
+    });
+  }
+  private stageTableMerge(
+    window: TableWindow,
+    edit: Extract<TableStructure, { kind: 'merge' }>,
+    history: boolean,
+  ) {
+    if (window.revision !== this.revision) throw new Error('Stale table merge');
+    if (bytes(JSON.stringify(edit)) > LIMITS.request)
+      throw new Error('Table merge request exceeds budget');
+    const { id, start } = this.locate(window.from),
+      table = this.tableIndex(this.region(id), start).find((t) => t.from + start === window.from)!;
+    if (edit.row === 0) throw new Error('Header merge source admission is not implemented');
+    const covered = table.rows[edit.row].cells.filter(
+      (c) => c.column >= edit.column && c.column < edit.column + edit.width,
+    );
+    const first = covered[0],
+      last = covered.at(-1)!;
+    for (const cell of covered) this.stageTableState(`cell:${cell.from + start}`, '', history);
+    const splice = { from: first.body + start, to: last.end + start, insert: edit.source };
+    this.stage(splice, history);
+    this.stageTableState(`cell:${first.from + start}`, JSON.stringify(edit.node), history);
+    const retained = structuredClone(window);
+    retained.cells = retained.cells.filter(
+      (c) =>
+        c.row !== edit.row ||
+        c.column === edit.column ||
+        c.column < edit.column ||
+        c.column >= edit.column + edit.width,
+    );
+    for (const cell of retained.cells) {
+      cell.first = mapPoint(cell.first, splice, -1);
+      cell.last = mapPoint(cell.last, splice, 1);
+    }
+    const merged = retained.cells.find((c) => c.row === edit.row && c.column === edit.column)!;
+    merged.first = splice.from;
+    merged.last = splice.from + splice.insert.length;
+    return this.tableWindow(merged.first, retained)!;
+  }
+  tableNeighbor(from: number, direction: number) {
+    const { id, start } = this.locate(from);
+    const source = this.region(id);
+    const table = this.tableIndex(source, start).find(
+      (t) => from - start >= t.from && from - start < t.to,
+    );
+    if (!table) throw new Error('Table cell no longer exists');
+    for (const row of table.rows)
+      for (const cell of row.cells)
+        if (cell.from + start === from) {
+          const index =
+            cell.row * table.columns + cell.column + (direction > 0 ? (cell.span ?? 1) : -1);
+          if (index < 0 || index >= table.rows.length * table.columns) return undefined;
+          const next = table.rows[Math.floor(index / table.columns)].cells.find(
+            (c) =>
+              c.column <= index % table.columns && c.column + (c.span ?? 1) > index % table.columns,
+          )!;
+          const result = {
+            source: next.body + start,
+            point: { cell: next.from + start, block: 0, offset: 0 },
+            revision: this.revision,
+          };
+          this.log('table-neighbor', from, bytes(JSON.stringify(result)));
+          return result;
+        }
+    throw new Error('Table cell identity is stale');
+  }
+  private tableIndexes = new Map<number, { source: string; tables: TableIndex[] }>();
+  backingTableScannedBytes = 0;
+  maxTableWindowBytes = 0;
+  tableWindow(position: number, retained?: TableWindow, preferred?: TablePoint) {
+    const { id, start } = this.locate(position),
+      source = this.region(id);
+    let index = this.tableIndexes.get(id);
+    if (!index || index.source !== source) {
+      index = { source, tables: this.tableIndex(source, start) };
+      this.tableIndexes.set(id, index);
+      this.backingTableScannedBytes += bytes(source);
+    }
+    const table = index.tables.find((t) => position - start >= t.from && position - start < t.to);
+    if (!table) return undefined;
+    const local = retained && structuredClone(retained);
+    for (const cell of local?.cells ?? []) {
+      cell.first -= start;
+      cell.last -= start;
+    }
+    const window = admitTableWindow(
+      source,
+      table,
+      position - start,
+      this.revision,
+      (cell) => {
+        const saved = this.tableStates.get(`cell:${cell.from + start}`);
+        return saved ? JSON.parse(saved) : undefined;
+      },
+      local,
+      preferred && { ...preferred, cell: preferred.cell - start },
+    );
+    window.from += start;
+    window.to += start;
+    for (const cell of window.cells) {
+      for (const field of ['from', 'to', 'body', 'end', 'first', 'last'] as const)
+        cell[field] += start;
+      for (const run of cell.runs) {
+        if (run.code) run.code = { from: run.code.from + start, to: run.code.to + start };
+        run.from += start;
+        run.to += start;
+      }
+      for (const block of cell.blocks ?? []) {
+        block.from += start;
+        block.to += start;
+      }
+    }
+    const size = bytes(JSON.stringify(window));
+    if (size > LIMITS.request) throw new Error('Table window exceeds admission budget');
+    this.maxTableWindowBytes = Math.max(this.maxTableWindowBytes, size);
+    this.log('table-window', position, size);
+    return window;
+  }
   readonly count: number;
   revision = 1;
   generation = 1;
@@ -130,7 +566,18 @@ export class SourceJournal {
   }
   replay(change: Change, redo: boolean) {
     if (!this.atomicDepth) throw new Error('History replay requires atomic admission');
-    if (change.seam)
+    if (change.tableState)
+      this.applyTableState(
+        redo
+          ? (change as Change & { tableState: string })
+          : {
+              tableState: change.tableState,
+              from: change.from,
+              to: change.from + change.insert.length,
+              insert: change.removed,
+            },
+      );
+    else if (change.seam)
       this.seamChange(
         redo ? change.seam.before : change.seam.after,
         redo ? change.seam.after : change.seam.before,
@@ -526,6 +973,9 @@ export class SourceJournal {
       alive: a.alive && !(splice.from <= a.from && splice.to >= a.to && splice.to > splice.from),
     }));
     this.seams = nextSeams;
+    this.tableStates = new Map(
+      [...this.tableStates].map(([key, value]) => [this.mapTableKey(key, splice), value]),
+    );
     this.revision++;
     this.inputInbox = this.inputInbox.map((encoded) => {
       const input: DeferredInput = JSON.parse(encoded);
@@ -607,6 +1057,7 @@ export class SourceJournal {
       logs: this.logs.slice(),
       stagedPages: this.stagedPages.slice(),
       seams: this.seams,
+      tableStates: this.tableStates,
       inputInbox: this.inputInbox,
     };
     this.atomicDepth++;
@@ -624,6 +1075,7 @@ export class SourceJournal {
     } catch (error) {
       this.stagedPages = state.stagedPages;
       this.seams = state.seams;
+      this.tableStates = state.tableStates;
       this.inputInbox = state.inputInbox;
       this.regions = regions;
       this.events = events;
@@ -659,11 +1111,20 @@ export class SourceJournal {
           to: change.from + removed.length,
           insert: '',
           removed,
+          ...(change.tableState ? { tableState: change.tableState } : {}),
         }),
       );
     let from = change.from;
     for (const insert of chunks(change.insert)) {
-      pages.push(JSON.stringify({ from, to: from, insert, removed: '' }));
+      pages.push(
+        JSON.stringify({
+          from,
+          to: from,
+          insert,
+          removed: '',
+          ...(change.tableState ? { tableState: change.tableState } : {}),
+        }),
+      );
       from += insert.length;
     }
     if (pages.some((p) => bytes(p) > LIMITS.journalPage))
@@ -852,6 +1313,13 @@ export class SourceJournal {
       for (let n = event.pages.length - 1; n >= 0; n--) {
         const c: Change = JSON.parse(event.pages[n]),
           inv = inverse(c);
+        if (c.tableState) {
+          const at = Number(c.tableState.slice(5));
+          if (remote.from <= at && remote.to > at)
+            throw new Error('Conflict: retained table structure history');
+          pages[n] = JSON.stringify({ ...c, tableState: this.mapTableKey(c.tableState, remote) });
+          continue;
+        }
         if (c.seam) {
           pages[n] = JSON.stringify(mapSeamChange(c, remote));
           continue;
@@ -874,6 +1342,13 @@ export class SourceJournal {
         pages: string[] = [];
       for (const page of event.pages) {
         const c: Change = JSON.parse(page);
+        if (c.tableState) {
+          const at = Number(c.tableState.slice(5));
+          if (remote.from <= at && remote.to > at)
+            throw new Error('Conflict: retained table structure history');
+          pages.push(JSON.stringify({ ...c, tableState: this.mapTableKey(c.tableState, remote) }));
+          continue;
+        }
         if (c.seam) {
           pages.push(JSON.stringify(mapSeamChange(c, remote)));
           continue;
@@ -898,6 +1373,15 @@ export class SourceJournal {
       backingSeamScannedBytes: this.backingSeamScannedBytes,
       maxBackingSeamSourceBytes: this.maxBackingSeamSourceBytes,
       backingSeamCount: this.seams.size,
+      backingTableIndexBytes: [...this.tableIndexes.values()].reduce(
+        (n, index) => n + bytes(JSON.stringify(index.tables)),
+        0,
+      ),
+      backingTableMetadataBytes: [...this.tableStates.values()].reduce(
+        (n, value) => n + bytes(value),
+        0,
+      ),
+      maxTableWriteBytes: this.maxTableWriteBytes,
       backingSeamBytes: bytes(JSON.stringify([...this.seams.values()])),
       backingListRepairs: this.backingListRepairs,
       maxListRepairRead: this.maxListRepairRead,

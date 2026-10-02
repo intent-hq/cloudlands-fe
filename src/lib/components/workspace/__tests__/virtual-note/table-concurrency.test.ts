@@ -1,0 +1,98 @@
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { CellSelection } from '@tiptap/pm/tables';
+import { store } from '$store/renderer/configured-store';
+import { SourceJournal } from './source-journal';
+import { DocumentSession } from './document-session';
+
+beforeAll(() => store.init());
+afterAll(() => store.dispose());
+const source = '| H | R |\n| :--- | ---: |\n| beforeafter | right |\n| bottom | last |';
+async function start() {
+  const service = new SourceJournal(() => source, 1);
+  const session = new DocumentSession(service, document.createElement('div'));
+  await session.seek(source.indexOf('after'));
+  session.editor!.commands.setTextSelection(session.projection!.pmAt(source.indexOf('after')));
+  return { service, session };
+}
+it('retains native cell selection across destroyed views', async () => {
+  const { session } = await start();
+  try {
+    const cells = session.projection!.table!.entries.filter((e) => e.cell.row === 1);
+    session.editor!.view.dispatch(
+      session.editor!.state.tr.setSelection(
+        CellSelection.create(session.editor!.state.doc, cells[0].pm, cells[1].pm),
+      ),
+    );
+    const selection = session.editor!.state.selection.toJSON();
+    const old = session.editor!;
+    await session.seek(session.selection.head);
+    expect(old.isDestroyed).toBe(true);
+    expect(session.editor!.state.selection.toJSON()).toEqual(selection);
+  } finally {
+    session.destroy();
+  }
+});
+it('maps session structure and global history through remote prose and row insertions', async () => {
+  const { service, session } = await start();
+  try {
+    session.editor!.commands.splitBlock();
+    const cell = session.editor!.state.selection.$head.node(3).toJSON();
+    session.remote({ from: 0, to: 0, insert: 'Remote prose\n\n' });
+    expect(session.projection!.table).toBeDefined();
+    expect(session.error).toBe('');
+    expect(session.editor!.state.selection.$head.node(3).toJSON()).toEqual(cell);
+    const at = service.region(0).indexOf('| before');
+    session.remote({ from: at, to: at, insert: '| remote | row |\n' });
+    await session.seek(session.selection.head);
+    expect(session.editor!.state.selection.$head.node(3).toJSON()).toEqual(cell);
+    await session.history();
+    expect(service.region(0)).toBe(
+      'Remote prose\n\n' + source.replace('| before', '| remote | row |\n| before'),
+    );
+    expect(session.editor!.state.selection.$head.node(3).childCount).toBe(1);
+    await session.history(true);
+    expect(session.editor!.state.selection.$head.node(3).toJSON()).toEqual(cell);
+  } finally {
+    session.destroy();
+  }
+});
+it('rolls back cell metadata, source, view and history if journal recording fails', async () => {
+  const { service, session } = await start();
+  try {
+    const doc = session.editor!.state.doc.toJSON(),
+      selection = session.editor!.state.selection.toJSON(),
+      revision = service.revision;
+    const fail = vi.spyOn(service, 'record').mockImplementationOnce(() => {
+      throw new Error('injected table admission failure');
+    });
+    session.editor!.commands.splitBlock();
+    fail.mockRestore();
+    expect(session.error).toContain('injected table admission failure');
+    expect(service.region(0)).toBe(source);
+    expect(service.revision).toBe(revision);
+    expect(service.depth).toBe(0);
+    expect(service.stats.backingTableMetadataBytes).toBe(0);
+    expect(session.editor!.state.doc.toJSON()).toEqual(doc);
+    expect(session.editor!.state.selection.toJSON()).toEqual(selection);
+  } finally {
+    session.destroy();
+  }
+});
+it('rejects a remote deletion of live structural metadata atomically', async () => {
+  const { service, session } = await start();
+  try {
+    session.editor!.commands.splitBlock();
+    const revision = service.revision,
+      doc = session.editor!.state.doc.toJSON(),
+      depth = service.depth;
+    const from = source.indexOf('| before'),
+      to = source.indexOf('| bottom');
+    expect(() => session.remote({ from, to, insert: '' })).toThrow(/Conflict/);
+    expect(service.region(0)).toBe(source);
+    expect(service.revision).toBe(revision);
+    expect(service.depth).toBe(depth);
+    expect(session.editor!.state.doc.toJSON()).toEqual(doc);
+  } finally {
+    session.destroy();
+  }
+});

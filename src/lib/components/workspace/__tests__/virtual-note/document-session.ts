@@ -13,6 +13,8 @@ import {
 } from './source-journal';
 import { SourceProjection, openMark, closeMark, type InlineContext } from './source-projection';
 import { continuationWindow, CONTINUATION } from './continuation-window';
+import { layoutTable } from './table-layout';
+import { CellSelection } from '@tiptap/pm/tables';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
@@ -78,12 +80,21 @@ export class DocumentSession {
     host.addEventListener('pointerdown', this.pointerDown);
     document.addEventListener('pointerup', this.pointerUp);
   }
-  private project(source: string, start: number) {
+  private project(source: string, start: number, table?: InlineContext['table']) {
     if (bytes(source) > LIMITS.active)
       throw new Error('Proof projection exceeds experiment budget');
     this.parsedBytes += bytes(source);
     this.maxParsedBytes = Math.max(this.maxParsedBytes, bytes(source));
-    const context = this.service.inlineContext(start, start + source.length);
+    const context: InlineContext = table
+      ? {
+          revision: table.revision,
+          from: start,
+          to: start + source.length,
+          before: [],
+          after: [],
+          table,
+        }
+      : this.service.inlineContext(start, start + source.length);
     if (context.revision !== this.service.revision)
       throw new Error('Stale inline context response');
     this.maxSourceContextBytes = Math.max(
@@ -132,6 +143,19 @@ export class DocumentSession {
     return source;
   }
   private readWindow(id: number, position?: number) {
+    const table = this.service.tableWindow(
+      position ?? this.service.start(id),
+      undefined,
+      position === this.selection.head ? this.selection.table?.head : undefined,
+    );
+    if (table) {
+      const source = table.cells.map((c) => c.raw).join('');
+      const from = table.cells[0].first,
+        to = table.cells.at(-1)!.last;
+      this.inFlightBytes += bytes(source);
+      this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
+      return { from, to, source, table, continuation: true };
+    }
     const bounds = continuationWindow(this.service, id, position);
     bounds.from = this.service.inlineBoundary(bounds.from, 1);
     bounds.to = this.service.inlineBoundary(bounds.to, -1);
@@ -139,7 +163,7 @@ export class DocumentSession {
     const source = this.readRange(bounds.from, bounds.to);
     this.inFlightBytes += bytes(source);
     this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
-    return { ...bounds, source };
+    return { ...bounds, source, table: undefined };
   }
   /** A source coordinate identifies a continuation; page edges never enter the source. */
   seek(position: number, restore = true) {
@@ -151,7 +175,7 @@ export class DocumentSession {
   }
   private deferInput(command: string, text?: string) {
     const chunks: Array<string | undefined> = [];
-    if (this.projection?.list && text && text.length > 128) {
+    if ((this.projection?.list || this.projection?.table) && text && text.length > 128) {
       for (let from = 0; from < text.length;) {
         let to = Math.min(from + 128, text.length);
         if (to < text.length && /[\uD800-\uDBFF]/.test(text[to - 1])) to--;
@@ -177,7 +201,15 @@ export class DocumentSession {
         const input = this.service.readInput();
         this.residentInputBytes = bytes(JSON.stringify(input));
         this.maxResidentInputBytes = Math.max(this.maxResidentInputBytes, this.residentInputBytes);
-        const target = input.selection?.head ?? this.selection.head;
+        const logical = input.selection ?? this.selection;
+        const neighbor =
+          input.command.startsWith('tableTab') && logical.table
+            ? this.service.tableNeighbor(
+                logical.table.head.cell,
+                input.command.endsWith('Backward') ? -1 : 1,
+              )
+            : undefined;
+        const target = neighbor?.source ?? input.selection?.head ?? this.selection.head;
         // Share the outstanding fetch, but retain the input if navigation becomes stale.
         if (!(await this.show(this.active, true, target, true))) {
           if (!this.editor || this.editor.isDestroyed || this.editor.view.composing) break;
@@ -198,7 +230,16 @@ export class DocumentSession {
           // Chromium performs the actual character/grapheme operation on bounded context.
           // MutationObserver delivers its transaction before the next input task.
           let accepted = true;
-          if (current.command === 'undo' || current.command === 'redo')
+          if (neighbor) {
+            this.selection = {
+              anchor: neighbor.source,
+              head: neighbor.source,
+              affinity: 1,
+              revision: this.service.revision,
+              table: { anchor: neighbor.point, head: neighbor.point, kind: 'text' },
+            };
+            this.renderSelection();
+          } else if (current.command === 'undo' || current.command === 'redo')
             await this.history(current.command === 'redo');
           else if (['insertParagraph', 'indent', 'outdent'].includes(current.command)) {
             // Enter is a keymap transaction, not a browser beforeinput operation.
@@ -247,6 +288,61 @@ export class DocumentSession {
       this.changed();
     }
   }
+  private tableTabAtEnd = false;
+  private tableTabDestination?: Selection;
+  tableViewport = 0;
+  private tableScroller?: HTMLElement;
+  private tableResize?: ResizeObserver;
+  private tableScroll = () => {
+    const table = this.projection?.table?.window,
+      scroller = this.tableScroller;
+    if (!table || !scroller || !this.tableColumnWidth || this.editor?.view.composing) return;
+    const row = Math.max(0, Math.min(table.rows - 1, Math.floor(scroller.scrollTop / 64)));
+    const column = Math.max(
+      0,
+      Math.min(table.columns - 1, Math.floor(scroller.scrollLeft / this.tableColumnWidth)),
+    );
+    if (
+      table.cells.some(
+        (c) => c.row === row && c.column <= column && c.column + (c.span ?? 1) > column,
+      )
+    )
+      return;
+    const at = this.service.tableAddress(table.from, row, column);
+    void this.show(this.active, false, at.source, this.pointerSelecting);
+  };
+  tableColumnWidth = 0;
+  resizeTable(viewport: number, anchor = true) {
+    const editor = this.editor,
+      table = this.projection?.table;
+    if (!editor || !table) return;
+    const scroller = this.host.parentElement;
+    let before: { left: number; top: number } | undefined;
+    if (anchor && scroller)
+      try {
+        before = editor.view.coordsAtPos(editor.state.selection.head);
+      } catch {
+        before = undefined;
+      }
+    this.tableViewport = viewport || scroller?.clientWidth || 640;
+    this.tableColumnWidth = layoutTable(editor, table.window, this.tableViewport).width;
+    if (before && scroller) {
+      const after = editor.view.coordsAtPos(editor.state.selection.head);
+      scroller.scrollLeft += after.left - before.left;
+      scroller.scrollTop += after.top - before.top;
+    }
+    if (scroller && !this.tableScroller) {
+      this.tableScroller = scroller;
+      scroller.addEventListener('scroll', this.tableScroll);
+      if (typeof ResizeObserver !== 'undefined') {
+        this.tableResize = new ResizeObserver((entries) => {
+          const width = entries[0]?.contentRect.width;
+          if (width && Math.abs(width - this.tableViewport) > 1) this.resizeTable(width);
+        });
+        this.tableResize.observe(scroller);
+      }
+    }
+  }
   private continueNearEdge() {
     if (
       this.drainingInput ||
@@ -258,6 +354,31 @@ export class DocumentSession {
       return;
     const p = this.projection!,
       head = this.selection.head;
+    if (p.table) {
+      const cell = p.table.entries.find(
+        (e) => e.cell.from === this.selection.table?.head.cell,
+      )?.cell;
+      const point = this.selection.table?.head;
+      const pageBlocks =
+        cell?.blocks &&
+        point &&
+        ((point.block - cell.blocks[0].index < 2 && cell.blocks[0].index > 0) ||
+          (cell.blocks.at(-1)!.index - point.block < 2 &&
+            cell.blocks.at(-1)!.index + 1 < (cell.blockCount ?? 0)) ||
+          cell.blocks.length > 8);
+      const pageText =
+        cell &&
+        ((cell.first > cell.body && head - cell.first < 32) ||
+          (cell.last < cell.end && cell.last - head < 32));
+      if (!pageBlocks && !pageText) return;
+      this.continuationQueued = true;
+      queueMicrotask(() => {
+        this.continuationQueued = false;
+        if (this.editor && !this.editor.view.composing)
+          void this.show(this.active, true, this.selection.head, true);
+      });
+      return;
+    }
     if (head < p.start || head > this.windowEnd) return;
     const first = this.service.start(this.active),
       last = this.service.start(this.active + 1);
@@ -317,7 +438,7 @@ export class DocumentSession {
     }
     const window = this.readWindow(id, position);
     try {
-      const next = this.project(window.source, window.from);
+      const next = this.project(window.source, window.from, window.table);
       if (preserveView && this.editor) {
         if (this.pointerSelecting) this.pointerRemapped = true;
         // Keep Chromium's active keyboard or mouse gesture on the same focused view.
@@ -337,11 +458,14 @@ export class DocumentSession {
             editor.schema.nodeFromJSON(next.content).content,
           );
           tr.setSelection(
-            TextSelection.create(
-              tr.doc,
-              next.pmAt(this.selection.anchor, this.selection.affinity),
-              next.pmAt(this.selection.head, this.selection.affinity),
-            ),
+            next.table?.restoreSelection(tr.doc, this.selection) ??
+              TextSelection.create(
+                tr.doc,
+                next.table?.pointPM(this.selection.table?.anchor) ??
+                  next.pmAt(this.selection.anchor, this.selection.affinity),
+                next.table?.pointPM(this.selection.table?.head) ??
+                  next.pmAt(this.selection.head, this.selection.affinity),
+              ),
           );
           editor.view.dispatch(tr.setMeta('addToHistory', false));
         } finally {
@@ -349,6 +473,7 @@ export class DocumentSession {
         }
         if (scroller)
           scroller.scrollTop += editor.view.coordsAtPos(editor.state.selection.head).top - before;
+        this.resizeTable(this.tableViewport, false);
         this.error = '';
         this.changed();
         return true;
@@ -435,12 +560,13 @@ export class DocumentSession {
               if (this.replayingInput || !event.cancelable) return false;
               const p = this.projection!;
               const needsWindow =
-                p.list &&
+                (p.list || p.table) &&
                 event.inputType === 'insertText' &&
                 (bytes(event.data ?? '') > 128 ||
                   bytes(p.source) + bytes(JSON.stringify(p.context)) + 2 * bytes(event.data ?? '') >
                     LIMITS.request - 128);
-              if (!this.service.pendingInputs && !needsWindow) return false;
+              if (!this.service.pendingInputs && !needsWindow && !(p.table && this.pendingFetch))
+                return false;
               const commands: Record<string, string> = {
                 insertText: 'insertText',
                 insertParagraph: 'insertParagraph',
@@ -455,6 +581,23 @@ export class DocumentSession {
             },
           },
           handleKeyDown: (_view, event) => {
+            if (
+              this.projection!.table &&
+              !this.replayingInput &&
+              event.key === 'Tab' &&
+              this.selection.table
+            ) {
+              const direction = event.shiftKey ? -1 : 1;
+              const next = this.service.tableNeighbor(this.selection.table.head.cell, direction);
+              if (!next && direction > 0) this.tableTabAtEnd = true;
+              const entry =
+                next && this.projection!.table.entries.find((e) => e.cell.from === next.point.cell);
+              if (next && (!entry || this.pendingFetch || this.service.pendingInputs)) {
+                event.preventDefault();
+                this.deferInput(direction < 0 ? 'tableTabBackward' : 'tableTabForward');
+                return true;
+              }
+            }
             if (
               this.projection!.list &&
               !this.replayingInput &&
@@ -537,10 +680,11 @@ export class DocumentSession {
             }
             const p = this.projection!;
             const globalRange =
-              this.selection.anchor < p.start ||
-              this.selection.head < p.start ||
-              this.selection.anchor > p.start + p.source.length ||
-              this.selection.head > p.start + p.source.length;
+              !p.table &&
+              (this.selection.anchor < p.start ||
+                this.selection.head < p.start ||
+                this.selection.anchor > p.start + p.source.length ||
+                this.selection.head > p.start + p.source.length);
             if (
               globalRange &&
               event.shiftKey &&
@@ -613,6 +757,13 @@ export class DocumentSession {
         },
       });
       this.created++;
+      this.resizeTable(this.tableViewport, false);
+      if (restore && this.projection.table && this.tableScroller) {
+        const cells = this.projection.table.window.cells;
+        this.tableScroller.scrollLeft =
+          Math.min(...cells.map((c) => c.column)) * this.tableColumnWidth;
+        this.tableScroller.scrollTop = cells[0].row * 64;
+      }
       if (
         !restore &&
         (this.selection.head < window.from ||
@@ -635,11 +786,14 @@ export class DocumentSession {
       editor = this.editor!;
     editor.view.dispatch(
       editor.state.tr.setSelection(
-        TextSelection.create(
-          editor.state.doc,
-          p.pmAt(this.selection.anchor, this.selection.affinity),
-          p.pmAt(this.selection.head, this.selection.affinity),
-        ),
+        p.table?.restoreSelection(editor.state.doc, this.selection) ??
+          TextSelection.create(
+            editor.state.doc,
+            p.table?.pointPM(this.selection.table?.anchor) ??
+              p.pmAt(this.selection.anchor, this.selection.affinity),
+            p.table?.pointPM(this.selection.table?.head) ??
+              p.pmAt(this.selection.head, this.selection.affinity),
+          ),
       ),
     );
   }
@@ -657,7 +811,19 @@ export class DocumentSession {
   }
   private fromPM(selection: { anchor: number; head: number }): Selection {
     const p = this.projection!;
+    let anchor = p.table?.pointAt(selection.anchor),
+      head = p.table?.pointAt(selection.head);
+    const cells = selection instanceof CellSelection;
+    if (cells && p.table) {
+      const a = p.table.entries.find((e) => e.pm === selection.$anchorCell.pos),
+        h = p.table.entries.find((e) => e.pm === selection.$headCell.pos);
+      anchor = a ? { cell: a.cell.from, block: 0, offset: 0 } : undefined;
+      head = h ? { cell: h.cell.from, block: 0, offset: 0 } : undefined;
+    }
     return {
+      ...(anchor && head
+        ? { table: { anchor, head, kind: cells ? ('cell' as const) : ('text' as const) } }
+        : {}),
       anchor: p.sourceAt(selection.anchor),
       head: p.sourceAt(selection.head),
       affinity: selection.anchor <= selection.head ? 1 : -1,
@@ -682,7 +848,7 @@ export class DocumentSession {
           const tr = transactions[index];
           if (!tr.docChanged) {
             if (tr.selectionSet) {
-              this.selection = this.fromPM(tr.selection);
+              this.selection = this.tableTabDestination ?? this.fromPM(tr.selection);
               this.selectionGeneration++;
               if (this.service.pendingInputs && !this.replayingInput)
                 this.service.enqueueInput({
@@ -701,6 +867,7 @@ export class DocumentSession {
           if (index) this.acceptedAppended++;
           else this.acceptedRoots++;
           const before = { ...this.selection };
+          let tableAfter: Selection | undefined;
           let adjacent = false;
           tr.mapping.maps[0]?.forEach((from, to) => {
             const start = this.projection!.sourceAt(from),
@@ -714,56 +881,113 @@ export class DocumentSession {
             transactions[0].getMeta('addToHistory') !== false;
           this.service.beginChanges();
           let oldStart = this.projection!.start;
-          const listBatch = !!this.projection!.list;
+          const tableBatch = this.projection!.table;
+          const listBatch = !!this.projection!.list || !!tableBatch;
           for (let n = 0; n < (listBatch ? 1 : tr.steps.length); n++) {
             let fences: NonNullable<InlineContext['fences']> = [];
             // Native joins may have intermediate structures with no Markdown representation.
             // Admit the final list document atomically using every step's token mapping.
-            const splices = listBatch
-              ? this.projection!.list!.translateTransaction(tr)
-              : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
-                  fences = next;
-                });
-            const listSeams = this.projection!.list?.seams;
-            this.maxSeamAdmissionBytes = Math.max(
-              this.maxSeamAdmissionBytes,
-              bytes(JSON.stringify(listSeams ?? [])),
-            );
-            this.service.stageProjection(
-              splices,
-              fences,
-              this.projection!.context!.revision,
-              history,
-              this.projection!.list?.indentation,
-              (splice) => {
-                oldStart = mapPoint(oldStart, splice, -1);
-                this.windowEnd = mapPoint(this.windowEnd, splice);
-                if (!history && this.prevRange)
-                  this.prevRange = [
-                    mapPoint(this.prevRange[0], splice),
-                    mapPoint(this.prevRange[1], splice),
-                  ];
-              },
-            );
-            if (listSeams)
-              this.service.setSeams(
-                oldStart,
-                this.windowEnd,
-                listSeams,
-                this.service.revision,
+            const splices = tableBatch
+              ? tableBatch.translateTransaction(tr, (pm, affinity) =>
+                  this.projection!.sourceAt(pm, affinity),
+                )
+              : listBatch
+                ? this.projection!.list!.translateTransaction(tr)
+                : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
+                    fences = next;
+                  });
+            if (tableBatch?.codeChanges.length)
+              splices.push(...this.service.tableCodePatches(tableBatch.codeChanges));
+            if (tableBatch?.structural) {
+              const table = this.service.stageTableStructure(
+                tableBatch.window,
+                tableBatch.structural,
                 history,
               );
-            this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
+              this.projection = this.project(
+                table.cells.map((c) => c.raw).join(''),
+                table.cells[0].first,
+                table,
+              );
+              this.windowEnd = table.cells.at(-1)!.last;
+              if (this.tableTabAtEnd && tableBatch.structural.kind === 'row') {
+                const target = this.service.tableAddress(
+                  table.from,
+                  tableBatch.structural.index,
+                  0,
+                );
+                tableAfter = {
+                  anchor: target.source,
+                  head: target.source,
+                  affinity: 1,
+                  revision: this.service.revision,
+                  table: { anchor: target.point, head: target.point, kind: 'text' },
+                };
+                this.tableTabDestination = tableAfter;
+              }
+            } else {
+              const listSeams = this.projection!.list?.seams;
+              this.maxSeamAdmissionBytes = Math.max(
+                this.maxSeamAdmissionBytes,
+                bytes(JSON.stringify(listSeams ?? [])),
+              );
+              if (tableBatch && this.projection!.context!.revision !== this.service.revision)
+                throw new Error('Stale table transaction');
+              if (tableBatch)
+                for (const changed of tableBatch.changedCells)
+                  this.service.stageTableCell(changed.cell, changed.node, history);
+              this.service.stageProjection(
+                splices,
+                fences,
+                tableBatch ? this.service.revision : this.projection!.context!.revision,
+                history,
+                this.projection!.list?.indentation,
+                (splice) => {
+                  oldStart = mapPoint(oldStart, splice, -1);
+                  this.windowEnd = mapPoint(this.windowEnd, splice);
+                  if (!history && this.prevRange)
+                    this.prevRange = [
+                      mapPoint(this.prevRange[0], splice),
+                      mapPoint(this.prevRange[1], splice),
+                    ];
+                },
+              );
+              if (listSeams)
+                this.service.setSeams(
+                  oldStart,
+                  this.windowEnd,
+                  listSeams,
+                  this.service.revision,
+                  history,
+                );
+              if (this.projection!.table) {
+                const retained = structuredClone(tableBatch!.window);
+                for (const splice of splices)
+                  for (const cell of retained.cells) {
+                    cell.first = mapPoint(cell.first, splice, -1);
+                    cell.last = mapPoint(cell.last, splice, 1);
+                  }
+                const target = mapPoint(before.head, splices[0] ?? { from: 0, to: 0, insert: '' });
+                const table = this.service.tableWindow(target, retained)!;
+                this.projection = this.project(
+                  table.cells.map((c) => c.raw).join(''),
+                  table.cells[0].first,
+                  table,
+                );
+                this.windowEnd = table.cells.at(-1)!.last;
+              } else
+                this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
+            }
             if (
-              this.projection.list &&
+              (this.projection.list || this.projection.table) &&
               !this.editor!.schema.nodeFromJSON(this.projection.content).eq(
                 listBatch ? tr.doc : tr.steps[n].apply(tr.docs[n]).doc!,
               )
             ) {
-              throw new Error('Translated list source differs from accepted document');
+              throw new Error('Translated source differs from accepted document');
             }
           }
-          const after = this.fromPM(tr.selection);
+          const after = tableAfter ?? this.fromPM(tr.selection);
           const composition = tr.getMeta('composition');
           const group =
             this.prevTime !== 0 &&
@@ -796,6 +1020,15 @@ export class DocumentSession {
           this.cache.clear();
         }
       });
+      if (this.tableTabAtEnd && this.tableTabDestination) {
+        this.tableTabAtEnd = false;
+        queueMicrotask(() => {
+          this.selection = this.tableTabDestination!;
+          this.tableTabDestination = undefined;
+          void this.seek(this.selection.head);
+        });
+      }
+      this.resizeTable(this.tableViewport);
       this.error = '';
       // Only source changes invalidate anchors. Refreshing during a selectionchange can
       // race the browser's next native selection update.
@@ -803,6 +1036,8 @@ export class DocumentSession {
       this.changed();
       this.continueNearEdge();
     } catch (error) {
+      this.tableTabAtEnd = false;
+      this.tableTabDestination = undefined;
       Object.assign(this, old);
       if (this.rollbackState) this.editor!.view.updateState(this.rollbackState);
       this.error = String(error);
@@ -870,8 +1105,10 @@ export class DocumentSession {
     await this.seek(from);
   }
   remote(splice: Splice) {
+    const table = !!this.projection?.table;
     const oldStart = this.projection!.start;
     this.service.atomic(() => {
+      this.service.validateTableRemote(splice);
       this.service.apply(splice);
       this.service.rebase(splice);
     });
@@ -880,6 +1117,10 @@ export class DocumentSession {
     if (this.prevRange)
       this.prevRange = [mapPoint(this.prevRange[0], splice), mapPoint(this.prevRange[1], splice)];
     this.cache.clear();
+    if (table) {
+      void this.seek(this.selection.head);
+      return;
+    }
     if (splice.to <= oldStart) {
       // Remote delimiter changes can turn either mapped edge into an empty mark span.
       const start = this.service.inlineBoundary(mapPoint(oldStart, splice), 1);
@@ -927,6 +1168,11 @@ export class DocumentSession {
     });
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
+      tableColumnWidth: this.tableColumnWidth,
+      tableCells: this.projection?.table?.entries.length ?? 0,
+      tableContextBytes: bytes(JSON.stringify(this.projection?.context?.table ?? {})),
+      maxTableWindowBytes: this.service.maxTableWindowBytes,
+      backingTableScannedBytes: this.service.backingTableScannedBytes,
       maxSeamMetadataBytes: this.maxSeamMetadataBytes,
       maxSeamAdmissionBytes: this.maxSeamAdmissionBytes,
       maxResidentAndInFlightSeamBytes: this.maxResidentAndInFlightSeamBytes,
@@ -1041,6 +1287,8 @@ export class DocumentSession {
     };
   }
   destroy() {
+    this.tableResize?.disconnect();
+    this.tableScroller?.removeEventListener('scroll', this.tableScroll);
     this.navigation++;
     this.host.removeEventListener('pointerdown', this.pointerDown);
     document.removeEventListener('pointerup', this.pointerUp);

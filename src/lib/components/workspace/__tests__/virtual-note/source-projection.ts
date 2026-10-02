@@ -5,6 +5,8 @@ import type { Splice } from './source-journal';
 import { scanFences, type Fence } from './fence-context';
 import type { ListItem, ListSeam } from './list-context';
 import { ListProjection } from './list-projection';
+import { TableProjection } from './table-projection';
+import type { TableWindow } from './table-source';
 
 export type Mark = { type: string; attrs?: Record<string, unknown> };
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
@@ -19,6 +21,7 @@ export type InlineContext = {
   lists?: ListItem[];
   seams?: ListSeam[];
   documentEnd?: boolean;
+  table?: TableWindow;
 };
 export const openMark = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');
 export const closeMark = (mark: Mark) => (mark.type === 'bold' ? '**' : `](${mark.attrs?.href})`);
@@ -80,12 +83,22 @@ export class SourceProjection {
     [];
   private trailing = '';
   readonly list?: ListProjection;
+  readonly table?: TableProjection;
   constructor(
     readonly source: string,
     readonly start = 0,
     readonly context?: InlineContext,
     indexOnly = false,
   ) {
+    if (context?.table && !indexOnly) {
+      this.table = new TableProjection(context.table);
+      this.content.content = this.table.content.content;
+      for (const [p, s] of this.table.positions) this.positions.set(p, s);
+      for (const [p, s] of this.table.ends) this.ends.set(p, s);
+      for (const [p, s] of this.table.boundaries) this.boundaries.set(p, s);
+      this.tokens.push(...this.table.tokens);
+      return;
+    }
     if (context && (context.from !== start || context.to !== start + source.length))
       throw new Error('Context does not describe this source window');
     if (context?.lists?.length && !indexOnly) {
@@ -303,6 +316,7 @@ export class SourceProjection {
     }
   }
   sourceAt(pm: number, affinity = 1) {
+    if (this.table) return this.table.sourceAt(pm, affinity);
     const source =
       affinity < 0 ? (this.ends.get(pm) ?? this.positions.get(pm)) : this.positions.get(pm);
     const exact = source ?? this.boundaries.get(pm);
@@ -310,6 +324,7 @@ export class SourceProjection {
     return exact;
   }
   pmAt(source: number, affinity = 1) {
+    if (this.table) return this.table.pmAt(source, affinity);
     let nearest = 1,
       distance = Infinity;
     for (const [pm, offset] of this.positions) {
@@ -322,6 +337,8 @@ export class SourceProjection {
     return nearest;
   }
   translate(step: Step, before: PMNode, codeContext?: (fences: Fence[]) => void): Splice[] {
+    if (this.table)
+      return this.table.translate(step, before, (pm, affinity) => this.sourceAt(pm, affinity));
     if (this.list) return this.list.translate(step, before);
     const applied = step.apply(before);
     if (!applied.doc) throw new Error(applied.failed ?? 'Invalid proof step');
