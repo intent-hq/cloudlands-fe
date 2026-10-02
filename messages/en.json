@@ -2453,7 +2453,6 @@
   "chat_queuedMessages_cancel_tooltip": "Cancel",
   "chat_queuedMessages_author_ariaLabel": "Queued by {name}",
   "chat_queuedMessages_failedWillRetry_label": "Failed — will retry",
-  "chat_queuedMessages_failedWillRetryPrefix_label": "(Failed — will retry)",
   "chat_queuedMessages_sendNow_tooltip": "Send now (interrupts current stream)",
   "chat_queuedMessages_sendImmediately_label": "Send immediately",
   "chat_modelPicker_clearSearch_ariaLabel": "Clear search",

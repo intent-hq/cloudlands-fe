@@ -2453,7 +2453,6 @@
   "chat_queuedMessages_cancel_tooltip": "取消",
   "chat_queuedMessages_author_ariaLabel": "由 {name} 加入队列",
   "chat_queuedMessages_failedWillRetry_label": "失败——将重试",
-  "chat_queuedMessages_failedWillRetryPrefix_label": "（失败——将重试）",
   "chat_queuedMessages_sendNow_tooltip": "立即发送（中断当前流式输出）",
   "chat_queuedMessages_sendImmediately_label": "立即发送",
   "chat_modelPicker_clearSearch_ariaLabel": "清除搜索",

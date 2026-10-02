@@ -189,6 +189,36 @@ describe('QueuedMessageList', () => {
   });
 
   describe('send immediately', () => {
+    it.each(['single', 'all'] as const)(
+      'announces an active %s send and returns to idle when delivery stays queued',
+      async (scope) => {
+        const pending = deferred<'queued'>();
+        const send = vi.fn(() => pending.promise);
+        render(QueuedMessageList, {
+          props: {
+            messages: [queued({})],
+            ...(scope === 'single' ? { onsendnow: send } : { onsendall: send }),
+          },
+        });
+        const header = screen.getByTestId('queued-messages-disclosure');
+        const label = screen.getByTestId('queued-messages-label');
+        const idleText = label.textContent;
+        const idleName = header.getAttribute('aria-label');
+        await fireEvent.click(
+          screen.getByRole('button', {
+            name: scope === 'single' ? 'Send immediately' : 'Send all ready messages now',
+          }),
+        );
+        expect(label.textContent).not.toBe(idleText);
+        expect(header.getAttribute('aria-label')).not.toBe(idleName);
+        await fireEvent.click(header);
+        expect(header.getAttribute('aria-expanded')).toBe('false');
+        pending.resolve('queued');
+        await waitFor(() => expect(label.textContent).toBe(idleText));
+        expect(header.getAttribute('aria-label')).toBe(idleName);
+      },
+    );
+
     it('targets only the chosen ID and prevents duplicate/edit/remove actions until acknowledgement', async () => {
       const pending = deferred<'delivered'>();
       const onsendnow = vi.fn(() => pending.promise);
@@ -672,13 +702,20 @@ describe('QueuedMessageList', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the requeued-after-failure indicator on queued rows', () => {
-    const { container } = render(QueuedMessageList, {
-      props: { messages: [queued({ content: 'try again', requeuedAfterFailure: true })] },
+  it('shows retry status separately from message content until sending starts', async () => {
+    const pending = deferred<'delivered'>();
+    render(QueuedMessageList, {
+      props: {
+        messages: [queued({ content: 'try again', requeuedAfterFailure: true })],
+        onsendnow: () => pending.promise,
+      },
     });
 
-    expect(screen.getByText(/try again/)).toBeTruthy();
-    expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe('try again');
+    expect(screen.getByTestId('queued-message-retry-status').getAttribute('role')).toBe('status');
+    await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
+    expect(screen.queryByTestId('queued-message-retry-status')).toBeNull();
+    pending.resolve('delivered');
   });
 
   describe('human author identity (multiplayer)', () => {

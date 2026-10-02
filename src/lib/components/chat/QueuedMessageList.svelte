@@ -9,13 +9,9 @@
    */
 
   import Fa from 'svelte-fa';
-  import {
-    faCheck,
-    faTimes,
-    faRotateRight,
-    faFile,
-    faArrowUp,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faFile, faArrowUp } from '@fortawesome/free-solid-svg-icons';
+  import ArrowClockwiseIcon from 'phosphor-svelte/lib/ArrowClockwiseIcon';
+  import ArrowUUpLeftIcon from 'phosphor-svelte/lib/ArrowUUpLeftIcon';
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
   import { tick } from 'svelte';
@@ -114,6 +110,9 @@
   let sendStates = $state<Record<string, 'sending' | QueuedMessageSendOutcome | undefined>>({});
   let bulkAction = $state<'send' | 'clear' | null>(null);
   let bulkError = $state<string | null>(null);
+  const queueSending = $derived(
+    bulkAction === 'send' || messages.some((message) => isSending(message.id)),
+  );
   const busy = $derived(
     bulkAction !== null ||
       Object.values(sendStates).some((state) => state === 'sending' || state === 'delivered'),
@@ -126,9 +125,11 @@
   let previousMessageCount = $state(0);
   const contentId = $derived(`queued-messages-content-${messages[0]?.id ?? 'empty'}`);
   const headerLabel = $derived(
-    messages.length === 1
-      ? m.chat_queuedMessages_header_one()
-      : m.chat_queuedMessages_header_many({ count: formatInteger(messages.length) }),
+    queueSending
+      ? m.chat_queuedMessages_sending_label()
+      : messages.length === 1
+        ? m.chat_queuedMessages_header_one()
+        : m.chat_queuedMessages_header_many({ count: formatInteger(messages.length) }),
   );
   const rowElements = new Map<string, HTMLElement>();
   let sendErrors = $state<Record<string, string | undefined>>({});
@@ -756,7 +757,9 @@
         onclick={toggleExpanded}
       >
         <span class="min-w-0 flex-1 truncate" data-testid="queued-messages-label">
-          {m.chat_queuedMessages_sendingWhenIdle_label()}
+          {queueSending
+            ? m.chat_queuedMessages_sending_label()
+            : m.chat_queuedMessages_sendingWhenIdle_label()}
         </span>
       </Button>
       {#if !disabled}
@@ -884,7 +887,7 @@
                         onpointerdown={(event) => event.preventDefault()}
                         tooltip={m.chat_queuedMessages_cancel_tooltip()}
                       >
-                        <Fa icon={faTimes} class="w-3 h-3" />
+                        <ArrowUUpLeftIcon size={16} weight="regular" aria-hidden="true" />
                       </Button>
                     </div>
                   {:else}
@@ -895,19 +898,6 @@
                     <!-- Display mode -->
                     <div class="queued-message-display flex min-w-0 flex-1 items-start gap-2">
                       <div class="queued-message-body min-w-0 flex-1">
-                        {#if message.requeuedAfterFailure}
-                          <div
-                            class="type-caption flex shrink-0 items-center gap-1 text-warning-ink"
-                            title={m.chat_queuedMessages_failedWillRetry_label()}
-                          >
-                            <div aria-hidden="true">
-                              <Fa icon={faRotateRight} class="w-3 h-3" />
-                            </div>
-                            <span class="sr-only"
-                              >{m.chat_queuedMessages_failedWillRetry_label()}</span
-                            >
-                          </div>
-                        {/if}
                         {@render imageThumbnails(message)}
                         {@render fileChips(message)}
                         <Button
@@ -949,11 +939,21 @@
                             class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
                             data-testid="queued-message-text"
                           >
-                            {message.requeuedAfterFailure
-                              ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
-                              : ''}{memberMentionsToText(message.content)}
+                            {memberMentionsToText(message.content)}
                           </span>
                         </Button>
+                        {#if message.requeuedAfterFailure && !isSending(message.id)}
+                          <div
+                            class="type-caption mt-0.5 flex items-start gap-1 text-warning-ink"
+                            data-testid="queued-message-retry-status"
+                            role="status"
+                          >
+                            <span class="first-line-icon" aria-hidden="true">
+                              <ArrowClockwiseIcon size={12} weight="regular" />
+                            </span>
+                            <span>{m.chat_queuedMessages_failedWillRetry_label()}</span>
+                          </div>
+                        {/if}
                       </div>
                       {#if !disabled}
                         <div

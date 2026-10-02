@@ -16,6 +16,7 @@
     contentKind?: 'plain' | 'multiline' | 'attachments' | 'attachments-only' | 'member';
     showAuthors?: boolean;
     sendOutcome?: QueuedMessageSendOutcome | 'pending' | 'failed';
+    startSending?: boolean;
     clearFails?: boolean;
     docked?: boolean;
   }
@@ -43,7 +44,7 @@
       'attachments-only': { props: { messageCount: 3, contentKind: 'attachments-only' } },
       'member-mention': { props: { messageCount: 2, contentKind: 'member' } },
       'shared-authors': { props: { messageCount: 3, showAuthors: true } },
-      sending: { props: { messageCount: 3, sendOutcome: 'pending' } },
+      sending: { props: { messageCount: 3, sendOutcome: 'pending', startSending: true } },
       'still-queued': { props: { messageCount: 2, sendOutcome: 'queued' } },
       'recovery-required': { props: { messageCount: 2, sendOutcome: 'quarantined' } },
       'send-failed': { props: { messageCount: 2, sendOutcome: 'failed' } },
@@ -54,6 +55,9 @@
 </script>
 
 <script lang="ts">
+  import { onMount, tick } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
+
   let {
     messageCount = 3,
     heldCount = 0,
@@ -64,9 +68,22 @@
     contentKind = 'plain',
     showAuthors = false,
     sendOutcome,
+    startSending = false,
     clearFails = false,
     docked = false,
   }: Props = $props();
+  let previewRoot: HTMLDivElement;
+
+  onMount(() => {
+    if (!startSending) return;
+    void tick().then(() => {
+      previewRoot
+        .querySelector<HTMLButtonElement>(
+          `button[aria-label="${CSS.escape(m.chat_queuedMessages_sendAll_ariaLabel())}"]`,
+        )
+        ?.click();
+    });
+  });
   const people: MessageAuthor[] = [
     { principalId: 'preview-self', login: 'you', displayName: 'You', avatarUrl: null },
     {
@@ -184,25 +201,27 @@
   />
 {/snippet}
 
-{#if docked}
-  <div
-    class="group/panel flex h-[560px] w-full flex-col justify-end"
-    data-testid="queued-messages-docked-preview"
-  >
-    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div class="mt-auto" style:--queued-messages-max-height="280px">
-        <div class="has-[>_*]:pb-2">{@render queue()}</div>
-        <EventSubscriptionsCard
-          workspaceId="queue-preview"
-          agentId="queue-preview"
-          isolatedPreview={{ count: 2, initiallyExpanded: false }}
-        />
+<div class="w-full min-w-0" bind:this={previewRoot}>
+  {#if docked}
+    <div
+      class="group/panel flex h-[560px] w-full flex-col justify-end"
+      data-testid="queued-messages-docked-preview"
+    >
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div class="mt-auto" style:--queued-messages-max-height="280px">
+          <div class="has-[>_*]:pb-2">{@render queue()}</div>
+          <EventSubscriptionsCard
+            workspaceId="queue-preview"
+            agentId="queue-preview"
+            isolatedPreview={{ count: 2, initiallyExpanded: false }}
+          />
+        </div>
+      </div>
+      <div class="shrink-0">
+        <SimpleRichInput bind:value={draft} workspace={null} />
       </div>
     </div>
-    <div class="shrink-0">
-      <SimpleRichInput bind:value={draft} workspace={null} />
-    </div>
-  </div>
-{:else}
-  {@render queue()}
-{/if}
+  {:else}
+    {@render queue()}
+  {/if}
+</div>
