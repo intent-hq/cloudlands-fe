@@ -835,7 +835,7 @@ export class SourceJournal {
   private spans(id: number) {
     const source = this.region(id);
     let index = this.inlineIndex.get(id);
-    if (!index || index.source !== source || index.revision !== this.revision) {
+    if (!index || index.source !== source) {
       const fences = scanFences(source);
       const projection = new SourceProjection(
         source,

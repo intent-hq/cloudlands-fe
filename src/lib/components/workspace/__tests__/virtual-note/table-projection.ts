@@ -423,7 +423,17 @@ export class TableProjection {
               paragraphs: paragraphSlice,
             }
           : undefined;
-      this.changedCells.push({ cell: entry.cell, node: after.toJSON(), inline, paragraphs });
+      const node = after.toJSON();
+      if (entry.cell.owner) {
+        // Unchanged mounted dimensions are viewport clips, not native edits to
+        // the logical span. Header/inline changes must retain the backing owner.
+        node.attrs = { ...node.attrs };
+        if (after.attrs.rowspan === before.attrs.rowspan)
+          node.attrs.rowspan = entry.cell.owner.rowspan;
+        if (after.attrs.colspan === before.attrs.colspan)
+          node.attrs.colspan = entry.cell.owner.colspan;
+      }
+      this.changedCells.push({ cell: entry.cell, node, inline, paragraphs });
       const flatten = (cell: PMNode) => {
         let content = Fragment.empty;
         cell.forEach((p) => {
