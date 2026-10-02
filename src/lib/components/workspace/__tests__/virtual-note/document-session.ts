@@ -48,8 +48,38 @@ export class DocumentSession {
     } finally {
       this.service.clipboardBacking.close(manifest.id);
     }
+    return manifest;
   }
 
+  cutTableSelection() {
+    const before = structuredClone(this.selection),
+      generation = this.selectionGeneration;
+    const publication = this.copyTableSelection();
+    if (generation !== this.selectionGeneration) throw new Error('Stale clipboard selection');
+    const after = this.service.atomic(() => {
+      this.service.beginChanges();
+      const anchorsBefore = structuredClone(this.service.anchors);
+      const after = this.service.stageTableCut(before, publication.id, this.editor!.schema);
+      this.service.record(
+        {
+          changes: [],
+          before,
+          after,
+          anchorsBefore,
+          anchorsAfter: structuredClone(this.service.anchors),
+        },
+        false,
+      );
+      return after;
+    });
+    this.selection = after;
+    this.selectionGeneration++;
+    this.prevTime = 0;
+    this.cache.clear();
+    queueMicrotask(() => {
+      void this.seek(after.head);
+    });
+  }
   editor?: Editor;
   projection?: SourceProjection;
   selection: Selection = { anchor: 0, head: 0, affinity: 1, revision: 1 };
@@ -931,6 +961,17 @@ export class DocumentSession {
               }
               return true;
             },
+            cut: (_view, event) => {
+              if (this.selection.table?.kind !== 'cell') return false;
+              event.preventDefault();
+              try {
+                this.cutTableSelection();
+                this.error = '';
+              } catch (error) {
+                this.error = String(error);
+              }
+              return true;
+            },
             beforeinput: (_view, event) => {
               if (this.replayingInput || !event.cancelable) return false;
               const p = this.projection!;
@@ -1602,6 +1643,7 @@ export class DocumentSession {
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
       clipboardRelay: { ...this.clipboardRelay },
+      maxBackingClipboardMutationBytes: this.service.maxBackingClipboardMutationBytes,
       externalClipboardBacking: {
         ...this.service.clipboardBacking.stats,
         retainedBytes: this.service.clipboardBacking.retainedBytes,

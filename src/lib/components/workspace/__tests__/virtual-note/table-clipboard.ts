@@ -234,6 +234,7 @@ export class ExternalClipboardSink {
   published: ClipboardValue = empty();
   maxStagingBytes = 0;
   publications = 0;
+  lastPublication?: { id: number; revision: number };
   begin(manifest: ClipboardManifest) {
     if (this.staging) throw new Error('Clipboard publication already pending');
     this.staging = { manifest: structuredClone(manifest), index: 0, value: empty() };
@@ -268,6 +269,7 @@ export class ExternalClipboardSink {
     )
       throw new Error('Incomplete or stale clipboard publication');
     this.published = stage.value;
+    this.lastPublication = { id: stage.manifest.id, revision: stage.manifest.revision };
     this.publications++;
     this.staging = undefined;
   }

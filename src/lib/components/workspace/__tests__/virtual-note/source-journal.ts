@@ -117,6 +117,82 @@ export class SourceJournal {
     );
   }
 
+  maxBackingClipboardMutationBytes = 0;
+  stageTableCut(selection: Selection, publication: number, schema: Schema) {
+    const encoded = JSON.stringify({ selection, publication });
+    if (bytes(encoded) > LIMITS.request) throw new Error('Clipboard cut intent exceeds budget');
+    const received = JSON.parse(encoded) as { selection: Selection; publication: number };
+    if (
+      received.selection.revision !== this.revision ||
+      received.selection.table?.kind !== 'cell' ||
+      this.clipboardSink.lastPublication?.id !== received.publication ||
+      this.clipboardSink.lastPublication.revision !== this.revision
+    )
+      throw new Error('Stale or unpublished clipboard cut');
+    const logical = received.selection.table;
+    const { id, start } = this.locate(logical.anchor.cell),
+      source = this.region(id);
+    const table = this.tableIndex(source, start).find(
+      (t) => logical.anchor.cell - start >= t.from && logical.anchor.cell - start < t.to,
+    )!;
+    const all = table.rows.flatMap((row) => row.cells);
+    const anchor = all.find((cell) => cell.from + start === logical.anchor.cell)!,
+      head = all.find((cell) => cell.from + start === logical.head.cell)!;
+    const top = Math.min(anchor.row, head.row),
+      bottom = Math.max(anchor.row + (anchor.rowSpan ?? 1), head.row + (head.rowSpan ?? 1));
+    const left = Math.min(anchor.column, head.column),
+      right = Math.max(anchor.column + (anchor.span ?? 1), head.column + (head.span ?? 1));
+    // Match native cellsInRect: owners beginning outside its top/left boundary are not mutated.
+    const selected = all
+      .filter(
+        (cell) =>
+          cell.row >= top && cell.row < bottom && cell.column >= left && cell.column < right,
+      )
+      .sort((a, b) => b.from - a.from);
+    let headFrom = logical.head.cell,
+      mutationBytes = 0;
+    for (const cell of selected) {
+      const stored = this.tableStates.get(`cell:${cell.from + start}`);
+      const old = stored
+        ? (JSON.parse(stored) as JSONContent)
+        : schema.nodes[cell.row === 0 ? 'tableHeader' : 'tableCell']
+            .createAndFill({ align: cell.align })!
+            .toJSON();
+      const node = { ...old, content: [schema.nodes.paragraph.createAndFill()!.toJSON()] };
+      mutationBytes += bytes(stored ?? '') + bytes(source.slice(cell.body, cell.end));
+      this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(node));
+      const splice = { from: cell.body + start, to: cell.end + start, insert: '' };
+      this.stage(splice);
+      headFrom = mapPoint(headFrom, splice, -1);
+    }
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(encoded));
+    this.maxBackingClipboardMutationBytes = Math.max(
+      this.maxBackingClipboardMutationBytes,
+      mutationBytes,
+    );
+    const updated = this.tableIndex(this.region(id), start).find(
+      (t) => t.from + start === table.from + start,
+    )!;
+    const last = updated.rows
+      .flatMap((row) => row.cells)
+      .find((cell) => cell.from + start === headFrom)!;
+    const after: Selection = {
+      anchor: last.body + start,
+      head: last.body + start,
+      affinity: 1,
+      revision: this.revision,
+      table: {
+        kind: 'text',
+        anchor: { cell: headFrom, block: 0, offset: 0 },
+        head: { cell: headFrom, block: 0, offset: 0 },
+      },
+    };
+    const response = JSON.stringify(after);
+    if (bytes(response) > LIMITS.request) throw new Error('Clipboard cut response exceeds budget');
+    this.log('table-clipboard-cut', logical.anchor.cell, bytes(encoded));
+    return JSON.parse(response) as Selection;
+  }
+
   // These serialized blobs model backing-store records, never renderer caches.
   private tableStates = new Map<string, string>();
   private applyTableState(change: Splice & { tableState: string }) {
