@@ -707,7 +707,7 @@
       sendingIds.has(id)
     )
       return;
-    if (storeBacked) void requestMutation(id, { kind: 'remove' });
+    if (storeBacked) void dispatchMutation(id, { kind: 'remove' });
     else onremove?.(id);
   }
 
