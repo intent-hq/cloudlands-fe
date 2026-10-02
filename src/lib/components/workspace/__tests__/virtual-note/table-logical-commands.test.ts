@@ -105,10 +105,28 @@ for (const test of cases) {
       };
       await session.seek(head.body);
       const before = native.state.doc.firstChild!.toJSON();
+      const revisionBeforeCan = service.revision;
+      expect(session.editor!.can()[test.command]()).toBe(native.can()[test.command]());
+      expect(service.revision).toBe(revisionBeforeCan);
+      expect(service.region(0)).toBe(source);
       expect(native.commands[test.command]()).toBe(true);
       expect(session.editor!.commands[test.command]()).toBe(true);
       expect(session.error).toBe('');
       expect(await backingJSON()).toEqual(native.state.doc.firstChild!.toJSON());
+      const backing = service as unknown as { tableIndex: (s: string, start: number) => TableIndex[] };
+      const afterIndex = backing.tableIndex(service.region(0), 0)[0];
+      const selection = native.state.selection;
+      const cells = selection instanceof CellSelection;
+      const point = (pos: typeof selection.$head) => ({
+        cell: afterIndex.rows[pos.index(1)].cells[pos.index(2)].from,
+        block: cells ? 0 : pos.index(3),
+        offset: cells ? 0 : pos.parentOffset,
+      });
+      expect(session.selection.table).toEqual({
+        kind: cells ? 'cell' : 'text',
+        anchor: point(cells ? selection.$anchorCell : selection.$anchor),
+        head: point(cells ? selection.$headCell : selection.$head),
+      });
       const old = session.editor!;
       const saved = service.region(0);
       await session.seek(session.selection.head);
