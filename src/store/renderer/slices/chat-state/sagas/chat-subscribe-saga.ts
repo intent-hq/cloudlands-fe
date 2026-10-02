@@ -634,6 +634,9 @@ function* handleSubscriptionEvent(
       yield* put(
         chatTranscriptSnapshotApplied(event.agentId, {
           truncated: event.transcript.truncated,
+          ...(event.transcript.nextToken !== undefined
+            ? { nextToken: event.transcript.nextToken }
+            : {}),
           totalMessages: event.transcript.totalMessages,
           ...(oldest ? { oldestMessageId: oldest.id } : {}),
           ...(event.transcript.resumed === undefined ? {} : { resumed: event.transcript.resumed }),

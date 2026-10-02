@@ -2259,7 +2259,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
   // ---- §5.5 agent.getConversation pagination -----------------------------
 
-  it('getConversation forwards limit only when no pageToken is given (first page)', async () => {
+  it('getConversation defaults to a five-message first page', async () => {
     backend.onRequest('agent.getConversation', () => ({
       messages: [{ id: 'm1' }],
       truncated: true,
@@ -2272,7 +2272,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     expect(backend.requests[0]).toEqual({
       method: 'agent.getConversation',
-      params: { agentId: 'agent-1', limit: 50, projection: 'slim' },
+      params: { agentId: 'agent-1', limit: 5, projection: 'slim' },
     });
     expect(page.nextToken).toBe('tok-2');
     expect(page.truncated).toBe(true);

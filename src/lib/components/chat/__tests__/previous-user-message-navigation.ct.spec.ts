@@ -761,7 +761,7 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
         historyStartLoaded: false,
         // One unloaded page keeps real scrolling without invoking the ordinal
         // seek saga, which this focused navigation host does not start.
-        totalMessages: 200,
+        totalMessages: automatedTail.length + 5,
         deferPages: true,
         conversationPages: [
           conversationPage([

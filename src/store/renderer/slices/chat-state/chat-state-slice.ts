@@ -70,6 +70,8 @@ export const emptyChatAgentState: ChatAgentState = {
   lastChunkReceivedAt: 0,
   liveStreamPhase: null,
   fetchingOlderHistory: false,
+  scrollbackOlderBlocked: false,
+  scrollbackGapBlocked: false,
   fetchingGapFill: false,
   scrollbackOlderToken: null,
   scrollbackGapToken: null,
@@ -882,7 +884,7 @@ export const chatTranscriptSnapshotRerequested = createAction<[wsId: string, age
 // --- Scrollback paging actions (on-demand history segment fetches) ---
 
 /**
- * UI request: fetch ONE older-history page (200 rows) into the scrollback
+ * UI request: fetch ONE older-history page into the scrollback
  * history segment. Deduped per agent by the `fetchingOlderHistory` flag
  * (takeLeading semantics per agent); a no-op once `oldestReached`.
  */
@@ -891,7 +893,7 @@ export const olderHistoryPageRequested = createAction<[wsId: string, agentId: st
 );
 
 /**
- * UI request: fetch ONE page (200 rows) refilling the hole between the
+ * UI request: fetch ONE page refilling the hole between the
  * scrollback history segment and the live tail. Deduped per agent by the
  * `fetchingGapFill` flag; a no-op unless the segment's `gapToTail` is open.
  */
@@ -960,9 +962,9 @@ export const scrollbackFetchStarted = createAction<
  * newest side, so a forward walk continuing from the old position would
  * skip the pruned rows.
  */
-export const scrollbackOlderPageSettled = createAction<[agentId: string, nextToken: string | null]>(
-  'chatState/scrollbackOlderPageSettled',
-);
+export const scrollbackOlderPageSettled = createAction<
+  [agentId: string, nextToken: string | null, blocked?: boolean]
+>('chatState/scrollbackOlderPageSettled');
 
 /**
  * A gap-refill scrollback page fetch settled (success or swallowed error).
@@ -972,9 +974,9 @@ export const scrollbackOlderPageSettled = createAction<[agentId: string, nextTok
  * so a backward walk continuing from the old position would skip the
  * pruned rows.
  */
-export const scrollbackGapPageSettled = createAction<[agentId: string, prevToken: string | null]>(
-  'chatState/scrollbackGapPageSettled',
-);
+export const scrollbackGapPageSettled = createAction<
+  [agentId: string, prevToken: string | null, blocked?: boolean]
+>('chatState/scrollbackGapPageSettled');
 
 /**
  * An `aroundIndex` seek fetch settled. Clears `fetchingHistorySeek` and — on
@@ -990,6 +992,11 @@ export const scrollbackSeekSettled = createAction<
     unsupported?: boolean,
   ]
 >('chatState/scrollbackSeekSettled');
+
+/** Latch daemon capability without settling another request's active window. */
+export const historySeekUnsupportedDetected = createAction<[agentId: string]>(
+  'chatState/historySeekUnsupportedDetected',
+);
 
 /**
  * Drop the agent's scrollback continuation state (both cursors + fetching
@@ -1354,6 +1361,11 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
     // A snapshot from the CURRENT subscription is exactly what the
     // switch-back reveal gate waits for — reveal the transcript.
     awaitingSwitchBackSnapshot: false,
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
+    ...(meta.resumed !== true && meta.nextToken !== undefined
+      ? { scrollbackOlderToken: meta.nextToken }
+      : {}),
     // §7.1 `resumed: false` discard: the retained transcript (history
     // segment included) is dropped, so the whole scrollback walk resets
     // ATOMICALLY with the snapshot — stranded fetching flags from a wire
@@ -1370,7 +1382,7 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
           fetchingOlderHistory: false,
           fetchingGapFill: false,
           fetchingHistorySeek: false,
-          scrollbackOlderToken: null,
+          scrollbackOlderToken: meta.nextToken ?? null,
           scrollbackGapToken: null,
           scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
         }
@@ -1471,38 +1483,58 @@ chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direc
       ? { fetchingOlderHistory: true }
       : direction === 'gap'
         ? { fetchingGapFill: true }
-        : { fetchingHistorySeek: true }),
+        : {
+            fetchingHistorySeek: true,
+            fetchingOlderHistory: false,
+            fetchingGapFill: false,
+            // Every seek owns a new window; late pages from the prior
+            // window must not merge or overwrite its continuation cursors.
+            scrollbackDiscardEpoch: getAgent(state, agentId).scrollbackDiscardEpoch + 1,
+          }),
   }),
 );
-chatStateReducer.with(scrollbackOlderPageSettled, (state, { payload: [agentId, nextToken] }) =>
-  updateAgent(state, agentId, {
-    agentId,
-    fetchingOlderHistory: false,
-    scrollbackOlderToken: nextToken,
-    scrollbackGapToken: null,
-  }),
+chatStateReducer.with(
+  scrollbackOlderPageSettled,
+  (state, { payload: [agentId, nextToken, blocked] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      fetchingOlderHistory: false,
+      scrollbackOlderToken: nextToken,
+      scrollbackOlderBlocked: blocked === true,
+      scrollbackGapToken: null,
+    }),
 );
-chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, prevToken] }) =>
-  updateAgent(state, agentId, {
-    agentId,
-    fetchingGapFill: false,
-    scrollbackGapToken: prevToken,
-    scrollbackOlderToken: null,
-  }),
+chatStateReducer.with(
+  scrollbackGapPageSettled,
+  (state, { payload: [agentId, prevToken, blocked] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      fetchingGapFill: false,
+      scrollbackGapToken: prevToken,
+      scrollbackGapBlocked: blocked === true,
+      scrollbackOlderToken: null,
+    }),
 );
 chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens, unsupported] }) =>
   updateAgent(state, agentId, {
     agentId,
     fetchingHistorySeek: false,
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
     scrollbackOlderToken: tokens.nextToken,
     scrollbackGapToken: tokens.prevToken,
     ...(unsupported ? { historySeekUnsupported: true } : {}),
   }),
 );
+chatStateReducer.with(historySeekUnsupportedDetected, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { historySeekUnsupported: true }),
+);
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (
+    !agent.scrollbackOlderBlocked &&
+    !agent.scrollbackGapBlocked &&
     !agent.fetchingOlderHistory &&
     !agent.fetchingGapFill &&
     !agent.fetchingHistorySeek &&
@@ -1512,6 +1544,8 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
     return state;
   }
   return updateAgent(state, agentId, {
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
     fetchingOlderHistory: false,
     fetchingGapFill: false,
     fetchingHistorySeek: false,

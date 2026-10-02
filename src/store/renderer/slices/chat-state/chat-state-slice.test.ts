@@ -1502,7 +1502,7 @@ describe('chatState selectors', () => {
     expect(agent.historySeekUnsupported).toBe(true);
     expect(agent.transcriptSnapshot?.resumed).toBe(false);
     // The epoch bump invalidates workers still awaiting their wire call.
-    expect(agent.scrollbackDiscardEpoch).toBe(1);
+    expect(agent.scrollbackDiscardEpoch).toBe(3);
 
     state = chatStateReducer(
       state,
@@ -1512,7 +1512,7 @@ describe('chatState selectors', () => {
         resumed: false,
       }),
     );
-    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(2);
+    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(4);
   });
 
   it('a resumed:true (or plain) snapshot leaves the walk state untouched', () => {
@@ -1547,12 +1547,25 @@ describe('chatState selectors', () => {
       expect(emptyChatAgentState.historySeekUnsupported).toBe(false);
     });
 
-    it('scrollbackFetchStarted seek direction sets only fetchingHistorySeek', () => {
+    it('scrollbackFetchStarted seek direction sets fetchingHistorySeek', () => {
       const state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'seek'));
       const agent = state.byAgentId[AGENT];
       expect(agent.fetchingHistorySeek).toBe(true);
       expect(agent.fetchingOlderHistory).toBe(false);
       expect(agent.fetchingGapFill).toBe(false);
+    });
+
+    it('a new seek invalidates pending pages and owns the shared fetching flag', () => {
+      let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'older'));
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'gap'));
+      const priorEpoch = state.byAgentId[AGENT].scrollbackDiscardEpoch;
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+      expect(state.byAgentId[AGENT]).toMatchObject({
+        fetchingHistorySeek: true,
+        fetchingOlderHistory: false,
+        fetchingGapFill: false,
+        scrollbackDiscardEpoch: priorEpoch + 1,
+      });
     });
 
     it('scrollbackSeekSettled clears the flag and persists BOTH landing cursors', () => {

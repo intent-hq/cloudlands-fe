@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_PAGE_SIZE } from '$shared/constants';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -316,6 +317,7 @@
   import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
+  import { fillChatViewport } from './chat-viewport-fill';
   import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
   import {
     attachPinnedPromptMessage,
@@ -2480,12 +2482,46 @@
   // Near-top px distance that requests one older-history page.
   const SCROLLBACK_TOP_THRESHOLD_PX = 240;
 
+  function requestViewportFill() {
+    if (!isActive || !agentId || !workspace?.id || !$transcriptSnapshotMeta$) return;
+    const chat = selectChatAgentState.select(appStore.state, agentId);
+    if (
+      chat.scrollbackOlderBlocked ||
+      chat.fetchingOlderHistory ||
+      chat.fetchingGapFill ||
+      chat.fetchingHistorySeek ||
+      seekLandingPending ||
+      $historySegmentMeta$.gapToTail ||
+      $historyExhausted$
+    )
+      return;
+    if (
+      !shouldRequestOlderHistory({
+        scrollTop: 0,
+        threshold: 0,
+        canScroll: false,
+        fetching: false,
+        exhausted: $historyExhausted$,
+        historyCount: $agentHistoryMessages$.length,
+        tailCount: $agentMessages$.length,
+        tailTruncated: $transcriptSnapshotMeta$.truncated || $agentTailCapPruned$,
+        totalMessages: $transcriptSnapshotMeta$.totalMessages,
+      })
+    )
+      return;
+    appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
+  }
+
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
     if (!isActive || !container || !workspace?.id || !agentId) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
-    if ($fetchingHistorySeek$ || seekLandingPending) return;
+    if ($fetchingHistorySeek$ || $fetchingGapFill$ || seekLandingPending) return;
+    if (selectChatAgentState.select(appStore.state, agentId).scrollbackOlderBlocked) return;
+    // Automatic fill owns short content; programmatic bottom positioning must
+    // not turn into near-top prefetch while hydration is still settling.
+    if (shouldFollowBottom) return;
     const request = shouldRequestOlderHistory({
       scrollTop: container.scrollTop,
       threshold: SCROLLBACK_TOP_THRESHOLD_PX,
@@ -2518,7 +2554,7 @@
   // Set from debounce fire until the landing is applied: suppresses the
   // serial trigger, the prepend anchor restore, and the frozen-phase
   // absorption (the landing handler owns spacers + scroll position).
-  let seekLandingPending = false;
+  let seekLandingPending = $state(false);
   let pendingSeekTargetOrdinal: number | null = null;
 
   // Estimated unloaded-row split for the current segment (above vs below).
@@ -3265,9 +3301,17 @@
     });
   });
 
-  function requestHistoryGapFill() {
+  function requestHistoryGapFill(trigger: 'automatic' | 'explicit' = 'automatic') {
     if (!isActive || !workspace?.id || !agentId) return;
-    if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
+    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.gapToTail) return;
+    // A failed or stalled page stops automatic continuation, but the visible
+    // load button must still allow a deliberate retry. Keep the latch until
+    // that request settles so observers cannot restart the stopped chain.
+    if (
+      trigger === 'automatic' &&
+      selectChatAgentState.select(appStore.state, agentId).scrollbackGapBlocked
+    )
+      return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
     // segment must not go to the wire. The saga carries the same guard;
@@ -4606,7 +4650,9 @@
       handledOpenMessageRequestIds.add(detail.requestId);
       const match = detail.query
         ? findChatSearchMatches(
-            $agentMessages$.filter((message) => message.id === detail.messageId),
+            [...$agentHistoryMessages$, ...$agentMessages$].filter(
+              (message) => message.id === detail.messageId,
+            ),
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
@@ -4752,7 +4798,7 @@
     const getContainer = beginScrollNavigation();
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
-    const epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+    let epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
     let cancelled = false;
     let ownsSeek = false;
     let tokens = { nextToken: null as string | null, prevToken: null as string | null };
@@ -4802,6 +4848,7 @@
         ownsSeek = true;
         seekLandingPending = true;
         appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
+        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
         const historyIndex = $agentHistoryMessages$.findIndex(
           (message) => message.id === currentMessageId,
         );
@@ -4822,7 +4869,7 @@
           (token, anchor) =>
             appClient.agents.getConversation(
               originAgentId,
-              200,
+              CHAT_PAGE_SIZE,
               token,
               anchor,
               undefined,
@@ -5791,8 +5838,8 @@
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
-    // both). Seek the page containing it (§5.5 aroundMessageId) and replace
-    // the session, same as the deep-open helper; on failure (message deleted
+    // both). Seek the page containing it (§5.5 aroundMessageId) into the
+    // history segment, same as the deep-open helper; on failure (message deleted
     // / seek rejected) the helper logs and we bail, leaving the conversation
     // where it is. Resident rows scroll directly, keeping the tail intact.
     if (agentId && !messageIdToTurnKey.has(messageId)) {
@@ -6068,6 +6115,20 @@
     <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
+      use:fillChatViewport={{
+        enabled:
+          isActive &&
+          !!$transcriptSnapshotMeta$ &&
+          !isFirstHydrationLoading &&
+          !$awaitingSwitchBackSnapshot$ &&
+          !$fetchingOlderHistory$ &&
+          !$fetchingGapFill$ &&
+          !$fetchingHistorySeek$ &&
+          !seekLandingPending,
+        revision: `${agentId}:${$transcriptSnapshotMeta$?.seq}:${$agentHistoryMessages$.length}:${$agentMessages$.length}`,
+        hydrate: (id) => messageHydrationPolicy.setForced(id, true),
+        requestOlder: requestViewportFill,
+      }}
       use:trackPinnedPrompt={{
         enabled: isActive && containerHeight >= 400,
         onChange: setPinnedPrompt,
@@ -6601,7 +6662,7 @@
                         size="sm"
                         class="text-xs text-muted-foreground"
                         data-testid="chat-history-gap-load-button"
-                        onclick={requestHistoryGapFill}
+                        onclick={() => requestHistoryGapFill('explicit')}
                       >
                         {m.chat_chatPanel_historyGapLoad_label()}
                       </Button>

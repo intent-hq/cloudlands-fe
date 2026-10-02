@@ -187,6 +187,10 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
   selectWorkspaceTasksInitialized: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectChatAgentState: mocks.selector({
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
+  }),
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
   }),
@@ -3316,6 +3320,49 @@ describe('ChatPanel mounted lifecycle', () => {
     );
     await vi.advanceTimersByTimeAsync(1600);
     expect(target.classList.contains('highlight-flash')).toBe(false);
+  });
+
+  it('a history deep link reveals the collapsed block containing its query', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('tail', 'Latest reply')]);
+    mocks.agentHistoryMessages.set([
+      {
+        ...searchableAssistant('history-target', ''),
+        contentBlocks: [
+          { type: 'text', text: '<group:Completed>Summary' },
+          { type: 'text', text: 'history needle</group>' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="history-target"]')!;
+    const disclosure = document.createElement('div');
+    disclosure.dataset.chatSearchDisclosureId = 'group:b:0';
+    disclosure.dataset.chatSearchExpanded = 'false';
+    const expand = vi.fn();
+    disclosure.addEventListener('chatsearchexpand', expand);
+    target.append(disclosure);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'history-target',
+          query: 'history needle',
+          requestId: 'history-search',
+        },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 90; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(expand).toHaveBeenCalledTimes(1);
   });
 
   it('supersedes a pending same-agent deep link with the newer target', async () => {
