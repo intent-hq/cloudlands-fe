@@ -60,6 +60,22 @@ export class DocumentSession {
     this.pointerAnchor = pos ? this.projection?.sourceAt(pos.pos) : undefined;
   };
   private pointerUp = () => {
+    const editor = this.editor;
+    if (
+      this.pointerRemapped &&
+      this.projection?.table &&
+      editor?.state.selection instanceof CellSelection
+    ) {
+      // Native Chrome dragging defers selection normalization. After a crop,
+      // its range still references the replaced DOM; reconcile that range before
+      // the table plugin releases its selectingCells state on mouseup.
+      const anchor = editor.view.domAtPos(editor.state.selection.anchor);
+      const head = editor.view.domAtPos(editor.state.selection.head);
+      editor.view.dom.ownerDocument
+        .getSelection()
+        ?.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
+      editor.view.focus();
+    }
     this.pointerSelecting = false;
     this.continueNearEdge();
   };
