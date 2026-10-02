@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
-import { DOMSerializer, type Node as PMNode } from '@tiptap/pm/model';
+import { DOMSerializer, Mark, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection, type Transaction } from '@tiptap/pm/state';
 import { CellSelection } from '@tiptap/pm/tables';
 import { ReplaceStep, type Step } from '@tiptap/pm/transform';
@@ -372,8 +372,21 @@ export class TableProjection {
       const textOnly = step.slice.content.content.every((n) => n.isText);
       if (entry && textOnly && !step.slice.openStart && !step.slice.openEnd) {
         const literal = step.slice.content.textBetween(0, step.slice.content.size, '');
-        const from = sourceAt(step.from),
-          to = sourceAt(step.to, -1);
+        // A native caret has one position on both sides of Markdown delimiters.
+        // Match the inserted native marks to the right-hand text when possible;
+        // otherwise insert at the left-hand source endpoint. An empty replacement
+        // must not turn that delimiter gap into a reversed deletion range.
+        const affinity =
+          step.from === step.to &&
+          step.slice.content.firstChild &&
+          !Mark.sameSet(
+            step.slice.content.firstChild.marks,
+            before.resolve(step.from).nodeAfter?.marks ?? [],
+          )
+            ? -1
+            : 1;
+        const from = sourceAt(step.from, affinity),
+          to = step.from === step.to ? from : sourceAt(step.to, -1);
         const code = entry.cell.runs.find(
           (r) => r.code && from >= r.code.from && to <= r.code.to,
         )?.code;
@@ -389,7 +402,7 @@ export class TableProjection {
           .replace(/\[/g, '&#91;')
           .replace(/\]/g, '&#93;')
           .replace(/[\\`*_~|]/g, '\\$&');
-        return [{ from: sourceAt(step.from), to: sourceAt(step.to, -1), insert }];
+        return [{ from, to, insert }];
       }
     }
     throw new Error(`Table transaction requires structural admission: ${step.toJSON().stepType}`);

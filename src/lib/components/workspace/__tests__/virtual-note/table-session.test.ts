@@ -379,3 +379,37 @@ it('inserts native unmarked text outside a bold boundary without reversing sourc
     session.destroy();
   }
 });
+
+for (const [edge, marked] of [
+  ['start', true],
+  ['end', true],
+  ['end', false],
+] as const)
+  it(`preserves native ${marked ? 'bold' : 'plain'} insertion at the ${edge} of table emphasis`, async () => {
+    const source = '| H |\n| --- |\n| plain **bold** tail |';
+    const service = new SourceJournal(() => source, 1);
+    const session = new DocumentSession(service, document.createElement('div'));
+    try {
+      const at = source.indexOf('bold') + (edge === 'end' ? 4 : 0);
+      await session.seek(at);
+      session.editor!.commands.setTextSelection(session.projection!.pmAt(at));
+      session.editor!.view.dispatch(
+        session.editor!.state.tr.setStoredMarks(
+          marked ? [session.editor!.schema.marks.bold.create()] : [],
+        ),
+      );
+      session.editor!.view.dispatch(session.editor!.state.tr.insertText('Z'));
+      expect(session.error).toBe('');
+      const expected = marked
+        ? source.slice(0, at) + 'Z' + source.slice(at)
+        : source.slice(0, at + 2) + 'Z' + source.slice(at + 2);
+      expect(service.region(0)).toBe(expected);
+      const dom = document.createElement('div');
+      dom.innerHTML = await processMarkdownToHTML(expected);
+      expect(DOMParser.fromSchema(session.editor!.schema).parse(dom).firstChild!.toJSON()).toEqual(
+        session.editor!.state.doc.firstChild!.toJSON(),
+      );
+    } finally {
+      session.destroy();
+    }
+  });
