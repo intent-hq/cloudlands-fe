@@ -270,7 +270,10 @@ describe('agentQueueReducer', () => {
       [{ status: 'failed', error: 'already drained' }],
       [{ status: 'cancelled' }],
     ] as const)('settles a pending request once as %o', (result) => {
-      const pending = agentQueueReducer(initialState, queuedMessageMutationRequested(request('r1')));
+      const pending = agentQueueReducer(
+        initialState,
+        queuedMessageMutationRequested(request('r1')),
+      );
       const settled = agentQueueReducer(pending, queuedMessageMutationFinished('r1', result));
       expect(getItem(settled.mutations, 'r1')).toMatchObject({ ...result });
       expect(
@@ -305,15 +308,16 @@ describe('agentQueueReducer', () => {
       );
       const released = agentQueueReducer(state, queuedMessageMutationsReleased('panel-a'));
       expect(released.mutations.ids).toEqual(['b1', 'c1']);
-      expect(agentQueueReducer(released, queuedMessageMutationsReleased('panel-a'))).toBe(
-        released,
-      );
+      expect(agentQueueReducer(released, queuedMessageMutationsReleased('panel-a'))).toBe(released);
       const unmounted = agentQueueReducer(released, workspaceUnmounted('ws-1'));
       expect(unmounted.mutations.ids).toEqual(['c1']);
     });
 
     it('selects every consumer request for one agent and workspace with a stable reference', () => {
-      let queueState = agentQueueReducer(initialState, queuedMessageMutationRequested(request('a1')));
+      let queueState = agentQueueReducer(
+        initialState,
+        queuedMessageMutationRequested(request('a1')),
+      );
       queueState = agentQueueReducer(
         queueState,
         queuedMessageMutationRequested(request('b1', { consumerId: 'panel-b' })),
@@ -326,9 +330,9 @@ describe('agentQueueReducer', () => {
       const selected = selectQueuedMessageMutations.select(state, AGENT_ID, 'ws-1');
       expect(selected.map((entry) => entry.requestId)).toEqual(['a1', 'b1']);
       expect(selectQueuedMessageMutations.select(state, AGENT_ID, 'ws-1')).toBe(selected);
-      expect(selectQueuedMessageMutations.select(storeWith(initialState), AGENT_ID, 'ws-1')).toEqual(
-        [],
-      );
+      expect(
+        selectQueuedMessageMutations.select(storeWith(initialState), AGENT_ID, 'ws-1'),
+      ).toEqual([]);
     });
   });
 

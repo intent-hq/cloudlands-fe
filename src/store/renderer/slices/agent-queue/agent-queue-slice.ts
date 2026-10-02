@@ -63,9 +63,9 @@ export const queuedMessageMutationFinished = createAction<
   [requestId: string, result: QueuedMessageMutationResult]
 >('agentQueue/mutationFinished');
 
-export const queuedMessageMutationConsumed = createAction<
-  [consumerId: string, requestId: string]
->('agentQueue/mutationConsumed');
+export const queuedMessageMutationConsumed = createAction<[consumerId: string, requestId: string]>(
+  'agentQueue/mutationConsumed',
+);
 
 /** Drop every outcome owned by a consumer that unmounted. */
 export const queuedMessageMutationsReleased = createAction<[consumerId: string]>(
