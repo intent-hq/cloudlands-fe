@@ -32,6 +32,12 @@ for (const [name, prefix, suffix] of [
   ['crlf-prefix-only', 'untouched **prefix**\r\n\r\n', ''],
   ['crlf-suffix-only', '', '\r\n\r\nuntouched _suffix_'],
   ['asymmetric-neighbors', 'untouched **prefix**\n\n', '\n\n\n\nuntouched _suffix_'],
+  ['suffix-three-lf', '', '\n\n\nuntouched _suffix_'],
+  ['suffix-four-lf', '', '\n\n\n\nuntouched _suffix_'],
+  ['suffix-three-crlf', '', '\r\n\r\n\r\nuntouched _suffix_'],
+  ['prefix-three-lf', 'untouched **prefix**\n\n\n', ''],
+  ['prefix-three-crlf', 'untouched **prefix**\r\n\r\n\r\n', ''],
+  ['mixed-extra-neighbors', 'untouched **prefix**\r\n\r\n\r\n', '\n\n\nuntouched _suffix_'],
 ])
   it(`preserves native deletion live and fresh phases with ${name}`, async () => {
     const source = prefix + table + suffix,
