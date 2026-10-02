@@ -213,14 +213,14 @@ export interface ChatAgentState {
    * instead of promoting.
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
-  /** Latest queue snapshot and one processed turn bridge events arriving before enqueue acknowledgement. */
-  queueSnapshot?: Record<string, QueuedMessage>;
-  queueSnapshotVersion?: number;
+  /** Local identity changes for each distinct attempted send, even with identical payloads. */
+  attemptGeneration?: number;
+  /** Payload from the exact consumed entry, never inferred from queue receive order. */
   processedQueuedTurn?: {
     turnId: string;
-    message?: QueuedMessage;
-    snapshotVersion?: number;
-    retryRecord?: LastAttemptedMessage;
+    messages?: QueuedMessage[];
+    attemptGeneration: number;
+    record?: LastAttemptedMessage;
   };
   modelUnavailable: ModelUnavailableInfo | null;
   /**

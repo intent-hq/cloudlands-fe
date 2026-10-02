@@ -1,4 +1,7 @@
-import { buildQueuedRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  buildQueuedRecordedAttempt,
+  buildProcessedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
@@ -102,7 +105,15 @@ function updateAgent(
   partial: Partial<ChatAgentState>,
 ): ChatStateSlice {
   const current = getAgent(state, agentId);
-  return setAgent(state, agentId, { ...current, ...partial });
+  return setAgent(state, agentId, {
+    ...current,
+    ...partial,
+    ...('lastAttemptedMessage' in partial &&
+    partial.lastAttemptedMessage !== current.lastAttemptedMessage &&
+    partial.attemptGeneration === undefined
+      ? { attemptGeneration: (current.attemptGeneration ?? 0) + 1 }
+      : {}),
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -111,9 +122,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Structural equality over serializable retry payloads (plain objects, arrays,
- * primitives — the only shapes Redux state may hold). Used by the parked-park
- * reducer to recognize the caller's own mid-turn `lastAttemptedMessage`
- * overwrite (#1011) without clobbering a concurrently recorded attempt.
+ * primitives — the only shapes Redux state may hold). Used to avoid replacing
+ * unchanged parked payloads, never to identify an attempted send.
  */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -285,8 +295,7 @@ function reduceAgentIdleReconcile(
  *
  * Promotion is NOT inferred from snapshots (monorepo#1057): the exact
  * drain-start signal is `agent:queue:processing` (or the
- * `agent.sendQueuedMessageNow` RPC response, which carries the turnId
- * instead of the event, §5.5) — see reduceQueueProcessing. A record whose
+ * `agent.sendQueuedMessageNow` RPC response as a legacy fallback, §5.5) — see reduceQueueProcessing. A record whose
  * entry vanishes from the snapshot stays PARKED: promoting on the vanishing
  * id would misfire on a requeue (entry re-appears under a new id), and a
  * whole-queue discard (`agent.editAndRegenerate`) drops records at the flow
@@ -318,31 +327,7 @@ function reduceQueueContentSync(
       next[id] = parked;
     }
   }
-  const queueSnapshotVersion = (agent.queueSnapshotVersion ?? 0) + 1;
-  const processed = agent.processedQueuedTurn;
-  const processedMessage = processed && presentByTurnId.get(processed.turnId);
-  const processedRecord =
-    processedMessage && processed.retryRecord
-      ? buildQueuedRecordedAttempt(processedMessage, processed.retryRecord)
-      : undefined;
-  return updateAgent(state, agentId, {
-    queueSnapshotVersion,
-    ...(processed && processedMessage
-      ? {
-          processedQueuedTurn: {
-            ...processed,
-            message: processedMessage,
-            snapshotVersion: queueSnapshotVersion,
-            ...(processedRecord ? { retryRecord: processedRecord } : {}),
-          },
-          ...(processedRecord && deepEqual(agent.lastAttemptedMessage, processed.retryRecord)
-            ? { lastAttemptedMessage: processedRecord }
-            : {}),
-        }
-      : {}),
-    queueSnapshot: Object.fromEntries(presentByTurnId),
-    ...(payloadSynced ? { queuedRetryRecords: next } : {}),
-  });
+  return payloadSynced ? updateAgent(state, agentId, { queuedRetryRecords: next }) : state;
 }
 
 /**
@@ -362,46 +347,54 @@ function findParkedRecordKey(agent: ChatAgentState, turnId: string | undefined):
 }
 
 /**
- * Exact drain-start promotion (monorepo#1057): `agent:queue:processing` (or
- * the `agent.sendQueuedMessageNow` delivered response, which carries the
- * `turnId` instead of the event, §5.5) says the daemon dequeued THIS entry to
- * run it — promote its parked record into `lastAttemptedMessage` (including
- * the stale-banner clear: the promoted record's turn is now the active turn,
- * so a previous turn's failure banner must not persist over it). A no-op
- * when nothing matches: the entry was never parked by this client, or the
- * record was already promoted (it left `queuedRetryRecords`, so a duplicate
- * event cannot double-promote).
+ * Promote retry records using the exact consumed entries and provider turn from
+ * processing. Keep this authority for an enqueue acknowledgement that arrives
+ * later. A repeated admission after recovery refreshes the same operation;
+ * legacy events/Send-now responses can promote a parked record but cannot erase
+ * a richer event's payload. Distinct local attempts have their own generation.
  */
 function reduceQueueProcessing(
   state: ChatStateSlice,
   agentId: string,
   turnId: string | undefined,
+  messages?: QueuedMessage[],
 ): ChatStateSlice {
   if (turnId === undefined) return state;
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
-  const previous =
-    agent.processedQueuedTurn?.turnId === turnId ? agent.processedQueuedTurn : undefined;
-  const processedQueuedTurn = {
-    turnId,
-    snapshotVersion: agent.queueSnapshot?.[turnId]
-      ? agent.queueSnapshotVersion
-      : previous?.snapshotVersion,
-    retryRecord: previous?.retryRecord,
-    message:
-      agent.queueSnapshot?.[turnId] ??
-      (agent.processedQueuedTurn?.turnId === turnId
-        ? agent.processedQueuedTurn.message
-        : undefined),
-  };
-  const key = findParkedRecordKey(agent, turnId);
-  if (key === null) return updateAgent(state, agentId, { processedQueuedTurn });
-  const parked = agent.queuedRetryRecords[key];
+  const consumedTurns = new Set(messages?.map((entry) => entry.turnId) ?? [turnId]);
+  const keys = Object.keys(agent.queuedRetryRecords).filter((key) =>
+    consumedTurns.has(agent.queuedRetryRecords[key].turnId),
+  );
+  const previous = agent.processedQueuedTurn;
+  // A recovered entry may start processing again with a richer payload under the
+  // same turn. Refresh that operation only, never a subsequent local attempt.
+  // Send-now's legacy response must not erase authoritative event data.
+  if (previous?.turnId === turnId && !keys.length) {
+    if (!messages) return state;
+    const record = previous.record
+      ? buildProcessedRecordedAttempt(messages, previous.record)
+      : undefined;
+    return updateAgent(state, agentId, {
+      processedQueuedTurn: { ...previous, messages, record },
+      ...(record && previous.attemptGeneration === (agent.attemptGeneration ?? 0)
+        ? { lastAttemptedMessage: record, attemptGeneration: previous.attemptGeneration }
+        : {}),
+    });
+  }
+  const attemptGeneration = (agent.attemptGeneration ?? 0) + (keys.length ? 1 : 0);
+  const processedQueuedTurn = { turnId, messages, attemptGeneration };
+  if (!keys.length) return updateAgent(state, agentId, { processedQueuedTurn });
+  const parked = agent.queuedRetryRecords[keys[0]];
   const remaining = { ...agent.queuedRetryRecords };
-  delete remaining[key];
+  for (const key of keys) delete remaining[key];
+  const processedRecord = messages
+    ? buildProcessedRecordedAttempt(messages, parked.record)
+    : parked.record;
   return updateAgent(state, agentId, {
-    processedQueuedTurn: { ...processedQueuedTurn, retryRecord: parked.record },
-    lastAttemptedMessage: parked.record,
+    processedQueuedTurn: { ...processedQueuedTurn, record: processedRecord },
+    attemptGeneration,
+    lastAttemptedMessage: processedRecord,
     queuedRetryRecords: remaining,
     error: null,
     modelUnavailable: null,
@@ -598,7 +591,6 @@ export const chatQueuedRetryRecordSet = createAction<
     record: LastAttemptedMessage,
     turnId: string,
     onlyIfProcessed?: boolean,
-    snapshotVersionAtSend?: number,
   ]
 >('chatState/queuedRetryRecordSet');
 
@@ -612,8 +604,8 @@ export const chatQueuedRetryRecordSet = createAction<
  * the record under the queued entry's id (drain-start promotion then
  * re-activates it for the turn that actually runs it, see
  * reduceQueueProcessing) and undoes the mid-turn overwrite:
- * `lastAttemptedMessage` is cleared only when it still structurally equals
- * the parked payload, so a concurrently recorded attempt is never clobbered.
+ * `lastAttemptedMessage` is cleared only for the same explicit attempt generation
+ * (or the same object for legacy callers), never a distinct identical submission.
  * Dispatched by the agent-stream-lifecycle queued branch. `turnId`
  * (monorepo#1057) — see `chatQueuedRetryRecordSet`; here it comes from the
  * auto-queued `agent.sendMessage` response's top-level `turnId` (or the
@@ -629,7 +621,7 @@ export const chatQueuedRetryRecordParked = createAction<
     turnId: string,
     canonicalRecord?: LastAttemptedMessage | null,
     onlyIfProcessed?: boolean,
-    snapshotVersionAtSend?: number,
+    attemptGenerationAtSend?: number,
   ]
 >('chatState/queuedRetryRecordParked');
 
@@ -697,9 +689,9 @@ export const chatSendFailed = createAction<
  * the events bridge (and chat-send-service's "Send now" success branch,
  * whose RPC response carries the turnId instead of the event, §5.5).
  */
-export const chatQueueProcessingReceived = createAction<[agentId: string, turnId?: string]>(
-  'chatState/queueProcessingReceived',
-);
+export const chatQueueProcessingReceived = createAction<
+  [agentId: string, turnId?: string, messages?: QueuedMessage[]]
+>('chatState/queueProcessingReceived');
 
 /** Agent was interrupted — clear streaming without error */
 export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
@@ -1061,44 +1053,55 @@ chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp }
 chatStateReducer.with(
   chatLastAttemptedMessageSet,
   (state, { payload: [agentId, lastAttemptedMessage] }) =>
-    updateAgent(state, agentId, { lastAttemptedMessage }),
+    updateAgent(state, agentId, {
+      lastAttemptedMessage,
+      attemptGeneration: (getAgent(state, agentId).attemptGeneration ?? 0) + 1,
+    }),
 );
 chatStateReducer.with(chatQueuedSendStarted, (state, { payload: [agentId] }) =>
   state.byAgentId[agentId] ? state : updateAgent(state, agentId, { agentId }),
 );
 
 /** Resolve an enqueue acknowledgement only against its exact processed turn. */
+function isProcessedEntry(agent: ChatAgentState, messageId: string, turnId: string) {
+  const processed = agent.processedQueuedTurn;
+  return processed?.messages
+    ? processed.messages.some((message) => message.id === messageId && message.turnId === turnId)
+    : processed?.turnId === turnId;
+}
+
 function acknowledgedProcessedAttempt(
   agent: ChatAgentState,
+  messageId: string,
   turnId: string,
   record: LastAttemptedMessage,
-  snapshotVersionAtSend?: number,
 ) {
   const processed = agent.processedQueuedTurn;
-  if (processed?.turnId !== turnId) return undefined;
-  // A snapshot already present before this send cannot supersede its canonical
-  // acknowledgement. Snapshots observed during the send can contain later appends.
-  const hasNewerSnapshot =
-    snapshotVersionAtSend === undefined || (processed.snapshotVersion ?? 0) > snapshotVersionAtSend;
-  return processed.message && hasNewerSnapshot
-    ? buildQueuedRecordedAttempt(processed.message, record)
+  if (
+    !processed ||
+    !isProcessedEntry(agent, messageId, turnId) ||
+    processed.attemptGeneration !== (agent.attemptGeneration ?? 0)
+  )
+    return undefined;
+  // Only entries captured at admission outrank a canonical ACK. Legacy snapshots
+  // have no mutation revision and cannot establish a newer payload.
+  return processed.messages
+    ? (processed.record ?? buildProcessedRecordedAttempt(processed.messages, record))
     : record;
 }
 
 chatStateReducer.with(
   chatQueuedRetryRecordSet,
-  (
-    state,
-    { payload: [agentId, messageId, record, turnId, onlyIfProcessed, snapshotVersionAtSend] },
-  ) => {
+  (state, { payload: [agentId, messageId, record, turnId, onlyIfProcessed] }) => {
     const agent = getAgent(state, agentId);
-    const processed = acknowledgedProcessedAttempt(agent, turnId, record, snapshotVersionAtSend);
+    const processed = acknowledgedProcessedAttempt(agent, messageId, turnId, record);
     if (processed && agent.processedQueuedTurn)
       return updateAgent(state, agentId, {
         lastAttemptedMessage: processed,
-        processedQueuedTurn: { ...agent.processedQueuedTurn, retryRecord: processed },
+        attemptGeneration: agent.processedQueuedTurn.attemptGeneration,
+        processedQueuedTurn: { ...agent.processedQueuedTurn, record: processed },
       });
-    if (onlyIfProcessed) return state;
+    if (onlyIfProcessed || isProcessedEntry(agent, messageId, turnId)) return state;
     return updateAgent(state, agentId, {
       agentId,
       queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
@@ -1117,22 +1120,24 @@ chatStateReducer.with(
         turnId,
         canonicalRecord,
         onlyIfProcessed,
-        snapshotVersionAtSend,
+        attemptGenerationAtSend,
       ],
     },
   ) => {
     const agent = getAgent(state, agentId);
     const processed = acknowledgedProcessedAttempt(
       agent,
+      messageId,
       turnId,
       canonicalRecord ?? record,
-      snapshotVersionAtSend,
     );
     if (processed && agent.processedQueuedTurn)
       return updateAgent(state, agentId, {
         lastAttemptedMessage: processed,
-        processedQueuedTurn: { ...agent.processedQueuedTurn, retryRecord: processed },
+        attemptGeneration: agent.processedQueuedTurn.attemptGeneration,
+        processedQueuedTurn: { ...agent.processedQueuedTurn, record: processed },
       });
+    if (isProcessedEntry(agent, messageId, turnId)) return state;
     return updateAgent(state, agentId, {
       agentId,
       queuedRetryRecords:
@@ -1140,7 +1145,11 @@ chatStateReducer.with(
           ? agent.queuedRetryRecords
           : parkRetryRecord(agent, messageId, canonicalRecord ?? record, turnId),
       // Clear only the exact optimistic attempt belonging to this auto-queued send.
-      lastAttemptedMessage: deepEqual(agent.lastAttemptedMessage, record)
+      lastAttemptedMessage: (
+        attemptGenerationAtSend === undefined
+          ? agent.lastAttemptedMessage === record
+          : (agent.attemptGeneration ?? 0) === attemptGenerationAtSend
+      )
         ? null
         : agent.lastAttemptedMessage,
     });
@@ -1173,8 +1182,10 @@ chatStateReducer.with(
   (state, { payload: [agentId, messageId] }) =>
     reduceQueuedRecordRemoved(state, agentId, messageId),
 );
-chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
-  reduceQueueProcessing(state, agentId, turnId),
+chatStateReducer.with(
+  chatQueueProcessingReceived,
+  (state, { payload: [agentId, turnId, messages] }) =>
+    reduceQueueProcessing(state, agentId, turnId, messages),
 );
 chatStateReducer.with(
   chatSendFailed,

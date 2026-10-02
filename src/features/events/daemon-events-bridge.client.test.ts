@@ -239,6 +239,8 @@ import { selectContextItems } from '$store/renderer/slices/context/context-selec
 import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
+  chatQueuedRetryRecordParked,
+  chatLastAttemptedMessageSet,
   chatReset,
   chatSendFailed,
   chatSendStarted,
@@ -3937,6 +3939,196 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
       }),
     ]);
   });
+
+  it.each(['set', 'parked'] as const)(
+    'keeps every admitted batch row through stale snapshots and %s acknowledgements',
+    async (ack) => {
+      appStore.dispatch(chatReset(AGENT));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      const first = {
+        id: 'a',
+        turnId: 'turn-a',
+        content: 'first',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        messageMetadata: { fromPrincipalId: 'alice', answeredQuestionsMessageId: 'one' },
+      };
+      const a = {
+        ...first,
+        content: 'first\n\nsecond',
+        fileBlocks: [{ type: 'file', attachmentId: 'file-a', fileName: 'a.txt' }],
+        imageBlocks: [{ type: 'image', attachmentId: 'image-a' }],
+      };
+      const b = {
+        ...first,
+        id: 'b',
+        turnId: 'turn-b',
+        content: 'Bob input',
+        position: 1,
+        fileBlocks: [{ type: 'file', attachmentId: 'file-b', fileName: 'b.txt' }],
+        messageMetadata: { fromPrincipalId: 'bob', answeredQuestionsMessageId: 'two' },
+      };
+      appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'a', { text: 'first' }, 'turn-a'));
+      appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'b', { text: 'Bob input' }, 'turn-b'));
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [first] }));
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: 'a',
+          turnId: 'provider-turn',
+          content: a.content,
+          queuedMessages: [a, b],
+        }),
+      );
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [first] }));
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+      const expected = {
+        text: 'first\n\nsecond\n\nBob input',
+        options: {
+          imageBlocks: a.imageBlocks,
+          fileBlocks: [...a.fileBlocks, ...b.fileBlocks],
+          messageMetadata: { mergedMessageMetadata: [a.messageMetadata, b.messageMetadata] },
+        },
+      };
+      const acknowledge = () =>
+        appStore.dispatch(
+          ack === 'set'
+            ? chatQueuedRetryRecordSet(AGENT, 'b', { text: 'Bob input' }, 'turn-b', true)
+            : chatQueuedRetryRecordParked(
+                AGENT,
+                'b',
+                { text: 'Bob input' },
+                'turn-b',
+                { text: 'Bob input' },
+                true,
+              ),
+        );
+      acknowledge();
+      appStore.dispatch(chatSendFailed(AGENT, 'failed', 'provider-turn'));
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual(expected);
+      expect(appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      expect(appStore.state.chatState.byAgentId[AGENT].processedQueuedTurn?.messages).toEqual([
+        a,
+        b,
+      ]);
+      // A separate send with identical payload is still a different attempt.
+      const next = structuredClone(expected);
+      appStore.dispatch(chatLastAttemptedMessageSet(AGENT, next));
+      const generation = appStore.state.chatState.byAgentId[AGENT].attemptGeneration;
+      acknowledge();
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: 'a',
+          turnId: 'provider-turn',
+          content: a.content,
+          queuedMessages: [a, b],
+        }),
+      );
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toBe(next);
+      expect(appStore.state.chatState.byAgentId[AGENT].attemptGeneration).toBe(generation);
+    },
+  );
+
+  it.each([false, true])(
+    'refreshes the same recovered turn without overwriting a later identical attempt (%s)',
+    async (newAttempt) => {
+      appStore.dispatch(chatReset(AGENT));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      const first = {
+        id: 'old-id',
+        turnId: 'same-turn',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+        fileBlocks: [{ type: 'file', attachmentId: 'one', fileName: 'one.txt' }],
+        messageMetadata: { answeredQuestionsMessageId: 'one' },
+      };
+      const recovered = {
+        ...first,
+        id: 'recovered-id',
+        content: 'first\n\nsecond',
+        fileBlocks: [
+          ...first.fileBlocks,
+          { type: 'file', attachmentId: 'two', fileName: 'two.txt' },
+        ],
+        messageMetadata: {
+          mergedMessageMetadata: [first.messageMetadata, { answeredQuestionsMessageId: 'two' }],
+        },
+      };
+      appStore.dispatch(
+        chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.turnId),
+      );
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: first.id,
+          turnId: first.turnId,
+          content: first.content,
+          queuedMessages: [first],
+        }),
+      );
+      const previousAttempt = structuredClone(
+        appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage!,
+      );
+      if (newAttempt) appStore.dispatch(chatLastAttemptedMessageSet(AGENT, previousAttempt));
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [recovered] }));
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: recovered.id,
+          turnId: recovered.turnId,
+          content: recovered.content,
+          queuedMessages: [recovered],
+        }),
+      );
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: recovered.id,
+          turnId: recovered.turnId,
+          content: recovered.content,
+        }),
+      );
+      appStore.dispatch(chatSendFailed(AGENT, 'failed again', recovered.turnId));
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual(
+        newAttempt
+          ? previousAttempt
+          : {
+              text: recovered.content,
+              options: {
+                fileBlocks: recovered.fileBlocks,
+                messageMetadata: recovered.messageMetadata,
+              },
+            },
+      );
+      if (newAttempt)
+        expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toBe(
+          previousAttempt,
+        );
+    },
+  );
+
+  it.each([{ queuedMessages: [] }, { queuedMessages: [{ id: 'wrong' }] }])(
+    'rejects malformed processing authority %j without promoting retry data',
+    async ({ queuedMessages }) => {
+      appStore.dispatch(chatReset(AGENT));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      wrapDispatch();
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: 'q',
+          turnId: 'turn',
+          queuedMessages,
+        }),
+      );
+      expect(queueProcessingCalls()).toHaveLength(0);
+    },
+  );
 
   it('dispatches with turnId undefined when the payload omits it (legacy pre-#1022 entry)', async () => {
     await primeBridge();

@@ -369,8 +369,8 @@ export async function sendMessage(
                   // yield to it.
                   dispatchRedux(chatQueuedSendStarted(agentId));
                   const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
-                  const snapshotVersionAtSend =
-                    appStore.state.chatState?.byAgentId[agentId]?.queueSnapshotVersion ?? 0;
+                  const attemptGenerationAtSend =
+                    appStore.state.chatState?.byAgentId[agentId]?.attemptGeneration ?? 0;
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
                   // persistence); legacy-only fields (messages, resetHistory,
@@ -512,7 +512,7 @@ export async function sendMessage(
                               turnId,
                               buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
                               !retryMessage,
-                              snapshotVersionAtSend,
+                              attemptGenerationAtSend,
                             ),
                           );
                         } else if (isCurrent()) {

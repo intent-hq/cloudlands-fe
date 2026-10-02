@@ -415,10 +415,10 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].queuedRetryRecords['qm-1'].record.text).toBe('after');
     });
 
-    it('retains a snapshot before the first enqueue acknowledgement without promoting it)', () => {
+    it('does not infer processed authority from a pre-acknowledgement queue snapshot', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
-      expect(s2.byAgentId[AGENT].queueSnapshot).toEqual({ 'qm-1': queuedEntry('qm-1') });
+      expect(s2.byAgentId[AGENT].processedQueuedTurn).toBeUndefined();
       expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBe(
         s1.byAgentId[AGENT].lastAttemptedMessage,
       );
@@ -452,6 +452,9 @@ describe('chatStateReducer', () => {
           'qm-1',
           { ...attempt, options: { noteIds: ['n-1'] } },
           'qm-1',
+          undefined,
+          false,
+          s.byAgentId[AGENT].attemptGeneration,
         ),
       );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
@@ -673,7 +676,18 @@ describe('chatStateReducer', () => {
 
     it('chatQueuedRetryRecordParked stores the turnId and clears the matching slot (#1011)', () => {
       let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'B' }));
-      s = chatStateReducer(s, chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
+      s = chatStateReducer(
+        s,
+        chatQueuedRetryRecordParked(
+          AGENT,
+          'qm-1',
+          { text: 'B' },
+          'turn-1',
+          undefined,
+          false,
+          s.byAgentId[AGENT].attemptGeneration,
+        ),
+      );
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
       });
@@ -761,7 +775,7 @@ describe('chatStateReducer', () => {
     });
 
     it.each([false, true])(
-      'refreshes a processed retry from a later snapshot without replacing another attempt (%s)',
+      'uses processing authority without replacing a distinct identical attempt (%s)',
       (anotherAttempt) => {
         const first = {
           id: 'q',
@@ -786,21 +800,18 @@ describe('chatStateReducer', () => {
           chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn'),
         );
         state = chatStateReducer(state, replaceAgentQueue(AGENT, [first]));
-        state = chatStateReducer(state, chatQueueProcessingReceived(AGENT, 'turn'));
+        state = chatStateReducer(state, chatQueueProcessingReceived(AGENT, 'turn', [combined]));
         state = chatStateReducer(
           state,
-          chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn', true, 1),
+          chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn', true),
         );
         if (anotherAttempt)
-          state = chatStateReducer(
-            state,
-            chatLastAttemptedMessageSet(AGENT, { text: 'unrelated' }),
-          );
+          state = chatStateReducer(state, chatLastAttemptedMessageSet(AGENT, { text: 'first' }));
         state = chatStateReducer(state, replaceAgentQueue(AGENT, [combined]));
         state = chatStateReducer(state, replaceAgentQueue(AGENT, []));
         expect(state.byAgentId[AGENT].lastAttemptedMessage).toEqual(
           anotherAttempt
-            ? { text: 'unrelated' }
+            ? { text: 'first' }
             : {
                 text: combined.content,
                 options: {

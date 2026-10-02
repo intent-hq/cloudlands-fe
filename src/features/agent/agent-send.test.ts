@@ -428,7 +428,15 @@ describe('agent-send wire contract (pending agent, first message)', () => {
 
   it.each(
     [true, false].flatMap((prior) =>
-      ['snapshot-first', 'processing-first', 'ack-only'].map((order) => [prior, order] as const),
+      [
+        'snapshot-first',
+        'processing-first',
+        'ack-only',
+        'lagged-old-snapshot',
+        'stale-after-processing',
+        'legacy-lagged',
+        'batch',
+      ].map((order) => [prior, order] as const),
     ),
   )(
     'keeps the processed canonical retry after a delayed response (prior record: %s, order: %s)',
@@ -454,6 +462,31 @@ describe('agent-send wire contract (pending agent, first message)', () => {
           ],
         },
       };
+      const bob: QueuedMessage = {
+        ...first,
+        id: 'bob',
+        turnId: 'bob-turn',
+        content: 'Bob input',
+        fileBlocks: [{ type: 'file', attachmentId: 'bob-file', fileName: 'bob.txt' }],
+        messageMetadata: {
+          fromPrincipalId: 'bob',
+          type: 'question_answers',
+          answeredQuestionsMessageId: 'question-bob',
+        },
+      };
+      const processedRows = order === 'batch' ? [latest, bob] : [latest];
+      const expectedContent = order === 'batch' ? latest.content + '\n\nBob input' : latest.content;
+      const expectedFiles =
+        order === 'batch' ? [...latest.fileBlocks!, ...bob.fileBlocks!] : latest.fileBlocks;
+      const expectedMetadata =
+        order === 'batch'
+          ? {
+              mergedMessageMetadata: [
+                ...(latest.messageMetadata!.mergedMessageMetadata as unknown[]),
+                bob.messageMetadata,
+              ],
+            }
+          : latest.messageMetadata;
       if (hasPriorRecord)
         appStore.dispatch(
           chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id),
@@ -464,21 +497,52 @@ describe('agent-send wire contract (pending agent, first message)', () => {
         if (method === 'agent.get') return { agent: daemonPendingAgent };
         if (method === 'agent.getQueue') return { success: true, queue: [] };
         if (method === 'agent.sendMessage') {
+          if (order === 'lagged-old-snapshot' || order === 'legacy-lagged') {
+            appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
           if (order !== 'snapshot-first')
-            appStore.dispatch(chatQueueProcessingReceived(AGENT, first.id));
-          if (order !== 'ack-only') {
+            appStore.dispatch(
+              chatQueueProcessingReceived(
+                AGENT,
+                first.id,
+                order === 'legacy-lagged' ? undefined : processedRows,
+              ),
+            );
+          if (
+            order !== 'ack-only' &&
+            order !== 'lagged-old-snapshot' &&
+            order !== 'legacy-lagged'
+          ) {
             appStore.dispatch(replaceAgentQueue(AGENT, [latest], WS));
             noteAgentQueueEventSnapshotApplied(AGENT, WS);
           }
           if (order === 'snapshot-first')
-            appStore.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+            appStore.dispatch(
+              chatQueueProcessingReceived(
+                AGENT,
+                first.id,
+                order === 'legacy-lagged' ? undefined : processedRows,
+              ),
+            );
+          if (order === 'stale-after-processing') {
+            appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
           appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
           noteAgentQueueEventSnapshotApplied(AGENT, WS);
           return {
             success: true,
             queued: true,
-            turnId: first.id,
-            queuedMessage: order === 'ack-only' ? latest : { ...first, content: 'first\n\nsecond' },
+            turnId: order === 'batch' ? bob.turnId : first.id,
+            queuedMessage:
+              order === 'batch'
+                ? bob
+                : order === 'ack-only' ||
+                    order === 'lagged-old-snapshot' ||
+                    order === 'legacy-lagged'
+                  ? latest
+                  : { ...first, content: 'first\n\nsecond' },
           };
         }
         return {};
@@ -486,8 +550,8 @@ describe('agent-send wire contract (pending agent, first message)', () => {
       await sendMessage(AGENT, 'second', workspace());
       appStore.dispatch(chatSendFailed(AGENT, 'turn failed', first.id));
       expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual({
-        text: latest.content,
-        options: { fileBlocks: latest.fileBlocks, messageMetadata: latest.messageMetadata },
+        text: expectedContent,
+        options: { fileBlocks: expectedFiles, messageMetadata: expectedMetadata },
       });
       expect(appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords).toEqual({});
     },

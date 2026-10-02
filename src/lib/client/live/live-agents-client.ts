@@ -592,8 +592,9 @@ export class LiveAgentsClient implements AgentsClient {
     // a missing entry (already drained/removed) rejects with -32602, folded
     // into `{ success: false, error }` — callers surface it non-destructively
     // (the entry is gone; nothing to roll back). The delivered arm carries
-    // `turnId` (the entry's preserved turn-correlation id — this path emits
-    // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
+    // `turnId` (the entry's preserved turn-correlation id). The processing event
+    // carries the authoritative consumed entries; this response remains a legacy
+    // promotion fallback (§5.5),
     // surfaced on the MutationResult (monorepo#1057).
     try {
       const result = await backendRequest<{

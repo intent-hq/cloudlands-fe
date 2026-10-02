@@ -1669,16 +1669,11 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:queue:processing` (§6.5) carries `{ agentId, messageId, content,
- * turnId? }` — the drain-start signal emitted right after `agent:queue:updated`
- * when the daemon dequeues an entry to run its turn. It covers
- * `persisted: true` redrives that skip the user-row `agent:message` echo, so
- * it is the exact promotion signal for retry records (monorepo#1057). The
- * reducer matches on `turnId` alone, but `messageId` stays part of the
- * malformed-payload gate so a contract regression is rejected rather than
- * silently no-oping. `turnId` should always be present on the pinned daemon
- * (legacy pre-#1022 rows are backfilled on rehydration); the reducer no-ops
- * defensively when it is not.
+ * Processing identifies the admitted provider turn, including persisted redrives
+ * that skip a user-message echo. Optional queuedMessages contains every consumed
+ * entry in order, with each entry's own identity and complete retry payload.
+ * Queue snapshots and enqueue acknowledgements cannot override that authority.
+ * Legacy events without the array retain turn-based best-effort promotion.
  */
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1686,7 +1681,29 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || typeof data.messageId !== 'string') return;
   const turnId = typeof data.turnId === 'string' ? data.turnId : undefined;
-  appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
+  const rows = data.queuedMessages;
+  if (rows !== undefined) {
+    // Reject malformed authority instead of upgrading a partial payload to truth.
+    if (
+      !Array.isArray(rows) ||
+      !rows.length ||
+      typeof turnId !== 'string' ||
+      rows.some(
+        (row) =>
+          !row ||
+          typeof row !== 'object' ||
+          typeof row.id !== 'string' ||
+          typeof row.turnId !== 'string' ||
+          typeof row.content !== 'string' ||
+          typeof row.queuedAt !== 'string' ||
+          typeof row.position !== 'number',
+      ) ||
+      rows[0].id !== data.messageId ||
+      new Set(rows.map((row) => row.id)).size !== rows.length
+    )
+      return;
+    appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
+  } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }
 
 /**

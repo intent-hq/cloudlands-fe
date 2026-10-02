@@ -14,6 +14,36 @@ export function buildQueuedRecordedAttempt(
   });
 }
 
+/** Retry exactly the entries admitted for one provider turn, preserving their order. */
+export function buildProcessedRecordedAttempt(
+  messages: readonly QueuedMessage[],
+  attempt: LastAttemptedMessage,
+): LastAttemptedMessage {
+  const options = { ...attempt.options };
+  // Absence in the admitted payload is authoritative too; never retain stale files/tags.
+  delete options.imageBlocks;
+  delete options.fileBlocks;
+  delete options.messageMetadata;
+  const images = messages.flatMap((message) => message.imageBlocks ?? []);
+  const files = messages.flatMap((message) => message.fileBlocks ?? []);
+  if (images.length) options.imageBlocks = images;
+  if (files.length) options.fileBlocks = files;
+  if (messages.length === 1) {
+    if (messages[0].messageMetadata !== undefined)
+      options.messageMetadata = messages[0].messageMetadata;
+  } else if (messages.some((message) => message.messageMetadata !== undefined)) {
+    options.messageMetadata = {
+      mergedMessageMetadata: messages.flatMap((message) => {
+        const metadata = message.messageMetadata;
+        return Array.isArray(metadata?.mergedMessageMetadata)
+          ? metadata.mergedMessageMetadata
+          : [metadata ?? null];
+      }),
+    };
+  }
+  return buildRecordedAttempt(messages.map((message) => message.content).join('\n\n'), options);
+}
+
 /**
  * Build the retry payload a send attempt carries, for the error banner's "Try
  * again" (#941). `text` already includes any workspace-context prefix, so a
@@ -26,9 +56,7 @@ export function buildQueuedRecordedAttempt(
  * pending question set unanswered and the sticky wizard visible).
  *
  * Single construction site shared by chat-send-service (direct/queue-on-send
- * recording) and agent-send (auto-queue park, #1011) — the park reducer's
- * structural-equality clear relies on both producing the exact same shape,
- * so drift between hand-rolled copies would silently break it.
+ * recording) and agent-send (auto-queue park, #1011). The retry payload contains no authorization or attempt identity; those are tracked separately.
  */
 export function buildRecordedAttempt(
   text: string,
