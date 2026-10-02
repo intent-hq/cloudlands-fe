@@ -65,6 +65,20 @@ it('admits one bounded logical owner continuation at vertical span origin, inter
       for (const page of wire) expect(bytes(JSON.stringify(page))).toBeLessThanOrEqual(4096);
       const received = decodeTablePages(JSON.parse(JSON.stringify(wire)), 7);
       const projection = new TableProjection(received);
+      // Source-less native activation must retain the exact admitted owner
+      // paragraphs, including an interior fragment whose mounted row differs.
+      const retained = admitTableWindow(
+        saved,
+        index,
+        index.rows[row].cells.at(-1)!.body,
+        7,
+        (c) => metadata.get(c.from),
+        received,
+      );
+      expect(new TableProjection(retained).content).toEqual(projection.content);
+      expect(retained.cells.find((c) => c.from === owner.from)!.blocks).toEqual(
+        received.cells.find((c) => c.from === owner.from)!.blocks,
+      );
       const doc = native.schema.nodeFromJSON(projection.content),
         table = doc.firstChild!,
         map = TableMap.get(table);

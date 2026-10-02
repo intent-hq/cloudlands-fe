@@ -443,7 +443,10 @@ export function admitTableWindow(
       (projectedBlock === undefined ? rectangle?.fragmentStart?.(entry, limit) : undefined) ??
       Math.max(entry.body, center - Math.floor(limit / 2));
     let last = Math.min(entry.end, first + limit);
-    const old = retained?.cells.find((c) => c.row === entry.row && c.column === entry.column);
+    const old = retained?.cells.find(
+      (c) =>
+        (c.owner?.row ?? c.row) === entry.row && (c.owner?.column ?? c.column) === entry.column,
+    );
     if (old) {
       first = old.first;
       last = old.last;
