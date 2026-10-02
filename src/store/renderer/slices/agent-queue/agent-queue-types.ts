@@ -15,9 +15,7 @@ export interface AgentQueueEntryState {
 export type { QueuedMessageSendOutcome };
 
 export type QueuedMessageMutationOperation =
-  | { kind: 'edit'; content: string; editing?: boolean }
-  | { kind: 'remove' }
-  | { kind: 'sendNow' };
+  { kind: 'edit'; content: string; editing?: boolean } | { kind: 'remove' } | { kind: 'sendNow' };
 
 /** One queued edit/remove/send-now request, correlated to the consumer that issued it. */
 export interface QueuedMessageMutationRequest {

@@ -254,9 +254,7 @@
   const sendingIds = new Set<string>();
 
   function isSending(id: string) {
-    return (
-      sendStates[id] === 'sending' || sendStates[id] === 'delivered' || pendingSendIds.has(id)
-    );
+    return sendStates[id] === 'sending' || sendStates[id] === 'delivered' || pendingSendIds.has(id);
   }
 
   $effect(() => {

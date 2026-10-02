@@ -2,7 +2,11 @@ import { store } from '../../store';
 import type { QueuedMessage } from '$shared/types';
 import type { StoreState } from '../../types';
 import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import type { AgentQueueEntryState, AgentQueueState, QueuedMessageMutation } from './agent-queue-types';
+import type {
+  AgentQueueEntryState,
+  AgentQueueState,
+  QueuedMessageMutation,
+} from './agent-queue-types';
 
 const emptyAgentQueueEntry: AgentQueueEntryState = {
   messages: createCollection<QueuedMessage, 'id'>('id'),

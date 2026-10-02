@@ -642,9 +642,7 @@ describe('chatSendSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
     for (const action of [active, queued]) {
-      expect(getItem(run.queue().mutations, action.payload[0].requestId)?.status).toBe(
-        'cancelled',
-      );
+      expect(getItem(run.queue().mutations, action.payload[0].requestId)?.status).toBe('cancelled');
     }
     expect(mocks.sendQueuedNow).toHaveBeenCalledTimes(2);
     expect(mocks.send).not.toHaveBeenCalled();

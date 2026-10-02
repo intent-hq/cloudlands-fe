@@ -874,11 +874,7 @@ function getCommandAgentId(action: ChatCommand): string {
     return (action as QueuedMutationAction).payload[0].agentId;
   return (
     action as
-      | StopAction
-      | RetryAction
-      | RetryModelAction
-      | RetryProviderAction
-      | RetryFromStalledAction
+      StopAction | RetryAction | RetryModelAction | RetryProviderAction | RetryFromStalledAction
   ).payload[0];
 }
 
