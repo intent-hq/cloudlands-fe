@@ -30,6 +30,7 @@
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { cameraMotionKeyframes, partitionSceneIds } from './diagram-motion';
   import { freeLabelFractions } from './diagram-label-placement';
+  import { equalComputedLayout } from './equal-computed-layout';
 
   interface Props {
     diagram: DiagramPrimitive;
@@ -75,6 +76,7 @@
 
   // Computed layout
   let layout = $state<ComputedLayout | null>(null);
+  let publishedLayout: ComputedLayout | null = null;
   let layoutError = $state(false);
   let fitToWidth = $state(false);
   let fitScale = $state(1);
@@ -885,7 +887,7 @@
             groups,
           }
         : diagram.model;
-      layout = computeLayout(
+      const nextLayout = computeLayout(
         model,
         currentState
           ? {
@@ -903,9 +905,16 @@
         renderStyleConfig,
         layoutWidthLimit,
       );
+      // Width/font invalidations still measure again, but an unchanged result
+      // need not invalidate every node, connector and label placement downstream.
+      if (!equalComputedLayout(publishedLayout, nextLayout)) {
+        publishedLayout = nextLayout;
+        layout = nextLayout;
+      }
       layoutError = false;
       beginDiagramSettlement();
     } catch {
+      publishedLayout = null;
       layout = null;
       layoutError = true;
     }
