@@ -127,3 +127,39 @@ it('refreshes retained viewport geometry after a native source-less terminal app
   expect(() => s.tableHeights.record(next.geometry!, next.geometry!.heights)).not.toThrow();
   expect(s.region(0)).toBe(source);
 });
+
+it('retains measured fragment placement through source-less terminal admission and rollback', () => {
+  const text = 'abcdefghij '.repeat(6000);
+  const source = `| H | R |\n| --- | --- |\n| ${text} | neighbor |`;
+  const s = new SourceJournal(() => source, 1);
+  const viewport = { width: 1280, height: 520, top: 0, font: '16px/24px sans-serif' };
+  const initial = s.tableViewportWindow(source.indexOf(text), viewport)!;
+  const cell = initial.cells.find((c) => c.row === 1 && c.column === 0)!;
+  s.tableHeights.measureCells(initial, [
+    { cell: cell.from, height: cell.raw.length * 0.73, padding: 17 },
+  ]);
+  const middle = s.tableViewportWindow(cell.body, {
+    ...viewport, top: initial.geometry!.total / 2,
+  })!;
+  expect(middle.layout![0].top).toBeGreaterThan(10000);
+  const geometry = middle.geometry!, layout = middle.layout;
+  expect(() => s.atomic(() => {
+    s.stageTableTrailing(0, true, s.revision, false);
+    const next = s.tableWindow(cell.body, middle)!;
+    expect(next.layout).toEqual(layout);
+    expect(next.geometry).toEqual({ ...geometry, revision: s.revision });
+    throw Error('rollback measured append');
+  })).toThrow('rollback measured append');
+  expect(s.revision).toBe(geometry.revision);
+  expect(s.tableWindow(cell.body, middle)!.layout).toEqual(layout);
+  s.atomic(() => s.stageTableTrailing(0, true, s.revision, false));
+  const next = s.tableWindow(cell.body, middle)!;
+  expect(next.layout).toEqual(layout);
+  expect(next.geometry).toEqual({ ...geometry, revision: s.revision });
+  expect(s.region(0)).toBe(source);
+  expect(() => s.tableHeights.record(geometry, geometry.heights)).toThrow('Stale');
+  s.atomic(() => s.stage({ from: cell.body, to: cell.body + 1, insert: 'X' }, false));
+  const changed = s.tableViewportWindow(cell.body, viewport)!;
+  expect(changed.geometry!.total).toBeLessThan(geometry.total);
+  expect(s.region(0)).toBe(source.slice(0, cell.body) + 'X' + source.slice(cell.body + 1));
+});
