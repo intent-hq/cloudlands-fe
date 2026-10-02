@@ -180,10 +180,8 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('button', { name: 'List view', exact: true }).click();
   await expect(component.getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
-  await component
-    .getByRole('group', { name: 'Status', exact: true })
-    .getByRole('button', { name: /^Running/ })
-    .click();
+  await component.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
@@ -229,7 +227,9 @@ test('Home preview resizes and board headers stay visible while scrolling', asyn
   });
   await board.getByRole('button', { name: 'Review the new onboarding flow', exact: true }).click();
   const detail = component.locator('[data-home-detail]');
-  const handle = component.locator('.resizable-panel-handle');
+  const handle = component
+    .getByRole('tabpanel', { name: 'Workspaces', exact: true })
+    .getByRole('button', { name: 'Resize panel (double-click to reset)', exact: true });
   await expect(handle).toBeVisible();
   const width = (await detail.boundingBox())!.width;
   await handle.focus();
@@ -294,8 +294,8 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(board.locator('section')).toHaveCount(3);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
-  await expect(inactive.getByRole('img', { name: 'Done', exact: true })).toHaveCount(1);
-  await expect(inactive.getByRole('img', { name: 'Idle', exact: true })).toHaveCount(2);
+  await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);
+  await expect(inactive.getByRole('img', { name: /^Idle\./ })).toHaveCount(2);
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
 });
 
