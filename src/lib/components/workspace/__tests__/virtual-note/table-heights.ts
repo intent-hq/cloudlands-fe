@@ -13,7 +13,7 @@ export class TableHeights {
   private summaries = new Map<string, Map<number, number>>();
   private cellSamples = new Map<
     string,
-    Map<number, { row: number; rate: number; total: number }>
+    Map<number, { row: number; rowspan: number; rate: number; total: number }>
   >();
   maxCellWriteBytes = 0;
   private samples(key: HeightKey) {
@@ -59,17 +59,25 @@ export class TableHeights {
         continue;
       const rate = measure.height / (cell.last - cell.first);
       samples.set(cell.from, {
-        row: cell.row,
+        row: cell.owner?.row ?? cell.row,
+        rowspan: cell.owner?.rowspan ?? 1,
         rate,
         total: rate * (cell.end - cell.body) + measure.padding,
       });
     }
     for (const row of new Set(
-      window.cells.filter((c) => c.first > c.body || c.last < c.end).map((c) => c.row),
+      window.cells
+        .filter((c) => (c.first > c.body || c.last < c.end) && (c.owner?.rowspan ?? 1) === 1)
+        .map((c) => c.row),
     )) {
       entries.set(
         row,
-        Math.max(41, ...[...samples.values()].filter((s) => s.row === row).map((s) => s.total)),
+        Math.max(
+          41,
+          ...[...samples.values()]
+            .filter((s) => s.row === row && s.rowspan === 1)
+            .map((s) => s.total),
+        ),
       );
     }
     window.geometry = this.range(page, page.rows, page.row, page.heights.length);
@@ -82,10 +90,20 @@ export class TableHeights {
       .filter((c) => c.first > c.body || c.last < c.end)
       .map((c) => {
         const rate = samples.get(c.from)?.rate ?? 0;
+        let before = 0,
+          after = 0;
+        if (c.owner && c.mounted && c.owner.rowspan > 1) {
+          const page = window.geometry!;
+          const ownerTop = this.range(page, page.rows, c.owner.row, 0).top;
+          const mounted = this.range(page, page.rows, c.row, c.mounted.rowspan);
+          const ownerEnd = this.range(page, page.rows, c.owner.row + c.owner.rowspan, 0).top;
+          before = mounted.top - ownerTop;
+          after = ownerEnd - mounted.top - mounted.heights.reduce((a, b) => a + b, 0);
+        }
         return {
           cell: c.from,
-          top: Math.max(0, c.first - c.body) * rate,
-          bottom: Math.max(0, c.end - c.last) * rate,
+          top: Math.max(0, (c.first - c.body) * rate - before),
+          bottom: Math.max(0, (c.end - c.last) * rate - after),
         };
       });
   }
@@ -103,13 +121,21 @@ export class TableHeights {
     }
     return entries;
   }
+  private height(key: HeightKey, row: number) {
+    let height = this.entries(key).get(row) ?? 41;
+    // This is an estimate derived from the encountered owner fragment, not an
+    // offscreen measurement or a renderer-resident map of the covered rows.
+    for (const sample of this.samples(key).values())
+      if (sample.rowspan > 1 && row >= sample.row && row < sample.row + sample.rowspan)
+        height = Math.max(height, sample.total / sample.rowspan);
+    return height;
+  }
   range(key: HeightKey, rows: number, row: number, count: number): TableGeometry {
-    const entries = this.entries(key);
     let top = 0,
       total = 0;
     const heights: number[] = [];
     for (let r = 0; r < rows; r++) {
-      const height = entries.get(r) ?? 41;
+      const height = this.height(key, r);
       if (r < row) top += height;
       if (r >= row && r < row + count) heights.push(height);
       total += height;
@@ -122,17 +148,16 @@ export class TableHeights {
     return page;
   }
   viewport(key: HeightKey, rows: number, top: number, height: number) {
-    const entries = this.entries(key);
     let row = 0,
       offset = 0;
-    while (row < rows - 1 && offset + (entries.get(row) ?? 41) <= top) {
-      offset += entries.get(row) ?? 41;
+    while (row < rows - 1 && offset + this.height(key, row) <= top) {
+      offset += this.height(key, row);
       row++;
     }
     let count = 0,
       end = offset;
     while (row + count < rows && end < top + height) {
-      end += entries.get(row + count) ?? 41;
+      end += this.height(key, row + count);
       count++;
     }
     return this.range(key, rows, row, Math.min(rows - row, count + 1));

@@ -113,7 +113,9 @@ for (const test of cases) {
       expect(session.editor!.commands[test.command]()).toBe(true);
       expect(session.error).toBe('');
       expect(await backingJSON()).toEqual(native.state.doc.firstChild!.toJSON());
-      const backing = service as unknown as { tableIndex: (s: string, start: number) => TableIndex[] };
+      const backing = service as unknown as {
+        tableIndex: (s: string, start: number) => TableIndex[];
+      };
       const afterIndex = backing.tableIndex(service.region(0), 0)[0];
       const selection = native.state.selection;
       const cells = selection instanceof CellSelection;

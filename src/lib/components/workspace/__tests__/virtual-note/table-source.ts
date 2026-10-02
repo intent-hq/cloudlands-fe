@@ -455,8 +455,12 @@ export function admitTableWindow(
         preferred?.cell === entry.from
           ? preferred.block
           : (projectedBlock ?? runs.find((r) => r.to >= center)?.block ?? blocks.length - 1);
-      let begin = Math.max(0, Math.min(blocks.length - 7, wanted - 3)),
-        end = Math.min(blocks.length, begin + 7);
+      const count =
+        projectedBlock !== undefined && rectangle
+          ? Math.max(7, Math.ceil((blocks.length * rectangle.rowCount) / entry.rowSpan!) + 6)
+          : 7;
+      let begin = Math.max(0, Math.min(blocks.length - count, wanted - 3)),
+        end = Math.min(blocks.length, begin + count);
       if (old?.blocks?.length) {
         begin = old.blocks[0].index;
         end = old.blocks.at(-1)!.index + 1 + blocks.length - (old.blockCount ?? blocks.length);
