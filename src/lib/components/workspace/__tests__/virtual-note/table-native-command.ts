@@ -31,6 +31,7 @@ export function applyNativeTableCommand(
   kind: 'text' | 'cell',
   name: TableCommandName,
   editor: Editor,
+  dispatch = true,
 ) {
   const state = EditorState.create({
     doc,
@@ -54,9 +55,11 @@ export function applyNativeTableCommand(
     {
       state,
       tr: state.tr,
-      dispatch: (tr: Transaction) => {
-        transaction = tr;
-      },
+      dispatch: dispatch
+        ? (tr: Transaction) => {
+            transaction = tr;
+          }
+        : undefined,
     },
     {
       get(target, key) {

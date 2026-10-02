@@ -764,6 +764,7 @@ export class SourceJournal {
     intent: { revision: number; table: number; command: TableCommandName; selection: Selection },
     editor: Editor,
     apply = true,
+    dispatch = true,
   ): Selection | false {
     const encoded = JSON.stringify(intent),
       size = bytes(encoded);
@@ -790,7 +791,7 @@ export class SourceJournal {
         return value ? JSON.parse(value) : undefined;
       },
       this.clipboardCellSerialization,
-      { name: received.command, kind: logical.kind },
+      { name: received.command, kind: logical.kind, dispatch },
     );
     this.maxBackingTableCommandBytes = Math.max(
       this.maxBackingTableCommandBytes,

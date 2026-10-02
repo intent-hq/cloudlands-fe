@@ -27,7 +27,7 @@ export function planTableTextPaste(
   editor: Editor,
   stored: (from: number) => JSONContent | undefined,
   serialization?: CellSerializationWork,
-  command?: { name: TableCommandName; kind: 'text' | 'cell' },
+  command?: { name: TableCommandName; kind: 'text' | 'cell'; dispatch?: boolean },
 ) {
   const schema = editor.schema;
   const origins = new Map<PMNode, TableCellSource>();
@@ -81,6 +81,7 @@ export function planTableTextPaste(
         command.kind,
         command.name,
         editor,
+        command.dispatch,
       )
     : fitNativeTextPaste(doc, position(anchor), position(head), value, editor, [tableEditing()]);
   const result = fitted.state.doc.firstChild!;
@@ -90,6 +91,10 @@ export function planTableTextPaste(
   let point: TablePoint | undefined, caret: number | undefined;
   let anchorPoint: TablePoint | undefined, anchorSource: number | undefined;
   result.forEach((row, ro, r) => {
+    // A retained final source row has no terminator. Native append must add a
+    // separator before its new row without rewriting any existing cell text.
+    if (r > 0 && !text.endsWith('\n'))
+      text += source.slice(table.rows[0].from, table.rows[0].to).endsWith('\r\n') ? '\r\n' : '\n';
     const old = table.rows.find((_, i) => rows[i] === row);
     const ending =
       source

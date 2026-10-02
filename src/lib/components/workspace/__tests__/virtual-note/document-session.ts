@@ -987,7 +987,8 @@ export class DocumentSession {
             command: name,
             selection: structuredClone(this.selection),
           };
-          if (!this.service.stageLogicalTableCommand(intent, this.editor!, false)) return false;
+          if (!this.service.stageLogicalTableCommand(intent, this.editor!, false, !!props.dispatch))
+            return false;
           if (props.dispatch) props.tr.setMeta('proofLogicalTableCommand', intent);
           return true;
         };
