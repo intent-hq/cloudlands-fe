@@ -91,32 +91,6 @@ for (const key of ['ArrowUp', 'ArrowDown'])
     }, key);
     expect(target.blocks[0]).toBeGreaterThan(0);
     expect(target.blocks.at(-1)!).toBeLessThan(target.count - 1);
-    await page.keyboard.press(key);
-    await root.evaluate((el) => {
-      const h = el as Host & { releaseArrow?: () => void };
-      h.proof.delayFetch = undefined;
-      h.releaseArrow?.();
-    });
-    await expect
-      .poll(() => root.evaluate((el) => (el as Host).proof.service.pendingInputs))
-      .toBe(0);
-    await settled(page);
-    const bounded = await root.evaluate(async (el) => {
-      const p = (el as Host).proof;
-      const selected = structuredClone(p.selection.table!);
-      const actual = p.projection!.table!.pointAt(p.editor!.state.selection.head);
-      const old = p.editor!;
-      await p.seek(p.selection.head);
-      return {
-        selected,
-        actual,
-        restored: p.selection.table,
-        destroyed: old.isDestroyed,
-        source: p.service.region(0),
-        error: p.error,
-        stats: p.snapshot(),
-      };
-    });
     await focus(page, 'native');
     await page
       .getByTestId('native')
@@ -133,17 +107,6 @@ for (const key of ['ArrowUp', 'ArrowDown'])
         editor.view.dispatch(editor.state.tr.scrollIntoView());
       }, target);
     await settled(page);
-    await expect
-      .poll(() =>
-        root.evaluate((el) => {
-          const p = (el as Host).proof;
-          return !p.pendingFetch && !p.service.pendingInputs && !p.navigating;
-        }),
-      )
-      .toBe(true);
-    // Scrolling the full native oracle can finish an independent bounded scroll mount.
-    // Activate the native editor only after that fixture navigation has settled.
-    await focus(page, 'native');
     const nativeBefore = await page
       .getByTestId('native')
       .getByTestId('proof')
@@ -180,6 +143,45 @@ for (const key of ['ArrowUp', 'ArrowDown'])
         const s = (el as Host).native.state.selection;
         return { block: s.$head.index(3), offset: s.$head.parentOffset };
       });
+    await focus(page, 'bounded');
+    const boundedBefore = await root.evaluate((el, point) => {
+      const p = (el as Host).proof;
+      const at = p.projection!.table!.pointPM(point);
+      if (at === undefined) throw Error('Held merged endpoint no longer mounted');
+      p.editor!.commands.setTextSelection(at);
+      return {
+        active: document.activeElement === p.editor!.view.dom,
+        point: p.projection!.table!.pointAt(at),
+      };
+    }, target.point);
+    expect(boundedBefore.active).toBe(true);
+    expect(boundedBefore.point).toEqual(target.point);
+    await page.keyboard.press(key);
+    await root.evaluate((el) => {
+      const h = el as Host & { releaseArrow?: () => void };
+      h.proof.delayFetch = undefined;
+      h.releaseArrow?.();
+    });
+    await expect
+      .poll(() => root.evaluate((el) => (el as Host).proof.service.pendingInputs))
+      .toBe(0);
+    await settled(page);
+    const bounded = await root.evaluate(async (el) => {
+      const p = (el as Host).proof;
+      const selected = structuredClone(p.selection.table!);
+      const actual = p.projection!.table!.pointAt(p.editor!.state.selection.head);
+      const old = p.editor!;
+      await p.seek(p.selection.head);
+      return {
+        selected,
+        actual,
+        restored: p.selection.table,
+        destroyed: old.isDestroyed,
+        source: p.service.region(0),
+        error: p.error,
+        stats: p.snapshot(),
+      };
+    });
     await info.attach('merged-arrow.json', {
       body: JSON.stringify({ fixture, target, bounded, native }),
       contentType: 'application/json',
