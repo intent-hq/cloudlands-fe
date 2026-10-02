@@ -138,10 +138,14 @@ on:
 # Serialize runs so scheduled, push-triggered, and manually dispatched runs
 # can never race a merge of the same Release PR. `cancel-in-progress: false`
 # because a run that has already decided to merge must not be cancelled
-# mid-merge.
+# mid-merge. Retain pending pin pushes: the default single pending slot
+# lets a later ordinary push discard the only run with pin-advance evidence.
+# GitHub bounds this queue at 100 pending runs; overflow still has the hourly
+# backstop. Existing readiness polling remains bounded to 15 minutes per run.
 concurrency:
   group: auto-cut-alpha
   cancel-in-progress: false
+  queue: max
 
 jobs:
   # Read-only queries authenticate with the implicit GITHUB_TOKEN, so the

@@ -467,6 +467,47 @@ function runPinChain(data = pinFixture(), event = 'push', mergeData = data) {
 }
 
 describe('prompt pin-driven alpha cut', () => {
+  it('preserves the pending pin push when an ordinary push arrives while another cut polls', () => {
+    // A entered readiness polling before B advanced the pin. Once B lands,
+    // A's Release PR pin check must prevent A from cutting its stale pin.
+    const polling = pinFixture();
+    polling.before = 'd'.repeat(40);
+    polling.after = BASE;
+    polling.pins[polling.before] = '0.9.108';
+    const active = runCut(polling, 'push', 'Merge the Release PR when green', 'v3.0.0', 'true');
+    expect(active.cut, active.output).toBe(false);
+    expect(active.output).toContain('head does not carry the pushed intentd pin');
+
+    const pinPush = pinFixture();
+    const ordinaryPush = pinFixture();
+    ordinaryPush.before = HEAD;
+    ordinaryPush.after = 'c'.repeat(40);
+    ordinaryPush.pins[ordinaryPush.after] = PIN;
+
+    // Mock GitHub's scheduler boundary using the actual workflow setting:
+    // single (default) replaces pending B with C; max retains B then C.
+    // https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+    const pending: { name: string; data: ReturnType<typeof pinFixture> }[] = [];
+    for (const run of [
+      { name: 'B', data: pinPush },
+      { name: 'C', data: ordinaryPush },
+    ]) {
+      if (workflow.concurrency.queue !== 'max') pending.splice(0);
+      pending.push(run);
+    }
+    const cuts: string[] = [];
+    for (const run of pending) {
+      // Finish each real workflow chain before starting the next: merges
+      // stay serialized, and C observes B's release if B was retained.
+      if (cuts.length) {
+        run.data.feTag = 'v3.0.1';
+        run.data.pins['tags/v3.0.1'] = PIN;
+      }
+      if (runPinChain(run.data).cut) cuts.push(run.name);
+    }
+    expect(cuts).toEqual(['B']);
+  });
+
   it('wires helpers before throttling and keeps the existing trigger and guard chain', () => {
     const checkout = steps.find((s) => s.name === 'Checkout trusted release helpers')!;
     const throttle = steps.find((s) => s.name === 'Throttle to one cut per hour')!;
@@ -482,7 +523,11 @@ describe('prompt pin-driven alpha cut', () => {
     expect(merge.if).toContain("steps.inflight.outputs.defer != 'true'");
     expect(workflow.on.push.branches).toEqual(['main']);
     expect(workflow.on.schedule).toEqual([{ cron: '30 * * * *' }]);
-    expect(workflow.concurrency).toEqual({ group: 'auto-cut-alpha', 'cancel-in-progress': false });
+    expect(workflow.concurrency).toEqual({
+      group: 'auto-cut-alpha',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
   });
 
   it.each(['tags', 'date'])('keeps the original fail-open %s lookup policy', (kind) => {
