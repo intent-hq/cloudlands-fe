@@ -51,7 +51,7 @@ export class DocumentSession {
       const after = this.service.atomic(() => {
         this.service.beginChanges();
         const anchorsBefore = structuredClone(this.service.anchors);
-        const after = this.service.stageTablePaste(before, manifest.id, this.editor!.schema);
+        const after = this.service.stageTablePaste(before, manifest.id, this.editor!);
         this.service.record(
           {
             changes: [],

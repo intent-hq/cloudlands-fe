@@ -27,7 +27,7 @@ import {
   type TableFragment,
   type TableRectangle,
 } from './table-source';
-import type { JSONContent } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 import {
   patchTableCell,
   patchTableInline,
@@ -120,7 +120,8 @@ export class SourceJournal {
       costs: { selectedSourceBytes: 0, nodes: 0, elements: 0, serializedPMBytes: 0 },
     });
   }
-  stageTablePaste(selection: Selection, publication: number, schema: Schema) {
+  stageTablePaste(selection: Selection, publication: number, editor: Editor) {
+    const schema = editor.schema;
     const encoded = JSON.stringify({ selection, publication });
     if (bytes(encoded) > LIMITS.request) throw new Error('Clipboard paste intent exceeds budget');
     const received = JSON.parse(encoded) as { selection: Selection; publication: number };
@@ -184,6 +185,7 @@ export class SourceJournal {
         logical.anchor,
         logical.head,
         this.clipboardInputSink.published,
+        editor,
       );
       this.maxClipboardTextFitNodes = Math.max(this.maxClipboardTextFitNodes, fitted.costs.nodes);
       this.maxClipboardTextFitBytes = Math.max(

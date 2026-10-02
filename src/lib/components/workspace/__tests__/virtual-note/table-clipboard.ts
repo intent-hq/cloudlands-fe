@@ -9,7 +9,18 @@ import {
 import { __clipCells, __pastedCells, removeColSpan } from '@tiptap/pm/tables';
 import { Transform } from '@tiptap/pm/transform';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
-import { getTextBetween, getTextSerializersFromSchema, type JSONContent } from '@tiptap/core';
+import {
+  getTextBetween,
+  getTextSerializersFromSchema,
+  getExtensionField,
+  getSchemaTypeByName,
+  isExtensionRulesEnabled,
+  pasteRulesPlugin,
+  sortExtensions,
+  type Editor,
+  type JSONContent,
+  type PasteRule,
+} from '@tiptap/core';
 import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import { bytes } from './bounded-note-service';
 import { scanTables, tableCellAt, tableRuns, type TableIndex } from './table-source';
@@ -92,13 +103,29 @@ export function fitCellTextPaste(
   anchor: TablePoint,
   head: TablePoint,
   value: ClipboardValue,
+  editor: Editor,
 ) {
   const position = (point: TablePoint) => {
     let pos = 1;
     for (let i = 0; i < point.block; i++) pos += cell.child(i).nodeSize;
     return pos + point.offset;
   };
+  const plugins = sortExtensions([...editor.extensionManager.extensions].reverse()).flatMap(
+    (extension) => {
+      const add = getExtensionField<() => PasteRule[]>(extension, 'addPasteRules', {
+        name: extension.name,
+        options: extension.options,
+        storage: editor.extensionStorage[extension.name],
+        editor,
+        type: getSchemaTypeByName(extension.name, editor.schema),
+      });
+      return add && isExtensionRulesEnabled(extension, editor.options.enablePasteRules)
+        ? pasteRulesPlugin({ editor, rules: add() })
+        : [];
+    },
+  );
   const state = EditorState.create({
+    plugins,
     schema: cell.type.schema,
     doc: cell,
     selection: TextSelection.create(cell, position(anchor), position(head)),
@@ -123,21 +150,31 @@ export function fitCellTextPaste(
   const tr = single
     ? state.tr.replaceSelectionWith(slice.content.firstChild!, plain)
     : state.tr.replaceSelection(slice);
-  let nodes = 2;
+  const result = state.applyTransaction(tr.setMeta('uiEvent', 'paste').setMeta('paste', true));
+  let nodes = 1;
   cell.descendants(() => nodes++);
-  tr.doc.descendants(() => nodes++);
+  for (const transaction of result.transactions) {
+    nodes++;
+    transaction.doc.descendants(() => nodes++);
+  }
   slice.content.descendants(() => nodes++);
   return {
-    cell: tr.doc,
+    cell: result.state.doc,
     point: {
       cell: head.cell,
-      block: tr.selection.$head.index(0),
-      offset: tr.selection.$head.parentOffset,
+      block: result.state.selection.$head.index(0),
+      offset: result.state.selection.$head.parentOffset,
     },
     costs: {
       elements: container.querySelectorAll('*').length,
       nodes,
-      serializedBytes: bytes(JSON.stringify([cell.toJSON(), slice.toJSON(), tr.doc.toJSON()])),
+      serializedBytes: bytes(
+        JSON.stringify([
+          cell.toJSON(),
+          slice.toJSON(),
+          ...result.transactions.map((transaction) => transaction.doc.toJSON()),
+        ]),
+      ),
     },
   };
 }
