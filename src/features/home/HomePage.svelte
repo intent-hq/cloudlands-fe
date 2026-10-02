@@ -930,7 +930,7 @@
                             </span>
                           {/snippet}
                           {#snippet trailing()}<span
-                              class="workspace-row-meta flex items-center gap-4 text-muted-foreground"
+                              class="workspace-row-meta flex items-center gap-2 text-muted-foreground"
                             >
                               {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
                                   ><Tooltip.Root
@@ -947,7 +947,7 @@
                                 >{/if}
                               <HomeWorkspaceStatus workspace={item} />
                               <span
-                                class="inline-flex w-8 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
+                                class="inline-flex w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
                                 data-home-row-time
                               >
                                 <HomeActivityTime workspace={item} />
