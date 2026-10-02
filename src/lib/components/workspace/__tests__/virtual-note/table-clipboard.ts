@@ -112,10 +112,10 @@ export function fitCellTextPaste(
   };
   const plugins = sortExtensions([...editor.extensionManager.extensions].reverse()).flatMap(
     (extension) => {
-      const add = getExtensionField<() => PasteRule[]>(extension, 'addPasteRules', {
+      const add = getExtensionField<(() => PasteRule[]) | undefined>(extension, 'addPasteRules', {
         name: extension.name,
         options: extension.options,
-        storage: editor.extensionStorage[extension.name],
+        storage: Reflect.get(editor.extensionStorage, extension.name),
         editor,
         type: getSchemaTypeByName(extension.name, editor.schema),
       });
@@ -152,12 +152,18 @@ export function fitCellTextPaste(
     : state.tr.replaceSelection(slice);
   const result = state.applyTransaction(tr.setMeta('uiEvent', 'paste').setMeta('paste', true));
   let nodes = 1;
-  cell.descendants(() => nodes++);
+  cell.descendants(() => {
+    nodes++;
+  });
   for (const transaction of result.transactions) {
     nodes++;
-    transaction.doc.descendants(() => nodes++);
+    transaction.doc.descendants(() => {
+      nodes++;
+    });
   }
-  slice.content.descendants(() => nodes++);
+  slice.content.descendants(() => {
+    nodes++;
+  });
   return {
     cell: result.state.doc,
     point: {
