@@ -137,7 +137,6 @@ describe('createWorkspaceHydrationTierScheduler', () => {
     });
 
     expect([...critical]).toEqual([
-      'tasks',
       'agents',
       'terminals',
       'taskAgentLinks',

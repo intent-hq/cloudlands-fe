@@ -1,8 +1,8 @@
 /**
  * HudWorkspaceGrid read gating — the grid renders one card per registered
  * workspace, but only cards the user can see may ask the daemon for their
- * `tasks` + `tokenUsage` rollups. Off-viewport cards issue nothing; scrolling
- * one into view issues exactly one read pair for it, and only for it. The
+ * `tokenUsage` rollups. Off-viewport cards issue nothing; scrolling
+ * one into view issues only one token read for it, and only for it. The
  * active workspace is exempt (its rollups back the rest of the UI).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -160,20 +160,20 @@ describe('HudWorkspaceGrid per-workspace read gating', () => {
     expect(observers[0].options?.rootMargin).toBe(CARD_VISIBILITY_ROOT_MARGIN);
   });
 
-  it('issues exactly one read pair for a card scrolled into view, and only for it', () => {
+  it('issues only one token read for a card scrolled into view, and only for it', () => {
     render(HudWorkspaceGrid);
     flushSync();
 
     const [first] = observedElements();
     scrollIntoView(first);
 
-    expect(readsOf(TASKS_READ)).toEqual(['ws-1']);
+    expect(readsOf(TASKS_READ)).toEqual([]);
     expect(readsOf(TOKENS_READ)).toEqual(['ws-1']);
 
     // Scrolling it out and back in must not re-issue: the daemon-events bridge
     // keeps the rollups fresh after the first read.
     scrollIntoView(first);
-    expect(readsOf(TASKS_READ)).toEqual(['ws-1']);
+    expect(readsOf(TASKS_READ)).toEqual([]);
     expect(readsOf(TOKENS_READ)).toEqual(['ws-1']);
   });
 
@@ -183,7 +183,7 @@ describe('HudWorkspaceGrid per-workspace read gating', () => {
     render(HudWorkspaceGrid);
     flushSync();
 
-    expect(readsOf(TASKS_READ)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+    expect(readsOf(TASKS_READ)).toEqual([]);
     expect(readsOf(TOKENS_READ)).toEqual(['ws-1', 'ws-2', 'ws-3']);
   });
 
@@ -191,7 +191,7 @@ describe('HudWorkspaceGrid per-workspace read gating', () => {
     render(HudWorkspaceGrid, { props: { workspaceId: 'ws-2' } });
     flushSync();
 
-    expect(readsOf(TASKS_READ)).toEqual(['ws-2']);
+    expect(readsOf(TASKS_READ)).toEqual([]);
     expect(readsOf(TOKENS_READ)).toEqual(['ws-2']);
   });
 });

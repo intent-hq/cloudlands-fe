@@ -1373,7 +1373,7 @@
       {#if contentActions?.additional}
         <Menu.Separator />
         <Menu.Group data-panel-actions-section="additional">
-          {@render contentActions.additional()}
+          {@render contentActions.additional(panelActionsMenuOpen[location])}
         </Menu.Group>
       {/if}
     {/snippet}
