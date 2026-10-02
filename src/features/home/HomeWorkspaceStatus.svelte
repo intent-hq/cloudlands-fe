@@ -80,11 +80,7 @@
           data-home-status={group}
           data-home-status-error={failed || undefined}
         >
-          <span
-            class="inline-flex size-3.5 shrink-0 items-center justify-center"
-            class:needs-you-icon={group === 'needs-you'}
-            aria-hidden="true"
-          >
+          <span class="inline-flex size-3 shrink-0 items-center justify-center" aria-hidden="true">
             {#if presentation.icon}
               <Fa icon={presentation.icon} weight="fill" class="size-full!" />
             {:else}
@@ -101,10 +97,5 @@
 <style>
   .needs-you {
     color: hsl(var(--workspace-status-unread));
-  }
-  .needs-you-icon {
-    width: 18px;
-    height: 18px;
-    border-radius: 9999px;
   }
 </style>

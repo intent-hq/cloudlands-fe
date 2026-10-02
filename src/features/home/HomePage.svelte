@@ -946,7 +946,12 @@
                                   ></Tooltip.Provider
                                 >{/if}
                               <HomeWorkspaceStatus workspace={item} />
-                              <HomeActivityTime workspace={item} />
+                              <span
+                                class="inline-flex w-16 shrink-0 justify-end type-caption tabular-nums"
+                                data-home-row-time
+                              >
+                                <HomeActivityTime workspace={item} />
+                              </span>
                               <SidebarOverflowMenu
                                 items={workspaceMenu(item)}
                                 ariaLabel={m.workspace_sidebarHeader_actions_ariaLabel()}

@@ -76,7 +76,7 @@
             <Skeleton class="size-5 shrink-0 rounded-full" />
           {/if}
           {#if rows !== 'compact'}
-            <Skeleton class="h-3 w-6 shrink-0" />
+            <Skeleton class={rows === 'workspace' ? 'h-3 w-16 shrink-0' : 'h-3 w-6 shrink-0'} />
           {/if}
         </div>
       {/each}
