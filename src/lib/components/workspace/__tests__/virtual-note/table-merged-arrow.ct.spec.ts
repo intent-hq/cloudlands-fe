@@ -133,6 +133,17 @@ for (const key of ['ArrowUp', 'ArrowDown'])
         editor.view.dispatch(editor.state.tr.scrollIntoView());
       }, target);
     await settled(page);
+    await expect
+      .poll(() =>
+        root.evaluate((el) => {
+          const p = (el as Host).proof;
+          return !p.pendingFetch && !p.service.pendingInputs && !p.navigating;
+        }),
+      )
+      .toBe(true);
+    // Scrolling the full native oracle can finish an independent bounded scroll mount.
+    // Activate the native editor only after that fixture navigation has settled.
+    await focus(page, 'native');
     const nativeBefore = await page
       .getByTestId('native')
       .getByTestId('proof')

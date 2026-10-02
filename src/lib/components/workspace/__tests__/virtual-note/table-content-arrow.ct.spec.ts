@@ -158,4 +158,61 @@ for (const key of [
       expect(bounded.destroyed).toBe(true);
       expect(bounded.restored).toEqual(bounded.selection);
       expect(bounded.bytes).toBeLessThanOrEqual(16384);
+      if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        const history = await page.evaluate(async () => {
+          const host = (side: string) =>
+            document.querySelector(`[data-testid="${side}"] [data-testid="proof"]`) as Host;
+          const p = host('bounded').proof,
+            native = host('native').native;
+          const before = structuredClone(p.selection),
+            original = p.service.region(0);
+          const expected = original.slice(0, before.head) + 'X' + original.slice(before.head);
+          native.commands.insertContent('X');
+          p.editor!.commands.insertContent('X');
+          const saved = p.service.region(0);
+          p.save();
+          const old = p.editor!;
+          await p.seek(p.selection.head);
+          const inserted = {
+            native: native.state.selection.$head.parentOffset,
+            bounded: p.selection.table!.head.offset,
+            destroyed: old.isDestroyed,
+          };
+          await p.history();
+          native.commands.undo();
+          const undo = {
+            source: p.service.region(0),
+            selection: structuredClone(p.selection.table),
+            native: native.state.selection.$head.parentOffset,
+          };
+          await p.history(true);
+          native.commands.redo();
+          const redo = {
+            source: p.service.region(0),
+            selection: structuredClone(p.selection.table),
+            native: native.state.selection.$head.parentOffset,
+          };
+          return {
+            before,
+            expected,
+            saved,
+            inserted,
+            undo,
+            redo,
+            error: p.error,
+            stats: p.snapshot(),
+          };
+        });
+        expect(history.error).toBe('');
+        expect(history.saved).toBe(history.expected);
+        expect(history.inserted.destroyed).toBe(true);
+        expect(history.inserted.bounded).toBe(history.inserted.native);
+        expect(history.undo.source).toBe(source);
+        expect(history.undo.selection).toEqual(history.before.table);
+        expect(history.undo.selection!.head.offset).toBe(history.undo.native);
+        expect(history.redo.source).toBe(history.saved);
+        expect(history.redo.selection!.head.offset).toBe(history.redo.native);
+        expect(history.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
+        expect(history.stats.maxTableWriteBytes).toBeLessThanOrEqual(4096);
+      }
     });
