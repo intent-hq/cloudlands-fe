@@ -2,7 +2,16 @@ import { test, expect } from '../../../../../test/ct-test';
 import Pair from './ParagraphProofHarness.svelte';
 import { focus, settled, type Host } from './paragraph-browser';
 
-for (const key of ['ArrowDown', 'ArrowUp'] as const) {
+for (const key of [
+  'ArrowDown',
+  'ArrowUp',
+  'ArrowLeft',
+  'ArrowRight',
+  'Shift+ArrowDown',
+  'Shift+ArrowUp',
+  'Shift+ArrowLeft',
+  'Shift+ArrowRight',
+] as const) {
   test(`native ${key} crosses a mounted table edge without changing logical columns`, async ({
     mount,
     page,
@@ -19,9 +28,17 @@ for (const key of ['ArrowDown', 'ArrowUp'] as const) {
         const p = (el as Host).proof;
         await p.seek(p.service.region(0).indexOf('r20c1'));
         const entries = p.projection!.table!.entries;
-        const row = (key === 'ArrowDown' ? Math.max : Math.min)(...entries.map((e) => e.cell.row));
-        const entry = entries.find((e) => e.cell.row === row && e.cell.column === 1)!;
-        return { text: p.editor!.state.doc.nodeAt(entry.pm)!.textContent, row };
+        const vertical = key.endsWith('Up') || key.endsWith('Down');
+        const last = key.endsWith('Down') || key.endsWith('Right');
+        const edge = (last ? Math.max : Math.min)(
+          ...entries.map((e) => (vertical ? e.cell.row : e.cell.column)),
+        );
+        const entry = entries.find((e) =>
+          vertical
+            ? e.cell.row === edge && e.cell.column === 1
+            : e.cell.column === edge && e.cell.row === 21,
+        )!;
+        return { text: p.editor!.state.doc.nodeAt(entry.pm)!.textContent, row: entry.cell.row };
       }, key);
     const outcomes = [];
     for (const side of ['native', 'bounded']) {
@@ -29,16 +46,19 @@ for (const key of ['ArrowDown', 'ArrowUp'] as const) {
       await page
         .getByTestId(side)
         .getByTestId('proof')
-        .evaluate((el, text) => {
-          const h = el as Host,
-            editor = h.proof?.editor ?? h.native;
-          let at = -1;
-          editor!.state.doc.descendants((n, pos) => {
-            if (n.type.name === 'paragraph' && n.textContent === text) at = pos + 1;
-          });
-          if (at < 0) throw new Error('Native edge cell missing');
-          editor!.commands.setTextSelection(at);
-        }, target.text);
+        .evaluate(
+          (el, { text, key }) => {
+            const h = el as Host,
+              editor = h.proof?.editor ?? h.native;
+            let at = -1;
+            editor!.state.doc.descendants((n, pos) => {
+              if (n.type.name === 'paragraph' && n.textContent === text) at = pos + 1;
+            });
+            if (at < 0) throw new Error('Native edge cell missing');
+            editor!.commands.setTextSelection(at + (key.endsWith('Right') ? text.length : 0));
+          },
+          { text: target.text, key },
+        );
       await settled(page);
       await page.keyboard.press(key);
       await settled(page);
@@ -50,8 +70,20 @@ for (const key of ['ArrowDown', 'ArrowUp'] as const) {
             const h = el as Host,
               p = h.proof,
               editor = p?.editor ?? h.native;
+            const selected = editor!.state.selection;
+            const cellSelection = selected as typeof selected & {
+              $headCell?: typeof selected.$head;
+              $anchorCell?: typeof selected.$anchor;
+            };
             return {
-              text: editor!.state.selection.$head.parent.textContent,
+              text:
+                cellSelection.$headCell?.nodeAfter?.textContent ??
+                selected.$head.parent.textContent,
+              anchorText:
+                cellSelection.$anchorCell?.nodeAfter?.textContent ??
+                selected.$anchor.parent.textContent,
+              kind: selected.toJSON().type,
+              anchorOffset: selected.$anchor.parentOffset,
               depth: editor!.state.selection.$head.depth,
               offset: editor!.state.selection.$head.parentOffset,
               selection: p?.selection,
@@ -68,9 +100,14 @@ for (const key of ['ArrowDown', 'ArrowUp'] as const) {
     });
     expect(outcomes[1].error).toBe('');
     expect(outcomes[1].text).toBe(outcomes[0].text);
+    expect(outcomes[1].anchorText).toBe(outcomes[0].anchorText);
+    expect(outcomes[1].kind).toBe(outcomes[0].kind);
     expect(outcomes[1].depth).toBe(outcomes[0].depth);
-    expect(outcomes[1].offset).toBe(outcomes[0].offset);
-    expect(outcomes[1].selection!.table!.kind).toBe('text');
+    if (outcomes[0].kind === 'text') {
+      expect(outcomes[1].offset).toBe(outcomes[0].offset);
+      expect(outcomes[1].anchorOffset).toBe(outcomes[0].anchorOffset);
+    }
+    expect(outcomes[1].selection!.table!.kind).toBe(outcomes[0].kind === 'cell' ? 'cell' : 'text');
     expect(outcomes[1].source).toBe(source);
     expect(outcomes[1].stats!.maxSourceContextBytes).toBeLessThanOrEqual(16384);
     expect(outcomes[1].stats!.cacheBytes).toBeLessThanOrEqual(16384);

@@ -31,8 +31,8 @@ const cases = [
   { command: 'mergeCells', row: 21, column: 4, accepted: false },
   { command: 'splitCell', row: 21, column: 4, accepted: false },
   { command: 'mergeOrSplit', row: 21, column: 4, accepted: false },
-  { command: 'deleteRow', row: 0, column: 0, endRow: 60, endColumn: 7 },
-  { command: 'deleteColumn', row: 60, column: 7, endRow: 0, endColumn: 0 },
+  { command: 'deleteRow', row: 0, column: 0, endRow: 60, endColumn: 7, accepted: false },
+  { command: 'deleteColumn', row: 60, column: 7, endRow: 0, endColumn: 0, accepted: false },
 ] as const;
 for (const test of cases) {
   it(`matches native logical ${test.command} at ${test.row},${test.column} ${'endRow' in test ? `to ${test.endRow},${test.endColumn}` : ''}`, async () => {
