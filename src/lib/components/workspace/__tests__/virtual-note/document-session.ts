@@ -272,6 +272,7 @@ export class DocumentSession {
   maxTableTransferPageBytes = 0;
   maxTableTransferBytes = 0;
   maxTableAssemblyBytes = 0;
+  maxTableRestoreAnchorBytes = 0;
   maxTableResidentAndAssemblyBytes = 0;
   private receiveTable(pages: TablePage[] | undefined) {
     if (!pages) return undefined;
@@ -963,6 +964,38 @@ export class DocumentSession {
         this.changed();
         return true;
       }
+      // Reconstructing a row is not a request to scroll to its origin: one row
+      // can contain many viewports of text. Keep only the encountered caret's
+      // pixel coordinate while the old native view is still available.
+      let restoreAnchor: { left: number; top: number } | undefined;
+      if (restore && next.table && this.projection?.table && this.editor) {
+        const scroller = this.tableScroller ?? this.host.parentElement;
+        const caret = this.editor.view.coordsAtPos(this.editor.state.selection.head);
+        const viewport = scroller?.getBoundingClientRect();
+        if (
+          scroller &&
+          viewport &&
+          this.projection.table.pointAt(this.editor.state.selection.head) &&
+          caret.top >= viewport.top &&
+          caret.bottom <= viewport.top + scroller.clientHeight
+        )
+          restoreAnchor = { left: caret.left, top: caret.top };
+      }
+      if (restoreAnchor) {
+        const anchorBytes = bytes(JSON.stringify(restoreAnchor));
+        const activeBytes =
+          bytes(window.source) + bytes(JSON.stringify(next.context)) + anchorBytes;
+        if (activeBytes > TABLE_ACTIVE_BYTES)
+          throw new Error('Table restoration anchor exceeds source budget');
+        this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, activeBytes);
+        this.maxTableRestoreAnchorBytes = Math.max(this.maxTableRestoreAnchorBytes, anchorBytes);
+        this.maxTableResidentAndAssemblyBytes = Math.max(
+          this.maxTableResidentAndAssemblyBytes,
+          activeBytes +
+            bytes(this.projection!.source) +
+            bytes(JSON.stringify(this.projection!.context)),
+        );
+      }
       this.editor?.destroy();
       if (this.editor) this.destroyed++;
       this.active = id;
@@ -1508,6 +1541,13 @@ export class DocumentSession {
       } else this.renderSelection();
       this.suppress = false;
       if (this.projection.table?.window.trailing !== false) this.editor.view.focus();
+      if (restoreAnchor && this.projection.table) {
+        const actual = this.projection.table.pointAt(this.editor.state.selection.head);
+        if (JSON.stringify(actual) === JSON.stringify(this.selection.table?.head)) {
+          this.preserveTableAnchor(restoreAnchor);
+          this.rememberTableAnchor();
+        }
+      }
       if (!restore && this.projection.table && this.tableScroller && this.tableScrollRequest) {
         // Destroying the old DOM temporarily shrinks the scroll canvas. Restore
         // the requested viewport after mounting/layout, including fresh sessions
@@ -2139,6 +2179,7 @@ export class DocumentSession {
       maxTableTransferPageBytes: this.maxTableTransferPageBytes,
       maxTableTransferBytes: this.maxTableTransferBytes,
       maxTableAssemblyBytes: this.maxTableAssemblyBytes,
+      maxTableRestoreAnchorBytes: this.maxTableRestoreAnchorBytes,
       maxTableResidentAndAssemblyBytes: this.maxTableResidentAndAssemblyBytes,
       tableColumnWidth: this.tableColumnWidth,
       tableCells: this.projection?.table?.entries.length ?? 0,
