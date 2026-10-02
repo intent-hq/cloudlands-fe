@@ -367,6 +367,30 @@ describe('WebSocketApiSettings', () => {
     await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
   });
 
+  it.each([5182, 6200])(
+    'edits only the connection port when legacy server.port is %i',
+    async (legacyPort) => {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.port', value: legacyPort },
+        { path: 'server.wsApi.enabled', value: false },
+        { path: 'server.wsApi.port', value: 5182 },
+      ]);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([{ path: 'server.wsApi.port', value: 5183 }]);
+
+      await renderExpandedSettings();
+      const input = await screen.findByRole('spinbutton', { name: 'Port' });
+      await waitFor(() => expect((input as HTMLInputElement).value).toBe('5182'));
+      expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
+      await fireEvent.input(input, { target: { value: '5183' } });
+      await fireEvent.click(await screen.findByText('Save'));
+      await waitFor(() =>
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledExactlyOnceWith([
+          { path: 'server.wsApi.port', value: 5183 },
+        ]),
+      );
+    },
+  );
+
   it('hides Save button when the persisted port value is retyped (#814)', async () => {
     // Arrange: WSS disabled, port 5181
     mocks.mockSettingsList.mockResolvedValue([
