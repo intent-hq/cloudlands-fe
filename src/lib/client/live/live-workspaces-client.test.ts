@@ -224,7 +224,7 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
         workspace: { id: 'ws-general', title: 'General', branch: 'general', status: 'Active' },
         initialAgent: agent,
       });
-      const request = { repositoryPath: '/repo', initialAgent };
+      const request = { idempotencyKey: 'general-create', repositoryPath: '/repo', initialAgent };
       const result = await new LiveWorkspacesClient().create(request);
       expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
         timeoutMs: 120_000,
