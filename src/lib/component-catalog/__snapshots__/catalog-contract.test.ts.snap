@@ -16874,7 +16874,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                               <div class="min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-5 pt-5 px-6" data-slot="dialog-body">
                                 <div class="gap-4 grid grid-cols-1 min-w-0">
                                   <p class="type-body">
-                                    "This workspace's browser is currently driven by Studio Mac. It will be pinned to this client and all of its agent-owned tabs will move here. Page state is not preserved; tabs you opened yourself are unaffected."
+                                    "This workspace’s primary computer is Studio Mac. Switching here ends active desktop control and moves agent-owned browser tabs here. Page state is not preserved; tabs you opened yourself stay put."
                               <div class="dialog-actions flex flex-wrap gap-2 items-center justify-end m-0 min-w-0 pb-6 px-6 shrink-0 svelte-<scope>" data-slot="dialog-footer">
                                 <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                   <div class="flex items-center" data-slot="form-actions-destructive">
@@ -18002,6 +18002,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                               "Terminal read access"
                                           <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                             "Let agents list terminal sessions and read their output"
+                                      <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="desktopControl" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
+                                        <div class="flex-1 min-w-0">
+                                          <div class="flex gap-2 items-baseline min-w-0">
+                                            <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
+                                              "Desktop control"
+                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                            "Make desktop control tools available to new agent sessions. Your permission is still required. This does not change remembered permission or stop active control."
                                       <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="richChatBlocks" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">
