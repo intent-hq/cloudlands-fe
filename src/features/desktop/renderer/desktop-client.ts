@@ -66,6 +66,7 @@ const event = z.discriminatedUnion('type', [
           'agent_end',
           'user_stop',
           'primary_changed',
+          'owner_changed',
           'disconnected',
           'screen_locked',
           'os_permission_lost',

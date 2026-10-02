@@ -308,7 +308,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(12);
+      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(13);
     });
     expect(screen.getByText('~50 tokens/turn')).toBeTruthy();
   });

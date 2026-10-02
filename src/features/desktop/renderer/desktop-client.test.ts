@@ -43,6 +43,22 @@ describe('desktop wire validation', () => {
       }),
     ).toBeUndefined();
   });
+  it('accepts ownership revocation so active control can be cleared', () => {
+    const event = {
+      id: 'owner-change',
+      type: 'desktop:session-changed',
+      data: {
+        workspaceId: 'workspace',
+        agentId: 'agent',
+        sessionId: 'session',
+        computerId: 'computer',
+        computerName: 'Windows workstation',
+        status: 'ended',
+        reason: 'owner_changed',
+      },
+    };
+    expect(parseDesktopEvent(event)).toEqual(event);
+  });
   it.each([undefined, 2, true])(
     'fails closed for unsupported capability %s',
     async (desktopControl) => {
