@@ -4,6 +4,11 @@ import {
 } from '$features/agent/utils/build-recorded-attempt';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ChatAgentState,
   ChatStateSlice,
@@ -385,7 +390,7 @@ function reduceQueueProcessing(
     return updateAgent(state, agentId, {
       processedQueuedTurn: {
         ...previous,
-        messages,
+        messages: createCollection('id', messages),
         record,
         entryTurns: { ...previous.entryTurns, ...entryTurns },
       },
@@ -395,7 +400,12 @@ function reduceQueueProcessing(
     });
   }
   const attemptGeneration = (agent.attemptGeneration ?? 0) + (keys.length ? 1 : 0);
-  const processedQueuedTurn = { turnId, messages, entryTurns, attemptGeneration };
+  const processedQueuedTurn = {
+    turnId,
+    messages: messages ? createCollection('id', messages) : undefined,
+    entryTurns,
+    attemptGeneration,
+  };
   if (!keys.length) return updateAgent(state, agentId, { processedQueuedTurn });
   const parked = agent.queuedRetryRecords[keys[0]];
   const remaining = { ...agent.queuedRetryRecords };
@@ -1079,7 +1089,7 @@ function isProcessedEntry(agent: ChatAgentState, messageId: string, turnId: stri
   const processed = agent.processedQueuedTurn;
   return processed?.messages
     ? processed.entryTurns?.[messageId] === turnId ||
-        processed.messages.some((message) => message.id === messageId && message.turnId === turnId)
+        getItem(processed.messages, messageId)?.turnId === turnId
     : processed?.turnId === turnId;
 }
 
@@ -1099,7 +1109,7 @@ function acknowledgedProcessedAttempt(
   // Only entries captured at admission outrank a canonical ACK. Legacy snapshots
   // have no mutation revision and cannot establish a newer payload.
   return processed.messages
-    ? (processed.record ?? buildProcessedRecordedAttempt(processed.messages, record))
+    ? (processed.record ?? buildProcessedRecordedAttempt(getItems(processed.messages), record))
     : record;
 }
 

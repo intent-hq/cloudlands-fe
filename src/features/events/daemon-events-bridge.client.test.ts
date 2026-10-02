@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -4008,10 +4009,9 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
       appStore.dispatch(chatSendFailed(AGENT, 'failed', 'provider-turn'));
       expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual(expected);
       expect(appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords).toEqual({});
-      expect(appStore.state.chatState.byAgentId[AGENT].processedQueuedTurn?.messages).toEqual([
-        a,
-        b,
-      ]);
+      expect(
+        getItems(appStore.state.chatState.byAgentId[AGENT].processedQueuedTurn!.messages!),
+      ).toEqual([a, b]);
       // A separate send with identical payload is still a different attempt.
       const next = structuredClone(expected);
       appStore.dispatch(chatLastAttemptedMessageSet(AGENT, next));
