@@ -64,10 +64,16 @@ for (const [span, width, height] of [
             .toJSON();
           for (let r = top; r < bottom; r++) {
             const row = expected.content![0].content![r];
-            row.content = row.content!.flatMap((cell, c) => {
+            const cells = row.content!.flatMap((cell, c) => {
               if (c < left || c >= right) return [cell];
               return (r - top) % height === 0 && (c - left) % width === 0 ? [replacement] : [];
             });
+            expected.content![0].content![r] = e.schema.nodes.tableRow
+              .create(
+                row.attrs,
+                cells.map((cell) => e.schema.nodeFromJSON(cell)),
+              )
+              .toJSON();
           }
           const data = new DataTransfer();
           data.setData(
