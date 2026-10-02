@@ -82,7 +82,7 @@
             <Button
               {...props}
               variant="plain"
-              size="icon-xs"
+              size="icon-compact"
               class="h-6 w-6 shrink-0 {SUBSCRIPTION_ICON_BUTTON_CLASS}"
               aria-label={m.chat_scriptMonitor_actions_ariaLabel({ name: monitor.scriptName })}
               {disabled}><KebabIcon class="h-3 w-3" /></Button
@@ -107,7 +107,7 @@
       </Menu.Root>
       <Button
         variant="plain"
-        size="icon-xs"
+        size="icon-compact"
         class="h-6 w-6 shrink-0 {SUBSCRIPTION_ICON_BUTTON_CLASS}"
         aria-label={monitor.scriptName}
         aria-expanded={expanded === monitor.monitorId}
@@ -126,7 +126,7 @@
     </div>
     {#if operation?.error}<p
         role="alert"
-        class="type-caption text-destructive {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
+        class="type-caption text-danger {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
       >
         {operation.message}
       </p>{/if}
