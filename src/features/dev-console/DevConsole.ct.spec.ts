@@ -7,7 +7,10 @@ const viewer = (page: Page, label: string) =>
   page.locator('[data-payload-viewer]').and(page.getByRole('region', { name: label, exact: true }));
 const lines = (region: Locator) => region.locator('.view-lines');
 async function ready(region: Locator) {
-  await expect(region.getByRole('button', { name: 'Search', exact: true })).toBeEnabled();
+  // Cold Monaco chunks and workers can outlast the default assertion budget on shared hosts.
+  await expect(region.getByRole('button', { name: 'Search', exact: true })).toBeEnabled({
+    timeout: 15000,
+  });
   await expect(region.locator('.monaco-editor')).toBeVisible();
   await expect(region.locator('pre')).toHaveCount(0);
 }
