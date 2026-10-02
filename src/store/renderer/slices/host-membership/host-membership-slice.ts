@@ -25,6 +25,7 @@ export interface HostMembershipState {
   busy: boolean;
   error: string | null;
   revision: number | null;
+  createdInviteId: string | null;
 }
 export const initialState: HostMembershipState = {
   target: null,
@@ -35,6 +36,7 @@ export const initialState: HostMembershipState = {
   busy: false,
   error: null,
   revision: null,
+  createdInviteId: null,
 };
 export const hostMembershipOpened =
   createAction<[target: HostMembershipTarget]>('hostMembership/opened');
@@ -49,6 +51,11 @@ export const hostMembershipLoaded =
   createAction<
     [target: HostMembershipTarget, members: HostMember[], invites: HostInvite[], revision: number]
   >('hostMembership/loaded');
+export const hostMembershipInviteCleared = createAction<[target: HostMembershipTarget]>(
+  'hostMembership/inviteCleared',
+);
+export const hostMembershipCreated =
+  createAction<[target: HostMembershipTarget, inviteId: string]>('hostMembership/created');
 export const hostMembershipDenied =
   createAction<[target: HostMembershipTarget, error: string]>('hostMembership/denied');
 export const hostMembershipFinished =
@@ -93,4 +100,12 @@ hostMembershipReducer.with(hostMembershipFinished, (state, { payload: [target] }
 
 hostMembershipReducer.with(hostMembershipDenied, (state, { payload: [target, error] }) =>
   matches(state, target) ? { ...initialState, target, withheld: true, error } : state,
+);
+
+hostMembershipReducer.with(hostMembershipCreated, (state, { payload: [target, inviteId] }) =>
+  matches(state, target) ? { ...state, createdInviteId: inviteId } : state,
+);
+
+hostMembershipReducer.with(hostMembershipInviteCleared, (state, { payload: [target] }) =>
+  matches(state, target) && !state.busy ? { ...state, createdInviteId: null } : state,
 );

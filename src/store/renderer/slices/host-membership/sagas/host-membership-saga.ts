@@ -26,6 +26,7 @@ import {
   hostMembershipLoaded,
   hostMembershipFailed,
   hostMembershipFinished,
+  hostMembershipCreated,
   type HostMembershipTarget,
 } from '../host-membership-slice';
 
@@ -89,6 +90,8 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       });
       if (!(yield* current(target))) return;
       created = { id: result.invite.id, url: result.url };
+      retainHostInviteLink(target.session, created.id, created.url);
+      yield* put(hostMembershipCreated(target, created.id));
     } else if (command.kind === 'remove') {
       const state = yield* selectHostMembershipState.effect();
       const member = getItem(state.members, command.principalId);

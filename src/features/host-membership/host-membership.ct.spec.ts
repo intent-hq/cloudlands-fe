@@ -41,16 +41,14 @@ for (const width of [390, 960]) {
     await expect(page.getByRole('textbox', { name: 'Account username' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Invite a host member', exact: true }).click();
     const account = page.getByRole('textbox', { name: 'Account username' });
-    await account.focus();
+    await expect(account).toBeFocused();
     await page.keyboard.type('sam');
     await page.keyboard.press('Tab');
-    await expect(
-      page.getByRole('button', { name: 'Create invite link', exact: true }),
-    ).toBeFocused();
-    await page.keyboard.press('Enter');
+    await expect(page.getByRole('checkbox')).toBeFocused();
+    await page.keyboard.press('Space');
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('sam');
+    await expect(account).toHaveValue('sam');
     await expect(dialog).toContainText('current and future workspaces');
     await expect(dialog).toContainText('repository');
     await expect(dialog).toContainText('AI');
@@ -62,6 +60,14 @@ for (const width of [390, 960]) {
     }
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Invite a host member', exact: true }),
+    ).toBeFocused();
+    if (process.env.COLLABORATION_CAPTURE_DIR) {
+      await page.screenshot({
+        path: join(process.env.COLLABORATION_CAPTURE_DIR, `host-page-${width}.png`),
+      });
+    }
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
     ).toBeLessThanOrEqual(1);
@@ -69,3 +75,53 @@ for (const width of [390, 960]) {
     await expect(page.getByTestId('host-membership-settings')).toHaveCount(0);
   });
 }
+
+test('an invitation stays inside the dialog during create and copy, with no duplicate submission', async ({
+  mount,
+  page,
+}) => {
+  const invite = {
+    id: 'created',
+    scope: 'host',
+    role: 'member',
+    createdByPrincipalId: 'owner',
+    pinLogin: 'sam',
+    pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '2' },
+    reusable: false,
+    redemptionCount: 0,
+    createdAt: '2026-10-02T00:00:00Z',
+    expiresAt: '2026-10-09T00:00:00Z',
+  };
+  const url = 'intent://invite?controlled-modal-test=1';
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await mount(Harness, {
+    hooksConfig: {
+      mockBackend: {
+        ...mockBackend,
+        'host.invite.list': { invites: [{ ...invite, url }] },
+        'host.invite.create': {
+          invite,
+          url,
+          secret: 'controlled-test-only',
+          hosts: [],
+          port: 8080,
+          fingerprint: 'test',
+          version: 1,
+        },
+      },
+    },
+  });
+  await page.getByRole('button', { name: 'Invite a host member', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'Account username' }).fill('sam');
+  await expect(dialog.getByRole('button', { name: 'Create invite link' })).toBeDisabled();
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Create invite link' }).click();
+  await expect(dialog.getByRole('status')).toContainText('New invite link');
+  await expect(dialog.getByRole('button', { name: 'Create invite link' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Copy link' }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).last().click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Open invites' })).toContainText('@sam');
+});

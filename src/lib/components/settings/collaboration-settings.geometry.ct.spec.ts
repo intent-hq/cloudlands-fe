@@ -52,12 +52,8 @@ test('unlinked owner opens and cancels invitation using the keyboard without los
   await expect(
     page.getByText('Access to all current and future workspaces', { exact: true }),
   ).toBeVisible();
-  const cancel = page
-    .locator('#host-invitation-form')
-    .getByRole('button', { name: 'Cancel', exact: true });
-  await page.keyboard.press('Tab');
-  await expect(cancel).toBeFocused();
-  await page.keyboard.press('Enter');
+  await expect(account).toBeFocused();
+  await page.keyboard.press('Escape');
   await expect(account).toHaveCount(0);
   await expect(invite).toBeFocused();
   await expect(page.getByTestId('guest-sessions-joined')).toBeVisible();

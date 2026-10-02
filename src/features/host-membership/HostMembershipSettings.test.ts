@@ -40,15 +40,17 @@ it('renders truthful host scope and submits a confirmed account pin without exte
   });
   expect(screen.queryByLabelText('Account username')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+  expect(screen.getByRole('dialog', { name: 'Invite a host member' })).toBeTruthy();
+  expect(
+    within(screen.getByTestId('host-membership-settings')).queryByLabelText('Account username'),
+  ).toBeNull();
   expect(screen.getByText(/expires after seven days/)).toBeTruthy();
   expect(
     screen.getByText(/Members can create and fully manage all current and future/),
   ).toBeTruthy();
   await fireEvent.input(screen.getByLabelText('Account username'), { target: { value: 'sam' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
-  const dialog = await screen.findByRole('dialog');
-  expect(dialog.textContent).toContain('@sam · GitHub');
-  expect(dialog.textContent).not.toContain('github@github.com');
+  await fireEvent.click(screen.getByRole('checkbox'));
+  const dialog = screen.getByRole('dialog');
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Create invite link' }));
   expect(mocks.dispatch).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -110,7 +112,7 @@ it('closes the invitation without creating one and returns focus to the invite a
   mocks.dispatch.mockClear();
   await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(screen.queryByLabelText('Account username')).toBeNull();
-  expect(document.activeElement).toBe(invite);
+  await waitFor(() => expect(document.activeElement).toBe(invite));
   expect(mocks.dispatch).not.toHaveBeenCalledWith(
     expect.objectContaining({ type: 'hostMembership/requested' }),
   );
@@ -198,4 +200,79 @@ it('shows roster profiles and readable providers while preserving exact removal 
       payload: [target, { kind: 'remove', principalId: 'member-stable' }],
     }),
   );
+});
+
+it.each(['member', 'unknown', 'host', 'withheld'] as const)(
+  'cancels the open invitation when authority changes: %s',
+  async (change) => {
+    render(HostMembershipSettings, {
+      props: { context: selectPrincipalActionContext.select(mocks.state)! },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+    await fireEvent.input(screen.getByLabelText('Account username'), { target: { value: 'sam' } });
+    await fireEvent.click(screen.getByRole('checkbox'));
+    if (change === 'member') mocks.state = withHostPrincipal(mocks.state, 'member');
+    else if (change === 'unknown')
+      mocks.state = { ...mocks.state, principal: { ...mocks.state.principal, status: 'loading' } };
+    else if (change === 'host')
+      mocks.state = {
+        ...mocks.state,
+        principal: { ...mocks.state.principal, context: 'another-host' },
+      };
+    else
+      mocks.state = {
+        ...mocks.state,
+        hostMembership: { ...mocks.state.hostMembership, withheld: true },
+      };
+    mocks.dispatch.mockClear();
+    mocks.emit();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'hostMembership/requested' }),
+    );
+  },
+);
+
+it('keeps create busy, copies its exact result, and starts a fresh draft after closing', async () => {
+  const {
+    hostMembershipStarted,
+    hostMembershipCreated,
+    hostMembershipFinished,
+    hostMembershipFailed,
+  } = await import('$store/renderer/slices/host-membership/host-membership-slice');
+  const { retainHostInviteLink, clearHostInviteLinks } = await import('./invite-links');
+  render(HostMembershipSettings, {
+    props: { context: selectPrincipalActionContext.select(mocks.state)! },
+  });
+  const target = mocks.dispatch.mock.calls.find(
+    ([action]) => action.type === hostMembershipOpened.type,
+  )![0].payload[0];
+  await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+  await fireEvent.input(screen.getByLabelText('Account username'), { target: { value: 'sam' } });
+  await fireEvent.click(screen.getByRole('checkbox'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  mocks.dispatch(hostMembershipStarted(target));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Creating…' }).hasAttribute('disabled')).toBe(true),
+  );
+  retainHostInviteLink(target.session, 'created-exact', 'intent://invite?controlled=1');
+  mocks.dispatch(hostMembershipCreated(target, 'created-exact'));
+  mocks.dispatch(hostMembershipFinished(target));
+  const dialog = screen.getByRole('dialog');
+  await fireEvent.click(await within(dialog).findByRole('button', { name: 'Copy link' }));
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'hostMembership/requested',
+      payload: [target, { kind: 'copy', inviteId: 'created-exact' }],
+    }),
+  );
+  mocks.dispatch(hostMembershipFailed(target, 'Could not refresh the member list.'));
+  await fireEvent.click(
+    within(dialog).getAllByRole('button', { name: 'Close', exact: true }).at(-1)!,
+  );
+  expect(screen.getByRole('alert').textContent).toContain('Could not refresh the member list.');
+  await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+  expect((screen.getByLabelText('Account username') as HTMLInputElement).value).toBe('');
+  expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false');
+  clearHostInviteLinks(target.session);
 });

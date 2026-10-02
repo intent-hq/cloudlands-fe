@@ -11,6 +11,7 @@ export const labelMetadata = parseUiComponentMetadata({
   owner: '007-B2',
   callers: [
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
+    'src/features/host-membership/HostInvitationDialog.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ModalCatalogPreview.svelte',

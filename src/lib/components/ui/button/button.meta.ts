@@ -15,6 +15,7 @@ export const buttonMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B1',
   callers: [
+    'src/features/host-membership/HostInvitationDialog.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',

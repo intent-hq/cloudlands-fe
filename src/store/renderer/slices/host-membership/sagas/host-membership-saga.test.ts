@@ -118,10 +118,57 @@ describe('owner host membership wire and authority', () => {
       expect(JSON.stringify(h.actions)).not.toContain(secret);
       expect(JSON.stringify(h.state())).not.toContain(secret);
       expect(readHostInviteLink('session', 'invite')).toBe(url);
+      expect(h.state().hostMembership.createdInviteId).toBe('invite');
       h.dispatch(hostMembershipClosed(h.target));
       await settle();
       expect(readHostInviteLink('session', 'invite')).toBeNull();
     } finally {
+      h.task.cancel();
+    }
+  });
+  it('retains the exact created link when the follow-up roster refresh fails', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === 'host.invite.create') return { invite: invitation, url, secret };
+        throw new Error('refresh failed');
+      });
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: { pinLogin: 'sam', pinProvider: 'github' },
+        }),
+      );
+      await settle();
+      expect(h.state().hostMembership.createdInviteId).toBe('invite');
+      expect(h.state().hostMembership.error).toBeTruthy();
+      expect(readHostInviteLink('session', 'invite')).toBe(url);
+      expect(JSON.stringify(h.actions)).not.toContain(secret);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
+  it('rejects duplicate creation while the first request is pending', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      mocks.request.mockClear();
+      mocks.request.mockImplementation(() => new Promise(() => {}));
+      const command = {
+        kind: 'create' as const,
+        input: { pinLogin: 'sam', pinProvider: 'github' as const },
+      };
+      h.dispatch(hostMembershipRequested(h.target, command));
+      h.dispatch(hostMembershipRequested(h.target, command));
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(1);
+      expect(h.state().hostMembership.busy).toBe(true);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
       h.task.cancel();
     }
   });
@@ -267,6 +314,7 @@ describe('owner host membership wire and authority', () => {
         expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(['host.invite.create']);
         expect(readHostInviteLink('session', 'invite')).not.toBe(url + '-new');
         expect(JSON.stringify(h.actions)).not.toContain(secret);
+        expect(h.state().hostMembership.createdInviteId).toBeNull();
       } finally {
         h.dispatch(hostMembershipClosed(h.target));
         h.task.cancel();
