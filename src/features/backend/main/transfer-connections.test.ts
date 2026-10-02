@@ -544,38 +544,58 @@ describe('main-channel isolation (regression, monorepo#2458)', () => {
 });
 
 // protocol-version-ok-file: dedicated transfer connection support fixtures.
-describe('registered-root chunk transfers', () => {
-  it.each(['11.1', '11.0', undefined])(
-    'negotiates on the dedicated socket with version %s',
-    async (protocolVersion) => {
-      const { sockets } = installFakeFactory();
-      const params = {
-        workspaceId: 'ws',
-        path: 'same.pdf',
-        gitRootId: 'root-a',
-        offset: 0,
-        length: 1024,
-      };
-      const result = requestOverTransferConnection(wssConfig, 'file.readChunk', params).catch(
-        (error) => error,
-      );
-      await flush();
-      expect(sockets[0].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
-      respondLast(sockets[0], { protocolVersion });
-      await flush();
-      if (protocolVersion === '11.1') {
-        expect(JSON.parse(sockets[0].writes.at(-1)!)).toMatchObject({
-          method: 'file.readChunk',
-          params,
-        });
-        respondLast(sockets[0], { content: 'Ug==', size: 1, bytesRead: 1 });
-        expect(await result).toEqual({ content: 'Ug==', size: 1, bytesRead: 1 });
-      } else {
-        expect(await result).toBeInstanceOf(Error);
-        expect(sockets[0].writes).toHaveLength(1);
-      }
-      expect(sockets[0].destroyed).toBe(true);
-      expect(__getActiveTransferCountForTesting()).toBe(0);
-    },
-  );
+describe.each(['file.read', 'file.readChunk'])('registered-root %s transfers', (method) => {
+  it.each([
+    ['11.1', true],
+    ['12.0', true],
+    ['11.0', false],
+    ['13.0', false],
+    ['12.0-preview', false],
+    [undefined, false],
+  ])('negotiates on the dedicated socket with version %s', async (protocolVersion, supported) => {
+    const { sockets } = installFakeFactory();
+    const params = {
+      workspaceId: 'ws',
+      path: 'same.pdf',
+      gitRootId: 'root-a',
+      ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+    };
+    const result = requestOverTransferConnection(wssConfig, method, params).catch((error) => error);
+    await flush();
+    expect(sockets[0].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+    respondLast(sockets[0], { protocolVersion });
+    await flush();
+    if (supported) {
+      expect(JSON.parse(sockets[0].writes.at(-1)!)).toMatchObject({ method, params });
+      const response = method === 'file.read' ? 'R' : { content: 'Ug==', size: 1, bytesRead: 1 };
+      respondLast(sockets[0], response);
+      expect(await result).toEqual(response);
+    } else {
+      expect(await result).toBeInstanceOf(Error);
+      expect(sockets[0].writes).toHaveLength(1);
+    }
+    expect(sockets[0].destroyed).toBe(true);
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+  });
+
+  it('does not reuse protocol 12 support if the dedicated socket reconnects after hello', async () => {
+    vi.useFakeTimers();
+    const { sockets } = installFakeFactory();
+    const result = requestOverTransferConnection(wssConfig, method, {
+      workspaceId: 'ws',
+      path: 'same.pdf',
+      gitRootId: 'root-a',
+      ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+    }).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets[0].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+    respondLast(sockets[0], { protocolVersion: '12.0' });
+    sockets[0].emit('close');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toBeInstanceOf(Error);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].writes).toEqual([]);
+    expect(sockets[1].destroyed).toBe(true);
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+  });
 });
