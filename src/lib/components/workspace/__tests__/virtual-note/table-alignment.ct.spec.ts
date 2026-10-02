@@ -130,3 +130,71 @@ test('native table paragraph marks and escaped literals survive editing, save an
   expect(result.after).toEqual(result.before);
   expect(result.canonical.doc.content?.[0]).toEqual(result.before);
 });
+
+test('native table Shift+Enter retains breaks, cells and edit history through canonical save', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(Harness, { props: { oracle: true, sourceOverride: source } });
+  const host = page.getByTestId('proof');
+  await expect.poll(() => host.evaluate((el) => !!(el as Host).native)).toBe(true);
+  const original = await host.evaluate((el) => {
+    const h = el as Host;
+    let caret = -1;
+    h.native.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'b') caret = pos + 2;
+    });
+    h.native.commands.setTextSelection(caret);
+    h.native.view.focus();
+    return h.native.state.doc.firstChild!.toJSON();
+  });
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('tail');
+  const snapshot = () =>
+    host.evaluate((el) => {
+      const h = el as Host;
+      return {
+        table: h.native.state.doc.firstChild!.toJSON(),
+        selection: h.native.state.selection.toJSON(),
+      };
+    });
+  const edited = await snapshot();
+  expect(edited.table.content![1].content![1].content).toHaveLength(1);
+  expect(edited.table.content![1].content![1].content![0].content).toEqual([
+    { type: 'text', text: 'b' },
+    { type: 'hardBreak' },
+    { type: 'text', text: 'tail' },
+  ]);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect((await snapshot()).table).toEqual(original);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  expect(await snapshot()).toEqual(edited);
+  const result = await host.evaluate(async (el) => {
+    const h = el as Host & {
+      nativeMarkdown: () => string;
+      reloadNative: (source: string) => Promise<void>;
+    };
+    const markdown = h.nativeMarkdown().trim();
+    const canonical = await h.parseSource(markdown);
+    const selection = h.native.state.selection.toJSON();
+    const old = h.native;
+    await h.reloadNative(markdown);
+    h.native.commands.setTextSelection({ from: selection.anchor!, to: selection.head! });
+    return {
+      markdown,
+      canonical,
+      destroyed: old.isDestroyed,
+      table: h.native.state.doc.firstChild!.toJSON(),
+      selection: h.native.state.selection.toJSON(),
+    };
+  });
+  await testInfo.attach('table-hard-break-roundtrip.json', {
+    body: JSON.stringify({ original, edited, result }),
+    contentType: 'application/json',
+  });
+  expect(result.markdown).toBe(source.replace('| a | b |', '| a | b<br>tail |'));
+  expect(result.destroyed).toBe(true);
+  expect(result.table).toEqual(edited.table);
+  expect(result.selection).toEqual(edited.selection);
+  expect(result.canonical.doc.content?.[0]).toEqual(edited.table);
+});

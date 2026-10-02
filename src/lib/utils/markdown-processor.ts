@@ -1821,7 +1821,14 @@ export function processHTMLToMarkdown(
             if (node.nodeType === Node.TEXT_NODE)
               node.textContent = escapeText(node.textContent ?? '');
             else if (node instanceof Element) {
-              if (node.tagName === 'CODE') {
+              // The math validator compares the complete rendered subtree.
+              // Escaping its descendants would invalidate genuine source metadata.
+              if (validatedMathSource(node)) continue;
+              if (node.tagName === 'BR') {
+                // The existing Markdown grammar permits attribute-free BR.
+                // A raw newline here would start another pipe-table row.
+                node.replaceWith(document.createTextNode('<br>'));
+              } else if (node.tagName === 'CODE') {
                 while (node.nextSibling instanceof Element && node.nextSibling.tagName === 'CODE') {
                   const next = node.nextSibling;
                   node.textContent = (node.textContent ?? '') + (next.textContent ?? '');
