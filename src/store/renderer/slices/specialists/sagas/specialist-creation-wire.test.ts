@@ -18,6 +18,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), error: vi.fn() },
 }));
 
+import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { specialistsSaga } from './specialists-saga';
 import {
@@ -36,12 +37,13 @@ it('creates a user specialist through the real client and confirms the wire cata
   const catalog = new Promise<{ specialists: SpecialistDef[] }>((resolve) => {
     releaseCatalog = resolve;
   });
+  const create = vi.spyOn(appClient.specialists, 'create');
   let written = false;
   const request = vi.mocked(backendRequest).mockImplementation(async (method) => {
     if (method === 'specialist.create') {
       const result = await write;
       written = true;
-      return result;
+      return { specialist: result };
     }
     if (method === 'specialist.list') return written ? catalog : { specialists: [] };
     throw new Error(`Unexpected method: ${method}`);
@@ -85,6 +87,7 @@ it('creates a user specialist through the real client and confirms the wire cata
     });
     expect(specialists.creationByContext.user.status).toBe('saving');
     releaseWrite(spec);
+    await expect(create.mock.results[0].value).resolves.toEqual(spec);
     await vi.waitFor(() => expect(specialists.creationByContext.user.status).toBe('refreshing'));
     expect(request.mock.calls.filter(([method]) => method === 'specialist.list')).toEqual([
       ['specialist.list'],
@@ -100,5 +103,6 @@ it('creates a user specialist through the real client and confirms the wire cata
   } finally {
     task.cancel();
     await task.toPromise();
+    create.mockRestore();
   }
 });

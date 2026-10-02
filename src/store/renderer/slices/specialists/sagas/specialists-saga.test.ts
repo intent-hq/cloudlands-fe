@@ -30,7 +30,7 @@ vi.mock('$lib/client', () => ({
   },
 }));
 vi.mock('$lib/constants/specialists', () => ({
-  GITHUB_DEPENDENT_SPECIALIST_IDS: new Set<string>(),
+  GITHUB_DEPENDENT_SPECIALIST_IDS: new Set(['pr-reviewer']),
   SPECIALISTS: [
     {
       id: 'builtin',
@@ -53,6 +53,7 @@ import type { StoreState } from '../../../types';
 import { selectSpecialists } from '../specialists-selectors';
 import {
   createSpecialistFromDraft,
+  setSpecialistCreation,
   updateSpecialistDraft,
   deleteFileSpecialist,
   initialState,
@@ -775,11 +776,13 @@ describe('specialist creation confirmation', () => {
   function harness() {
     let state = {
       specialists: initialState,
+      githubAuth: { isAuthenticated: false },
       providerCatalog: providerCatalogReducer(undefined, { type: '@@init' }),
     };
     const channel = stdChannel();
     const dispatch = vi.fn((action: StoreAction<unknown>) => {
       state = {
+        ...state,
         specialists: specialistsReducer(state.specialists, action),
         providerCatalog: providerCatalogReducer(state.providerCatalog, action),
       };
@@ -812,6 +815,36 @@ describe('specialist creation confirmation', () => {
     });
     return { promise, resolve, reject };
   }
+
+  it('creates a visible unique ID instead of reusing a GitHub-gated ID', async () => {
+    const h = harness();
+    h.dispatch(updateSpecialistDraft('user', { name: 'PR Reviewer' }));
+    mocks.list.mockImplementation(async () => [fileDef(mocks.create.mock.calls[0][0])]);
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await expect(action.promise).resolves.toBe('pr-reviewer-2');
+    expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toContain(
+      'pr-reviewer-2',
+    );
+  });
+
+  it('does not confirm a persisted entry excluded from the sidebar by GitHub auth', async () => {
+    const h = harness();
+    h.dispatch(
+      setSpecialistCreation('user', {
+        draft: h.creation().draft,
+        status: 'refresh-failed',
+        specialistId: 'pr-reviewer',
+      }),
+    );
+    mocks.list.mockResolvedValue([fileDef('pr-reviewer')]);
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await expect(action.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
 
   it('keeps pending through write and catalog delays and ignores duplicate submissions', async () => {
     const write = deferred<unknown>();

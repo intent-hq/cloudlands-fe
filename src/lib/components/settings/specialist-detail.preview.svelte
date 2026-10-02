@@ -159,7 +159,7 @@
             releaseWrite = undefined;
             liveCatalog = { specialists: [...liveCatalog.specialists, definition] };
             holdCatalog = true;
-            return { ok: true, result: definition };
+            return { ok: true, result: { specialist: definition } };
           }
           if (request.method === 'specialist.list') {
             catalogRequests += 1;

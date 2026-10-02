@@ -19,7 +19,11 @@ import type {
   SpecialistDef,
   SpecialistCatalog,
 } from '$lib/client/app-client';
-import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
+import {
+  SPECIALISTS,
+  GITHUB_DEPENDENT_SPECIALIST_IDS,
+  type Specialist,
+} from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -33,8 +37,11 @@ import {
   workspaceCatalogReceived,
   workspaceCatalogReadFailed,
 } from '../../provider-catalog/provider-catalog-slice';
+import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
+  filterSpecialistsByGitHubAuth,
+  selectFileSpecialists,
   selectSpecialistCreation,
   selectSpecialistCreationIds,
   selectSpecialists,
@@ -324,6 +331,12 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
   }
 }
 
+function* isInSettingsSidebar(id: string, workspaceId?: string) {
+  const specialists = yield* selectSpecialists.effect(workspaceId);
+  const authenticated = yield* selectGitHubAuthIsAuthenticated.effect();
+  return filterSpecialistsByGitHubAuth(specialists, authenticated).some((entry) => entry.id === id);
+}
+
 /** Wait on the existing workspace catalog owner rather than starting another catalog reader. */
 function* confirmWorkspaceSpecialist(workspaceId: string, id: string) {
   const updates = yield* actionChannel(
@@ -340,7 +353,7 @@ function* confirmWorkspaceSpecialist(workspaceId: string, id: string) {
         while (true) {
           const action = yield* take(updates);
           const specialist = yield* selectGetFileSpecialist.effect(id, workspaceId);
-          if (specialist) return specialist;
+          if (specialist && (yield* call(isInSettingsSidebar, id, workspaceId))) return specialist;
           if (action.type === workspaceCatalogReadFailed.type) return undefined;
         }
       }),
@@ -375,12 +388,18 @@ function* handleCreateFromDraft(
   const specialists = yield* selectSpecialists.effect();
   const workspaceSpecialists = workspaceId ? yield* selectSpecialists.effect(workspaceId) : [];
   const reservedIds = yield* selectSpecialistCreationIds.effect();
+  const files = yield* selectFileSpecialists.effect();
+  const bundled = yield* selectBundledSpecialists.effect();
   const id =
     creation.specialistId ??
     generateUniqueSpecialistId(draft.name.trim(), [
       ...specialists.map((specialist) => specialist.id),
       ...workspaceSpecialists.map((specialist) => specialist.id),
       ...reservedIds,
+      ...files.map((specialist) => specialist.id),
+      ...bundled.map((specialist) => specialist.id),
+      ...SPECIALISTS.map((specialist) => specialist.id),
+      ...GITHUB_DEPENDENT_SPECIALIST_IDS,
     ]);
   let settled = false;
   try {
@@ -417,7 +436,7 @@ function* handleCreateFromDraft(
     // A subscription may supersede this request; inspect Redux after the refresh.
     const refreshed = yield* call(refetchSpecialists, context);
     const available = yield* selectGetFileSpecialist.effect(id);
-    if (!available) {
+    if (!available || !(yield* call(isInSettingsSidebar, id))) {
       const error = new Error(m.specialists_mutation_refreshFailed_error());
       yield* put(
         setSpecialistCreation(draftContext, {
