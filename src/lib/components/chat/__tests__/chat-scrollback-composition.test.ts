@@ -258,12 +258,28 @@ describe('shouldRequestOlderHistory', () => {
     ).toBe(false);
   });
 
-  it('does not fire away from the top, while unscrollable, fetching, or exhausted', () => {
+  it('does not fire away from the top, while fetching, or exhausted', () => {
     expect(shouldRequestOlderHistory({ ...base, scrollTop: 500 })).toBe(false);
-    expect(shouldRequestOlderHistory({ ...base, canScroll: false })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, fetching: true })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, exhausted: true })).toBe(false);
   });
+
+  it.each([5, 0])(
+    'fills an unscrollable viewport with %i resident tail rows when older history exists',
+    (tailCount) => {
+      // Five short rows, or an empty resident window with known older history,
+      // must start the shared older-page path without requiring a scroll event.
+      expect(
+        shouldRequestOlderHistory({
+          ...base,
+          scrollTop: 0,
+          canScroll: false,
+          tailCount,
+          totalMessages: 120,
+        }),
+      ).toBe(true);
+    },
+  );
 
   it('extends the near-top threshold by the virtual spacer height (thumb drag)', () => {
     // Thumb dragged INTO the estimated region: scrollTop is far beyond the

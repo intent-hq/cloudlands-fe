@@ -32,6 +32,7 @@ import {
   initialState as agentSessionInitialState,
   prependHistoryMessages,
   removeSession,
+  seedHistoryAround,
   removeWorkspaceSessions,
   updateSession,
 } from '../../agent-session/agent-session-slice';
@@ -176,6 +177,87 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('walks five-message older pages past an inclusive fallback anchor', async () => {
+    const run = harness();
+    try {
+      const rows = Array.from({ length: 20 }, (_, i) => message(`m-${i}`, i));
+      run.dispatch(bulkUpsertSessions([session({ messages: rows.slice(15) })]));
+      // Inclusive seek at m-15 overlaps the tail, then nextToken moves to
+      // the exclusive boundary. These are explicit daemon responses, not
+      // a second implementation of its paginator.
+      mocks.getConversation
+        .mockResolvedValueOnce(page(rows.slice(13, 18), { nextToken: 'before-13' }))
+        .mockResolvedValueOnce(page(rows.slice(8, 13), { nextToken: 'before-8' }));
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      expect(run.history()?.messages.map((row) => row.id)).toEqual(
+        rows.slice(8, 15).map((row) => row.id),
+      );
+      expect(run.chat()?.scrollbackOlderToken).toBe('before-8');
+      expect(mocks.getConversation.mock.calls).toEqual([
+        [AGENT, 5, undefined, 'm-15', undefined, WS],
+        [AGENT, 5, 'before-13', undefined, undefined, WS],
+      ]);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('walks five-message newer pages past an inclusive fallback anchor and closes the gap', async () => {
+    const run = harness();
+    try {
+      const rows = Array.from({ length: 20 }, (_, i) => message(`m-${i}`, i));
+      run.dispatch(bulkUpsertSessions([session({ messages: rows.slice(15) })]));
+      run.dispatch(seedHistoryAround(AGENT, rows.slice(3, 8), 3));
+      expect(run.history()?.gapToTail).toBe(true);
+      mocks.getConversation
+        .mockResolvedValueOnce(page(rows.slice(5, 10), { prevToken: 'after-9' }))
+        .mockResolvedValueOnce(page(rows.slice(10, 15), { prevToken: 'after-14' }))
+        .mockResolvedValueOnce(page(rows.slice(15), { prevToken: null }));
+      for (let request = 0; request < 3; request++) {
+        run.dispatch(historyGapFillRequested(WS, AGENT));
+        await settle();
+      }
+      expect(run.history()?.gapToTail).toBe(false);
+      expect(run.history()?.messages.map((row) => row.id)).toEqual(
+        rows.slice(3, 15).map((row) => row.id),
+      );
+      expect(mocks.getConversation.mock.calls).toEqual([
+        [AGENT, 5, undefined, 'm-7', undefined, WS],
+        [AGENT, 5, 'after-9', undefined, undefined, WS],
+        [AGENT, 5, 'after-14', undefined, undefined, WS],
+      ]);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('uses one five-message seek window for a distant jump', async () => {
+    const run = harness();
+    try {
+      run.dispatch(bulkUpsertSessions([session({ messages: [message('tail', 2000)] })]));
+      mocks.getConversation.mockResolvedValueOnce(
+        page(
+          Array.from({ length: 5 }, (_, i) => message(`m-${998 + i}`, 998 + i)),
+          { nextToken: 'before-998', prevToken: 'after-1002', totalMessages: 2001 },
+        ),
+      );
+      run.dispatch(historySeekRequested(WS, AGENT, 1000));
+      await settle();
+      expect(run.history()?.messages).toHaveLength(5);
+      expect(mocks.getConversation.mock.calls).toEqual([
+        [AGENT, 5, undefined, undefined, 1000, WS],
+      ]);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
   });
 
   it('seeks at the tail oldest on the first older request, then continues from the persisted token', async () => {
