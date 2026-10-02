@@ -44,6 +44,7 @@ interface Entry {
   key: string;
   scope: string;
   handles: Set<string>;
+  ambiguousHandles: Set<string>;
   parentKey?: string;
   unsubscribeKey?: string;
   replacementKey?: string;
@@ -388,6 +389,7 @@ export class DevConsoleCaptureService {
       key,
       scope,
       handles: new Set(),
+      ambiguousHandles: new Set(),
       replied: false,
       closed: false,
       retainedBytes: payload.retainedBytes,
@@ -439,6 +441,11 @@ export class DevConsoleCaptureService {
     const key = this.streamKey(entry.scope, entry.record.direction, handle);
     let owners = session.streams.get(key);
     if (!owners) session.streams.set(key, (owners = new Set()));
+    for (const owner of owners) {
+      if (owner === entry) continue;
+      owner.ambiguousHandles.add(key);
+      entry.ambiguousHandles.add(key);
+    }
     owners.add(entry);
     entry.handles.add(key);
     entry.record.streamState = 'open';
@@ -451,11 +458,14 @@ export class DevConsoleCaptureService {
     handle: StreamHandle,
     trailingOutput = false,
   ): Entry | undefined {
-    const owners = session.streams.get(this.streamKey(scope, direction, handle));
+    const key = this.streamKey(scope, direction, handle);
+    const owners = session.streams.get(key);
     // Retained host executions may still emit output after exit. If their ID is
     // reused, even an ended owner makes trailing output ambiguous. Never guess.
     const owner = owners?.size === 1 ? owners.values().next().value : undefined;
-    if (!owner || owner.closed) return;
+    // Eviction of another owner cannot disambiguate output already in flight.
+    // Collision history lives on bounded retained records, never a global tombstone.
+    if (!owner || owner.closed || owner.ambiguousHandles.has(key)) return;
     return owner.record.streamState !== 'ended' || (trailingOutput && handle.family === 'host-exec')
       ? owner
       : undefined;

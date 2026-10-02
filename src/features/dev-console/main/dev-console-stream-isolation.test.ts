@@ -267,3 +267,38 @@ it('does not guess ownership of trailing output when a completed host ID is reus
   expect(h.rows()[0].frameCount).toBe(3);
   expect(h.rows().find((r) => r.requestId === 'new')?.frameCount).toBe(2);
 });
+
+it.each([false, true])(
+  'preserves host ID ambiguity after the older owner is evicted (early replay: %s)',
+  (earlyReply) => {
+    const h = setup(3);
+    h.source.request('old', 'outbound', 'host.execStream', {
+      command: 'true',
+      requestId: 'reused',
+    });
+    h.source.reply('old', { requestId: 'reused' });
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:exit', data: { requestId: 'reused', ok: true, exitCode: 0 } },
+    });
+    h.source.request('new', 'outbound', 'host.execStream', {
+      command: 'true',
+      requestId: 'reused',
+    });
+    if (!earlyReply) h.source.reply('new', { requestId: 'reused' });
+    // This frame evicts the old execution; it must not clear the survivor's ambiguity.
+    h.source.notification(
+      'inbound',
+      earlyReply ? 'events.event' : 'unrelated',
+      earlyReply
+        ? {
+            event: { type: 'host:exec:stdout', data: { requestId: 'reused', chunk: 'YQ==' } },
+          }
+        : {},
+    );
+    if (earlyReply) h.source.reply('new', { requestId: 'reused' });
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:stdout', data: { requestId: 'reused', chunk: 'Yg==' } },
+    });
+    expect(h.rows().find((r) => r.requestId === 'new')).toMatchObject({ frameCount: 2 });
+  },
+);
