@@ -1,8 +1,9 @@
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { END, buffers, channel, eventChannel, type Channel, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
   all,
   call,
+  cancel,
   cancelled,
   delay,
   flush,
@@ -11,6 +12,7 @@ import {
   race,
   take,
   takeEvery,
+  type SagaGenerator,
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -68,8 +70,16 @@ import {
 
 const logger = createLogger('SpecialistsSaga');
 
+type CatalogReadOutcome = 'accepted' | 'failed';
+
 interface ListContext {
   generation: number;
+  // Each creation needs every outcome; a shared unicast channel would steal updates.
+  confirmations: Set<Channel<CatalogReadOutcome>>;
+}
+
+function* publishCatalogRead(context: ListContext, outcome: CatalogReadOutcome) {
+  for (const updates of [...context.confirmations]) yield* put(updates, outcome);
 }
 
 /**
@@ -188,7 +198,7 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
 
 function* applySpecialistCatalog(catalog: SpecialistCatalog) {
   yield* put(setSpecialistImportDiagnostics(catalog.importDiagnostics ?? []));
-  yield* call(applySpecialistList, catalog.specialists, true);
+  return yield* call(applySpecialistList, catalog.specialists, true);
 }
 
 function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
@@ -197,7 +207,7 @@ function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
   // failed read and must not replace the last-known-good roster or loaded flags.
   if (!authoritative && defs.length === 0 && (yield* selectBundledSpecialistsLoaded.effect())) {
     logger.warn('Ignoring empty specialist list after initial load');
-    return;
+    return false;
   }
 
   const bundledDefs = defs.filter((def) => def.source === 'bundled');
@@ -217,24 +227,38 @@ function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
   yield* put(setCustomSpecialistsLoaded(true));
   yield* put(setFileSpecialists(fileDefs.map(toFileSpecialist)));
   yield* put(setFileSpecialistsLoaded(true));
+  return true;
 }
 
 function* refetchSpecialists(context: ListContext) {
   const generation = ++context.generation;
   try {
+    let accepted: boolean;
     if (appClient.specialists.listCatalog) {
       const catalog = yield* call([appClient.specialists, appClient.specialists.listCatalog]);
-      if (generation === context.generation) yield* call(applySpecialistCatalog, catalog);
+      if (generation !== context.generation) return;
+      accepted = yield* call(applySpecialistCatalog, catalog);
     } else {
       const defs = yield* call([appClient.specialists, appClient.specialists.list]);
-      if (generation === context.generation) yield* call(applySpecialistList, defs);
+      if (generation !== context.generation) return;
+      accepted = yield* call(applySpecialistList, defs);
     }
-    return true;
+    yield* call(
+      publishCatalogRead,
+      context,
+      accepted ? ('accepted' as const) : ('failed' as const),
+    );
   } catch (error) {
+    // An obsolete failure cannot invalidate a newer catalog or fail its waiters.
+    if (generation !== context.generation) return;
     logger.error('Failed to refetch specialist list', error);
-    const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
-    yield* call([notify, notify.error], m.specialists_mutation_refreshFailed_error());
-    return false;
+    const hasConfirmations = context.confirmations.size > 0;
+    yield* call(publishCatalogRead, context, 'failed' as const);
+    // Creation owns its failure notification; ordinary refreshes still report theirs.
+    if (!hasConfirmations) {
+      const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
+      yield* call([notify, notify.error], m.specialists_mutation_refreshFailed_error());
+    }
   }
 }
 
@@ -337,6 +361,34 @@ function* isInSettingsSidebar(id: string, workspaceId?: string) {
   return filterSpecialistsByGitHubAuth(specialists, authenticated).some((entry) => entry.id === id);
 }
 
+/** Follow accepted global reads even if another creation or subscription supersedes ours. */
+function* confirmGlobalSpecialist(context: ListContext, id: string): SagaGenerator<FileSpecialist> {
+  const updates = channel<CatalogReadOutcome>(buffers.expanding());
+  context.confirmations.add(updates);
+  const refresh = yield* fork(refetchSpecialists, context);
+  try {
+    const { available } = yield* race({
+      available: call(function* () {
+        while (true) {
+          const outcome = yield* take(updates);
+          if (outcome === 'failed') return undefined;
+          const specialist = yield* selectGetFileSpecialist.effect(id);
+          if (specialist && (yield* call(isInSettingsSidebar, id))) return specialist;
+        }
+      }),
+      // Bounds both a hung RPC and accepted catalogs that never contain a visible row.
+      timeout: delay(30000),
+    });
+    if (!available) throw new Error(m.specialists_mutation_refreshFailed_error());
+    return available;
+  } finally {
+    context.confirmations.delete(updates);
+    updates.close();
+    // A subscription may confirm the row while our superseded RPC is still pending.
+    yield* cancel(refresh);
+  }
+}
+
 /** Wait on the existing workspace catalog owner rather than starting another catalog reader. */
 function* confirmWorkspaceSpecialist(workspaceId: string, id: string) {
   const updates = yield* actionChannel(
@@ -432,25 +484,7 @@ function* handleCreateFromDraft(
         setSpecialistCreation(draftContext, { draft, specialistId: id, status: 'refreshing' }),
       );
     }
-    // Only the applied catalog (also used by the sidebar) can confirm availability.
-    // A subscription may supersede this request; inspect Redux after the refresh.
-    const refreshed = yield* call(refetchSpecialists, context);
-    const available = yield* selectGetFileSpecialist.effect(id);
-    if (!available || !(yield* call(isInSettingsSidebar, id))) {
-      const error = new Error(m.specialists_mutation_refreshFailed_error());
-      yield* put(
-        setSpecialistCreation(draftContext, {
-          draft,
-          specialistId: id,
-          status: 'refresh-failed',
-          error: error.message,
-        }),
-      );
-      if (refreshed) yield* call(showMutationError, error, error.message);
-      yield* put(action.failure(error));
-      settled = true;
-      return;
-    }
+    const available = yield* call(confirmGlobalSpecialist, context, id);
     if (workspaceId) yield* call(confirmWorkspaceSpecialist, workspaceId, id);
     yield* put(setSpecialistCreation(draftContext, emptySpecialistCreation));
     const folder = yield* selectSpecialistsFolderPath.effect();
@@ -571,8 +605,14 @@ function* watchSpecialistsSubscription(context: ListContext) {
       const catalog: SpecialistCatalog | SpecialistDef[] = yield* take(channel);
       if (catalog === (END as unknown as SpecialistCatalog)) break;
       ++context.generation;
-      if (Array.isArray(catalog)) yield* call(applySpecialistList, catalog);
-      else yield* call(applySpecialistCatalog, catalog);
+      const accepted = Array.isArray(catalog)
+        ? yield* call(applySpecialistList, catalog)
+        : yield* call(applySpecialistCatalog, catalog);
+      yield* call(
+        publishCatalogRead,
+        context,
+        accepted ? ('accepted' as const) : ('failed' as const),
+      );
     }
   } finally {
     channel.close();
@@ -580,7 +620,7 @@ function* watchSpecialistsSubscription(context: ListContext) {
 }
 
 export function* specialistsSaga() {
-  const context: ListContext = { generation: 0 };
+  const context: ListContext = { generation: 0, confirmations: new Set() };
   yield* fork(watchSpecialistsSubscription, context);
   yield* all([
     takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),

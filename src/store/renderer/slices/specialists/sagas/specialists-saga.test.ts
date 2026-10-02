@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
+import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => ({
+  catalogReads: false,
   create: vi.fn(),
   edit: vi.fn(),
   remove: vi.fn(),
@@ -21,6 +23,11 @@ vi.mock('$lib/client', () => ({
       edit: mocks.edit,
       delete: mocks.remove,
       list: mocks.list,
+      get listCatalog() {
+        return mocks.catalogReads
+          ? async () => ({ specialists: (await mocks.list()) as SpecialistDef[] })
+          : undefined;
+      },
       subscribe: (handler: (defs: any[]) => void) => {
         mocks.subscription = handler;
         mocks.subscribe(handler);
@@ -48,6 +55,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: mocks.loggerError, warn: mocks.loggerWarn }),
 }));
 
+// Load the mocked lazy notification module before timed saga tests.
+import '$lib/components/patterns/notify';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import type { StoreState } from '../../../types';
 import { selectSpecialists } from '../specialists-selectors';
@@ -761,10 +770,11 @@ describe('specialistsSaga', () => {
   });
 });
 
-describe('specialist creation confirmation', () => {
+describe.each(['list', 'listCatalog'] as const)('specialist creation via %s', (reader) => {
   const tasks: ReturnType<typeof runSaga>[] = [];
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.catalogReads = reader === 'listCatalog';
     mocks.list.mockReset().mockResolvedValue([]);
     mocks.create.mockReset().mockResolvedValue({});
   });
@@ -829,6 +839,7 @@ describe('specialist creation confirmation', () => {
   });
 
   it('does not confirm a persisted entry excluded from the sidebar by GitHub auth', async () => {
+    vi.useFakeTimers();
     const h = harness();
     h.dispatch(
       setSpecialistCreation('user', {
@@ -840,6 +851,7 @@ describe('specialist creation confirmation', () => {
     mocks.list.mockResolvedValue([fileDef('pr-reviewer')]);
     const action = createSpecialistFromDraft('user');
     h.dispatch(action);
+    await vi.advanceTimersByTimeAsync(30000);
     await expect(action.promise).rejects.toThrow();
     expect(h.creation().status).toBe('refresh-failed');
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
@@ -915,10 +927,12 @@ describe('specialist creation confirmation', () => {
   it.each(['rejected', 'missing'] as const)(
     'retries only refresh after a successful write and %s catalog',
     async (failure) => {
+      vi.useFakeTimers();
       if (failure === 'rejected') mocks.list.mockRejectedValueOnce(new Error('Offline'));
       const h = harness();
       const action = createSpecialistFromDraft('user');
       h.dispatch(action);
+      await vi.advanceTimersByTimeAsync(30000);
       await expect(action.promise).rejects.toThrow();
       expect(h.creation().status).toBe('refresh-failed');
       expect(h.creation().draft.name).toBe('Reviewer');
@@ -993,6 +1007,141 @@ describe('specialist creation confirmation', () => {
     await expect(action.promise).rejects.toThrow();
     expect(h.creation().status).toBe('refresh-failed');
     expect(h.creation().draft.name).toBe('Reviewer');
+  });
+
+  it.each(['resolved', 'rejected', 'still pending'] as const)(
+    'confirms overlapping contexts from the newer catalog when the superseded read is %s',
+    async (olderOutcome) => {
+      const older = deferred<ReturnType<typeof fileDef>[]>();
+      const newer = deferred<ReturnType<typeof fileDef>[]>();
+      mocks.list.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+      const h = harness();
+      const first = createSpecialistFromDraft('user');
+      h.dispatch(first);
+      await settle();
+      h.dispatch(updateSpecialistDraft('workspace:A', { name: 'Second' }));
+      const second = createSpecialistFromDraft('workspace:A', 'A');
+      h.dispatch(second);
+      await settle();
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      if (olderOutcome === 'resolved') older.resolve([fileDef('reviewer')]);
+      if (olderOutcome === 'rejected') older.reject(new Error('Obsolete read failed'));
+      await settle();
+      expect(h.creation().status).toBe('refreshing');
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      h.dispatch(createSpecialistFromDraft('user'));
+      newer.resolve([fileDef('reviewer'), fileDef('second')]);
+      await expect(first.promise).resolves.toBe('reviewer');
+      expect(h.state().specialists.creationByContext['workspace:A'].status).toBe('refreshing');
+      h.dispatch(
+        workspaceCatalogReceived(
+          'A',
+          {
+            catalog: { providers: [] },
+            settings: [],
+            specialists: [fileDef('reviewer'), fileDef('second')],
+            readiness: {},
+          },
+          0,
+        ),
+      );
+      await expect(second.promise).resolves.toBe('second');
+      expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toEqual([
+        'reviewer',
+        'second',
+      ]);
+      expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['reviewer', 'second']);
+      expect(mocks.toastSuccess).toHaveBeenCalledTimes(2);
+      expect(mocks.toastError).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects both waiting contexts on a current read failure and retries without duplicate writes', async () => {
+    vi.useFakeTimers();
+    const older = deferred<ReturnType<typeof fileDef>[]>();
+    const newer = deferred<ReturnType<typeof fileDef>[]>();
+    mocks.list.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    const h = harness();
+    const first = createSpecialistFromDraft('user');
+    h.dispatch(first);
+    await settle();
+    h.dispatch(updateSpecialistDraft('workspace:A', { name: 'Second' }));
+    const second = createSpecialistFromDraft('workspace:A');
+    h.dispatch(second);
+    await settle();
+    newer.reject(new Error('Current read failed'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(h.state().specialists.creationByContext['workspace:A'].status).toBe('refresh-failed');
+    await expect(first.promise).rejects.toThrow();
+    await expect(second.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(h.state().specialists.creationByContext['workspace:A'].status).toBe('refresh-failed');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    mocks.list.mockResolvedValue([fileDef('reviewer'), fileDef('second')]);
+    const retry = createSpecialistFromDraft('user');
+    h.dispatch(retry);
+    await expect(retry.promise).resolves.toBe('reviewer');
+    const secondRetry = createSpecialistFromDraft('workspace:A');
+    h.dispatch(secondRetry);
+    await expect(secondRetry.promise).resolves.toBe('second');
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['reviewer', 'second']);
+    older.resolve([fileDef('reviewer')]);
+    await settle();
+    expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toEqual([
+      'reviewer',
+      'second',
+    ]);
+  });
+
+  it.each(['hung', 'missing'] as const)(
+    'bounds a %s global catalog and retries only the refresh',
+    async (outcome) => {
+      vi.useFakeTimers();
+      const read = deferred<ReturnType<typeof fileDef>[]>();
+      mocks.list.mockReturnValueOnce(read.promise);
+      const h = harness();
+      const action = createSpecialistFromDraft('user');
+      h.dispatch(action);
+      await settle();
+      if (outcome === 'missing') read.resolve([fileDef('someone-else')]);
+      await vi.advanceTimersByTimeAsync(29999);
+      expect(h.creation().status).toBe('refreshing');
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(action.promise).rejects.toThrow();
+      expect(h.creation().status).toBe('refresh-failed');
+      expect(h.creation().draft.name).toBe('Reviewer');
+      mocks.list.mockResolvedValue([fileDef('reviewer')]);
+      const retry = createSpecialistFromDraft('user');
+      h.dispatch(retry);
+      await expect(retry.promise).resolves.toBe('reviewer');
+      read.resolve([fileDef('stale')]);
+      await settle();
+      expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toEqual([
+        'reviewer',
+      ]);
+      expect(mocks.create).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('accepts a subscription catalog while its own global read is still pending', async () => {
+    const read = deferred<ReturnType<typeof fileDef>[]>();
+    mocks.list.mockReturnValue(read.promise);
+    const h = harness();
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await settle();
+    mocks.subscription?.([fileDef('someone-else')]);
+    await settle();
+    expect(h.creation().status).toBe('refreshing');
+    mocks.subscription?.([fileDef('reviewer')]);
+    await expect(action.promise).resolves.toBe('reviewer');
+    read.reject(new Error('Obsolete read failed'));
+    await settle();
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).toHaveBeenCalledOnce();
+    expect(mocks.create).toHaveBeenCalledOnce();
   });
 
   it('reserves different IDs for simultaneous contexts with the same name', async () => {
