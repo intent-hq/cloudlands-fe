@@ -41,10 +41,12 @@ function queued(overrides: Partial<QueuedMessage>): QueuedMessage {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function buttonTooltips(container: HTMLElement): string[] {
@@ -272,6 +274,79 @@ describe('QueuedMessageList', () => {
       );
       await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
     });
+
+    it.each([
+      ['save', 'released', true],
+      ['save', 'empty', true],
+      ['cancel', 'released', true],
+      ['cancel', 'empty', true],
+      ['save', 'released', false],
+      ['cancel', 'empty', false],
+      ['save', 'empty', 'throw'],
+      ['cancel', 'released', 'throw'],
+      ['save', 'released', 'conflict'],
+    ] as const)(
+      'settles %s after an earlier %s snapshot (success: %s)',
+      async (action, snapshot, success) => {
+        const pending = deferred<{ success: boolean; error?: string }>();
+        const onedit = vi
+          .fn()
+          .mockResolvedValueOnce({ success: true })
+          .mockImplementationOnce(() => pending.promise);
+        const view = renderQueue({
+          props: { messages: [queued({ id: 'newer', content: 'second' })], onedit },
+        });
+        await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+        await waitFor(() => expect(onedit).toHaveBeenCalledTimes(1));
+        await fireEvent.input(screen.getByRole('textbox'), {
+          target: { value: 'my unsaved draft' },
+        });
+        await view.rerender({
+          messages: [
+            queued({
+              id: 'older',
+              content: 'first\n\nsecond',
+              editing: true,
+              editingMessageId: 'newer',
+            }),
+          ],
+        });
+        await fireEvent.keyDown(screen.getByRole('textbox'), {
+          key: action === 'save' ? 'Enter' : 'Escape',
+        });
+        await waitFor(() => expect(onedit).toHaveBeenCalledTimes(2));
+        await view.rerender({
+          messages:
+            snapshot === 'empty'
+              ? []
+              : [queued({ id: 'older', content: 'first\n\nsecond', editing: false })],
+        });
+        expect(screen.queryByTestId('queued-draft-conflict')).toBeNull();
+        if (success === 'throw') pending.reject(new Error('connection lost'));
+        else
+          pending.resolve(
+            success === true
+              ? { success: true }
+              : {
+                  success: false,
+                  error:
+                    success === 'conflict'
+                      ? 'queued edit conflict: this draft was combined into another queued message; refresh before editing'
+                      : 'release failed',
+                },
+          );
+        await tick();
+        await tick();
+        if (success === true) {
+          await waitFor(() => expect(screen.queryByTestId('queued-draft-conflict')).toBeNull());
+        } else {
+          expect((await screen.findByTestId('queued-draft-conflict')).textContent).toContain(
+            'my unsaved draft',
+          );
+        }
+        expect(screen.queryByRole('textbox')).toBeNull();
+      },
+    );
 
     it('retains a displaced draft without submitting it to the other held row', async () => {
       const onedit = vi.fn().mockResolvedValue({ success: true });

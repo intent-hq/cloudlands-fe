@@ -108,7 +108,9 @@
 
   // Track which message is being edited
   let editingId = $state<string | null>(null);
-  let conflictedDrafts = $state<Array<{ id: string; content: string }>>([]);
+  let conflictedDrafts = $state<
+    Array<{ id: string; content: string; pendingOperationId?: number }>
+  >([]);
   let editContent = $state('');
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
@@ -118,7 +120,9 @@
   const editHasMembers = $derived(
     memberMentionsToText(editOriginalContent) !== editOriginalContent,
   );
-  let activeEditOperation: { messageId: string } | null = null;
+  type EditOperation = { messageId: string; token: number; releasing: boolean };
+  let editOperationSequence = 0;
+  let activeEditOperation: EditOperation | null = null;
   let pendingFocusRestore: { messageId: string; element: HTMLElement } | null = null;
   let expanded = $state(true);
   let previousMessageCount = $state(0);
@@ -201,23 +205,23 @@
     play();
   }
 
-  function beginEditOperation(messageId: string) {
-    const operation = { messageId };
+  function beginEditOperation(messageId: string, releasing = false) {
+    const operation = { messageId, token: ++editOperationSequence, releasing };
     activeEditOperation = operation;
     return operation;
   }
 
-  function ownsEditOperation(operation: { messageId: string }) {
+  function ownsEditOperation(operation: EditOperation) {
     return activeEditOperation === operation && editingId === operation.messageId;
   }
 
-  function finishEditOperation(operation: { messageId: string }) {
+  function finishEditOperation(operation: EditOperation) {
     if (!ownsEditOperation(operation)) return false;
     activeEditOperation = null;
     return true;
   }
 
-  function clearEditState(operation?: { messageId: string }) {
+  function clearEditState(operation?: EditOperation) {
     if (operation && !ownsEditOperation(operation)) return false;
     editingId = null;
     editContent = '';
@@ -228,23 +232,37 @@
     return true;
   }
 
-  function preserveConflictedDraft() {
+  function preserveConflictedDraft(pendingOperationId?: number) {
     if (editingId) {
       conflictedDrafts = [
         ...conflictedDrafts.filter((draft) => draft.id !== editingId),
-        { id: editingId, content: editContent },
+        { id: editingId, content: editContent, pendingOperationId },
       ];
     }
     clearEditState();
   }
 
-  function preserveServerConflict(error: string | undefined, operation: { messageId: string }) {
+  // Queue events may release or drain a row before its save/cancel reply. Keep
+  // that draft private until the reply settles, without blocking another editor.
+  function settleDetachedEdit(operation: EditOperation, success: boolean) {
+    if (!conflictedDrafts.some((draft) => draft.pendingOperationId === operation.token))
+      return false;
+    conflictedDrafts = conflictedDrafts.flatMap((draft) => {
+      if (draft.pendingOperationId !== operation.token) return [draft];
+      return success ? [] : [{ id: draft.id, content: draft.content }];
+    });
+    return true;
+  }
+
+  function preserveServerConflict(error: string | undefined, operation: EditOperation) {
+    if (settleDetachedEdit(operation, false)) return true;
     if (!ownsEditOperation(operation) || !error?.includes('queued edit conflict:')) return false;
     preserveConflictedDraft();
     return true;
   }
 
-  async function clearOwnedEditState(operation: { messageId: string }) {
+  async function clearOwnedEditState(operation: EditOperation) {
+    if (settleDetachedEdit(operation, true)) return false;
     if (!ownsEditOperation(operation)) return false;
     let cleared = false;
     await animateRowMutation(operation.messageId, () => {
@@ -262,7 +280,11 @@
   });
 
   $effect(() => {
-    if (editingId && !findQueuedMessageForEdit(messages, editingId)) preserveConflictedDraft();
+    if (editingId && !findQueuedMessageForEdit(messages, editingId)) {
+      preserveConflictedDraft(
+        activeEditOperation?.releasing ? activeEditOperation.token : undefined,
+      );
+    }
   });
 
   $effect.pre(() => {
@@ -476,7 +498,7 @@
     )
       return;
     const wasProgrammatic = editStartedProgrammatically;
-    const operation = beginEditOperation(editingId);
+    const operation = beginEditOperation(editingId, true);
     const originalContent = editOriginalContent;
 
     // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
@@ -494,6 +516,7 @@
       } catch (error) {
         // IPC/network failure - stay in edit mode
         console.error('Exception while releasing queued message hold on cancel:', error);
+        if (settleDetachedEdit(operation, false)) return;
         finishEditOperation(operation);
         return;
       }
@@ -510,7 +533,7 @@
       return;
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
-      const operation = beginEditOperation(editingId);
+      const operation = beginEditOperation(editingId, true);
       const newContent = editContent.trim();
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
@@ -528,6 +551,7 @@
         } catch (error) {
           // IPC/network failure - stay in edit mode
           console.error('Exception while saving queued message edit:', error);
+          if (settleDetachedEdit(operation, false)) return;
           finishEditOperation(operation);
           return;
         }
@@ -665,7 +689,7 @@
   {/if}
 {/snippet}
 
-{#each conflictedDrafts as draft (draft.id)}
+{#each conflictedDrafts.filter((draft) => draft.pendingOperationId === undefined) as draft (draft.id)}
   <div
     class="border-b border-border p-3 space-y-2"
     data-testid="queued-draft-conflict"
