@@ -30,8 +30,8 @@ class Source implements RpcTrafficSource {
     this.emit({ type: 'notification', direction, method, payload });
   }
 }
-function setup(maxRecords = 100) {
-  const service = new DevConsoleCaptureService({ maxRecords });
+function setup(maxRecords = 100, monotonicNow?: () => number) {
+  const service = new DevConsoleCaptureService({ maxRecords, monotonicNow });
   const source = new Source();
   const detach = service.registerClient('one', 'main', source);
   const { sessionId } = service.openSession('one');
@@ -44,6 +44,167 @@ function setup(maxRecords = 100) {
   };
 }
 const push = { subscriptionId: 's', kind: 'snapshot', seq: 0, snapshot: [] };
+const duplicateRejection = {
+  code: -32602,
+  message: 'host.execStream requestId is already active',
+};
+
+describe('rejected duplicate host streams', () => {
+  it.each([1, 3])('preserves the active stream after %i duplicate rejections', (duplicates) => {
+    let now = 0;
+    const h = setup(100, () => now);
+    const start = { command: 'cat', requestId: 'id' };
+    const ack = { requestId: 'id' };
+    h.source.request('active', 'outbound', 'host.execStream', start);
+    now = 1;
+    h.source.reply('active', ack);
+    for (let i = 0; i < duplicates; i++)
+      h.source.request(`duplicate-${i}`, 'outbound', 'host.execStream', start);
+    for (let i = duplicates - 1; i >= 0; i--) {
+      h.source.reply(`duplicate-${i}`, duplicateRejection, 'error');
+      if (i > 0) {
+        h.source.notification('inbound', 'events.event', {
+          event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'dW5rbm93bg==' } },
+        });
+        expect(h.rows()[0].frameCount).toBe(2);
+      }
+    }
+    const outputs = ['host:exec:stdout', 'host:exec:stderr'].map((type) => ({
+      event: { type, data: { requestId: 'id', chunk: 'aGk=' } },
+    }));
+    now = 4;
+    for (const output of outputs) h.source.notification('inbound', 'events.event', output);
+    const input = { requestId: 'id', stdin: 'hello' };
+    now = 5;
+    h.source.request('write', 'outbound', 'host.execStream.write', input);
+    now = 6;
+    const writeAck = { ok: true };
+    h.source.reply('write', writeAck);
+    now = 7;
+    const exit = {
+      event: { type: 'host:exec:exit', data: { requestId: 'id', ok: true, exitCode: 0 } },
+    };
+    h.source.notification('inbound', 'events.event', exit);
+    const payloads = [start, ack, ...outputs, input, writeAck, exit];
+    expect(h.rows()[0]).toMatchObject({
+      status: 'success',
+      streamState: 'ended',
+      frameCount: 7,
+      durationMs: 7,
+      totalBytes: payloads.reduce(
+        (bytes, payload) => bytes + Buffer.byteLength(JSON.stringify(payload)),
+        0,
+      ),
+    });
+    expect(h.rows()[0].frames?.map((frame) => JSON.parse(frame.payload.text))).toEqual(payloads);
+    expect(
+      h
+        .rows()
+        .filter((row) => String(row.requestId).startsWith('duplicate-'))
+        .map((row) => [row.status, row.frameCount]),
+    ).toEqual(Array.from({ length: duplicates }, () => ['error', 2]));
+  });
+
+  it.each(['timeout', 'send-error', 'error'] as const)(
+    'keeps ambiguity when the duplicate ends with an uncertain %s outcome',
+    (status) => {
+      const h = setup();
+      for (const key of ['active', 'uncertain', 'rejected'])
+        h.source.request(key, 'outbound', 'host.execStream', { command: 'cat', requestId: 'id' });
+      h.source.reply('active', { requestId: 'id' });
+      h.source.emit({
+        type: 'response',
+        key: 'uncertain',
+        status,
+        payload: { code: -32603, message: 'unknown outcome' },
+      });
+      h.source.reply('rejected', duplicateRejection, 'error');
+      h.source.notification('inbound', 'events.event', {
+        event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+      });
+      h.source.request('write', 'outbound', 'host.execStream.write', {
+        requestId: 'id',
+        eof: true,
+      });
+      expect(h.rows()[0].frameCount).toBe(2);
+    },
+  );
+
+  it('captures output between successive rejected duplicates', () => {
+    const h = setup();
+    h.source.request('active', 'outbound', 'host.execStream', { command: 'cat', requestId: 'id' });
+    h.source.reply('active', { requestId: 'id' });
+    for (let i = 0; i < 5; i++) {
+      h.source.request(`rejected-${i}`, 'outbound', 'host.execStream', {
+        command: 'cat',
+        requestId: 'id',
+      });
+      h.source.reply(`rejected-${i}`, duplicateRejection, 'error');
+      h.source.notification('inbound', 'events.event', {
+        event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+      });
+      expect(h.rows()[0].frameCount).toBe(3 + i);
+    }
+  });
+
+  it('does not erase accepted overlap history when another duplicate is rejected', () => {
+    const h = setup(4);
+    for (const key of ['old', 'active', 'rejected']) {
+      h.source.request(key, 'outbound', 'host.execStream', { command: 'cat', requestId: 'id' });
+      if (key !== 'rejected') h.source.reply(key, { requestId: 'id' });
+      if (key !== 'rejected') h.source.notification('inbound', 'unrelated', {});
+    }
+    // The rejected request evicted the old accepted owner, leaving real ambiguity.
+    h.source.reply('rejected', duplicateRejection, 'error');
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+    });
+    // Snapshot before another row can evict the survivor.
+    expect(h.rows().find((row) => row.requestId === 'active')).toMatchObject({ frameCount: 2 });
+  });
+
+  it('keeps uncertainty after an unacknowledged owner is evicted', () => {
+    const h = setup(4);
+    for (const key of ['unknown', 'active', 'rejected']) {
+      h.source.request(key, 'outbound', 'host.execStream', { command: 'cat', requestId: 'id' });
+      if (key === 'unknown') h.source.notification('inbound', 'unrelated', {});
+    }
+    h.source.reply('active', { requestId: 'id' });
+    h.source.notification('inbound', 'unrelated', {});
+    h.source.reply('rejected', duplicateRejection, 'error');
+    h.source.reply('unknown', duplicateRejection, 'error'); // Evicted requests cannot regain ownership.
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+    });
+    expect(h.rows().find((row) => row.requestId === 'active')).toMatchObject({ frameCount: 2 });
+  });
+
+  it('releases collision history when all owners leave bounded retention', () => {
+    const h = setup(4);
+    for (let cycle = 0; cycle < 8; cycle++) {
+      for (const key of ['old', 'active']) {
+        h.source.request(`${cycle}-${key}`, 'outbound', 'host.execStream', {
+          command: 'cat',
+          requestId: 'id',
+        });
+        h.source.reply(`${cycle}-${key}`, { requestId: 'id' });
+      }
+      for (let i = 0; i < 4; i++) h.source.notification('inbound', 'unrelated', {});
+      expect(h.rows()).toHaveLength(4);
+    }
+    h.source.request('fresh', 'outbound', 'host.execStream', { command: 'cat', requestId: 'id' });
+    h.source.reply('fresh', { requestId: 'id' });
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+    });
+    expect(h.rows().find((row) => row.requestId === 'fresh')).toMatchObject({ frameCount: 3 });
+    h.service.clearSession('one', h.sessionId);
+    expect(h.service.getSnapshot('one', h.sessionId)).toMatchObject({
+      records: [],
+      retainedPayloadBytes: 0,
+    });
+  });
+});
 
 describe('stream correlation isolation', () => {
   it.each(['outbound', 'inbound'] as const)(

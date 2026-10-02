@@ -3,6 +3,7 @@ import {
   requestContinuation,
   requestStream,
   responseEndsStream,
+  responseRejectsStream,
   responseStream,
   subscriptionGroup,
   unsubscribeStream,
@@ -284,6 +285,9 @@ export class DevConsoleCaptureService {
       // Evicted, already replied and disconnected requests cannot regain associations.
       if (!entry || entry.replied || entry.closed) return;
       entry.replied = true;
+      // Apply definitive rejection before payload retention can evict this request.
+      if (event.status === 'error' && responseRejectsStream(entry.record.rpcMethod, event.payload))
+        this.releaseHandles(session, entry, true);
       const response = this.payload(session, entry.record, event.payload);
       if (
         !response ||
@@ -442,7 +446,9 @@ export class DevConsoleCaptureService {
     let owners = session.streams.get(key);
     if (!owners) session.streams.set(key, (owners = new Set()));
     for (const owner of owners) {
-      if (owner === entry) continue;
+      // Host requests are provisional until their outcome is known. The owner count
+      // blocks capture during overlap; uncertain removal below preserves its history.
+      if (owner === entry || handle.family === 'host-exec') continue;
       owner.ambiguousHandles.add(key);
       entry.ambiguousHandles.add(key);
     }
@@ -507,10 +513,14 @@ export class DevConsoleCaptureService {
     }
   }
 
-  private releaseHandles(session: Session, entry: Entry): void {
+  private releaseHandles(session: Session, entry: Entry, rejected = false): void {
     for (const key of entry.handles) {
       const owners = session.streams.get(key);
       owners?.delete(entry);
+      // Removing an accepted, evicted or uncertain owner cannot disambiguate frames
+      // already in flight. A pre-spawn rejection never owned those frames. Do not
+      // clear older ambiguity, and keep all history on bounded retained records.
+      if (!rejected) for (const owner of owners ?? []) owner.ambiguousHandles.add(key);
       if (owners?.size === 0) session.streams.delete(key);
     }
     entry.handles.clear();

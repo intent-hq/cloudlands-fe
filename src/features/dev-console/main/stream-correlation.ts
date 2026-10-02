@@ -51,6 +51,11 @@ export function responseEndsStream(method: string, result: unknown): boolean {
   const results = method === 'search.fileNames' ? data.files : data.matches;
   return Array.isArray(results) && results.length > 0;
 }
+export function responseRejectsStream(method: string, error: unknown): boolean {
+  // Host invalid-params errors (including a live duplicate ID) precede child spawn.
+  // Other failures may leave an execution running, so their ownership stays uncertain.
+  return method === 'host.execStream' && object(error).code === -32602;
+}
 export function requestContinuation(method: string, params: unknown): StreamHandle | undefined {
   if (method === 'host.execStream.write' || method === 'host.execStream.cancel')
     return handle('host-exec', object(params).requestId);

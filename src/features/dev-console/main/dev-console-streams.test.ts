@@ -86,6 +86,59 @@ const bus = (subscriptionId: string, type: string, data: unknown) => ({
 });
 
 describe('streaming RPC capture', () => {
+  it.each([false, true])(
+    'keeps the active host stream after a duplicate is rejected over JSON-RPC (oversize error: %s)',
+    async (oversize) => {
+      const h = setup(oversize ? { maxPayloadBytes: 512 } : {});
+      if (oversize)
+        h.service.setFullCapture(
+          'local',
+          h.sessionId,
+          {
+            direction: 'outbound',
+            kind: 'request',
+            method: 'host.execStream',
+          },
+          true,
+        );
+      const params = { command: 'cat', requestId: 'exec' };
+      const start = h.client.request('host.execStream', params);
+      const ack = { requestId: 'exec' };
+      h.socket.receive({ id: 1, result: ack });
+      await start;
+      const duplicate = h.client.request('host.execStream', params);
+      const rejection = expect(duplicate).rejects.toThrow('requestId is already active');
+      expect(h.socket.writes).toEqual([
+        { jsonrpc: '2.0', id: 1, method: 'host.execStream', params },
+        { jsonrpc: '2.0', id: 2, method: 'host.execStream', params },
+      ]);
+      h.socket.receive({
+        id: 2,
+        error: {
+          code: -32602,
+          message: 'host.execStream requestId is already active',
+          ...(oversize ? { data: 'x'.repeat(1024) } : {}),
+        },
+      });
+      await rejection;
+      h.tick(10);
+      const output = bus('s', 'host:exec:stdout', { requestId: 'exec', chunk: 'YQ==' });
+      h.socket.receive({ method: 'events.event', params: output });
+      expect(h.rows()[0]).toMatchObject({
+        status: 'success',
+        streamState: 'open',
+        frameCount: 3,
+        durationMs: 10,
+        totalBytes: [params, ack, output].reduce((total, payload) => total + bytes(payload), 0),
+      });
+      if (oversize) {
+        expect(h.rows().some((row) => row.requestId === 2)).toBe(false);
+        expect(h.service.getSnapshot('local', h.sessionId)?.droppedRecords).toBe(1);
+      } else
+        expect(h.rows()[1]).toMatchObject({ status: 'error', frameCount: 2, streamState: 'ended' });
+    },
+  );
+
   it.each(['chat.subscribe', 'note.subscribe', 'task.subscribe', 'note.presence.subscribe'])(
     'captures %s acknowledgement and pushes with per-side timing and totals',
     async (method) => {
