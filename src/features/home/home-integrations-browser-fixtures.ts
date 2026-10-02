@@ -98,7 +98,8 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
       if (typeof params.org === 'string' && params.org.startsWith('legacy-'))
         throw new Error('invalid params: Missing required parameter: owner');
       if (params.org) {
-        if (params.query === 'stale') {
+        // Hold only the original scope so switching owners cannot replace its release handle.
+        if (params.org === 'acme' && params.query === 'stale') {
           await new Promise<void>((resolve) => {
             releaseSearch = resolve;
           });

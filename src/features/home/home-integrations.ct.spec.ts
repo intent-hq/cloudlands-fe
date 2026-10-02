@@ -22,7 +22,7 @@ test('PR wire requests populate details and preserve rows after pagination fails
       owner: 'acme',
       repo: 'studio',
       repos: [{ owner: 'acme', repo: 'platform' }],
-      filter: 'all',
+      filter: 'assigned',
       state: 'open',
     },
   });
@@ -42,7 +42,8 @@ test('PR wire requests populate details and preserve rows after pagination fails
     body: await page.screenshot({ path: testInfo.outputPath('home-pr-detail.png') }),
     contentType: 'image/png',
   });
-  await component.getByRole('button', { name: 'Close preview' }).focus();
+  // Escape from a plain tab avoids the close button tooltip consuming the key.
+  await component.getByRole('tab', { name: 'Summary', exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(list.getByRole('option')).toBeFocused();
   await component.getByRole('button', { name: 'Load more', exact: true }).click();
@@ -83,7 +84,9 @@ test('Linear uses list envelopes and bare details with honest search scope', asy
     contentType: 'image/png',
   });
   await component.getByRole('button', { name: 'Close preview' }).click();
-  await component.getByRole('button', { name: 'Created by me', exact: true }).click();
+  const filter = component.getByRole('combobox', { name: 'Home views', exact: true });
+  await filter.click();
+  await page.getByRole('option', { name: 'Created by me', exact: true }).click();
   await expect.poll(calls).toContainEqual({
     method: 'linear.listIssues',
     params: { workspaceId: 'home-route', limit: 30, filter: 'created' },
@@ -93,12 +96,10 @@ test('Linear uses list envelopes and bare details with honest search scope', asy
     method: 'linear.searchIssues',
     params: { workspaceId: 'home-route', limit: 30, query: 'attention' },
   });
-  await expect(
-    component.getByRole('button', { name: 'Created by me', exact: true }),
-  ).toBeDisabled();
-  await expect(
-    component.getByText('Search across all Linear teams and people.', { exact: false }),
-  ).toBeVisible();
+  await expect(filter).toBeDisabled();
+  await component.getByRole('searchbox').fill('');
+  await expect(filter).toBeEnabled();
+  await expect(filter).toContainText('Created by me');
   await testInfo.attach('home-linear-wire-calls', {
     body: JSON.stringify(await calls(), null, 2),
     contentType: 'application/json',
@@ -136,7 +137,7 @@ test('All repositories are batched and stale search responses cannot replace new
 });
 
 for (const representation of ['raw', 'ipc'] as const) {
-  test(`Linear missing credentials show Connect for ${representation} daemon errors`, async ({
+  test(`Linear missing credentials show connection settings for ${representation} daemon errors`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -166,7 +167,7 @@ for (const representation of ['raw', 'ipc'] as const) {
     }, representation);
     await component.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(
-      component.getByRole('heading', { name: 'Connect Linear', exact: true }),
+      component.getByRole('button', { name: 'Open connection settings', exact: true }),
     ).toBeVisible();
     await expect(component.getByRole('alert')).toHaveCount(0);
     await expect(component.getByRole('listbox')).toHaveCount(0);
@@ -210,9 +211,9 @@ test('Linear service errors retain their daemon detail and remain retryable', as
     'linear API error: service temporarily unavailable',
   );
   await expect(component.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-  await expect(component.getByRole('heading', { name: 'Connect Linear', exact: true })).toHaveCount(
-    0,
-  );
+  await expect(
+    component.getByRole('button', { name: 'Open connection settings', exact: true }),
+  ).toHaveCount(0);
 });
 
 test('Start workspace carries the PR head through the browser initializer prefill', async ({
@@ -383,7 +384,7 @@ test('PR file pagination discards a changed head and restarts without the old cu
   });
 });
 
-test('PR bot comments sanitize HTML, preserve literal code, and expand compact cards', async ({
+test('PR bot comments sanitize HTML, preserve literal code, and collapse expanded cards', async ({
   mount,
   page,
 }, testInfo) => {
@@ -397,7 +398,6 @@ test('PR bot comments sanitize HTML, preserve literal code, and expand compact c
   await expect(card.locator('code').filter({ hasText: '<h2></h2>' })).toHaveText('<h2></h2>');
   await expect(card.locator('pre')).toContainText('<h2>literal heading</h2>');
   expect(await card.locator('[onerror],script').count()).toBe(0);
-  await card.getByRole('button', { name: 'Show more', exact: true }).click();
   await expect(
     card.getByText('Finding 24: preserve reviewer context.', { exact: true }),
   ).toBeVisible();
@@ -413,6 +413,11 @@ test('PR bot comments sanitize HTML, preserve literal code, and expand compact c
   await expect(card.getByRole('button', { name: 'Show more', exact: true })).toHaveAttribute(
     'aria-expanded',
     'false',
+  );
+  await card.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Show less', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true',
   );
 });
 
@@ -448,14 +453,17 @@ test('PR linked filter uses loaded workspace links without extra reads', async (
   await component.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
   const before = await page.evaluate(() => window.__homeIntegrationBrowser!.calls.length);
-  const filter = component.getByRole('button', { name: 'Linked to workspace', exact: true });
+  const filter = component.getByRole('combobox', { name: 'Home views', exact: true });
   await filter.click();
+  await page.getByRole('option', { name: 'Linked to workspace', exact: true }).click();
   await expect(list.getByRole('option')).toHaveCount(1);
   await expect(list.getByRole('option')).toContainText('#142');
   expect(await page.evaluate(() => window.__homeIntegrationBrowser!.calls.length)).toBe(before);
-  const bounds = await list.getByRole('option').boundingBox();
-  expect(bounds!.height).toBeLessThanOrEqual(50);
+  await expect(
+    list.getByRole('option').getByRole('button', { name: 'Open workspace' }),
+  ).toBeVisible();
   await filter.click();
+  await page.getByRole('option', { name: 'Assigned to me', exact: true }).click();
   await expect(list.getByRole('option')).toHaveCount(2);
 });
 
@@ -472,7 +480,7 @@ test('organization PR scope includes repositories outside Home and invalidates s
     calls().then((items) => items.filter((call) => call.method === 'github.pulls.search'));
   expect((await searches())[0].params).toMatchObject({
     org: 'acme',
-    filter: 'all',
+    filter: 'assigned',
     state: 'open',
     limit: 30,
     workspaceId: 'home-route',
@@ -485,8 +493,14 @@ test('organization PR scope includes repositories outside Home and invalidates s
   await expect
     .poll(async () => (await searches()).some((call) => call.params.query === 'stale'))
     .toBe(true);
-  await component.update({ organization: 'other-org', repoCount: 0 });
-  await expect(list).toContainText('other-org');
+  await component.update({ props: { organization: 'other-org', repoCount: 0 } });
+  await component.getByRole('searchbox').fill('');
+  await expect
+    .poll(async () => (await searches()).at(-1)?.params)
+    .toMatchObject({ org: 'other-org' });
+  await expect.poll(async () => (await searches()).at(-1)?.params.query).toBeUndefined();
+  await expect(list.getByRole('option')).toHaveCount(1);
+  await expect(list).toContainText('outside-sidebar');
   await page.evaluate(() => window.__homeIntegrationBrowser!.releaseSearch());
   await expect(list).not.toContainText('Stale search response');
   await list.getByRole('option').click();

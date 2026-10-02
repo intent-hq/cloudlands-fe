@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import { store } from '$store/renderer/store';
   import { startHomePreview } from './home-preview-lifecycle';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
@@ -20,6 +21,7 @@
     workspaces?: Workspace[];
   } = $props();
   const dispose = startHomePreview(() => [setupHomeIntegrationsFixtures(store)]);
+  admitLegacyPrincipal();
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(replaceWorkspaceList(workspaces));
   const repositories = $derived(
