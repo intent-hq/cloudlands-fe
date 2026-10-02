@@ -24,7 +24,7 @@ import {
   bulkUpsertSessions,
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { agentMutationUiRequested } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
 import {
   hudActivated,
   hudDeactivated,
@@ -289,9 +289,15 @@ describe('AgentCard pending-question avatar state', () => {
 
     const stopActions = dispatch.mock.calls
       .map(([action]) => action)
-      .filter((action) => action.type === stopAgentSessionRequested.type);
+      .filter((action) => action.type === agentMutationUiRequested.type);
     expect(stopActions).toHaveLength(1);
-    expect(stopActions[0].payload).toEqual(['ws-1', agentId]);
+    expect(stopActions[0].payload).toEqual([
+      'ws-1',
+      expect.any(String),
+      expect.any(String),
+      agentId,
+      { kind: 'stop' },
+    ]);
   });
 
   it('does not offer Stop for an idle agent with a pending question', async () => {

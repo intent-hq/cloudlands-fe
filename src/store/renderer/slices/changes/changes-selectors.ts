@@ -196,10 +196,3 @@ export const selectSidebarMergeWhenReady: AppSelector<boolean, [workspaceId: str
   store.createSelector(
     (state, workspaceId: string): boolean => getWs(state, workspaceId).acceptChanges.mergeWhenReady,
   );
-
-export const selectPendingAutoAction: AppSelector<
-  AcceptChangesState['pendingAutoAction'],
-  [workspaceId: string]
-> = store.createSelector(
-  (state, workspaceId: string) => getWs(state, workspaceId).acceptChanges.pendingAutoAction,
-);

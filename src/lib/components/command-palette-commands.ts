@@ -74,6 +74,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-remote-agents',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalRemoteAgents_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-remote-agents',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalRemoteAgents_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'new-terminal',
     get label() {
       return m.lib_commandPalette_newTerminal_command();
@@ -141,6 +155,14 @@ export const COMMAND_PALETTE_COMMANDS = [
     },
     icon: faPaperclip,
     shortcut: '⇧⌘A',
+  },
+  {
+    id: 'open-dev-console',
+    get label() {
+      return m.devConsole_title_label();
+    },
+    icon: faTerminal,
+    shortcut: '',
   },
   {
     id: 'open-hud',

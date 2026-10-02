@@ -15,6 +15,7 @@ function queued(id: string, position: number): QueuedMessage {
     content: `message ${id}`,
     queuedAt: '2026-01-01T00:00:00.000Z',
     position,
+    messageMetadata: { fromPrincipalId: 'self' },
   };
 }
 
@@ -36,7 +37,9 @@ describe('queued message reduced motion', () => {
     const onedit = vi.fn().mockResolvedValue({ success: true });
     const first = queued('one', 0);
     const second = queued('two', 1);
-    const view = render(QueuedMessageList, { props: { messages: [first, second], onedit } });
+    const view = render(QueuedMessageList, {
+      props: { messages: [first, second], ownPrincipalId: 'self', onedit },
+    });
 
     await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
     const textarea = await waitFor(() => view.container.querySelector('textarea'));

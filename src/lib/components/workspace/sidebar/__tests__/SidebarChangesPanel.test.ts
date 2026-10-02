@@ -4,6 +4,9 @@ import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
+import { store as appStore } from '$store/renderer/store';
+import { prWorkflowReducer } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+import { acceptWorkflowReducer } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
 
 // Polyfill scrollIntoView for jsdom
 if (typeof Element.prototype.scrollIntoView !== 'function') {
@@ -230,6 +233,8 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     { select: () => mockPostMergeState },
   ),
   selectGitOperationFlags: createMockFtSelector(() => mockGitOperationFlags),
+  selectGitCommitDetailsFiles: createMockFtSelector(() => []),
+  selectAcceptChangesStatus: createMockFtSelector(() => mockPostMergeState),
   selectSecondaryRootGitRoots: createMockFtSelector(() => mockSecondaryRoots),
 }));
 
@@ -298,7 +303,7 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   },
 }));
 
-const mockDispatch = vi.fn();
+const mockDispatch = vi.hoisted(() => vi.fn());
 // Mutable mock store state — the real git-roots selectors read the gitRoots
 // slice off this (they tolerate a partial state via optional chaining).
 const { mockStoreState } = vi.hoisted(() => ({
@@ -683,7 +688,20 @@ function makeWorkspace(overrides: Record<string, any> = {}) {
 
 async function resetMocks() {
   vi.clearAllMocks();
-  mockStoreState.value = {};
+  mockStoreState.value = {
+    gitWrite: { byWorkspaceId: {} },
+    prWorkflow: prWorkflowReducer(undefined, { type: 'init' }),
+    acceptWorkflow: acceptWorkflowReducer(undefined, { type: 'init' }),
+  };
+  mockDispatch.mockImplementation((action) => {
+    mockStoreState.value.prWorkflow = prWorkflowReducer(mockStoreState.value.prWorkflow, action);
+    mockStoreState.value.acceptWorkflow = acceptWorkflowReducer(
+      mockStoreState.value.acceptWorkflow,
+      action,
+    );
+    (appStore as unknown as { emitState(): void }).emitState();
+    return action;
+  });
   mockRootGetStatus.mockResolvedValue({ ok: true, data: {} });
   mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });
   mockFileTrackingStore.loading = false;
@@ -782,7 +800,7 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('refreshes Git status before broad Changes data with the explicit workspace ID', async () => {
+    it('dispatches a refresh intent with the explicit workspace ID', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       const { container } = await renderPanel();
       const refresh = await waitFor(() => {
@@ -796,20 +814,19 @@ describe('SidebarChangesPanel', () => {
 
       await fireEvent.click(refresh);
 
-      expect(
-        mockDispatch.mock.calls
-          .map(([action]) => action)
-          .filter(
-            (action) =>
-              action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-          ),
-      ).toEqual([
-        { type: 'git/loadStatus', payload: ['ws-1', true] },
-        { type: 'changes/refreshRequested', payload: ['ws-1'] },
-      ]);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
     });
 
-    it('routes header refresh through the original primary flow and clears the busy flag', async () => {
+    it('routes header refresh through the primary intent and honors the busy flag', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
       const { getByTestId, container } = render(Host);
@@ -824,18 +841,14 @@ describe('SidebarChangesPanel', () => {
       ).toBeNull();
       mockDispatch.mockClear();
       await fireEvent.click(button);
-      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
-        { type: 'git/setGitOperationFlag', payload: ['ws-1', 'isRefreshingGitStatus', true] },
-        { type: 'git/loadStatus', payload: ['ws-1', true] },
-        { type: 'changes/refreshRequested', payload: ['ws-1'] },
-        { type: 'changes/refreshAcceptChangesStatus', payload: ['ws-1'] },
-      ]);
-      const { gitCache } = await import('$features/git/git-cache');
-      expect(gitCache.invalidate).toHaveBeenCalledWith('git-status-ws-1');
-      await waitFor(() =>
-        expect(mockDispatch).toHaveBeenLastCalledWith({
-          type: 'git/setGitOperationFlag',
-          payload: ['ws-1', 'isRefreshingGitStatus', false],
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
         }),
       );
       mockGitOperationFlags.isRefreshingGitStatus = true;
@@ -1190,7 +1203,7 @@ describe('SidebarChangesPanel', () => {
       expect(mockWorkspaceStore.update).not.toHaveBeenCalled();
     });
 
-    it('runs a pending auto-commit for the owner', async () => {
+    it('does not replay the root-owned auto-commit when an owner remounts the panel', async () => {
       const { backgroundGitActionsService } =
         await import('$features/accept-changes/background-git-actions.service');
       (backgroundGitActionsService.commit as Mock).mockClear();
@@ -1198,24 +1211,20 @@ describe('SidebarChangesPanel', () => {
       mockAcceptChangesState.commitMessage = 'feat: auto';
       mockSidebarChangesState.pendingAutoAction = { action: 'commit', workspaceId: 'ws-1' };
 
+      const first = await renderPanel();
+      first.unmount();
       await renderPanel();
 
-      await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'changes/setPendingAutoAction',
-            payload: ['ws-1', null],
-          }),
-        );
-        expect(backgroundGitActionsService.commit).toHaveBeenCalledWith({
-          workspaceId: 'ws-1',
-          commitMessage: 'feat: auto',
-        });
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+      ]);
+      expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
     });
 
-    it('consumes a pending auto-commit for a collaborator without firing the owner-only RPC', async () => {
+    it('does not execute or consume a root-owned auto-commit in a collaborator panel', async () => {
       const { backgroundGitActionsService } =
         await import('$features/accept-changes/background-git-actions.service');
       (backgroundGitActionsService.commit as Mock).mockClear();
@@ -1225,13 +1234,9 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'changes/setPendingAutoAction',
-            payload: ['ws-1', null],
-          }),
-        );
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
       });
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
@@ -1369,7 +1374,7 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Interactions', () => {
-    it('stages via the git-write-service seam when stage action is invoked on unstaged file', async () => {
+    it('dispatches a stage intent when stage action is invoked on an unstaged file', async () => {
       const unstaged = [makeChange({ relativePath: 'src/foo.ts' })];
       mockFileTrackingStore.unstagedChanges = unstaged;
       mockFileTrackingStore.stagedChanges = [];
@@ -1385,10 +1390,19 @@ describe('SidebarChangesPanel', () => {
       const stageBtns = container.querySelectorAll('[data-testid="stage-btn"]');
       expect(stageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(stageBtns[0]);
-      expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'stage', paths: ['src/foo.ts'], openDiff: true, source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
-    it('unstages via the git-write-service seam when unstage action is invoked on staged file', async () => {
+    it('dispatches an unstage intent when unstage action is invoked on a staged file', async () => {
       const staged = [makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = staged;
@@ -1403,7 +1417,16 @@ describe('SidebarChangesPanel', () => {
       const unstageBtns = container.querySelectorAll('[data-testid="unstage-btn"]');
       expect(unstageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(unstageBtns[0]);
-      expect(mockUnstageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'unstage', paths: ['src/foo.ts'], openDiff: true, source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
     it('toggles commit drawer open and close', async () => {
@@ -1650,7 +1673,16 @@ describe('SidebarChangesPanel', () => {
       );
       expect(stageAllBtn).toBeDefined();
       await fireEvent.click(stageAllBtn!);
-      expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'stage', paths: ['src/a.ts', 'src/b.ts'], source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
     it('unstage all button unstages all staged files', async () => {
@@ -1676,7 +1708,16 @@ describe('SidebarChangesPanel', () => {
       );
       expect(unstageAllBtn).toBeDefined();
       await fireEvent.click(unstageAllBtn!);
-      expect(mockUnstageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'unstage', paths: ['src/a.ts', 'src/b.ts'], source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
     it('clicking a file dispatches workspace:open-diff event', async () => {
@@ -1923,8 +1964,8 @@ describe('SidebarChangesPanel', () => {
   // COMMIT GROUP REGRESSION TESTS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('Commit Group - store refresh after commit (regression)', () => {
-    it('calls loadGitStatus and file tracking refresh after successful group commit', async () => {
+  describe('Commit Group - root-owned mutation and refresh', () => {
+    it('dispatches a workspace-scoped group commit without component-owned writes or refreshes', async () => {
       // Set up AcceptChangesClient to return success
       const { AcceptChangesClient } =
         await import('$features/accept-changes/accept-changes.client');
@@ -1989,26 +2030,33 @@ describe('SidebarChangesPanel', () => {
 
       // Clear mocks to isolate assertions to this interaction
       mockDispatch.mockClear();
+      const { selectAllWorkspaceAgents } =
+        await import('$store/renderer/slices/workspace-agents/workspace-agents-selectors');
+      (selectAllWorkspaceAgents.select as Mock).mockReturnValueOnce([
+        { id: 'agent-1', name: 'Test Agent' },
+      ]);
 
       await fireEvent.click(commitBtn!);
 
-      // Wait for the async commit flow (enqueueGroupCommit → commitSingleGroup)
-      // to complete and verify stores are refreshed afterward
-      await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalled();
-      });
-
-      expect(
-        mockDispatch.mock.calls
-          .map(([action]) => action)
-          .filter(
-            (action) =>
-              action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-          ),
-      ).toEqual([
-        { type: 'git/loadStatus', payload: ['ws-1', true] },
-        { type: 'changes/refreshRequested', payload: ['ws-1'] },
-      ]);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            {
+              kind: 'partialCommit',
+              paths: ['src/foo.ts'],
+              section: 'unstaged',
+              message: 'Test Agent',
+              groupKey: 'unstaged:agent-1',
+              agentId: 'agent-1',
+              source: 'sidebar',
+            },
+          ],
+        }),
+      );
+      expect(AcceptChangesClient.execute).not.toHaveBeenCalled();
     });
   });
 
@@ -2016,7 +2064,8 @@ describe('SidebarChangesPanel', () => {
   // PR AUTO-DISCOVERY TESTS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('PR Auto-Discovery', () => {
+  // Discovery/auth/dedup behavior is exercised by accept-workflow-observer-saga.test.ts.
+  describe('PR discovery lifecycle handoff', () => {
     let refreshPRStatusRequestedMock: Mock;
 
     beforeEach(async () => {
@@ -2033,7 +2082,7 @@ describe('SidebarChangesPanel', () => {
       mockGitHubAuthIsAuthenticated.value = false;
     });
 
-    it('triggers PR discovery when workspace has pushed commits and no active PR', async () => {
+    it('hands a workspace with pushed commits to the root observer without a second discovery', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
@@ -2041,28 +2090,32 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledWith('ws-1', false, false);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
       });
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
-    it('triggers initial PR discovery on remote branches even with no pushed commits', async () => {
-      // Workspaces on existing remote branches (e.g., PR review) should perform one
-      // initial PR discovery even when there are no local pushed commits, because the
-      // branch may already have a PR. hasRemote defaults to true in the component.
+    it('keeps a remote workspace observed across a panel remount without local discovery', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'local commit', isPushed: false }),
       ];
 
+      const first = await renderPanel();
+      first.unmount();
       await renderPanel();
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledWith('ws-1', false, false);
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+      ]);
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
-    it('does not trigger PR discovery when GitHub is not authenticated', async () => {
+    it('registers the observer before authentication so the root can discover after auth', async () => {
       mockGitHubAuthIsAuthenticated.value = false;
 
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -2072,11 +2125,14 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      await new Promise((r) => setTimeout(r, 100));
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
+      });
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
-    it('re-triggers PR discovery when workspace switches (resets tracked count)', async () => {
+    it('releases the old observer and acquires the new one when workspace switches', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
@@ -2084,9 +2140,7 @@ describe('SidebarChangesPanel', () => {
 
       const { rerender } = await renderPanel();
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledTimes(1);
-      });
+      mockDispatch.mockClear();
 
       // Switch to a different workspace with pushed commits
       mockWorkspaceStore.findById.mockReturnValue(
@@ -2099,9 +2153,19 @@ describe('SidebarChangesPanel', () => {
 
       await rerender({ workspaceId: 'ws-2' });
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledTimes(2);
-      });
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter(
+            (action) =>
+              action.type === 'git/acceptChangesConsumerMounted' ||
+              action.type === 'git/acceptChangesConsumerUnmounted',
+          ),
+      ).toEqual([
+        { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-2'] },
+      ]);
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
   });
 
@@ -2423,6 +2487,7 @@ describe('SidebarChangesPanel', () => {
       const { createCollection } =
         await import('@themislib/themis/utils/collections/collection-utils');
       mockStoreState.value = {
+        ...mockStoreState.value,
         gitRoots: {
           byWorkspaceId: {
             'ws-1': { gitRoots: createCollection('id', roots as any[]) },
@@ -2492,10 +2557,16 @@ describe('SidebarChangesPanel', () => {
       );
       const primaryRefresh = header.querySelector<HTMLButtonElement>('button')!;
       await fireEvent.click(primaryRefresh);
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: 'git/loadStatus',
-        payload: ['ws-1', true],
-      });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
       expect(
         mockDispatch.mock.calls.some(([action]) => action.type === 'git/loadSecondaryRoot'),
       ).toBe(false);
@@ -2662,10 +2733,8 @@ describe('SidebarChangesPanel', () => {
       expect(listText).not.toContain('Merge');
     });
 
-    it('leaves a pending auto-action queued while browsing a secondary root', async () => {
-      // While a secondary root is selected the primary body (PRSection /
-      // MergePanel refs) is unmounted — consuming the action there would
-      // silently drop an agent-triggered auto create-PR or merge.
+    it('does not consume or replay root-owned auto-actions when changing the viewed git root', async () => {
+      // Auto-actions are independent of the selected root and mounted child refs.
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       await seedGitRoots([makeGitRoot()]);
       mockRootGetStatus.mockResolvedValue({
@@ -2718,7 +2787,7 @@ describe('SidebarChangesPanel', () => {
         expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
       );
 
-      // Back to primary: the still-queued action is now consumed
+      // Returning to primary must not replay the root-owned action.
       trigger.focus();
       await fireEvent.keyDown(trigger, { key: 'Enter' });
       await waitFor(() => {
@@ -2730,11 +2799,12 @@ describe('SidebarChangesPanel', () => {
         expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeFalsy();
       });
 
-      await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
-        );
-      });
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
+      );
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ asyncActionType: 'prWorkflow/requested' }),
+      );
     });
   });
 
@@ -2916,7 +2986,7 @@ describe('SidebarChangesPanel', () => {
       expect(container.querySelector('input.inline-edit-input')).toBeNull();
     });
 
-    it('hides pull and force push from a collaborator and skips the refused status refresh', async () => {
+    it('hides pull and force push from a collaborator while delegating refresh authorization', async () => {
       const { refreshAcceptChangesStatus } =
         await import('$store/renderer/slices/changes/changes-slice');
       const clickRefresh = async (container: HTMLElement) => {
@@ -2943,8 +3013,19 @@ describe('SidebarChangesPanel', () => {
         expect(owner.container.querySelector('[data-testid="pr-pull-button"]')).not.toBeNull();
       });
       (refreshAcceptChangesStatus as Mock).mockClear();
+      mockDispatch.mockClear();
       await clickRefresh(owner.container);
-      expect(refreshAcceptChangesStatus).toHaveBeenCalledWith('ws-1');
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
+      expect(refreshAcceptChangesStatus).not.toHaveBeenCalled();
       owner.unmount();
 
       await seedBehind('collaborator');
@@ -2954,7 +3035,18 @@ describe('SidebarChangesPanel', () => {
       });
       expect(guest.container.querySelector('[data-testid="pr-pull-button"]')).toBeNull();
       (refreshAcceptChangesStatus as Mock).mockClear();
+      mockDispatch.mockClear();
       await clickRefresh(guest.container);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
       expect(refreshAcceptChangesStatus).not.toHaveBeenCalled();
       guest.unmount();
 

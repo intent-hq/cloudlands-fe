@@ -31,7 +31,10 @@ import {
   resolveUserDataBasePath,
   shouldIsolateDevIntentdDataDir,
 } from './utils/resolve-dev-instance.js';
-app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
+app.setPath(
+  'userData',
+  resolveUserDataBasePath(app.getPath('appData'), app.commandLine.getSwitchValue('user-data-dir')),
+);
 
 // EARLY: Support multiple dev instances by using unique userData paths.
 // Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron
@@ -392,6 +395,10 @@ import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { setResolvedAppName } from './utils/resolve-app-title.js';
+import {
+  setupDevConsoleIPC,
+  disposeDevConsole,
+} from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
@@ -497,6 +504,7 @@ async function performGracefulShutdown() {
 
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown
+    disposeDevConsole();
     await cleanupTerminals();
 
     // Allow native conpty threads to complete their exit callbacks
@@ -1487,6 +1495,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupWorkspaceSummaryIPC();
   setupFileIPC();
   setupSystemIPC();
+  setupDevConsoleIPC();
   setupPowerStateIPC();
   await setupConfigIPC();
   registerIDEHandlers(); // Needed for IDE integration

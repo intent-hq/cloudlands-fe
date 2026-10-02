@@ -177,6 +177,31 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
   });
 });
 
+describe('scriptsClient.create purpose forwarding', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'preserves %s creation intent',
+    async (purpose) => {
+      const definition = liveScript({ mode: 'command', purpose: purpose ?? 'oneOff' });
+      scriptsCreate.mockResolvedValueOnce({ success: true, script: definition });
+      const input = {
+        name: 'test',
+        command: 'pnpm test',
+        mode: 'command' as const,
+        ...(purpose ? { purpose } : {}),
+      };
+      expect(await scriptsClient.create('ws-1', input)).toEqual({
+        success: true,
+        data: definition,
+      });
+      const sent = scriptsCreate.mock.calls[0][1];
+      if (purpose) expect(sent).toHaveProperty('purpose', purpose);
+      else expect(sent).not.toHaveProperty('purpose');
+    },
+  );
+});
+
 describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
   afterEach(() => vi.clearAllMocks());
 
@@ -195,7 +220,7 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
 
     const result = await scriptsClient.update('ws-1', 'script-auto-dev', { command: 'pnpm dev' });
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
     expect(scriptsCreate).toHaveBeenCalledTimes(1);
     expect(scriptsCreate).toHaveBeenCalledWith(
       'ws-1',
@@ -209,6 +234,16 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
     );
     expect(result.success).toBe(true);
   });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'leaves stored %s purpose authoritative on an omitted-purpose update',
+    async (purpose) => {
+      scriptsList.mockResolvedValueOnce([liveScript({ mode: 'command', purpose })]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      await scriptsClient.update('ws-1', 'script-1', { name: 'renamed' });
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('purpose');
+    },
+  );
 
   it('refuses the upsert when the target script is running — no script.create goes out on the wire', async () => {
     // The scriptId upsert tears down the live PTY group daemon-side (§5.8),
@@ -246,17 +281,19 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     const result = await scriptsClient.detect('ws-1');
 
     expect(filesRead).toHaveBeenCalledWith('ws-1', 'package.json');
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
     expect(scriptsCreate).toHaveBeenCalledTimes(2);
     expect(scriptsCreate).toHaveBeenNthCalledWith(1, 'ws-1', {
       name: 'dev',
       command: 'npm run dev',
+      purpose: 'saved',
       mode: 'service',
       category: 'dev',
     });
     expect(scriptsCreate).toHaveBeenNthCalledWith(2, 'ws-1', {
       name: 'test',
       command: 'npm run test',
+      purpose: 'saved',
       mode: 'command',
       category: 'test',
     });
@@ -334,6 +371,26 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     expect(result).toMatchObject({ added: 0, removed: 0, packageManager: 'pnpm' });
     expect(result).not.toHaveProperty('skippedRunning');
   });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'does not reclassify existing %s detected commands',
+    async (purpose) => {
+      seedManifests({ 'package.json': JSON.stringify({ scripts: { test: 'vitest' } }) });
+      scriptsList.mockResolvedValueOnce([
+        liveScript({
+          name: 'test',
+          command: 'yarn test',
+          mode: 'command',
+          source: 'auto-detected',
+          purpose,
+        }),
+      ]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      await scriptsClient.detect('ws-1');
+      expect(scriptsCreate).toHaveBeenCalledTimes(1);
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('purpose');
+    },
+  );
 
   it('never sends the script.create upsert when the target script is running — skips and reports it', async () => {
     // Same changed-command diff as the upsert case above, but the existing

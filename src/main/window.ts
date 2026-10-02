@@ -1,3 +1,4 @@
+import { isDevConsoleRoute } from '../shared/dev-console-route';
 import path from 'path';
 import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -395,6 +396,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
+      if (isDevConsoleRoute(new URL(url).pathname)) return false;
       return true;
     })
     .map((w: BrowserWindowType) => {
@@ -591,7 +593,9 @@ export function isValidWindowSession(s: unknown): s is WindowSession {
 export function loadWindowSessions(backendId: string): WindowSession[] | null {
   try {
     if (closedBackendSessions.has(backendId)) return null;
-    const valid = readSessionsMap()[backendId];
+    const valid = readSessionsMap()[backendId]?.filter(
+      (session) => !isDevConsoleRoute(session.route),
+    );
     if (valid && valid.length > 0) {
       // Cap per backend to guard against a corrupted sessions file.
       const capped = valid.slice(0, MAX_SESSIONS_PER_BACKEND);

@@ -502,6 +502,7 @@ type CanonicalAgentSessionUpdates = {
   waitingForAgentIds?: string[];
   waitingOnHooks?: AgentSession['waitingOnHooks'];
   waitingOnPrMonitors?: AgentSession['waitingOnPrMonitors'];
+  waitingOnScriptMonitors?: AgentSession['waitingOnScriptMonitors'];
   liveTurnOpen?: boolean;
   liveTurnOpenedAt?: string | undefined;
 };
@@ -761,6 +762,8 @@ function canonicalSessionUpdates(
   // empty), so an idle event always clears a stale list; other canonical
   // event types that don't carry the field leave the existing value alone.
   if (Array.isArray(fields.waitingOnHooks)) updates.waitingOnHooks = fields.waitingOnHooks;
+  if (Array.isArray(fields.waitingOnScriptMonitors))
+    updates.waitingOnScriptMonitors = fields.waitingOnScriptMonitors;
   if (Array.isArray(fields.waitingOnPrMonitors)) {
     updates.waitingOnPrMonitors = fields.waitingOnPrMonitors;
   }
@@ -846,6 +849,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         // default to [] so a stale list from a prior idle is cleared.
         waitingOnHooks: data.waitingOnHooks ?? [],
         waitingOnPrMonitors: data.waitingOnPrMonitors ?? [],
+        waitingOnScriptMonitors: data.waitingOnScriptMonitors ?? [],
       },
     ];
   }
@@ -1714,7 +1718,7 @@ export const setHistoryOldestReached = createAction<[agentId: string, oldestReac
  * newest end ⇒ contiguous, mirroring the append overlap rule).
  */
 export const seedHistoryAround = createAction<
-  [agentId: string, messages: AgentMessage[], startOrdinalEstimate: number]
+  [agentId: string, messages: AgentMessage[], startOrdinalEstimate?: number]
 >('agentSessions/seedHistoryAround');
 
 /** Drop an agent's scrollback history segment entirely. */
@@ -2252,7 +2256,9 @@ agentSessionReducer.with(
       // An estimated 0 start is still an estimate — exact only via the
       // walk's nextToken === null (setHistoryOldestReached).
       oldestReached: false,
-      startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)),
+      ...(startOrdinalEstimate === undefined
+        ? {}
+        : { startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)) }),
     });
   },
 );

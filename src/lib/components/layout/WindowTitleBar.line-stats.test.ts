@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
-  getLineStats: vi.fn(),
+  backendRequest: vi.fn(),
   invoke: vi.fn(() => Promise.resolve()),
 }));
 
@@ -19,8 +19,8 @@ const readable = <T>(value: T) => ({
 vi.mock('$app/state', () => ({
   page: { params: { id: 'ws-1' }, url: { pathname: '/workspace/ws-1' } },
 }));
-vi.mock('$features/file-tracking/file-tracking.client', () => ({
-  getLineStats: mocks.getLineStats,
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/components/ui/tooltip', () => ({ Tooltip: () => null }));
@@ -75,7 +75,7 @@ describe('WindowTitleBar', () => {
     await view.rerender({ workspaceId: 'ws-2' });
     await tick();
 
-    expect(mocks.getLineStats).not.toHaveBeenCalled();
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
   });
 
   it('keeps the native window title current when the workspace changes', async () => {

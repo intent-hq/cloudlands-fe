@@ -415,10 +415,13 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].queuedRetryRecords['qm-1'].record.text).toBe('after');
     });
 
-    it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {
+    it('does not infer processed authority from a pre-acknowledgement queue snapshot', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
-      expect(s2).toBe(s1);
+      expect(s2.byAgentId[AGENT].processedQueuedTurn).toBeUndefined();
+      expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBe(
+        s1.byAgentId[AGENT].lastAttemptedMessage,
+      );
     });
 
     it('replaceAgentQueue never materializes a chat-state entry for an unopened chat', () => {
@@ -449,6 +452,9 @@ describe('chatStateReducer', () => {
           'qm-1',
           { ...attempt, options: { noteIds: ['n-1'] } },
           'qm-1',
+          undefined,
+          false,
+          s.byAgentId[AGENT].attemptGeneration,
         ),
       );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
@@ -545,13 +551,13 @@ describe('chatStateReducer', () => {
       });
     });
 
-    it('a snapshot with unchanged content leaves parked records untouched (state identity preserved)', () => {
+    it('a snapshot with unchanged content leaves parked records untouched', () => {
       const s = chatStateReducer(
         initialState,
         chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'content of qm-1' }, 'qm-1'),
       );
       const s2 = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
-      expect(s2).toBe(s);
+      expect(s2.byAgentId[AGENT].queuedRetryRecords).toBe(s.byAgentId[AGENT].queuedRetryRecords);
     });
 
     it('chatQueuedRetryRecordUpdated is a no-op when nothing is parked under the id', () => {
@@ -670,11 +676,35 @@ describe('chatStateReducer', () => {
 
     it('chatQueuedRetryRecordParked stores the turnId and clears the matching slot (#1011)', () => {
       let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'B' }));
-      s = chatStateReducer(s, chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
+      s = chatStateReducer(
+        s,
+        chatQueuedRetryRecordParked(
+          AGENT,
+          'qm-1',
+          { text: 'B' },
+          'turn-1',
+          undefined,
+          false,
+          s.byAgentId[AGENT].attemptGeneration,
+        ),
+      );
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
       });
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('recovers the first auto-queue acknowledgement when processing arrived without a snapshot', () => {
+      const attempt = { text: 'pending answer' };
+      let state = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempt));
+      state = chatStateReducer(state, chatQueueProcessingReceived(AGENT, 'survivor'));
+      state = chatStateReducer(
+        state,
+        chatQueuedRetryRecordParked(AGENT, 'survivor', attempt, 'survivor', null),
+      );
+      state = chatStateReducer(state, chatSendFailed(AGENT, 'failed after response', 'survivor'));
+      expect(state.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempt);
+      expect(state.byAgentId[AGENT].queuedRetryRecords).toEqual({});
     });
 
     it('chatQueueProcessingReceived promotes the exact record by turnId', () => {
@@ -729,10 +759,13 @@ describe('chatStateReducer', () => {
       expect(s2).toBe(s1);
     });
 
-    it('chatQueueProcessingReceived is a no-op when nothing matches (no approximation)', () => {
+    it('records processing before acknowledgement without approximating a retry payload', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, chatQueueProcessingReceived(AGENT, 'turn-x'));
-      expect(s2).toBe(s1);
+      expect(s2.byAgentId[AGENT].processedQueuedTurn?.turnId).toBe('turn-x');
+      expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBe(
+        s1.byAgentId[AGENT].lastAttemptedMessage,
+      );
       // Never materializes state for an unopened chat either.
       const s3 = chatStateReducer(
         initialState,
@@ -740,6 +773,56 @@ describe('chatStateReducer', () => {
       );
       expect(s3.byAgentId['agent-unopened']).toBeUndefined();
     });
+
+    it.each([false, true])(
+      'uses processing authority without replacing a distinct identical attempt (%s)',
+      (anotherAttempt) => {
+        const first = {
+          id: 'q',
+          turnId: 'turn',
+          content: 'first',
+          position: 0,
+          queuedAt: '2026-10-02T00:00:00Z',
+        };
+        const combined = {
+          ...first,
+          content: 'first\n\nsecond',
+          fileBlocks: [{ type: 'file' as const, attachmentId: 'second', fileName: 'second.txt' }],
+          messageMetadata: {
+            mergedMessageMetadata: [
+              { answeredQuestionsMessageId: 'one' },
+              { answeredQuestionsMessageId: 'two' },
+            ],
+          },
+        };
+        let state = chatStateReducer(
+          initialState,
+          chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn'),
+        );
+        state = chatStateReducer(state, replaceAgentQueue(AGENT, [first]));
+        state = chatStateReducer(state, chatQueueProcessingReceived(AGENT, 'turn', [combined]));
+        state = chatStateReducer(
+          state,
+          chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn', true),
+        );
+        if (anotherAttempt)
+          state = chatStateReducer(state, chatLastAttemptedMessageSet(AGENT, { text: 'first' }));
+        state = chatStateReducer(state, replaceAgentQueue(AGENT, [combined]));
+        state = chatStateReducer(state, replaceAgentQueue(AGENT, []));
+        expect(state.byAgentId[AGENT].lastAttemptedMessage).toEqual(
+          anotherAttempt
+            ? { text: 'first' }
+            : {
+                text: combined.content,
+                options: {
+                  fileBlocks: combined.fileBlocks,
+                  messageMetadata: combined.messageMetadata,
+                },
+              },
+        );
+        expect(state.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      },
+    );
 
     it('a queue snapshot does NOT promote a vanished record (processing owns the promotion)', () => {
       // The record's entry id left the snapshot — under the removed inference
@@ -1419,7 +1502,7 @@ describe('chatState selectors', () => {
     expect(agent.historySeekUnsupported).toBe(true);
     expect(agent.transcriptSnapshot?.resumed).toBe(false);
     // The epoch bump invalidates workers still awaiting their wire call.
-    expect(agent.scrollbackDiscardEpoch).toBe(1);
+    expect(agent.scrollbackDiscardEpoch).toBe(3);
 
     state = chatStateReducer(
       state,
@@ -1429,7 +1512,7 @@ describe('chatState selectors', () => {
         resumed: false,
       }),
     );
-    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(2);
+    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(4);
   });
 
   it('a resumed:true (or plain) snapshot leaves the walk state untouched', () => {
@@ -1464,12 +1547,25 @@ describe('chatState selectors', () => {
       expect(emptyChatAgentState.historySeekUnsupported).toBe(false);
     });
 
-    it('scrollbackFetchStarted seek direction sets only fetchingHistorySeek', () => {
+    it('scrollbackFetchStarted seek direction sets fetchingHistorySeek', () => {
       const state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'seek'));
       const agent = state.byAgentId[AGENT];
       expect(agent.fetchingHistorySeek).toBe(true);
       expect(agent.fetchingOlderHistory).toBe(false);
       expect(agent.fetchingGapFill).toBe(false);
+    });
+
+    it('a new seek invalidates pending pages and owns the shared fetching flag', () => {
+      let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, 'older'));
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'gap'));
+      const priorEpoch = state.byAgentId[AGENT].scrollbackDiscardEpoch;
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+      expect(state.byAgentId[AGENT]).toMatchObject({
+        fetchingHistorySeek: true,
+        fetchingOlderHistory: false,
+        fetchingGapFill: false,
+        scrollbackDiscardEpoch: priorEpoch + 1,
+      });
     });
 
     it('scrollbackSeekSettled clears the flag and persists BOTH landing cursors', () => {

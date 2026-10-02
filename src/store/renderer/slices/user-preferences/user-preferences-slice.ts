@@ -64,6 +64,8 @@ export type UserPreferencesState = {
   labsMultiplayerEnabled: boolean;
   /** Whether new GitLab setup is offered in Labs. Existing connections are preserved. */
   labsGitLabEnabled: boolean;
+  /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
+  labsRemoteAgentsEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -135,6 +137,7 @@ export const initialState: UserPreferencesStoreState = {
   labsSettingsVisible: false,
   labsMultiplayerEnabled: false,
   labsGitLabEnabled: false,
+  labsRemoteAgentsEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   notificationVolumeEditId: 0,
@@ -382,6 +385,17 @@ export const setLabsGitLabEnabled = labsGitLabPreference.setAction;
 
 export const toggleLabsGitLab = labsGitLabPreference.toggleAction;
 
+const labsRemoteAgentsPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsRemoteAgentsEnabled',
+  setActionName: 'setLabsRemoteAgentsEnabled',
+  toggleActionName: 'toggleLabsRemoteAgents',
+});
+
+export const setLabsRemoteAgentsEnabled = labsRemoteAgentsPreference.setAction;
+
+export const toggleLabsRemoteAgents = labsRemoteAgentsPreference.toggleAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesStoreState>(initialState);
 userPreferencesReducer.with(agentRulesEditorOpened, (state) => ({
   ...state,
@@ -486,6 +500,7 @@ reduceMotionOnBatteryPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);
+labsRemoteAgentsPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

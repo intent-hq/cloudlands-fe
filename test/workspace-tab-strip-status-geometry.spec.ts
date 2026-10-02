@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -235,7 +236,10 @@ async function mountStrip(
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/src/lib/components/layout/WorkspaceTabStrip.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
   await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
@@ -292,7 +296,8 @@ async function mountStrip(
       },
     };
     if (panelOpen === undefined || panelWidth === undefined) {
-      target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
+      // Match WindowTitleBar's flex controls: shrinking bounds the scroll viewport.
+      target.style.cssText = `position:relative;display:flex;min-width:0;align-items:center;width:100%;padding:24px;zoom:${zoom};`;
       mount(Strip, { target, props: stripProps });
     } else {
       target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;

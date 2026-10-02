@@ -79,12 +79,6 @@ import {
   loadWorkspaceNotesSucceeded,
   workspaceNotesHydrationRequested,
 } from '../../workspace-notes/workspace-notes-slice';
-import {
-  ensureWorkspaceTasksLoaded,
-  loadWorkspaceTasksFailed,
-  loadWorkspaceTasksRequested,
-  loadWorkspaceTasksSucceeded,
-} from '../../workspace-tasks/workspace-tasks-slice';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
@@ -328,11 +322,6 @@ function* dispatchHydrationBranch(
     return;
   }
   switch (branch) {
-    case 'tasks':
-      yield* put(
-        force ? loadWorkspaceTasksRequested(workspaceId) : ensureWorkspaceTasksLoaded(workspaceId),
-      );
-      break;
     case 'events':
       yield* put(loadEventsRequested(workspaceId));
       break;
@@ -478,14 +467,11 @@ function* settleHydrationBranch(
         : first;
   if (typeof workspaceId !== 'string') return;
   const failureTypes = new Set([
-    loadWorkspaceTasksFailed.type,
     eventsLoadFailed.type,
     loadSkillsFailed.type,
     loadWorkspaceNotesFailed.type,
   ]);
   const mappings: Partial<Record<string, WorkspaceHydrationBranch>> = {
-    [loadWorkspaceTasksSucceeded.type]: 'tasks',
-    [loadWorkspaceTasksFailed.type]: 'tasks',
     [eventsLoaded.type]: 'events',
     [eventsLoadFailed.type]: 'events',
     [setScriptsInitialized.type]: 'scripts',
@@ -514,8 +500,6 @@ function* settleHydrationBranch(
 }
 
 const hydrationSettleActionTypes = new Set([
-  loadWorkspaceTasksSucceeded.type,
-  loadWorkspaceTasksFailed.type,
   eventsLoaded.type,
   eventsLoadFailed.type,
   setScriptsInitialized.type,

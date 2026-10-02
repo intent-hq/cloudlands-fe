@@ -204,7 +204,7 @@ describe('provider availability service', () => {
       return handler;
     };
 
-    it.each(['codex', 'cortex', 'opencode', 'pi', 'droid', 'grok', 'unsloth', 'claude-code'])(
+    it.each(['codex', 'cortex', 'opencode', 'pi', 'droid', 'grok', 'unsloth'])(
       'returns a failure envelope when the %s binary probe RPC fails',
       async (providerId) => {
         routeBackend({});
@@ -234,274 +234,132 @@ describe('provider availability service', () => {
         error: 'transport down',
       });
     });
-
-    it('claude-code: a failed npx probe after a resolved CLI fails the check instead of fabricating a warning', async () => {
-      routeBackend({});
-      mocks.findBinaryStrict.mockImplementation(async (name: string) => {
-        if (name === 'claude') return '/usr/local/bin/claude';
-        throw new Error('npx probe failed');
-      });
-      const handler = await setup();
-
-      const result = await handler({}, 'claude-code');
-
-      expect(result).toEqual({
-        success: false,
-        providerId: 'claude-code',
-        error: 'npx probe failed',
-      });
-    });
   });
 
-  it('aggregate path: a failed claude CLI re-gate probe fails the whole check instead of downgrading availability', async () => {
-    // Discovery said claude-code is installed; the FE-side CLI re-gate probe
-    // then failed. Folding that to available:false would erase a working
-    // provider — the aggregate must reject so the saga keeps prior state.
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          p.id === 'claude-code'
-            ? { ...p, installed: true, resolvedPath: '/usr/local/bin/npx' }
-            : p,
-        ),
-        npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
-      },
-      'host.providerAuthStatus': authSweep(),
-    });
-    mocks.findBinaryStrict.mockRejectedValue(new Error('transport down'));
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-
-    await expect(getProviderAvailability()).rejects.toThrow('transport down');
-  });
-
-  it('surfaces the npx-missing warning on the discovery path when the claude CLI is installed', async () => {
-    // The daemon reports claude-code as not installed (npx-only provider,
-    // npx absent), but the claude CLI itself is on the host — the aggregate
-    // must still warn instead of showing a silently unavailable provider.
-    routeBackend({
-      'host.providerDiscovery': EMPTY_DISCOVERY,
-      'host.providerAuthStatus': authSweep(),
-    });
-    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-      name === 'claude' ? '/usr/local/bin/claude' : null,
-    );
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.claudeCode.available).toBe(false);
-    expect(result.providers.claudeCode.warning).toBe(CLAUDE_CODE_NPX_MISSING_WARNING);
-    expect(result.npx).toEqual({ resolvedPath: null, version: null, versionOk: false });
-  });
-
-  it('does not warn on the discovery path when the claude CLI is absent', async () => {
-    routeBackend({
-      'host.providerDiscovery': EMPTY_DISCOVERY,
-      'host.providerAuthStatus': authSweep(),
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.claudeCode.available).toBe(false);
-    expect(result.providers.claudeCode.warning).toBeUndefined();
-  });
-
-  it('does not warn on the discovery path when npx is present', async () => {
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
-      },
-      'host.providerAuthStatus': authSweep(),
-    });
-    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-      name === 'claude' ? '/usr/local/bin/claude' : null,
-    );
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.claudeCode.warning).toBeUndefined();
-  });
-
-  it('reports claude-code unavailable when discovery says installed but the claude CLI is missing', async () => {
-    // The daemon reports npx-only providers as installed from npx presence
-    // alone; the claude CLI prerequisite is FE-checked, so its absence must
-    // override the discovery result.
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          p.id === 'claude-code'
-            ? { ...p, installed: true, resolvedPath: '/usr/local/bin/npx' }
-            : p,
-        ),
-        npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
-      },
-      'host.providerAuthStatus': authSweep(),
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.claudeCode.available).toBe(false);
-    expect(result.providers.claudeCode.warning).toBeUndefined();
-  });
-
-  it('keeps claude-code available when discovery says installed and the claude CLI is present', async () => {
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          p.id === 'claude-code'
-            ? { ...p, installed: true, resolvedPath: '/usr/local/bin/npx' }
-            : p,
-        ),
-        npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
-      },
-      'host.providerAuthStatus': authSweep(),
-    });
-    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-      name === 'claude' ? '/usr/local/bin/claude' : null,
-    );
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.claudeCode.available).toBe(true);
-    expect(result.providers.claudeCode.warning).toBeUndefined();
-  });
-
-  describe('claude-code providers.paths override (intent#4378)', () => {
-    // Since intentd#1714 a valid `providers.paths["claude-code"]` override is
-    // exec'd in place of the pinned npx adapter, and discovery reports the
-    // provider `installed` from the override while `resolvedPath` stays the
-    // auto-detected npx (the key is omitted on the wire when npx is absent).
-    // npx is not involved on that path, so the npx-missing warning must not
-    // fire.
-    const OVERRIDE_DISCOVERY = {
+  describe('Claude daemon discovery', () => {
+    const discovery = (
+      row: { installed: boolean; resolvedPath?: string | null; gatedOff?: string | null } | null,
+    ) => ({
       ...EMPTY_DISCOVERY,
-      providers: EMPTY_DISCOVERY.providers.map(({ resolvedPath, ...p }) =>
-        p.id === 'claude-code' ? { ...p, installed: true } : { ...p, resolvedPath },
+      npx: row?.resolvedPath
+        ? { resolvedPath: row.resolvedPath, version: '10.0.0', versionOk: true }
+        : EMPTY_DISCOVERY.npx,
+      providers: EMPTY_DISCOVERY.providers.flatMap((provider) =>
+        provider.id !== 'claude-code' ? [provider] : row ? [{ ...provider, ...row }] : [],
       ),
-      npx: { resolvedPath: null, version: null, versionOk: false },
-    };
-
-    it('discovery path: installed via override with npx missing stays available without the npx warning', async () => {
-      routeBackend({
-        'host.providerDiscovery': OVERRIDE_DISCOVERY,
-        'host.providerAuthStatus': authSweep({ 'claude-code': true }),
-      });
-      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-        name === 'claude' ? '/usr/local/bin/claude' : null,
-      );
-
-      const { getProviderAvailability } = await import('../provider-availability.service');
-      const result = await getProviderAvailability();
-
-      expect(result.providers.claudeCode).toEqual({
-        available: true,
-        hasNpxFallback: false,
-        authenticated: true,
-      });
-      expect(result.npx).toEqual({ resolvedPath: null, version: null, versionOk: false });
     });
 
-    it('discovery path: an override still requires the claude CLI prerequisite', async () => {
-      // The daemon's auth probe gates claude-code on the real `claude` CLI
-      // regardless of the adapter override; the FE re-gate mirrors that.
-      routeBackend({
-        'host.providerDiscovery': OVERRIDE_DISCOVERY,
-        'host.providerAuthStatus': authSweep(),
-      });
-      mocks.findBinaryStrict.mockResolvedValue(null);
-
-      const { getProviderAvailability } = await import('../provider-availability.service');
-      const result = await getProviderAvailability();
-
-      expect(result.providers.claudeCode.available).toBe(false);
-      expect(result.providers.claudeCode.warning).toBeUndefined();
+    it.each([
+      [
+        'bundled runtime without a standalone CLI',
+        { installed: true, resolvedPath: '/usr/bin/npx' },
+      ],
+      ['valid adapter override without npx', { installed: true, resolvedPath: undefined }],
+    ])('uses discovery for %s and preserves auth tri-state', async (_label, row) => {
+      for (const authenticated of [true, false, null]) {
+        routeBackend({
+          'host.providerDiscovery': discovery(row),
+          'host.providerAuthStatus': authSweep({ 'claude-code': authenticated }),
+        });
+        mocks.backendRequest.mockClear();
+        const { getProviderAvailability, setupProviderAvailabilityIPC } =
+          await import('../provider-availability.service');
+        setupProviderAvailabilityIPC();
+        const aggregate = await getProviderAvailability();
+        expect(aggregate.providers.claudeCode).toEqual({
+          available: true,
+          hasNpxFallback: false,
+          authenticated: authenticated ?? undefined,
+        });
+        expect(
+          mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+        ).toEqual([['host.providerDiscovery', {}]]);
+        const single = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
+          {},
+          { providerId: 'claude-code', force: false },
+        );
+        expect(single).toEqual({
+          success: true,
+          providerId: 'claude-code',
+          data: aggregate.providers.claudeCode,
+        });
+        expect(
+          mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+        ).toHaveLength(2);
+        expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
+          providerId: 'claude-code',
+          force: false,
+        });
+      }
+      expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
+      expect(mocks.findBinary).not.toHaveBeenCalled();
     });
 
-    it('single recheck: warns when npx is missing and the daemon reports no override in use', async () => {
-      routeBackend({
-        'host.providerDiscovery': EMPTY_DISCOVERY,
-        'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
-      });
-      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-        name === 'claude' ? '/usr/local/bin/claude' : null,
-      );
+    it.each([
+      ['uninstalled', { installed: false }, CLAUDE_CODE_NPX_MISSING_WARNING],
+      ['gated', { installed: false, gatedOff: 'TEST_GATE' }, undefined],
+      ['missing', null, undefined],
+    ])(
+      'keeps a %s row unavailable without binary probes or duplicate discovery',
+      async (_label, row, warning) => {
+        routeBackend({
+          'host.providerDiscovery': discovery(row),
+          'host.providerAuthStatus': authSweep({ 'claude-code': true }),
+        });
+        const { getProviderAvailability, setupProviderAvailabilityIPC } =
+          await import('../provider-availability.service');
+        setupProviderAvailabilityIPC();
+        const aggregate = await getProviderAvailability();
+        expect(aggregate.providers.claudeCode.available).toBe(false);
+        expect(aggregate.providers.claudeCode.warning).toBe(warning);
+        expect(aggregate.providers.claudeCode.authenticated).toBeUndefined();
+        expect(
+          mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+        ).toHaveLength(1);
+        mocks.backendRequest.mockClear();
+        const single = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
+          {},
+          'claude-code',
+        );
+        expect(single).toEqual({
+          success: true,
+          providerId: 'claude-code',
+          data: aggregate.providers.claudeCode,
+        });
+        expect(mocks.backendRequest.mock.calls).toEqual([['host.providerDiscovery', {}]]);
+        expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
+        expect(mocks.findBinary).not.toHaveBeenCalled();
+      },
+    );
 
+    it('does not claim npx is missing when discovery has no npx verdict', async () => {
+      routeBackend({
+        'host.providerDiscovery': { ...discovery({ installed: false }), npx: undefined },
+      });
       const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
       setupProviderAvailabilityIPC();
       const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
-
-      expect(result).toEqual({
-        success: true,
-        providerId: 'claude-code',
-        data: { available: true, authenticated: true, warning: CLAUDE_CODE_NPX_MISSING_WARNING },
-      });
+      expect(result).toMatchObject({ success: true, data: { available: false } });
+      expect(result.data.warning).toBeUndefined();
+      expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
     });
 
-    it('single recheck: suppresses the npx warning when the daemon reports the override in use', async () => {
-      routeBackend({
-        'host.providerDiscovery': OVERRIDE_DISCOVERY,
-        'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
-      });
-      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-        name === 'claude' ? '/usr/local/bin/claude' : null,
-      );
-
+    it('preserves aggregate and single failure envelopes when discovery fails', async () => {
+      mocks.backendRequest.mockRejectedValue(new Error('discovery transport down'));
       const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
       setupProviderAvailabilityIPC();
-      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
-
-      expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
-      expect(result).toEqual({
-        success: true,
-        providerId: 'claude-code',
-        data: { available: true, authenticated: true },
-      });
-    });
-
-    it('single recheck: does not consult discovery when npx resolves', async () => {
-      routeBackend({
-        'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
-      });
-      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-        name === 'claude' || name === 'npx' ? `/usr/local/bin/${name}` : null,
+      expect(await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code')).toEqual(
+        {
+          success: false,
+          providerId: 'claude-code',
+          error: 'discovery transport down',
+        },
       );
-
-      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
-      setupProviderAvailabilityIPC();
-      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
-
-      expect(mocks.backendRequest).not.toHaveBeenCalledWith('host.providerDiscovery', {});
-      expect(result).toEqual({
-        success: true,
-        providerId: 'claude-code',
-        data: { available: true, authenticated: true },
-      });
-    });
-
-    it('single recheck: a failed discovery RPC while npx is missing fails the check instead of guessing', async () => {
-      routeBackend({});
-      mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-        name === 'claude' ? '/usr/local/bin/claude' : null,
-      );
-
-      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
-      setupProviderAvailabilityIPC();
-      const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!({}, 'claude-code');
-
-      expect(result).toEqual({
+      expect(await mocks.handlers.get(PROVIDERS_CHANNELS.GET_AVAILABILITY)!({})).toEqual({
         success: false,
-        providerId: 'claude-code',
-        error: 'unexpected daemon method: host.providerDiscovery',
+        error: 'discovery transport down',
       });
+      expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
     });
   });
 
@@ -758,6 +616,10 @@ describe('provider availability service', () => {
 
   it('single recheck attaches the host.providerAuthStatus identity line and omits it without one', async () => {
     routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: [{ ...EMPTY_DISCOVERY.providers[1], installed: true }],
+      },
       'host.providerAuthStatus': {
         providers: [
           {
@@ -768,9 +630,6 @@ describe('provider availability service', () => {
         ],
       },
     });
-    mocks.findBinaryStrict.mockImplementation(async (name: string) =>
-      name === 'claude' || name === 'npx' ? `/usr/local/bin/${name}` : null,
-    );
 
     const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
     setupProviderAvailabilityIPC();
@@ -781,19 +640,28 @@ describe('provider availability service', () => {
     expect(withIdentity).toEqual({
       success: true,
       providerId: 'claude-code',
-      data: { available: true, authenticated: true, authDetails: 'dev@example.com · Example Org' },
+      data: {
+        available: true,
+        hasNpxFallback: false,
+        authenticated: true,
+        authDetails: 'dev@example.com · Example Org',
+      },
     });
 
     // The same recheck against a daemon that sent no `identity` object
     // yields no authDetails key at all.
     routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: [{ ...EMPTY_DISCOVERY.providers[1], installed: true }],
+      },
       'host.providerAuthStatus': { providers: [{ id: 'claude-code', authenticated: true }] },
     });
     const withoutIdentity = await handler({}, 'claude-code');
     expect(withoutIdentity).toEqual({
       success: true,
       providerId: 'claude-code',
-      data: { available: true, authenticated: true },
+      data: { available: true, hasNpxFallback: false, authenticated: true },
     });
     expect(withoutIdentity.data).not.toHaveProperty('authDetails');
   });

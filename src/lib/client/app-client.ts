@@ -1,3 +1,8 @@
+import type {
+  ScriptArchiveFilter,
+  ScriptArchiveResult,
+  ScriptRestoreResult,
+} from '$features/scripts/types';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -49,7 +54,7 @@ import type {
   ScriptWithState,
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
-import type { ScriptCategory, ScriptMode } from '$features/scripts/types';
+import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
@@ -192,6 +197,7 @@ export interface AgentCreateRequest {
   /** Reasoning effort for the session's model (Option B session field, §5.5). */
   reasoningEffort?: string;
   specialist?: string | null;
+  rememberSpecialist?: boolean;
   name?: string;
   nameExplicitlySet?: boolean;
   agentId?: string;
@@ -268,13 +274,6 @@ export interface UserMessageIndexItem {
 export type UserMessageIndexResult =
   | { ok: true; items: UserMessageIndexItem[]; total: number }
   | { ok: false; unsupported: boolean; error: string };
-
-/** Pull-request summary surfaced by the git domain. */
-export interface PrStatusSummary {
-  prNumber?: number;
-  url?: string;
-  state?: string;
-}
 
 /**
  * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
@@ -750,8 +749,8 @@ export interface AgentsClient {
    * NOT idempotent: a missing entry (already drained/removed) rejects with
    * `-32602`, folded into `{ success: false, error }` like the other
    * mutations. The delivered arm carries `turnId` (the entry's preserved
-   * turn-correlation id, §5.5 — this RPC's response replaces the
-   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * turn-correlation id, §5.5). Admitted sends also emit `agent:queue:processing`
+   * with the complete consumed entries; the response is a legacy promotion fallback,
    * surfaced on the MutationResult (monorepo#1057).
    */
   sendQueuedNow(params: {
@@ -886,6 +885,7 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult>;
@@ -1008,23 +1008,25 @@ export interface AgentsClient {
  * terminal `streamingComplete` frames.
  */
 export interface ChatTranscript {
+  /** Exclusive older-page continuation from the authoritative snapshot. */
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;
   isStreaming: boolean;
   /**
-   * Resume disposition (PROTOCOL §7.1 `sinceMessageId`), stamped ONLY on the
-   * emit produced by the seq-0 snapshot of a registration that requested a
-   * resume: `true` — the snapshot was a delta from the requested anchor,
-   * merged onto the retained baseline; `false` — the daemon did not honor
-   * the resume (unknown/pruned id) and replied with the standard newest-page
-   * snapshot, so the subscriber must fully rehydrate older history. Absent
-   * on every other emit (delta emits, non-resume snapshots).
+   * Resume/reset disposition (PROTOCOL §7.1), forwarded on snapshot emits:
+   * `true` means a post-anchor delta merged onto the retained baseline;
+   * `false` means a newest-page reset after a missing resume anchor,
+   * transcript edit/replacement, or lag recovery. Subscribers must discard
+   * cached history on `false`, including mid-stream snapshots on registrations
+   * that never requested resume. Absent on delta emits and snapshots whose
+   * wire payload carries no disposition.
    */
   resumed?: boolean;
   /**
-   * Stamped `true` ONLY on the emit produced by applying a seq-0 snapshot
-   * push (fresh registration, gap resnapshot, reconnect re-registration) —
+   * Stamped `true` on the emit produced by applying any snapshot push
+   * (initial hydration, re-registration, or mid-stream recovery/reset) —
    * absent on delta emits. Consumers use it to tell "the daemon just served
    * the authoritative newest page (with the in-flight assistant merged)"
    * apart from incremental delta reconciliation, e.g. the chat-subscribe
@@ -1059,6 +1061,8 @@ export interface ChatClient {
    * snapshot then carries only messages after that id with `resumed: true`,
    * or falls back to the standard newest-page snapshot with `resumed: false`
    * when the daemon no longer knows the id (see `ChatTranscript.resumed`).
+   * Later reset snapshots can also carry `resumed: false`, regardless of
+   * whether resume was requested; consumers must discard cached history.
    */
   subscribe(
     agentId: string,
@@ -1293,7 +1297,11 @@ export interface SettingsClient {
 
 export interface FilesClient {
   list(workspaceId: string): Promise<FileContentEntry[]>;
-  read(workspaceId: string, path: string): Promise<FileContentEntry | null>;
+  read(
+    workspaceId: string,
+    path: string,
+    options?: { gitRootId: string },
+  ): Promise<FileContentEntry | null>;
   /** Root node of the workspace file tree, or `null` when no tree is available. */
   explorerTree(workspaceId: string): Promise<FileNode | null>;
   /**
@@ -1405,12 +1413,11 @@ export interface GitClient {
     commitHash: string,
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null>;
-  prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
    * relink-after-merge, stale-link clearing) for one workspace on demand and
-   * returns the post-refresh linkage state. Unlike `pr.status` it does NOT
-   * require an active PR. Errors fold to `null`.
+   * returns the post-refresh linkage state. An active PR is not required.
+   * Errors fold to `null`.
    */
   prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
   /**
@@ -1828,12 +1835,14 @@ export interface CommentsClient {
 
 /** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
 export interface ScriptCreateInput {
+  /** Omit to use the daemon default; existing IDs retain their stored purpose. */
+  purpose?: ScriptPurpose;
   name: string;
   command: string;
   mode: ScriptMode;
   cwd?: string;
   env?: Record<string, string>;
-  category?: ScriptCategory;
+  category?: string;
   autoStart?: boolean;
   scriptId?: string;
 }
@@ -1852,8 +1861,23 @@ export interface ScriptRunResult {
 }
 
 export interface ScriptsClient {
+  supportsLifecycle?(): Promise<boolean>;
+  /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
+  archive?(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptArchiveResult>;
+  restore?(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptRestoreResult>;
   /** `script.list` — definitions with merged runtime state. */
-  list(workspaceId: string): Promise<ScriptWithState[]>;
+  list(
+    workspaceId: string,
+    options?: { archive?: ScriptArchiveFilter },
+  ): Promise<ScriptWithState[]>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.remove` — stop (if running) and forget a script. */
@@ -1911,6 +1935,12 @@ export interface SkillsClient {
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
 export interface SpecialistDef {
+  /** Original Claude definition; read-only in Intent. */
+  importedFrom?: 'claude-code';
+  /** Unsupported settings that prevent launching this imported definition. */
+  unsupportedFields?: string[];
+  requiredSkills?: string[];
+  missingSkills?: string[];
   id: string;
   name: string;
   description: string;
@@ -1965,7 +1995,29 @@ export interface SpecialistDef {
   resolvedReasoningEffort?: string;
 }
 
+export interface SpecialistImportDiagnostic {
+  path: string;
+  isDirectory?: boolean;
+  source: 'user' | 'project';
+  code: 'invalid' | 'unreadable' | 'broken-link' | 'too-large' | 'shadowed' | 'scan-limit';
+  message: string;
+  specialistId?: string;
+  winnerPath?: string;
+}
+
+export interface SpecialistCatalog {
+  specialists: SpecialistDef[];
+  importDiagnostics?: SpecialistImportDiagnostic[];
+}
+
 export interface SpecialistsClient {
+  /** Additive catalog view; legacy list/subscribe consumers keep their array API. */
+  listCatalog?(
+    provider?: string,
+    workspaceId?: string,
+    options?: { includeProject?: boolean },
+  ): Promise<SpecialistCatalog>;
+  subscribeCatalog?(handler: SubscriptionHandler<SpecialistCatalog>): Unsubscribe;
   /**
    * Merged bundled + user definitions (`specialist.list`, PROTOCOL
    * §5.11). The optional `provider` supplies the resolution context for the

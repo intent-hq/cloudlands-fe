@@ -205,17 +205,27 @@ test('keeps attention in the transcript alongside questions and a queued draft u
   // before checking the overlay's inert composer and attention coexistence.
   await expect(editor).toContainText('My response is ready.');
   await expect(queue).toBeVisible();
+  // This imported row has no verified author, so even the host owner cannot edit it.
+  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await component.getByRole('button', { name: /Click to expand/i }).click();
   await expect(question).toBeVisible();
   await expect(composer).toHaveAttribute('inert', '');
   await expect(composer).toHaveAttribute('aria-hidden', 'true');
-  await expect(queue).toHaveCount(0);
+  // Keep the queue mounted to preserve local edit drafts while the wizard owns input.
+  await expect(queue).toHaveCount(1);
+  await expect(queue).toBeHidden();
+  await expect(queue.getByRole('button')).toHaveCount(0);
+  const queuedContent = queue.getByTestId('queued-message-content');
+  await queuedContent.focus();
+  await expect(queuedContent).not.toBeFocused();
   await component.update({ props: { attention: 'blocker' } });
   await expect(banner.getByTestId('attention-request-label')).toContainText(/blocker/i);
   await viewport.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   await expect(banner).toBeInViewport({ ratio: 0.95 });
   const open = await measure(component);
-  expect(open.queue).toBeNull();
+  expect(open.queue).not.toBeNull();
+  expect(open.queue!.bottom - open.queue!.top).toBe(0);
+  expect(open.queue!.right - open.queue!.left).toBe(0);
   expect(open.inTranscript).toBe(true);
   expect(open.inComposer).toBe(false);
   const questionBox = await question.boundingBox();
@@ -225,6 +235,7 @@ test('keeps attention in the transcript alongside questions and a queued draft u
   await expect(composer).not.toHaveAttribute('inert', '');
   await expect(composer).not.toHaveAttribute('aria-hidden', 'true');
   await expect(queue).toBeVisible();
+  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await editor.focus();
   await expect(editor).toBeFocused();
   await expect(editor).toContainText('My response is ready.');

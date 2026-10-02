@@ -1,3 +1,7 @@
+// Native diagnostic windows share this display-backed Electron verification lane.
+import './electron-browser-lifetime-dev-console.fixture';
+import './electron-browser-lifetime-dev-console-ui.fixture';
+import './electron-browser-capture.fixture';
 /** Real Electron guest identity evidence; never launches Intent or a daemon. */
 import {
   _electron as electron,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_PAGE_SIZE } from '$shared/constants';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -80,6 +81,14 @@
     selectAgentTailCapPruned,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+  import {
+    selectCanAdministerHost,
+    selectPrincipalSnapshot,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    findQueuedMessageForEdit,
+    queuedMessagePermissions,
+  } from '$lib/utils/queued-message-permissions';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
@@ -265,7 +274,9 @@
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
-  import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
+  import AutoCommitStatus from './AutoCommitStatus.svelte';
+  import { gitReadRequested, releaseGitRead } from '$store/renderer/slices/git/git-slice';
+  import { selectGitRead } from '$store/renderer/slices/git/git-selectors';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import {
@@ -306,6 +317,7 @@
   import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
+  import { fillChatViewport } from './chat-viewport-fill';
   import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
   import {
     attachPinnedPromptMessage,
@@ -356,7 +368,6 @@
     CHAT_TRANSCRIPT_OVERFLOW_CLASS,
     chatTranscriptBottomInsetClass,
   } from './chat-queue-edge-layout';
-  import { invoke, listenSync } from '$lib/electron-bridge';
   import {
     selectContextSpecialists,
     selectContextQuotaRetryProviderIds,
@@ -1119,6 +1130,9 @@
   );
   // The viewer's own rows carry no author identity (transcript and queue).
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+  const isHostOwner$ = selectCanAdministerHost();
+  const admittedPrincipal$ = selectPrincipalSnapshot();
+  const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -2468,12 +2482,46 @@
   // Near-top px distance that requests one older-history page.
   const SCROLLBACK_TOP_THRESHOLD_PX = 240;
 
+  function requestViewportFill() {
+    if (!isActive || !agentId || !workspace?.id || !$transcriptSnapshotMeta$) return;
+    const chat = selectChatAgentState.select(appStore.state, agentId);
+    if (
+      chat.scrollbackOlderBlocked ||
+      chat.fetchingOlderHistory ||
+      chat.fetchingGapFill ||
+      chat.fetchingHistorySeek ||
+      seekLandingPending ||
+      $historySegmentMeta$.gapToTail ||
+      $historyExhausted$
+    )
+      return;
+    if (
+      !shouldRequestOlderHistory({
+        scrollTop: 0,
+        threshold: 0,
+        canScroll: false,
+        fetching: false,
+        exhausted: $historyExhausted$,
+        historyCount: $agentHistoryMessages$.length,
+        tailCount: $agentMessages$.length,
+        tailTruncated: $transcriptSnapshotMeta$.truncated || $agentTailCapPruned$,
+        totalMessages: $transcriptSnapshotMeta$.totalMessages,
+      })
+    )
+      return;
+    appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
+  }
+
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
     if (!isActive || !container || !workspace?.id || !agentId) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
-    if ($fetchingHistorySeek$ || seekLandingPending) return;
+    if ($fetchingHistorySeek$ || $fetchingGapFill$ || seekLandingPending) return;
+    if (selectChatAgentState.select(appStore.state, agentId).scrollbackOlderBlocked) return;
+    // Automatic fill owns short content; programmatic bottom positioning must
+    // not turn into near-top prefetch while hydration is still settling.
+    if (shouldFollowBottom) return;
     const request = shouldRequestOlderHistory({
       scrollTop: container.scrollTop,
       threshold: SCROLLBACK_TOP_THRESHOLD_PX,
@@ -2506,7 +2554,7 @@
   // Set from debounce fire until the landing is applied: suppresses the
   // serial trigger, the prepend anchor restore, and the frozen-phase
   // absorption (the landing handler owns spacers + scroll position).
-  let seekLandingPending = false;
+  let seekLandingPending = $state(false);
   let pendingSeekTargetOrdinal: number | null = null;
 
   // Estimated unloaded-row split for the current segment (above vs below).
@@ -3253,9 +3301,17 @@
     });
   });
 
-  function requestHistoryGapFill() {
+  function requestHistoryGapFill(trigger: 'automatic' | 'explicit' = 'automatic') {
     if (!isActive || !workspace?.id || !agentId) return;
-    if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
+    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.gapToTail) return;
+    // A failed or stalled page stops automatic continuation, but the visible
+    // load button must still allow a deliberate retry. Keep the latch until
+    // that request settles so observers cannot restart the stopped chain.
+    if (
+      trigger === 'automatic' &&
+      selectChatAgentState.select(appStore.state, agentId).scrollbackGapBlocked
+    )
+      return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
     // segment must not go to the wire. The saga carries the same guard;
@@ -3786,57 +3842,23 @@
     };
   });
 
-  // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
-  let autoCommitStatuses = $state<CommitStatus[]>([]);
-
-  function refreshAutoCommitStatuses() {
-    const requestedAgentId = agentId;
-    if (!isActive || !requestedAgentId) return;
-    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', {
-      agentId: requestedAgentId,
-    })
-      .then((response) => {
-        if (isActive && requestedAgentId === agentId && response?.success && response.data) {
-          autoCommitStatuses = response.data;
-        }
-      })
-      .catch(() => {
-        // Silently ignore — component degrades gracefully
-      });
-  }
-
-  // Fetch on mount / when agentId changes
+  const autoCommitConsumerId = `auto-commit:${crypto.randomUUID()}`;
+  const autoCommitRead$ = selectGitRead(workspaceIdStore, autoCommitConsumerId);
+  const autoCommitStatuses = $derived(
+    $autoCommitRead$?.result?.kind === 'autoCommitStatus' ? $autoCommitRead$.result.statuses : [],
+  );
   $effect(() => {
-    void agentId;
-    if (!isActive) return;
-    refreshAutoCommitStatuses();
-  });
-
-  // Listen for real-time auto-commit events (3 listeners total, not per-turn)
-  $effect(() => {
-    if (!isActive) return;
-    const cleanupStarted = listenSync<{ agentId: string }>('git:auto-commit-started', (event) => {
-      const data = event.payload || event;
-      if (data.agentId === agentId) refreshAutoCommitStatuses();
-    });
-    const cleanupSucceeded = listenSync<{ agentId: string }>(
-      'git:auto-commit-succeeded',
-      (event) => {
-        const data = event.payload || event;
-        if (data.agentId === agentId) refreshAutoCommitStatuses();
-      },
-    );
-    const cleanupHookFailure = listenSync<{ agentId: string }>(
-      'git:auto-commit-hook-failure',
-      (event) => {
-        const data = event.payload || event;
-        if (data.agentId === agentId) refreshAutoCommitStatuses();
-      },
+    if (!isActive || !workspace?.id || !agentId) return;
+    const wsId = workspace.id;
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(
+      gitReadRequested(wsId, autoCommitConsumerId, requestId, {
+        kind: 'autoCommitStatus',
+        agentId,
+      }),
     );
     return () => {
-      cleanupStarted();
-      cleanupSucceeded();
-      cleanupHookFailure();
+      appStore.dispatch(releaseGitRead(wsId, autoCommitConsumerId, requestId));
     };
   });
 
@@ -4628,7 +4650,9 @@
       handledOpenMessageRequestIds.add(detail.requestId);
       const match = detail.query
         ? findChatSearchMatches(
-            $agentMessages$.filter((message) => message.id === detail.messageId),
+            [...$agentHistoryMessages$, ...$agentMessages$].filter(
+              (message) => message.id === detail.messageId,
+            ),
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
@@ -4774,7 +4798,7 @@
     const getContainer = beginScrollNavigation();
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
-    const epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+    let epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
     let cancelled = false;
     let ownsSeek = false;
     let tokens = { nextToken: null as string | null, prevToken: null as string | null };
@@ -4824,6 +4848,7 @@
         ownsSeek = true;
         seekLandingPending = true;
         appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
+        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
         const historyIndex = $agentHistoryMessages$.findIndex(
           (message) => message.id === currentMessageId,
         );
@@ -4844,7 +4869,7 @@
           (token, anchor) =>
             appClient.agents.getConversation(
               originAgentId,
-              200,
+              CHAT_PAGE_SIZE,
               token,
               anchor,
               undefined,
@@ -5109,9 +5134,27 @@
     });
   });
 
+  function queuePermissions(messageId: string) {
+    return queuedMessagePermissions(
+      $queuedMessages$.find((message) => message.id === messageId),
+      queuePrincipalId,
+      workspace?.ownerPrincipalId,
+      $isHostOwner$,
+    );
+  }
+
   // Handle editing a queued message. The client seam folds transport errors
   // into `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
+    if (
+      !queuedMessagePermissions(
+        findQueuedMessageForEdit($queuedMessages$, messageId),
+        queuePrincipalId,
+        workspace?.ownerPrincipalId,
+        $isHostOwner$,
+      ).edit
+    )
+      return { success: false };
     const originAgentId = agentId;
     const originWorkspaceId = workspace?.id;
     const result = await appClient.agents.editQueued(
@@ -5138,6 +5181,7 @@
   // Handle removing a queued message — the saga removes it optimistically from
   // Redux (immediate UI update) and restores it if the backend removal fails.
   function handleRemoveQueuedMessage(messageId: string) {
+    if (!queuePermissions(messageId).remove) return;
     appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
   }
 
@@ -5146,7 +5190,8 @@
   // saga needs only agentId/wsId/queuedMessageId — the daemon owns
   // the entry's content/attachments and dequeues + delivers transactionally.
   async function handleSendQueuedMessageNow(messageId: string) {
-    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+    if (!workspace || !queuePermissions(messageId).sendNow)
+      throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
     const outcome = await appStore.dispatch(
       sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
@@ -5584,6 +5629,7 @@
     const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
       specialistUpdate: {
         specialist: specialistId,
+        rememberSpecialist: true,
         ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
         ...(specialistId === null
           ? { systemPrompt: null }
@@ -5792,8 +5838,8 @@
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
-    // both). Seek the page containing it (§5.5 aroundMessageId) and replace
-    // the session, same as the deep-open helper; on failure (message deleted
+    // both). Seek the page containing it (§5.5 aroundMessageId) into the
+    // history segment, same as the deep-open helper; on failure (message deleted
     // / seek rejected) the helper logs and we bail, leaving the conversation
     // where it is. Resident rows scroll directly, keeping the tail intact.
     if (agentId && !messageIdToTurnKey.has(messageId)) {
@@ -5964,6 +6010,7 @@
   bind:this={panelElement}
   bind:clientHeight={panelHeight}
   class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  class:chief-chat-panel={isChiefWorkspace}
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
@@ -6041,34 +6088,38 @@
            clears it on a later animation frame after the turns unmount), so it
            would otherwise paint stale message content above the skeleton. -->
       {#if pinnedPrompt && !deferTranscriptReveal}
-        <!-- Mirror the conversation column's horizontal padding plus the chief
-             variant's user-row inset so the pinned bubble aligns with
-             in-conversation user bubbles. -->
+        <!-- Share the transcript inset so the pinned bubble aligns with its source. -->
         <div
-          class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
-            ? 'px-0'
-            : 'px-4 sm:px-6'}"
+          class="chat-content-measure mx-auto w-full min-w-0"
           class:regular-chat-content-inset={!isChiefWorkspace}
-          style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <div
-            class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
-            style:--subscription-card-max-bleed={isChiefWorkspace ? '0.25rem' : undefined}
-          >
-            <PinnedTurnPrompt
-              message={pinnedPrompt.message}
-              surface={pinnedPrompt.surface}
-              {workspace}
-              onActivate={handlePinnedPromptClick}
-            />
-          </div>
+          <PinnedTurnPrompt
+            message={pinnedPrompt.message}
+            surface={pinnedPrompt.surface}
+            {workspace}
+            onActivate={handlePinnedPromptClick}
+          />
         </div>
       {/if}
     </div>
     <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
+      use:fillChatViewport={{
+        enabled:
+          isActive &&
+          !!$transcriptSnapshotMeta$ &&
+          !isFirstHydrationLoading &&
+          !$awaitingSwitchBackSnapshot$ &&
+          !$fetchingOlderHistory$ &&
+          !$fetchingGapFill$ &&
+          !$fetchingHistorySeek$ &&
+          !seekLandingPending,
+        revision: `${agentId}:${$transcriptSnapshotMeta$?.seq}:${$agentHistoryMessages$.length}:${$agentMessages$.length}`,
+        hydrate: (id) => messageHydrationPolicy.setForced(id, true),
+        requestOlder: requestViewportFill,
+      }}
       use:trackPinnedPrompt={{
         enabled: isActive && containerHeight >= 400,
         onChange: setPinnedPrompt,
@@ -6096,10 +6147,9 @@
     >
       <div
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
-          ? 'px-0'
-          : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+          ? ''
+          : 'pt-8'} {transcriptBottomInsetClass}"
         class:regular-chat-content-inset={!isChiefWorkspace}
-        style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
         data-testid="chat-transcript-inner"
         data-structural-recompute-count={transcriptStructure.recomputeCount}
       >
@@ -6602,7 +6652,7 @@
                         size="sm"
                         class="text-xs text-muted-foreground"
                         data-testid="chat-history-gap-load-button"
-                        onclick={requestHistoryGapFill}
+                        onclick={() => requestHistoryGapFill('explicit')}
                       >
                         {m.chat_chatPanel_historyGapLoad_label()}
                       </Button>
@@ -6805,33 +6855,26 @@
                           estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
                         >
                           {#snippet children()}
-                            <div
-                              class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
-                              style:--subscription-card-max-bleed={isChiefWorkspace
-                                ? '0.25rem'
-                                : undefined}
-                            >
-                              <ChatMessage
-                                {agentId}
-                                messageId={message.id}
-                                ownsMessageIdentity={false}
-                                {workspace}
-                                ownPrincipalId={$presenceOwnPrincipalId$}
-                                onEditSubmit={isRetiredSession
-                                  ? undefined
-                                  : (newText, model, blocks) =>
-                                      handleEditMessage(message.id, newText, model, blocks)}
-                                onEditStateChange={(isEditing) =>
-                                  handleTurnEditStateChange(turnKey, isEditing)}
-                                editModel={turn.assistantMessages[0]?.metadata?.model ??
-                                  hydratedInputModel}
-                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                                previousMessageLoading={previousMessageLoadingId === message.id}
-                                backendSessionId={auggieSessionId}
-                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
-                                  cardSpacingOwnedBefore}
-                              />
-                            </div>
+                            <ChatMessage
+                              {agentId}
+                              messageId={message.id}
+                              ownsMessageIdentity={false}
+                              {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
+                              onEditSubmit={isRetiredSession
+                                ? undefined
+                                : (newText, model, blocks) =>
+                                    handleEditMessage(message.id, newText, model, blocks)}
+                              onEditStateChange={(isEditing) =>
+                                handleTurnEditStateChange(turnKey, isEditing)}
+                              editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                hydratedInputModel}
+                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              previousMessageLoading={previousMessageLoadingId === message.id}
+                              backendSessionId={auggieSessionId}
+                              suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                cardSpacingOwnedBefore}
+                            />
                           {/snippet}
                         </LazyTurn>
                       </div>
@@ -7166,7 +7209,6 @@
   <div
     bind:this={composerElement}
     class="conversation-composer relative z-10 w-full"
-    class:chief-composer={isChiefWorkspace}
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -7315,18 +7357,24 @@
                   providerId={inputProviderId}
                 >
                   {#snippet queueRegion()}
-                    {#if queuedMessagesVisibility.showQueue}
+                    <div
+                      class:hidden={!queuedMessagesVisibility.showQueue &&
+                        visibleQueuedMessages.length > 0}
+                    >
                       <QueuedMessageList
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
                         authors={queuedMessageAuthors}
-                        ownPrincipalId={$presenceOwnPrincipalId$}
+                        ownPrincipalId={queuePrincipalId}
+                        presentationPrincipalId={$presenceOwnPrincipalId$}
+                        ownerPrincipalId={workspace?.ownerPrincipalId}
+                        isHostOwner={$isHostOwner$}
                         onedit={handleEditQueuedMessage}
                         onremove={handleRemoveQueuedMessage}
                         onsendnow={handleSendQueuedMessageNow}
                         ondone={() => inputComponent?.focus?.()}
                       />
-                    {/if}
+                    </div>
                   {/snippet}
                 </SimpleRichInput>
               {/if}
@@ -7341,12 +7389,6 @@
 <style>
   .chat-panel-container {
     container: chat-panel / inline-size;
-  }
-
-  .regular-chat-content-inset {
-    --subscription-card-max-bleed: 1rem;
-    padding-left: 1rem;
-    padding-right: 1rem;
   }
 
   .workspace-setup-card-alignment {
@@ -7367,20 +7409,19 @@
     }
   }
 
-  @container chat-panel (min-width: 640px) {
-    .regular-chat-content-inset {
-      padding-left: 3.1rem;
-      padding-right: 3.1rem;
-    }
-  }
-
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   .chat-content-measure {
+    --chat-content-inset: 1rem;
     max-width: 140em;
+    padding-inline: var(--chat-content-inset);
+  }
+
+  .chief-chat-panel .chat-content-measure {
+    --chat-content-inset: 0px;
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */
@@ -7438,29 +7479,21 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
-  .conversation-composer {
-    --composer-lane-inset-x: 1rem;
-    --composer-lane-inset-bottom: 1rem;
-  }
-
-  .conversation-composer.chief-composer {
-    --composer-lane-inset-x: 0;
-    --composer-lane-inset-bottom: 0.25rem;
-  }
-
   .composer-prompt-lane {
-    padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
+    padding-block: 0.5rem var(--chat-content-inset);
+  }
+
+  .chief-chat-panel .composer-prompt-lane {
+    padding-bottom: 0.25rem;
   }
 
   @container chat-panel (min-width: 640px) {
-    .conversation-composer {
-      --composer-lane-inset-x: 1.5rem;
-      --composer-lane-inset-bottom: 1.5rem;
+    .chat-content-measure {
+      --chat-content-inset: 1.5rem;
     }
 
-    .conversation-composer.chief-composer {
-      --composer-lane-inset-x: 0;
-      --composer-lane-inset-bottom: 0.5rem;
+    .chief-chat-panel .composer-prompt-lane {
+      padding-bottom: 0.5rem;
     }
   }
 

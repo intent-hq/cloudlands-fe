@@ -18,7 +18,11 @@ import { parsePairingUri } from '$shared/utils/pairing-uri';
 import { getMainWindow } from '../../../main/state';
 import * as connectionsStore from '../../backend/main/connections-store';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
-import { inspectPersonalCredential, invitedRole } from '../../backend/main/invited-principal';
+import {
+  BackendCompatibilityError,
+  inspectPersonalCredential,
+  invitedRole,
+} from '../../backend/main/invited-principal';
 import { canonicalFingerprint } from '../../backend/main/invited-session-key';
 import { captureInviteAttempt } from './invite-attempt';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
@@ -37,7 +41,7 @@ let pairLinkInFlight = false;
 /**
  * Handle an `intent://pair?...` deep link end to end. Resolves once the flow
  * completes (window opened, dialog cancelled, or link rejected); never
- * rejects — all failures are logged (scrubbed) and swallowed. Concurrent
+ * rejects — failures are logged without secrets and shown in a native dialog. Concurrent
  * calls are dropped while one is in flight (see `pairLinkInFlight`).
  */
 export async function handlePairDeepLink(url: string): Promise<void> {
@@ -135,8 +139,23 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     });
     logger.info('Added backend from pairing link; opening its window', { id: record.id });
     await openBackendWindow(record.id);
-  } catch {
+  } catch (error) {
     logger.warn('Pair deep link handling failed', { kind: 'pairing-failed' });
+    const options: MessageBoxOptions = {
+      type: error instanceof BackendCompatibilityError ? 'warning' : 'error',
+      title: m.deeplink_pairFailure_title(),
+      message:
+        error instanceof BackendCompatibilityError
+          ? error.message
+          : m.deeplink_pairFailure_message(),
+    };
+    try {
+      const parent = getMainWindow();
+      if (parent && !parent.isDestroyed()) await dialog.showMessageBox(parent, options);
+      else await dialog.showMessageBox(options);
+    } catch {
+      logger.warn('Could not show pairing failure dialog');
+    }
   } finally {
     attempt.release();
     pairLinkInFlight = false;

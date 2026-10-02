@@ -9,7 +9,6 @@
     selectUnstagedWorkingChanges,
   } from '$store/renderer/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { loadChatTranscript } from '$features/agent/chat-read-service';
   import {
     selectActiveTab,
     selectAllTabs,
@@ -91,6 +90,7 @@
   import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
+  import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
@@ -927,8 +927,6 @@
       open={openLauncherHoverKey === `agent:${agent.id}`}
       onOpenChange={(open) => {
         handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
-        if (open && agent.messages.length === 0)
-          void loadChatTranscript(agent.id, agent.workspaceId);
       }}
     >
       <Button
@@ -1438,7 +1436,7 @@
                       data-sidebar-launcher-label
                       class={cn(
                         'truncate text-sm font-semibold',
-                        tab.id === 'changes' ? 'min-w-0 flex-1' : '',
+                        tab.id === 'changes' || tab.id === 'agents' ? 'min-w-0 flex-1' : '',
                       )}>{tab.label}</span
                     >
                     {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
@@ -1457,6 +1455,7 @@
                       <span id={`sidebar-launcher-agent-count-${workspaceId}`} class="sr-only">
                         {launcherAgentCountLabel}
                       </span>
+                      <WorkspaceTokenUsage {workspaceId} />
                     {/if}
                     {#if tab.id === 'files' && $fileExplorerWorkspacePath}
                       <span class="pointer-events-auto relative z-20 cursor-pointer">

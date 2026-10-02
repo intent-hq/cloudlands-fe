@@ -24,6 +24,9 @@ import {
   selectNormalizedProviderId,
 } from '../provider-catalog/provider-catalog-selectors';
 
+/** Persistence/hydration ownership; UI selectors use the selected fields only. */
+export const selectModelSelectionState = store.createSelector((state) => state.model);
+
 /** Unscoped catalogs belong to one admitted owner/member and provider projection. */
 export const selectModelBootContext = store.createSelector((state): string | null => {
   const admission = selectPrincipalActionContext.select(state);

@@ -4,6 +4,8 @@
   interface Props {
     locked?: boolean;
     admittedOwner?: boolean;
+    secondaryFiles?: boolean;
+    onNavigation?: (action: { type: string; payload: unknown }) => void;
   }
   export const preview = definePreview<Props>({
     id: 'changes-summary',
@@ -30,16 +32,21 @@
   } from '$store/renderer/slices/changes/changes-slice';
   import { gitRootsUpdated } from '$store/renderer/slices/git-roots/git-roots-slice';
   import { setSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
-  import { installChangesSummaryMocks } from './changes-summary.preview-fixtures';
+  import { setupChangesSummaryPreview } from '../../../../test/changes-summary-preview';
   import { ChangeStage } from '$features/file-tracking/types';
 
-  let { locked = false, admittedOwner = true }: Props = $props();
+  let {
+    locked = false,
+    admittedOwner = true,
+    secondaryFiles = false,
+    onNavigation,
+  }: Props = $props();
   const workspaceId = 'changes-summary-preview';
   const timestamp = '2026-09-01T00:00:00Z';
   const branch = 'feature/a-long-working-branch-for-sidebar-layout';
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
-  const restoreMocks = untrack(() =>
-    installChangesSummaryMocks(workspaceId, branch, admittedOwner),
+  const disposePreview = untrack(() =>
+    setupChangesSummaryPreview(workspaceId, branch, admittedOwner, onNavigation),
   );
   store.dispatch(
     setWorkspaceEntity({
@@ -89,7 +96,18 @@
   );
   store.dispatch(
     setSecondaryRootGit(workspaceId, 'summary-root', {
-      status: { branch: 'feature/component', files: [], ahead: 0, behind: 0, isClean: true },
+      status: {
+        branch: 'feature/component',
+        files: secondaryFiles
+          ? [
+              { path: 'collision.md', status: '?', staged: false },
+              { path: 'tracked.txt', status: 'M', staged: false },
+            ]
+          : [],
+        ahead: 0,
+        behind: 0,
+        isClean: !secondaryFiles,
+      },
       commits: [],
       nextToken: undefined,
       commitFiles: {},
@@ -117,7 +135,7 @@
     );
   });
   onDestroy(() => {
-    restoreMocks();
+    disposePreview();
     store.dispatch(removeWorkspaceEntity(workspaceId));
     dispose();
   });

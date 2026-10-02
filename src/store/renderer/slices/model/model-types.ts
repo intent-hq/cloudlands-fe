@@ -34,8 +34,8 @@ export type ModelState = {
   availableModelsProviderId: string;
   loadingState: Record<string, ModelLoadingState>;
   providerModels: Record<string, string>;
-  /** Newest local per-provider model picks awaiting matching daemon hydration. */
-  pendingProviderModels: Record<string, string>;
+  /** Existing host-execution connection context, including reconnect identity. */
+  selectionConnection: string | null;
   /**
    * Reasoning-effort level paired with the default-model setting
    * (`model.defaultReasoningEffort`, PROTOCOL §5.12). '' means unset — the
@@ -47,24 +47,8 @@ export type ModelState = {
   fallbackInfoByAgentId: Record<string, ModelFallbackInfo>;
   /**
    * Default provider id — the provider leg of the default model triple
-   * (`model.defaultProvider`, PROTOCOL §5.12; '' before hydration). Set by
-   * `activeProviderAccepted`/`atomicDefaultModelAccepted` (validated user picks), hydrated by
-   * `hydrateDefaultProvider`, with a first-catalog-row fallback at
-   * `providerCatalogLoaded` — the registry itself carries no default.
-   * Ids are validated against `catalogProviderIds` once the catalog lands.
+   * (`model.defaultProvider`, PROTOCOL §5.12; '' before hydration).
+   * Updated only by daemon receipts, never by selection intents or catalogs.
    */
   defaultProviderId: string;
-  /**
-   * Newest local default-provider choice awaiting a matching daemon
-   * hydration. Conflicting hydration values are older snapshots/echoes and
-   * cannot replace the choice until it is confirmed or the persistence write
-   * is rejected (`activeProviderPersistRejected`).
-   */
-  pendingDefaultProviderId: string | null;
-  /**
-   * Catalog provider ids mirrored from `providerCatalogLoaded` (registry
-   * order), used to reject stale/unknown provider ids in the mirrors above.
-   * Empty before the first hydration.
-   */
-  catalogProviderIds: string[];
 };

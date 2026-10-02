@@ -1,3 +1,5 @@
+import { principalReducer } from '$store/renderer/slices/principal/principal-slice';
+import { createAdmittedLegacyPrincipal } from './fixtures/admitted-legacy-principal';
 import {
   userPreferencesReducer,
   initialState as userPreferences,
@@ -7,10 +9,7 @@ import {
   guestSessionsReducer,
   initialState as guestSessions,
 } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-import {
-  connectionsReducer,
-  initialState as connections,
-} from '$store/renderer/slices/connections/connections-slice';
+import { connectionsReducer } from '$store/renderer/slices/connections/connections-slice';
 import {
   workspaceReducer,
   initialState as workspace,
@@ -18,7 +17,12 @@ import {
 
 /** Component tests exercise production reducers and root-owned workflow sagas. */
 export function createGuestWorkflowTestStore() {
-  const freshState = () => ({ guestSessions, connections, workspace, userPreferences });
+  const freshState = () => ({
+    guestSessions,
+    ...createAdmittedLegacyPrincipal(),
+    workspace,
+    userPreferences: { ...userPreferences, labsMultiplayerEnabled: true },
+  });
   let state = freshState();
   const channel = stdChannel();
   const listeners = new Set<() => void>();
@@ -32,6 +36,8 @@ export function createGuestWorkflowTestStore() {
     },
     dispatch(action: { type: string }) {
       state = {
+        ...state,
+        principal: principalReducer(state.principal, action as never),
         userPreferences: userPreferencesReducer(state.userPreferences, action as never),
         guestSessions: guestSessionsReducer(state.guestSessions, action as never),
         connections: connectionsReducer(state.connections, action as never),

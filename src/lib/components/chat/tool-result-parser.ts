@@ -1,3 +1,5 @@
+import { projectLatestCommentAuthor } from '$features/comments/comment-attribution';
+import type { CommentAttribution } from '$shared/types/comment.types';
 /**
  * Tool Result Parser
  *
@@ -109,6 +111,9 @@ export interface ParsedToolResult {
     status: string;
     commentCount: number;
     latestAuthor?: string;
+    latestAuthorType?: 'user' | 'agent';
+    latestAuthorPrincipalId?: string;
+    latestAuthorIdentity?: CommentAttribution['authorIdentity'];
     lastActivity?: string;
   }>;
   totalComments?: number;
@@ -1842,12 +1847,18 @@ function parseCommentListResult(
             latestCommentAuthor?: string;
             lastActivity?: string;
           };
+          const latest = projectLatestCommentAuthor(t);
           return {
             threadId: thread.threadId,
             targetedText: thread.targetedText || undefined,
             status: thread.status || 'open',
             commentCount: thread.commentCount || 1,
-            latestAuthor: thread.latestCommentAuthor || undefined,
+            latestAuthor: latest.author || undefined,
+            ...(latest.authorType ? { latestAuthorType: latest.authorType } : {}),
+            ...(latest.authorPrincipalId
+              ? { latestAuthorPrincipalId: latest.authorPrincipalId }
+              : {}),
+            ...(latest.authorIdentity ? { latestAuthorIdentity: latest.authorIdentity } : {}),
             lastActivity: thread.lastActivity || undefined,
           };
         });

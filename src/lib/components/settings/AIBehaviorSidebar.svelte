@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { ListRow } from '$lib/components/patterns/collection';
@@ -24,11 +25,12 @@
     activeView: AIBehaviorView;
     onSelect: (view: AIBehaviorView) => void;
     isActive?: boolean;
+    workspaceId?: string;
   }
 
-  let { activeView, onSelect, isActive = true }: Props = $props();
+  let { activeView, onSelect, isActive = true, workspaceId }: Props = $props();
 
-  const specialists = selectSpecialists();
+  const specialists = $derived(selectSpecialists(workspaceId));
   const fileSpecialists$ = selectFileSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
@@ -47,7 +49,7 @@
 
   function getHasOverrides(id: string): boolean {
     void $fileSpecialists$; // track file specialist changes for reactivity
-    return selectHasOverrides.select(appStore.state, id);
+    return selectHasOverrides.select(appStore.state, id, workspaceId);
   }
 
   // Check if item is selected
@@ -61,10 +63,16 @@
   }
 </script>
 
+<SpecialistImportDiagnostics {workspaceId} />
+
 <!-- Specialists -->
 {#each visibleSpecialists as specialist (specialist.id)}
   {@const hasOverrides = getHasOverrides(specialist.id)}
-  {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
+  {@const sourceLabel = selectSpecialistSourceLabel.select(
+    appStore.state,
+    specialist.id,
+    workspaceId,
+  )}
 
   <Button
     bind:ref={specialistButtonRefs[specialist.id]}

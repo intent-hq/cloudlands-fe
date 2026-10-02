@@ -11,7 +11,12 @@
    * nests interactive controls.
    */
   import Fa from 'svelte-fa';
-  import { faBolt, faChevronDown, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faBolt,
+    faChevronDown,
+    faCodePullRequest,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { handleLink } from '$features/navigation/link-handler';
@@ -55,6 +60,18 @@
       : undefined,
   );
   const statusLabel = $derived.by(() => {
+    if (presentation.kind === 'script') {
+      switch (presentation.attribution.reason) {
+        case 'finished':
+          return m.chat_scriptMonitor_finished_description();
+        case 'ttl-expired':
+          return m.chat_scriptMonitor_expired_description();
+        case 'output-match':
+          return m.chat_scriptMonitor_matched_description();
+        case 'line-count':
+          return m.chat_scriptMonitor_counted_description();
+      }
+    }
     if (presentation.kind === 'pr') return m.chat_prMonitorWakeAttribution_wokeAgent_after();
     if (presentation.state === 'active') {
       return m.chat_hookWakeAttribution_wokeAgentStillActive_after();
@@ -96,7 +113,11 @@
 >
   <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
     <Fa
-      icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
+      icon={presentation.kind === 'hook'
+        ? faBolt
+        : presentation.kind === 'script'
+          ? faTerminal
+          : faCodePullRequest}
       size={16}
       class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
     />
@@ -113,6 +134,11 @@
       >
         {presentation.attribution.displayName}
       </span>
+    {:else if presentation.kind === 'script'}
+      <span
+        class="min-w-0 truncate text-muted-foreground"
+        title={presentation.attribution.scriptName}>{presentation.attribution.scriptName}</span
+      >
     {:else}
       {@const chipLabel = getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
       <Button

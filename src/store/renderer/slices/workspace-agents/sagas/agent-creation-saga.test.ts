@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
   toastError: vi.fn(),
+  toastSuccess: vi.fn(),
   backendRequest: vi.fn(),
   // When true, `agentFactory.createAgent` is the REAL UnifiedAgentFactory
   // (→ real LiveAgentsClient → mocked transport) instead of `mocks.createAgent`.
@@ -22,11 +23,15 @@ vi.mock('$features/agent/services/agent-factory', async (importOriginal) => {
     },
   };
 });
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: mocks.toastSuccess },
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
+import { store as appStore } from '../../../store';
+import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession, Note, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -56,6 +61,13 @@ import {
   runAgentForNoteRequested,
 } from '../workspace-agents-slice';
 import { agentCreationSaga } from './agent-creation-saga';
+import {
+  workspaceAgentsReducer,
+  clearAgentCreationOutcome,
+  emptyWorkspaceAgentState,
+} from '../workspace-agents-slice';
+import { selectAgentCreationOutcome } from '../workspace-agents-selectors';
+import type { StoreState } from '../../../types';
 
 const WS = 'ws-create-saga';
 const AGENT = 'agent-created';
@@ -199,9 +211,279 @@ function start(getState: () => unknown = state) {
 }
 
 describe('agentCreationSaga', () => {
+  function startConsumer() {
+    let current = {
+      ...state(),
+      workspaceAgents: { byWorkspaceId: { [WS]: emptyWorkspaceAgentState } },
+    } as unknown as StoreState;
+    const channel = stdChannel();
+    const dispatched: any[] = [];
+    const dispatch = (action: any) => {
+      current = {
+        ...current,
+        workspaceAgents: workspaceAgentsReducer(current.workspaceAgents, action),
+      };
+      dispatched.push(action);
+      channel.put(action);
+    };
+    const task = runSaga({ channel, getState: () => current, dispatch }, agentCreationSaga);
+    return {
+      task,
+      dispatch,
+      dispatched,
+      changeConnection: () => {
+        current = { ...current, ...guestWindowIdentity() } as StoreState;
+      },
+      outcome: (id = 'card') => selectAgentCreationOutcome.select(current, id, WS, 'primitive'),
+    };
+  }
+
+  it('coalesces duplicate creation but settles every original seq and each consumer outcome', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const owner = startConsumer();
+    const config = { workspaceId: WorkspaceId(WS), source: 'agent-action-block' };
+    const first = createAgentFromConfigRequested(WS, config, {
+      consumer: { id: 'card', resourceId: 'primitive' },
+    });
+    const second = createAgentFromConfigRequested(WS, config, {
+      consumer: { id: 'other-card', resourceId: 'primitive' },
+    });
+    owner.dispatch(first);
+    owner.dispatch(second);
+    await settle();
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    expect(owner.outcome()).toMatchObject({ status: 'pending', seq: first.seq });
+    resolve({ success: true, agent: session() });
+    await expect(Promise.all([first.promise, second.promise])).resolves.toEqual([
+      session(),
+      session(),
+    ]);
+    expect(owner.outcome()).toMatchObject({ status: 'success', seq: first.seq, agentId: AGENT });
+    expect(owner.outcome('other-card')).toMatchObject({
+      status: 'success',
+      seq: second.seq,
+      agentId: AGENT,
+    });
+    expect(
+      owner.dispatched
+        .filter((a) => a.type === createAgentFromConfigRequested.success.type)
+        .map((a) => a.payload.seq),
+    ).toEqual([first.seq, second.seq]);
+    expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
+    owner.task.cancel();
+  });
+
+  it('does not navigate, notify or publish a late result after its consumer is released', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const owner = startConsumer();
+    const action = createAgentFromConfigRequested(
+      WS,
+      { workspaceId: WorkspaceId(WS), source: 'agent-action-block' },
+      { openAgent: true, consumer: { id: 'card', resourceId: 'primitive' } },
+    );
+    owner.dispatch(action);
+    owner.dispatch(clearAgentCreationOutcome('card'));
+    resolve({ success: true, agent: session() });
+    await expect(action.promise).resolves.toEqual(session());
+    expect(owner.outcome()).toBeUndefined();
+    expect(owner.dispatched).not.toContainEqual(
+      expect.objectContaining({ type: openAgentTabRequested.type }),
+    );
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    owner.task.cancel();
+  });
+
+  it('settles a cancelled consumer and its compatible promise without accepting a late completion', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const owner = startConsumer();
+    const action = createAgentFromConfigRequested(
+      WS,
+      { workspaceId: WorkspaceId(WS) },
+      { consumer: { id: 'card', resourceId: 'primitive' } },
+    );
+    owner.dispatch(action);
+    owner.task.cancel();
+    await expect(action.promise).rejects.toThrow();
+    expect(owner.outcome()).toMatchObject({ status: 'cancelled' });
+    resolve({ success: true, agent: session() });
+    await settle();
+    expect(owner.outcome()).toMatchObject({ status: 'cancelled' });
+  });
+
+  it.each([true, false])(
+    'suppresses late UI results after connection change (success=%s)',
+    async (success) => {
+      let resolve!: (value: unknown) => void;
+      mocks.createAgent.mockImplementation(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const owner = startConsumer();
+      const action = createAgentFromConfigRequested(
+        WS,
+        { workspaceId: WorkspaceId(WS), source: 'agent-action-block' },
+        { openAgent: true, consumer: { id: 'card', resourceId: 'primitive' } },
+      );
+      owner.dispatch(action);
+      const duplicate = createAgentFromConfigRequested(WS, action.payload[1], {
+        openAgent: true,
+        consumer: { id: 'other-card', resourceId: 'primitive' },
+      });
+      owner.dispatch(duplicate);
+      expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+      const settlement = Promise.allSettled([action.promise, duplicate.promise]);
+      owner.changeConnection();
+      resolve(success ? { success: true, agent: session() } : { success: false, error: 'refused' });
+      expect((await settlement).map((result) => result.status)).toEqual(['rejected', 'rejected']);
+      expect(owner.outcome()).toMatchObject({ status: 'cancelled' });
+      expect(owner.outcome('other-card')).toMatchObject({ status: 'cancelled' });
+      expect(owner.outcome()?.agentId).toBeUndefined();
+      expect(owner.dispatched).not.toContainEqual(
+        expect.objectContaining({ type: openAgentTabRequested.type }),
+      );
+      expect(mocks.toastSuccess).not.toHaveBeenCalled();
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      owner.task.cancel();
+    },
+  );
   afterEach(() => {
     mocks.useRealFactory = false;
     vi.clearAllMocks();
+    mocks.backendRequest.mockReset();
+  });
+
+  it.each(['chief-card', 'agent-action-block'])(
+    'preserves %s failure feedback in the owner',
+    async (source) => {
+      mocks.createAgent.mockResolvedValue({ success: false, error: 'host unavailable' });
+      const owner = startConsumer();
+      const action = createAgentFromConfigRequested(
+        WS,
+        { workspaceId: WorkspaceId(WS), source },
+        { consumer: { id: 'card', resourceId: 'primitive' } },
+      );
+      owner.dispatch(action);
+      await expect(action.promise).rejects.toThrow('host unavailable');
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+        source === 'chief-card'
+          ? m.layout_chiefCard_startFailed_error({ message: 'host unavailable' })
+          : 'host unavailable',
+        { description: m.agent_creation_failed_description() },
+      );
+      owner.task.cancel();
+    },
+  );
+
+  for (const source of ['chief-card', 'agent-action-block']) {
+    it.each(['provider-model', 'forbidden'] as const)(
+      `keeps actionable %s guidance in the single ${source} failure toast`,
+      async (kind) => {
+        const error =
+          kind === 'provider-model'
+            ? new Error('agent.create: model fable-5 does not belong to provider claude-code')
+            : Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+        mocks.createAgent.mockResolvedValue({ success: false, error: error.message, cause: error });
+        const owner = startConsumer();
+        const action = createAgentFromConfigRequested(
+          WS,
+          { workspaceId: WorkspaceId(WS), source },
+          { consumer: { id: 'card', resourceId: 'primitive' } },
+        );
+        owner.dispatch(action);
+        await expect(action.promise).rejects.toThrow();
+        expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+          kind === 'provider-model'
+            ? m.agent_creation_createFailed_error()
+            : m.agent_creation_notPermitted_error(),
+          {
+            description:
+              kind === 'provider-model'
+                ? m.agent_creation_providerModelMismatch_description()
+                : m.agent_creation_notPermitted_description(),
+          },
+        );
+        owner.task.cancel();
+      },
+    );
+
+    it(`cleans transport wrappers before showing the single ${source} failure toast`, async () => {
+      mocks.createAgent.mockResolvedValue({
+        success: false,
+        error:
+          "Error invoking remote method 'agent.create': Error: host unavailable\n    at invoke (transport.ts:12:3)",
+      });
+      const owner = startConsumer();
+      const action = createAgentFromConfigRequested(
+        WS,
+        { workspaceId: WorkspaceId(WS), source },
+        { consumer: { id: 'card', resourceId: 'primitive' } },
+      );
+      owner.dispatch(action);
+      await expect(action.promise).rejects.toThrow('host unavailable');
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+        source === 'chief-card'
+          ? m.layout_chiefCard_startFailed_error({ message: 'host unavailable' })
+          : 'host unavailable',
+        { description: m.agent_creation_failed_description() },
+      );
+      owner.task.cancel();
+    });
+  }
+
+  it('reports a missing widget workspace without sending creation or requesting a selection', async () => {
+    const { channel, dispatched, task } = start();
+    const action = createAgentFromConfigRequested('', {
+      workspaceId: WorkspaceId(''),
+      source: 'agent-action-block',
+    });
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow(m.notes_agentActionBlock_noWorkspace_error());
+    expect(mocks.createAgent).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+      m.notes_agentActionBlock_noWorkspace_error(),
+      { description: m.agent_creation_failed_description() },
+    );
+    expect(dispatched).not.toContainEqual(
+      expect.objectContaining({ type: openAgentTabRequested.type }),
+    );
+    task.cancel();
+  });
+
+  it('uses the widget unknown-error fallback when creation returns no failure detail', async () => {
+    mocks.createAgent.mockResolvedValue({ success: false });
+    const owner = startConsumer();
+    const action = createAgentFromConfigRequested(
+      WS,
+      { workspaceId: WorkspaceId(WS), source: 'agent-action-block' },
+      { consumer: { id: 'card', resourceId: 'primitive' } },
+    );
+    owner.dispatch(action);
+    await expect(action.promise).rejects.toThrow(m.notes_agentActionBlock_unknown_error());
+    expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+      m.notes_agentActionBlock_unknown_error(),
+      { description: m.agent_creation_failed_description() },
+    );
+    owner.task.cancel();
   });
 
   it('routes the fire-and-forget create trigger through agentFactory with server-minted identity', async () => {
@@ -222,6 +504,211 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent.mock.calls[0][1]).not.toHaveProperty('agentId');
     task.cancel();
     await task.toPromise();
+  });
+
+  it('restores the workspace specialist without reusing prior agent overrides', async () => {
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'implementor' });
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const current = state('', [], 'codex', { codex: 'settings-model' });
+    const previous = {
+      ...session(),
+      provider: 'claude-code',
+      model: 'previous-model',
+      reasoningEffort: 'high',
+    };
+    current.workspaceAgents.byWorkspaceId[WS].agentIds = [AGENT] as never[];
+    current.agentSessions.byAgentId = { [AGENT]: previous };
+    const { channel, task } = start(() => current);
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenCalledWith('agent.getCreationPreferences', {
+      workspaceId: WS,
+    });
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: 'Implementor',
+        nameExplicitlySet: false,
+        provider: 'codex',
+        metadata: { specialist: 'implementor' },
+      }),
+    );
+    const config = mocks.createAgent.mock.calls[0][1];
+    expect(config.model).not.toBe('previous-model');
+    expect(config.reasoningEffort).not.toBe('high');
+    expect(config.rememberSpecialist).not.toBe(true);
+    task.cancel();
+  });
+
+  it('reads Settings again for each creation while keeping specialist memory', async () => {
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'implementor' });
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    let current = state('', [], 'codex', { codex: 'first-model' });
+    const { channel, task } = start(() => current);
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
+      provider: 'codex',
+      metadata: { specialist: 'implementor' },
+    });
+    current = state('', [], 'claude-code', { 'claude-code': 'new-model' });
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent.mock.calls[1][1]).toMatchObject({
+      provider: 'claude-code',
+      metadata: { specialist: 'implementor' },
+    });
+    expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+    task.cancel();
+  });
+
+  it('takes updated specialist model defaults from Settings without clearing specialist memory', async () => {
+    const configured: FileSpecialist = {
+      id: 'custom',
+      name: 'Custom',
+      description: '',
+      source: 'user',
+      filePath: '/tmp/custom.md',
+      behaviorPrompt: 'Help with the task.',
+      codingAgent: 'codex',
+      model: 'first-model',
+    };
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'custom' });
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    let current = state('', [configured], 'codex');
+    const { channel, task } = start(() => current);
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
+      model: 'first-model',
+      metadata: { specialist: 'custom' },
+    });
+    current = state('', [{ ...configured, model: 'second-model' }], 'codex');
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent.mock.calls[1][1]).toMatchObject({
+      model: 'second-model',
+      metadata: { specialist: 'custom' },
+    });
+    expect(mocks.backendRequest.mock.calls.map(([method]) => method)).toEqual([
+      'agent.getCreationPreferences',
+      'agent.getCreationPreferences',
+    ]);
+    task.cancel();
+  });
+
+  it.each([undefined, 'removed', 'chief-of-staff', 'pr-reviewer'])(
+    'falls back to the configured specialist for unavailable preference %s',
+    async (specialistId) => {
+      mocks.backendRequest.mockResolvedValue({ specialistId });
+      mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+      const { channel, task } = start(() => state('verifier'));
+      channel.put(createAgentRequested(WS));
+      await settle();
+      expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
+        metadata: { specialist: 'verifier' },
+      });
+      task.cancel();
+    },
+  );
+
+  it('keeps explicit General distinct from an unset preference', async () => {
+    mocks.backendRequest.mockResolvedValue({ specialistId: null });
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start(() => state('verifier'));
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
+      name: 'Agent',
+      provider: 'augment',
+      model: 'sonnet',
+    });
+    expect(mocks.createAgent.mock.calls[0][1].metadata?.specialist).toBeUndefined();
+    task.cancel();
+  });
+
+  it('uses an explicit picker choice without reading or overwriting it from memory', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start();
+    channel.put(createAgentWithSpecialistRequested(WS, 'verifier'));
+    await settle();
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
+      rememberSpecialist: true,
+      metadata: { specialist: 'verifier' },
+    });
+    task.cancel();
+  });
+
+  it('does not create after the connection changes during preference loading', async () => {
+    const pending = Promise.withResolvers<{ specialistId: string }>();
+    mocks.backendRequest.mockReturnValue(pending.promise);
+    let current = state();
+    const { channel, task } = start(() => current);
+    channel.put(createAgentRequested(WS));
+    current = { ...current, ...guestWindowIdentity() };
+    pending.resolve({ specialistId: 'implementor' });
+    await settle();
+    expect(mocks.createAgent).not.toHaveBeenCalled();
+    task.cancel();
+  });
+
+  it('re-reads each workspace preference when switching back and forth', async () => {
+    mocks.backendRequest.mockImplementation(async (_method, { workspaceId }) => ({
+      specialistId: workspaceId === WS ? 'verifier' : null,
+    }));
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const current = state();
+    const other = 'other-workspace';
+    const scoped = {
+      ...current,
+      workspace: {
+        workspaces: createCollection('id', [
+          current.workspace.workspaces.map[WS],
+          { id: other, title: 'Other', repositoryPath: '/other' },
+        ]),
+      },
+      providerCatalog: {
+        ...current.providerCatalog,
+        byWorkspaceId: {
+          ...current.providerCatalog.byWorkspaceId,
+          [other]: current.providerCatalog.byWorkspaceId[WS],
+        },
+      },
+    };
+    const { channel, task } = start(() => scoped);
+    for (const id of [WS, other, WS]) {
+      channel.put(createAgentRequested(id));
+      await settle();
+    }
+    expect(mocks.createAgent.mock.calls.map(([, config]) => config.metadata?.specialist)).toEqual([
+      'verifier',
+      undefined,
+      'verifier',
+    ]);
+    expect(mocks.backendRequest.mock.calls.map(([, params]) => params.workspaceId)).toEqual([
+      WS,
+      other,
+      WS,
+    ]);
+    task.cancel();
+  });
+
+  it('falls back on older daemons but surfaces other preference read failures', async () => {
+    mocks.backendRequest.mockRejectedValueOnce(
+      Object.assign(new Error('method unavailable'), { rpcCode: -32601 }),
+    );
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const { channel, task } = start();
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent).toHaveBeenCalledOnce();
+    mocks.backendRequest.mockRejectedValueOnce(new Error('offline'));
+    channel.put(createAgentRequested(WS));
+    await settle();
+    expect(mocks.createAgent).toHaveBeenCalledOnce();
+    expect(mocks.toastError).toHaveBeenCalledOnce();
+    task.cancel();
   });
 
   it('pairs a blank agent model with its selected Claude provider', async () => {
@@ -925,6 +1412,7 @@ describe('agentCreationSaga', () => {
     );
 
     it('renders the not-permitted sentence end to end: real factory, real agents client, transport answers -32003', async () => {
+      appStore.init();
       // Only the wire is faked: the real UnifiedAgentFactory calls the real
       // LiveAgentsClient, whose `agent.create` request the transport refuses
       // exactly as the daemon does for a collaborator connection.

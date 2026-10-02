@@ -44,6 +44,16 @@ afterEach(() => {
 });
 
 describe('diagram export', () => {
+  it('requires the enclosing presentation to finish applying its geometry', () => {
+    const { container, svg } = diagramFixture();
+    container.setAttribute('data-diagram-presentation', '');
+    container.setAttribute('data-diagram-presentation-settled', 'false');
+    expect(() => serializeDiagramSvg(container)).toThrow('Diagram SVG is unavailable');
+    container.setAttribute('data-diagram-presentation-settled', 'true');
+    expect(serializeDiagramSvg(container)).toContain('Primary database');
+    expect(svg.isConnected).toBe(true);
+  });
+
   it('builds a standalone SVG with complete themed geometry and no toolbar chrome', () => {
     const { container, svg } = diagramFixture(true);
     const originalGetComputedStyle = window.getComputedStyle.bind(window);

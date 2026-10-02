@@ -49,6 +49,12 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
   selectWorkspaceScriptEntries: workspaceReadable(
     (workspaceId) => mocks.scripts[workspaceId] ?? [],
   ),
@@ -187,7 +193,7 @@ describe('WorkspaceShellList development script controls', () => {
       });
     });
 
-    it.each(['idle', 'running', 'exited', 'restarting'] as const)(
+    it.each(['idle', 'starting', 'running', 'exited', 'restarting'] as const)(
       'opens a %s script in a panel even after an overlay placement',
       async (status) => {
         mocks.scripts[WS] = [script('script-1', 'Dev server', status)];
@@ -237,6 +243,15 @@ describe('WorkspaceShellList development script controls', () => {
         payload: [WS, 'script-1', 'panel'],
       });
     });
+  });
+
+  it('opens script output without exposing history or cleanup controls', async () => {
+    mocks.scripts[WS] = [script('saved', 'Saved build', 'idle')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Idle Saved build' }));
+    expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ scriptId: 'saved' }));
+    expect(screen.queryByRole('button', { name: /History and cleanup/ })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('renders truthful empty shell states', () => {
@@ -343,6 +358,7 @@ describe('WorkspaceShellList development script controls', () => {
   it('orders live scripts first and exposes controls for each runtime state', () => {
     mocks.scripts[WS] = [
       script('idle', 'Compile', 'idle'),
+      script('starting', 'App', 'starting'),
       script('running', 'Dev server', 'running'),
       script('exited', 'Build', 'exited'),
       script('restarting', 'Worker', 'restarting'),
@@ -352,8 +368,9 @@ describe('WorkspaceShellList development script controls', () => {
       Array.from(document.querySelectorAll('[data-sidebar-shell-script]'), (row) =>
         row.getAttribute('data-sidebar-shell-script'),
       ),
-    ).toEqual(['running', 'restarting', 'exited', 'idle']);
+    ).toEqual(['starting', 'running', 'restarting', 'exited', 'idle']);
     for (const [id, name] of [
+      ['starting', 'App'],
       ['running', 'Dev server'],
       ['restarting', 'Worker'],
     ]) {

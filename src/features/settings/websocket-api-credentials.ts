@@ -1,6 +1,6 @@
 import type { SettingsFormRequest } from '$store/renderer/slices/settings-events/settings-events-types';
 
-type Credentials = { token: string; qrDataUrl: string };
+type Credentials = { token: string; qrDataUrl: string; pairingUri?: string };
 type Recipient = {
   sessionId: string;
   requestIds: Record<string, string>;
@@ -71,4 +71,9 @@ export function clearWebsocketCredentials(formId: string, sessionId?: string): v
 
 export function clearAllWebsocketCredentials(): void {
   for (const formId of recipients.keys()) clearWebsocketCredentials(formId);
+}
+
+export function readPersonalPairingUri(identity: SettingsFormRequest): string {
+  const recipient = recipients.get(identity.formId);
+  return recipient?.sessionId === identity.sessionId ? (recipient.value.pairingUri ?? '') : '';
 }
