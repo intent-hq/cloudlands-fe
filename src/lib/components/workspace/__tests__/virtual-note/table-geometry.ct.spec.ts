@@ -366,3 +366,70 @@ test('remote row insertion and deletion retain the active native cell and its pi
   }
   expect(await root.evaluate((el) => (el as Host).proof.service.region(0))).toBe(source);
 });
+
+test('encountered row height survives horizontal eviction of its tall cell', async ({
+  mount,
+  page,
+}, info) => {
+  await mount(Harness, { props: { sourceOverride: source } });
+  const root = page.getByTestId('proof');
+  await expect(root.locator('.tiptap')).toHaveCount(1);
+  await root.evaluate(async (el) => {
+    const p = (el as Host).proof;
+    await p.seek(p.service.region(0).indexOf('W'.repeat(20)));
+  });
+  await settled(page);
+  const snapshot = () =>
+    root.evaluate((el) => {
+      const p = (el as Host).proof,
+        table = p.projection!.table!.window;
+      const index = [...new Set(table.cells.map((c) => c.row))].indexOf(100);
+      return {
+        height: p.editor!.view.dom.querySelectorAll('tr')[index].getBoundingClientRect().height,
+        geometry: table.geometry,
+        stats: p.snapshot(),
+        source: p.service.region(0),
+      };
+    });
+  const before = await snapshot();
+  await root.evaluate((el) => {
+    const p = (el as Host).proof,
+      scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+    scroller.scrollLeft = p.tableColumnWidth * 40;
+  });
+  await expect
+    .poll(() =>
+      root.evaluate((el) =>
+        (el as Host).proof.projection!.table!.window.cells.some((c) => c.column === 44),
+      ),
+    )
+    .toBe(false);
+  await settled(page);
+  const hidden = await snapshot();
+  await root.evaluate((el) => {
+    const p = (el as Host).proof,
+      scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+    scroller.scrollLeft = p.tableColumnWidth * 44;
+  });
+  await expect
+    .poll(() =>
+      root.evaluate((el) =>
+        (el as Host).proof.projection!.table!.window.cells.some(
+          (c) => c.row === 100 && c.column === 44,
+        ),
+      ),
+    )
+    .toBe(true);
+  await settled(page);
+  const returned = await snapshot();
+  await info.attach('table-retained-height.json', {
+    body: JSON.stringify({ before, hidden, returned }),
+    contentType: 'application/json',
+  });
+  expect(before.height).toBeGreaterThan(41);
+  for (const after of [hidden, returned]) {
+    expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
+    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+    expect(after.source).toBe(source);
+  }
+});
