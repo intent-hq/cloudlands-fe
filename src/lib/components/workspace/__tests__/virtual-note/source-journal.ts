@@ -1,3 +1,4 @@
+import { planTablePaste } from './table-paste-plan';
 import {
   ClipboardBacking,
   ExternalClipboardSink,
@@ -17,6 +18,7 @@ import { scanFences, type Fence } from './fence-context';
 import { scanLists, type ListItem, type ListSeam } from './list-context';
 import {
   scanTables,
+  tableCellAt,
   admitTableWindow,
   type TableIndex,
   type TableWindow,
@@ -103,6 +105,10 @@ export class SourceJournal {
   maxClipboardInputDOM = 0;
   maxClipboardInputNodes = 0;
   maxClipboardRepeatedBytes = 0;
+  maxClipboardPastePlanBytes = 0;
+  maxClipboardPastePlanCells = 0;
+  maxClipboardPasteMetadataBytes = 0;
+  maxClipboardPasteSourceBytes = 0;
   openClipboardInput(value: ClipboardValue) {
     return this.clipboardInput.open(this.revision, {
       value,
@@ -148,29 +154,87 @@ export class SourceJournal {
     const selected = all.filter(
       (cell) => cell.row >= top && cell.row < bottom && cell.column >= left && cell.column < right,
     );
-    if (
+    const hasSpans =
       selected.some((cell) => (cell.span ?? 1) !== 1 || (cell.rowSpan ?? 1) !== 1) ||
-      selected.length !== (bottom - top) * (right - left)
-    )
-      throw new Error('Crossing target spans still need paged paste isolation');
-    for (const row of parsed.cells.rows)
-      row.forEach((cell) => {
-        if (cell.attrs.colspan !== 1 || cell.attrs.rowspan !== 1)
-          throw new Error('Pasted spans still need structural source deltas');
+      selected.length !== (bottom - top) * (right - left) ||
+      parsed.cells.rows.some((row) => {
+        let span = false;
+        row.forEach((cell) => {
+          span ||= cell.attrs.colspan !== 1 || cell.attrs.rowspan !== 1;
+        });
+        return span;
       });
-    for (const cell of selected.sort((a, b) => b.from - a.from)) {
-      const replacement = parsed.cells.rows[cell.row - top].child(cell.column - left);
-      this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(replacement.toJSON()));
-      this.stage({
-        from: cell.body + start,
-        to: cell.end + start,
-        insert: clipboardCellSource(replacement),
-      });
+    if (hasSpans) {
+      const plan = planTablePaste(
+        source,
+        table,
+        { top, bottom, left, right },
+        parsed.cells,
+        schema,
+        (from) => {
+          const value = this.tableStates.get(`cell:${from + start}`);
+          return value ? JSON.parse(value) : undefined;
+        },
+      );
+      this.maxClipboardPastePlanBytes = Math.max(
+        this.maxClipboardPastePlanBytes,
+        plan.costs.planBytes,
+      );
+      this.maxClipboardPastePlanCells = Math.max(this.maxClipboardPastePlanCells, plan.costs.cells);
+      this.maxClipboardPasteMetadataBytes = Math.max(
+        this.maxClipboardPasteMetadataBytes,
+        plan.costs.metadataBytes,
+      );
+      this.maxClipboardPasteSourceBytes = Math.max(
+        this.maxClipboardPasteSourceBytes,
+        plan.costs.sourceBytes,
+      );
+      for (const row of plan.rows.slice().reverse()) {
+        for (const cell of table.rows[row.index].cells)
+          if (this.tableStates.has(`cell:${cell.from + start}`))
+            this.stageTableState(`cell:${cell.from + start}`, '');
+        const previous = source.slice(row.from, row.to);
+        let prefix = 0,
+          suffix = 0;
+        while (
+          prefix < previous.length &&
+          prefix < row.text.length &&
+          previous[prefix] === row.text[prefix]
+        )
+          prefix++;
+        while (
+          suffix < previous.length - prefix &&
+          suffix < row.text.length - prefix &&
+          previous[previous.length - suffix - 1] === row.text[row.text.length - suffix - 1]
+        )
+          suffix++;
+        if (prefix !== previous.length || prefix !== row.text.length)
+          this.stage({
+            from: start + row.from + prefix,
+            to: start + row.to - suffix,
+            insert: row.text.slice(prefix, row.text.length - suffix),
+          });
+        for (const state of row.states)
+          this.stageTableState(
+            `cell:${start + row.from + state.offset}`,
+            JSON.stringify(state.node),
+          );
+      }
+    } else {
+      for (const cell of selected.sort((a, b) => b.from - a.from)) {
+        const replacement = parsed.cells.rows[cell.row - top].child(cell.column - left);
+        this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(replacement.toJSON()));
+        this.stage({
+          from: cell.body + start,
+          to: cell.end + start,
+          insert: clipboardCellSource(replacement),
+        });
+      }
     }
     this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(encoded));
     const updated = this.tableIndex(this.region(id), start).find((t) => t.from === table.from)!;
-    const first = updated.rows[top].cells.find((c) => c.column === left)!,
-      last = updated.rows[bottom - 1].cells.find((c) => c.column === right - 1)!;
+    const first = tableCellAt(updated, top, left),
+      last = tableCellAt(updated, bottom - 1, right - 1);
     const after: Selection = {
       anchor: first.body + start,
       head: last.body + start,
