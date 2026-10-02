@@ -118,12 +118,15 @@ function runCut(
   git('config', 'core.fileMode', 'true');
   git('remote', 'add', 'origin', data.fetchFail ? join(directory, 'unavailable') : directory);
   writeFileSync(join(directory, 'package.json'), '{ "version": "3.0.0" }\n');
-  writeFileSync(join(directory, 'intentd.version'), '0.9.110\n');
+  writeFileSync(
+    join(directory, 'intentd.version'),
+    data.shape === 'pin' ? '0.9.109\n' : `${PIN}\n`,
+  );
   writeFileSync(join(directory, 'CHANGELOG.md'), '# Changelog\n');
   git('add', '.');
   git('commit', '-qm', 'base');
   const baseRefOid = git('rev-parse', 'HEAD');
-  if (data.shape === 'pin') writeFileSync(join(directory, 'intentd.version'), '0.9.111\n');
+  if (data.shape === 'pin') writeFileSync(join(directory, 'intentd.version'), `${PIN}\n`);
   else writeFileSync(join(directory, 'package.json'), '{ "version": "3.1.0" }\n');
   if (data.shape === 'mode') chmodSync(join(directory, 'CHANGELOG.md'), 0o755);
   if (data.shape === 'source') writeFileSync(join(directory, 'app.js'), 'malicious()\n');
