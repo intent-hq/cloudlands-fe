@@ -186,7 +186,7 @@
     anchor-scope: --dialog-title;
     width: min(100% - 2rem, 100vw - 2rem);
     min-width: min(var(--dialog-content-min-width), 100% - 2rem, 100vw - 2rem);
-    max-height: calc(100dvh - 2rem);
+    max-height: min(80vh, calc(100dvh - 2rem));
   }
 
   :global(.dialog-close-button) {
