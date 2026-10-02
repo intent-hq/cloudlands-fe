@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs
+// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,7 +11,13 @@ import { confirmedIntentdNoop } from './intentd-release-readiness.mjs';
 const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
 const { load } = createRequire(builderRequire.resolve('app-builder-lib'))('js-yaml');
 const workflow = load(readFileSync('.github/workflows/auto-cut-alpha.yml', 'utf8'));
-const steps = workflow.jobs['auto-merge-release-pr'].steps as { name: string; run?: string }[];
+const steps = workflow.jobs['auto-merge-release-pr'].steps as {
+  name: string;
+  run?: string;
+  env?: Record<string, string>;
+  if?: string;
+  with?: Record<string, unknown>;
+}[];
 const PIN = '0.9.110';
 const BASE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
@@ -22,6 +28,12 @@ const directories: string[] = [];
 function fixture() {
   return {
     pin: PIN,
+    pins: {} as Record<string, string>,
+    feTag: 'v3.0.0',
+    feTagDate: '2026-09-26T05:50:00Z',
+    prDate: '2026-09-26T06:00:00Z',
+    before: BASE,
+    after: HEAD,
     compare: {
       ahead_by: 1,
       base_commit: { sha: BASE, commit: { committer: { date: '2026-09-26T05:00:00Z' } } },
@@ -94,6 +106,7 @@ function runCut(
   stepName = 'Merge the Release PR when green',
   throttleTag = '',
   dryRun = true,
+  pinAdvance = '',
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'intentd-readiness-'));
   directories.push(directory);
@@ -118,7 +131,7 @@ function runCut(
   git('commit', '-qm', 'chore(release): 3.1.0');
   const headRefOid = git('rev-parse', 'HEAD');
   mkdirSync(join(directory, 'scripts'));
-  for (const script of ['intentd-release-readiness.mjs', 'release-pr-fast-path.mjs'])
+  for (const script of ['intentd-release-readiness.mjs', 'release-pr-fast-path.mjs', 'intentd-pin-advance.sh'])
     writeFileSync(join(directory, 'scripts', script), readFileSync(`scripts/${script}`));
   if (data.missingHelper) rmSync(join(directory, 'scripts', 'release-pr-fast-path.mjs'));
   writeFileSync(
@@ -128,6 +141,18 @@ function runCut(
       detail: { ...data.detail, baseRefOid, headRefOid: data.missingHead ? '' : headRefOid },
     }),
   );
+  writeFileSync(
+    join(directory, 'event.json'),
+    JSON.stringify({
+      before: data.before,
+      after: data.after,
+      head_commit: { timestamp: '2026-09-26T06:00:00Z' },
+      commits: [{ message: 'fix: bump intentd sidecar' }],
+    }),
+  );
+  writeFileSync(join(directory, 'sleep'), '#!/usr/bin/env bash\ntouch "$READINESS_SLEPT"\n', {
+    mode: 0o755,
+  });
   writeFileSync(
     join(directory, 'gh'),
     `#!/usr/bin/env node
@@ -150,15 +175,16 @@ else if (endpoint === 'graphql') {
   if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
   else { process.stdout.write(String(f.unresolved)); process.exit(0); }
 }
-else if (endpoint.includes('/contents/intentd.version')) value = {content: Buffer.from(f.pin + '\\n').toString('base64')};
+else if (endpoint.includes('/contents/intentd.version')) value = {content: Buffer.from((f.pins[endpoint.split('?ref=')[1]] ?? f.pin) + '\\n').toString('base64')};
 else if (endpoint === 'repos/${BE}/compare/v${PIN}...main?per_page=1') value = f.compare;
 else if (endpoint === 'repos/${BE}/git/matching-refs/tags/v') value = [{ref: 'refs/tags/' + f.beTag}];
-else if (endpoint.includes('/git/matching-refs/tags/v')) value = [{ref: 'refs/tags/v3.0.0'}];
-else if (endpoint === 'repos/${FE}/compare/v3.0.0...main?per_page=250') value = {commits: f.commits};
+else if (endpoint.includes('/git/matching-refs/tags/v')) value = [{ref: 'refs/tags/' + f.feTag}];
+else if (endpoint.startsWith('repos/${FE}/compare/')) value = {commits: f.commits};
 else if (endpoint === 'repos/${BE}/git/ref/heads/main') value = {object: {sha: f.proof.head}};
 else if (endpoint === 'repos/${BE}/commits/v${PIN}') value = {sha: '${BASE}'};
 else if (endpoint === 'repos/${BE}/commits/' + f.beTag) value = {commit: {committer: {date: f.beTagDate}}};
-else if (endpoint === 'repos/${FE}/commits/v3.0.0') value = {commit: {committer: {date: '2026-09-26T05:50:00Z'}}};
+else if (endpoint === 'repos/${FE}/commits/' + f.feTag) value = {commit: {committer: {date: f.feTagDate}}};
+else if (endpoint === 'repos/${FE}/commits/' + f.pr.headRefName) value = {commit: {committer: {date: f.prDate}}};
 else if (endpoint === 'repos/${BE}/actions/workflows/release-plz.yml') value = {id: 42, path: '.github/workflows/release-plz.yml', state: 'active'};
 else if (endpoint.includes('/actions/workflows/release-plz.yml/runs?')) value = {total_count: 1, workflow_runs: [f.proof.run]};
 else if (endpoint === 'repos/${BE}/actions/runs/100') value = f.proof.run;
@@ -181,10 +207,30 @@ process.stdout.write(JSON.stringify(value));
   );
   writeFileSync(
     join(directory, 'date'),
-    '#!/usr/bin/env bash\nif [[ "$*" == "+%s" ]]; then exec /usr/bin/date -d "2026-09-26T06:00:00Z" +%s; fi\nexec /usr/bin/date "$@"\n',
+    '#!/usr/bin/env bash\nif [[ "$*" == "+%s" ]]; then if [[ -f "$READINESS_SLEPT" ]]; then exec /usr/bin/date -d "2026-09-26T06:16:00Z" +%s; else exec /usr/bin/date -d "2026-09-26T06:00:00Z" +%s; fi; fi\nexec /usr/bin/date "$@"\n',
     { mode: 0o755 },
   );
-  const result = spawnSync('bash', ['-c', steps.find((s) => s.name === stepName)!.run!], {
+  const step = steps.find((s) => s.name === stepName)!;
+  const context: Record<string, string> = {
+    'github.token': 'mock',
+    'secrets.RELEASE_PAT': 'mock',
+    'inputs.dry_run == true': String(dryRun),
+    'github.event_name': event,
+    'github.event.before': data.before,
+    'github.sha': data.after,
+    'steps.throttle.outputs.tag': throttleTag,
+    'steps.throttle.outputs.pin_advance': pinAdvance,
+  };
+  const stepEnv = Object.fromEntries(
+    Object.entries(step.env ?? {}).map(([key, value]) => [
+      key,
+      value.replace(/\$\{\{(.*?)\}\}/g, (_, expression: string) => {
+        expect(context).toHaveProperty(expression.trim());
+        return context[expression.trim()];
+      }),
+    ]),
+  );
+  const result = spawnSync('bash', ['-c', step.run!], {
     cwd: directory,
     encoding: 'utf8',
     timeout: 15_000,
@@ -194,13 +240,10 @@ process.stdout.write(JSON.stringify(value));
       READINESS_FIXTURE: join(directory, 'fixture.json'),
       READINESS_CALLS: join(directory, 'calls'),
       GITHUB_REPOSITORY: FE,
-      EVENT_NAME: event,
-      DRY_RUN: String(dryRun),
-      THROTTLE_TAG: throttleTag,
+      ...stepEnv,
+      GITHUB_EVENT_PATH: join(directory, 'event.json'),
+      READINESS_SLEPT: join(directory, 'slept'),
       GITHUB_OUTPUT: join(directory, 'outputs'),
-      MANIFEST_MIRROR_URL: 'https://example.invalid/alpha.json',
-      RELEASE_PAT: 'mock',
-      GH_TOKEN: 'mock',
     },
   });
   expect(result.status, result.stderr || result.stdout).toBe(0);
@@ -385,6 +428,198 @@ describe('auto-cut direct release merge', () => {
     const result = runCut({ ...fixture(), shape });
     expect(result.cut).toBe(true);
     expect(result.output).toContain(shape === 'metadata' ? 'direct' : 'queue');
+  });
+});
+
+function pinFixture() {
+  return {
+    ...fixture(),
+    pins: { [BASE]: '0.9.109', [HEAD]: PIN, 'heads/main': PIN, 'tags/v3.0.0': '0.9.109' },
+    beTag: `v${PIN}`,
+  };
+}
+
+function outputValue(outputs: string, key: string) {
+  return outputs
+    .trim()
+    .split('\n')
+    .filter((line) => line.startsWith(`${key}=`))
+    .at(-1)
+    ?.slice(key.length + 1);
+}
+
+// Execute each guarded workflow step with the preceding step's real outputs.
+function runPinChain(data = pinFixture(), event = 'push', mergeData = data) {
+  const throttle = runCut(data, event, 'Throttle to one cut per hour');
+  if (outputValue(throttle.outputs, 'defer') === 'true')
+    return { cut: false, output: throttle.output };
+  const inflight = runCut(data, event, 'Check for an in-flight intentd release build');
+  if (outputValue(inflight.outputs, 'defer') === 'true')
+    return { cut: false, output: inflight.output };
+  return runCut(
+    mergeData,
+    event,
+    'Merge the Release PR when green',
+    outputValue(throttle.outputs, 'tag'),
+    true,
+    outputValue(throttle.outputs, 'pin_advance'),
+  );
+}
+
+describe('prompt pin-driven alpha cut', () => {
+  it('wires helpers before throttling and keeps the existing trigger and guard chain', () => {
+    const checkout = steps.find((s) => s.name === 'Checkout trusted release helpers')!;
+    const throttle = steps.find((s) => s.name === 'Throttle to one cut per hour')!;
+    const inflight = steps.find((s) => s.name === 'Check for an in-flight intentd release build')!;
+    const merge = steps.find((s) => s.name === 'Merge the Release PR when green')!;
+    expect(steps.indexOf(checkout)).toBeLessThan(steps.indexOf(throttle));
+    expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-pin-advance.sh');
+    expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-release-readiness.mjs');
+    expect(checkout.if).not.toContain('steps.throttle');
+    expect(throttle.if).toContain("github.event_name != 'workflow_dispatch'");
+    expect(inflight.if).toContain("steps.throttle.outputs.defer != 'true'");
+    expect(merge.if).toContain("steps.throttle.outputs.defer != 'true'");
+    expect(merge.if).toContain("steps.inflight.outputs.defer != 'true'");
+    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.schedule).toEqual([{ cron: '30 * * * *' }]);
+    expect(workflow.concurrency).toEqual({ group: 'auto-cut-alpha', 'cancel-in-progress': false });
+  });
+
+  it.each(['tags', 'date'])('keeps the original fail-open %s lookup policy', (kind) => {
+    const data = pinFixture();
+    data.fail = kind === 'tags' ? `repos/${FE}/git/matching-refs/` : `repos/${FE}/commits/v3.0.0`;
+    expect(runPinChain(data).cut).toBe(true);
+  });
+
+  it('keeps ordinary pushes eligible after the hour', () => {
+    const data = pinFixture();
+    data.pins[BASE] = PIN;
+    data.feTagDate = '2026-09-26T04:00:00Z';
+    expect(runPinChain(data).cut).toBe(true);
+  });
+
+  it('allows the new pin if a recent old-pin tag appeared after an unthrottled start', () => {
+    const before = pinFixture();
+    before.feTagDate = '2026-09-26T04:00:00Z';
+    const after = pinFixture();
+    after.feTag = 'v3.0.1';
+    after.pins['tags/v3.0.1'] = '0.9.109';
+    expect(runPinChain(before, 'push', after).cut).toBe(true);
+  });
+
+  it('still defers an ordinary push after a concurrent tag appears', () => {
+    const before = pinFixture();
+    before.pins[BASE] = PIN;
+    before.feTagDate = '2026-09-26T04:00:00Z';
+    const after = structuredClone(before);
+    after.feTag = 'v3.0.1';
+    after.pins['tags/v3.0.1'] = '0.9.109';
+    expect(runPinChain(before, 'push', after).cut).toBe(false);
+  });
+
+  it('treats promotion from a prerelease to the stable pin as an advance', () => {
+    const data = pinFixture();
+    data.pins[BASE] = `${PIN}-alpha.1`;
+    data.pins['tags/v3.0.0'] = `${PIN}-alpha.1`;
+    expect(runPinChain(data).cut).toBe(true);
+  });
+
+  it('cuts a proven new pin within the hour through the existing push chain', () => {
+    const result = runPinChain();
+    expect(result.cut, result.output).toBe(true);
+  });
+
+  it.each([
+    'unchanged',
+    'comment-only',
+    'rollback',
+    'already carried',
+    'newer carried',
+    'superseded',
+    'malformed',
+    'missing before',
+  ])('does not exempt a %s pin push', (kind) => {
+    const data = pinFixture();
+    if (kind === 'unchanged') data.pins[BASE] = PIN;
+    if (kind === 'comment-only') data.pins[BASE] = `# Old comment\n${PIN}\n`;
+    if (kind === 'rollback') data.pins[BASE] = '0.9.111';
+    if (kind === 'already carried') data.pins['tags/v3.0.0'] = PIN;
+    if (kind === 'newer carried') data.pins['tags/v3.0.0'] = '0.9.111';
+    if (kind === 'superseded') data.pins['heads/main'] = '0.9.111';
+    if (kind === 'malformed') data.pins[HEAD] = 'garbage';
+    if (kind === 'missing before') data.before = '0'.repeat(40);
+    expect(runPinChain(data).cut).toBe(false);
+  });
+
+  it('keeps the schedule throttle even with an unshipped pin', () => {
+    expect(runPinChain(pinFixture(), 'schedule').cut).toBe(false);
+  });
+
+  it.each([BASE, HEAD, 'heads/main', 'tags/v3.0.0'])(
+    'retains the throttle when pin evidence at %s is unreadable',
+    (ref) => {
+      const data = pinFixture();
+      data.fail = `/contents/intentd.version?ref=${ref}`;
+      expect(runPinChain(data).cut).toBe(false);
+    },
+  );
+
+  it('can pass a concurrent cut that still carries the old pin', () => {
+    const before = pinFixture();
+    const after = pinFixture();
+    after.feTag = 'v3.0.1';
+    after.pins['tags/v3.0.1'] = '0.9.109';
+    const result = runPinChain(before, 'push', after);
+    expect(result.cut, result.output).toBe(true);
+  });
+
+  it.each(['carried', 'superseded', 'proof unreadable'])(
+    'rechecks before merging when the pin becomes %s',
+    (kind) => {
+      const before = pinFixture();
+      const after = pinFixture();
+      if (kind === 'carried') {
+        after.feTag = 'v3.0.1';
+        after.pins['tags/v3.0.1'] = PIN;
+      }
+      if (kind === 'superseded') after.pins['heads/main'] = '0.9.111';
+      if (kind === 'proof unreadable') after.fail = `/contents/intentd.version?ref=${BASE}`;
+      expect(runPinChain(before, 'push', after).cut).toBe(false);
+    },
+  );
+
+  it.each([
+    'hold',
+    'pin PR',
+    'failed CI',
+    'pending CI',
+    'review',
+    'conflict',
+    'draft',
+    'fork',
+    'author',
+    'stale pin',
+    'stale head',
+    'BE dependency',
+    'inflight',
+  ])('keeps the %s guard for exempt pin pushes', (guard) => {
+    const data = pinFixture();
+    if (guard === 'hold') data.pr.labels = [{ name: 'hold-release' }];
+    if (guard === 'pin PR') data.pinPr = [{ number: 7, isCrossRepository: false }];
+    if (guard === 'failed CI') data.detail.statusCheckRollup[0].conclusion = 'FAILURE';
+    if (guard === 'pending CI') data.detail.statusCheckRollup = [];
+    if (guard === 'review') data.unresolved = 1;
+    if (guard === 'conflict') data.detail.mergeable = 'CONFLICTING';
+    if (guard === 'draft') data.detail.isDraft = true;
+    if (guard === 'fork') data.pr.isCrossRepository = true;
+    if (guard === 'author') data.pr.author.login = 'someone-else';
+    if (guard === 'stale pin') data.pins[data.pr.headRefName] = '0.9.109';
+    if (guard === 'stale head') data.prDate = '2026-09-26T05:00:00Z';
+    if (guard === 'BE dependency') data.proof.jobs = [];
+    if (guard === 'inflight') data.beTag = 'v0.9.111';
+    const result = runPinChain(data);
+    expect(result.cut, result.output).toBe(false);
+    expect(result.output).not.toContain('throttling this cut');
   });
 });
 
