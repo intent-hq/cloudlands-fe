@@ -176,20 +176,28 @@ for (const key of ['ArrowUp', 'ArrowDown'])
         selected,
         actual,
         restored: p.selection.table,
+        restoredActual: p.projection!.table!.pointAt(p.editor!.state.selection.head),
         destroyed: old.isDestroyed,
         source: p.service.region(0),
         error: p.error,
         stats: p.snapshot(),
       };
     });
+    await settled(page);
+    const settledActual = await root.evaluate((el) => {
+      const p = (el as Host).proof;
+      return p.projection!.table!.pointAt(p.editor!.state.selection.head);
+    });
     await info.attach('merged-arrow.json', {
-      body: JSON.stringify({ fixture, target, bounded, native }),
+      body: JSON.stringify({ fixture, target, bounded, settledActual, native }),
       contentType: 'application/json',
     });
     expect(native.block).toBe(target.point.block + (key === 'ArrowUp' ? -1 : 1));
     expect(bounded.selected.head).toEqual({ cell: target.point.cell, ...native });
     expect(bounded.actual).toEqual(bounded.selected.head);
     expect(bounded.restored).toEqual(bounded.selected);
+    expect(bounded.restoredActual).toEqual(bounded.selected.head);
+    expect(settledActual).toEqual(bounded.selected.head);
     expect(bounded.destroyed).toBe(true);
     expect(bounded.error).toBe('');
     expect(bounded.source).toBe(fixture.saved);
