@@ -1,3 +1,4 @@
+import { buildQueuedRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
@@ -309,9 +310,10 @@ function reduceQueueContentSync(
   const next: Record<string, QueuedRetryRecord> = {};
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
     const present = presentById.get(id) ?? presentByTurnId.get(parked.turnId);
-    if (present && parked.record.text !== present.content) {
+    const record = present ? buildQueuedRecordedAttempt(present, parked.record) : parked.record;
+    if (!deepEqual(parked.record, record)) {
       textSynced = true;
-      next[id] = { ...parked, record: { ...parked.record, text: present.content } };
+      next[id] = { ...parked, record };
     } else {
       next[id] = parked;
     }

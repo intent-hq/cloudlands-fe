@@ -704,6 +704,56 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  it('replaces the surviving row in place after append and parks the full retry payload', async () => {
+    const original: QueuedMessage = {
+      id: 'surviving',
+      turnId: 'surviving',
+      content: 'first',
+      queuedAt: '2026-10-02T00:00:00Z',
+      position: 0,
+      messageMetadata: { fromPrincipalId: 'alice' },
+      imageBlocks: [{ type: 'image', attachmentId: 'first-image' }],
+    };
+    const system: QueuedMessage = {
+      id: 'system',
+      content: 'wake',
+      queuedAt: original.queuedAt,
+      position: 1,
+      messageMetadata: { source: 'system' },
+    };
+    const merged = {
+      ...original,
+      content: 'first\n\nsecond',
+      fileBlocks: [{ type: 'file' as const, attachmentId: 'second-file', fileName: 'report.txt' }],
+    };
+    mocks.queue.mockResolvedValue({ success: true, turnId: 'surviving', queuedMessage: merged });
+    const run = harness(session({ isStreaming: true, isProcessing: true }));
+    run.dispatch(replaceAgentQueue(AGENT, [original, system], WS));
+    run.channel.put(
+      sendMessage(AGENT, { wsId: WS, text: 'second', fileBlocks: merged.fileBlocks }),
+    );
+    await settle();
+    await settle();
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [merged, system], WS));
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(
+        AGENT,
+        'surviving',
+        {
+          text: 'first\n\nsecond',
+          options: {
+            imageBlocks: original.imageBlocks,
+            fileBlocks: merged.fileBlocks,
+            messageMetadata: original.messageMetadata,
+          },
+        },
+        'surviving',
+      ),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('seeds the queue mirror from the queue RPC echo when no live snapshot intervened', async () => {
     const freshQueuedMessage: QueuedMessage = {
       id: 'queued-fresh',
@@ -759,7 +809,13 @@ describe('chatSendSaga', () => {
     mocks.queue.mockResolvedValue({
       success: true,
       turnId: 'turn-queued',
-      queuedMessage: { id: 'queued-1', content: 'later file', timestamp: 1 },
+      queuedMessage: {
+        id: 'queued-1',
+        content: '',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        fileBlocks,
+      },
     });
     const queueRun = harness(
       session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),

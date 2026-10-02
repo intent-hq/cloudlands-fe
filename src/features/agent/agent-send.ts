@@ -1,3 +1,4 @@
+import { reconcileQueuedMessage } from './utils/reconcile-queued-message';
 import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 /**
@@ -33,14 +34,21 @@ import {
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
+  removeMessage as removeAgentSessionMessage,
   setAgentStreaming,
   updateMessage as updateAgentSessionMessage,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
-import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
-import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  chatQueuedRetryRecordParked,
+  chatQueuedRetryRecordSet,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  buildRecordedAttempt,
+  buildQueuedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import { getAgentQueueEventSnapshotSeq, hydrateAgentQueue } from './agent-queue-read-service';
@@ -439,6 +447,7 @@ export async function sendMessage(
 
                       // Reset streaming flag so UI doesn't stay in "Thinking"
                       dispatchRedux(setAgentStreaming(session.id, false));
+                      dispatchRedux(removeAgentSessionMessage(session.id, userMessage.id));
 
                       // Seed the local queue from queuedMessage (like chat-send-service
                       // queue-on-send path does) so the UI immediately shows queued state
@@ -474,6 +483,17 @@ export async function sendMessage(
                               turnId,
                             ),
                           );
+                          dispatchRedux(
+                            chatQueuedRetryRecordSet(
+                              agentId,
+                              queuedMessage.id,
+                              buildQueuedRecordedAttempt(
+                                queuedMessage,
+                                buildRecordedAttempt(content, options),
+                              ),
+                              turnId,
+                            ),
+                          );
                         } else {
                           // Unreachable against the pinned daemon; if it ever
                           // fires, the caller's mid-turn lastAttemptedMessage
@@ -499,9 +519,7 @@ export async function sendMessage(
                             agentId,
                             workspace.id,
                           );
-                          const next = existing.some((m) => m.id === queuedMessage.id)
-                            ? existing
-                            : [...existing, queuedMessage];
+                          const next = reconcileQueuedMessage(existing, queuedMessage);
                           dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
                         } else if (isCurrent()) {
                           logger.debug(

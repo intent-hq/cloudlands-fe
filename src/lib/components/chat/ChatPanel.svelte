@@ -80,6 +80,8 @@
     selectAgentTailCapPruned,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import { queuedMessagePermissions } from '$lib/utils/queued-message-permissions';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
@@ -1120,6 +1122,7 @@
   );
   // The viewer's own rows carry no author identity (transcript and queue).
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+  const isHostOwner$ = selectCanAdministerHost();
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -5076,9 +5079,19 @@
     });
   });
 
+  function queuePermissions(messageId: string) {
+    return queuedMessagePermissions(
+      $queuedMessages$.find((message) => message.id === messageId),
+      $presenceOwnPrincipalId$,
+      workspace?.ownerPrincipalId,
+      $isHostOwner$,
+    );
+  }
+
   // Handle editing a queued message. The client seam folds transport errors
   // into `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
+    if (!queuePermissions(messageId).edit) return { success: false };
     const originAgentId = agentId;
     const originWorkspaceId = workspace?.id;
     const result = await appClient.agents.editQueued(
@@ -5105,6 +5118,7 @@
   // Handle removing a queued message — the saga removes it optimistically from
   // Redux (immediate UI update) and restores it if the backend removal fails.
   function handleRemoveQueuedMessage(messageId: string) {
+    if (!queuePermissions(messageId).remove) return;
     appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
   }
 
@@ -5113,7 +5127,8 @@
   // saga needs only agentId/wsId/queuedMessageId — the daemon owns
   // the entry's content/attachments and dequeues + delivers transactionally.
   async function handleSendQueuedMessageNow(messageId: string) {
-    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+    if (!workspace || !queuePermissions(messageId).sendNow)
+      throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
     const outcome = await appStore.dispatch(
       sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
@@ -7288,6 +7303,8 @@
                         messages={visibleQueuedMessages}
                         authors={queuedMessageAuthors}
                         ownPrincipalId={$presenceOwnPrincipalId$}
+                        ownerPrincipalId={workspace?.ownerPrincipalId}
+                        isHostOwner={$isHostOwner$}
                         onedit={handleEditQueuedMessage}
                         onremove={handleRemoveQueuedMessage}
                         onsendnow={handleSendQueuedMessageNow}

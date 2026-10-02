@@ -345,6 +345,107 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     });
   }, 30000);
 
+  it.each(['response-first', 'event-first', 'drained-first'])(
+    'reconciles an auto-queued append without duplicate rows (%s)',
+    async (order) => {
+      const first: QueuedMessage = {
+        id: 'survivor',
+        turnId: 'survivor',
+        content: 'first',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        imageBlocks: [{ type: 'image', attachmentId: 'first-image' }],
+        messageMetadata: { fromPrincipalId: 'alice' },
+        author: { principalId: 'alice', displayName: 'Alice', login: null, avatarUrl: null },
+      };
+      const system: QueuedMessage = {
+        ...first,
+        id: 'system',
+        turnId: 'system',
+        position: 1,
+        content: 'wake',
+        messageMetadata: { source: 'system' },
+      };
+      const merged = {
+        ...first,
+        content: 'first\n\nsecond',
+        fileBlocks: [
+          { type: 'file' as const, attachmentId: 'second-file', fileName: 'report.txt' },
+        ],
+      };
+      const latest = { ...merged, content: 'first\n\nsecond\n\nthird' };
+      appStore.dispatch(replaceAgentQueue(AGENT, [first, system], WS));
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.get') return { agent: daemonPendingAgent };
+        if (method === 'agent.getQueue')
+          return { success: true, queue: order === 'drained-first' ? [] : [latest, system] };
+        if (method === 'agent.sendMessage') {
+          if (order !== 'response-first') {
+            appStore.dispatch(
+              replaceAgentQueue(AGENT, order === 'drained-first' ? [] : [latest, system], WS),
+            );
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
+          return {
+            success: true,
+            queued: true,
+            turnId: first.id,
+            queuedMessage: { ...merged, author: null },
+          };
+        }
+        return {};
+      });
+      await sendMessage(AGENT, 'second', workspace(), {
+        userAppMessageId: 'append-attempt',
+        fileBlocks: merged.fileBlocks,
+      });
+      expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(
+        order === 'drained-first' ? [] : [order === 'event-first' ? latest : merged, system],
+      );
+      expect(
+        appStore.state.agentSessions.byAgentId[AGENT]?.messages.some(
+          (message) => message.appMessageId === 'append-attempt',
+        ),
+      ).toBe(false);
+      if (order === 'response-first') {
+        appStore.dispatch(replaceAgentQueue(AGENT, [latest, system], WS));
+        noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([latest, system]);
+      }
+      if (order !== 'drained-first') {
+        expect(
+          appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords.survivor.record,
+        ).toMatchObject({
+          text: latest.content,
+          options: { imageBlocks: first.imageBlocks, fileBlocks: merged.fileBlocks },
+        });
+      }
+    },
+  );
+
+  it('preserves another participant as a barrier when the daemon returns a fresh ID', async () => {
+    const queued = (id: string, principal: string, position: number): QueuedMessage => ({
+      id,
+      turnId: id,
+      content: id,
+      position,
+      queuedAt: '2026-10-02T00:00:00Z',
+      messageMetadata: { fromPrincipalId: principal },
+    });
+    const alice = queued('alice-first', 'alice', 0);
+    const bob = queued('bob', 'bob', 1);
+    const second = queued('alice-second', 'alice', 2);
+    appStore.dispatch(replaceAgentQueue(AGENT, [alice, bob], WS));
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage')
+        return { success: true, queued: true, turnId: second.id, queuedMessage: second };
+      return {};
+    });
+    await sendMessage(AGENT, second.content, workspace());
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([alice, bob, second]);
+  });
+
   it('does not re-seed the queue when a live agent:queue:updated snapshot superseded the send (monorepo#2481)', async () => {
     // The daemon delivered the queued entry and emitted an EMPTY
     // agent:queue:updated snapshot while the RPC response was still in

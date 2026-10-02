@@ -42,6 +42,7 @@
       id: `queue-${i}`,
       // i18n-ignore (test-only component fixture content)
       content: `Queued message ${i + 1}`,
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: '2026-01-01T00:00:00.000Z',
       position: i,
     })),
@@ -59,7 +60,7 @@
   >
     {#snippet queueRegion()}
       {#if messages.length > 0}
-        <QueuedMessageList {messages} />
+        <QueuedMessageList ownPrincipalId="preview-author" {messages} />
       {/if}
     {/snippet}
   </SimpleRichInput>

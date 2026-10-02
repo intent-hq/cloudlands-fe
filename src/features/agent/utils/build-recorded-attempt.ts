@@ -1,4 +1,18 @@
 import type { LastAttemptedMessage } from '$store/renderer/slices/chat-state/chat-state-types';
+import type { QueuedMessage } from '$shared/types';
+
+/** A queue append can retain an older ID and accumulate text and attachments. */
+export function buildQueuedRecordedAttempt(
+  message: QueuedMessage,
+  attempt: LastAttemptedMessage,
+): LastAttemptedMessage {
+  return buildRecordedAttempt(message.content, {
+    ...attempt.options,
+    ...(message.imageBlocks !== undefined ? { imageBlocks: message.imageBlocks } : {}),
+    ...(message.fileBlocks !== undefined ? { fileBlocks: message.fileBlocks } : {}),
+    ...(message.messageMetadata !== undefined ? { messageMetadata: message.messageMetadata } : {}),
+  });
+}
 
 /**
  * Build the retry payload a send attempt carries, for the error banner's "Try

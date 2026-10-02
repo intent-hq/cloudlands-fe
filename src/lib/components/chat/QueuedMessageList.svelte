@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { queuedMessagePermissions } from '$lib/utils/queued-message-permissions';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
   /**
@@ -71,6 +72,8 @@
      * entries render no author. `null` = not yet known, every author shown.
      */
     ownPrincipalId?: string | null;
+    ownerPrincipalId?: string | null;
+    isHostOwner?: boolean;
   }
 
   let {
@@ -82,9 +85,15 @@
     ondone,
     authors = null,
     ownPrincipalId = null,
+    ownerPrincipalId = null,
+    isHostOwner = false,
   }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+
+  function permissions(message: QueuedMessage | undefined) {
+    return queuedMessagePermissions(message, ownPrincipalId, ownerPrincipalId, isHostOwner);
+  }
 
   // Track which message is being edited
   let editingId = $state<string | null>(null);
@@ -127,6 +136,7 @@
       !onsendnow ||
       disabled ||
       !message ||
+      !permissions(message).sendNow ||
       message.editing ||
       editingId === id ||
       sendingIds.has(id) ||
@@ -389,7 +399,13 @@
   });
 
   async function startEdit(message: QueuedMessage, programmatic = false) {
-    if (disabled || isSending(message.id) || activeEditOperation || editingId === message.id)
+    if (
+      !permissions(message).edit ||
+      disabled ||
+      isSending(message.id) ||
+      activeEditOperation ||
+      editingId === message.id
+    )
       return;
     const operation = beginEditOperation(message.id);
     await animateRowMutation(message.id, () => {
@@ -424,7 +440,12 @@
   }
 
   async function cancelEdit() {
-    if (activeEditOperation || !editingId) return;
+    if (
+      activeEditOperation ||
+      !editingId ||
+      !permissions(messages.find((message) => message.id === editingId)).edit
+    )
+      return;
     const wasProgrammatic = editStartedProgrammatically;
     const operation = beginEditOperation(editingId);
     const originalContent = editOriginalContent;
@@ -455,7 +476,11 @@
   }
 
   async function saveEdit() {
-    if (activeEditOperation) return;
+    if (
+      activeEditOperation ||
+      !permissions(messages.find((message) => message.id === editingId)).edit
+    )
+      return;
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
       const operation = beginEditOperation(editingId);
@@ -501,7 +526,13 @@
   }
 
   function handleRemove(id: string) {
-    if (disabled || isSending(id) || sendingIds.has(id)) return;
+    if (
+      disabled ||
+      !permissions(messages.find((message) => message.id === id)).remove ||
+      isSending(id) ||
+      sendingIds.has(id)
+    )
+      return;
     onremove?.(id);
   }
 
@@ -534,8 +565,9 @@
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
-    const last = messages[messages.length - 1];
-    if (!last) return false;
+    const last = messages.findLast((message) => permissions(message).edit);
+    if (!last || disabled || activeEditOperation || editingId === last.id || isSending(last.id))
+      return false;
     void startEdit(last, true);
     return true;
   }
@@ -782,23 +814,25 @@
                   </Button>
                   {#if !disabled}
                     <div class={QUEUE_ACTION_CLUSTER_CLASS} data-testid="queued-message-actions">
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        iconOnly
-                        class="-my-1"
-                        aria-label={m.chat_queuedMessages_edit_tooltip()}
-                        disabled={isSending(message.id)}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={(event) => {
-                          event.stopPropagation();
-                          void startEdit(message);
-                        }}
-                        tooltip={m.chat_queuedMessages_edit_tooltip()}
-                      >
-                        <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
-                      </Button>
-                      {#if onsendnow}
+                      {#if permissions(message).edit}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          iconOnly
+                          class="-my-1"
+                          aria-label={m.chat_queuedMessages_edit_tooltip()}
+                          disabled={isSending(message.id)}
+                          onpointerdown={(event) => event.stopPropagation()}
+                          onclick={(event) => {
+                            event.stopPropagation();
+                            void startEdit(message);
+                          }}
+                          tooltip={m.chat_queuedMessages_edit_tooltip()}
+                        >
+                          <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
+                        </Button>
+                      {/if}
+                      {#if onsendnow && permissions(message).sendNow}
                         <Button
                           variant="ghost-light"
                           size="icon-xs"
@@ -816,19 +850,21 @@
                           <Fa icon={faArrowUp} class="w-3 h-3" />
                         </Button>
                       {/if}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        iconOnly
-                        class="-my-1"
-                        aria-label={m.chat_queuedMessages_remove_tooltip()}
-                        disabled={isSending(message.id)}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={() => handleRemove(message.id)}
-                        tooltip={m.chat_queuedMessages_remove_tooltip()}
-                      >
-                        <XIcon size={13} weight="regular" aria-hidden="true" />
-                      </Button>
+                      {#if permissions(message).remove}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          iconOnly
+                          class="-my-1"
+                          aria-label={m.chat_queuedMessages_remove_tooltip()}
+                          disabled={isSending(message.id)}
+                          onpointerdown={(event) => event.stopPropagation()}
+                          onclick={() => handleRemove(message.id)}
+                          tooltip={m.chat_queuedMessages_remove_tooltip()}
+                        >
+                          <XIcon size={13} weight="regular" aria-hidden="true" />
+                        </Button>
+                      {/if}
                     </div>
                   {/if}
                 </div>

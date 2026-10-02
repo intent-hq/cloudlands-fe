@@ -1,3 +1,4 @@
+import { reconcileQueuedMessage } from '$features/agent/utils/reconcile-queued-message';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
@@ -17,7 +18,10 @@ import {
   getAgentQueueEventSnapshotSeq,
   hydrateAgentQueue,
 } from '$features/agent/agent-queue-read-service';
-import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  buildRecordedAttempt,
+  buildQueuedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
 import {
   imageRetryBlocks,
   toImageReferenceBlocks,
@@ -323,7 +327,14 @@ function* dispatchToLifecycle(
       if (queuedMessage) {
         const turnId = result.turnId ?? queuedMessage.turnId;
         if (typeof turnId === 'string') {
-          yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
+          yield* put(
+            chatQueuedRetryRecordSet(
+              agentId,
+              queuedMessage.id,
+              buildQueuedRecordedAttempt(queuedMessage, recordedAttempt),
+              turnId,
+            ),
+          );
         }
         // Seed only when no authoritative snapshot — live agent:queue:updated
         // fold or hydrate-reconciled fold — landed since the send started: a
@@ -335,9 +346,8 @@ function* dispatchToLifecycle(
           getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend
         ) {
           const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
-          if (!existing.some((message) => message.id === queuedMessage.id)) {
-            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage], wsId));
-          }
+          const next = reconcileQueuedMessage(existing, queuedMessage);
+          yield* put(replaceAgentQueue(agentId, next, wsId));
         } else if (yield* mutationIsCurrent(agentId, ownership)) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
