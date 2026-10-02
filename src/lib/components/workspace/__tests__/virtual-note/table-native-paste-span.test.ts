@@ -57,7 +57,10 @@ for (const mode of ['trailing-cell', 'whole-width', 'crossing-plain', 'crossing-
           : '<table><tr><td colspan="2" rowspan="2"><p>P</p></td></tr><tr></tr></table>';
       let error: string | undefined, result: boolean | undefined;
       try {
-        result = editor.view.pasteHTML(html);
+        result = editor.view.pasteHTML(
+          html,
+          new Event('paste', { cancelable: true }) as ClipboardEvent,
+        );
       } catch (caught) {
         error = String(caught);
       }
