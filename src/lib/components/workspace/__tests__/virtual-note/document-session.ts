@@ -311,6 +311,39 @@ export class DocumentSession {
   private tableResize?: ResizeObserver;
   private tableMeasurements?: ResizeObserver;
   private measuredTable?: Element;
+  private tableFontObserver?: MutationObserver;
+  private tableAnchor?: { point: string; left: number; top: number };
+  private tableOriginX = 0;
+  private tableOriginY = 0;
+  private rememberTableAnchor() {
+    const editor = this.editor;
+    if (!editor || !this.selection.table) return;
+    try {
+      const coords = editor.view.coordsAtPos(editor.state.selection.head);
+      this.tableAnchor = {
+        point: JSON.stringify(this.selection.table.head),
+        left: coords.left,
+        top: coords.top,
+      };
+    } catch {
+      this.tableAnchor = undefined;
+    }
+  }
+  private preserveTableAnchor(before: { left: number; top: number }) {
+    const editor = this.editor,
+      scroller = this.tableScroller ?? this.host.parentElement;
+    if (!editor || !scroller) return;
+    let after = editor.view.coordsAtPos(editor.state.selection.head);
+    scroller.scrollLeft += after.left - before.left;
+    scroller.scrollTop += after.top - before.top;
+    after = editor.view.coordsAtPos(editor.state.selection.head);
+    // At the document origin negative scrolling is impossible. A bounded scalar
+    // inset preserves the screen anchor without retaining or measuring hidden cells.
+    this.tableOriginX = Math.max(0, this.tableOriginX + before.left - after.left);
+    this.tableOriginY = Math.max(0, this.tableOriginY + before.top - after.top);
+    editor.view.dom.style.paddingLeft = `${this.tableOriginX}px`;
+    editor.view.dom.style.paddingTop = `${(this.projection!.table!.window.geometry?.top ?? 0) + this.tableOriginY}px`;
+  }
   private tableScroll = () => {
     const table = this.projection?.table?.window,
       scroller = this.tableScroller;
@@ -325,18 +358,24 @@ export class DocumentSession {
     const geometry = this.service.tableHeights.viewport(
       key,
       table.rows,
-      scroller.scrollTop,
+      Math.max(0, scroller.scrollTop - this.tableOriginY),
       scroller.clientHeight,
     );
     const row = geometry.row;
     const column = Math.max(
       0,
-      Math.min(table.columns - 1, Math.floor(scroller.scrollLeft / this.tableColumnWidth)),
+      Math.min(
+        table.columns - 1,
+        Math.floor(Math.max(0, scroller.scrollLeft - this.tableOriginX) / this.tableColumnWidth),
+      ),
     );
     const lastRow = Math.min(table.rows - 1, row + geometry.heights.length - 1);
     const lastColumn = Math.min(
       table.columns - 1,
-      Math.floor((scroller.scrollLeft + scroller.clientWidth - 1) / this.tableColumnWidth),
+      Math.floor(
+        (Math.max(0, scroller.scrollLeft - this.tableOriginX) + scroller.clientWidth - 1) /
+          this.tableColumnWidth,
+      ),
     );
     if (
       [row, lastRow].every((r) =>
@@ -346,15 +385,26 @@ export class DocumentSession {
           ),
         ),
       )
-    )
+    ) {
+      this.rememberTableAnchor();
       return;
+    }
     const at = this.service.tableAddress(table.from, row, column);
     this.tableScrollRequest = {
       position: at.source,
-      top: scroller.scrollTop,
-      left: scroller.scrollLeft,
+      top: Math.max(0, scroller.scrollTop - this.tableOriginY),
+      left: Math.max(0, scroller.scrollLeft - this.tableOriginX),
     };
-    void this.show(this.active, false, at.source, false).finally(() => {
+    const active = this.projection!.table!.entries.find(
+      (e) => e.cell.from === this.selection.table?.head.cell,
+    )?.cell;
+    const preserve =
+      !!active &&
+      active.row >= row &&
+      active.row <= lastRow &&
+      active.column >= column &&
+      active.column <= lastColumn;
+    void this.show(this.active, false, at.source, preserve).finally(() => {
       this.tableScrollRequest = undefined;
     });
   };
@@ -367,7 +417,15 @@ export class DocumentSession {
     let before: { left: number; top: number } | undefined;
     if (anchor && scroller)
       try {
-        before = editor.view.coordsAtPos(editor.state.selection.head);
+        const geometry = table.window.geometry;
+        const cached = this.tableAnchor;
+        before =
+          geometry &&
+          cached &&
+          cached.point === JSON.stringify(this.selection.table?.head) &&
+          (geometry.font !== this.tableFont() || Math.abs(viewport - this.tableViewport) > 1)
+            ? cached
+            : editor.view.coordsAtPos(editor.state.selection.head);
       } catch {
         before = undefined;
       }
@@ -402,6 +460,11 @@ export class DocumentSession {
         this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, size);
       }
     }
+    editor.view.dom.style.paddingLeft = `${this.tableOriginX}px`;
+    editor.view.dom.style.paddingTop = `${(table.window.geometry?.top ?? table.window.cells[0].row * 41) + this.tableOriginY}px`;
+    editor.view.dom.style.paddingBottom = `${scroller?.clientHeight ?? 0}px`;
+    editor.view.dom.style.paddingRight = `${this.tableViewport}px`;
+    editor.view.dom.style.width = `${table.window.columns * this.tableColumnWidth + this.tableOriginX + this.tableViewport}px`;
     const nativeTable = editor.view.dom.querySelector('table');
     if (
       nativeTable &&
@@ -415,12 +478,23 @@ export class DocumentSession {
           this.resizeTable(this.tableViewport);
       });
       this.tableMeasurements.observe(nativeTable);
+      this.tableFontObserver?.disconnect();
+      this.tableFontObserver = new MutationObserver(() => {
+        if (
+          !this.pointerSelecting &&
+          !editor.isDestroyed &&
+          this.editor === editor &&
+          this.projection?.table?.window.geometry?.font !== this.tableFont()
+        )
+          this.resizeTable(this.tableViewport);
+      });
+      this.tableFontObserver.observe(editor.view.dom, {
+        attributes: true,
+        attributeFilter: ['style', 'class'],
+      });
     }
-    if (before && scroller) {
-      const after = editor.view.coordsAtPos(editor.state.selection.head);
-      scroller.scrollLeft += after.left - before.left;
-      scroller.scrollTop += after.top - before.top;
-    }
+    if (before && scroller) this.preserveTableAnchor(before);
+    this.rememberTableAnchor();
     if (scroller && !this.tableScroller) {
       this.tableScroller = scroller;
       scroller.addEventListener('scroll', this.tableScroll);
@@ -537,7 +611,7 @@ export class DocumentSession {
         let scroller = this.host.parentElement;
         while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY))
           scroller = scroller.parentElement;
-        const before = scroller ? editor.view.coordsAtPos(editor.state.selection.head).top : 0;
+        const before = scroller ? editor.view.coordsAtPos(editor.state.selection.head) : undefined;
         this.projection = next;
         this.windowEnd = window.to;
         this.suppress = true;
@@ -561,9 +635,14 @@ export class DocumentSession {
         } finally {
           this.suppress = false;
         }
-        if (scroller)
-          scroller.scrollTop += editor.view.coordsAtPos(editor.state.selection.head).top - before;
         this.resizeTable(this.tableViewport, false);
+        if (scroller && before) {
+          if (next.table) this.preserveTableAnchor(before);
+          else
+            scroller.scrollTop +=
+              editor.view.coordsAtPos(editor.state.selection.head).top - before.top;
+        }
+        this.rememberTableAnchor();
         this.error = '';
         this.changed();
         return true;
@@ -1261,6 +1340,13 @@ export class DocumentSession {
       maxSourceContextBytes: this.maxSourceContextBytes,
       tableColumnWidth: this.tableColumnWidth,
       tableCells: this.projection?.table?.entries.length ?? 0,
+      tableAnchorStateBytes: bytes(
+        JSON.stringify({
+          anchor: this.tableAnchor,
+          originX: this.tableOriginX,
+          originY: this.tableOriginY,
+        }),
+      ),
       tableGeometryBytes: bytes(JSON.stringify(this.projection?.table?.window.geometry ?? {})),
       maxTableGeometryReadBytes: this.service.tableHeights.maxReadBytes,
       maxTableGeometryWriteBytes: this.service.tableHeights.maxWriteBytes,
@@ -1385,6 +1471,7 @@ export class DocumentSession {
   destroy() {
     this.tableResize?.disconnect();
     this.tableMeasurements?.disconnect();
+    this.tableFontObserver?.disconnect();
     this.tableScroller?.removeEventListener('scroll', this.tableScroll);
     this.navigation++;
     this.host.removeEventListener('pointerdown', this.pointerDown);
