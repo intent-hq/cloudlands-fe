@@ -179,6 +179,7 @@ export interface SaveAgentSessionOptions {
   allowTruncation?: boolean;
   specialistUpdate?: {
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   };

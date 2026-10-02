@@ -457,6 +457,7 @@ export class UnifiedAgentFactory {
           normalized.skipInitialPrompt,
           normalized.nameExplicitlySet,
           normalized.placement,
+          normalized.rememberSpecialist,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
         // A late acknowledgement belongs to the original connection, not the
@@ -715,6 +716,7 @@ export class UnifiedAgentFactory {
     return {
       name: normalizedName,
       placement: config.placement,
+      rememberSpecialist: config.rememberSpecialist,
       nameExplicitlySet: config.nameExplicitlySet, // Wire `nameExplicitlySet` — false marks a generated placeholder name
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
@@ -770,6 +772,7 @@ export class UnifiedAgentFactory {
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
     placement?: import('$shared/types/agent-node').AgentPlacement,
+    rememberSpecialist?: boolean,
   ): Promise<{
     success: boolean;
     agentId?: string;
@@ -800,7 +803,8 @@ export class UnifiedAgentFactory {
         // Maps to wire `specialistId` (PROTOCOL §5.5) — the daemon persists the
         // session specialist from the top-level param only; `metadata.specialist`
         // is NOT harvested, so it must be lifted onto the request here.
-        specialist: agent.metadata?.specialist,
+        specialist: agent.metadata?.specialist ?? (rememberSpecialist ? null : undefined),
+        ...(rememberSpecialist !== undefined ? { rememberSpecialist } : {}),
         metadata: agent.metadata,
         workspaceContext: workspaceContext as Record<string, unknown> | undefined,
       };

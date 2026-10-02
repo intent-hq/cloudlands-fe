@@ -27,6 +27,7 @@ import { selectContextSelectedModel } from '../../provider-catalog/workspace-cat
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { selectEffectiveDefaultProviderId } from '../../provider-catalog/provider-catalog-selectors';
 import {
+  filterPickableSpecialists,
   selectDefaultSpecialistId,
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
@@ -39,6 +40,7 @@ import {
   selectWorkspaceActionContext,
   selectWorkspaceById,
 } from '../../workspace/workspace-selectors';
+import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import { setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
 import { createChiefVirtualWorkspace } from '../chief-virtual-workspace';
@@ -205,68 +207,66 @@ function* openCreatedAgent(
 
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
   const [wsId, agentType, options] = action.payload;
-  if (yield* call(refusedForCollaborator, wsId)) return;
-  const workspace = yield* call(validateWorkspace, wsId);
-  if (!workspace) return;
-  const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-  const model = yield* selectContextSelectedModel.effect(wsId);
-  const activeProvider = yield* selectEffectiveDefaultProviderId.effect(wsId);
-  const name = generateSpecialistAgentName(
-    'Agent',
-    agents.map((agent) => agent.name).filter((value): value is string => !!value),
-  );
-  try {
-    const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
-      name,
-      nameExplicitlySet: false,
-      workspaceId: WorkspaceId(wsId),
-      // Store selections are bare model ids paired with the active provider —
-      // the explicit triple rides the request as-is (no model-string parsing).
-      model,
-      provider: activeProvider,
-      agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
-      source: 'keyboard-shortcut',
-    });
-    if (!result.success || !result.agent) {
-      logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, factoryFailure(result));
-      return;
-    }
-    yield* call(registerCreatedAgent, wsId, result.agent, agents);
-    yield* put(
-      openAgentTabRequested(wsId, {
-        agentId: result.agent.id,
-        panelLayoutId: options?.panelLayoutId,
-        targetPanelId: options?.panelId,
-      }),
-    );
-  } catch (error) {
-    logger.error('Failed to create agent', { workspaceId: wsId, error });
-    yield* call(showCreationError, error);
-  }
+  yield* call(createManualAgent, wsId, undefined, options, agentType);
 }
 
 function* createSpecialistAgent(
   action: ReturnType<typeof createAgentWithSpecialistRequested>,
 ): SagaGenerator<void> {
   const [wsId, specialistId, options] = action.payload;
+  yield* call(createManualAgent, wsId, specialistId, options);
+}
+
+function* createManualAgent(
+  wsId: string,
+  selectedSpecialistId: string | null | undefined,
+  options?: { panelLayoutId?: string; panelId?: string },
+  agentType?: string,
+): SagaGenerator<void> {
   if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
-  const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-  // General (no specialist): the store's bare model selection paired with the
-  // active provider. A specialist swaps in its effective coding agent and its
-  // explicit model override (undefined ⇒ the daemon resolves the default in
-  // that provider's context).
-  let model: string | undefined = yield* selectContextSelectedModel.effect(wsId);
-  let provider: string = yield* selectEffectiveDefaultProviderId.effect(wsId);
-  let behaviorPrompt: string | undefined;
-  let reasoningEffort: string | undefined;
-  let baseName = 'Agent';
-  if (specialistId) {
-    const specialists = yield* selectSpecialists.effect(wsId);
-    const specialist = specialists.find((candidate) => candidate.id === specialistId);
-    if (specialist) {
+  const context = yield* selectWorkspaceActionContext.effect(wsId);
+  try {
+    let preferred = selectedSpecialistId;
+    if (preferred === undefined && wsId !== CHIEF_WORKSPACE_ID) {
+      // Read the daemon on every manual creation: reloads, other clients and
+      // workspace navigation must not reuse a stale local preference.
+      try {
+        const preference = yield* call(
+          backendRequest<{ specialistId?: string | null }>,
+          'agent.getCreationPreferences',
+          { workspaceId: wsId },
+        );
+        preferred = preference?.specialistId;
+      } catch (error) {
+        // Older daemons have no memory endpoint. Other errors must surface,
+        // rather than silently creating a different specialist.
+        if ((error as { rpcCode?: number })?.rpcCode !== -32601) throw error;
+      }
+    }
+    if ((yield* selectWorkspaceActionContext.effect(wsId)) !== context) return;
+    const available = yield* selectSpecialists.effect(wsId);
+    const authenticated = yield* selectGitHubAuthIsAuthenticated.effect();
+    const specialists = filterPickableSpecialists(available, authenticated);
+    const defaultId = yield* selectDefaultSpecialistId.effect(wsId);
+    const specialist =
+      preferred === null
+        ? undefined
+        : (specialists.find((candidate) => candidate.id === preferred) ??
+          specialists.find((candidate) => candidate.id === defaultId));
+    const specialistId = specialist?.id;
+    const agents = yield* selectAllWorkspaceAgents.effect(wsId);
+    // General (no specialist): the store's bare model selection paired with the
+    // active provider. A specialist swaps in its effective coding agent and its
+    // explicit model override (undefined ⇒ the daemon resolves the default in
+    // that provider's context).
+    let model: string | undefined = yield* selectContextSelectedModel.effect(wsId);
+    let provider: string = yield* selectEffectiveDefaultProviderId.effect(wsId);
+    let behaviorPrompt: string | undefined;
+    let reasoningEffort: string | undefined;
+    let baseName = 'Agent';
+    if (specialistId && specialist) {
       baseName = specialist.name;
       provider = yield* selectEffectiveCodingAgent.effect(specialistId, wsId);
       // Legacy boundary: an explicit frontmatter model may still be a
@@ -279,22 +279,21 @@ function* createSpecialistAgent(
       behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId, wsId);
       reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId, wsId);
     }
-  }
-  const name = generateSpecialistAgentName(
-    baseName,
-    agents.map((agent) => agent.name).filter((value): value is string => !!value),
-  );
-  try {
+    const name = generateSpecialistAgentName(
+      baseName,
+      agents.map((agent) => agent.name).filter((value): value is string => !!value),
+    );
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
       name,
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
       model,
       provider,
-      agentType: createAgentTypeId('chat'),
+      agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       behaviorPrompt,
       reasoningEffort,
-      source: 'specialist-picker',
+      source: selectedSpecialistId === undefined ? 'keyboard-shortcut' : 'specialist-picker',
+      rememberSpecialist: selectedSpecialistId !== undefined ? true : undefined,
       metadata: specialistId ? { specialist: specialistId } : undefined,
     });
     if (!result.success || !result.agent) {
@@ -302,6 +301,7 @@ function* createSpecialistAgent(
       yield* call(showCreationError, factoryFailure(result));
       return;
     }
+    if ((yield* selectWorkspaceActionContext.effect(wsId)) !== context) return;
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
     yield* put(
       openAgentTabRequested(wsId, {
