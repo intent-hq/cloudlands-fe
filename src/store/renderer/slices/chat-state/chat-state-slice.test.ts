@@ -38,6 +38,10 @@ import {
   pendingProposalRecoveryRequested,
   pendingProposalRecoverySettled,
   pendingProposalRecoveryPruned,
+  previousUserMessageLoadConsumed,
+  previousUserMessageLoadReleased,
+  previousUserMessageLoadRequested,
+  previousUserMessageLoadSettled,
   chatSwitchBackRevealTimedOut,
   messageBlockHydrationRequested,
   messageBlockHydrated,
@@ -62,6 +66,7 @@ import {
   selectTranscriptHydratedOnce,
   selectPendingQuestionRecovery,
   selectPendingProposalRecovery,
+  selectPreviousUserMessageLoad,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -1601,6 +1606,75 @@ describe('chatState selectors', () => {
       expect(agent.scrollbackOlderToken).toBeNull();
       expect(agent.scrollbackGapToken).toBeNull();
       expect(agent.historySeekUnsupported).toBe(true);
+    });
+  });
+
+  describe('previous user message load state', () => {
+    const select = (state: typeof initialState) =>
+      selectPreviousUserMessageLoad.select(asStoreState(state), AGENT);
+
+    it('correlates request, outcome, consume and release by requestId', () => {
+      let state = chatStateReducer(
+        initialState,
+        previousUserMessageLoadRequested('ws-1', AGENT, 'req-1', 'msg-10'),
+      );
+      expect(select(state)).toEqual({
+        requestId: 'req-1',
+        currentMessageId: 'msg-10',
+        status: 'loading',
+      });
+      state = chatStateReducer(state, scrollbackFetchStarted(AGENT, 'seek'));
+      state = chatStateReducer(
+        state,
+        previousUserMessageLoadSettled(AGENT, 'req-1', 'found', 'msg-8'),
+      );
+      expect(select(state)).toEqual({
+        requestId: 'req-1',
+        currentMessageId: 'msg-10',
+        status: 'found',
+        targetId: 'msg-8',
+        epoch: 1,
+      });
+      expect(chatStateReducer(state, previousUserMessageLoadSettled(AGENT, 'req-1', 'error'))).toBe(
+        state,
+      );
+      state = chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-1'));
+      expect(select(state)?.consumed).toBe(true);
+      expect(chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-1'))).toBe(state);
+      state = chatStateReducer(state, previousUserMessageLoadReleased(AGENT, 'req-1'));
+      expect(select(state)).toBeUndefined();
+      expect(selectChatAgentState.select(asStoreState(state), AGENT).fetchingHistorySeek).toBe(
+        true,
+      );
+    });
+
+    it('ignores stale settle, consume and release from a superseded request', () => {
+      let state = chatStateReducer(
+        initialState,
+        previousUserMessageLoadRequested('ws-1', AGENT, 'req-old', 'msg-10'),
+      );
+      state = chatStateReducer(
+        state,
+        previousUserMessageLoadRequested('ws-1', AGENT, 'req-new', 'msg-11'),
+      );
+      const current = state;
+      state = chatStateReducer(state, previousUserMessageLoadSettled(AGENT, 'req-old', 'start'));
+      state = chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-old'));
+      state = chatStateReducer(state, previousUserMessageLoadReleased(AGENT, 'req-old'));
+      expect(state).toBe(current);
+      expect(chatStateReducer(state, previousUserMessageLoadConsumed(AGENT, 'req-new'))).toBe(
+        state,
+      );
+      state = chatStateReducer(
+        state,
+        previousUserMessageLoadSettled(AGENT, 'req-new', 'start', 'ignored'),
+      );
+      expect(select(state)).toEqual({
+        requestId: 'req-new',
+        currentMessageId: 'msg-11',
+        status: 'start',
+        epoch: 0,
+      });
     });
   });
 
