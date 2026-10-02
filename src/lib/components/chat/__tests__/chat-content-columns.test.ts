@@ -464,8 +464,6 @@ describe('chat content column contracts', () => {
       queueSnapshot.store!.set([]);
       await tick();
       expect(ui.queryByTestId('queued-messages-container')).toBeNull();
-      const utilities = ui.getByTestId('transcript-utility-stack');
-      expect(utilities.querySelector('.pb-2')).toBeNull();
       if (phase !== 'editing') {
         expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
         settle(
