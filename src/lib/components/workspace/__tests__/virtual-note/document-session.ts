@@ -984,7 +984,12 @@ export class DocumentSession {
           // Do not ask native text geometry to measure an invisible viewport.
           if (actual && JSON.stringify(actual) === JSON.stringify(anchorPoint)) {
             const caret = this.editor.view.coordsAtPos(this.editor.state.selection.head);
-            if (caret.top >= viewport.top && caret.bottom <= viewport.top + scroller.clientHeight)
+            if (
+              caret.top >= viewport.top &&
+              caret.bottom <= viewport.top + scroller.clientHeight &&
+              caret.left >= viewport.left &&
+              caret.right <= viewport.left + scroller.clientWidth
+            )
               restoreAnchor = { left: caret.left, top: caret.top };
           }
         }
