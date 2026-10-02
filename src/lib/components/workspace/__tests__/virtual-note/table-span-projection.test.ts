@@ -73,6 +73,13 @@ it('admits one bounded logical owner continuation at vertical span origin, inter
       const continuation = received.cells.filter((c) => c.from === owner.from);
       expect(continuation).toHaveLength(1);
       expect(continuation[0].attrs!.rowspan).toBe(120);
+      // A continuation at the logical row must expose that owner's corresponding
+      // native paragraph, not replay the first seven blocks at every position.
+      expect(continuation[0].blocks!.some((block) => block.index === row - 1)).toBe(true);
+      for (const block of continuation[0].blocks!) {
+        expect(continuation[0].runs.filter((run) => run.block === block.index).map((run) => run.text).join(''))
+          .toBe(full.child(1).firstChild!.child(block.index).textContent);
+      }
       expect(table.firstChild!.firstChild!.attrs.rowspan).toBe(count);
       expect(projection.entries.filter((e) => e.cell.from === owner.from)).toHaveLength(1);
       for (let r = 0; r < count; r++) {
