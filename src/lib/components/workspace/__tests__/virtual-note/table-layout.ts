@@ -16,6 +16,18 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
   editor.view.dom.style.minHeight = `${window.geometry?.total ?? window.rows * 41}px`;
   editor.view.dom.style.boxSizing = 'border-box';
   editor.view.dom.style.paddingTop = `${window.geometry?.top ?? window.cells[0].row * 41}px`;
+  // The projection canvas owns scrolling and logical column offsets. Native
+  // prose breakout centering changes by half a collapsed border after updates.
+  // Keep its wrapper in the same coordinate system as the admitted cells.
+  Object.assign(table.parentElement!.style, {
+    position: 'static',
+    left: 'auto',
+    transform: 'none',
+    width: '100%',
+    minWidth: '0',
+    maxWidth: 'none',
+    overflow: 'visible',
+  });
   table.style.marginLeft = `${firstColumn * width}px`;
   table.style.tableLayout = 'fixed';
   table.style.width = `${width * columns}px`;
