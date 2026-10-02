@@ -1,11 +1,17 @@
-import { compactRunContext, deriveTableRuns, type RunContext } from './table-run-context';
+import {
+  compactRunContext,
+  compactParagraphContexts,
+  deriveTableRuns,
+  type RunContext,
+  type ParagraphRunContext,
+} from './table-run-context';
 import type { TableFragment, TableWindow } from './table-source';
 
 // Renderer cells retain this tuple, not an expanded object plus an encoded copy.
 // Plain text provenance is derived from its source interval when requested.
 type Extra = Partial<
   Omit<TableFragment, 'row' | 'column' | 'from' | 'to' | 'body' | 'raw' | 'align'>
-> & { syntax?: RunContext };
+> & { syntax?: RunContext; paragraphSyntax?: ParagraphRunContext[] };
 type CellData = [number, number, number, number, number, string, (string | null)?, Extra?];
 class PackedCell implements TableFragment {
   constructor(readonly data: CellData) {}
@@ -40,6 +46,11 @@ class PackedCell implements TableFragment {
     return this.data[7]?.end ?? this.body + this.raw.length;
   }
   get runs() {
+    const paragraphs = this.data[7]?.paragraphSyntax;
+    if (paragraphs)
+      return paragraphs.flatMap(([first, last, context]) =>
+        deriveTableRuns(this.raw.slice(first - this.first, last - this.first), first, context),
+      );
     const context = this.data[7]?.syntax;
     if (context) return deriveTableRuns(this.raw, this.first, context);
     return (
@@ -95,7 +106,11 @@ function packTableCell(c: TableFragment): TableFragment {
   if (!plain && (c.runs.length || c.raw)) {
     const syntax = compactRunContext(c);
     if (syntax) extra.syntax = syntax;
-    else extra.runs = c.runs;
+    else {
+      const paragraphs = compactParagraphContexts(c);
+      if (paragraphs) extra.paragraphSyntax = paragraphs;
+      else extra.runs = c.runs;
+    }
   }
   for (const key of ['span', 'blocks', 'blockCount', 'attrs', 'nodeType'] as const)
     if (c[key] !== undefined) Object.assign(extra, { [key]: c[key] });

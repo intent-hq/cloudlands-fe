@@ -65,3 +65,24 @@ export function compactRunContext(cell: TableFragment): RunContext | undefined {
       }
   return undefined;
 }
+
+export type ParagraphRunContext = [number, number, RunContext];
+/** Each admitted paragraph gets only its bounded source interval and boundary
+ * syntax. Empty paragraphs stay in the separate structural block list. */
+export function compactParagraphContexts(cell: TableFragment): ParagraphRunContext[] | undefined {
+  if ((cell.blocks?.length ?? 0) < 2) return undefined;
+  const parts: ParagraphRunContext[] = [];
+  const restored: TableRun[] = [];
+  for (const block of cell.blocks!) {
+    const runs = cell.runs.filter((r) => r.block === block.index);
+    if (!runs.length) continue;
+    const first = runs[0].from,
+      last = runs.at(-1)!.to;
+    const raw = cell.raw.slice(first - cell.first, last - cell.first);
+    const context = compactRunContext({ ...cell, first, last, raw, runs, blocks: undefined });
+    if (!context) return undefined;
+    parts.push([first, last, context]);
+    restored.push(...deriveTableRuns(raw, first, context, false));
+  }
+  return signature(restored) === signature(cell.runs) ? parts : undefined;
+}

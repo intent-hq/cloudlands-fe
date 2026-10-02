@@ -77,3 +77,44 @@ it('derives dense canonical marks from bounded source without repeating every ma
   expect(restored.cells[0].runs).toEqual(original.cells[0].runs);
   expect(restored.cells[0].raw).toBe(raw);
 });
+
+it('pages dense native paragraph contexts with exact offsets, marks and empty blocks', () => {
+  const first = '**bold** _italic_ `code` \\| \\\\ '.repeat(95);
+  const raw = first + 'BOUNDARY ' + first;
+  const original = cloneTableWindow(fixture(raw));
+  const cell = original.cells[0],
+    seam = cell.first + first.length;
+  let offset = 1000;
+  cell.runs = tableRuns(raw, cell.first)
+    .flatMap((run) => {
+      if (run.from < seam && run.to > seam) {
+        const split = seam - run.from;
+        return [
+          { ...run, to: seam, text: run.text.slice(0, split) },
+          { ...run, from: seam, text: run.text.slice(split) },
+        ];
+      }
+      return [run];
+    })
+    .map((run) => {
+      const block = run.from < seam ? 0 : 2;
+      if (run.from === seam) offset = 0;
+      const mapped = { ...run, offset, block };
+      offset += run.text.length;
+      return mapped;
+    });
+  cell.blocks = [
+    { index: 0, from: cell.first, to: seam },
+    { index: 1, from: seam, to: seam },
+    { index: 2, from: seam, to: cell.last },
+  ];
+  cell.blockCount = 3;
+  const packed = packTableWindow(original);
+  const pages = encodeTablePages(packed);
+  expect(pages.length).toBeLessThanOrEqual(4);
+  for (const page of pages) expect(bytes(JSON.stringify(page))).toBeLessThanOrEqual(4096);
+  expect(bytes(JSON.stringify(packed)) + bytes(raw)).toBeLessThanOrEqual(16384);
+  const restored = decodeTablePages(JSON.parse(JSON.stringify(pages)), 7);
+  expect(restored.cells[0].runs).toEqual(cell.runs);
+  expect(restored.cells[0].blocks).toEqual(cell.blocks);
+});
