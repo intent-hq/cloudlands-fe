@@ -1251,6 +1251,8 @@ export class DocumentSession {
               if (tableBatch)
                 for (const changed of tableBatch.changedCells)
                   if (changed.inline) this.service.stageTableInline(changed.inline, history);
+                  else if (changed.paragraphs)
+                    this.service.stageTableParagraphs(changed.paragraphs, history);
                   else this.service.stageTableCell(changed.cell, changed.node, history);
               this.service.stageProjection(
                 splices,

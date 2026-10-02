@@ -15,7 +15,13 @@ import {
   type TableRectangle,
 } from './table-source';
 import type { JSONContent } from '@tiptap/core';
-import { patchTableCell, patchTableInline, type TableInlineWrite } from './table-state';
+import {
+  patchTableCell,
+  patchTableInline,
+  patchTableParagraphs,
+  type TableInlineWrite,
+  type TableParagraphWrite,
+} from './table-state';
 import type { TableStructure } from './table-projection';
 import { tableCodeChanges, type TableCodeEdit } from './table-code';
 export const LIMITS = {
@@ -127,6 +133,29 @@ export class SourceJournal {
     );
     this.stageTableState(`cell:${received.cell}`, JSON.stringify(merged), history);
     this.log('table-inline-write', received.cell, payload);
+  }
+  maxTableParagraphTransientBytes = 0;
+  stageTableParagraphs(edit: TableParagraphWrite, history = true) {
+    if (edit.revision !== this.revision) throw new Error('Stale table paragraph write');
+    const encoded = JSON.stringify(edit),
+      payload = bytes(encoded);
+    if (payload > LIMITS.request) throw new Error('Table paragraph write exceeds budget');
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, payload);
+    // Serialized-size accounting for caller object + encoded request + decoded
+    // backing request, NOT a JavaScript heap measurement.
+    this.maxTableParagraphTransientBytes = Math.max(
+      this.maxTableParagraphTransientBytes,
+      payload * 3,
+    );
+    const received: TableParagraphWrite = JSON.parse(encoded);
+    const prior = this.tableStates.get(`cell:${received.cell}`);
+    const merged = patchTableParagraphs(
+      this.slice(received.body, received.end),
+      prior ? JSON.parse(prior) : undefined,
+      received,
+    );
+    this.stageTableState(`cell:${received.cell}`, JSON.stringify(merged), history);
+    this.log('table-paragraph-write', received.cell, payload);
   }
   stageTableCell(fragment: TableFragment, node: JSONContent, history = true) {
     const payload = bytes(JSON.stringify({ fragment, node }));
@@ -1493,6 +1522,7 @@ export class SourceJournal {
         (n, index) => n + bytes(JSON.stringify(index.tables)),
         0,
       ),
+      maxTableParagraphTransientBytes: this.maxTableParagraphTransientBytes,
       backingTableMetadataBytes: [...this.tableStates.values()].reduce(
         (n, value) => n + bytes(value),
         0,

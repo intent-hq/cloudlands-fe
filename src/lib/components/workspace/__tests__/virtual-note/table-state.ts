@@ -14,6 +14,72 @@ export type TableInlineWrite = {
   content: JSONContent[];
 };
 
+export type TableParagraphWrite = Omit<TableInlineWrite, 'content'> & {
+  lastBlock: number;
+  paragraphs: JSONContent[];
+};
+
+/** Mock backing only: the request contains changed paragraph boundaries/inline
+ * content, never the unchanged prefix or suffix of an oversized native cell. */
+export function patchTableParagraphs(
+  source: string,
+  existing: JSONContent | undefined,
+  edit: TableParagraphWrite,
+) {
+  const original: JSONContent = existing ?? {
+    type: edit.nodeType,
+    attrs: edit.attrs,
+    content: [
+      {
+        type: 'paragraph',
+        content: tableRuns(source, edit.body).map((run) => ({
+          type: run.hardBreak ? 'hardBreak' : 'text',
+          ...(run.hardBreak ? {} : { text: run.text }),
+          marks: run.marks,
+        })),
+      },
+    ],
+  };
+  const first = original.content?.[edit.block],
+    last = original.content?.[edit.lastBlock];
+  const total = (node: JSONContent) =>
+    (node.content ?? []).reduce((n, child) => n + length(child), 0);
+  if (
+    !first ||
+    !last ||
+    edit.lastBlock < edit.block ||
+    edit.from < 0 ||
+    edit.to < 0 ||
+    edit.from > total(first) ||
+    edit.to > total(last) ||
+    (edit.block === edit.lastBlock && edit.to < edit.from) ||
+    !edit.paragraphs.length ||
+    edit.paragraphs.some(
+      (p) =>
+        p.type !== 'paragraph' ||
+        (p.content ?? []).some((n) => n.type !== 'text' && n.type !== 'hardBreak'),
+    )
+  )
+    throw new Error('Invalid native table paragraph range');
+  const paragraphs = structuredClone(edit.paragraphs);
+  paragraphs[0].content = join([
+    ...slice(first.content ?? [], 0, edit.from),
+    ...(paragraphs[0].content ?? []),
+  ]);
+  paragraphs.at(-1)!.content = join([
+    ...(paragraphs.at(-1)!.content ?? []),
+    ...slice(last.content ?? [], edit.to, Infinity),
+  ]);
+  return {
+    ...original,
+    content: [
+      ...original.content!.slice(0, edit.block),
+      ...paragraphs,
+      ...original.content!.slice(edit.lastBlock + 1),
+    ],
+  };
+}
+
 const length = (node: JSONContent) => (node.type === 'hardBreak' ? 1 : (node.text?.length ?? 0));
 function slice(nodes: JSONContent[], from: number, to: number) {
   let cursor = 0;

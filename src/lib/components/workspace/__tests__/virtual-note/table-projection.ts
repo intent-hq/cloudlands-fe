@@ -1,6 +1,6 @@
 import { tableInlineSourcePatch } from './table-inline-source';
 import type { JSONContent } from '@tiptap/core';
-import { DOMSerializer, Mark, type Node as PMNode } from '@tiptap/pm/model';
+import { DOMSerializer, Fragment, Mark, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection, type Transaction } from '@tiptap/pm/state';
 import { CellSelection } from '@tiptap/pm/tables';
 import { ReplaceStep, type Step } from '@tiptap/pm/transform';
@@ -9,7 +9,7 @@ import type { SourceProjection } from './source-projection';
 import type { Splice, TablePoint, Selection } from './source-journal';
 import { scanTables, type TableWindow, type TableFragment } from './table-source';
 import type { TableCodeEdit } from './table-code';
-import type { TableInlineWrite } from './table-state';
+import type { TableInlineWrite, TableParagraphWrite } from './table-state';
 
 const size = (node: JSONContent): number =>
   node.type === 'text'
@@ -52,6 +52,7 @@ export class TableProjection {
     cell: TableFragment;
     node: JSONContent;
     inline?: TableInlineWrite;
+    paragraphs?: TableParagraphWrite;
   }> = [];
   constructor(readonly window: TableWindow) {
     const table: JSONContent = { type: 'table', content: [] };
@@ -335,7 +336,57 @@ export class TableProjection {
               content: step.slice.content.content.map((n) => n.toJSON()),
             }
           : undefined;
-      this.changedCells.push({ cell: entry.cell, node: after.toJSON(), inline });
+      const firstParagraph =
+        step instanceof ReplaceStep
+          ? this.paragraphs.find(
+              (p) => p.cell.from === entry.cell.from && step.from >= p.pm && step.from <= p.end,
+            )
+          : undefined;
+      const lastParagraph =
+        step instanceof ReplaceStep
+          ? this.paragraphs.find(
+              (p) => p.cell.from === entry.cell.from && step.to >= p.pm && step.to <= p.end,
+            )
+          : undefined;
+      const paragraphSlice =
+        step instanceof ReplaceStep &&
+        step.slice.openStart === 1 &&
+        step.slice.openEnd === 1 &&
+        step.slice.content.content.every((n) => n.type.name === 'paragraph')
+          ? step.slice.content.content.map((n) => n.toJSON())
+          : step instanceof ReplaceStep &&
+              !step.slice.openStart &&
+              !step.slice.openEnd &&
+              step.slice.content.content.every((n) => n.isText || n.type.name === 'hardBreak')
+            ? [{ type: 'paragraph', content: step.slice.content.content.map((n) => n.toJSON()) }]
+            : undefined;
+      const paragraphs: TableParagraphWrite | undefined =
+        !inline && firstParagraph && lastParagraph && paragraphSlice && step instanceof ReplaceStep
+          ? {
+              revision: this.window.revision,
+              cell: entry.cell.from,
+              body: entry.cell.body,
+              end: entry.cell.end,
+              nodeType: after.type.name,
+              attrs: after.attrs,
+              block: firstParagraph.block,
+              lastBlock: lastParagraph.block,
+              from: firstParagraph.offset + step.from - firstParagraph.pm,
+              to: lastParagraph.offset + step.to - lastParagraph.pm,
+              paragraphs: paragraphSlice,
+            }
+          : undefined;
+      this.changedCells.push({ cell: entry.cell, node: after.toJSON(), inline, paragraphs });
+      const flatten = (cell: PMNode) => {
+        let content = Fragment.empty;
+        cell.forEach((p) => {
+          content = content.append(p.content);
+        });
+        return content;
+      };
+      // Splitting/joining paragraph boundaries changes only session structure.
+      // Keep the original Markdown spelling when native inline content is equal.
+      if (paragraphs && flatten(before).eq(flatten(after))) continue;
       if (
         tr.steps.length === 1 &&
         tr.steps[0] instanceof ReplaceStep &&
