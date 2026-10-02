@@ -154,7 +154,9 @@ workspaceTasksReducer.with(
     return setWorkspaceState(state, workspaceId, {
       ...ws,
       tasks: createCollection<WorkspaceTask, 'id'>('id', tasks),
-      stats,
+      // An invalidated read may finish after a newer workspace summary.
+      // Keep that aggregate, especially when no demand remains to re-read tasks.
+      stats: ws.revision === ws.readRevision ? stats : ws.stats,
       loading: false,
       error: null,
       initialized: true,

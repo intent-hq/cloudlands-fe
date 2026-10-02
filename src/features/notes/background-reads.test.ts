@@ -799,6 +799,45 @@ describe('background reads through the real store, sagas, clients and event brid
       },
     );
 
+    it.each(['summary first', 'task list first'] as const)(
+      'keeps canonical progress after an invalidated task read finishes with no demand: %s',
+      async (order) => {
+        const pendingTasks = deferred<{ tasks: []; stats: typeof running }>();
+        const pendingSummary = deferred<{ workspace: Workspace }>();
+        backend.onRequest('task.list', () => pendingTasks.promise);
+        backend.onRequest('workspace.get', () => pendingSummary.promise);
+        store.dispatch(acquireWorkspaceTasksDemand(WS, 'closing-chat'));
+        await settle();
+        taskChange();
+        store.dispatch(releaseWorkspaceTasksDemand(WS, 'closing-chat'));
+        await settle();
+        expect(reads('task.list')).toEqual([{ method: 'task.list', params: { workspaceId: WS } }]);
+        expect(reads('workspace.get')).toEqual([
+          { method: 'workspace.get', params: { workspaceId: WS } },
+        ]);
+        if (order === 'summary first') {
+          pendingSummary.resolve({ workspace: workspace(WS, halfDone) });
+          await settle();
+          expect(progress()).toEqual(halfDone);
+          pendingTasks.resolve({ tasks: [], stats: running });
+        } else {
+          pendingTasks.resolve({ tasks: [], stats: running });
+          await settle();
+          pendingSummary.resolve({ workspace: workspace(WS, halfDone) });
+        }
+        await vi.advanceTimersByTimeAsync(2000);
+        expect(progress()).toEqual(halfDone);
+        expect(hudProgress()).toEqual(halfDone);
+        expect(store.state.workspaceTasks.byWorkspaceId[WS]).toMatchObject({
+          loading: false,
+          stale: true,
+          demandIds: [],
+        });
+        expect(reads('task.list')).toHaveLength(1);
+        expect(reads('workspace.get')).toHaveLength(1);
+      },
+    );
+
     it.each(['note:created', 'note:updated', 'note:deleted', 'task:created'])(
       'refreshes daemon counters on %s alone without inferring stats from task rows',
       async (type) => {
