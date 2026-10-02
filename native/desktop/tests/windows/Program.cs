@@ -65,6 +65,15 @@ static class Program {
         Require(identity.GetProperty("platform").GetString()=="windows","Wrong native platform");
         await peer.Call("acquire");
         using(var competitor=new Peer()) await competitor.Call("acquire",expectedError:"desktop-busy");
+        // Keep the original stdin OPEN with no further requests, as when Electron
+        // freezes. Native lease expiry must release both input and exclusivity.
+        await peer.Call("key",new {key="Shift",down=true});
+        await Observe(()=>(GetAsyncKeyState(0x10)&0x8000)!=0,"lease test holds Shift");
+        await Task.Delay(16000);
+        await Observe(()=>(GetAsyncKeyState(0x10)&0x8000)==0,"lease releases held input");
+        using(var afterExpiry=new Peer()) { await afterExpiry.Call("acquire"); await afterExpiry.Call("release"); }
+        await peer.Call("check",expectedError:"desktop-not-active");
+        await peer.Call("acquire");
         var layout=await peer.Call("layout");
         var screen=Screen.FromControl(target);
         var display=layout.EnumerateArray().Single(d=>d.GetProperty("displayId").GetString()==screen.DeviceName).Clone();
