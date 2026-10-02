@@ -1,3 +1,4 @@
+import { Lexer, type Token } from 'marked';
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Transform, type Step } from '@tiptap/pm/transform';
@@ -8,7 +9,12 @@ import { ListProjection } from './list-projection';
 import { TableProjection } from './table-projection';
 import type { TableWindow } from './table-source';
 
-export type Mark = { type: string; attrs?: Record<string, unknown> };
+export type Mark = {
+  type: string;
+  attrs?: Record<string, unknown>;
+  delimiter?: string;
+  range?: { from: number; to: number };
+};
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
 const key = (mark: Mark) => `${mark.type}:${mark.type === 'link' ? mark.attrs?.href : ''}`;
 export type InlineContext = {
@@ -23,8 +29,14 @@ export type InlineContext = {
   documentEnd?: boolean;
   table?: TableWindow;
 };
-export const openMark = (mark: Mark) => (mark.type === 'bold' ? '**' : '[');
-export const closeMark = (mark: Mark) => (mark.type === 'bold' ? '**' : `](${mark.attrs?.href})`);
+export const openMark = (mark: Mark) =>
+  mark.type === 'bold' ? '**' : mark.type === 'italic' ? (mark.delimiter ?? '*') : '[';
+export const closeMark = (mark: Mark) =>
+  mark.type === 'bold'
+    ? '**'
+    : mark.type === 'italic'
+      ? (mark.delimiter ?? '*')
+      : `](${mark.attrs?.href})`;
 const escape = (text: string) => text.replace(/[\\`*_[\]{}()#+.!>~-]/g, '\\$&');
 
 // Markdown strong delimiters cannot enclose boundary whitespace. Normalize only
@@ -208,7 +220,7 @@ export class SourceProjection {
     source = prefix + source + suffix;
     start -= prefix.length;
     let pm = 0;
-    const paragraphs = /([^]*?)(\n[ \t]+\n+|\n\n|$)/g;
+    const paragraphs = /([^]*?)(\n[ \t]+\n+|\n\n+|$)/g;
     let match: RegExpExecArray | null;
     while ((match = paragraphs.exec(source)) && match[0]) {
       const raw = match[1],
@@ -248,6 +260,43 @@ export class SourceProjection {
         }
         return -1;
       };
+      // Use the existing canonical inline lexer for italic delimiter flanking
+      // and escapes. Renderer input is still just this bounded paragraph; the
+      // full-source index-only pass remains separately accounted mock backing.
+      const italics = new Map<number, number>();
+      const indexItalics = (tokens: Token[], offset: number) => {
+        for (const token of tokens) {
+          if (token.type === 'em') italics.set(offset, offset + token.raw.length);
+          if (token.type === 'em' || token.type === 'strong')
+            indexItalics(token.tokens!, offset + (token.type === 'em' ? 1 : 2));
+          else if (token.type === 'link') indexItalics(token.tokens!, offset + 1);
+          offset += token.raw.length;
+        }
+      };
+      if (raw.includes('_') || raw.includes('*'))
+        indexItalics(Lexer.lexInline(raw, { gfm: true }), 0);
+      for (const mark of [...(context?.before ?? []), ...(context?.after ?? [])]) {
+        if (mark.type !== 'italic' || !mark.range) continue;
+        let open = mark.range.from - base - 1;
+        let end = mark.range.to - base + 1;
+        if (mark.range.from <= this.start && match.index === 0) {
+          open = 0;
+          for (const before of context?.before ?? []) {
+            if (before.type === 'italic' && before.range?.from === mark.range.from) break;
+            open += openMark(before).length;
+          }
+        }
+        if (mark.range.to >= this.start + this.source.length) {
+          end = this.start + this.source.length - base;
+          for (const after of (context?.after ?? []).slice().reverse()) {
+            end += closeMark(after).length;
+            if (after.type === 'italic' && after.range?.to === mark.range.to) break;
+          }
+        }
+        // Cropped whitespace does not become an actual Markdown delimiter edge.
+        // These two scalar bounds come from the revisioned backing token index.
+        if (open >= 0 && end <= raw.length) italics.set(open, end);
+      }
       const parse = (from: number, to: number, stack: Mark[]) => {
         for (let i = from; i < to;) {
           if (
@@ -263,7 +312,13 @@ export class SourceProjection {
             contentTo = i,
             end = i;
           let mark: Mark | undefined;
-          if (raw.startsWith('**', i)) {
+          const italicEnd = italics.get(i);
+          if (italicEnd !== undefined && italicEnd <= to) {
+            contentFrom = i + 1;
+            contentTo = italicEnd - 1;
+            end = italicEnd;
+            mark = { type: 'italic', delimiter: raw[i] };
+          } else if (raw.startsWith('**', i)) {
             const close = closing('**', i + 2, to);
             if (close > i + 2) {
               contentFrom = i + 2;
@@ -304,11 +359,27 @@ export class SourceProjection {
       parse(0, raw.length, []);
       if (!indexOnly)
         this.positions.set(pm, Math.min(this.start + this.source.length, base + raw.length));
-      if (!indexOnly) this.paragraphs.push({ end: pm, next: pm + 2, separator: match[2] });
+      const separator = match[2];
+      const emptyParagraphs = /^\n{2,}$/.test(separator)
+        ? Math.max(0, separator.length - (raw.length ? 2 : 1))
+        : 0;
+      const firstSeparator = emptyParagraphs ? separator.slice(0, raw.length ? 2 : 1) : separator;
+      if (!indexOnly) this.paragraphs.push({ end: pm, next: pm + 2, separator: firstSeparator });
       if (!indexOnly) this.content.content!.push({ type: 'paragraph', content: nodes });
       pm++;
-      if (!indexOnly) this.boundaries.set(pm, base + raw.length + match[2].length);
-      this.trailing = match[2];
+      let boundary = base + raw.length + firstSeparator.length;
+      if (!indexOnly) this.boundaries.set(pm, boundary);
+      this.trailing = firstSeparator;
+      for (let empty = 0; empty < emptyParagraphs; empty++) {
+        if (!indexOnly) {
+          this.positions.set(pm + 1, boundary);
+          this.paragraphs.push({ end: pm + 1, next: pm + 3, separator: '\n' });
+          this.content.content!.push({ type: 'paragraph' });
+          this.boundaries.set(pm + 2, ++boundary);
+        }
+        pm += 2;
+        this.trailing = '\n';
+      }
     }
     if (!this.content.content!.length) {
       this.content.content!.push({ type: 'paragraph' });
@@ -403,7 +474,7 @@ export class SourceProjection {
       paragraph.forEach((node, inner) => {
         if (!node.isText) throw new Error(`Unsupported proof inline ${node.type.name}`);
         const desired = node.marks.map((m) => ({ type: m.type.name, attrs: m.attrs }));
-        if (desired.some((m) => !['bold', 'link'].includes(m.type)))
+        if (desired.some((m) => !['bold', 'italic', 'link'].includes(m.type)))
           throw new Error('Unsupported proof mark');
         for (let i = 0; i < node.text!.length; i++) {
           const token = survivors.get(offset + 1 + inner + i),

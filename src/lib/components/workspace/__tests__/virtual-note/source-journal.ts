@@ -1592,7 +1592,11 @@ export class SourceJournal {
       const local = position - start;
       return this.spans(id)
         .filter((s) => s.openFrom < local && s.contentFrom <= local && local <= s.contentTo)
-        .map((s) => s.mark);
+        .map((s) =>
+          s.mark.type === 'italic'
+            ? { ...s.mark, range: { from: s.contentFrom + start, to: s.contentTo + start } }
+            : s.mark,
+        );
     };
     const before = stack(from),
       after = stack(to);
