@@ -1192,6 +1192,17 @@
     return wizardCollapsedInitial.collapsed;
   });
 
+  // The consumer may still represent the immediately preceding question set
+  // while the registration effect switches keys. Never hand that draft to a
+  // new wizard: its answer count belongs to the old question shape.
+  const questionWizardDraft = $derived.by(() => {
+    const pending = pendingQuestions;
+    const consumer = $questionUiConsumer$;
+    return pending && consumer?.storageKey === wizardDraftKey(agentId, pending.messageId)
+      ? consumer.draft
+      : undefined;
+  });
+
   function handleQuestionWizardCollapsed(collapsed: boolean): void {
     const pending = pendingQuestions;
     const consumer = selectQuestionUiConsumer.select(appStore.state, instanceId);
@@ -5967,11 +5978,7 @@
     const workspaceId = workspace?.id;
     if (!isActive || !workspaceId || !agentId) return;
     const current = selectUserMessageIndexUi.select(appStore.state, workspaceId, instanceId);
-    if (
-      current?.status === 'pending' ||
-      (current?.result?.ok === false && current.result.unsupported)
-    )
-      return;
+    if (current?.status === 'pending' || current?.unsupported) return;
     appStore.dispatch(
       userMessageIndexRequested(
         workspaceId,
@@ -7529,7 +7536,7 @@
                     <QuestionWizard
                       bind:this={questionWizard}
                       questions={pendingQuestions.questions}
-                      draft={$questionUiConsumer$?.draft}
+                      draft={questionWizardDraft}
                       onDraftChange={handleQuestionWizardDraftChanged}
                       onResolved={handleQuestionWizardResolved}
                       collapsed={questionWizardCollapsed}

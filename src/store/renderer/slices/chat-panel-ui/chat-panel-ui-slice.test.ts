@@ -65,6 +65,54 @@ describe('chatPanelUiReducer', () => {
       status: 'pending',
       result: { ok: true, total: 1 },
     });
+
+    state = chatPanelUiReducer(
+      state,
+      userMessageIndexFinished(
+        WS,
+        CONSUMER,
+        'request-2',
+        'failed',
+        {
+          ok: false,
+          unsupported: false,
+          error: 'offline',
+        },
+        'offline',
+      ),
+    );
+    expect(getItem(state.byWorkspaceId[WS].userMessageIndexes, CONSUMER)).toMatchObject({
+      status: 'failed',
+      result: { ok: true, total: 1 },
+      unsupported: false,
+      error: 'offline',
+    });
+
+    state = chatPanelUiReducer(
+      state,
+      userMessageIndexRequested(WS, CONSUMER, 'request-3', AGENT, 4),
+    );
+    state = chatPanelUiReducer(
+      state,
+      userMessageIndexFinished(
+        WS,
+        CONSUMER,
+        'request-3',
+        'succeeded',
+        {
+          ok: false,
+          unsupported: true,
+          error: 'method not found',
+        },
+        'method not found',
+      ),
+    );
+    expect(getItem(state.byWorkspaceId[WS].userMessageIndexes, CONSUMER)).toMatchObject({
+      status: 'succeeded',
+      result: { ok: true, total: 1 },
+      unsupported: true,
+      error: 'method not found',
+    });
   });
 
   it('isolates retry outcomes between panels and rejects stale settlements', () => {

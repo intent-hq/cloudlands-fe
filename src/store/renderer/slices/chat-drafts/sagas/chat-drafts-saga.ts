@@ -153,7 +153,11 @@ export function* chatDraftsSaga(
         attachments.length > 0 ? attachments : undefined,
       );
       delete pair.committed[requestId];
-      for (const later of Object.values(pair.committed)) later.rollback = { text, attachments };
+      // A clear splits the pair's rollback history. A successful pre-clear
+      // write must not become the rollback baseline for a post-clear draft.
+      for (const later of Object.values(pair.committed)) {
+        if (later.epoch === save.epoch) later.rollback = { text, attachments };
+      }
       // Re-assert on success unless a clear superseded this save.
       if (pair.epoch === save.epoch) setCachedDraft(workspaceId, agentId, { text, attachments });
       yield* put(chatDraftSaveSettled(ownerId, requestId, 'saved'));
