@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "Enviar todo",
   "chat_queuedMessages_sendAll_ariaLabel": "Enviar ahora todos los mensajes listos",
   "chat_queuedMessages_expand_ariaLabel": "Mostrar todos los mensajes en cola",
+  "chat_queuedMessages_showLess_label": "Mostrar menos",
   "chat_queuedMessages_clearFailed_error": "No se pudo vaciar la cola: {error}",
   "chat_queuedMessages_header_many": "Se enviarán {count} mensajes juntos cuando el agente esté libre",
   "chat_queuedMessages_heldForEditing_title": "Retenido para edición",

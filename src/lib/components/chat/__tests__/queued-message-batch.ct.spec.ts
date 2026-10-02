@@ -137,7 +137,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 }
 
 for (const width of [420, 240]) {
-  test(`expands a faded queue and keeps its actions reachable at ${width}px`, async ({
+  test(`expands and restores a compact queue with reachable actions at ${width}px`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -170,6 +170,20 @@ for (const width of [420, 240]) {
       body: await component.screenshot(),
       contentType: 'image/png',
     });
+    const showLess = component.getByRole('button', { name: 'Show less', exact: true });
+    await expect(showLess).toBeInViewport();
+    await showLess.focus();
+    await page.keyboard.press('Enter');
+    await expect(expand).toBeFocused();
+    await expect.poll(async () => (await viewport.boundingBox())!.height).toBeCloseTo(compact, 1);
+    expect(await viewport.evaluate((node) => node.scrollTop)).toBe(0);
+    await expect(component.getByTestId('queued-message-row')).toHaveCount(12);
+    await page.keyboard.press('Enter');
+    await expect(showLess).toBeVisible();
+    await expect.poll(async () => (await viewport.boundingBox())!.height).toBeGreaterThan(compact);
+    await showLess.click();
+    await expect(expand).toBeFocused();
+    await expect(showLess).toHaveCount(0);
   });
 }
 

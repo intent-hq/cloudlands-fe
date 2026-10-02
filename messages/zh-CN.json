@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "全部发送",
   "chat_queuedMessages_sendAll_ariaLabel": "立即发送所有就绪消息",
   "chat_queuedMessages_expand_ariaLabel": "显示所有排队消息",
+  "chat_queuedMessages_showLess_label": "收起",
   "chat_queuedMessages_clearFailed_error": "无法清空队列：{error}",
   "chat_queuedMessages_header_many": "智能体空闲时将一并发送 {count} 条消息",
   "chat_queuedMessages_heldForEditing_title": "已暂留以供编辑",

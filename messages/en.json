@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "Send all",
   "chat_queuedMessages_sendAll_ariaLabel": "Send all ready messages now",
   "chat_queuedMessages_expand_ariaLabel": "Show all queued messages",
+  "chat_queuedMessages_showLess_label": "Show less",
   "chat_queuedMessages_clearFailed_error": "Could not clear the queue: {error}",
   "chat_queuedMessages_header_many": "{count} messages will send together when idle",
   "chat_queuedMessages_heldForEditing_title": "Held for editing",

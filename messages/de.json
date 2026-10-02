@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "Alle senden",
   "chat_queuedMessages_sendAll_ariaLabel": "Alle bereiten Nachrichten jetzt senden",
   "chat_queuedMessages_expand_ariaLabel": "Alle Nachrichten in der Warteschlange anzeigen",
+  "chat_queuedMessages_showLess_label": "Weniger anzeigen",
   "chat_queuedMessages_clearFailed_error": "Die Warteschlange konnte nicht geleert werden: {error}",
   "chat_queuedMessages_header_many": "{count} Nachrichten werden zusammen gesendet, sobald der Agent frei ist",
   "chat_queuedMessages_heldForEditing_title": "Zur Bearbeitung zurückgehalten",

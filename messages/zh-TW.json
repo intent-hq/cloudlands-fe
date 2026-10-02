@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "全部傳送",
   "chat_queuedMessages_sendAll_ariaLabel": "立即傳送所有就緒訊息",
   "chat_queuedMessages_expand_ariaLabel": "顯示所有排隊訊息",
+  "chat_queuedMessages_showLess_label": "收起",
   "chat_queuedMessages_clearFailed_error": "無法清空佇列：{error}",
   "chat_queuedMessages_header_many": "代理程式閒置時將一併傳送 {count} 則訊息",
   "chat_queuedMessages_heldForEditing_title": "已暫留以供編輯",

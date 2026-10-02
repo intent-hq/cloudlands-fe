@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "すべて送信",
   "chat_queuedMessages_sendAll_ariaLabel": "準備ができているメッセージをすべて今すぐ送信",
   "chat_queuedMessages_expand_ariaLabel": "待機中のメッセージをすべて表示",
+  "chat_queuedMessages_showLess_label": "表示を減らす",
   "chat_queuedMessages_clearFailed_error": "キューを空にできませんでした: {error}",
   "chat_queuedMessages_header_many": "エージェントが待機状態になると、{count} 件のメッセージをまとめて送信します",
   "chat_queuedMessages_heldForEditing_title": "編集のため保留中",

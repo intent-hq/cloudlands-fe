@@ -104,9 +104,10 @@
   let viewportHeight = $state(0);
   let viewport = $state<HTMLDivElement>();
   let previewExpander = $state<HTMLButtonElement | null>(null);
+  let disclosureButton = $state<HTMLButtonElement | null>(null);
   const previewHeight = new Spring(0, 'moderate');
   let heightInitialized = false;
-  const clipped = $derived(!showAll && bodyHeight > viewportHeight + 1);
+  const clipped = $derived(!showAll && bodyHeight > Math.min(viewportHeight, 144) + 1);
   let sendStates = $state<Record<string, 'sending' | QueuedMessageSendOutcome | undefined>>({});
   let bulkAction = $state<'send' | 'clear' | null>(null);
   let bulkError = $state<string | null>(null);
@@ -145,6 +146,17 @@
 
   function expandPreview() {
     showAll = true;
+  }
+
+  async function collapsePreview() {
+    showAll = false;
+    void previewHeight.set(Math.min(bodyHeight, 144), { instant: true });
+    if (viewport) viewport.scrollTop = 0;
+    await tick();
+    // Make the replacement control available before moving focus to it.
+    if (viewport) viewportHeight = viewport.clientHeight;
+    await tick();
+    (previewExpander ?? disclosureButton)?.focus({ preventScroll: true });
   }
 
   function toggleExpanded() {
@@ -744,6 +756,7 @@
       data-testid="queued-messages-header"
     >
       <Button
+        bind:ref={disclosureButton}
         type="button"
         variant="plain"
         size="compact"
@@ -805,11 +818,14 @@
         data-testid="queued-messages-content"
         transition:safeDisclosureTransition={{ tier: 'moderate' }}
       >
-        <div class="relative overflow-hidden rounded-lg bg-background">
+        <div
+          class="queued-messages-body relative flex flex-col overflow-hidden rounded-lg bg-background"
+        >
           <div
+            id="{contentId}-viewport"
             bind:this={viewport}
             bind:clientHeight={viewportHeight}
-            class="queued-messages-viewport min-w-0 overscroll-contain {showAll
+            class="queued-messages-viewport min-h-0 min-w-0 overscroll-contain {showAll
               ? 'overflow-y-auto'
               : 'overflow-hidden'}"
             class:queued-messages-preview={!showAll}
@@ -1036,8 +1052,22 @@
               iconOnly
               class="absolute inset-x-0 bottom-0 h-10 w-full cursor-pointer items-end justify-center rounded-none border-0 bg-linear-to-b from-transparent to-background to-85% pb-1 text-muted-foreground"
               aria-label={m.chat_queuedMessages_expand_ariaLabel()}
+              aria-expanded={false}
+              aria-controls="{contentId}-viewport"
               onclick={expandPreview}
             />
+          {:else if showAll}
+            <Button
+              variant="ghost-light"
+              size="compact"
+              class="type-caption w-full rounded-none"
+              aria-expanded={true}
+              aria-controls="{contentId}-viewport"
+              data-testid="queued-messages-show-less"
+              onclick={collapsePreview}
+            >
+              {m.chat_queuedMessages_showLess_label()}
+            </Button>
           {/if}
         </div>
       </div>
@@ -1058,11 +1088,15 @@
     container: queued-messages / inline-size;
   }
 
-  .queued-messages-viewport {
+  .queued-messages-body {
     --queued-messages-viewport-limit: max(
       48px,
       calc(var(--queued-messages-max-height, 50vh) - 38px)
     );
+    max-height: var(--queued-messages-viewport-limit);
+  }
+
+  .queued-messages-viewport {
     max-height: var(--queued-messages-viewport-limit);
   }
 

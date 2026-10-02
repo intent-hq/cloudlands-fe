@@ -2446,6 +2446,7 @@
   "chat_queuedMessages_sendAll_label": "Tout envoyer",
   "chat_queuedMessages_sendAll_ariaLabel": "Envoyer tous les messages prêts maintenant",
   "chat_queuedMessages_expand_ariaLabel": "Afficher tous les messages en attente",
+  "chat_queuedMessages_showLess_label": "Afficher moins",
   "chat_queuedMessages_clearFailed_error": "Impossible de vider la file : {error}",
   "chat_queuedMessages_header_many": "{count} messages seront envoyés ensemble quand l'agent sera inactif",
   "chat_queuedMessages_heldForEditing_title": "Retenu pour modification",
