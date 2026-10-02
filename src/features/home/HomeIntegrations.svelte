@@ -424,7 +424,7 @@
             </p>{/snippet}
           {#snippet row({ item })}
             <ListRow
-              class="home-list-row home-integration-row min-h-12 items-start border-b border-border/50 px-2 py-3"
+              class="home-list-row home-integration-row min-h-12 items-start border-b border-border px-2 py-3"
             >
               {#snippet leading()}{#if isPr}<HomePullState
                     state={item.state}

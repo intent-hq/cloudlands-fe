@@ -852,7 +852,7 @@
                     {:else}
                       {#snippet workspaceRow({ item }: { item: Workspace })}
                         <ListRow
-                          class="home-list-row h-12 items-center border-b border-border/50 px-3 py-1"
+                          class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                           data-home-workspace={item.id}
                           oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                         >
