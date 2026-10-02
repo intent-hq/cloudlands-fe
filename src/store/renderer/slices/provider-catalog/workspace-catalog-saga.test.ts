@@ -132,10 +132,7 @@ describe('workspace catalog ownership', () => {
       expect(mocks.specialists).toHaveBeenCalledWith(undefined, 'A');
       expect(mocks.request).toHaveBeenCalledWith('host.providerDiscovery', { workspaceId: 'A' });
       expect(mocks.auth).toHaveBeenCalledWith({ workspaceId: 'B' });
-      expect(mocks.request).toHaveBeenCalledWith('host.findBinary', {
-        name: 'claude',
-        workspaceId: 'B',
-      });
+      expect(mocks.request).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
       expect(state.providerCatalog.byWorkspaceId?.B.readiness['claude-code'].available).toBe(true);
       expect(mocks.mcpStatuses).toHaveBeenCalledWith(['server-B'], 'B');
       expect(state.providerCatalog.byWorkspaceId?.B.mcpServers?.[0]).toEqual({

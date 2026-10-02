@@ -69,24 +69,35 @@ function answeredIdFromMetadata(metadata: unknown): string | null {
   return typeof answered === 'string' && answered.length > 0 ? answered : null;
 }
 
-/**
- * Id of the question set a user message answers, or null for every other
- * message. Reads the row's `metadata` first, falling back to the text blocks'
- * `messageMetadata` (the same dual surface the daemon persists a tagged
- * message on — see `questions-dismissed-notice.ts`).
- */
-export function getAnsweredQuestionsMessageId(
-  message: AnswerMessageLike | null | undefined,
-): string | null {
-  if (!message) return null;
-  const fromRow = answeredIdFromMetadata(message.metadata);
-  if (fromRow) return fromRow;
-  const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
-  for (const block of blocks) {
-    if (block.type === 'text') {
-      const fromBlock = answeredIdFromMetadata(block.messageMetadata);
-      if (fromBlock) return fromBlock;
+/** IDs answered by all contributions to a merged human message. */
+function answeredIdsFromMetadata(metadata: unknown): string[] {
+  const id = answeredIdFromMetadata(metadata);
+  const ids = id ? [id] : [];
+  if (metadata && typeof metadata === 'object' && 'mergedMessageMetadata' in metadata) {
+    const contributions = metadata.mergedMessageMetadata;
+    if (Array.isArray(contributions)) {
+      for (const contribution of contributions) {
+        const answered = answeredIdFromMetadata(contribution);
+        if (answered && !ids.includes(answered)) ids.push(answered);
+      }
     }
   }
-  return null;
+  return ids;
+}
+
+/** Row metadata is authoritative, with text-block metadata as the legacy fallback. */
+export function getAnsweredQuestionsMessageIds(
+  message: AnswerMessageLike | null | undefined,
+): string[] {
+  if (!message) return [];
+  const fromRow = answeredIdsFromMetadata(message.metadata);
+  if (fromRow.length) return fromRow;
+  const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
+  return [
+    ...new Set(
+      blocks.flatMap((block) =>
+        block.type === 'text' ? answeredIdsFromMetadata(block.messageMetadata) : [],
+      ),
+    ),
+  ];
 }

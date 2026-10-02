@@ -7032,5 +7032,7 @@
   "devConsole_payload_collapse_label": "全部摺疊",
   "devConsole_payload_expand_label": "全部展開",
   "devConsole_payload_load_error": "無法載入檢視器。擷取的文字顯示於下方。",
-  "devConsole_payload_large_description": "承載資料較大，無法使用語法醒目提示和摺疊功能；搜尋與複製仍可使用。"
+  "devConsole_payload_large_description": "承載資料較大，無法使用語法醒目提示和摺疊功能；搜尋與複製仍可使用。",
+  "chat_queuedMessages_draftConflict_description": "此佇列訊息已合併、變更或刪除。你的草稿保留在此處。請複製後重新使用，或捨棄草稿。",
+  "chat_queuedMessages_discardDraft_label": "捨棄草稿"
 }

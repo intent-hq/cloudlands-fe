@@ -160,7 +160,19 @@ function start(current = state()) {
   const channel = stdChannel();
   const actions: unknown[] = [];
   const task = runSaga(
-    { channel, dispatch: (action) => actions.push(action), getState: () => current },
+    {
+      channel,
+      dispatch: (action) => {
+        current.scripts = scriptsReducer(current.scripts, action);
+        if (
+          !['scripts/readStarted', 'scripts/readFinished', 'scripts/readReconciled'].includes(
+            action.type,
+          )
+        )
+          actions.push(action);
+      },
+      getState: () => current,
+    },
     lifecycleReadSaga,
   );
   runningTasks.push(task);
@@ -954,7 +966,12 @@ describe('lifecycleReadSaga', () => {
         {
           channel,
           dispatch: (action) => {
-            actions.push(action);
+            if (
+              !['scripts/readStarted', 'scripts/readFinished', 'scripts/readReconciled'].includes(
+                action.type,
+              )
+            )
+              actions.push(action);
             current = {
               ...current,
               terminals: terminalsReducer(current.terminals, action as never),
@@ -1169,10 +1186,16 @@ describe('lifecycleReadSaga', () => {
     }
   });
 
-  it('recovers missed retirement state for open output without scanning archives', async () => {
+  it('recovers missed retirement metadata for retained rows from the all partition', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list.mockResolvedValue([]);
-    mocks.scripts.status.mockResolvedValue({ status: 'exited', exitCode: 1, restartCount: 0 });
+    mocks.scripts.list.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: 'open-output',
+        archivedAt: 'now',
+        lastRun: { outcome: 'failed', stoppedAt: 'now' },
+        runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+      },
+    ]);
     const run = startScriptCache();
     try {
       const row = { id: 'open-output', runtime: { status: 'running', restartCount: 0 } };
@@ -1182,8 +1205,15 @@ describe('lifecycleReadSaga', () => {
       await settle();
       await settle();
       await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([[WS, { archive: 'active' }]]);
-      expect(mocks.scripts.status.mock.calls).toEqual([[WS, 'open-output']]);
+      expect(mocks.scripts.list.mock.calls).toEqual([
+        [WS, { archive: 'active' }],
+        [WS, { archive: 'all' }],
+      ]);
+      expect(mocks.scripts.status).not.toHaveBeenCalled();
+      expect(run.getState().byWorkspaceId[WS].scripts['closed-output']).toBeUndefined();
+      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].lastRun?.outcome).toBe(
+        'failed',
+      );
       expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
         status: 'exited',
         exitCode: 1,
@@ -1195,11 +1225,11 @@ describe('lifecycleReadSaga', () => {
     }
   });
 
-  it('keeps a newer live event when an open retired viewer status read finishes late', async () => {
+  it('keeps a newer live event when retained metadata reconciliation finishes late', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
     mocks.scripts.list.mockResolvedValue([]);
     let resolveStatus!: (value: unknown) => void;
-    mocks.scripts.status.mockReturnValue(
+    mocks.scripts.list.mockResolvedValueOnce([]).mockReturnValueOnce(
       new Promise((resolve) => {
         resolveStatus = resolve;
       }),
@@ -1215,11 +1245,17 @@ describe('lifecycleReadSaga', () => {
       run.dispatch(refreshScripts(WS));
       await settle();
       await settle();
-      expect(mocks.scripts.status).toHaveBeenCalledOnce();
+      expect(mocks.scripts.list).toHaveBeenCalledTimes(2);
       run.dispatch(
         updateRuntimeState(WS, 'open-output', { status: 'starting', startedAt: 'new run' }),
       );
-      resolveStatus({ status: 'exited', exitCode: 1, restartCount: 0 });
+      resolveStatus([
+        {
+          id: 'open-output',
+          archivedAt: 'now',
+          runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+        },
+      ]);
       await settle();
       await settle();
       expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({

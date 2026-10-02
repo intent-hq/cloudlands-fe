@@ -69,14 +69,6 @@ function* readCatalog(pending: Set<string>, action: CatalogAction) {
           appClient.settings.getMcpServers(workspaceId),
         ]),
     );
-    // Discovery's Claude adapter probe does not replace its CLI prerequisite.
-    const claude = discovery.providers.find((provider) => provider.id === 'claude-code');
-    const claudeCli = claude?.installed
-      ? yield* call(backendRequest<{ available: boolean }>, 'host.findBinary', {
-          name: 'claude',
-          workspaceId,
-        })
-      : undefined;
     const mcpStatuses = yield* call(
       [appClient.settings, appClient.settings.getMcpServerStatuses],
       mcpServers.flatMap((server) => (server.id ? [server.id] : [])),
@@ -96,10 +88,7 @@ function* readCatalog(pending: Set<string>, action: CatalogAction) {
             discovery.providers.map((p) => [
               p.id,
               {
-                available:
-                  p.installed &&
-                  !p.gatedOff &&
-                  (p.id !== 'claude-code' || claudeCli?.available === true),
+                available: p.installed && !p.gatedOff,
                 ...auth[p.id],
                 hasNpxFallback: p.hasNpxFallback,
               },

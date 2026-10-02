@@ -54,7 +54,7 @@ import type {
   ScriptWithState,
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
-import type { ScriptCategory, ScriptMode, ScriptPurpose } from '$features/scripts/types';
+import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
@@ -756,8 +756,8 @@ export interface AgentsClient {
    * NOT idempotent: a missing entry (already drained/removed) rejects with
    * `-32602`, folded into `{ success: false, error }` like the other
    * mutations. The delivered arm carries `turnId` (the entry's preserved
-   * turn-correlation id, §5.5 — this RPC's response replaces the
-   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * turn-correlation id, §5.5). Admitted sends also emit `agent:queue:processing`
+   * with the complete consumed entries; the response is a legacy promotion fallback,
    * surfaced on the MutationResult (monorepo#1057).
    */
   sendQueuedNow(params: {
@@ -1848,7 +1848,7 @@ export interface ScriptCreateInput {
   mode: ScriptMode;
   cwd?: string;
   env?: Record<string, string>;
-  category?: ScriptCategory;
+  category?: string;
   autoStart?: boolean;
   scriptId?: string;
 }

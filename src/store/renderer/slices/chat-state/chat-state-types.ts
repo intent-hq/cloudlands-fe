@@ -1,3 +1,6 @@
+import type { QueuedMessage } from '$shared/types';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+
 // ============================================================================
 // Per-Agent Chat State
 // ============================================================================
@@ -211,6 +214,17 @@ export interface ChatAgentState {
    * instead of promoting.
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
+  /** Local identity changes for each distinct attempted send, even with identical payloads. */
+  attemptGeneration?: number;
+  /** Payload from the exact consumed entry, never inferred from queue receive order. */
+  processedQueuedTurn?: {
+    turnId: string;
+    messages?: Collection<QueuedMessage, 'id'>;
+    /** Exact entry/turn pairs observed across recovery admissions of this operation. */
+    entryTurns?: Record<string, string>;
+    attemptGeneration: number;
+    record?: LastAttemptedMessage;
+  };
   modelUnavailable: ModelUnavailableInfo | null;
   /**
    * Set when the last turn failed with the daemon's `quota-exceeded` code
