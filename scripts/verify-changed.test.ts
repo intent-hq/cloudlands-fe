@@ -32,6 +32,7 @@ import {
   vitestExcludePatterns,
 } from './verify-changed.mjs';
 import { lockOwner } from './verification-lock.mjs';
+import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -2312,6 +2313,26 @@ describe('dependency freshness gate', () => {
 });
 
 describe('expensive-check coordination', () => {
+  it.each(['ct-full', 'ct-related'])('rejects a real passing retry through %s', async (id) => {
+    const root = temporaryDirectory();
+    vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
+    vi.stubEnv('CT_PORT', String(10000 + (process.pid % 50000)));
+    const fixture = createCtGateFixture(root);
+    const changed = id === 'ct-full' ? 'playwright-ct.config.ts' : fixture.spec;
+    const plan = createVerificationPlan([changed], { root, ctTests: [fixture.spec] });
+    const check = plan.checks.find((check) => check.id === id);
+    expect(check).toMatchObject({ executable: 'pnpm', lockKind: 'ct' });
+    expect(check?.args).toEqual(
+      id === 'ct-full' ? ['run', 'test:ct'] : ['run', 'test:ct', '--', fixture.spec],
+    );
+    // Execute only the selected CT gate: the fixture package routes the real
+    // test:ct script to a tiny aligned-runner control, not the application suite.
+    await expect(runVerificationPlan({ ...plan, checks: [check] }, root)).rejects.toThrow(
+      /failed with exit code 1/,
+    );
+    expect(fixture.report().stats).toMatchObject({ flaky: 1, unexpected: 0 });
+  });
+
   it('releases only its own acquired lock', async () => {
     const parent = temporaryDirectory();
     const lockPath = join(parent, 'lock');

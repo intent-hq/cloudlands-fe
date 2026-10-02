@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -21,8 +22,69 @@ import {
   usage,
 } from './run-ct-tests.mjs';
 import { HELD_LOCK_ENV, acquireVerificationLock, lockOwner } from './verification-lock.mjs';
+import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 
 const baseEnv = { PATH: '/usr/bin' };
+
+describe('strict CT launcher', () => {
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+
+  function run(args: string[]) {
+    const root = mkdtempSync(path.join(tmpdir(), 'ct-gate-'));
+    dirs.push(root);
+    const fixture = createCtGateFixture(root);
+    const result = spawnSync(process.execPath, [fixture.launcher, '-c', fixture.config, ...args], {
+      cwd: root,
+      // No browser is opened; isolate this worker's lock from real CT discovery.
+      env: {
+        ...process.env,
+        DD_TRACE_STARTUP_LOGS: 'false',
+        CT_PORT: String(10000 + (process.pid % 50000)),
+      },
+      encoding: 'utf8',
+      timeout: 25_000,
+    });
+    expect(result.error).toBeUndefined();
+    return { root, fixture, result };
+  }
+
+  it.each([{ args: [] }, { args: ['--fail-on-flaky-tests'] }])(
+    'rejects a real passing retry and retains both attempts with flags $args',
+    ({ args }) => {
+      const { root, fixture, result } = run(args);
+      const report = fixture.report();
+      expect(report.stats.flaky).toBe(1);
+      const test = report.suites[0].specs[0].tests[0];
+      expect(test.results.map((attempt: { status: string }) => attempt.status)).toEqual([
+        'failed',
+        'passed',
+      ]);
+      expect(test.results[0].attachments).toContainEqual({
+        name: 'attempt',
+        contentType: 'text/plain',
+        body: Buffer.from('0').toString('base64'),
+      });
+      expect(existsSync(path.join(root, 'html/index.html'))).toBe(true);
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+      expect(fixture.argv().filter((arg: string) => arg === '--fail-on-flaky-tests')).toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it('accepts a first-attempt pass and forwards test selection', () => {
+    const { fixture, result } = run(['--grep', 'first pass control']);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(fixture.report().stats).toMatchObject({ expected: 1, flaky: 0, unexpected: 0 });
+  });
+
+  it('lists tests without executing the intentional failure', () => {
+    const { result } = run(['--list']);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toContain('retry control');
+  });
+});
 
 describe('parseLauncherArgs', () => {
   it('drops the pnpm `--` separator and forwards the rest', () => {
