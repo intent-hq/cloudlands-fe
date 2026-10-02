@@ -716,7 +716,7 @@
     if (onclick) {
       onclick(event);
     } else {
-      const sourcePanelId = findSourcePanelId(event.target);
+      const sourcePanelId = findSourcePanelId(event.currentTarget);
       const openInAdjacentPanel = isCmdClickModifier({ event });
       const wsId = $agent$?.workspaceId
         ? String($agent$.workspaceId)
