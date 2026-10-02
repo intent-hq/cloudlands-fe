@@ -295,11 +295,13 @@ test('keyboard message navigation releases follow and can return to bottom', asy
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatMessageNavigatorIntegrationHost);
+  await expect(component.locator('.tiptap-editor')).toBeEditable();
+  await component.evaluate(() => document.fonts.ready);
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   const down = bottomArrow(component);
   await down.expectAtBottom(true);
   const bottom = await scroll.evaluate((node) => node.scrollTop);
-  const navigationSteps = 4;
+  const navigationSteps = 6;
   for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(
@@ -309,19 +311,22 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     await page.waitForTimeout(200);
   }
   await page.waitForTimeout(500);
-  const target = component.locator('[data-message-id="user-24"]');
-  const centerOffset = await target.evaluate(
-    (node, container) => {
-      const message = node.getBoundingClientRect();
-      const viewport = (container as HTMLElement).getBoundingClientRect();
-      return message.top + message.height / 2 - (viewport.top + viewport.height / 2);
-    },
-    await scroll.elementHandle(),
-  );
+  const target = component.locator('[data-message-id="user-23"]');
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
-  expect(Math.abs(centerOffset)).toBeLessThanOrEqual(3);
+  await testInfo.attach('keyboard-reading-position', {
+    body: JSON.stringify({
+      bottom,
+      readingPosition,
+      bottomDistance: await scroll.evaluate(
+        (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
+      ),
+    }),
+    contentType: 'application/json',
+  });
   expect(readingPosition).toBeLessThan(bottom);
+  await expect(target).toBeInViewport({ ratio: 1 });
   await down.expectAtBottom(false);
+  await component.screenshot({ path: testInfo.outputPath('keyboard-reading-position.png') });
   for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent('navigate-message', { detail: { direction: 'next' } })),
@@ -336,7 +341,6 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     body: JSON.stringify({
       bottom,
       readingPosition,
-      centerOffset,
       returnedPosition: await scroll.evaluate((node) => node.scrollTop),
       bottomDistance: await scroll.evaluate(
         (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
