@@ -1908,7 +1908,7 @@
   }
 
   .panel-header {
-    padding-inline: var(--panel-content-inset);
+    padding-inline: 8px;
     gap: 4px;
   }
 
@@ -2093,6 +2093,10 @@
     transform: rotate(270deg);
   }
   @container (max-width: 420px) {
+    .panel-header {
+      padding-inline: 8px;
+      gap: 4px;
+    }
     :global(.panel-selector-button) {
       gap: 8px;
       padding-inline: 6px;

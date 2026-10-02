@@ -5963,6 +5963,7 @@
   bind:this={panelElement}
   bind:clientHeight={panelHeight}
   class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  class:chief-chat-panel={isChiefWorkspace}
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
@@ -7353,8 +7354,13 @@
   }
 
   .chat-content-measure {
+    --chat-content-inset: 1rem;
     max-width: 140em;
-    padding-inline: var(--chat-content-inline-inset, var(--panel-content-inset));
+    padding-inline: var(--chat-content-inset);
+  }
+
+  .chief-chat-panel .chat-content-measure {
+    --chat-content-inset: 0px;
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */
@@ -7413,7 +7419,21 @@
   }
 
   .composer-prompt-lane {
-    padding-block: var(--panel-content-inset);
+    padding-block: 0.5rem var(--chat-content-inset);
+  }
+
+  .chief-chat-panel .composer-prompt-lane {
+    padding-bottom: 0.25rem;
+  }
+
+  @container chat-panel (min-width: 640px) {
+    .chat-content-measure {
+      --chat-content-inset: 1.5rem;
+    }
+
+    .chief-chat-panel .composer-prompt-lane {
+      padding-bottom: 0.5rem;
+    }
   }
 
   @keyframes input-flash {

@@ -321,7 +321,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="flex shrink-0 items-center justify-between gap-1 px-(--panel-content-inset) pb-1.5 pt-2 {collapsed
+      class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2 {collapsed
         ? 'cursor-pointer'
         : ''}"
       data-chief-header-row
@@ -443,8 +443,7 @@
          up to 8px above — accepted as cosmetic. -->
     <div
       id={ontoggle ? 'combined-panel-chief-content' : undefined}
-      class="min-h-0 flex-1 overflow-clip px-(--panel-content-inset) pt-0 [overflow-clip-margin:0.5rem]"
-      style:--chat-content-inline-inset="0px"
+      class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]"
       hidden={Boolean(ontoggle && collapsed)}
     >
       <section class="flex h-full min-h-0 flex-col">
