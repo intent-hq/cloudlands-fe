@@ -37,13 +37,6 @@ export type ScriptCategory =
   'dev' | 'build' | 'test' | 'lint' | 'typecheck' | 'format' | 'storybook' | 'other';
 
 /**
- * How the script was created.
- * - `auto-detected`: Discovered from package.json or similar
- * - `user`: Manually created by user or agent
- */
-export type ScriptSource = 'auto-detected' | 'user';
-
-/**
  * Runtime status of a script process.
  */
 export type ScriptStatus = 'idle' | 'starting' | 'running' | 'restarting' | 'exited';
