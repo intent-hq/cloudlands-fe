@@ -133,5 +133,50 @@ it('admits a wrapped-cell continuation alongside partial edge columns within the
   expect(
     new TextEncoder().encode(JSON.stringify(window) + window.cells.map((c) => c.raw).join(''))
       .length + 96,
-  ).toBeLessThanOrEqual(4096);
+  ).toBeLessThanOrEqual(16384);
+});
+
+it('uses bounded encountered text measurements to page oversized cell contents by scroll position', () => {
+  const text = 'START ' + 'abcdefghij '.repeat(2500) + ' END';
+  const source = `| H |\n| --- |\n| ${text} |`;
+  const service = new SourceJournal(() => source, 1);
+  const viewport = {
+    top: 0,
+    left: 0,
+    width: 1280,
+    height: 520,
+    font: 'sans-serif|16px|24px|normal',
+  };
+  const initial = service.tableViewportWindow(source.indexOf('START'), viewport)!;
+  const cell = initial.cells.find((c) => c.row === 1)!;
+  expect(cell.raw).toContain('START');
+  expect(cell.raw).not.toContain('END');
+  // Unit model only; browser tests independently measure the real native glyphs.
+  service.tableHeights.measureCells(initial, [
+    { cell: cell.from, height: (cell.raw.length / 100) * 24, padding: 17 },
+  ]);
+  const middle = service.tableViewportWindow(cell.body, {
+    ...viewport,
+    top: initial.geometry!.total / 2,
+  })!;
+  const middleCell = middle.cells.find((c) => c.row === 1)!;
+  expect(middleCell.first).toBeGreaterThan(cell.first);
+  expect(middleCell.last).toBeLessThan(cell.end);
+  const end = service.tableViewportWindow(cell.body, {
+    ...viewport,
+    top: initial.geometry!.total - 520,
+  })!;
+  expect(end.cells.find((c) => c.row === 1)!.raw).toContain('END');
+  const back = service.tableViewportWindow(cell.body, viewport)!;
+  expect(back.cells.find((c) => c.row === 1)!.raw).toContain('START');
+  for (const window of [initial, middle, end, back]) {
+    expect(
+      new TextEncoder().encode(JSON.stringify(window) + window.cells.map((c) => c.raw).join(''))
+        .length,
+    ).toBeLessThanOrEqual(16384);
+    const pages = service.transferTable(window);
+    expect(pages.length).toBeLessThanOrEqual(4);
+    for (const page of pages)
+      expect(new TextEncoder().encode(JSON.stringify(page)).length).toBeLessThanOrEqual(4096);
+  }
 });

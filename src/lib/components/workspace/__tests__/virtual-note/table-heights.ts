@@ -1,3 +1,4 @@
+import type { TableCellSource, TableWindow } from './table-source';
 import { bytes } from './bounded-note-service';
 export type HeightKey = { revision: number; table: number; width: number; font: string };
 export type TableGeometry = HeightKey & {
@@ -10,6 +11,84 @@ export type TableGeometry = HeightKey & {
 /** Mock backing only. Renderer receives one bounded page, never the summaries Map. */
 export class TableHeights {
   private summaries = new Map<string, Map<number, number>>();
+  private cellSamples = new Map<
+    string,
+    Map<number, { row: number; rate: number; total: number }>
+  >();
+  maxCellWriteBytes = 0;
+  private samples(key: HeightKey) {
+    const id = JSON.stringify([key.revision, key.table, key.width, key.font]);
+    let samples = this.cellSamples.get(id);
+    if (!samples) {
+      samples = new Map();
+      this.cellSamples.set(id, samples);
+    }
+    return samples;
+  }
+  fragmentStart(
+    key: HeightKey,
+    cell: TableCellSource,
+    rowTop: number,
+    top: number,
+    height: number,
+    limit: number,
+  ) {
+    const rate = this.samples(key).get(cell.from)?.rate;
+    if (!rate) return cell.body;
+    const offset = Math.max(0, top - rowTop - height / 5);
+    return Math.max(cell.body, Math.min(cell.end - limit, cell.body + Math.floor(offset / rate)));
+  }
+  measureCells(
+    window: TableWindow,
+    measurements: Array<{ cell: number; height: number; padding: number }>,
+  ) {
+    const page = window.geometry!;
+    const size = bytes(JSON.stringify({ revision: page.revision, measurements }));
+    if (size > 4096) throw new Error('Table cell measurement page exceeds budget');
+    this.maxCellWriteBytes = Math.max(this.maxCellWriteBytes, size);
+    const samples = this.samples(page),
+      entries = this.entries(page);
+    for (const measure of measurements) {
+      const cell = window.cells.find((c) => c.from === measure.cell)!;
+      if (
+        !cell ||
+        !Number.isFinite(measure.height) ||
+        measure.height <= 0 ||
+        cell.last <= cell.first
+      )
+        continue;
+      const rate = measure.height / (cell.last - cell.first);
+      samples.set(cell.from, {
+        row: cell.row,
+        rate,
+        total: rate * (cell.end - cell.body) + measure.padding,
+      });
+    }
+    for (const row of new Set(
+      window.cells.filter((c) => c.first > c.body || c.last < c.end).map((c) => c.row),
+    )) {
+      entries.set(
+        row,
+        Math.max(41, ...[...samples.values()].filter((s) => s.row === row).map((s) => s.total)),
+      );
+    }
+    window.geometry = this.range(page, page.rows, page.row, page.heights.length);
+    window.layout = this.layout(window);
+  }
+  layout(window: TableWindow) {
+    if (!window.geometry) return undefined;
+    const samples = this.samples(window.geometry);
+    return window.cells
+      .filter((c) => c.first > c.body || c.last < c.end)
+      .map((c) => {
+        const rate = samples.get(c.from)?.rate ?? 0;
+        return {
+          cell: c.from,
+          top: Math.max(0, c.first - c.body) * rate,
+          bottom: Math.max(0, c.end - c.last) * rate,
+        };
+      });
+  }
   maxReadBytes = 0;
   maxWriteBytes = 0;
   scannedRows = 0;
@@ -74,6 +153,9 @@ export class TableHeights {
     return this.range(page, page.rows, page.row, heights.length);
   }
   get backingBytes() {
-    return bytes(JSON.stringify([...this.summaries].map(([k, v]) => [k, [...v]])));
+    return (
+      bytes(JSON.stringify([...this.summaries].map(([k, v]) => [k, [...v]]))) +
+      bytes(JSON.stringify([...this.cellSamples].map(([k, v]) => [k, [...v]])))
+    );
   }
 }

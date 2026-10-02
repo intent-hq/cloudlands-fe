@@ -144,6 +144,10 @@
 </div>
 
 <style>
+  :global(.proof-table-projection [data-proof-cell-fragment]) {
+    padding-top: calc(0.5rem + var(--proof-cell-before));
+    padding-bottom: calc(0.5rem + var(--proof-cell-after));
+  }
   :global(.proof-table-projection table) {
     width: var(--proof-table-width) !important;
     min-width: 0 !important;

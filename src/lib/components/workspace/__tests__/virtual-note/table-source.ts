@@ -58,6 +58,7 @@ export type TableWindow = {
   column: number;
   cells: TableFragment[];
   geometry?: TableGeometry;
+  layout?: Array<{ cell: number; top: number; bottom: number }>;
 };
 
 /** Mock backing scan. Full row/cell arrays never cross the window admission boundary. */
@@ -303,6 +304,7 @@ export function tableRuns(source: string, start: number): TableRun[] {
 }
 
 export type TableRectangle = {
+  fragmentStart?: (cell: TableCellSource, limit: number) => number;
   row: number;
   column: number;
   rowCount: number;
@@ -382,7 +384,9 @@ export function admitTableWindow(
     }
     const center =
       entry === target ? Math.max(entry.body, Math.min(entry.end, position)) : entry.body;
-    let first = Math.max(entry.body, center - Math.floor(limit / 2));
+    let first =
+      rectangle?.fragmentStart?.(entry, limit) ??
+      Math.max(entry.body, center - Math.floor(limit / 2));
     let last = Math.min(entry.end, first + limit);
     const old = retained?.cells.find((c) => c.row === entry.row && c.column === entry.column);
     if (old) {
@@ -448,8 +452,9 @@ export function admitTableWindow(
         : {}),
     };
   };
+  const viewport = !!rectangle?.geometry;
   let radius = 2,
-    limit = 512;
+    limit = viewport ? 8192 : 512;
   for (;;) {
     const cells: TableFragment[] = [];
     if (retained)
@@ -502,12 +507,12 @@ export function admitTableWindow(
     if (
       bytes(JSON.stringify(packTableWindow(window))) +
         cells.reduce((n, c) => n + bytes(c.raw), 0) <=
-      (retained ? 3968 : 3072)
+      (retained ? 16256 : viewport ? 14336 : 3072)
     )
       return window;
     if (retained) throw new Error('Table edit requires window headroom');
     if (radius && !rectangle) radius--;
-    else limit = Math.floor(limit / 2);
+    else limit = Math.floor(limit * (viewport ? 0.8 : 0.5));
     if (limit < 8) throw new Error('Table cell context cannot fit admission budget');
   }
 }

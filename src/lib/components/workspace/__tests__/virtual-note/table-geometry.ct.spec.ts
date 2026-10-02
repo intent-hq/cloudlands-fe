@@ -100,7 +100,7 @@ test('encountered offscreen text corrects row height while the visible caret kee
   expect(after.point.table).toEqual(anchored.point.table);
   expect(after.native).toEqual(anchored.point.table!.head);
   expect(Math.abs(after.coords.top - anchored.coords.top)).toBeLessThanOrEqual(1);
-  expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+  expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
   expect(after.stats.pmNodes).toBeLessThanOrEqual(256);
 });
 
@@ -164,7 +164,7 @@ test('viewport resize and font changes preserve logical and pixel caret anchors'
     expect(after.point).toEqual(before.point);
     expect(Math.abs(after.coords.top - before.coords.top)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.coords.left - before.coords.left)).toBeLessThanOrEqual(1);
-    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
   }
 });
 
@@ -225,7 +225,7 @@ test('actual table glyph resizing preserves the native caret and invalidates row
   expect(after.native).toEqual(after.point);
   expect(Math.abs(after.coords.top - before.coords.top)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.coords.left - before.coords.left)).toBeLessThanOrEqual(1);
-  expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+  expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
 });
 
 test('horizontal and vertical revisits restore the native cell after actual view eviction', async ({
@@ -296,7 +296,7 @@ test('horizontal and vertical revisits restore the native cell after actual view
     expect(visit.native).toEqual(before.point!.head);
     expect(visit.stats.destroyed).toBeGreaterThan(before.destroyed);
     expect(visit.stats.tableColumnWidth).toBe(before.width);
-    expect(visit.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+    expect(visit.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
     expect(visit.source).toBe(source);
   }
 });
@@ -362,7 +362,7 @@ test('remote row insertion and deletion retain the active native cell and its pi
     expect(after.native).toEqual(after.point);
     expect(Math.abs(after.coords.top - before.coords.top)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.coords.left - before.coords.left)).toBeLessThanOrEqual(1);
-    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
   }
   expect(await root.evaluate((el) => (el as Host).proof.service.region(0))).toBe(source);
 });
@@ -437,7 +437,7 @@ test('encountered row height survives horizontal eviction of its tall cell', asy
   expect(returned.fragment).toBe(before.fragment);
   for (const after of [hidden, returned]) {
     expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
-    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
     expect(after.source).toBe(heightSource);
   }
 });

@@ -356,6 +356,7 @@ export class DocumentSession {
   tableViewport = 0;
   private tableScroller?: HTMLElement;
   private tableScrollRequest?: { position: number; top: number; left: number };
+  private tableFragmentScrollTop = 0;
   private tableFont() {
     const style = getComputedStyle(this.editor?.view.dom ?? this.host);
     return [style.fontFamily, style.fontSize, style.lineHeight, style.letterSpacing].join('|');
@@ -431,7 +432,12 @@ export class DocumentSession {
           this.tableColumnWidth,
       ),
     );
+    const fragmentMove =
+      table.cells.some((c) => c.first > c.body || c.last < c.end) &&
+      Math.abs(scroller.scrollTop - this.tableFragmentScrollTop) >
+        Math.max(24, scroller.clientHeight / 4);
     if (
+      !fragmentMove &&
       [row, lastRow].every((r) =>
         [column, lastColumn].every((c) =>
           table.cells.some(
@@ -443,6 +449,8 @@ export class DocumentSession {
       this.rememberTableAnchor();
       return;
     }
+    const atEnd = scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 1;
+    this.tableFragmentScrollTop = scroller.scrollTop;
     const at = this.service.tableAddress(table.from, row, column);
     this.tableScrollRequest = {
       position: at.source,
@@ -459,8 +467,11 @@ export class DocumentSession {
         active.row <= lastRow &&
         active.column >= column &&
         active.column <= lastColumn);
-    void this.show(this.active, false, at.source, preserve).finally(() => {
+    void this.show(this.active, false, at.source, preserve && !fragmentMove).finally(() => {
       this.tableScrollRequest = undefined;
+      if (atEnd && this.projection?.table)
+        scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+      this.tableFragmentScrollTop = scroller.scrollTop;
     });
   };
   tableColumnWidth = 0;
@@ -509,6 +520,27 @@ export class DocumentSession {
       );
       if (rows.every((height) => height > 0)) {
         table.window.geometry = this.service.tableHeights.record(table.window.geometry, rows);
+        if (table.window.cells.some((c) => c.first > c.body || c.last < c.end)) {
+          const measured = table.entries.map((entry) => {
+            const cell = editor.view.nodeDOM(entry.pm) as HTMLElement;
+            const paragraphs = Array.from(cell.querySelectorAll('p'));
+            const first = paragraphs[0]?.getBoundingClientRect(),
+              last = paragraphs.at(-1)?.getBoundingClientRect();
+            const style = getComputedStyle(cell),
+              layout = table.window.layout?.find((l) => l.cell === entry.cell.from);
+            return {
+              cell: entry.cell.from,
+              height: first && last ? last.bottom - first.top : 0,
+              padding:
+                parseFloat(style.paddingTop) +
+                parseFloat(style.paddingBottom) -
+                (layout?.top ?? 0) -
+                (layout?.bottom ?? 0) +
+                1,
+            };
+          });
+          this.service.tableHeights.measureCells(table.window, measured);
+        }
         editor.view.setProps({});
         layoutTable(editor, table.window, this.tableViewport);
         const size =
@@ -520,7 +552,11 @@ export class DocumentSession {
     }
     editor.view.dom.style.paddingLeft = `${this.tableOriginX}px`;
     editor.view.dom.style.paddingTop = `${(table.window.geometry?.top ?? table.window.cells[0].row * 41) + this.tableOriginY}px`;
-    editor.view.dom.style.paddingBottom = `${scroller?.clientHeight ?? 0}px`;
+    editor.view.dom.style.paddingBottom = table.window.cells.some(
+      (c) => c.first > c.body || c.last < c.end,
+    )
+      ? '0px'
+      : `${scroller?.clientHeight ?? 0}px`;
     editor.view.dom.style.paddingRight = `${this.tableViewport}px`;
     editor.view.dom.style.width = `${table.window.columns * this.tableColumnWidth + this.tableOriginX + this.tableViewport}px`;
     const nativeTable = editor.view.dom.querySelector('table');
@@ -735,6 +771,18 @@ export class DocumentSession {
         }
         return DecorationSet.create(state.doc, [
           ...rows,
+          ...(p.table?.window.layout ?? []).flatMap((layout) => {
+            const entry = p.table!.entries.find((e) => e.cell.from === layout.cell);
+            const node = entry && state.doc.nodeAt(entry.pm);
+            return node
+              ? [
+                  Decoration.node(entry!.pm, entry!.pm + node.nodeSize, {
+                    'data-proof-cell-fragment': 'true',
+                    style: `--proof-cell-before:${layout.top}px;--proof-cell-after:${layout.bottom}px`,
+                  }),
+                ]
+              : [];
+          }),
           ...(p.list?.synthetic ?? []).map((pos) =>
             Decoration.node(pos, pos + 2, { style: 'display:none', contenteditable: 'false' }),
           ),
@@ -1430,6 +1478,7 @@ export class DocumentSession {
       tableGeometryBytes: bytes(JSON.stringify(this.projection?.table?.window.geometry ?? {})),
       maxTableGeometryReadBytes: this.service.tableHeights.maxReadBytes,
       maxTableGeometryWriteBytes: this.service.tableHeights.maxWriteBytes,
+      maxTableCellMeasurementBytes: this.service.tableHeights.maxCellWriteBytes,
       backingTableGeometryBytes: this.service.tableHeights.backingBytes,
       backingTableGeometryScannedRows: this.service.tableHeights.scannedRows,
       tableContextBytes: bytes(JSON.stringify(this.projection?.context?.table ?? {})),

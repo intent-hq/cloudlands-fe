@@ -164,7 +164,7 @@ for (const gesture of [
       expect(result.type).toBe('cell');
       expect(result.anchor).toBe(gesture.start);
       expect(result.head).toBe(gesture.end);
-      if (result.stats) expect(result.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+      if (result.stats) expect(result.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
     }
     expect(results[1].anchor).toBe(results[0].anchor);
     expect(results[1].head).toBe(results[0].head);

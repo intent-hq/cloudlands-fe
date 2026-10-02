@@ -508,6 +508,23 @@ export class SourceJournal {
       rowCount: geometry.heights.length,
       columnCount,
       geometry,
+      ...(viewport.top === undefined
+        ? {}
+        : {
+            fragmentStart: (entry, limit) => {
+              const rowTop =
+                geometry.top +
+                geometry.heights.slice(0, entry.row - geometry.row).reduce((a, b) => a + b, 0);
+              return this.tableHeights.fragmentStart(
+                key,
+                { ...entry, from: entry.from + start },
+                rowTop,
+                top,
+                viewport.height,
+                limit,
+              );
+            },
+          }),
     });
   }
   tableWindow(
@@ -559,6 +576,7 @@ export class SourceJournal {
         block.to += start;
       }
     }
+    window.layout = this.tableHeights.layout(window);
     const packed = packTableWindow(window);
     const size = bytes(JSON.stringify(packed));
     if (size > TABLE_ACTIVE_BYTES) throw new Error('Table window exceeds admission budget');
