@@ -1476,6 +1476,16 @@ export class DocumentSession {
             this.editor!,
           );
           if (!after) throw new Error('Logical table command no longer applies');
+          if (
+            this.tableTabAtEnd &&
+            command.getMeta('proofLogicalTableCommand').command === 'addRowAfter'
+          ) {
+            const next = this.service.tableNeighbor(before.table!.head.cell, 1);
+            if (!next) throw new Error('Appended table row has no logical Tab destination');
+            after.anchor = after.head = next.source;
+            after.affinity = 1;
+            after.table = { anchor: next.point, head: next.point, kind: 'text' };
+          }
           this.service.record(
             {
               changes: [],
@@ -1488,6 +1498,8 @@ export class DocumentSession {
           );
           return after;
         });
+        this.tableTabAtEnd = false;
+        this.tableTabDestination = undefined;
         this.selection = after;
         this.selectionGeneration++;
         this.prevTime = 0;
@@ -1497,6 +1509,8 @@ export class DocumentSession {
           void this.seek(after.head);
         });
       } catch (error) {
+        this.tableTabAtEnd = false;
+        this.tableTabDestination = undefined;
         this.error = String(error);
         this.rejectedTransactions++;
         this.changed();

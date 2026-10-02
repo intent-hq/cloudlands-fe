@@ -125,7 +125,16 @@ for (const operation of [
         }
       }
       expect(session.error).toBe('');
-      if (operation.startsWith('split'))
+      if (operation === 'header') {
+        // Logical commands commit source/session state synchronously; mounted
+        // metadata arrives through the same paged view replacement as split.
+        const committed = service
+          .tableWindow(raw.rows[1].cells[0].body)!
+          .cells.find((cell) => cell.from === raw.rows[1].cells[0].from)!;
+        expect(committed.nodeType).toBe('tableHeader');
+        expect(committed.attrs.rowspan).toBe(120);
+      }
+      if (operation.startsWith('split') || operation === 'header')
         await expect.poll(() => session!.created).toBeGreaterThan(created);
       if (operation === 'splitSelection') {
         expect(native.state.selection).toBeInstanceOf(CellSelection);
