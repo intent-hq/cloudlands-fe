@@ -336,7 +336,7 @@ async function captureFirstMountedFrame(page: Page) {
 
 test.describe('EventWakeupBanner panel navigation geometry', () => {
   for (const width of [1400, 760]) {
-    test(`first wake target opens after its source pane at ${width}px`, async ({ page }) => {
+    test(`first wake target opens beside its source tab at ${width}px`, async ({ page }) => {
       await mountWakeupLayout(page, width);
       const firstFramePromise = captureFirstMountedFrame(page);
       await page.waitForFunction(
@@ -354,16 +354,17 @@ test.describe('EventWakeupBanner panel navigation geometry', () => {
 
       expect(frame.panelIds).toEqual(['source', 'sibling']);
       expect(frame.root).toMatchObject({ type: 'split', direction: 'horizontal' });
-      // Source-context agent opens preserve their panel and insert after the opener.
+      // Source-context agent opens insert after the opener and leave sibling panels untouched.
       expect(frame.source.tabs.map((tab: { id: string }) => tab.id)).toEqual([
         'agent-source',
         target?.id,
       ]);
+      expect(frame.sibling.tabs).toHaveLength(1);
+      expect(frame.sibling.tabs[0].id).toBe('sibling-file');
+      expect(frame.sibling.activeTabId).toBe('sibling-file');
       expect(target).toBeDefined();
       expect(target?.openerTabId).toBe('agent-source');
       expect(frame.source.activeTabId).toBe(target?.id);
-      expect(frame.sibling.tabs.map((tab: { id: string }) => tab.id)).toEqual(['sibling-file']);
-      expect(frame.sibling.activeTabId).toBe('sibling-file');
       expect(frame.focusedPanelId).toBe('source');
       expect(frame.rects[0].right).toBeLessThanOrEqual(frame.rects[1].left);
       expect(frame.activeElementInInactiveWrapper).toBe(false);
@@ -383,15 +384,16 @@ test.describe('EventWakeupBanner panel navigation geometry', () => {
         'appLayout/openAgentTabRequested',
         'workspaceAgents/ensureAgentSessionLoaded',
         'panelLayout/openTab',
-        'panelLayout/openTabInRightmostColumnRequested',
-        'panelLayout/reconcilePanelColumnCount',
-        'panelLayout/openTabInRightmostColumn',
       ];
-      expect(frame.actionOrder.filter((type) => routingActions.includes(type))).toEqual([
-        'appLayout/openAgentTabRequested',
-        'workspaceAgents/ensureAgentSessionLoaded',
-        'panelLayout/openTab',
-      ]);
+      expect(
+        frame.actionOrder.filter(
+          (type) =>
+            routingActions.includes(type) ||
+            type === 'panelLayout/openTabInRightmostColumnRequested' ||
+            type === 'panelLayout/reconcilePanelColumnCount' ||
+            type === 'panelLayout/openTabInRightmostColumn',
+        ),
+      ).toEqual(routingActions);
     });
   }
 });
