@@ -25,6 +25,9 @@ patchedDependencies:
   playwright-core@1.58.2:
     hash: caa2ef4ff2713cfcca71af2bc50d749d7f9d02c4cf79c6161183692cfac6add6
     path: patches/playwright-core@1.58.2.patch
+  prosemirror-tables@1.8.5:
+    hash: 4ac8b842806412aef17bb8c14e0d676175d8142eff7e6167d201466cb9388e76
+    path: patches/prosemirror-tables@1.8.5.patch
 
 importers:
 
@@ -7219,7 +7222,7 @@ snapshots:
       prosemirror-model: 1.25.11
       prosemirror-schema-list: 1.5.1
       prosemirror-state: 1.4.4
-      prosemirror-tables: 1.8.5
+      prosemirror-tables: 1.8.5(patch_hash=4ac8b842806412aef17bb8c14e0d676175d8142eff7e6167d201466cb9388e76)
       prosemirror-transform: 1.12.0
       prosemirror-view: 1.42.3
 
@@ -10000,7 +10003,7 @@ snapshots:
       prosemirror-transform: 1.12.0
       prosemirror-view: 1.42.3
 
-  prosemirror-tables@1.8.5:
+  prosemirror-tables@1.8.5(patch_hash=4ac8b842806412aef17bb8c14e0d676175d8142eff7e6167d201466cb9388e76):
     dependencies:
       prosemirror-keymap: 1.2.3
       prosemirror-model: 1.25.11

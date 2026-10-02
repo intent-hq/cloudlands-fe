@@ -25,7 +25,8 @@ for (const [span, width, height] of [
       it(`native paste selects owners and preserves exact content/history: ${span}/${edge}/${backward ? 'backward' : 'forward'}`, async () => {
         const source =
           '| A | B | C | D |\n| --- | --- | --- | --- |\n' +
-          Array.from({ length: 6 }, (_, r) => `| a${r} | b${r} | c${r} | d${r} |`).join('\n');
+          Array.from({ length: 6 }, (_, r) => `| a${r} | b${r} | c${r} | d${r} |`).join('\n') +
+          '\n\nUntouched tail';
         const editor = new Editor(
           createEditorConfig({
             element: document.createElement('div'),

@@ -368,7 +368,8 @@
     "patchedDependencies": {
       "playwright-core@1.58.2": "patches/playwright-core@1.58.2.patch",
       "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
-      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
+      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch",
+      "prosemirror-tables@1.8.5": "patches/prosemirror-tables@1.8.5.patch"
     }
   }
 }
