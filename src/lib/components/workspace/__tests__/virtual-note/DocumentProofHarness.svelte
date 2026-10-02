@@ -62,8 +62,8 @@
       proof: proof ?? null,
       native: native ?? null,
       mockBackingFixtureBytes: new TextEncoder().encode(paragraphSource).byteLength,
-      parseSource: async (source: string) => {
-        const html = await processMarkdownToHTML(source);
+      parseSource: async (source: string, renderMath = false) => {
+        const html = await processMarkdownToHTML(source, { renderMath });
         const element = document.createElement('div');
         element.innerHTML = html;
         const editor = proof?.editor ?? native;
@@ -75,7 +75,10 @@
         Object.assign(root, { proof });
         await proof.show(0);
       },
-      nativeMarkdown: () => processHTMLToMarkdown(native.getHTML(), { preserveAnchors: true }),
+      nativeMarkdown: (preserveAnchors = true) =>
+        processHTMLToMarkdown(native.getHTML(), { preserveAnchors }),
+      serializeHTML: (html: string, preserveAnchors = true) =>
+        processHTMLToMarkdown(html, { preserveAnchors }),
       reloadNative: async (source: string) => {
         const content = await processMarkdownToHTML(source);
         native.destroy();

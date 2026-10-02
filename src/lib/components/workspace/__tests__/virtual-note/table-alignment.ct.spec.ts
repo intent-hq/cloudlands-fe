@@ -198,3 +198,67 @@ test('native table Shift+Enter retains breaks, cells and edit history through ca
   expect(result.selection).toEqual(edited.selection);
   expect(result.canonical.doc.content?.[0]).toEqual(edited.table);
 });
+
+for (const preserveAnchors of [true, false]) {
+  test(`native combined table marks and rendered math survive serialization (anchors=${preserveAnchors})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await mount(Harness, { props: { oracle: true, sourceOverride: source } });
+    const host = page.getByTestId('proof');
+    await expect.poll(() => host.evaluate((el) => !!(el as Host).native)).toBe(true);
+    const result = await host.evaluate(async (el, preserveAnchors) => {
+      const h = el as Host & {
+        nativeMarkdown: (preserveAnchors: boolean) => string;
+        serializeHTML: (html: string, preserveAnchors: boolean) => string;
+        parseSource: (
+          source: string,
+          renderMath?: boolean,
+        ) => Promise<{
+          html: string;
+          doc: { content?: unknown[] };
+        }>;
+        reloadNative: (source: string) => Promise<void>;
+      };
+      const inline =
+        '<strong><em>bold italic</em> <a href="https://example.com">bold link</a> <code>a\\|b</code></strong>';
+      h.native.commands.setContent(
+        `<table><tr><th align="center"><p>${inline}</p></th><th>Right</th></tr><tr><td align="center"><p>${inline}</p></td><td>edit</td></tr></table>`,
+      );
+      let caret = -1;
+      h.native.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'paragraph' && node.textContent === 'edit') caret = pos + 5;
+      });
+      h.native.commands.setTextSelection(caret);
+      h.native.commands.insertContent('!');
+      const before = h.native.state.doc.firstChild!.toJSON();
+      const markdown = h.nativeMarkdown(preserveAnchors).trim();
+      const canonical = await h.parseSource(markdown);
+      const direct = h.serializeHTML(canonical.html, preserveAnchors).trim();
+      const old = h.native;
+      await h.reloadNative(markdown);
+      const mathSource = '| H |\n| --- |\n| $x_1 + y$ |';
+      const math = await h.parseSource(mathSource, true);
+      return {
+        before,
+        markdown,
+        canonical,
+        direct,
+        destroyed: old.isDestroyed,
+        after: h.native.state.doc.firstChild!.toJSON(),
+        mathSource,
+        mathSaved: h.serializeHTML(math.html, preserveAnchors).trim(),
+      };
+    }, preserveAnchors);
+    await testInfo.attach('table-combined-roundtrip.json', {
+      body: JSON.stringify(result),
+      contentType: 'application/json',
+    });
+    expect(result.destroyed).toBe(true);
+    expect(result.after).toEqual(result.before);
+    expect(result.canonical.doc.content?.[0]).toEqual(result.before);
+    expect(result.direct).toBe(result.markdown);
+    expect(result.markdown.split('\n')[1]).toBe('| :---: | --- |');
+    expect(result.mathSaved).toBe(result.mathSource);
+  });
+}

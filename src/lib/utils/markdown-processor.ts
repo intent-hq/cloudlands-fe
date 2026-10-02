@@ -1850,7 +1850,31 @@ export function processHTMLToMarkdown(
                   })
                   .join('<!-- -->');
                 node.replaceWith(document.createTextNode(code));
-              } else prepare(node);
+              } else {
+                prepare(node);
+                const delimiter =
+                  node.tagName === 'STRONG' || node.tagName === 'B'
+                    ? '**'
+                    : node.tagName === 'EM' || node.tagName === 'I'
+                      ? '*'
+                      : undefined;
+                if (delimiter) {
+                  // Markdown emphasis cannot open/close on whitespace. Entities
+                  // retain that whitespace inside its original native mark.
+                  const inline = processInlineContent(node).replace(/^\s+|\s+$/g, (space) =>
+                    Array.from(space, (char) => `&#${char.charCodeAt(0)};`).join(''),
+                  );
+                  // Inert separators prevent adjacent marks or punctuation from
+                  // changing delimiter flanking. The parser removes the comments.
+                  const before = node.previousSibling;
+                  const after = node.nextSibling;
+                  const prefix = before && !/\s$/.test(before.textContent ?? '') ? '<!-- -->' : '';
+                  const suffix = after && !/^\s/.test(after.textContent ?? '') ? '<!-- -->' : '';
+                  node.replaceWith(
+                    document.createTextNode(`${prefix}${delimiter}${inline}${delimiter}${suffix}`),
+                  );
+                }
+              }
             }
           }
         };
