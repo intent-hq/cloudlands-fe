@@ -349,34 +349,13 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     vi.unstubAllGlobals();
   });
 
-  it('owns task demand only while the hydrated header summary is displayed, even with no cached tasks', async () => {
-    testState.transcriptHydration = 'loading';
-    testState.transcriptHydratedOnce = false;
-    const props = { workspace, agentId: 'agent-1', isActive: true, onTaskProgressChange: vi.fn() };
-    const view = render(ChatPanel, { props });
-    const actions = (type: string) =>
-      testState.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type === `workspaceTasks/${type}`);
-    expect(actions('acquireWorkspaceTasksDemand')).toHaveLength(0);
+  it('does not acquire task demand merely because a hydrated chat reports header progress', async () => {
     testState.transcriptHydration = 'settled';
     testState.transcriptHydratedOnce = true;
-    testState.notify();
-    flushSync();
-    expect(actions('acquireWorkspaceTasksDemand')).toHaveLength(1);
-    const first = actions('acquireWorkspaceTasksDemand')[0].payload;
-    expect(first[0]).toBe(workspace.id);
-    await view.rerender({ ...props, isActive: false });
-    expect(actions('releaseWorkspaceTasksDemand')[0].payload).toEqual(first);
-    await view.rerender(props);
-    const second = actions('acquireWorkspaceTasksDemand')[1].payload;
-    expect(second[1]).not.toBe(first[1]);
-    await view.rerender({ ...props, workspace: { ...workspace, id: 'second-workspace' } });
-    expect(actions('releaseWorkspaceTasksDemand')[1].payload).toEqual(second);
-    const third = actions('acquireWorkspaceTasksDemand')[2].payload;
-    expect(third[0]).toBe('second-workspace');
-    view.unmount();
-    expect(actions('releaseWorkspaceTasksDemand')[2].payload).toEqual(third);
+    await renderInitialWorkspaceChatPanel(vi.fn());
+    expect(testState.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      'workspaceTasks/acquireWorkspaceTasksDemand',
+    );
   });
 
   it('does not request task rows for a chat without a displayed header task consumer', async () => {

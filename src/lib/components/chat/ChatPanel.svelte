@@ -93,10 +93,6 @@
     selectWorkspaceTasks,
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import {
-    acquireWorkspaceTasksDemand,
-    releaseWorkspaceTasksDemand,
-  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { clearBrowserElementCapture } from '$store/renderer/slices/browser/browser-slice';
@@ -2360,18 +2356,6 @@
       revealDeferred: deferTranscriptReveal,
     }),
   );
-  const hasTaskProgressConsumer = $derived(!!onTaskProgressChange);
-  // The panel header displays task summaries even when its task popover is
-  // closed. Demand follows that consumer, never the presence of cached rows.
-  $effect(() => {
-    if (!isActive || !showTranscriptUtilityCard || !hasTaskProgressConsumer || !workspace?.id)
-      return;
-    const workspaceId = workspace.id;
-    const demandId = crypto.randomUUID();
-    untrack(() => appStore.dispatch(acquireWorkspaceTasksDemand(workspaceId, demandId)));
-    return () => appStore.dispatch(releaseWorkspaceTasksDemand(workspaceId, demandId));
-  });
-
   // Cache each segment by its selector reference. Live text and session/task
   // updates must not rescan unchanged scrollback history for a native plan.
   const historyNativePlan = $derived(selectNativeExecutionPlan([$agentHistoryMessages$]));
