@@ -1,7 +1,7 @@
 /** Desktop-control wire contract. Credentials exist only in Electron main. */
 export type DesktopState =
   | { status: 'inactive' }
-  | { status: 'pending_permission'; requestId: string; computerName: string }
+  | { status: 'pending_permission'; requestId: string; computerName?: string }
   | { status: 'active'; sessionId: string; computerName: string; hint: string };
 
 export interface DesktopPermissionState {
@@ -17,6 +17,7 @@ export interface DesktopPermissionRequest {
   agentName: string;
   computerId: string;
   computerName: string;
+  claimsPrimary: boolean;
   expiresAt: string;
   options: { id: DesktopPermissionDecision; label: string }[];
 }
