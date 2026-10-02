@@ -53,7 +53,7 @@ actor Desktop {
     }
     func displays() throws -> [CGDirectDisplayID] {
         var ids = [CGDirectDisplayID](repeating: 0, count: 64), count: UInt32 = 0
-        guard CGGetActiveDisplayList(64, &ids, &count) == .success, count > 0 else { throw refused("No active displays") }
+        guard CGGetActiveDisplayList(64, &ids, &count) == .success else { throw refused("Display enumeration failed") }
         return Array(ids.prefix(Int(count))).sorted()
     }
     func description(_ id: CGDirectDisplayID) -> [String: Any] {
@@ -64,6 +64,13 @@ actor Desktop {
         let height = Int((bounds.height * scale).rounded())
         return ["displayId": String(id), "width": width, "height": height,
                 "originX": Int((bounds.origin.x * scale).rounded()), "originY": Int((bounds.origin.y * scale).rounded()), "scaleFactor": scale]
+    }
+    func checkLayout(_ p: [String: Any]) throws {
+        if let expected = p["layout"] as? [[String: Any]] {
+            guard NSArray(array: try displays().map(description)).isEqual(to: expected) else {
+                throw Refusal(code: "desktop-stale-layout", detail: "Display topology changed")
+            }
+        }
     }
     func mapping(_ key: String) throws -> CGKeyCode {
         let named: [String: CGKeyCode] = ["Enter":36,"Tab":48,"Escape":53,"Backspace":51,"Delete":117,"Home":115,"End":119,"PageUp":116,"PageDown":121,"ArrowUp":126,"ArrowDown":125,"ArrowLeft":123,"ArrowRight":124,"Space":49,"Shift":56,"Control":59,"Alt":58,"Meta":55,
@@ -122,6 +129,7 @@ actor Desktop {
             lockFD = fd; lastStep = milliseconds(); try ready(); return ["ok": true]
         }
         try ready()
+        try checkLayout(p)
         switch op {
         case "check": return ["ok": true]
         case "layout": return try displays().map(description)
@@ -132,8 +140,16 @@ actor Desktop {
             let excluded = content.windows.filter { exclusions.contains($0.windowID) }
             guard Set(excluded.map(\.windowID)) == exclusions else { throw refused("Cannot identify every desktop indicator window") }
             if op == "validateExclusion" { return ["ok": true] }
+            try checkLayout(p)
+            guard let selected = p["display"] as? [String: Any], let text = selected["displayId"] as? String,
+                  let selectedId = UInt32(text), try displays().contains(selectedId) else {
+                throw Refusal(code: "desktop-display-unavailable", detail: "The selected display is unavailable")
+            }
+            guard NSDictionary(dictionary: description(selectedId)).isEqual(to: selected) else {
+                throw Refusal(code: "desktop-stale-layout", detail: "Display geometry changed")
+            }
             var captures = [[String: Any]]()
-            for id in try displays() {
+            for id in [selectedId] {
                 try ready()
                 guard let display = content.displays.first(where: { $0.displayID == id }) else { throw refused("Display changed during capture") }
                 var info = description(id)
@@ -142,6 +158,7 @@ actor Desktop {
                 config.showsCursor = false
                 let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(display: display, excludingWindows: excluded), configuration: config)
                 try ready()
+                try checkLayout(p)
                 let data = NSMutableData()
                 guard let output = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { throw refused("PNG encoder unavailable") }
                 CGImageDestinationAddImage(output, image, nil)

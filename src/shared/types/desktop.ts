@@ -68,16 +68,17 @@ interface DesktopPoint {
   y: number;
 }
 interface DesktopPosition extends DesktopPoint {
-  displayId: string;
+  displayId?: string;
   layoutId: string;
 }
 export type DesktopAction =
-  | { kind: 'screenshot' }
+  | { kind: 'listDisplay' }
+  | { kind: 'screenshot'; displayId?: string; layoutId?: string }
   | ({ kind: 'click'; button?: 'left' | 'right'; clickCount?: 1 | 2 } & DesktopPosition)
   | { kind: 'type'; text: string }
   | { kind: 'keypress'; key: string; modifiers?: DesktopModifier[] }
   | ({ kind: 'scroll'; deltaX: number; deltaY: number } & DesktopPosition)
-  | { kind: 'drag'; displayId: string; layoutId: string; from: DesktopPoint; to: DesktopPoint };
+  | { kind: 'drag'; displayId?: string; layoutId: string; from: DesktopPoint; to: DesktopPoint };
 export interface DesktopDisplay {
   displayId: string;
   width: number;
@@ -85,6 +86,10 @@ export interface DesktopDisplay {
   originX: number;
   originY: number;
   scaleFactor: number;
+}
+export interface DesktopDisplayList {
+  layoutId: string;
+  displays: DesktopDisplay[];
 }
 export interface DesktopScreenshotResult {
   capturedAt: string;

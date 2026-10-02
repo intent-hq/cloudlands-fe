@@ -82,7 +82,10 @@ static class Program {
         var exclusions=new {excludedWindows=new[]{overlay.Handle.ToInt64().ToString()}};
         await peer.Call("validateExclusion",new {excludedWindows=new[]{"0"}},"desktop-unsupported-operation");
         await peer.Call("validateExclusion",exclusions);
-        var captures=await peer.Call("capture",exclusions);
+        await peer.Call("capture",new {excludedWindows=exclusions.excludedWindows,display=new {displayId="missing"},layout},"desktop-display-unavailable");
+        await peer.Call("capture",new {excludedWindows=exclusions.excludedWindows,display,layout=Array.Empty<object>()},"desktop-stale-layout");
+        var captures=await peer.Call("capture",new {excludedWindows=exclusions.excludedWindows,display,layout});
+        Require(captures.GetArrayLength()==1,"Capture included an unselected display");
         var capture=captures.EnumerateArray().Single(d=>d.GetProperty("displayId").GetString()==screen.DeviceName);
         using(var bytes=new MemoryStream(Convert.FromBase64String(capture.GetProperty("data").GetString()!)))
         using(var bitmap=new Bitmap(bytes)) {

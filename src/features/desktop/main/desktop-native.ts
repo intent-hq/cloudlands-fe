@@ -174,17 +174,19 @@ export class DesktopNativeAdapter implements DesktopNative {
     await this.request('validateExclusion', { excludedWindows });
   }
   async layout(): Promise<DesktopDisplay[]> {
-    return z
-      .array(displaySchema)
-      .min(1)
-      .parse(await this.request('layout'));
+    return z.array(displaySchema).parse(await this.request('layout'));
   }
-  async capture(excludedWindows: string[], signal: AbortSignal) {
+  async capture(
+    excludedWindows: string[],
+    signal: AbortSignal,
+    display: DesktopDisplay,
+    layout: DesktopDisplay[],
+  ) {
     signal.throwIfAborted();
     const result = z
       .array(displaySchema.extend({ data: z.string().min(1) }))
       .min(1)
-      .parse(await this.request('capture', { excludedWindows }));
+      .parse(await this.request('capture', { excludedWindows, display, layout }));
     signal.throwIfAborted();
     return result;
   }
@@ -193,12 +195,13 @@ export class DesktopNativeAdapter implements DesktopNative {
     display: DesktopDisplay | undefined,
     check: (executed?: boolean) => void,
     signal: AbortSignal,
+    layout?: DesktopDisplay[],
   ): Promise<void> {
     let completedInput = false;
     const step = async (operation: string, params: Record<string, unknown> = {}) => {
       signal.throwIfAborted();
       check();
-      await this.request(operation, params);
+      await this.request(operation, { ...params, ...(layout ? { layout } : {}) });
       if (operation !== 'validateKey') completedInput = true;
       check(completedInput);
       signal.throwIfAborted();
@@ -241,6 +244,7 @@ export class DesktopNativeAdapter implements DesktopNative {
           for (const key of [...(action.modifiers ?? [])].reverse())
             await step('key', { key, down: false });
           break;
+        case 'listDisplay':
         case 'screenshot':
           throw desktopFailure('invalid-params', 'Capture is not an input step', 'not_started');
       }

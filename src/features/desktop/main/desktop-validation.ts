@@ -5,7 +5,7 @@ import type { DesktopError } from '../../../shared/types/desktop';
 const id = z.string().min(1).max(512);
 const finite = z.number().finite();
 const point = z.object({ x: finite.nonnegative(), y: finite.nonnegative() }).strict();
-const position = { displayId: id, layoutId: id, ...point.shape };
+const position = { displayId: id.optional(), layoutId: id, ...point.shape };
 const namedKeys = new Set([
   'Enter',
   'Tab',
@@ -25,7 +25,10 @@ const namedKeys = new Set([
   ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`),
 ]);
 const desktopActionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('screenshot') }).strict(),
+  z.object({ kind: z.literal('listDisplay') }).strict(),
+  z
+    .object({ kind: z.literal('screenshot'), displayId: id.optional(), layoutId: id.optional() })
+    .strict(),
   z
     .object({
       kind: z.literal('click'),
@@ -61,7 +64,13 @@ const desktopActionSchema = z.discriminatedUnion('kind', [
     .strict(),
   z.object({ kind: z.literal('scroll'), ...position, deltaX: finite, deltaY: finite }).strict(),
   z
-    .object({ kind: z.literal('drag'), displayId: id, layoutId: id, from: point, to: point })
+    .object({
+      kind: z.literal('drag'),
+      displayId: id.optional(),
+      layoutId: id,
+      from: point,
+      to: point,
+    })
     .strict(),
 ]);
 const binding = { workspaceId: id, agentId: id, principalId: id, connectionEpoch: id };
@@ -104,6 +113,8 @@ export function desktopFailure(
             'desktop-stale-request',
             'desktop-stale-command',
             'desktop-stale-layout',
+            'desktop-display-selection-required',
+            'desktop-display-unavailable',
             'desktop-command-expired',
           ].includes(code)
         ? -32602

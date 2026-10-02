@@ -115,6 +115,224 @@ function setup() {
 }
 afterEach(() => vi.restoreAllMocks());
 
+describe('desktop display selection', () => {
+  it('lists metadata without capture and permits an empty display list', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.layout).mockResolvedValue([]);
+    await expect(t.handle(await t.prepare({ kind: 'listDisplay' }))).resolves.toMatchObject({
+      result: { layoutId: expect.any(String), displays: [] },
+    });
+    expect(t.native.capture).not.toHaveBeenCalled();
+    expect(t.connection.saveAsset).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+    await expect(t.prepare({ kind: 'screenshot' })).rejects.toMatchObject(
+      error('desktop-display-unavailable', 'not_started'),
+    );
+    await t.executor.invalidate('agent_end');
+  });
+  it('lists current metadata when topology changes after preparation', async () => {
+    const t = setup();
+    await t.activate();
+    const ticket = await t.prepare({ kind: 'listDisplay' });
+    const latest = [{ ...display, width: 2160, height: 3840 }];
+    vi.mocked(t.native.layout).mockResolvedValue(latest);
+    await expect(t.handle(ticket)).resolves.toMatchObject({ result: { displays: latest } });
+    expect(t.native.capture).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+  it('requires selection on multiple displays and captures only the selected display', async () => {
+    const t = setup();
+    const second = { ...display, displayId: 'second', originX: 0 };
+    vi.mocked(t.native.layout).mockResolvedValue([display, second]);
+    await t.activate();
+    await expect(t.prepare({ kind: 'screenshot' })).rejects.toMatchObject(
+      error('desktop-display-selection-required', 'not_started'),
+    );
+    await expect(t.prepare({ kind: 'screenshot', displayId: 'missing' })).rejects.toMatchObject(
+      error('desktop-display-unavailable', 'not_started'),
+    );
+    expect(t.native.capture).not.toHaveBeenCalled();
+    expect(t.connection.saveAsset).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+    vi.mocked(t.native.capture).mockResolvedValue([{ ...second, data: 'png' }]);
+    const result = (await t.handle(
+      await t.prepare({ kind: 'screenshot', displayId: 'second' }),
+    )) as { result: { displays: unknown[] } };
+    expect(result.result.displays).toHaveLength(1);
+    expect(t.native.capture).toHaveBeenCalledWith(['123'], expect.any(AbortSignal), second, [
+      display,
+      second,
+    ]);
+    expect(t.connection.saveAsset).toHaveBeenCalledTimes(1);
+    await t.executor.invalidate('agent_end');
+  });
+  it('uses list metadata for single-display pointers and rejects ambiguous pointers', async () => {
+    const t = setup();
+    await t.activate();
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    for (const action of [
+      { kind: 'click', x: 1, y: 2 },
+      { kind: 'scroll', x: 1, y: 2, deltaX: 0, deltaY: 10 },
+      { kind: 'drag', from: { x: 1, y: 2 }, to: { x: 3, y: 4 } },
+    ] as const)
+      await t.handle(await t.prepare({ ...action, layoutId: listed.result.layoutId }));
+    expect(t.native.input).toHaveBeenCalledTimes(3);
+    const second = { ...display, displayId: 'second' };
+    vi.mocked(t.native.layout).mockResolvedValue([display, second]);
+    const next = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    await expect(
+      t.prepare({ kind: 'click', x: 1, y: 2, layoutId: next.result.layoutId }),
+    ).rejects.toMatchObject(error('desktop-display-selection-required'));
+    await t.executor.invalidate('agent_end');
+  });
+  it('rejects topology changes between preparation and execution without capture or input', async () => {
+    const t = setup();
+    await t.activate();
+    const ticket = await t.prepare({ kind: 'screenshot' });
+    vi.mocked(t.native.layout).mockResolvedValue([{ ...display, scaleFactor: 1 }]);
+    await expect(t.handle(ticket)).rejects.toMatchObject(
+      error('desktop-stale-layout', 'not_started'),
+    );
+    expect(t.native.capture).not.toHaveBeenCalled();
+    expect(t.native.input).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+  it.each(['click', 'scroll', 'drag'] as const)(
+    'rejects missing selection for multi-display %s without input',
+    async (kind) => {
+      const t = setup();
+      await t.activate();
+      vi.mocked(t.native.layout).mockResolvedValue([display, { ...display, displayId: 'second' }]);
+      const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+        result: { layoutId: string };
+      };
+      const action: DesktopAction =
+        kind === 'drag'
+          ? { kind, layoutId: listed.result.layoutId, from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }
+          : kind === 'scroll'
+            ? { kind, layoutId: listed.result.layoutId, x: 0, y: 0, deltaX: 0, deltaY: 1 }
+            : { kind, layoutId: listed.result.layoutId, x: 0, y: 0 };
+      await expect(t.prepare(action)).rejects.toMatchObject(
+        error('desktop-display-selection-required', 'not_started'),
+      );
+      await expect(t.prepare({ ...action, displayId: 'missing' })).rejects.toMatchObject(
+        error('desktop-display-unavailable', 'not_started'),
+      );
+      expect(t.native.input).not.toHaveBeenCalled();
+      expect(t.native.capture).not.toHaveBeenCalled();
+      expect(t.connection.saveAsset).not.toHaveBeenCalled();
+      expect(t.overlay.pulse).not.toHaveBeenCalled();
+      await t.executor.invalidate('agent_end');
+    },
+  );
+  it('rejects unexpected extra native images without publishing any asset', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.capture).mockResolvedValue([
+      { ...display, data: 'png' },
+      { ...display, displayId: 'foreign', data: 'private' },
+    ]);
+    await expect(t.handle(await t.prepare({ kind: 'screenshot' }))).rejects.toMatchObject(
+      error('desktop-execution-failed'),
+    );
+    expect(t.connection.saveAsset).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+  });
+  it('requires active authority for listing and rejects stale screenshot layout tokens', async () => {
+    const t = setup();
+    await expect(t.prepare({ kind: 'listDisplay' })).rejects.toMatchObject(
+      error('desktop-not-active'),
+    );
+    await t.activate();
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    vi.mocked(t.native.layout).mockResolvedValue([{ ...display, width: 2160, height: 3840 }]);
+    await expect(
+      t.prepare({
+        kind: 'screenshot',
+        displayId: display.displayId,
+        layoutId: listed.result.layoutId,
+      }),
+    ).rejects.toMatchObject(error('desktop-stale-layout', 'not_started'));
+    expect(t.native.capture).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+  it('reserves preparation while topology is read and rejects late preparation after Stop', async () => {
+    const t = setup();
+    await t.activate();
+    const wait = deferred<(typeof display)[]>();
+    vi.mocked(t.native.layout).mockReturnValue(wait.promise);
+    const pending = t.prepare({ kind: 'screenshot' });
+    await expect(t.prepare({ kind: 'listDisplay' })).rejects.toMatchObject(error('desktop-busy'));
+    await t.executor.stop('session');
+    wait.resolve([display]);
+    await expect(pending).rejects.toMatchObject(error('desktop-not-active'));
+    expect(t.native.capture).not.toHaveBeenCalled();
+  });
+  it('rejects pointer hotplug between preparation and execution', async () => {
+    const t = setup();
+    await t.activate();
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    const ticket = await t.prepare({ kind: 'click', layoutId: listed.result.layoutId, x: 0, y: 0 });
+    vi.mocked(t.native.layout).mockResolvedValue([
+      display,
+      { ...display, displayId: 'new-screen' },
+    ]);
+    await expect(t.handle(ticket)).rejects.toMatchObject(
+      error('desktop-stale-layout', 'not_started'),
+    );
+    expect(t.native.input).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+  it('sends selected-only capture and topology guards through the shared native adapter', async () => {
+    const request = vi.fn(async (op: string, _params?: Record<string, unknown>) =>
+      op === 'capture' ? [{ ...display, data: 'png' }] : op === 'layout' ? [] : { ok: true },
+    );
+    const adapter = new DesktopNativeAdapter(request);
+    const signal = new AbortController().signal;
+    expect(await adapter.layout()).toEqual([]);
+    await adapter.capture(['overlay'], signal, display, [display]);
+    expect(request).toHaveBeenCalledWith('capture', {
+      excludedWindows: ['overlay'],
+      display,
+      layout: [display],
+    });
+    await adapter.input(
+      { kind: 'click', x: 0, y: 0, layoutId: 'layout' },
+      display,
+      () => {},
+      signal,
+      [display],
+    );
+    for (const [op, params] of request.mock.calls) {
+      if (op === 'move' || op === 'button') expect(params).toMatchObject({ layout: [display] });
+    }
+    expect(request).toHaveBeenLastCalledWith('releaseInput');
+  });
+  it('withholds a capture if topology changes during native capture', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.capture).mockImplementation(async () => {
+      vi.mocked(t.native.layout).mockResolvedValue([]);
+      return [{ ...display, data: 'png' }];
+    });
+    await expect(t.handle(await t.prepare({ kind: 'screenshot' }))).rejects.toMatchObject(
+      error('desktop-stale-layout'),
+    );
+    expect(t.connection.saveAsset).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+  });
+});
+
 describe('desktop executor authority and command tickets', () => {
   it('binds a consent claimant to its own preparation and connection epoch', async () => {
     const t = setup();
@@ -335,9 +553,10 @@ describe('desktop executor authority and command tickets', () => {
       display,
       expect.any(Function),
       expect.any(AbortSignal),
+      [display],
     );
     vi.mocked(t.native.layout).mockResolvedValue([{ ...display, scaleFactor: 1 }]);
-    await expect(t.handle(await t.prepare(action))).rejects.toMatchObject(
+    await expect(t.prepare(action)).rejects.toMatchObject(
       error('desktop-stale-layout', 'not_started'),
     );
     await t.executor.invalidate('agent_end');

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   DesktopAction,
   DesktopDisplay,
+  DesktopDisplayList,
   DesktopEndReason,
   DesktopScreenshotResult,
 } from '../../../shared/types/desktop';
@@ -37,12 +38,15 @@ export interface DesktopNative {
   capture(
     excludedWindows: string[],
     signal: AbortSignal,
+    display: DesktopDisplay,
+    layout: DesktopDisplay[],
   ): Promise<(DesktopDisplay & { data: string })[]>;
   input(
     action: DesktopAction,
     display: DesktopDisplay | undefined,
     check: (executed?: boolean) => void,
     signal: AbortSignal,
+    layout?: DesktopDisplay[],
   ): Promise<void>;
 }
 export interface DesktopCredential {
@@ -76,6 +80,8 @@ interface Ticket {
   deadlineId: string;
   deadline: number;
   action: DesktopAction;
+  layout?: DesktopDisplayList;
+  display?: DesktopDisplay;
 }
 interface Session {
   request: Start;
@@ -239,10 +245,71 @@ export class DesktopExecutor {
         deadline: this.clock() + 10000,
         action: p.action,
       };
+      const ticket = s.ticket;
+      try {
+        if (p.action.kind === 'screenshot' || 'layoutId' in p.action) {
+          const displays = await this.native.layout();
+          this.check(s, ticket);
+          const previous = s.layout;
+          const layout =
+            !previous || JSON.stringify(previous.displays) !== JSON.stringify(displays)
+              ? { id: randomUUID(), displays }
+              : previous;
+          s.layout = layout;
+          ticket.layout = { layoutId: layout.id, displays: layout.displays };
+          if (
+            'layoutId' in p.action &&
+            p.action.layoutId !== undefined &&
+            p.action.layoutId !== ticket.layout.layoutId
+          )
+            throw desktopFailure(
+              'desktop-stale-layout',
+              'List displays again after a display change',
+              'not_started',
+            );
+          const selected = p.action.displayId;
+          if (
+            !displays.length ||
+            (selected !== undefined && !displays.some((d) => d.displayId === selected))
+          )
+            throw desktopFailure(
+              'desktop-display-unavailable',
+              'The selected display is unavailable; call ws.desktop.listDisplay()',
+              'not_started',
+            );
+          if (selected === undefined && displays.length > 1)
+            throw desktopFailure(
+              'desktop-display-selection-required',
+              'Multiple displays are available. Call ws.desktop.listDisplay() and ask the user which screen to use, then retry with displayId.',
+              'not_started',
+            );
+          const target =
+            selected === undefined ? displays[0] : displays.find((d) => d.displayId === selected);
+          if (!target)
+            throw desktopFailure(
+              'desktop-display-unavailable',
+              'The selected display is unavailable',
+              'not_started',
+            );
+          ticket.display = target;
+          if (p.action.kind !== 'screenshot') {
+            const points = p.action.kind === 'drag' ? [p.action.from, p.action.to] : [p.action];
+            if (points.some((pt) => pt.x >= target.width || pt.y >= target.height))
+              throw desktopFailure(
+                'invalid-params',
+                'Coordinates are outside the selected display',
+                'not_started',
+              );
+          }
+        }
+      } catch (error) {
+        if (s.ticket === ticket) s.ticket = undefined;
+        throw error;
+      }
       return {
         commandId: p.commandId,
         sequence: p.sequence,
-        deadlineId: s.ticket.deadlineId,
+        deadlineId: ticket.deadlineId,
         expiresInMs: 10000,
       };
     }
@@ -285,73 +352,88 @@ export class DesktopExecutor {
       await this.native.check();
       guard();
       const action = ticket.action;
-      let result: DesktopScreenshotResult | { ok: true };
-      if (action.kind === 'screenshot') {
-        started = true;
-        const captures = await this.native.capture(this.overlay.excludedWindows(), s.abort.signal);
+      let result: DesktopScreenshotResult | DesktopDisplayList | { ok: true };
+      const checkLayout = async () => {
+        if (!ticket.layout) return;
+        const current = await this.native.layout();
         guard();
-        if (!captures.length)
-          throw desktopFailure('desktop-execution-failed', 'No displays were captured', 'partial');
-        const displays: DesktopScreenshotResult['displays'] = [];
-        for (const { data, ...display } of captures) {
-          guard();
-          const asset = await connection.saveAsset({
-            workspaceId: p.workspaceId,
-            data,
-            mimeType: 'image/png',
-            originalName: 'desktop.png',
-          });
-          guard();
-          if (!asset.assetId || asset.url !== `workspace-asset://${p.workspaceId}/${asset.assetId}`)
-            throw desktopFailure(
-              'desktop-execution-failed',
-              'Asset persistence returned an invalid screenshot reference',
-              'partial',
-            );
-          displays.push({ ...display, ...asset, mimeType: 'image/png' });
-        }
-        const layout = captures.map(({ data: _data, ...display }) => display);
-        if (!s.layout || JSON.stringify(s.layout.displays) !== JSON.stringify(layout))
-          s.layout = { id: randomUUID(), displays: layout };
-        result = { capturedAt: new Date().toISOString(), layoutId: s.layout.id, displays };
+        if (JSON.stringify(current) !== JSON.stringify(ticket.layout.displays))
+          throw desktopFailure(
+            'desktop-stale-layout',
+            'List displays again after a display change',
+            started ? 'partial' : 'not_started',
+          );
+      };
+      await checkLayout();
+      if (action.kind === 'listDisplay') {
+        const displays = await this.native.layout();
+        guard();
+        if (!s.layout || JSON.stringify(s.layout.displays) !== JSON.stringify(displays))
+          s.layout = { id: randomUUID(), displays };
+        result = { layoutId: s.layout.id, displays };
+      } else if (action.kind === 'screenshot') {
+        const selected = ticket.display;
+        const layout = ticket.layout;
+        if (!selected || !layout)
+          throw desktopFailure(
+            'desktop-stale-command',
+            'Screenshot selection was not prepared',
+            'not_started',
+          );
+        started = true;
+        const captures = await this.native.capture(
+          this.overlay.excludedWindows(),
+          s.abort.signal,
+          selected,
+          layout.displays,
+        );
+        guard();
+        await checkLayout();
+        if (
+          captures.length !== 1 ||
+          JSON.stringify(captures.map(({ data: _data, ...d }) => d)) !== JSON.stringify([selected])
+        )
+          throw desktopFailure(
+            'desktop-execution-failed',
+            'Native capture did not return exactly the selected display',
+            'partial',
+          );
+        const { data, ...display } = captures[0];
+        const asset = await connection.saveAsset({
+          workspaceId: p.workspaceId,
+          data,
+          mimeType: 'image/png',
+          originalName: 'desktop.png',
+        });
+        guard();
+        await checkLayout();
+        if (!asset.assetId || asset.url !== `workspace-asset://${p.workspaceId}/${asset.assetId}`)
+          throw desktopFailure(
+            'desktop-execution-failed',
+            'Asset persistence returned an invalid screenshot reference',
+            'partial',
+          );
+        result = {
+          capturedAt: new Date().toISOString(),
+          layoutId: layout.layoutId,
+          displays: [{ ...display, ...asset, mimeType: 'image/png' }],
+        };
         guard();
         this.overlay.pulse(p.sessionId);
       } else {
-        let display: DesktopDisplay | undefined;
-        if ('displayId' in action) {
-          const current = await this.native.layout();
-          guard();
-          if (
-            !s.layout ||
-            s.layout.id !== action.layoutId ||
-            JSON.stringify(current) !== JSON.stringify(s.layout.displays)
-          )
-            throw desktopFailure(
-              'desktop-stale-layout',
-              'Capture a new screenshot after a display change',
-              'not_started',
-            );
-          display = current.find((d) => d.displayId === action.displayId);
-          const points = action.kind === 'drag' ? [action.from, action.to] : [action];
-          const target = display;
-          if (!target || points.some((pt) => pt.x >= target.width || pt.y >= target.height))
-            throw desktopFailure(
-              'invalid-params',
-              'Coordinates are outside the captured display',
-              'not_started',
-            );
-        }
         guard();
         await this.native.input(
           action,
-          display,
+          ticket.display,
           (executed = false) => {
             if (executed) started = true;
             guard();
           },
           s.abort.signal,
+          ticket.layout?.displays,
         );
         guard();
+        await checkLayout();
         result = { ok: true };
       }
       return { commandId: p.commandId, sequence: p.sequence, result };

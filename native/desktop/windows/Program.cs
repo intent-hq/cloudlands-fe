@@ -126,6 +126,12 @@ static class Program {
         if(GetDpiForMonitor(monitor,0,out uint dpi,out _)!=0) throw Unsupported("Monitor scaling could not be read");
         return (object)new {displayId=s.DeviceName,width=r.Width,height=r.Height,originX=r.X,originY=r.Y,scaleFactor=dpi/96.0};
     }).ToArray();
+    static void CheckLayout(JsonElement p) {
+        if(p.TryGetProperty("layout",out var expected) && !System.Text.Json.Nodes.JsonNode.DeepEquals(
+            System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Layout())),
+            System.Text.Json.Nodes.JsonNode.Parse(expected.GetRawText())))
+            throw new Refusal("desktop-stale-layout","Display topology changed");
+    }
     static void ReleaseInput() {
         foreach(var key in heldKeys.ToArray()) Key(key,false,true);
         foreach(var button in heldButtons.ToArray()) MouseEvent(button=="right"?0x10u:4u,0,true);
@@ -153,6 +159,7 @@ static class Program {
             lastStep=Environment.TickCount64; Ready(); return new {ok=true};
         }
         Ready();
+        CheckLayout(p);
         if(op=="check") return new {ok=true};
         if(op=="layout") return Layout();
         if(op=="capture" || op=="validateExclusion") {
@@ -160,10 +167,17 @@ static class Program {
             var excluded=p.GetProperty("excludedWindows").EnumerateArray().Select(e=>new IntPtr(long.Parse(e.GetString()!))).ToArray();
             if(excluded.Length==0 || excluded.Any(h=>!GetWindowDisplayAffinity(h,out var affinity)||affinity!=0x11)) throw Unsupported("The desktop indicator cannot be excluded from capture");
             if(op=="validateExclusion") return new {ok=true};
+            var selected=p.GetProperty("display");
+            var selectedId=selected.GetProperty("displayId").GetString();
+            var current=Layout().Select(d=>JsonSerializer.SerializeToElement(d)).SingleOrDefault(d=>d.GetProperty("displayId").GetString()==selectedId);
+            if(current.ValueKind==JsonValueKind.Undefined) throw new Refusal("desktop-display-unavailable","The selected display is unavailable");
+            if(!System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(current.GetRawText()),System.Text.Json.Nodes.JsonNode.Parse(selected.GetRawText())))
+                throw new Refusal("desktop-stale-layout","Display geometry changed");
             var result=new List<object>();
-            foreach(var d in Layout()) {
+            foreach(var d in new[]{current}) {
                 Ready(); var e=JsonSerializer.SerializeToElement(d); int x=e.GetProperty("originX").GetInt32(),y=e.GetProperty("originY").GetInt32(),w=e.GetProperty("width").GetInt32(),h=e.GetProperty("height").GetInt32();
                 using var bitmap=new Bitmap(w,h,PixelFormat.Format32bppArgb); using(var graphics=Graphics.FromImage(bitmap)) graphics.CopyFromScreen(x,y,0,0,new Size(w,h),CopyPixelOperation.SourceCopy);
+                CheckLayout(p);
                 using var stream=new MemoryStream(); bitmap.Save(stream,ImageFormat.Png);
                 var map=JsonSerializer.Deserialize<Dictionary<string,object>>(e.GetRawText())!; map["data"]=Convert.ToBase64String(stream.ToArray()); result.Add(map);
             }
@@ -172,6 +186,7 @@ static class Program {
         if(op=="move") {
             var d=p.GetProperty("display"); var screen=Screen.AllScreens.SingleOrDefault(s=>s.DeviceName==d.GetProperty("displayId").GetString()) ?? throw new Refusal("desktop-stale-layout","Display disconnected");
             var r=screen.Bounds;
+            CheckLayout(p);
             if(r.Width!=d.GetProperty("width").GetInt32()||r.Height!=d.GetProperty("height").GetInt32()||r.X!=d.GetProperty("originX").GetInt32()||r.Y!=d.GetProperty("originY").GetInt32()) throw new Refusal("desktop-stale-layout","Display geometry changed");
             int x=r.X+(int)p.GetProperty("x").GetDouble(),y=r.Y+(int)p.GetProperty("y").GetDouble();
             if(!r.Contains(x,y)) throw Unsupported("Pointer is outside display"); Target(WindowFromPoint(new Point{x=x,y=y}));
