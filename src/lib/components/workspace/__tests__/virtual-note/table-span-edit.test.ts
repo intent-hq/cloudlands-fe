@@ -10,11 +10,11 @@ import { DocumentSession } from './document-session';
 
 beforeAll(() => store.init());
 afterAll(() => store.dispose());
-for (const operation of ['typing', 'header'] as const)
+for (const operation of ['typing', 'header', 'splitInterior', 'splitEnd'] as const)
   it(`preserves full logical span during ${operation} in an interior native continuation`, async () => {
     const original =
       '| H | R |\n| :--- | ---: |\n' +
-      Array.from({ length: 120 }, (_, r) => `| left${r} | right${r} |`).join('\n');
+      Array.from({ length: 125 }, (_, r) => `| left${r} | right${r} |`).join('\n');
     const native = new Editor(
       createEditorConfig({
         element: document.createElement('div'),
@@ -33,9 +33,7 @@ for (const operation of ['typing', 'header'] as const)
         if (n.type.name === 'tableCell' && n.textContent.startsWith('left')) cells.push(p);
       });
       native.view.dispatch(
-        native.state.tr.setSelection(
-          CellSelection.create(native.state.doc, cells[0], cells.at(-1)!),
-        ),
+        native.state.tr.setSelection(CellSelection.create(native.state.doc, cells[0], cells[119])),
       );
       expect(native.commands.mergeCells()).toBe(true);
       const source = processHTMLToMarkdown(native.getHTML()),
@@ -52,35 +50,51 @@ for (const operation of ['typing', 'header'] as const)
       // a renderer write path or evidence of bounded merge admission.
       Object.assign(service, { tableStates: metadata });
       session = new DocumentSession(service, document.createElement('div'));
-      await session.seek(source.indexOf('right94'));
+      await session.seek(source.indexOf(operation === 'splitEnd' ? 'right121' : 'right94'));
       const entry = session.projection!.table!.entries.find(
         (e) => e.cell.from === raw.rows[1].cells[0].from,
       )!;
       expect(entry.cell.owner?.rowspan).toBe(120);
-      expect(entry.cell.mounted!.rowspan).toBe(5);
+      expect(entry.cell.mounted!.rowspan).toBe(operation === 'splitEnd' ? 1 : 5);
       native.commands.setTextSelection(cells[0] + 4);
       session.editor!.commands.setTextSelection(entry.paragraph + 3);
+      const created = session.created;
       for (const editor of [native, session.editor!]) {
         if (operation === 'typing') expect(editor.commands.insertContent('Z')).toBe(true);
-        else expect(editor.commands.toggleHeaderCell()).toBe(true);
+        else if (operation === 'header') expect(editor.commands.toggleHeaderCell()).toBe(true);
+        else {
+          expect(editor.can().splitCell()).toBe(true);
+          expect(editor.commands.splitCell()).toBe(true);
+        }
       }
       expect(session.error).toBe('');
+      if (operation.startsWith('split'))
+        await expect.poll(() => session!.created).toBeGreaterThan(created);
       const expected = native.state.doc.firstChild!.child(1).child(0).toJSON();
       const inspect = () => {
-        const cell = session!.projection!.table!.entries.find(
-          (e) => e.cell.from === raw.rows[1].cells[0].from,
-        )!.cell;
+        const cell = operation.startsWith('split')
+          ? service
+              .tableWindow(raw.rows[1].cells[0].body)!
+              .cells.find((c) => c.from === raw.rows[1].cells[0].from)!
+          : session!.projection!.table!.entries.find(
+              (e) => e.cell.from === raw.rows[1].cells[0].from,
+            )!.cell;
         return { type: cell.nodeType, attrs: cell.attrs };
       };
       expect(inspect()).toEqual({ type: expected.type, attrs: expected.attrs });
       const saved = service.region(0);
-      expect(saved).toBe(
-        operation === 'typing'
-          ? source.slice(0, raw.rows[1].cells[0].body + 2) +
-              'Z' +
-              source.slice(raw.rows[1].cells[0].body + 2)
-          : source,
-      );
+      if (operation.startsWith('split'))
+        expect(await processMarkdownToHTML(saved)).toBe(
+          await processMarkdownToHTML(processHTMLToMarkdown(native.getHTML())),
+        );
+      else
+        expect(saved).toBe(
+          operation === 'typing'
+            ? source.slice(0, raw.rows[1].cells[0].body + 2) +
+                'Z' +
+                source.slice(raw.rows[1].cells[0].body + 2)
+            : source,
+        );
       const old = session.editor!;
       session.save();
       await session.seek(saved.indexOf('right94'));
@@ -93,7 +107,7 @@ for (const operation of ['typing', 'header'] as const)
       const current = session.projection!.table!.entries.find(
         (e) => e.cell.from === raw.rows[1].cells[0].from,
       )!.cell;
-      expect(current.attrs!.rowspan).toBe(120);
+      expect(current.attrs!.rowspan).toBe(operation.startsWith('split') ? 1 : 120);
       expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
       expect(service.stats.maxTableWriteBytes).toBeLessThanOrEqual(4096);
       console.info('Clipped span edit', {

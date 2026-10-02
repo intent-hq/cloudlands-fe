@@ -353,13 +353,83 @@ export class SourceJournal {
       revision: this.revision,
     };
   }
+  maxTableStructuralTransientBytes = 0;
+  maxBackingTableSplitCells = 0;
+  maxBackingTableSplitBytes = 0;
+  /** A bounded command intent; full cell reconstruction stays in mock backing. */
+  stageLogicalTableSplit(
+    intent: { revision: number; table: number; cell: number },
+    history = true,
+  ) {
+    const encoded = JSON.stringify(intent),
+      size = bytes(encoded);
+    if (size > LIMITS.request) throw new Error('Table command request exceeds budget');
+    const received = JSON.parse(encoded) as typeof intent;
+    if (received.revision !== this.revision) throw new Error('Stale logical table command');
+    const { id, start } = this.locate(received.table);
+    const table = this.tableIndex(this.region(id), start).find(
+      (t) => t.from + start === received.table,
+    );
+    const cell = table?.rows.flatMap((r) => r.cells).find((c) => c.from + start === received.cell);
+    const stored = this.tableStates.get(`cell:${received.cell}`);
+    if (!table || !cell || !stored) throw new Error('Logical table owner no longer exists');
+    const node = JSON.parse(stored) as JSONContent;
+    const width = Number(node.attrs!.colspan),
+      height = Number(node.attrs!.rowspan);
+    if (width * height <= 1) throw new Error('Logical table cell is not merged');
+    const colwidth = node.attrs!.colwidth as number[] | null;
+    const nodes = Array.from({ length: width * height }, (_, n) => ({
+      type: node.type,
+      attrs: {
+        ...node.attrs,
+        colspan: 1,
+        rowspan: 1,
+        colwidth: colwidth?.[n % width] ? [colwidth[n % width]] : null,
+      },
+      content: n ? [{ type: 'paragraph' }] : node.content,
+    }));
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, size);
+    this.maxTableStructuralTransientBytes = Math.max(
+      this.maxTableStructuralTransientBytes,
+      size * 3,
+    );
+    this.maxBackingTableSplitCells = Math.max(this.maxBackingTableSplitCells, nodes.length);
+    this.maxBackingTableSplitBytes = Math.max(
+      this.maxBackingTableSplitBytes,
+      bytes(JSON.stringify(nodes)),
+    );
+    const window = this.tableWindow(cell.body + start)!;
+    this.stageTableSplit(
+      window,
+      { kind: 'split', row: cell.row, column: cell.column, width, height, nodes },
+      history,
+      true,
+    );
+    const updated = this.tableIndex(this.region(id), start).find(
+      (t) => t.from + start === received.table,
+    )!;
+    const last = updated.rows[cell.row + height - 1].cells.find(
+      (c) => c.column === cell.column + width - 1,
+    )!;
+    const result = {
+      revision: this.revision,
+      cell: received.cell,
+      last: last.from + start,
+      lastSource: last.body + start,
+    };
+    const response = JSON.stringify(result);
+    if (bytes(response) > LIMITS.request) throw new Error('Table command response exceeds budget');
+    this.log('table-logical-split', received.cell, size);
+    return JSON.parse(response) as typeof result;
+  }
   private stageTableSplit(
     window: TableWindow,
     edit: Extract<TableStructure, { kind: 'split' }>,
     history: boolean,
+    backingIntent = false,
   ) {
     if (window.revision !== this.revision) throw new Error('Stale table split');
-    if (bytes(JSON.stringify(edit)) > LIMITS.request)
+    if (!backingIntent && bytes(JSON.stringify(edit)) > LIMITS.request)
       throw new Error('Table split request exceeds budget');
     const { id, start } = this.locate(window.from),
       table = this.tableIndex(this.region(id), start).find((t) => t.from + start === window.from)!;
@@ -408,6 +478,15 @@ export class SourceJournal {
           JSON.stringify(edit.nodes[r * edit.width + c]),
           history,
         );
+        const extent = retained.extent;
+        if (
+          extent &&
+          (next.row < extent.row ||
+            next.row >= extent.row + extent.rowCount ||
+            next.column < extent.column ||
+            next.column >= extent.column + extent.columnCount)
+        )
+          continue;
         retained.cells.push({
           ...next,
           from: next.from + start,
@@ -1582,6 +1661,9 @@ export class SourceJournal {
         0,
       ),
       maxTableWriteBytes: this.maxTableWriteBytes,
+      maxTableStructuralTransientBytes: this.maxTableStructuralTransientBytes,
+      maxBackingTableSplitCells: this.maxBackingTableSplitCells,
+      maxBackingTableSplitBytes: this.maxBackingTableSplitBytes,
       backingSeamBytes: bytes(JSON.stringify([...this.seams.values()])),
       backingListRepairs: this.backingListRepairs,
       maxListRepairRead: this.maxListRepairRead,

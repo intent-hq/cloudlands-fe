@@ -8,7 +8,7 @@ import {
   type TablePage,
 } from './table-transfer';
 import { cloneTableWindow } from './table-payload';
-import { Editor, Extension } from '@tiptap/core';
+import { Editor, Extension, type CommandProps } from '@tiptap/core';
 import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { createEditorConfig } from '$lib/utils/editor-config';
@@ -832,7 +832,40 @@ export class DocumentSession {
         onUpdate: () => {},
       });
       // Keep the native highlighter; meter its actual input, including auto detection.
+      const splitLogicalCell = (props: CommandProps): boolean | undefined => {
+        const p = this.projection?.table;
+        const logical = this.fromPM(props.state.selection).table;
+        const entry = p?.entries.find((e) => e.cell.from === logical?.anchor.cell);
+        if (
+          !entry?.cell.owner ||
+          !entry.cell.mounted ||
+          (entry.cell.owner.rowspan === entry.cell.mounted.rowspan &&
+            entry.cell.owner.colspan === entry.cell.mounted.colspan)
+        )
+          return undefined;
+        if (logical!.anchor.cell !== logical!.head.cell) return false;
+        if (props.dispatch)
+          props.tr.setMeta('proofLogicalTableSplit', {
+            revision: this.service.revision,
+            table: p!.window.from,
+            cell: entry.cell.from,
+          });
+        return true;
+      };
       const extensions = config.extensions.map((ext) => {
+        if (ext.name === 'table')
+          return ext
+            .extend({
+              addCommands() {
+                const parent = this.parent!();
+                return {
+                  ...parent,
+                  splitCell: () => (props) => splitLogicalCell(props) ?? parent.splitCell!()(props),
+                };
+              },
+            })
+            .configure(ext.options);
+
         if (ext.name === 'starterKit') return ext.configure({ ...ext.options, undoRedo: false });
         if (ext.name !== 'codeBlock') return ext;
         const lowlight = ext.options.lowlight;
@@ -1143,6 +1176,49 @@ export class DocumentSession {
   }
   private accept(transactions: Transaction[]) {
     if (this.suppress) return;
+    const logicalSplit = transactions.find((tr) => tr.getMeta('proofLogicalTableSplit'));
+    if (logicalSplit) {
+      const before = structuredClone(this.selection);
+      try {
+        const after = this.service.atomic(() => {
+          this.service.beginChanges();
+          const anchorsBefore = structuredClone(this.service.anchors);
+          const result = this.service.stageLogicalTableSplit(
+            logicalSplit.getMeta('proofLogicalTableSplit'),
+          );
+          const after: Selection = { ...before, revision: result.revision };
+          if (after.table?.kind === 'cell') {
+            after.table = { ...after.table, head: { cell: result.last, block: 0, offset: 0 } };
+            after.head = result.lastSource;
+          }
+          this.service.record(
+            {
+              changes: [],
+              before,
+              after,
+              anchorsBefore,
+              anchorsAfter: structuredClone(this.service.anchors),
+            },
+            false,
+          );
+          return after;
+        });
+        this.selection = after;
+        this.selectionGeneration++;
+        this.prevTime = 0;
+        this.cache.clear();
+        this.error = '';
+        // Finish native command dispatch before replacing its mounted view.
+        queueMicrotask(() => {
+          void this.seek(after.anchor);
+        });
+      } catch (error) {
+        this.error = String(error);
+        this.rejectedTransactions++;
+        this.changed();
+      }
+      return;
+    }
     const old = {
       projection: this.projection,
       windowEnd: this.windowEnd,
