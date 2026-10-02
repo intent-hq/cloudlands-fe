@@ -20,6 +20,7 @@ import {
   selectModelPickerCollapsedGroups,
 } from '$store/renderer/slices/model/model-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import {
   hydrateDefaultProvider,
   setAvailableModels,
@@ -44,7 +45,7 @@ const models = [
 const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
 let activeCleanup: (() => void) | undefined;
 
-function setupModels(populated: boolean) {
+function setupModels(populated: boolean, degraded = false) {
   return () => {
     activeCleanup?.();
     const previousLoading = selectLoadingStates.select(appStore.state);
@@ -73,14 +74,28 @@ function setupModels(populated: boolean) {
         ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
         : [];
       restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows));
-      appStore.dispatch(providerModelsLoaded(providerId, { models: rows }, epoch));
-      if (providerId === 'codex') appStore.dispatch(setAvailableModels(rows, providerId));
+      appStore.dispatch(
+        providerModelsLoaded(
+          providerId,
+          degraded
+            ? {
+                models: [],
+                warning: 'Temporary model catalog failure',
+              }
+            : { models: rows },
+          epoch,
+        ),
+      );
+      if (providerId === 'codex')
+        appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
+    const cancelCatalog = appStore.runSaga(modelReloadSaga);
     let disposed = false;
     const cleanup = () => {
       if (disposed) return;
       disposed = true;
       if (activeCleanup === cleanup) activeCleanup = undefined;
+      cancelCatalog();
       if (bridge && originalInvoke) bridge.invoke = originalInvoke;
       for (const restoreHandler of restoreModelHandlers) restoreHandler();
       appStore.dispatch(providerModelsCacheCleared());
@@ -149,6 +164,20 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         updateGlobalDefault: false,
       },
       setup: setupModels(true),
+    },
+    recovery: {
+      props: {
+        initialOpen: true,
+        selectedModel: 'codex-preview-balanced',
+        agentId: 'preview-recovery-agent',
+        showReasoning: true,
+        reasoningEffort: 'high',
+        onReasoningChange: () => true,
+        showDefaultOption: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+      },
+      setup: setupModels(true, true),
     },
     // Open the “Default model” trigger to reveal the empty state and Retry button.
     // No search is needed: both available providers return an empty model catalog.

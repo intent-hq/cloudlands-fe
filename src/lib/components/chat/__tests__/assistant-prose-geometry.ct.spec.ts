@@ -279,7 +279,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         const assertCluster = async (testId: string, expectedRows: number) => {
           const fixture = component.locator(`[data-testid="${testId}"]`);
-          const stack = fixture.locator(':scope > *');
+          await fixture.scrollIntoViewIfNeeded();
           const rows = fixture.locator('[data-chat-operational-row]');
           await expect(rows).toHaveCount(expectedRows);
           const rowLines = rows.locator('[data-operational-disclosure-row]');
@@ -322,23 +322,31 @@ for (const theme of ['light', 'dark'] as const) {
             );
           }
 
-          const firstBlock = fixture.locator('[data-message-content-block]').first();
-          const lastBlock = fixture.locator('[data-message-content-block]').last();
-          const firstRow = rows.first();
-          const lastRow = rows.last();
+          // Read related edges in one frame: expanded detail heights can still animate,
+          // so separate protocol calls can compare geometry from different frames.
+          const { stackBox, firstBlockBox, lastBlockBox, firstRowBox, lastRowBox } =
+            await fixture.evaluate((element) => {
+              const blocks = element.querySelectorAll('[data-message-content-block]');
+              const rows = element.querySelectorAll('[data-chat-operational-row]');
+              const box = (node: Element) => {
+                const { y, height } = node.getBoundingClientRect();
+                return { y, height };
+              };
+              return {
+                stackBox: box(element.firstElementChild!),
+                firstBlockBox: box(blocks[0]),
+                lastBlockBox: box(blocks[blocks.length - 1]),
+                firstRowBox: box(rows[0]),
+                lastRowBox: box(rows[rows.length - 1]),
+              };
+            });
           if (expectedRows === 1) {
-            const stackBox = (await stack.boundingBox())!;
-            const firstRowBox = (await firstRow.boundingBox())!;
             expect(firstRowBox.y - stackBox.y).toBeCloseTo(0, 1);
             expect(stackBox.y + stackBox.height - (firstRowBox.y + firstRowBox.height)).toBeCloseTo(
               0,
               1,
             );
           } else {
-            const firstBlockBox = (await firstBlock.boundingBox())!;
-            const lastBlockBox = (await lastBlock.boundingBox())!;
-            const firstRowBox = (await firstRow.boundingBox())!;
-            const lastRowBox = (await lastRow.boundingBox())!;
             expect(firstRowBox.y - (firstBlockBox.y + firstBlockBox.height)).toBeCloseTo(
               16 * zoom,
               1,
@@ -351,9 +359,10 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('static-operational-cluster', 5);
         await assertCluster('streaming-operational-cluster', 5);
 
+        await expandedGroup.scrollIntoViewIfNeeded();
         const groupRow = expandedGroup.locator('[data-operational-disclosure-row]');
         const groupProse = expandedGroup.locator(
-          '[data-response-group-content] > [data-message-content-block="text"]',
+          '[data-response-group-content] > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="text"]',
         );
         await expect(groupProse).toBeVisible();
         const [groupRowBox, groupProseBox] = await Promise.all([
@@ -367,6 +376,7 @@ for (const theme of ['light', 'dark'] as const) {
           'streaming-expanded-group-operational-rows',
         ]) {
           const nestedGroup = component.locator(`[data-testid="${fixtureId}"]`);
+          await nestedGroup.scrollIntoViewIfNeeded();
           const nestedGroupDisclosure = nestedGroup.locator(
             '[data-testid="response-group-disclosure"]',
           );
@@ -407,6 +417,7 @@ for (const theme of ['light', 'dark'] as const) {
             'group-group',
           ]) {
             const fixture = component.locator(`[data-testid="operational-pair-${mode}-${pair}"]`);
+            await fixture.scrollIntoViewIfNeeded();
             const rows = fixture.locator('[data-operational-row-container]');
             await expect(rows).toHaveCount(2);
             const boxes = await rows.evaluateAll((elements) =>
@@ -456,6 +467,7 @@ for (const theme of ['light', 'dark'] as const) {
           }
         }
 
+        await component.getByTestId('static-operational-cluster').scrollIntoViewIfNeeded();
         const staticRows = component.locator(
           '[data-testid="static-operational-cluster"] [data-operational-cluster-row]',
         );
@@ -522,5 +534,6 @@ test('removes operational detail motion when reduced motion is preferred', async
   await disclosure.click();
   const details = component.locator(`[id="${controls}"]`);
   await expect(details).toBeVisible();
+  await expect(details).toContainText('Reasoning body');
   await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
 });

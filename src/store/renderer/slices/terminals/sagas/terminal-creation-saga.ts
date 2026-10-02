@@ -5,7 +5,10 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { selectFocusedPanelId } from '../../panel-layout/panel-layout-selectors';
 import { openTab } from '../../panel-layout/panel-layout-slice';
-import { selectIsWorkspaceCollaborator } from '../../workspace/workspace-selectors';
+import {
+  selectIsWorkspaceCollaborator,
+  selectWorkspaceActionContext,
+} from '../../workspace/workspace-selectors';
 import {
   createPanelTerminalRequested,
   hydrateTerminalsRequested,
@@ -22,11 +25,14 @@ function* createTerminalWorker(
   // `terminal.create` is owner-only (multiplayer w3): the global new-terminal
   // shortcut still dispatches here, so the request is dropped rather than refused.
   if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) return;
+  const context = yield* selectWorkspaceActionContext.effect(workspaceId);
+  if (!context) return;
   try {
     const result: Awaited<ReturnType<typeof appClient.terminals.create>> = yield* call(
       [appClient.terminals, appClient.terminals.create],
       { workspaceId, cols: 80, rows: 24 },
     );
+    if (!context || context !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     if (!result.success || !result.id) {
       logger.error('Failed to create terminal', { error: result.error });
       return;

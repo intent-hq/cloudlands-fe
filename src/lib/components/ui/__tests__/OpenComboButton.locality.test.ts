@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { toNativePath } from '$lib/utils/path-utils';
 import { invoke } from '$lib/electron-bridge';
 import { setOpenAction } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -171,7 +171,7 @@ async function renderAndOpenDropdown(props: Record<string, unknown> = {}) {
 
 function actionLabels(container: HTMLElement): string[] {
   return within(container)
-    .getAllByRole('menuitem')
+    .getAllByRole('menuitemradio')
     .map((el) => within(el).getByText(/\S/, { selector: 'span' }).textContent?.trim() ?? '');
 }
 
@@ -422,7 +422,9 @@ describe('OpenComboButton menu action dispatch', () => {
     mockStoreState = makeState({ mode: 'sidecar-uds' });
     const container = await renderAndOpenDropdown();
 
-    await fireEvent.click(within(container).getByRole('menuitem', { name: 'Visual Studio Code' }));
+    const selected = within(container).getByRole('menuitemradio', { name: 'Visual Studio Code' });
+    expect(selected.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(selected);
 
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledExactlyOnceWith('vscode:open', '/tmp/project'),
@@ -439,7 +441,9 @@ describe('OpenComboButton menu action dispatch', () => {
       mockStoreState = makeState({ mode: 'sidecar-uds' });
       const container = await renderAndOpenDropdown({ workspaceId: 'ws-remote' });
 
-      await fireEvent.click(within(container).getByRole('menuitem', { name: 'Copy branch name' }));
+      await fireEvent.click(
+        within(container).getByRole('menuitemradio', { name: 'Copy branch name' }),
+      );
 
       await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledExactlyOnceWith('main'));
       expect(mockDispatch).toHaveBeenCalledWith(setOpenAction('copy-branch'));

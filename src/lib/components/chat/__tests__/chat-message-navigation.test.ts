@@ -241,3 +241,36 @@ describe('mergeUserMessageNavigationItems', () => {
     ]);
   });
 });
+
+describe('member sender hydrated versus index-only navigation', () => {
+  it('uses exact hydrated presentation but never interprets index provenance as author context', () => {
+    const header =
+      'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const raw = `${header}\n\nFind this body`;
+    const row = message('member', 'user', raw);
+    row.author = {
+      principalId: 'person-1',
+      login: 'same',
+      displayName: 'Same Person',
+      avatarUrl: null,
+      identity: { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' },
+    };
+    const before = JSON.stringify(row);
+    expect(getPlainTextMessagePreview(row, 'owner')).toBe('Find this body');
+    expect(getUserMessageNavigationItems([row], 'owner')).toEqual([
+      { id: 'member', text: 'Find this body' },
+    ]);
+    const index = [
+      {
+        id: 'member',
+        preview: raw,
+        metadata: { humanAuthor: { sourcePrincipalId: 'person-1', author: row.author } },
+      },
+    ] as unknown as UserMessageIndexItem[];
+    expect(getUserMessageNavigationItemsFromIndex(index)).toEqual([
+      { id: 'member', text: `${header} Find this body` },
+    ]);
+    expect(getPlainTextMessagePreview(row)).toBe(`${header} Find this body`);
+    expect(JSON.stringify(row)).toBe(before);
+  });
+});

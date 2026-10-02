@@ -13,6 +13,7 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
+  import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
   import {
     clearNewWorkspaceDraft,
     createNewWorkspaceDraftSaver,
@@ -52,6 +53,12 @@
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { cancelGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+  import {
+    selectGitLabAuthIsAuthenticating,
+    selectGitLabAuthIsConfigured,
+  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -66,7 +73,7 @@
   import ClaudeLoginButton from '$features/onboarding/messages/ClaudeLoginButton.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
-  import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
+  import OnboardingForgeStep from '$features/onboarding/steps/OnboardingForgeStep.svelte';
   import OnboardingRequirementsStep from '$features/onboarding/steps/OnboardingRequirementsStep.svelte';
   import {
     selectAllRequirementsMet,
@@ -188,6 +195,7 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
+  const hostRole$ = selectHostRole();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
@@ -724,7 +732,7 @@
         onboardingTestPromptRunning = false;
       }
     }
-    appStore.dispatch(goToStep('github'));
+    appStore.dispatch(goToStep('forge'));
   }
 
   // Pull conflict state
@@ -753,7 +761,9 @@
   const onboardingStepIndex = $derived(ONBOARDING_STEP_ORDER.indexOf($onboardingStep$));
   const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
-  const isGitHubStep = $derived($onboardingStep$ === 'github');
+  const isForgeStep = $derived($onboardingStep$ === 'forge');
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
@@ -761,15 +771,23 @@
   const showStartWorking = $derived(
     onboardingStepIndex >= ONBOARDING_STEP_ORDER.indexOf('configuring'),
   );
-  const onboardingVisibleStep = $derived(
-    isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
-  );
   // The 'requirements' gate is not counted in the visible step indicator, and
   // 'configuring' and 'ready' share one visible step, so the count is the
   // visible order minus the terminal 'ready' entry. Back navigation maps
   // visible step N-1 to the visible order so it never lands on the gate.
-  const VISIBLE_STEP_ORDER = ONBOARDING_STEP_ORDER.filter((step) => step !== 'requirements');
-  const ONBOARDING_TOTAL_STEPS = VISIBLE_STEP_ORDER.length - 1;
+  const VISIBLE_STEP_ORDER = $derived(
+    ONBOARDING_STEP_ORDER.filter(
+      (step) =>
+        step !== 'requirements' &&
+        ($hostRole$ !== 'member' || (step !== 'welcome' && step !== 'forge')),
+    ),
+  );
+  const ONBOARDING_TOTAL_STEPS = $derived(VISIBLE_STEP_ORDER.length - 1);
+  const onboardingVisibleStep = $derived(
+    isConfiguringStep
+      ? ONBOARDING_TOTAL_STEPS
+      : Math.max(1, VISIBLE_STEP_ORDER.indexOf($onboardingStep$) + 1),
+  );
 
   // ============================================================================
   // Mount: Reset onboarding state
@@ -788,6 +806,7 @@
   $effect(() => {
     if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
     const step = determineOnboardingInitialStep({
+      hostRole: $hostRole$,
       requirementsCheckedOnce: $requirementsCheckedOnce$,
       allRequirementsMet: $allRequirementsMet$,
     });
@@ -1029,14 +1048,17 @@
     if (isWelcomeStep && hasConnectedProvider) {
       e.preventDefault();
       advanceFromWelcomeStep();
-    } else if (isGitHubStep) {
+    } else if (isForgeStep) {
       // Continue when connected, skip otherwise — both advance to project.
-      // Skipping abandons a still-pending device flow, so cancel it rather
-      // than leaving it polling in the background (and resurfacing in
-      // Settings).
+      // Skipping abandons a still-pending device flow (GitHub or GitLab), so
+      // cancel it rather than leaving it polling in the background (and
+      // resurfacing in Settings).
       e.preventDefault();
       if (selectGitHubAuthIsAuthenticating.select(appStore.state)) {
         appStore.dispatch(cancelGitHubAuth());
+      }
+      if (selectGitLabAuthIsAuthenticating.select(appStore.state)) {
+        appStore.dispatch(cancelGitLabAuth());
       }
       appStore.dispatch(goToStep('project'));
     } else if (isProjectStep && projectSelection?.isValid) {
@@ -1693,16 +1715,18 @@
                             </p>
                           </div>
                         </div>
-                      {:else if isGitHubStep}
+                      {:else if isForgeStep}
                         <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
-                              {m.onboarding_page_connectGithub_title()}
+                              {$gitlabEnabled$ || $gitlabConfigured$
+                                ? m.onboarding_page_connectForge_title()
+                                : m.onboarding_forgeStep_connectGithub_label()}
                             </h2>
                             <p class="text-lg text-muted-foreground">
-                              {m.onboarding_page_connectGithub_before()}
+                              {m.onboarding_page_connectForge_before()}
                               <br />
-                              {m.onboarding_page_connectGithub_after()}
+                              {m.onboarding_page_connectForge_after()}
                             </p>
                           </div>
                         </div>
@@ -1736,7 +1760,9 @@
                     <div class="py-8 space-y-6" in:fly={{ tier: 'slow', distance: 15 }}>
                       {#if isRequirementsStep}
                         <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
-                          <OnboardingRequirementsStep />
+                          {#if $hostRole$ === 'owner'}
+                            <OnboardingRequirementsStep />
+                          {/if}
                         </div>
                       {:else if isWelcomeStep}
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">
@@ -1824,9 +1850,9 @@
                             </div>
                           {/if}
                         </div>
-                      {:else if isGitHubStep}
+                      {:else if isForgeStep}
                         <div class="max-w-5xl mx-auto">
-                          <OnboardingGitHubStep
+                          <OnboardingForgeStep
                             onContinue={() => appStore.dispatch(goToStep('project'))}
                             onSkip={() => appStore.dispatch(goToStep('project'))}
                           />

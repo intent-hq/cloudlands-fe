@@ -42,7 +42,10 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectWindowIdentitySettled } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    selectPrincipalActionContext,
+    selectHostAdministrationDenied,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -51,7 +54,6 @@
     setAgentFontStyle,
     setChatAuroraEnabled,
     setCodeFontFamily,
-    setLabsMultiplayerEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -62,7 +64,6 @@
     selectChatAuroraEnabled,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
-    selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectLabsMultiplayerEnabled,
@@ -94,15 +95,15 @@
   const agentFontStyle = selectAgentFontStyle();
   const codeFontFamily = selectCodeFontFamily();
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
-  const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
-  const windowIdentitySettled$ = selectWindowIdentitySettled();
+  const collaborationContext$ = selectPrincipalActionContext();
+  const hostAdministrationDenied$ = selectHostAdministrationDenied();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -121,10 +122,9 @@
     'providers',
     'connections',
     'devices',
-    'guest-sessions',
+    'collaboration',
     'setup',
     'advanced',
-    'labs',
     'input',
     'specialists',
   ];
@@ -149,8 +149,9 @@
     'backend-sync': 'devices',
     'websocket-api': 'devices',
     'remote-access': 'devices',
-    'guest-sessions': 'guest-sessions',
-    sharing: 'guest-sessions',
+    collaboration: 'collaboration',
+    'guest-sessions': 'collaboration',
+    sharing: 'collaboration',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -184,9 +185,6 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
-    labs: 'labs',
-    'labs-multiplayer': 'labs',
-    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -195,6 +193,7 @@
   }
 
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
+    if (tabParam === 'guest-sessions' || tabParam === 'sharing') return 'collaboration';
     if (tabParam === 'accounts') return 'providers';
     if (
       tabParam === 'general' ||
@@ -249,15 +248,22 @@
   // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
   // daemon state (multiplayer w3): a collaborator-only client cannot read or
   // change them, so those sections are withheld and their tabs redirect. The
-  // redirect waits for the window identity to settle: during boot the
+  // redirect waits for the connected principal: during boot the
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>(
-    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
-  );
+  const hiddenTabs = $derived.by(() => {
+    const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
+    if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
+    return tabs;
+  });
   $effect(() => {
-    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if (
+      hiddenTabs.includes(activeTab) &&
+      (activeTab === 'collaboration' || $hostAdministrationDenied$)
+    ) {
+      setActiveTab('display');
+    }
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
@@ -511,6 +517,7 @@
 
 {#snippet agentsNavigation()}
   <AIBehaviorSidebar
+    workspaceId={settingsWorkspaceId ?? undefined}
     activeView={aiBehaviorView}
     onSelect={selectAiBehaviorView}
     isActive={activeTab === 'specialists'}
@@ -598,9 +605,9 @@
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions'}
-          <div id="guest-sessions" class="scroll-mt-20">
-            <GuestSessionsSettings />
+        {#if activeTab === 'collaboration' && $labsMultiplayerEnabled$}
+          <div id="collaboration" class="scroll-mt-20">
+            {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
         {/if}
 
@@ -808,24 +815,27 @@
                   label={m.settings_font_code_label()}
                   description={m.settings_font_code_description()}
                 >
-                  <div class="w-[180px] flex-shrink-0">
-                    <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
-                      <Select.Trigger>
-                        <span class="truncate" style:font-family={$codeFontFamilyCSS}>
-                          {$codeFontFamilyLabel}
-                        </span>
-                      </Select.Trigger>
-                      <Select.Content portal class="max-h-[300px] w-[180px]">
-                        {#each $codeFontOptions as option}
-                          <Select.Item value={option.value}>
-                            <span class="truncate" style:font-family={option.fontFamily}>
-                              {option.label}
-                            </span>
-                          </Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
-                  </div>
+                  {#snippet control({ labelId, descriptionId })}
+                    <div class="w-[180px] flex-shrink-0">
+                      <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
+                        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}>
+                          <span class="truncate" style:font-family={$codeFontFamilyCSS}>
+                            {$codeFontOptions.find((option) => option.value === $codeFontFamily)
+                              ?.label ?? $codeFontFamily}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content portal class="max-h-[300px] w-[180px]">
+                          {#each $codeFontOptions as option}
+                            <Select.Item value={option.value}>
+                              <span class="truncate" style:font-family={option.fontFamily}>
+                                {option.label}
+                              </span>
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                  {/snippet}
                 </SettingsFieldRow>
               </section>
             </div>
@@ -1122,44 +1132,6 @@
               </div>
             </div>
           {/if}
-        {/if}
-
-        <!-- Labs -->
-        {#if activeTab === 'labs'}
-          <div id="labs" data-highlight-id="labs" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_labs()}
-            </h2>
-            <p class="type-body text-subtle mb-3">
-              {m.settings_labs_disclaimer_description()}
-            </p>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section
-                id="labs-multiplayer"
-                data-highlight-id="labs-multiplayer"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-labs-multiplayer-label-field"
-                  label={m.settings_labs_multiplayer_label()}
-                  description={m.settings_labs_multiplayer_description()}
-                  experimental
-                >
-                  <Switch
-                    id="labs-multiplayer-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$labsMultiplayerEnabled}
-                    onCheckedChange={(enabled) =>
-                      appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
-                    ariaLabel={m.settings_labs_multiplayer_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
-            </div>
-          </div>
         {/if}
       </main>
     </div>

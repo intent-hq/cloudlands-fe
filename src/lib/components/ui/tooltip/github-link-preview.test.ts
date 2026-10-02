@@ -7,6 +7,7 @@ vi.mock('$lib/client', () => ({
 }));
 
 import {
+  classifyGitHubLinkPreviewError,
   clearGitHubLinkPreviewCache,
   createPreviewRequest,
   loadGitHubLinkPreview,
@@ -42,6 +43,23 @@ const ISSUE: GitHubIssueDetails = {
   url: ISSUE_URL,
 };
 
+describe('classifyGitHubLinkPreviewError', () => {
+  it('uses the structured rate-limit code without depending on error text', () => {
+    expect(classifyGitHubLinkPreviewError({ data: { code: 'rate-limited' } })).toBe('rate-limited');
+  });
+
+  it.each([
+    new Error('source control rate limited'),
+    { data: { code: 'not-found' } },
+    { data: 'rate-limited' },
+    { data: { code: 429 } },
+    null,
+    undefined,
+  ])('leaves unclassified failures unavailable: %j', (error) => {
+    expect(classifyGitHubLinkPreviewError(error)).toBe('unavailable');
+  });
+});
+
 function makeClient(): GitHubLinkPreviewClient & {
   githubPullRequest: ReturnType<typeof vi.fn>;
   githubIssue: ReturnType<typeof vi.fn>;
@@ -67,6 +85,28 @@ describe('loadGitHubLinkPreview', () => {
     ).resolves.toBeNull();
     expect(client.githubPullRequest).not.toHaveBeenCalled();
     expect(client.githubIssue).not.toHaveBeenCalled();
+  });
+
+  it('does not share identical PRs across workspaces or injected connections', async () => {
+    const client = makeClient();
+    let resolve!: (value: GitHubPullRequestDetails) => void;
+    client.githubPullRequest.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const a = loadGitHubLinkPreview(PR_URL, { client, workspaceId: 'a' });
+    const b = loadGitHubLinkPreview(PR_URL, { client, workspaceId: 'b' });
+    await b;
+    expect(client.githubPullRequest).toHaveBeenCalledTimes(2);
+    expect(client.githubPullRequest).toHaveBeenNthCalledWith(1, 'octo', 'intent', 42, 'a');
+    expect(client.githubPullRequest).toHaveBeenNthCalledWith(2, 'octo', 'intent', 42, 'b');
+    const otherConnection = makeClient();
+    await loadGitHubLinkPreview(PR_URL, { client: otherConnection, workspaceId: 'a' });
+    expect(otherConnection.githubPullRequest).toHaveBeenCalledTimes(1);
+    resolve(PR);
+    await a;
   });
 
   it('routes a PR URL to githubPullRequest and tags the result kind: pr', async () => {

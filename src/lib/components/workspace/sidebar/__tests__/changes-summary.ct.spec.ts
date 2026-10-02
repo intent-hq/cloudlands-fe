@@ -1,6 +1,25 @@
 import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../changes-summary.preview.svelte';
 
+test('owner metadata cannot enable branch editing before connection admission', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Preview, { props: { admittedOwner: false } });
+  const summary = page.locator('[data-branch-summary]');
+  await expect(summary).toBeVisible();
+  const working = summary.locator('[data-branch-field="working"]');
+  await working.getByRole('button').focus();
+  await page.keyboard.press('Enter');
+  await expect(working.getByRole('button')).toBeFocused();
+  await expect(working.getByRole('textbox')).toHaveCount(0);
+  const target = summary.locator('[data-branch-field="target"]');
+  await expect(target.getByRole('textbox')).toHaveAttribute('readonly', '');
+  await expect(target.getByRole('button', { name: /Select a branch/ })).toHaveCount(0);
+});
+
 for (const { width, locked } of [
   { width: 360, locked: false },
   { width: 280, locked: true },
@@ -8,7 +27,7 @@ for (const { width, locked } of [
   test(`branch fields remain usable at ${width}px with ${locked ? 'locked' : 'selectable'} target`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 800 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Preview, { props: { locked } });
@@ -34,6 +53,14 @@ for (const { width, locked } of [
         weight: getComputedStyle(node).fontWeight,
       }));
       return { x: box.x, width: box.width, controls, labels };
+    });
+    await testInfo.attach('branch-field-geometry', {
+      body: JSON.stringify(geometry, null, 2),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('branch-fields', {
+      body: await summary.screenshot(),
+      contentType: 'image/png',
     });
     expect(geometry.controls).toHaveLength(2);
     for (const control of geometry.controls) {
@@ -64,13 +91,17 @@ for (const { width, locked } of [
       await expect(target.getByRole('textbox')).toHaveAttribute('readonly', '');
       await expect(target.getByRole('combobox')).toHaveCount(0);
     } else {
-      await target.getByRole('combobox').focus();
+      const trigger = target
+        .getByRole('button', { name: /Select a branch/ })
+        .and(target.locator('[aria-haspopup="dialog"]'));
+      await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+      await trigger.focus();
       await page.keyboard.press('Enter');
-      await expect(target.getByRole('combobox')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.locator('[data-slot="select-content"] input')).toBeFocused();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused();
       await page.keyboard.press('Escape');
-      await expect(target.getByRole('combobox')).toHaveAttribute('aria-expanded', 'false');
-      await expect(target.getByRole('combobox')).toBeFocused();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(trigger).toBeFocused();
     }
     const header = page.locator('[data-sidebar-card-tab="changes"] h6');
     const refresh = header.getByRole('button', { name: 'Refresh git status' });
@@ -92,3 +123,45 @@ for (const { width, locked } of [
     expect((await refresh.boundingBox())!.y).toBe((await close.boundingBox())!.y);
   });
 }
+
+test('secondary file buttons retain native and modifier activation inside the Changes panel', async ({
+  mount,
+  page,
+}) => {
+  const actions: Array<{ type: string; payload: unknown }> = [];
+  await mount(Preview, {
+    props: {
+      secondaryFiles: true,
+      onNavigation: (action: { type: string; payload: unknown }) => actions.push(action),
+    },
+  });
+  await page.getByRole('combobox', { name: 'Select git root' }).click();
+  await page.getByRole('option', { name: 'packages/component' }).click();
+  const file = page.getByTestId('secondary-root-file-open').filter({ hasText: 'collision.md' });
+  const tracked = page.getByTestId('secondary-root-file-open').filter({ hasText: 'tracked.txt' });
+  await file.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({
+    type: 'workspaceNavigation/openWorkspaceFile',
+    payload: [
+      'changes-summary-preview',
+      '/preview/workspace/packages/component/collision.md',
+      { gitRootId: 'summary-root', gitRootPath: '/preview/workspace/packages/component' },
+    ],
+  });
+  await page.keyboard.press('Space');
+  await expect.poll(() => actions.length).toBe(2);
+  expect(actions[1]).toEqual(actions[0]);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect.poll(() => actions.length).toBe(3);
+  expect(actions[2]).toMatchObject({
+    payload: [expect.anything(), expect.anything(), { openInAdjacentPanel: true }],
+  });
+  await tracked.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => actions.length).toBe(4);
+  expect(actions[3].type).toBe('workspaceNavigation/openWorkspaceDiff');
+  await tracked.click({ modifiers: ['ControlOrMeta'] });
+  await expect.poll(() => actions.length).toBe(5);
+});

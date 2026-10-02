@@ -1,3 +1,5 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 /**
  * @vitest-environment jsdom
  *
@@ -11,7 +13,7 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { PresenceMember } from '$shared/types/presence';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 import {
   initialState as presenceInitialState,
@@ -80,6 +82,11 @@ vi.mock('$lib/utils/workspace-navigation', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectCanShareWorkspace: mocks.selector(
+    () =>
+      mocks.state.userPreferences?.labsMultiplayerEnabled === true &&
+      mocks.workspaceEntity.myRole === 'owner',
+  ),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
@@ -170,7 +177,11 @@ const accepted = (principalId: string, role: WorkspaceMember['role']): Workspace
   addedAt: '2026-09-14T12:00:00Z',
 });
 const presenceState = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), presenceInitialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...presenceInitialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1'],
+  });
 const membership = presenceMembersReceived('ws-1', [
   accepted('me', 'owner'),
   accepted('ada', 'collaborator'),
@@ -193,7 +204,9 @@ async function renderProgressCard({
   myRole = 'owner' as Workspace['myRole'],
   memberCount = 4,
 } = {}) {
-  mocks.state.presence = presence;
+  const admitted = withLegacyPrincipal(mocks.state);
+  Object.assign(mocks.state, admitted);
+  mocks.state.presence = { ...presence, context: selectPrincipalActionContext.select(admitted) };
   mocks.state.workspace.workspaces = createCollection('id', [
     { id: WorkspaceId('ws-1'), title: 'Shared Workspace', ownerPrincipalId: 'me', memberCount },
   ] as Workspace[]);
@@ -226,7 +239,7 @@ describe('WorkspaceProgressCard presence row', () => {
     mocks.navigateToNote.mockClear();
     mocks.notes.length = 0;
     mocks.agents.length = 0;
-    mocks.state.userPreferences = undefined;
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
   });
 
   it('renders nothing for an unshared workspace, keeping the rest of the metadata block', async () => {
@@ -262,6 +275,41 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(greyscaleTile(avatar)!.classList.contains('grayscale')).toBe(false);
   };
 
+  it('badges each member with their identity forge and names it on hover; a row without one stays neutral', async () => {
+    await renderProgressCard({
+      presence: presenceState(
+        presenceMembersReceived('ws-1', [
+          accepted('me', 'owner'),
+          {
+            ...accepted('ada', 'collaborator'),
+            identity: { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '7' },
+          },
+          {
+            ...accepted('bob', 'collaborator'),
+            identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+          },
+          accepted('cy', 'collaborator'),
+        ]),
+        roster,
+        presenceOwnPrincipalReceived('me'),
+      ),
+    });
+    const badge = (principalId: string) =>
+      presenceRow()!.querySelector<HTMLElement>(
+        `[data-presence-avatar="${principalId}"] [data-presence-identity-provider]`,
+      );
+    expect(badge('ada')?.getAttribute('data-presence-identity-provider')).toBe('gitlab');
+    expect(badge('ada')?.getAttribute('data-presence-identity-host')).toBe('gitlab.example.com');
+    expect(badge('ada')?.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('gitlab');
+    expect(badge('bob')?.getAttribute('data-presence-identity-provider')).toBe('github');
+    expect(badge('bob')?.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('github');
+    expect(badge('cy')).toBeNull();
+
+    expect(personButton('ada').getAttribute('aria-label')).toContain('@ada on gitlab.example.com');
+    expect(personButton('bob').getAttribute('aria-label')).toContain('@bob on GitHub');
+    expect(personButton('cy').getAttribute('aria-label')).not.toMatch(/GitHub|gitlab/);
+  });
+
   it('still shows every other member, each greyscale with a grey ring, while nobody else is online', async () => {
     await renderProgressCard({
       presence: presenceState(membership, presenceOwnPrincipalReceived('me')),
@@ -284,6 +332,37 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(group.getAttribute('aria-label')).not.toMatch(/here$/);
     expect(group.getAttribute('aria-label')).toMatch(/not here|none here/i);
   });
+
+  it.each([
+    { provider: 'github', host: 'github.com', platform: 'GitHub' },
+    { provider: 'gitlab', host: 'gitlab.example.com', platform: 'gitlab.example.com' },
+  ] as const)(
+    'does not repeat fallback handles in $provider offline tooltips',
+    async ({ provider, host, platform }) => {
+      await renderProgressCard({
+        presence: presenceState(
+          presenceMembersReceived('ws-1', [
+            accepted('me', 'owner'),
+            ...[null, 'ada', 'Ada Lovelace'].map((displayName, index) => ({
+              ...accepted(`person-${index}`, 'collaborator'),
+              login: 'ada',
+              displayName,
+              identity: { provider, host, externalUserId: String(index) },
+            })),
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+      });
+      for (const index of [0, 1]) {
+        expect(personButton(`person-${index}`).getAttribute('aria-label')).toBe(
+          `@ada on ${platform} · offline`,
+        );
+      }
+      expect(personButton('person-2').getAttribute('aria-label')).toBe(
+        `Ada Lovelace · @ada on ${platform} · offline`,
+      );
+    },
+  );
 
   it('names the group by the people present, leaving the listed offline members out of the count', async () => {
     await renderProgressCard({
@@ -437,6 +516,26 @@ describe('WorkspaceProgressCard presence row', () => {
         type: openAgentTabRequested.type,
         payload: ['ws-1', expect.objectContaining({ agentId: 'agent-1' })],
       }),
+    );
+  });
+});
+
+describe('presence rollout mounted boundary', () => {
+  it('hides the complete row when Multiplayer is disabled, including focused avatars', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: false };
+    await renderProgressCard();
+    expect(presenceRow()).toBeNull();
+    expect(document.querySelector('[data-presence-person-button]')).toBeNull();
+  });
+  it('refuses a captured avatar click after admission invalidation', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.dispatch.mockClear();
+    await renderProgressCard();
+    const button = personButton('ada');
+    mocks.state.userPreferences = { labsMultiplayerEnabled: false };
+    await fireEvent.click(button);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: openAgentTabRequested.type }),
     );
   });
 });

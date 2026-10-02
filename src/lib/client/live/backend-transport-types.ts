@@ -76,6 +76,8 @@ export interface BackendNotification {
 
 /** Per-call options for `BackendTransport.request`. */
 export interface BackendRequestOptions {
+  /** Address this desktop's daemon from a window bound to another device. */
+  localMachine?: boolean;
   /**
    * Overrides the transport's default request timeout for a single call. Used
    * for long-running daemon operations (e.g. `git.pull`) whose own bound
@@ -104,7 +106,7 @@ export interface BackendTransport {
   /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */
   subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T>;
   /** Unsubscribe from daemon events (`events.unsubscribe`). Best-effort. */
-  unsubscribe(subscriptionId: string): Promise<void>;
+  unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void>;
   /** Listen for daemon notifications. Returns a disposer. */
   onNotification(handler: (notification: BackendNotification) => void): () => void;
   /**

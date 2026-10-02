@@ -34,7 +34,7 @@ for (const scenario of ['local', 'clone'] as const) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Pickers, { props: { scenario } });
     const fixture = page.getByTestId('initializer-pickers-fixture');
-    const triggers = fixture.getByRole('combobox');
+    const triggers = fixture.locator('button[aria-haspopup="dialog"]');
     if (scenario === 'clone') {
       const avatar = triggers.first().locator('img');
       await expect
@@ -64,7 +64,9 @@ for (const scenario of ['local', 'clone'] as const) {
         const { x, y, right } = range.getBoundingClientRect();
         const weight = getComputedStyle(node.parentElement!).fontWeight;
         // A loaded owner avatar is visible picker content, not inter-word whitespace.
-        const images = node.parentElement!.closest('[role=combobox]')?.querySelectorAll('img');
+        const images = node
+          .parentElement!.closest('button[aria-haspopup="dialog"]')
+          ?.querySelectorAll('img');
         const imageLefts = Array.from(images ?? [], (image) => image.getBoundingClientRect().left);
         bounds.push({ contentLeft: Math.min(x, ...imageLefts), y, right, weight });
       }
@@ -92,7 +94,7 @@ for (const scenario of ['local', 'clone'] as const) {
       await trigger.focus();
       expect(await trigger.boundingBox()).toEqual(initial);
       await trigger.press('Enter');
-      const menu = page.locator('[data-slot="select-content"]');
+      const menu = page.getByRole('dialog');
       await expect(menu).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(menu).toHaveCount(0);
@@ -157,17 +159,17 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
         const bounds = row.getBoundingClientRect();
         return (
           row.scrollWidth <= row.clientWidth &&
-          [...row.querySelectorAll('[role=combobox]')].every((trigger) => {
+          [...row.querySelectorAll('button[aria-haspopup="dialog"]')].every((trigger) => {
             const box = trigger.getBoundingClientRect();
             return box.left >= bounds.left && box.right <= bounds.right;
           })
         );
       }),
     ).toBe(true);
-    const repo = fixture.getByRole('combobox').first();
+    const repo = fixture.locator('button[aria-haspopup="dialog"]').first();
     await repo.focus();
     await repo.press('Enter');
-    await page.getByRole('button', { name: 'Copy local repo', exact: true }).click();
+    await page.getByRole('tab', { name: 'Copy local repo', exact: true }).click();
     await page
       .getByTestId('recent-repositories')
       .getByRole('button', { name: /^tools/ })
@@ -175,12 +177,16 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
     await expect(page.getByTestId('initializer-selection')).toContainText(
       '"repoPath":"/fixture/tools"',
     );
-    const branch = fixture.getByRole('combobox').nth(1);
+    const branch = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
     await branch.focus();
     await branch.press('Enter');
-    const menu = page.locator('[data-slot="select-content"]');
-    await menu.locator('input').fill('feature/task-29');
-    await menu.locator('input').press('Enter');
+    const menu = page.getByRole('dialog');
+    const search = menu.getByRole('combobox');
+    // Repository changes load branches asynchronously; this case commits a ready option.
+    await expect(search).toHaveAttribute('aria-busy', 'false');
+    await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeVisible();
+    await search.fill('feature/task-29');
+    await search.press('Enter');
     await expect(page.getByTestId('initializer-selection')).toContainText(
       '"branch":"feature/task-29"',
     );
@@ -204,15 +210,17 @@ for (const { name, width, height, position } of [
     await page.setViewportSize({ width, height });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Pickers, { props: { position } });
-    const triggers = page.getByTestId('initializer-pickers-fixture').getByRole('combobox');
+    const triggers = page
+      .getByTestId('initializer-pickers-fixture')
+      .locator('button[aria-haspopup="dialog"]');
     const repoTrigger = triggers.first();
     await repoTrigger.click();
-    const menu = page.locator('[data-slot="select-content"]');
+    const menu = page.getByRole('dialog');
     await expectViewportBounded(menu);
     await page.evaluate(() => document.fonts.ready);
     // Labels may wrap, but every rendered line must remain readable and operable.
     for (const label of ['Pick a repo', 'New repo', 'Copy local repo']) {
-      const mode = menu.getByRole('button', { name: label, exact: true });
+      const mode = menu.getByRole('tab', { name: label, exact: true });
       await mode.click();
       if (label === 'Pick a repo') {
         await expect(menu.getByPlaceholder('owner/repo', { exact: true })).toBeVisible();
@@ -226,7 +234,7 @@ for (const { name, width, height, position } of [
         .poll(() =>
           mode.evaluate((element) => {
             const button = element.getBoundingClientRect();
-            const popup = element.closest('[data-slot="select-content"]')!.getBoundingClientRect();
+            const popup = element.closest('[role="dialog"]')!.getBoundingClientRect();
             const style = getComputedStyle(element);
             const content = {
               left: button.left + parseFloat(style.paddingLeft),
@@ -288,7 +296,7 @@ for (const { name, width, height, position } of [
       await search.elementHandle(),
     );
     expect(warningBottom).toBeLessThanOrEqual(searchTop);
-    const results = page.getByTestId('branch-results');
+    const results = menu.getByRole('listbox');
     expect(await results.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
     await results.hover();
     await page.mouse.wheel(0, 300);
@@ -300,7 +308,7 @@ for (const { name, width, height, position } of [
     );
     await expect(menu).toHaveCount(0);
     await branchTrigger.click();
-    const direct = menu.getByRole('button', { name: /Work directly/ });
+    const direct = menu.getByRole('checkbox', { name: /Work directly/ });
     await direct.scrollIntoViewIfNeeded();
     const directBounds = (await direct.boundingBox())!;
     expect(directBounds.y).toBeGreaterThanOrEqual(0);
@@ -321,7 +329,10 @@ test('closed branch menu cannot refocus its input from a queued autofocus frame'
   await page.setViewportSize({ width: 720, height: 480 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Pickers);
-  const trigger = page.getByTestId('initializer-pickers-fixture').getByRole('combobox').nth(1);
+  const trigger = page
+    .getByTestId('initializer-pickers-fixture')
+    .locator('button[aria-haspopup="dialog"]')
+    .nth(1);
   await trigger.focus();
   const frames = await trigger.evaluateHandle((trigger) => {
     const request = window.requestAnimationFrame;
@@ -339,7 +350,7 @@ test('closed branch menu cannot refocus its input from a queued autofocus frame'
     };
     const flushAfterClose = (event: Event) => {
       if (event.target !== trigger || trigger.getAttribute('aria-expanded') !== 'false') return;
-      const input = document.querySelector('[data-slot="select-content"] input');
+      const input = document.querySelector('[data-slot="popover-content"] input');
       if (!input?.isConnected) return;
       // Reproduce a pending frame after focus restoration, before closing DOM is removed.
       closedInputWasConnected = true;
@@ -364,17 +375,20 @@ test('closed branch menu cannot refocus its input from a queued autofocus frame'
   });
   try {
     await trigger.press('Enter');
-    const input = page.locator('[data-slot="select-content"] input');
+    const input = page.getByRole('dialog').getByRole('combobox');
     await expect(input).toBeAttached();
     await input.press('Escape');
     const state = await frames.evaluate((frames) => frames.state);
     expect(state.flushed).toBeGreaterThan(0);
     expect(state.closedInputWasConnected).toBe(true);
     await expect(trigger).toBeFocused();
-    await expect(page.locator('[data-slot="select-content"]')).toHaveCount(0);
   } finally {
     await frames.evaluate((frames) => frames.restore());
   }
+  // Bits' presence manager also needs animation frames to finish removing closed content.
+  // Release the scheduler after exercising stale autofocus, then verify teardown and focus.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
 
 test('portalled branch menu escapes clipping and paints over panel tabs', async ({
@@ -384,17 +398,18 @@ test('portalled branch menu escapes clipping and paints over panel tabs', async 
   await page.setViewportSize({ width: 360, height: 480 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Pickers, { props: { position: 'stacked' } });
-  const trigger = page.getByTestId('initializer-pickers-fixture').getByRole('combobox').nth(1);
+  const trigger = page
+    .getByTestId('initializer-pickers-fixture')
+    .locator('button[aria-haspopup="dialog"]')
+    .nth(1);
   await trigger.click();
-  const menu = page.locator('[data-slot="select-content"]');
+  const menu = page.getByRole('dialog');
   await expect(menu.getByText(/Uncommitted changes/)).toBeVisible();
   await expect(
-    page.getByTestId('branch-results').getByRole('button', { name: 'main default', exact: true }),
+    page.getByTestId('branch-results').getByRole('option', { name: /main/ }),
   ).toBeVisible();
   await expectViewportBounded(menu);
-  await expect(
-    page.getByTestId('initializer-pickers-fixture').locator('[data-slot="select-content"]'),
-  ).toHaveCount(0);
+  await expect(page.getByTestId('initializer-pickers-fixture').getByRole('dialog')).toHaveCount(0);
   // Floating placement settles after the async branch list changes the menu's height.
   await expect
     .poll(() =>

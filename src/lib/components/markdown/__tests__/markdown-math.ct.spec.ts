@@ -29,6 +29,17 @@ for (const { theme, width } of [
   { theme: 'dark', width: 272 },
 ] as const) {
   test(`keeps local math readable in ${theme} at ${width}px`, async ({ mount, page }) => {
+    // Resource timing has a bounded buffer; large CT bundles can fill it before fonts load.
+    const fontResponses: { url: string; ok: boolean }[] = [];
+    page.on('response', (response) => {
+      if (
+        response.request().resourceType() === 'font' &&
+        new URL(response.url()).pathname.includes('KaTeX_Main')
+      ) {
+        fontResponses.push({ url: response.url(), ok: response.ok() });
+      }
+    });
+
     const component = await mount(MarkdownMathPreview, { props: { dense: width < 300 } });
     await component.evaluate((element, className) => element.classList.add(className), theme);
     await component.evaluate((element, nextWidth) => {
@@ -68,16 +79,17 @@ for (const { theme, width } of [
     if (width < 300) expect(measurements.displayScrollable).toBe(true);
     expect(measurements.overflowX).toBe('auto');
 
-    const fontResources = await page.evaluate(async () => {
-      await document.fonts.load('16px KaTeX_Main');
-      return performance
-        .getEntriesByType('resource')
-        .map((entry) => entry.name)
-        .filter((name) => name.includes('KaTeX_Main'));
+    const fontStatuses = await page.evaluate(async () => {
+      // Exercise missing timing entries without discarding the independent network evidence.
+      performance.clearResourceTimings();
+      return (await document.fonts.load('16px KaTeX_Main')).map((font) => font.status);
     });
-    expect(fontResources.length).toBeGreaterThan(0);
-    expect(fontResources.every((url) => new URL(url).origin === new URL(page.url()).origin)).toBe(
-      true,
-    );
+    expect(fontStatuses.length).toBeGreaterThan(0);
+    expect(fontStatuses.every((status) => status === 'loaded')).toBe(true);
+    expect(fontResponses.length).toBeGreaterThan(0);
+    expect(fontResponses.every(({ ok }) => ok)).toBe(true);
+    expect(
+      fontResponses.every(({ url }) => new URL(url).origin === new URL(page.url()).origin),
+    ).toBe(true);
   });
 }

@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectOrchestratorSpecialist,
   selectSpecialists,
@@ -32,6 +32,10 @@ export const selectWorkspaceInitializerDefaultParentPath = store.createSelector(
 
 export const selectWorkspaceInitializerRecentRepos = store.createSelector((state) =>
   getItems(state.workspaceInitializer.recentRepos),
+);
+
+export const selectWorkspaceInitializerDismissedRecentRepoKeys = store.createSelector(
+  (state) => state.workspaceInitializer.dismissedRecentRepoKeys,
 );
 
 export const selectWorkspaceInitializerRemoteSetups = store.createSelector((state) =>

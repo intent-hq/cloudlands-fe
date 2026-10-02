@@ -1,6 +1,15 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, QueuedMessage } from '$shared/types';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+
+const reconnectCallbacks = vi.hoisted(() => new Set<() => void>());
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  onBackendReconnected: vi.fn((callback: () => void) => {
+    reconnectCallbacks.add(callback);
+    return () => reconnectCallbacks.delete(callback);
+  }),
+}));
 
 // FAKE seam: appClient.agents.getQueue is stubbed so no daemon call happens.
 // The service runs against the REAL configured store so the replaceAgentQueue
@@ -87,6 +96,40 @@ afterEach(() => {
 });
 
 describe('hydrateAgentQueue', () => {
+  it('hydrates distinct portable authors and all-null humans without changing content or provenance', async () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const rows: QueuedMessage[] = [
+      {
+        ...queued('portable-one', 0),
+        author,
+        messageMetadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      },
+      {
+        ...queued('portable-two', 1),
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      },
+      {
+        ...queued('unknown-human', 2),
+        author: { principalId: null, login: null, displayName: null, avatarUrl: null },
+      },
+      { ...queued('no-author', 3), author: null },
+      queued('older-host', 4),
+    ];
+    const before = JSON.stringify(rows);
+    getQueueMock.mockResolvedValueOnce(rows);
+    await hydrateAgentQueue(AGENT);
+    expect(messagesOf(AGENT)).toEqual(rows);
+    expect(JSON.stringify(rows)).toBe(before);
+    expect(messagesOf(AGENT)[3]).toHaveProperty('author', null);
+    expect(messagesOf(AGENT)[4]).not.toHaveProperty('author');
+  });
+
   it('clears a stale mirrored row when the daemon queue is already drained (monorepo#1749)', async () => {
     // Simulate the missed agent:queue:updated: the mirror still holds a row
     // the daemon has drained.
@@ -96,7 +139,7 @@ describe('hydrateAgentQueue', () => {
     getQueueMock.mockResolvedValueOnce([]);
     await hydrateAgentQueue(AGENT);
 
-    expect(getQueueMock).toHaveBeenCalledWith(AGENT);
+    expect(getQueueMock).toHaveBeenCalledWith(AGENT, undefined);
     expect(messagesOf(AGENT)).toEqual([]);
     expect(entryOf(AGENT)?.isHydrating).toBe(false);
     expect(entryOf(AGENT)?.error).toBeNull();
@@ -256,4 +299,92 @@ describe('hydrateAgentQueue', () => {
     // Both folds applied — one bump each.
     expect(getAgentQueueEventSnapshotSeq(AGENT)).toBe(2);
   });
+});
+
+it('keeps queue retries in their workspace and discards old connection results', async () => {
+  let finish!: (rows: QueuedMessage[]) => void;
+  getQueueMock.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const oldRead = hydrateAgentQueue(AGENT, 'workspace-a');
+  const trailing = hydrateAgentQueue(AGENT, 'workspace-a');
+  for (const callback of reconnectCallbacks) callback();
+  getQueueMock.mockResolvedValueOnce([queued('new', 0)]);
+  await hydrateAgentQueue(AGENT, 'workspace-a');
+  finish([queued('stale', 0)]);
+  await Promise.all([oldRead, trailing]);
+  expect(messagesOf(AGENT).map((row) => row.id)).toEqual(['new']);
+  expect(getQueueMock).toHaveBeenCalledTimes(2);
+  expect(getQueueMock).toHaveBeenLastCalledWith(AGENT, 'workspace-a');
+});
+
+describe('workspace queue ownership', () => {
+  it.each(['a-first', 'b-first'])(
+    'keeps the latest workspace queue with %s completion',
+    async (order) => {
+      const finishes: Array<(rows: QueuedMessage[]) => void> = [];
+      getQueueMock.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)));
+      const a = hydrateAgentQueue(AGENT, 'workspace-a');
+      const b = hydrateAgentQueue(AGENT, 'workspace-b');
+      const finishA = async () => {
+        finishes[0]([queued('workspace-a-row', 0)]);
+        await a;
+      };
+      const finishB = async () => {
+        finishes[1]([queued('workspace-b-row', 0)]);
+        await b;
+      };
+      if (order === 'a-first') {
+        await finishA();
+        await finishB();
+      } else {
+        await finishB();
+        await finishA();
+      }
+      expect(messagesOf(AGENT).map((row) => row.id)).toEqual(['workspace-b-row']);
+    },
+  );
+});
+
+it.each([false, true])('ignores an old connection queue completion (reject=%s)', async (reject) => {
+  let finish!: (rows: QueuedMessage[]) => void;
+  let fail!: (error: Error) => void;
+  getQueueMock.mockImplementationOnce(
+    () =>
+      new Promise((resolve, rejectRead) => {
+        finish = resolve;
+        fail = rejectRead;
+      }),
+  );
+  const old = hydrateAgentQueue(AGENT, 'workspace-a');
+  const trailing = hydrateAgentQueue(AGENT, 'workspace-a');
+  for (const callback of reconnectCallbacks) callback();
+  getQueueMock.mockResolvedValueOnce([queued('fresh-b', 0)]);
+  await hydrateAgentQueue(AGENT, 'workspace-b');
+  if (reject) fail(new Error('old failure'));
+  else finish([queued('old-a', 0)]);
+  await Promise.all([old, trailing]);
+  expect(messagesOf(AGENT).map((row) => row.id)).toEqual(['fresh-b']);
+  expect(entryOf(AGENT)?.error).toBeNull();
+  expect(entryOf(AGENT)?.isHydrating).toBe(false);
+  expect(getQueueMock).toHaveBeenCalledTimes(2);
+});
+
+it('does not let another workspace invalidate a pending queue snapshot', async () => {
+  let finish!: (rows: QueuedMessage[]) => void;
+  getQueueMock.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = hydrateAgentQueue(AGENT, 'workspace-b');
+  noteAgentQueueEventSnapshotApplied(AGENT, 'workspace-a');
+  finish([queued('b', 0)]);
+  await pending;
+  expect(messagesOf(AGENT).map((row) => row.id)).toEqual(['b']);
+  expect(getAgentQueueEventSnapshotSeq(AGENT, 'workspace-b')).toBe(1);
 });

@@ -75,7 +75,10 @@ describe('collection pattern', () => {
     const first = within(list).getAllByRole('option')[0];
 
     await fireEvent.click(within(first).getByRole('button', { name: 'More actions for Alpha' }));
-    const details = within(document.body).getByRole('menuitem', { name: 'More about Alpha' });
+    const details = await within(document.body).findByRole('menuitemcheckbox', {
+      name: 'More about Alpha',
+    });
+    expect(details.getAttribute('aria-checked')).toBe('true');
     expect(details.querySelector('kbd')?.textContent).toBe('⌘I');
     await fireEvent.click(details);
 

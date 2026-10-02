@@ -4,6 +4,14 @@
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
+  import DelegationGroupSection from '$lib/components/chat/DelegationGroupSection.svelte';
+  import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+  } from '$lib/components/chat/subscription-disclosure';
+  import Fa from 'svelte-fa';
+  import { faBolt } from '@fortawesome/free-solid-svg-icons';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import {
     attachPinnedPromptMessage,
@@ -31,6 +39,7 @@
     finishedVariant?: 'agent:idle' | 'agent:reportToParent' | 'agent:created' | 'agent:completed';
     labelLength?: 'short' | 'long';
     chiefVariant?: boolean;
+    subscriptionLane?: 'chief-message' | 'chief-flush' | 'regular';
   }
 
   let {
@@ -43,6 +52,7 @@
     finishedVariant = 'agent:idle',
     labelLength = 'short',
     chiefVariant = false,
+    subscriptionLane,
   }: Props = $props();
   let pinned = $state<PinnedPromptState | null>(null);
   let scrollElement = $state<HTMLElement | null>(null);
@@ -124,84 +134,137 @@
 </script>
 
 <section style:width="{width}px" style:zoom data-panel={panelId}>
-  <div class="grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
-    <div>
-      <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
-        <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>
-          Sent message <a data-testid="ordinary-user-link" href="#message">link</a>
-          <code data-testid="ordinary-user-code">code</code>
-        </span>
-      </div>
-      <div class="mt-4" data-testid="attributed-message-lane">
-        <ChatMessage message={attributedMessage} />
-      </div>
-    </div>
-    <div>
-      <div data-testid="event-predecessor"></div>
-      <EventWakeupBanner
-        metadata={finishedMetadata}
-        asDivider
-        showAgentCards={false}
-        workspace={null}
-      />
-      <ConversationTurnGap
-        currentIsEventNotification
-        currentHasAssistantMessages={false}
-        nextIsEventNotification={false}
-      />
-      <div data-testid="following-transcript-row">Following transcript content</div>
-    </div>
-  </div>
-  <div class="relative">
-    <!-- Mirrors ChatPanel's pinned-prompt overlay: gutter-compensated host,
-         column-matched lane, and chief-variant row inset. -->
+  {#if subscriptionLane}
+    <!-- Reproduce the transcript clipping box and its lane-specific inline room.
+         Compact tokens also exercise a Chief nested under a compact regular lane. -->
     <div
-      class="pointer-events-none absolute inset-x-0 top-0 z-40"
-      style:padding-inline-end="{scrollbarGutterWidth}px"
-      data-testid="pinned-prompt-overlay-host"
+      data-testid="subscription-clip"
+      class="overflow-x-hidden bg-background text-foreground"
+      style:--chat-operational-row-inline-padding={width < 640 ? '0.125rem' : '0.5rem'}
+      style:--subscription-card-max-bleed={subscriptionLane === 'regular' ? '1rem' : '0px'}
     >
-      {#if pinned}
+      <div class={subscriptionLane === 'regular' ? 'px-4' : ''} data-testid="subscription-lane">
         <div
-          class={chiefVariant ? 'px-0' : 'px-4 sm:px-6'}
-          data-testid="pinned-prompt-overlay-lane"
+          class={subscriptionLane === 'chief-message' ? 'mx-1 sm:mx-2' : ''}
+          style:--subscription-card-max-bleed={subscriptionLane === 'chief-message'
+            ? '0.25rem'
+            : undefined}
         >
-          <div class={chiefVariant ? 'mx-1 sm:mx-2' : ''}>
-            <PinnedUserPrompt text={extractAllContent(pinned.message)} onActivate={() => {}} />
-          </div>
+          <ChatOperationalRow>
+            {#snippet leading()}<Fa icon={faBolt} size={16} />{/snippet}
+            {#snippet summary()}Tool row{/snippet}
+          </ChatOperationalRow>
+          <EventWakeupBanner
+            metadata={finishedMetadata}
+            asDivider
+            showAgentCards={false}
+            workspace={null}
+          />
+          <ChatMessage message={attributedMessage} />
         </div>
-      {/if}
+      </div>
     </div>
-    <div
-      bind:this={scrollElement}
-      data-testid="sticky-scroll"
-      class="forced-scrollbar h-[420px] overflow-y-auto"
-      style="scrollbar-gutter: stable; padding-inline-end: {syntheticScrollbarGutterWidth}px"
-      use:trackPinnedPrompt={{ enabled: true, onChange: (next) => (pinned = next) }}
-    >
-      <div style:height="{paginationHeight}px"></div>
+  {:else}
+    <div class="grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
+      <div>
+        <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>
+          <span data-testid="ordinary-user-text" class={USER_MESSAGE_TEXT_CLASS}>
+            Sent message <a data-testid="ordinary-user-link" href="#message">link</a>
+            <code data-testid="ordinary-user-code">code</code>
+          </span>
+        </div>
+        <div class="mt-4" data-testid="attributed-message-lane">
+          <ChatMessage message={attributedMessage} />
+        </div>
+      </div>
       <div
-        class="conversation-column flex min-h-full w-full flex-col {chiefVariant
-          ? 'px-0'
-          : 'px-4 pt-2 sm:px-6'}"
-        data-testid="conversation-column"
+        data-testid="subscription-tool-column"
+        style:--chat-operational-row-inline-padding={width < 640 ? '0.125rem' : '0.5rem'}
       >
-        <div data-conversation-turn class="h-[900px] pt-[260px]">
+        <ChatOperationalRow>
+          {#snippet leading()}<Fa icon={faBolt} size={16} />{/snippet}
+          {#snippet summary()}Tool row{/snippet}
+        </ChatOperationalRow>
+        <div data-testid="event-predecessor"></div>
+        <EventWakeupBanner
+          metadata={finishedMetadata}
+          asDivider
+          showAgentCards={false}
+          workspace={null}
+        />
+        <ConversationTurnGap
+          currentIsEventNotification
+          currentHasAssistantMessages={false}
+          nextIsEventNotification={false}
+        />
+        <div data-testid="following-transcript-row">Following transcript content</div>
+        <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
+          <DelegationGroupSection
+            group={{
+              groupId: `${panelId}-delegation`,
+              awaitMode: 'all',
+              expectedAgentIds: ['delegate-a', 'delegate-b'],
+              completedAgentIds: [],
+              deletedAgentIds: [],
+              agentStatuses: { 'delegate-a': 'responding', 'delegate-b': 'responding' },
+              delivered: false,
+            }}
+            hideActions
+          />
+        </div>
+      </div>
+    </div>
+    <div class="relative">
+      <!-- Mirrors ChatPanel's pinned-prompt overlay: gutter-compensated host,
+         column-matched lane, and chief-variant row inset. -->
+      <div
+        class="pointer-events-none absolute inset-x-0 top-0 z-40"
+        style:padding-inline-end="{scrollbarGutterWidth}px"
+        data-testid="pinned-prompt-overlay-host"
+      >
+        {#if pinned}
           <div
-            data-pinnable-user-prompt
-            data-pinned-prompt-id={message.id}
-            use:attachPinnedPromptMessage={message}
-            class="h-12"
+            class={chiefVariant ? 'px-0' : 'px-4 sm:px-6'}
+            data-testid="pinned-prompt-overlay-lane"
           >
             <div class={chiefVariant ? 'mx-1 sm:mx-2' : ''}>
-              <div data-testid="in-conversation-user-bubble" class={USER_MESSAGE_SURFACE_CLASS}>
-                {streamText}
+              <PinnedUserPrompt text={extractAllContent(pinned.message)} onActivate={() => {}} />
+            </div>
+          </div>
+        {/if}
+      </div>
+      <div
+        bind:this={scrollElement}
+        data-testid="sticky-scroll"
+        class="forced-scrollbar h-[420px] overflow-y-auto"
+        style="scrollbar-gutter: stable; padding-inline-end: {syntheticScrollbarGutterWidth}px"
+        use:trackPinnedPrompt={{ enabled: true, onChange: (next) => (pinned = next) }}
+      >
+        <div style:height="{paginationHeight}px"></div>
+        <div
+          class="conversation-column flex min-h-full w-full flex-col {chiefVariant
+            ? 'px-0'
+            : 'px-4 pt-2 sm:px-6'}"
+          data-testid="conversation-column"
+        >
+          <div data-conversation-turn class="h-[900px] pt-[260px]">
+            <div
+              data-pinnable-user-prompt
+              data-pinned-prompt-id={message.id}
+              use:attachPinnedPromptMessage={message}
+              class="h-12"
+            >
+              <div class={chiefVariant ? 'mx-1 sm:mx-2' : ''}>
+                <div data-testid="in-conversation-user-bubble" class={USER_MESSAGE_SURFACE_CLASS}>
+                  {streamText}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
+  {/if}
 </section>
 
 <style>

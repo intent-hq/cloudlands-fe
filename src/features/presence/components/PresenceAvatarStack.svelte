@@ -1,17 +1,8 @@
 <script lang="ts">
-  /**
-   * Avatar stack of the people present somewhere (a workspace sidebar, an
-   * agent chat): up to `maxVisible` avatars plus a "+N" overflow chip. Each
-   * avatar is ringed by the person's standing when known — the owner blue, an
-   * online member green, an offline member grey — an offline person's avatar
-   * tile (image or coloured initials) is drawn greyscale whatever their ring,
-   * and this window's own principal is marked. The ring is a box-shadow on the
-   * outer element and a CSS filter greys everything its element paints, so the
-   * filter lives on an inner tile and the ring keeps its colour. The group's
-   * accessible name counts only the people present (never offline members).
-   * With `action` every visible avatar is a button. Renders nothing when
-   * nobody is there.
-   */
+  /** Compact presence avatars. Modern role rings remain distinct from the
+   * separate connectivity marker; legacy callers retain their existing rings. */
+  import Fa from 'svelte-fa';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -74,10 +65,13 @@
             : m.presence_avatarStack_offline_many({ count: formatInteger(offlineOthers) }),
   );
   const fontSize = $derived(`${Math.max(8, Math.round(size * 0.55))}px`);
+  /** The forge badge: about half the avatar, never below a legible glyph. */
+  const badgeSize = $derived(Math.max(9, Math.round(size * 0.5)));
 
   const RING_CLASS: Record<PresenceRing, string> = {
     owner: 'ring-2 ring-info',
     member: 'ring-2 ring-success',
+    guest: 'ring-2 ring-warning-ink',
     offline: 'ring-2 ring-muted-foreground/40',
   };
 </script>
@@ -86,7 +80,7 @@
   {@const ring = presencePersonRing(person)}
   {@const offline = person.online === false}
   <span
-    class="inline-flex shrink-0 rounded-full border border-background {ring
+    class="relative inline-flex shrink-0 rounded-full border border-background {ring
       ? RING_CLASS[ring]
       : ''}"
     style:width="{size}px"
@@ -106,6 +100,28 @@
     >
       <PrincipalAvatar fill avatarUrl={person.avatarUrl} label={presencePersonName(person)} />
     </span>
+    {#if person.hostRole && person.online !== undefined}
+      <span
+        class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full border border-background {person.online
+          ? 'bg-success'
+          : 'bg-muted-foreground'}"
+        aria-hidden="true"
+        data-presence-status={person.online ? 'online' : 'offline'}
+      ></span>
+    {/if}
+    {#if person.identity}
+      <span
+        class="absolute -right-0.5 -bottom-0.5 inline-flex items-center justify-center rounded-full bg-background text-foreground"
+        style:width="{badgeSize}px"
+        style:height="{badgeSize}px"
+        style:font-size="{Math.round(badgeSize * 0.8)}px"
+        aria-hidden="true"
+        data-presence-identity-provider={person.identity.provider}
+        data-presence-identity-host={person.identity.host}
+      >
+        <Fa icon={person.identity.provider === 'gitlab' ? faGitlab : faGithub} />
+      </span>
+    {/if}
   </span>
 {/snippet}
 

@@ -1,3 +1,7 @@
+import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
+import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
+import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
+import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
  * Root app saga registry.
  *
@@ -6,8 +10,7 @@
  * initialization so their lifetime belongs to the renderer root.
  */
 
-import type { Store } from '@augmentcode/themis/svelte-store';
-import { all, call } from 'typed-redux-saga';
+import type { Store } from '@themislib/themis/svelte-store';
 
 import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
@@ -33,6 +36,7 @@ import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
+import { principalSaga } from './slices/principal/sagas/principal-saga';
 import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
@@ -40,23 +44,24 @@ import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-p
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
+import { pdfPreviewSaga } from './slices/pdf-preview/sagas/pdf-preview-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
+import { gitWriteSaga } from './slices/git/sagas/git-write-saga';
+import { acceptWorkflowSaga } from './slices/accept-workflow/sagas/accept-workflow-saga';
+import { acceptWorkflowObserverSaga } from './slices/accept-workflow/sagas/accept-workflow-observer-saga';
+import { prWorkflowSaga } from './slices/pr-workflow/sagas/pr-workflow-saga';
+import { chatChangesSaga } from './slices/chat-changes/sagas/chat-changes-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
-import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
-import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
-import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
-import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
-import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
-import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
-import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
+import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
+import { identitySaga } from './slices/identity/sagas/identity-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
 import { modelReloadSaga } from './slices/model/sagas/model-reload-saga';
@@ -82,6 +87,7 @@ import { settingsProposalHistorySaga } from './slices/settings-proposal-history/
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
+import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalog-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
@@ -97,10 +103,8 @@ import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
 import { unreadTrackingSaga } from './slices/unread-tracking/sagas/unread-tracking-saga';
 import { updateChannelSaga } from './slices/user-preferences/sagas/update-channel-saga';
-import { notificationSettingsSaga } from './slices/user-preferences/sagas/notification-settings-saga';
 import { userPreferencesPersistenceSaga } from './slices/user-preferences/sagas/user-preferences-persistence-saga';
 import { zoomIpcSaga } from './slices/user-preferences/sagas/zoom-ipc-saga';
-import { voiceSettingsSaga } from './slices/voice-settings/sagas/voice-settings-saga';
 import { activeStreamsSaga } from './slices/workspace-agents/sagas/active-streams-saga';
 import { agentCreationSaga } from './slices/workspace-agents/sagas/agent-creation-saga';
 import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';
@@ -120,17 +124,6 @@ import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-i
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
 export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 
-/** Owns all hardware-console listeners and side effects under one root lifetime. */
-export function* hardwareConsoleSaga() {
-  yield* all([
-    call(hardwareConsoleDeviceSaga),
-    call(actionKeySaga),
-    call(keyPinPersistenceSaga),
-    call(promptPickerSaga),
-    call(voiceTranscriptionSaga),
-  ]);
-}
-
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
   daemonEventsSaga,
@@ -138,6 +131,8 @@ export const sagas = [
   connectionsSaga,
   guestSessionsSaga,
   presenceSaga,
+  principalSaga,
+  hostExecutionSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -156,9 +151,15 @@ export const sagas = [
   regenerateFromMessageSaga,
   agentFailureToastSaga,
   gitReadSaga,
+  gitWriteSaga,
+  acceptWorkflowSaga,
+  acceptWorkflowObserverSaga,
+  prWorkflowSaga,
+  chatChangesSaga,
   acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,
+  pdfPreviewSaga,
   filesWriteSaga,
   workspaceNotesSaga,
   noteReadTrackingSaga,
@@ -170,6 +171,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceShareSaga,
+  hostMembershipSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,
@@ -184,22 +186,22 @@ export const sagas = [
   modelReloadSaga,
   providerAvailabilitySaga,
   setupPromptSaga,
-  hostRequirementsSaga,
   backgroundHooksSaga,
-  hardwareConsoleSaga,
-  voiceSettingsSaga,
+  hostOwnerServicesSaga,
   themeSaga,
   powerSaga,
   autoUpdateSaga,
   specialistsSaga,
+  workspaceCatalogSaga,
   proposalLifecycleSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
-  githubAuthSaga,
   githubRepoSearchSaga,
   githubUserSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,
+  identitySaga,
+  collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
   legacyImportSaga,
@@ -217,6 +219,7 @@ export const sagas = [
   releaseNotesSaga,
   browserPersistenceSaga,
   browserClientsSaga,
+  personalDevicesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,
@@ -224,7 +227,6 @@ export const sagas = [
   externalEditorsPersistenceSaga,
   workspaceSettingsSaga,
   updateChannelSaga,
-  notificationSettingsSaga,
   userPreferencesPersistenceSaga,
   workspaceInitializerSaga,
   zoomIpcSaga,

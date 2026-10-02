@@ -1,9 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -185,12 +187,24 @@ function geometryStubs(): Plugin {
   };
 }
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
   test.setTimeout(120_000);
+  const cacheDir = viteHarnessCacheDir('workspace-tab-strip-status-geometry', {
+    workerIndex: workerInfo.workerIndex,
+  });
+  console.log(
+    'HARNESS_CACHE ' +
+      JSON.stringify({
+        name: 'workspace-tab-strip-status-geometry',
+        worker: workerInfo.workerIndex,
+        cacheDir,
+        populated: existsSync(resolve(cacheDir, 'deps/_metadata.json')),
+      }),
+  );
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: viteHarnessCacheDir('workspace-tab-strip-status-geometry'),
+    cacheDir,
     optimizeDeps: { entries: ['src/lib/components/layout/WorkspaceTabStrip.svelte'] },
     plugins: [geometryStubs(), svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
@@ -222,7 +236,10 @@ async function mountStrip(
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/src/lib/components/layout/WorkspaceTabStrip.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
   await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
@@ -247,7 +264,12 @@ async function mountStrip(
     });
     function statusValue(categories: string[]) {
       const items = categories.map((category) => ({ category, count: 1, agentNames: [] }));
-      return { agentCount: 1, categories: items, visibleCategories: items, hiddenCategoryCount: 0 };
+      return {
+        agentCount: 1,
+        categories: items,
+        visibleCategories: items,
+        hiddenCategoryCount: 0,
+      };
     }
     const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
       import('/@id/svelte'),
@@ -274,7 +296,8 @@ async function mountStrip(
       },
     };
     if (panelOpen === undefined || panelWidth === undefined) {
-      target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
+      // Match WindowTitleBar's flex controls: shrinking bounds the scroll viewport.
+      target.style.cssText = `position:relative;display:flex;min-width:0;align-items:center;width:100%;padding:24px;zoom:${zoom};`;
       mount(Strip, { target, props: stripProps });
     } else {
       target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;

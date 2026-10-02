@@ -8,10 +8,9 @@ export type SettingsTab =
   | 'providers'
   | 'connections'
   | 'devices'
-  | 'guest-sessions'
+  | 'collaboration'
   | 'setup'
   | 'advanced'
-  | 'labs'
   | 'input'
   | 'specialists';
 

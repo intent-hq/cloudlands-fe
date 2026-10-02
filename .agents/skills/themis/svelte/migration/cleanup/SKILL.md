@@ -1,10 +1,9 @@
 ---
 name: svelte/migration/cleanup
 description: >-
-  Delete old .store.svelte.ts files, verify zero residual references remain,
-  and apply the rollback strategy if a migrated slice regresses. Final step
-  per slice; also owns the risk-minimization checklist (one store per PR,
-  tests, manual UI verification).
+  Use after migrating a Svelte store to remove old .store.svelte.ts files,
+  check residual references, verify the migrated slice, or roll back a
+  regression.
 type: sub-skill
 requires:
   - svelte/migration
@@ -16,7 +15,7 @@ triggers:
 ---
 # Migration — Cleanup and Rollback
 
-> Step 10 of the checklist, plus the rollback recipe. Run this once per slice, only after the new slice passes tests and the UI flows have been verified.
+> Final step of `../SKILL.md` → **Recommended Order**, plus the rollback recipe. Run this once per slice, only after the new slice passes tests and the UI flows have been verified.
 
 ## Remove Old Store Files
 
@@ -42,28 +41,33 @@ Verifier output must say either “no pass-through wrappers” or list each docu
 
 ## Rollback Strategy
 
-If a migration needs to be reverted:
+Keep migrations in small, independently verifiable technical increments. Retain
+the old store until the replacement is verified, and preserve a recoverable
+baseline through the active workflow before deleting it. Follow **Workflow
+ownership** below for any branch, commit, PR, or history operation.
 
-1. **Keep the old store file** in version control until the migration is verified
-2. **Migrate one store at a time** — never batch multiple stores in one commit
-3. **Use feature branches** — one branch per store migration
-4. **Test thoroughly** before deleting the old store
+## Workflow ownership
+
+Branching, commits, PR sizing, and rollback commands are governed by the active
+user/task/repository instructions. This skill does not require a branch, commit,
+or PR per store and does not authorize destructive history changes. Technical
+rollback scope remains the complete migrated owner and its consumers.
 
 ### Reverting a migration
 
-Rollback restores the old store file and affected components from git history, removes the new slice directory, removes the matching reducer constructor entry, and removes any matching `store.runSaga(sagaFn)` startup call from the app Store setup.
+When rollback is authorized, restore the old store and affected consumers from the approved baseline; remove the replacement slice, matching reducer constructor entry, and matching `store.runSaga(sagaFn)` startup call as one technical unit. Re-run affected tests and UI checks so there is only one active owner.
 
 ### Minimizing risk
 
 - **Run all existing tests** after each store migration
-- **Manually test affected UI flows** before committing
-- **Keep PRs small** — one store = one PR
+- **Manually test affected UI flows** before handoff
+- **Keep technical increments small**; use **Workflow ownership** for VCS policy
 - **Verify zero references** to the old store before deleting it: `grep -rn "{old-store}" src/ --include="*.ts" --include="*.svelte"`
 
 ## Final Checklist Per Slice
 
-- [ ] Reducer registered in `reducer.ts`
-- [ ] Saga registered in `sagas.ts`
+- [ ] Reducer registered in the configured Store constructor map
+- [ ] Any app saga explicitly started with owned cancellation, per `../../store/SKILL.md` → **App saga lifetime**
 - [ ] All consuming components updated (see `../component-migration/SKILL.md`)
 - [ ] All tests pass
 - [ ] Manual UI verification done on affected flows
@@ -71,79 +75,11 @@ Rollback restores the old store file and affected components from git history, r
 - [ ] `grep` confirms zero references to the old store path
 - [ ] Old module paths checked for one-line re-export/proxy/delegate leftovers
 - [ ] Any remaining compatibility shim documents the reason and sunset/removal condition
-- [ ] Commit message references the slice migrated (one store per PR)
-
-## Examples in This Skill
-
-- Added: zero-reference cleanup evidence; import replacement map; deletion readiness guard; documented compatibility shim; bad deletion with remaining consumers; final per-slice cleanup report.
-- Retained: none (this cleanup skill previously had no JS/TS examples).
+- [ ] Handoff identifies the migrated slice and follows **Workflow ownership**
 
 ## Cleanup Examples
 
-### 1. Record zero-reference search evidence
-
-```typescript
-type ReferenceSearch = {
-  query: string;
-  matches: string[];
-};
-
-export const oldCartStoreSearches: ReferenceSearch[] = [
-  { query: "cart.store.svelte", matches: [] },
-  { query: "from.*stores/cart", matches: [] },
-];
-
-export const canDeleteOldCartStore = oldCartStoreSearches.every((search) => search.matches.length === 0);
-```
-
-### 2. Track old imports replaced by new owners
-
-```typescript
-type ImportReplacement = {
-  consumer: string;
-  removedImport: string;
-  addedImports: string[];
-};
-
-export const cartImportReplacements: ImportReplacement[] = [
-  {
-    consumer: "src/routes/cart/CartSummary.svelte",
-    removedImport: "$lib/stores/cart.store.svelte",
-    addedImports: [
-      "$lib/store/slices/cart/cart-selectors",
-      "$lib/store/slices/cart/cart-slice",
-      "$lib/store/store",
-    ],
-  },
-];
-```
-
-### 3. Gate deletion on tests, UI checks, and zero references
-
-```typescript
-type CleanupReadiness = {
-  testsPass: boolean;
-  manualFlowsPass: boolean;
-  remainingReferences: number;
-  passThroughWrappers: string[];
-};
-
-function isCleanupReady(readiness: CleanupReadiness): boolean {
-  return readiness.testsPass
-    && readiness.manualFlowsPass
-    && readiness.remainingReferences === 0
-    && readiness.passThroughWrappers.length === 0;
-}
-
-export const cartCleanupReady = isCleanupReady({
-  testsPass: true,
-  manualFlowsPass: true,
-  remainingReferences: 0,
-  passThroughWrappers: [],
-});
-```
-
-### 4. Document a temporary compatibility shim when one is required
+### Document a temporary compatibility shim
 
 ```typescript
 /**
@@ -154,50 +90,33 @@ export const cartCleanupReady = isCleanupReady({
 export { selectCartTotal } from "$lib/store/slices/cart/cart-selectors";
 ```
 
-### 5. ❌ Bad: delete while consumers still import the old store
+### Record per-slice cleanup evidence
+
+Record actual search queries/results, consumer import replacements, tests, UI
+flows, and wrapper/shim findings together. This example is a report shape, not
+proof of a run: only delete when tests/UI pass and old-path searches are empty.
+If `Header.svelte` or `Checkout.svelte` still imports the old store, deletion is
+unsafe regardless of whether the replacement itself passes tests.
 
 ```typescript
-// ❌ BAD: this plan deletes an old store even though consumers still import it.
-type BadCleanupPlan = {
-  oldStorePath: string;
-  consumersStillImportingOldPath: string[];
-  deleteOldStoreNow: boolean;
-};
-
-export const badCleanupPlan: BadCleanupPlan = {
-  oldStorePath: "src/lib/stores/cart.store.svelte.ts",
-  consumersStillImportingOldPath: ["Header.svelte", "Checkout.svelte"],
-  deleteOldStoreNow: true,
-};
-```
-
-### 6. Produce final per-slice cleanup evidence
-
-```typescript
-type SliceCleanupReport = {
-  slice: string;
-  removedStoreFiles: string[];
-  remainingOldPathMatches: string[];
-  documentedShims: Array<{ path: string; removalCondition: string }>;
-  verification: string[];
-};
-
-export const cartCleanupReport: SliceCleanupReport = {
+export const cartCleanupReport = {
   slice: "cart",
   removedStoreFiles: ["src/lib/stores/cart.store.svelte.ts"],
-  remainingOldPathMatches: [],
+  searches: [
+    { query: "cart.store.svelte", matches: [] },
+    { query: "from.*stores/cart", matches: [] },
+  ],
+  importReplacements: [{
+    consumer: "src/routes/cart/CartSummary.svelte",
+    removedImport: "$lib/stores/cart.store.svelte",
+    addedImports: [
+      "$lib/store/slices/cart/cart-selectors",
+      "$lib/store/slices/cart/cart-slice",
+      "$lib/store/store",
+    ],
+  }],
+  passThroughWrappers: [],
   documentedShims: [],
   verification: ["cart reducer tests", "cart saga tests", "cart checkout manual flow"],
 };
 ```
-
-## Cases Covered
-
-| Case | Example |
-| --- | --- |
-| Zero-reference proof | Record zero-reference search evidence |
-| Consumer import migration | Track old imports replaced by new owners |
-| Deletion readiness | Gate deletion on tests, UI checks, and zero references |
-| Compatibility shim exception | Document a temporary compatibility shim when one is required |
-| Unsafe cleanup | Bad: delete while consumers still import the old store |
-| Final handoff evidence | Produce final per-slice cleanup evidence |

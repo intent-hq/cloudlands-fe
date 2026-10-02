@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { invoke } from '$lib/electron-bridge';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { StoreState } from '$store/renderer/types';
@@ -181,7 +181,9 @@ describe('OpenComboButton trigger ownership', () => {
     await fireEvent.click(within(container).getByRole('button', { name: 'Open in...' }));
     await within(container).findByRole('menu');
 
-    await fireEvent.click(within(container).getByRole('menuitem', { name: 'Finder' }));
+    const finder = within(container).getByRole('menuitemradio', { name: 'Finder' });
+    expect(finder.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(finder);
 
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledExactlyOnceWith('shell:showItemInFolder', {

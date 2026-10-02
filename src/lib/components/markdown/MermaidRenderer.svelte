@@ -552,6 +552,9 @@ ${source}`;
       const label = actor.querySelector<SVGTextElement>(':scope > text.actor-man');
       if (!head || !label) continue;
       const centerX = Number(head.getAttribute('cx'));
+      // Mermaid draws the head ten local units below each actor row. Keep
+      // that row origin: bottom actors use absolute coordinates in this group.
+      const rowY = Number(head.getAttribute('cy')) - 10;
       const labelHeight = label.getBBox().height;
       actor
         .querySelectorAll(':scope > line, :scope > circle')
@@ -559,13 +562,13 @@ ${source}`;
       const icon = template.cloneNode(true) as SVGSVGElement;
       icon.classList.add('mermaid-actor-user-icon');
       icon.setAttribute('x', String(centerX - 15));
-      icon.setAttribute('y', '1');
+      icon.setAttribute('y', String(rowY + 1));
       icon.setAttribute('width', '30');
       icon.setAttribute('height', '30');
       icon.setAttribute('aria-hidden', 'true');
       icon.setAttribute('focusable', 'false');
       icon.removeAttribute('role');
-      label.setAttribute('y', String(37 + labelHeight / 2));
+      label.setAttribute('y', String(rowY + 37 + labelHeight / 2));
       actor.insertBefore(icon, label);
     }
   }
@@ -622,6 +625,7 @@ ${source}`;
       }
     }
     for (const text of svg.querySelectorAll<SVGTextElement>('text')) {
+      if (text.closest('g.actor-man')) continue;
       const y = Number(text.getAttribute('y'));
       if (Number.isFinite(y) && y >= threshold) text.setAttribute('y', String(y + amount));
     }
@@ -631,6 +635,23 @@ ${source}`;
       if (![y, height].every(Number.isFinite)) continue;
       if (y >= threshold) rect.setAttribute('y', String(y + amount));
       else if (y + height >= threshold) rect.setAttribute('height', String(height + amount));
+    }
+    // Move actor labels and nested icon viewports together in the root SVG's
+    // coordinates, including actors whose row is carried by a group transform.
+    const rootMatrix = svg.getScreenCTM();
+    for (const actor of svg.querySelectorAll<SVGGElement>('g.actor-man')) {
+      const actorMatrix = actor.getScreenCTM();
+      const parentMatrix = (actor.parentElement as SVGGraphicsElement | null)?.getScreenCTM();
+      if (!rootMatrix || !actorMatrix || !parentMatrix) continue;
+      const bounds = actor.getBBox();
+      const top = new DOMPoint(bounds.x, bounds.y)
+        .matrixTransform(actorMatrix)
+        .matrixTransform(rootMatrix.inverse()).y;
+      if (top < threshold) continue;
+      const rootToParent = parentMatrix.inverse().multiply(rootMatrix);
+      const translate = svg.createSVGTransform();
+      translate.setTranslate(rootToParent.c * amount, rootToParent.d * amount);
+      actor.transform.baseVal.insertItemBefore(translate, 0);
     }
     // Self-message curves and construct tabs are not line/rect geometry. Move
     // their existing paint too, but never touch marker definitions or actor icons.
@@ -687,6 +708,10 @@ ${source}`;
     let labels: SVGTextElement[] = [];
     for (const child of svg.children) {
       if (child.matches('text.messageText')) labels.push(child as SVGTextElement);
+      if (child.matches('path.messageLine0, path.messageLine1')) {
+        labels = [];
+        continue;
+      }
       if (!child.matches('line.messageLine0, line.messageLine1')) continue;
       groups.push({ labels, line: child as SVGLineElement });
       labels = [];
@@ -886,6 +911,24 @@ ${source}`;
         group.insertBefore(surface, group.firstElementChild);
       });
     }
+
+    // Mermaid emits frames after their enclosed notes and inner frames. Paint
+    // complete constructs behind the sequence content, outermost first, so their
+    // opaque surfaces cannot cover notes or the structure of nested constructs.
+    const constructs = [...svg.querySelectorAll<SVGGElement>(':scope > .sequence-construct')];
+    constructs.sort((a, b) => {
+      const outer = a.getBBox();
+      const inner = b.getBBox();
+      return inner.width * inner.height - outer.width * outer.height;
+    });
+    // Preserve Mermaid's native background order, including participant boxes.
+    // Move each box group intact so its heading stays with its background rect.
+    const backgrounds = [...svg.children].filter(
+      (child) =>
+        child.matches('rect.rect') ||
+        (child.matches('g') && child.querySelector(':scope > rect.rect')),
+    );
+    svg.prepend(...backgrounds, ...constructs);
 
     const normalizeNoteText = (text: string) =>
       text
@@ -1339,7 +1382,8 @@ ${source}`;
     padMermaidEdgeLabels(svg);
     addMermaidLabelKnockouts(svg);
     addMermaidLabelFeathers(svg);
-    reserveFlowchartClusterHeaderBands(svg, clusterMembership);
+    if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2')
+      reserveFlowchartClusterHeaderBands(svg, clusterMembership);
     repairEntityDividers(svg);
     refineMermaidCylinderNodes(svg);
     repairFlowchartNodeOutlines(svg);
@@ -1347,6 +1391,25 @@ ${source}`;
     if (flowchart)
       svg.dataset.flowchartDirection =
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
+    // Keep native ranks and routes together; source-order stacking separates branches from joins.
+    if (flowchart) {
+      const bounds = svg.getBBox();
+      const padding = 16;
+      const width = Math.ceil(bounds.width + padding * 2);
+      const height = Math.ceil(bounds.height + padding * 2);
+      svg.setAttribute('viewBox', `${bounds.x - padding} ${bounds.y - padding} ${width} ${height}`);
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      setReadableMermaidWidth(svg, width);
+      applyMermaidTerminalGaps(svg);
+      if (!prefersReducedMotion(svg.ownerDocument)) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 64));
+      }
+      if (generation !== renderGeneration || fit !== fitGeneration) return false;
+      svg.dataset.layoutGeneration = String(generation);
+      svg.dataset.layoutSettled = 'true';
+      return true;
+    }
     const rendererWidth = rendererElement?.clientWidth ?? 0;
     const compactRendererLayout = rendererWidth > 0 ? rendererWidth <= 620 : compactLayout;
     if (flowchart && !compactRendererLayout && svg.querySelectorAll('g.cluster').length >= 2) {
@@ -1590,13 +1653,22 @@ ${source}`;
       // Our own final-error UI owns failures; Mermaid must not paint an error into the document.
       config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
-      config.layout = usesStateDiagram ? 'elk' : 'dagre';
+      const usesEntityDiagram = /^\s*erDiagram\b/m.test(renderCode);
+      config.layout = usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
+      if (usesHtmlLabels) {
+        config.flowchart = {
+          ...config.flowchart,
+          curve: 'basis',
+          nodeSpacing: 48,
+          rankSpacing: 64,
+        };
+      }
       if (compactLayout) {
         config.flowchart = {
           ...config.flowchart,
-          nodeSpacing: 4,
+          nodeSpacing: 48,
           padding: 9,
-          rankSpacing: 24,
+          rankSpacing: 48,
           wrappingWidth: narrowLayout && /\bsubgraph\b/.test(renderCode) ? 80 : 120,
         };
         if (narrowLayout) {
@@ -1713,10 +1785,13 @@ ${source}`;
 
   onMount(() => {
     mounted = true;
+    let observedWidth: number | undefined;
     const resizeObserver =
       typeof ResizeObserver === 'undefined'
         ? undefined
         : new ResizeObserver(([entry]) => {
+            if (entry.contentRect.width === observedWidth) return;
+            observedWidth = entry.contentRect.width;
             compactLayout = entry.contentRect.width <= 620;
             narrowLayout = narrowLayout
               ? entry.contentRect.width < 440

@@ -399,3 +399,43 @@ describe('ToolDetails batch delegate rendering', () => {
     expect(container.textContent).toContain('Agent spawned');
   });
 });
+
+it('renders the selected latest comment creator without borrowing another identity', () => {
+  const latestAuthorIdentity = {
+    provider: 'gitlab' as const,
+    host: 'gitlab.example',
+    externalUserId: '42',
+  };
+  const { container } = render(ToolDetails, {
+    props: {
+      input: {},
+      parsedResult: {
+        type: 'comment-list',
+        commentThreads: [
+          {
+            threadId: 'known',
+            commentCount: 2,
+            status: 'open',
+            latestAuthor: 'same',
+            latestAuthorType: 'user',
+            latestAuthorIdentity,
+          },
+          {
+            threadId: 'unknown',
+            commentCount: 1,
+            status: 'open',
+            latestAuthor: 'legacy',
+            latestAuthorType: 'user',
+          },
+        ],
+      },
+    },
+  });
+  const labels = Array.from(container.querySelectorAll('[data-comment-author]')).map((el) =>
+    el.getAttribute('aria-label'),
+  );
+  expect(labels).toHaveLength(2);
+  expect(labels[0]).toContain('gitlab.example');
+  expect(labels[0]).toContain('42');
+  expect(labels[1]).toBe('legacy');
+});

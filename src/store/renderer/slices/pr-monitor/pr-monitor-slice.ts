@@ -8,12 +8,12 @@
  * (`cancelPrMonitorRequested` / `flushPrMonitorRequested`) have no reducer
  * case — the daemon's `prMonitor:*` events converge the list.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';

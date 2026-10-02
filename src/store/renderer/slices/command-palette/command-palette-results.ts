@@ -39,6 +39,8 @@ export interface ComputeResultsInput {
   workspaceId: string | undefined;
   agents: WorkspaceObject[];
   notes: WorkspaceObject[];
+  /** Indexed note hits, already query-driven and in server relevance order. */
+  indexedNotes?: WorkspaceObject[];
   changes: WorkspaceObject[];
   terminals: WorkspaceObject[];
   browserUrls: WorkspaceObject[];
@@ -64,6 +66,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     workspaceId,
     agents,
     notes,
+    indexedNotes = [],
     changes,
     terminals,
     browserUrls,
@@ -125,6 +128,19 @@ export function computeResults(input: ComputeResultsInput): any[] {
         .sort((a, b) => b.score - a.score || (tiebreak ? tiebreak(a.item, b.item) : 0))
         .map((entry) => entry.item);
 
+    // Remote hits lead without metadata rechecking or re-ranking. First occurrence
+    // of a (workspaceId, noteId) wins, then fuzzy-ranked local-only hits follow.
+    // Stable local sorting preserves incoming recency order for equal fuzzy scores.
+    const rankedNotes = () => {
+      const seen = new Set<string>();
+      return [...indexedNotes, ...rank(notes)].filter((note) => {
+        const key = JSON.stringify([note.workspaceId ?? workspaceId, note.noteId ?? note.id]);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
     const byActivityDesc = (a: WorkspaceItem, b: WorkspaceItem) =>
       (b._activityTime ?? 0) - (a._activityTime ?? 0);
 
@@ -160,7 +176,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
       },
       {
         filter: 'note',
-        items: () => rank(notes),
+        items: rankedNotes,
         label: m.layout_commandPalette_context_group(),
         shortcutKey: '#',
       },

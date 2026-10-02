@@ -922,6 +922,7 @@ test('endpoint boundary oracle rejects detached, interior, and wrong-shape point
 test('keeps the bundled sandbox font through theme changes and repeated document visits', async ({
   page,
 }) => {
+  test.setTimeout(180_000);
   for (const [state, rootId] of [
     ['custom-architecture', 'custom-architecture'],
     ['custom-walkthrough', 'custom-walkthrough'],

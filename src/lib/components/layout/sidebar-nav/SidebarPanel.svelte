@@ -33,7 +33,10 @@
     type AllSpacesViewMode,
     type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
-  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    selectHostRole,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -52,7 +55,8 @@
   // workspaces shared with it, so its list is titled accordingly. Keyed off
   // the guest-window identity rather than the fail-closed collaborator-only
   // flag, which reads true on every owner window until identity settles.
-  const isGuestWindow$ = selectIsGuestWindow();
+  const hostRole$ = selectHostRole();
+  const canCreate$ = selectWorkspaceCreationVisible();
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
@@ -283,7 +287,7 @@
             >
               <Tabs.Trigger
                 value="all-workspaces"
-                class="sidebar-workspaces-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
               >
                 <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
               </Tabs.Trigger>
@@ -308,29 +312,34 @@
             <div class="panel-header workspace-panel-header shrink-0">
               <div class="min-w-0 flex-1">
                 <h2 class="panel-title text-ui font-medium text-foreground truncate">
-                  {$isGuestWindow$
+                  {$hostRole$ === 'guest'
                     ? m.layout_sidebarNav_allSharedWorkspaces_title()
                     : m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
-                <Tooltip
-                  content={m.layout_sidebarNav_newWorkspace_title()}
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
-                    onclick={() => appStore.dispatch(setShowCreateModal(true))}
-                    aria-label={m.layout_sidebarNav_newWorkspace_title()}
-                    data-spaces-create
+                {#if $canCreate$}
+                  <Tooltip
+                    content={m.layout_sidebarNav_newWorkspace_title()}
+                    side="bottom"
+                    sideOffset={4}
                   >
-                    <Fa icon={faPlus} size="xs" />
-                  </Button>
-                </Tooltip>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      type="button"
+                      class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
+                      onclick={() => {
+                        if (selectWorkspaceCreationVisible.select(appStore.state))
+                          appStore.dispatch(setShowCreateModal(true));
+                      }}
+                      aria-label={m.layout_sidebarNav_newWorkspace_title()}
+                      data-spaces-create
+                    >
+                      <Fa icon={faPlus} size="xs" />
+                    </Button>
+                  </Tooltip>
+                {/if}
                 <Menu.Root bind:open={spacesOptionsOpen}>
                   <Menu.Trigger>
                     {#snippet child({ props })}
@@ -502,14 +511,6 @@
 <style>
   .sidebar-panel {
     container-type: inline-size;
-    /* WorkspaceCard's 4px margin + 10px padding + 14px status + 10px gap. */
-    --sidebar-label-inset: 2.375rem;
-  }
-
-  .sidebar-panel :global(.sidebar-workspaces-tab) {
-    justify-content: flex-start;
-    /* Subtract the tab strip's 8px outer inset and 4px inner padding. */
-    padding-left: calc(var(--sidebar-label-inset) - 0.75rem);
   }
 
   /* Only the incoming pane moves; the outgoing pane becomes hidden/inert
@@ -610,11 +611,6 @@
 
   /* Narrow: stack header vertically */
   @container (max-width: 160px) {
-    :global(.sidebar-view-tabs) {
-      /* Compact rows use 8px padding and a 6px status-to-title gap. */
-      --sidebar-label-inset: 2rem;
-    }
-
     .panel-header {
       flex-direction: column;
       align-items: stretch;

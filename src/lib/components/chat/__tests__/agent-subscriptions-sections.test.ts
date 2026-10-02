@@ -64,6 +64,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentDetailHydrated: () => makeReadable(false),
+  selectAgentBackgroundPending: () => makeReadable(false),
   selectAgentPreview: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
       makeDerivedReadable(agentId, (id) => {
@@ -667,7 +668,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const distinctSurfaceClass = /^(?:bg-(?!transparent$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
-      expect(summary.classList).toContain('px-3!');
+      expect(summary.classList).toContain('subscription-card-row-inset');
       expect(summary.classList).toContain('py-2!');
       expect(summary.textContent?.trim()).toBe('2 agents finished');
       expect(
@@ -725,7 +726,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(finishedLeadingColumn.className).toContain('--agent-avatar-standard-surface-size');
       expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
       expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
-      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
+      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain(
+        'subscription-card-row-inset',
+      );
       expect(finishedIcon).toBeTruthy();
       expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
       expect(finishedIcon?.classList).toContain('text-muted-foreground!');
@@ -734,10 +737,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(waitingIcon?.classList).toContain('text-muted-foreground!');
       expect(waitingIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
-        expect(finishedIcon?.classList).toContain(token);
-        expect(waitingIcon?.classList).toContain(token);
-      }
     },
   );
 
@@ -1218,7 +1217,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-stop'));
     await flush();
-    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'agent-a' }]);
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'agent-a', workspaceId: 'ws-waiting-actions-shot' },
+    ]);
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-cancel'));
     await flush();
     expect(backendRequestSpy.mock.calls).toContainEqual([
@@ -1564,7 +1566,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-b')).getByTestId('one-shot-stop'));
     await flush();
-    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'agent-b' }]);
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'agent-b', workspaceId: 'ws-waiting-actions-group' },
+    ]);
     await fireEvent.click(within(agentRow('agent-b')).getByTestId('one-shot-cancel'));
     await flush();
     expect(backendRequestSpy.mock.calls).toContainEqual([

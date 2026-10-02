@@ -1,11 +1,13 @@
+import { hardwareConsoleSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
+import { encoderPreferenceSaga } from './slices/hardware-console/sagas/encoder-preference-saga';
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
-import { hardwareConsoleSaga, sagas, startAllAppSagas } from './sagas';
+import { sagas, startAllAppSagas } from './sagas';
 
 describe('renderer app saga registry', () => {
   it('registers every audited root saga exactly once', () => {
@@ -17,6 +19,8 @@ describe('renderer app saga registry', () => {
       'connectionsSaga',
       'guestSessionsSaga',
       'presenceSaga',
+      'principalSaga',
+      'hostExecutionSaga',
       'settingsHydrationSaga',
       'activeStreamsSaga',
       'agentReadSaga',
@@ -35,9 +39,15 @@ describe('renderer app saga registry', () => {
       'regenerateFromMessageSaga',
       'agentFailureToastSaga',
       'gitReadSaga',
+      'gitWriteSaga',
+      'acceptWorkflowSaga',
+      'acceptWorkflowObserverSaga',
+      'prWorkflowSaga',
+      'chatChangesSaga',
       'acceptChangesStatusSaga',
       'fileExplorerSaga',
       'filesReadSaga',
+      'pdfPreviewSaga',
       'filesWriteSaga',
       'workspaceNotesSaga',
       'noteReadTrackingSaga',
@@ -49,6 +59,7 @@ describe('renderer app saga registry', () => {
       'workspaceOperationsSaga',
       'workspaceTransferSaga',
       'workspaceShareSaga',
+      'hostMembershipSaga',
       'workspaceImportSaga',
       'scriptsOperationSaga',
       'lifecycleReadSaga',
@@ -63,22 +74,22 @@ describe('renderer app saga registry', () => {
       'modelReloadSaga',
       'providerAvailabilitySaga',
       'setupPromptSaga',
-      'hostRequirementsSaga',
       'backgroundHooksSaga',
-      'hardwareConsoleSaga',
-      'voiceSettingsSaga',
+      'hostOwnerServicesSaga',
       'themeSaga',
       'powerSaga',
       'autoUpdateSaga',
       'specialistsSaga',
+      'workspaceCatalogSaga',
       'proposalLifecycleSaga',
       'settingsProposalHistorySaga',
       'specialistProposalHistorySaga',
-      'githubAuthSaga',
       'githubRepoSearchSaga',
       'githubUserSearchSaga',
       'sentryAuthSaga',
       'linearAuthSaga',
+      'identitySaga',
+      'collaborationAuthSaga',
       'mcpSettingsSaga',
       'directoryPickerSaga',
       'legacyImportSaga',
@@ -96,6 +107,7 @@ describe('renderer app saga registry', () => {
       'releaseNotesSaga',
       'browserPersistenceSaga',
       'browserClientsSaga',
+      'personalDevicesSaga',
       'fileContentPruneSaga',
       'terminalCreationSaga',
       'terminalPersistenceSaga',
@@ -103,7 +115,6 @@ describe('renderer app saga registry', () => {
       'externalEditorsPersistenceSaga',
       'workspaceSettingsSaga',
       'updateChannelSaga',
-      'notificationSettingsSaga',
       'userPreferencesPersistenceSaga',
       'workspaceInitializerSaga',
       'zoomIpcSaga',
@@ -114,7 +125,7 @@ describe('renderer app saga registry', () => {
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
     ]);
-    expect(new Set(sagas).size).toBe(101);
+    expect(new Set(sagas).size).toBe(110);
   });
 
   it('returns one cancellation handler per registered saga', () => {
@@ -123,9 +134,9 @@ describe('renderer app saga registry', () => {
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(101);
+    expect(store.runSaga).toHaveBeenCalledTimes(110);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(101).fill(cancel));
+    expect(handlers).toEqual(Array(110).fill(cancel));
   });
 
   it('starts every hardware-console owner exactly once under one cancellable composition', () => {
@@ -143,10 +154,11 @@ describe('renderer app saga registry', () => {
     );
 
     expect(effect.type).toBe('ALL');
-    expect(effect.payload).toHaveLength(5);
-    expect(childEffects.map((child) => child.type)).toEqual(Array(5).fill('CALL'));
+    expect(effect.payload).toHaveLength(6);
+    expect(childEffects.map((child) => child.type)).toEqual(Array(6).fill('CALL'));
     expect(childEffects.map((child) => child.payload.fn)).toEqual([
       hardwareConsoleDeviceSaga,
+      encoderPreferenceSaga,
       actionKeySaga,
       keyPinPersistenceSaga,
       promptPickerSaga,

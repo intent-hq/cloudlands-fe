@@ -12,7 +12,7 @@ import type {
  * brief colours by when the caller knows them (a typing row knows none).
  */
 export type PresenceCircle = PresenceIdentity &
-  Partial<Pick<PresencePerson, 'owner' | 'online' | 'self'>>;
+  Partial<Pick<PresencePerson, 'owner' | 'online' | 'viewing' | 'self'>>;
 
 /**
  * What makes one avatar of a stack a button: its accessible label (also the
@@ -25,13 +25,13 @@ export interface PresenceCircleAction {
 }
 
 /**
- * The ring around an avatar: the owner blue whether online or not, an online
- * member green, an offline member grey. Offline is drawn on the avatar itself
- * (greyscale), so the owner ring never has to give way to it.
+ * Modern role rings never change with connectivity. Legacy callers keep their
+ * owner/online/offline presentation without asserting host membership.
  */
-export type PresenceRing = 'owner' | 'member' | 'offline';
+export type PresenceRing = 'owner' | 'member' | 'guest' | 'offline';
 
 export function presencePersonRing(person: PresenceCircle): PresenceRing | null {
+  if (person.hostRole) return person.hostRole;
   if (person.owner) return 'owner';
   if (person.online === false) return 'offline';
   return person.online === true ? 'member' : null;
@@ -41,10 +41,53 @@ export function presencePersonName(person: PresenceIdentity): string {
   return person.displayName?.trim() || person.login?.trim() || m.presence_person_unknown_label();
 }
 
-/** The name, marked "(you)" for this window's own principal. */
+/**
+ * The person's handle on their identity forge — "@login on GitHub", "@login
+ * on <gitlab host>", the bare forge without a login — or `null` for a person
+ * whose row carries no identity (a roster-only person, an older daemon).
+ */
+export function presencePersonForgeHandle(person: PresenceIdentity): string | null {
+  const identity = person.identity;
+  if (!identity) return null;
+  const login = person.login?.trim();
+  if (identity.provider === 'gitlab') {
+    return login
+      ? m.presence_person_gitlabHandle_label({ login: `@${login}`, host: identity.host })
+      : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
+  }
+  return login
+    ? m.presence_person_githubHandle_label({ login: `@${login}` })
+    : m.workspace_share_pinProvider_github_label();
+}
+
+/** Include a distinct display name; the forge handle already names a fallback login. */
+export function presencePersonNameWithForge(person: PresenceIdentity): string {
+  const handle = presencePersonForgeHandle(person);
+  if (!handle) return presencePersonName(person);
+  const name = person.displayName?.trim();
+  const login = person.login?.trim();
+  return name && name.replace(/^@/, '').toLowerCase() !== login?.toLowerCase()
+    ? m.presence_person_forge_label({ name, handle })
+    : handle;
+}
+
+/** The name (with the forge handle when known), marked "(you)" for this window's own principal. */
 export function presencePersonLabel(person: PresenceCircle): string {
-  const name = presencePersonName(person);
-  return person.self ? m.presence_person_you_label({ name }) : name;
+  const name = presencePersonNameWithForge(person);
+  const ownName = person.self ? m.presence_person_you_label({ name }) : name;
+  if (!person.hostRole) return ownName;
+  const role =
+    person.hostRole === 'owner'
+      ? m.presence_role_owner()
+      : person.hostRole === 'member'
+        ? m.presence_role_member()
+        : m.presence_role_guest();
+  const status = person.online
+    ? person.viewing
+      ? m.presence_status_viewing()
+      : m.presence_status_online()
+    : m.presence_status_offline();
+  return m.presence_person_roleStatus({ name: ownName, role, status });
 }
 
 /** Stable hue per principal so the same person keeps one color everywhere. */

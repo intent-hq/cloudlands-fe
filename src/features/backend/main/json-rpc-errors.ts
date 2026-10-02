@@ -8,6 +8,13 @@
  * `data.code` from the daemon when one is present).
  */
 
+import { m } from '../../../shared/paraglide/messages.js';
+import {
+  describeUrlForLog,
+  sanitizeCommandForDisplay,
+} from '../../../shared/utils/sanitize-credentials';
+import { scrubToken } from '../../deeplink/utils/scrub-token';
+
 /** Raw JSON-RPC error object as received from the daemon. */
 export interface JsonRpcErrorShape {
   code: number;
@@ -73,4 +80,102 @@ export class JsonRpcError extends Error {
   toErrorPayload(): { code: string; message: string; data: unknown; rpcCode: number } {
     return { code: this.code, message: this.message, data: this.data, rpcCode: this.rpcCode };
   }
+}
+
+const MAX_RELAY_DIAGNOSTIC_LENGTH = 2048;
+
+/** Redact whole values before other scrubbers can remove their quote boundaries. */
+function scrubDiagnosticFields(text: string): string {
+  const fields = /["']?([\w%+-]+)["']?\s*[:=]\s*|(--[\w-]+)\s+/g;
+  let result = '';
+  let copiedThrough = 0;
+  let match: RegExpExecArray | null;
+  while ((match = fields.exec(text)) !== null) {
+    let key = match[1] ?? match[2];
+    try {
+      key = decodeURIComponent(key.replace(/\+/g, ' '));
+    } catch {
+      // A malformed escape in a joined diagnostic prefix must not hide an
+      // encoded ASCII header/credential suffix. Leave other bytes unchanged.
+      key = key.replace(/%([0-7][a-f\d])/gi, (_escape, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16)),
+      );
+    }
+    key = key.replace(/^--/, '');
+    if (/(?:authorization|cookie)$/i.test(key)) {
+      // Headers can contain several credentials, quoted fields or folded lines.
+      // Match suffixes too: removing controls can join a preceding word to a
+      // split/encoded header name. Such ambiguous keys must still fail closed.
+      // Keep the preceding cause, but fail closed on the entire header tail.
+      return `${result}${text.slice(copiedThrough, fields.lastIndex)}***`;
+    }
+    if (!/(key|token|secret|pass|credential|auth|pwd)/i.test(key) && !/^tc$/i.test(key)) {
+      continue;
+    }
+
+    const valueStart = fields.lastIndex;
+    let valueEnd = valueStart;
+    const quote = text[valueStart];
+    if (quote === '"' || quote === "'" || quote === '`') {
+      valueEnd++;
+      while (valueEnd < text.length) {
+        const character = text[valueEnd++];
+        if (character === '\\') valueEnd = Math.min(valueEnd + 1, text.length);
+        else if (character === quote) break;
+      }
+    } else {
+      while (valueEnd < text.length && !/[\s,;}&]/.test(text[valueEnd])) valueEnd++;
+    }
+    result += `${text.slice(copiedThrough, valueStart)}***`;
+    copiedThrough = valueEnd;
+    fields.lastIndex = valueEnd;
+  }
+  return result + text.slice(copiedThrough);
+}
+
+/**
+ * A bounded diagnostic for the transfer/import dialogs and their logs. Match
+ * the renderer's mutationErrorMessage convention for generic internal errors,
+ * without serializing arbitrary data or changing the transport's error shape.
+ */
+export function relayErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : m.workspace_transfer_unknown_error();
+  // Bound work BEFORE trimming, concatenating or running credential regexes.
+  // Omit oversized fields entirely: a clipped prefix can expose part of a secret.
+  if (message.length > MAX_RELAY_DIAGNOSTIC_LENGTH) return m.workspace_transfer_unknown_error();
+  let text = message;
+  // i18n-ignore (match the daemon's JSON-RPC wire message)
+  if (message === 'Internal error' && error && typeof error === 'object' && 'data' in error) {
+    const data = error.data;
+    const detail = data && typeof data === 'object' && 'detail' in data ? data.detail : undefined;
+    if (typeof detail === 'string') {
+      if (message.length + 2 + detail.length > MAX_RELAY_DIAGNOSTIC_LENGTH) return message;
+      const trimmed = detail.trim();
+      if (trimmed && trimmed !== message) text = `${message}: ${trimmed}`;
+    }
+  }
+
+  // Redact while line boundaries still exist, then rescan without controls for
+  // split key names. Both interpretations must be safe before shared scrubbers.
+  text = scrubDiagnosticFields(text);
+  text = scrubDiagnosticFields(
+    text
+      .replace(/[\x00-\x1f\x7f]/g, '')
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+        '[REDACTED]',
+      ),
+  );
+  // Reuse the existing command, pairing and URL redaction conventions.
+  text = sanitizeCommandForDisplay(scrubToken(text))
+    .replace(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi, (url) => describeUrlForLog(url))
+    .replace(/\b(Bearer|Basic)\s+[a-z\d._~+\/-]+=*/gi, '$1 ***');
+  return text.length > MAX_RELAY_DIAGNOSTIC_LENGTH
+    ? `${text.slice(0, MAX_RELAY_DIAGNOSTIC_LENGTH - 1)}…`
+    : text;
 }

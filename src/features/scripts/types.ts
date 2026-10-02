@@ -12,6 +12,24 @@
  */
 export type ScriptMode = 'service' | 'command';
 
+export type ScriptArchiveFilter = 'active' | 'archived' | 'all';
+export type ScriptPurpose = 'saved' | 'oneOff';
+interface ScriptLastRun {
+  outcome: 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+  exitCode?: number;
+  startedAt?: string;
+  stoppedAt: string;
+  error?: string;
+}
+export interface ScriptArchiveResult {
+  archived: string[];
+  skipped: { scriptId: string; reason: 'live' | 'service' | 'notFound' }[];
+}
+export interface ScriptRestoreResult {
+  restored: string[];
+  skipped: { scriptId: string; reason: 'notFound' }[];
+}
+
 /**
  * Script category for grouping in the UI.
  */
@@ -47,6 +65,9 @@ export interface WorkspaceScript {
   createdAt: string;
   updatedAt?: string;
   lastRunAt?: string;
+  purpose?: ScriptPurpose;
+  archivedAt?: string;
+  lastRun?: ScriptLastRun;
 }
 
 /**

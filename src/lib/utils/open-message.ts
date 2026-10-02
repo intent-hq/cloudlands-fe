@@ -123,13 +123,17 @@ async function waitForMessage(agentId: string, messageId: string): Promise<boole
 export async function seekConversationToMessage(
   agentId: string,
   messageId: string,
+  workspaceId?: string,
 ): Promise<boolean> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   try {
     const page = await appClient.agents.getConversation(
       agentId,
       SEEK_PAGE_LIMIT,
       undefined,
       messageId,
+      undefined,
+      workspaceId,
     );
     if (!page.messages.some((message) => message.id === messageId)) return false;
     appStore.dispatch(replaceMessages(agentId, page.messages));
@@ -188,7 +192,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
 
   const present = (await waitForMessage(agentId, messageId))
     ? true
-    : await seekConversationToMessage(agentId, messageId);
+    : await seekConversationToMessage(agentId, messageId, workspaceId);
   if (!present) {
     logger.warn('[openMessage] Message not found; conversation opened at tail', {
       agentId,

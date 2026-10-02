@@ -11,6 +11,8 @@
     titleId?: string;
     descriptionId?: string;
     size?: ComponentProps<typeof Dialog.Content>['size'];
+    /** Keep dialog-owned child overlays visible; the body remains independently scrollable. */
+    allowOverflow?: boolean;
     role?: 'dialog' | 'alertdialog';
     busy?: boolean;
     dismissOnInteractOutside?: boolean;
@@ -35,6 +37,7 @@
     titleId,
     descriptionId,
     size = 'default',
+    allowOverflow = false,
     role = 'dialog',
     busy = false,
     dismissOnInteractOutside = true,
@@ -72,7 +75,9 @@
     {closeLabel}
     closeDisabled={busy}
     {escapeKeydownBehavior}
-    class="app-no-drag flex min-h-0 flex-col overflow-hidden p-0"
+    class="app-no-drag flex min-h-0 flex-col {allowOverflow
+      ? 'overflow-visible'
+      : 'overflow-hidden'} p-0"
     onOpenAutoFocus={(event) => {
       if (!initialFocus) return;
       initialFocus.focus();

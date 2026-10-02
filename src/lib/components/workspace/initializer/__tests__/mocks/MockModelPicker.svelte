@@ -57,6 +57,9 @@
   >
     pick model with resolved triple
   </button>
+  <button type="button" data-testid="attempt-reasoning" onclick={() => onReasoningChange?.('high')}
+    >attempt reasoning callback</button
+  >
   {#if showReasoning}
     <button type="button" data-testid="pick-reasoning" onclick={() => onReasoningChange?.('high')}>
       pick reasoning

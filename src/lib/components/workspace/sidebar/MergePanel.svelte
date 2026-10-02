@@ -3,25 +3,25 @@
    * MergePanel - Merge drawer content for sidebar changes panel.
    * Shows merge options (via PR or git), squash/push toggles, and merge/auto-fill buttons.
    */
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
+  import {
+    mergeToTrunkRequested,
+    mergePRWorkflowRequested,
+    setMergeOptions,
+  } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
+  import {
+    selectAcceptOperationPending,
+    selectMergeOptions,
+  } from '$store/renderer/slices/accept-workflow/accept-workflow-selectors';
   import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
-  import {
-    refreshRequested,
-    clearOlderCommits as ftClearOlderCommits,
-    setSidebarMergeWhenReady,
-  } from '$store/renderer/slices/changes/changes-slice';
-  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import { setSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-slice';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
     cancelExecution,
     executeBackgroundAgent,
   } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
 
-  import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import { selectSidebarMergeWhenReady } from '$store/renderer/slices/changes/changes-selectors';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -30,9 +30,7 @@
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
-  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { faCheck, faCodeMerge, faEye, faRobot, faStop } from '@fortawesome/free-solid-svg-icons';
   import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -53,8 +51,6 @@
     repoType: 'local' | 'github';
     commitMessage: string;
     onCommitMessageChange?: (value: string) => void;
-    onMergeComplete?: () => void;
-    onOpenRebaseTerminal?: () => void;
   }
 
   let {
@@ -72,8 +68,6 @@
     repoType,
     commitMessage,
     onCommitMessageChange,
-    onMergeComplete,
-    onOpenRebaseTerminal,
   }: Props = $props();
 
   // Redux selectors at component init
@@ -85,49 +79,22 @@
   const workspace = selectWorkspaceById(workspaceIdStore);
   const mergeExecState$ = selectExecutorState(workspaceIdStore, readable('commit-merge'));
   const mergeWhenReady$ = selectSidebarMergeWhenReady(workspaceIdStore);
+  const merging$ = selectAcceptOperationPending(workspaceIdStore, readable('merge'));
+  const mergingPR$ = selectAcceptOperationPending(workspaceIdStore, readable('mergePRWorkflow'));
+  const mergeOptions$ = selectMergeOptions(workspaceIdStore);
 
   // Derived from Redux
   const isGeneratingMerge = $derived($mergeExecState$.status === 'running');
   const mergeAgentId = $derived($mergeExecState$.agentId);
 
   // Local state
-  let isMergingToTrunk = $state(false);
-  let mergeOptions = $state({ squash: false, viaPR: false, mergingPR: false, pushAfter: true });
+  const isMergingToTrunk = $derived($merging$);
+  const isMergingPR = $derived($mergingPR$);
+  const mergeOptions = $derived($mergeOptions$);
 
-  // Auto-update defaults when reactive conditions change
-  import { untrack } from 'svelte';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  $effect(() => {
-    const shouldMergeViaPR = hasOpenPR && hasRemote;
-    const shouldPush = hasRemote;
-    untrack(() => {
-      mergeOptions.viaPR = shouldMergeViaPR;
-      mergeOptions.pushAfter = shouldPush;
-    });
-  });
 
-  // Expose mergeOptions and isMergingToTrunk for parent auto-action coordination
-  export function getMergeOptions() {
-    return mergeOptions;
-  }
-  export function triggerMerge(opts?: { squash?: boolean; localOnly?: boolean }) {
-    handleMergeToTrunk(opts);
-  }
-
-  async function persistWorkspaceChanges(changes: Record<string, unknown>) {
-    const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
-    if (result.ok) {
-      appStore.dispatch(setWorkspaceEntity(result.data));
-    }
-    return result;
-  }
-
-  function dispatchPostMergeUpdate(update: Record<string, unknown>) {
-    dispatchWindowEvent('workspace:post-merge-update', { workspaceId, ...update });
-  }
-
-  async function handleAutoFillMerge() {
+  function handleAutoFillMerge() {
     if (isGeneratingMerge) {
       appStore.dispatch(cancelExecution(workspaceId, 'commit-merge'));
     } else {
@@ -163,162 +130,37 @@
     }
   }
 
-  async function handleMergeToTrunk(options?: {
+  function handleMergeToTrunk(options?: {
     squash?: boolean;
     rebaseFirst?: boolean;
     localOnly?: boolean;
   }) {
     if (!workspaceId) return;
 
-    if (hasStaged) {
-      if (!commitMessage.trim()) {
-        notify.error(m.workspace_mergePanel_commitMessageRequired_error());
-        return;
-      }
-      const commitResult = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
-        commitMessage: commitMessage.trim(),
-      });
-      if (!commitResult.success) {
-        notify.error(commitResult.error || m.workspace_mergePanel_commitFailed_error());
-        return;
-      }
-    }
-
-    isMergingToTrunk = true;
-    try {
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'merge', {
+    appStore.dispatch(
+      mergeToTrunkRequested(workspaceId, {
+        hasStaged,
+        commitMessage,
         targetBranch,
-        mergeStrategy: options?.squash ? 'squash' : 'merge',
+        mergeHeadSha: allCommits[0]?.hash ?? null,
+        squash: options?.squash,
         rebaseFirst: options?.rebaseFirst,
         localOnly: options?.localOnly,
-      });
-
-      if (result.success) {
-        dispatchPostMergeUpdate({
-          isMergedToTrunk: true,
-          mergeHeadSha: allCommits[0]?.hash ?? null,
-        });
-        onMergeComplete?.();
-        onCommitMessageChange?.('');
-        try {
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-          ]);
-        } catch {
-          /* Refresh failed but merge succeeded */
-        }
-        if (result.result?.autoRebased && result.result?.newBaseSha) {
-          try {
-            await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
-            appStore.dispatch(ftClearOlderCommits(workspaceId));
-          } catch {
-            console.error('Failed to update baseCommitSha after auto-rebase');
-          }
-        }
-        if (result.result?.autoRebased) {
-          notify.success(m.workspace_mergePanel_rebasedAndMerged_label({ branch: targetBranch }));
-        } else {
-          notify.success(m.workspace_mergePanel_merged_label({ branch: targetBranch }));
-        }
-        celebrateMerge();
-      } else {
-        const errorMsg = result.error || '';
-        const needsRebase =
-          // i18n-ignore (matching backend error strings)
-          errorMsg.includes('Conflicts detected') ||
-          // i18n-ignore (matching backend error strings)
-          errorMsg.includes('behind') ||
-          // i18n-ignore (matching backend error strings)
-          errorMsg.includes('Please rebase');
-        if (needsRebase && !options?.rebaseFirst) {
-          notify.error(m.workspace_mergePanel_conflicts_error(), {
-            description: m.workspace_mergePanel_conflicts_description(),
-            action: {
-              label: m.workspace_mergePanel_rebaseInTerminal_label(),
-              onClick: () => onOpenRebaseTerminal?.(),
-            },
-            duration: 10000,
-          });
-        } else {
-          notify.error(result.error || m.workspace_mergePanel_mergeFailed_error());
-        }
-      }
-    } catch {
-      notify.error(m.workspace_mergePanel_mergeToTrunkFailed_error());
-    } finally {
-      isMergingToTrunk = false;
-    }
+      }),
+    );
   }
 
-  async function handleMergePROnGitHub(options?: { mergeMethod?: 'merge' | 'squash' | 'rebase' }) {
+  function handleMergePROnGitHub(options?: { mergeMethod?: 'merge' | 'squash' | 'rebase' }) {
     if (!workspaceId) return;
     const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft');
-    if (!openPR) {
-      notify.error(m.workspace_mergePanel_noOpenPr_error());
-      return;
-    }
-
-    mergeOptions.mergingPR = true;
-    try {
-      const result = await AcceptChangesClient.mergePR(workspaceId as WorkspaceId, openPR.number, {
+    if (!openPR) return;
+    appStore.dispatch(
+      mergePRWorkflowRequested(workspaceId, {
+        prNumber: openPR.number,
+        mergeHeadSha: allCommits[0]?.hash ?? null,
         mergeMethod: options?.mergeMethod || (mergeOptions.squash ? 'squash' : 'merge'),
-      });
-      if (result.success) {
-        dispatchPostMergeUpdate({
-          isMergedToTrunk: true,
-          mergeHeadSha: allCommits[0]?.hash ?? null,
-        });
-        onMergeComplete?.();
-        try {
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-            Promise.resolve(appStore.dispatch(refreshPRStatusRequested(workspaceId, true, false))),
-          ]);
-        } catch {
-          /* Refresh failed but merge succeeded */
-        }
-        notify.success(m.workspace_mergePanel_prMergedOnGithub_label({ number: openPR.number }));
-        celebrateMerge();
-      } else {
-        notify.error(result.error || m.workspace_mergePanel_prMergeFailed_error());
-      }
-    } catch {
-      notify.error(m.workspace_mergePanel_prMergeFailed_error());
-    } finally {
-      mergeOptions.mergingPR = false;
-    }
-  }
-
-  function celebrateMerge() {
-    // Dynamic import to avoid loading confetti until needed
-    import('canvas-confetti')
-      .then(({ default: confetti }) => {
-        const duration = 2000;
-        const end = Date.now() + duration;
-        const frame = () => {
-          confetti({
-            particleCount: 2,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0, y: 0.7 },
-            colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
-          });
-          confetti({
-            particleCount: 2,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1, y: 0.7 },
-            colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
-          });
-          if (Date.now() < end) requestAnimationFrame(frame);
-        };
-        frame();
-      })
-      .catch(() => {
-        /* confetti not available */
-      });
+      }),
+    );
   }
 </script>
 
@@ -330,7 +172,7 @@
       class="px-2.5 py-1 text-xs font-medium transition-colors {mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
-      onclick={() => (mergeOptions.viaPR = true)}
+      onclick={() => appStore.dispatch(setMergeOptions(workspaceId, { viaPR: true }))}
     >
       {m.workspace_mergePanel_viaPr_label()}
     </Button>
@@ -339,7 +181,7 @@
       class="px-2.5 py-1 text-xs font-medium transition-colors border-l border-border {!mergeOptions.viaPR
         ? 'bg-primary text-primary-foreground'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
-      onclick={() => (mergeOptions.viaPR = false)}
+      onclick={() => appStore.dispatch(setMergeOptions(workspaceId, { viaPR: false }))}
     >
       {m.workspace_mergePanel_viaGit_label()}
     </Button>
@@ -371,8 +213,10 @@
         <div class="flex items-center gap-1.5">
           <Switch
             id="squash-merge-github-toggle"
-            bind:checked={mergeOptions.squash}
-            disabled={mergeOptions.mergingPR}
+            checked={mergeOptions.squash}
+            onCheckedChange={(squash) =>
+              appStore.dispatch(setMergeOptions(workspaceId, { squash }))}
+            disabled={isMergingPR}
             size="sm"
           />
           <label
@@ -397,9 +241,9 @@
         size="xs"
         onclick={() =>
           handleMergePROnGitHub({ mergeMethod: mergeOptions.squash ? 'squash' : 'merge' })}
-        disabled={mergeOptions.mergingPR}
+        disabled={isMergingPR}
       >
-        {#if mergeOptions.mergingPR}
+        {#if isMergingPR}
           <IntentMarkLoader size={12} />
           <span>{m.workspace_mergePanel_mergingOnGithub_label()}</span>
         {:else}
@@ -497,7 +341,9 @@
         <div class="flex items-center gap-1.5">
           <Switch
             id="squash-merge-toggle"
-            bind:checked={mergeOptions.squash}
+            checked={mergeOptions.squash}
+            onCheckedChange={(squash) =>
+              appStore.dispatch(setMergeOptions(workspaceId, { squash }))}
             disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
             size="sm"
           />
@@ -519,7 +365,9 @@
         <div class="flex items-center gap-1.5">
           <Switch
             id="push-after-merge-toggle"
-            bind:checked={mergeOptions.pushAfter}
+            checked={mergeOptions.pushAfter}
+            onCheckedChange={(pushAfter) =>
+              appStore.dispatch(setMergeOptions(workspaceId, { pushAfter }))}
             disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
             size="sm"
           />

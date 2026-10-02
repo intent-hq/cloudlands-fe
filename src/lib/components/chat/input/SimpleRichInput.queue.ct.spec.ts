@@ -1,7 +1,32 @@
 import { expect, test } from '../../../../test/ct-test';
 import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
 
-// With no queue the prompt text sits directly below the composer padding-top
+for (const submit of ['button', 'Enter'] as const) {
+  test(`sends a Chief message with ${submit} without project-role fields`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(SimpleRichInputQueueHost, {
+      props: { chief: true, queueCount: 0, width: 560 },
+    });
+    const input = component.getByTestId('message-input');
+    const editor = input.locator('.tiptap-editor');
+    const send = input.getByRole('button', { name: 'Send message', exact: true });
+    await expect(send).toBeDisabled();
+    await editor.fill('How many PRs were merged in intent-hq over the last two weeks?');
+    await expect(send).toBeEnabled();
+    await testInfo.attach('assistant-send-enabled.png', {
+      body: await input.screenshot(),
+      contentType: 'image/png',
+    });
+    if (submit === 'button') await send.click();
+    else await editor.press('Enter');
+    await expect(component.locator('output')).toHaveText('sent');
+  });
+}
+
+// Measured inside the border, the prompt text sits below the composer padding-top
 // (8px) plus the `.tiptap-editor` padding-top (0.25rem = 4px) scoped in
 // TipTapEditor.svelte. The value is asserted as a constant rather than sampled
 // after mount: on CI the editor's scoped stylesheet can apply after the
@@ -26,7 +51,8 @@ test('preserves the empty composer and insets prompt text below expanded and col
     input.evaluate(
       (node) =>
         node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
-        node.getBoundingClientRect().top,
+        node.getBoundingClientRect().top -
+        node.clientTop,
     );
   // Settle on the CSS-defined inset before any other geometry is sampled, so
   // every read below sees the editor's scoped styles applied.
@@ -35,12 +61,14 @@ test('preserves the empty composer and insets prompt text below expanded and col
     const surface = node.getBoundingClientRect();
     const text = node.querySelector('.tiptap-editor p')!.getBoundingClientRect();
     const actions = node.querySelector('.action-bar')!.getBoundingClientRect();
-    return { top: text.top - surface.top, bottom: actions.top - text.bottom };
+    return { top: text.top - surface.top - node.clientTop, bottom: actions.top - text.bottom };
   });
   expect(geometry.top).toBe(EMPTY_TEXT_INSET);
   expect(Math.abs(geometry.bottom - geometry.top)).toBeLessThanOrEqual(4);
   expect(await queue.evaluate((node) => node.getBoundingClientRect().height)).toBe(0);
   const emptyBox = await input.boundingBox();
+  const surfaceInnerTop = () =>
+    input.evaluate((node) => node.getBoundingClientRect().top + node.clientTop);
   const queueEditorGap = () =>
     input.evaluate((node) => {
       const queue = node.querySelector('[data-chat-input-queue-region]')!.getBoundingClientRect();
@@ -78,7 +106,7 @@ test('preserves the empty composer and insets prompt text below expanded and col
   expect(expandedTypedInset).toBeLessThanOrEqual(14);
   const header = queue.getByTestId('queued-messages-disclosure');
   expect((await header.boundingBox())!.height).toBe(28);
-  expect((await header.boundingBox())!.y - (await input.boundingBox())!.y).toBe(4);
+  expect((await header.boundingBox())!.y - (await surfaceInnerTop())).toBe(4);
   await header.click();
   await expect(header).toHaveAttribute('aria-expanded', 'false');
   await expect(queue.getByTestId('queued-message-row')).toHaveCount(0);
@@ -89,7 +117,7 @@ test('preserves the empty composer and insets prompt text below expanded and col
   expect((await header.boundingBox())!.height).toBe(28);
   const collapsedHeaderBox = (await header.boundingBox())!;
   const collapsedEditorBox = (await input.locator('.editor-wrapper').boundingBox())!;
-  expect(collapsedHeaderBox.y).toBe((await input.boundingBox())!.y);
+  expect(collapsedHeaderBox.y).toBe(await surfaceInnerTop());
   expect(collapsedEditorBox.y - collapsedHeaderBox.y - collapsedHeaderBox.height).toBe(9);
   // Refocus before selecting through ProseMirror's keyboard transaction path.
   await editor.focus();

@@ -5,6 +5,7 @@ import {
   faCommentDots,
   faFile,
   faFileAlt,
+  faFlask,
   faFolderOpen,
   faGlobe,
   faPaperclip,
@@ -43,6 +44,48 @@ export const COMMAND_PALETTE_COMMANDS = [
       return m.lib_commandPalette_agentChat_pill();
     },
     icon: faCommentDots,
+  },
+  {
+    id: 'enable-experimental-multiplayer',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalMultiplayer_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-multiplayer',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalMultiplayer_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'enable-experimental-gitlab',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalGitlab_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-gitlab',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalGitlab_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'enable-experimental-remote-agents',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalRemoteAgents_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-remote-agents',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalRemoteAgents_label();
+    },
+    icon: faFlask,
   },
   {
     id: 'new-terminal',
@@ -112,6 +155,14 @@ export const COMMAND_PALETTE_COMMANDS = [
     },
     icon: faPaperclip,
     shortcut: '⇧⌘A',
+  },
+  {
+    id: 'open-dev-console',
+    get label() {
+      return m.devConsole_title_label();
+    },
+    icon: faTerminal,
+    shortcut: '',
   },
   {
     id: 'open-hud',

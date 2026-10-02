@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,6 +80,18 @@ const mocks = vi.hoisted(() => {
     }>,
     // Legacy `Workspace.prNumber`/`prUrl` (pre-`activePullRequest`); unset by default.
     legacyPr: null as { prNumber: number; prUrl: string } | null,
+    tokenUsage: {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      lastScanAt: null,
+      isStale: false,
+    },
   };
 });
 
@@ -132,6 +144,12 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
   selectWorkspaceScriptEntries: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
@@ -160,6 +178,10 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectBackgroundAgentsLoaded: mocks.selector(false),
   selectIsLoadingBackgroundAgents: mocks.selector(false),
   selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
+}));
+vi.mock('$store/renderer/slices/token-usage/token-usage-selectors', () => ({
+  selectWorkspaceTokenUsage: mocks.selectorFrom(() => mocks.tokenUsage),
+  selectWorkspaceTokenUsageCrossFilterRows: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: mocks.selector(false),
@@ -363,6 +385,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.focusedPanelId = 'source-panel';
     mocks.pullRequests = [];
     mocks.legacyPr = null;
+    mocks.tokenUsage = {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      lastScanAt: null,
+      isStale: false,
+    };
   });
 
   afterEach(() => {
@@ -383,7 +417,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
           // The visual-state helper already activates the real trigger with Enter.
           await waitFor(() => expect(view.getByRole('menu')).toBeTruthy());
           expect(view.container.querySelector('[data-sidebar-launcher="files"]')).toBeTruthy();
-          expect(view.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
+          expect(view.getByRole('menuitemradio', { name: 'Copy path' })).toBeTruthy();
         },
       };
     });
@@ -410,7 +444,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(getByText('Other')).toBeTruthy();
     expect(getByText('Copy path')).toBeTruthy();
 
-    await fireEvent.click(getByRole('menuitem', { name: 'Visual Studio Code' }));
+    const editor = getByRole('menuitemradio', { name: 'Visual Studio Code' });
+    expect(editor.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(editor);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('vscode:open', '/tmp/project'));
     await waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull());
   });
@@ -715,6 +751,54 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(getByRole('button', { name: /Agents.*0 agents total/ })).toBeTruthy();
     expect(container.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(0);
     expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
+  });
+
+  it('opens token usage from the collapsed Agents count without activating the launcher', async () => {
+    mocks.tokenUsage = {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 100,
+        outputTokens: 200,
+        cacheReadTokens: 600,
+        cacheCreationTokens: 100,
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    };
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container, getByTestId } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
+    const labelRow = agentCard.querySelector<HTMLElement>('[data-sidebar-label-row]')!;
+    const trigger = getByTestId('token-usage-disclosure');
+
+    expect(
+      labelRow.lastElementChild?.closest('[data-testid="workspace-token-usage"]'),
+    ).toBeTruthy();
+    expect(trigger.querySelector('[aria-hidden="true"]')?.textContent).toBe('1K');
+    expect(trigger.textContent).not.toContain('Cached');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    mocks.dispatch.mockClear();
+    await fireEvent.pointerDown(trigger);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.click(trigger);
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(getByTestId('token-usage-details')).toBeTruthy();
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+      ),
+    ).toBe(false);
+
+    await fireEvent.click(agentCard.querySelector('.launcher-tile-action')!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['agents']],
+      }),
+    );
   });
 
   it.each([1, 4, 6])('uses the shared logical-start stack at %i-item density', async (count) => {

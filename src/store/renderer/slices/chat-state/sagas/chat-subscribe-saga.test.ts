@@ -204,6 +204,7 @@ function delayNextSubscription(agentId: string): {
     agentId,
     expect.any(Function),
     expect.any(Function),
+    { workspaceId: WS },
   );
   if (!subscription) throw new Error(`no delayed chat.subscribe recorded for ${agentId}`);
   return { acquisition, subscription };
@@ -235,6 +236,45 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     clearAllChatInterestLeases();
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
+  });
+
+  it('retains portable author objects and explicit null in admitted transcript hydration and replacement', async () => {
+    const agentId = 'portable-hydration';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const rows: AgentMessage[] = [
+      {
+        ...makeMessage('portable-one', 'body'),
+        role: 'user',
+        author,
+        metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      },
+      {
+        ...makeMessage('portable-two', 'body'),
+        role: 'user',
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      },
+      { ...makeMessage('no-author', 'body'), role: 'user', author: null },
+    ];
+    const before = JSON.stringify(rows);
+    sub.handler({ ...transcript(rows), fromSnapshot: true });
+    await vi.waitFor(() =>
+      expect(selectAgentMessages.select(appStore.state, agentId).map((row) => row.author)).toEqual(
+        rows.map((row) => row.author),
+      ),
+    );
+    sub.handler({ ...transcript(rows), fromSnapshot: true });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].metadata).toEqual(
+      rows[0].metadata,
+    );
+    expect(JSON.stringify(rows)).toBe(before);
   });
 
   it('initializeChatRequested opens exactly one standing subscription per agent', () => {
@@ -506,6 +546,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -531,6 +572,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -559,6 +601,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -584,6 +627,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -608,6 +652,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -1498,7 +1543,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       seedSession(agentId, { messages: [makeMessage('m-existing', 'history')] });
       const sub = openChat(agentId);
       // Hydration never settled for this agent — full snapshot wanted.
-      expect(sub.options).toBeUndefined();
+      expect(sub.options).toEqual({ workspaceId: WS });
     });
 
     it('re-subscribes with the last fully-persisted message id once hydration has settled', () => {
@@ -1520,7 +1565,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
 
       const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
       expect(reopened).toBeDefined();
-      expect(reopened!.options).toEqual({ sinceMessageId: 'm-a-final' });
+      expect(reopened!.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-a-final' });
     });
 
     it('clears the resume anchor when workspace deletion names an agent whose slot already retired', () => {
@@ -1543,7 +1588,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
       const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
 
-      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+      expect(reopened?.options).toEqual({ workspaceId: WS, sinceMessageId: recycled.id });
     });
 
     it('clears an active-slot anchor when deletion queues behind a delayed ordinary close', async () => {
@@ -1572,7 +1617,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       });
       const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
 
-      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+      expect(reopened?.options).toEqual({ workspaceId: WS, sinceMessageId: recycled.id });
       expect(first.unsubscribe).toHaveBeenCalledOnce();
     });
 
@@ -1758,9 +1803,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentA,
         expect.any(Function),
         expect.any(Function),
-        { sinceMessageId: 'm-1' },
+        { workspaceId: WS, sinceMessageId: 'm-1' },
       );
-      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-1' });
     });
 
     it('requests the full snapshot when the placeholder is the only row at close', () => {
@@ -1777,7 +1822,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       ]);
 
       const reopened = closeThenReopen(agentA, agentB, sub);
-      expect(reopened.options).toBeUndefined();
+      expect(reopened.options).toEqual({ workspaceId: WS });
     });
 
     // The anchor scan keys on the row's `provisional` flag, not on empty
@@ -1807,7 +1852,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       });
 
       const reopened = closeThenReopen(agentA, agentB, sub);
-      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-1' });
     });
 
     // Conversely, a daemon-delivered assistant row with no content blocks is
@@ -1827,7 +1872,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(rows[1].provisional).toBeUndefined();
 
       const reopened = closeThenReopen(agentA, agentB, sub);
-      expect(reopened.options).toEqual({ sinceMessageId: 'm-empty' });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-empty' });
     });
   });
 
@@ -1933,9 +1978,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentA,
         expect.any(Function),
         expect.any(Function),
-        { sinceMessageId: 'm-1' },
+        { workspaceId: WS, sinceMessageId: 'm-1' },
       );
-      expect(reopened!.options).toEqual({ sinceMessageId: 'm-1' });
+      expect(reopened!.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-1' });
     });
 
     it('never resolves the fallback anchor to a firehose-created row when no close-time anchor was captured', () => {
@@ -1970,9 +2015,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
-        { sinceMessageId: 'm-1' },
+        { workspaceId: WS, sinceMessageId: 'm-1' },
       );
-      expect(reopened!.options).not.toEqual({ sinceMessageId: FIREHOSE_MESSAGE_ID });
+      expect(reopened!.options).not.toEqual({
+        workspaceId: WS,
+        sinceMessageId: FIREHOSE_MESSAGE_ID,
+      });
     });
   });
 
@@ -2195,7 +2243,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(markAgentAsViewed(agentId));
       const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
       if (!reopened) throw new Error(`no reopened chat.subscribe recorded for ${agentId}`);
-      expect(reopened.options).toEqual({ sinceMessageId: PRIOR });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: PRIOR });
       return reopened;
     }
 

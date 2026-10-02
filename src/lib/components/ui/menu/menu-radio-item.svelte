@@ -4,27 +4,35 @@
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
-  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import Indicator from './menu-indicator.svelte';
+  import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
     ref = $bindable(null),
     class: className,
+    closeOnSelect = false,
+    leading,
     children,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.RadioItemProps> & {
     children?: Snippet;
+    leading?: Snippet;
   } = $props();
+  const reserveIcon = useMenuIconColumn(() => !!leading);
 </script>
 
 {#snippet radioContent({ checked }: { checked: boolean })}
+  {#if leading || reserveIcon()}
+    <span
+      data-slot="menu-item-leading"
+      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      aria-hidden="true"
+    >
+      {@render leading?.()}
+    </span>
+  {/if}
   {@render children?.()}
-  <span
-    data-slot="menu-item-indicator"
-    class={cn(OPTION_LIST_END_SLOT_CLASS, 'text-primary-ink')}
-    aria-hidden="true"
-  >
-    {checked ? '●' : ''}
-  </span>
+  <Indicator state={checked ? 'checked' : 'empty'} />
 {/snippet}
 
 <MenuPrimitive.RadioItem
@@ -32,6 +40,7 @@
   children={radioContent}
   data-slot="menu-radio-item"
   data-menu-item
+  {closeOnSelect}
   class={cn(menuItem(), className)}
   {...restProps}
 />

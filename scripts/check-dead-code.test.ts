@@ -1,5 +1,5 @@
-// @verify-changed-triggers: tsconfig*.json
-import { spawnSync } from 'node:child_process';
+// @verify-changed-triggers: tsconfig*.json, scripts/check-dead-code.mjs
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -8,13 +8,16 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { once } from 'node:events';
+import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   CANARY_DIR,
   CANARY_PATHS,
@@ -28,6 +31,8 @@ import {
   stripCanaryIssues,
   stripJsonc,
 } from './check-dead-code-lib.mjs';
+
+import { defaultLockPath } from './verification-lock.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [CANARY_SVELTE, CANARY_TS] = CANARY_PATHS;
@@ -351,9 +356,388 @@ describe('check-dead-code CLI cleanup', () => {
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('ENOSPC');
       expect(existsSync(path.join(fixtureRoot, CANARY_DIR))).toBe(false);
+      expect(existsSync(defaultLockPath(`dead-code:${realpathSync(fixtureRoot)}`))).toBe(false);
       expect(existsSync(path.join(fixtureRoot, path.dirname(CANARY_DIR)))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+});
+
+// Real gate processes and real scanner children share a disposable root. The scanner
+// reads the files only when released over a socket; no sleep determines scan ordering.
+describe('check-dead-code concurrent processes', () => {
+  type Event = { id: string; phase: string; files?: string[]; pid?: number };
+  const cleanups: (() => Promise<void>)[] = [];
+
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  });
+
+  async function harness() {
+    const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'dead-code-overlap-')));
+    const root = path.join(dir, 'root');
+    mkdirSync(root);
+    writeFileSync(path.join(root, 'knip.jsonc'), '{}');
+    const events: Event[] = [];
+    const listeners = new Set<() => void>();
+    const sockets = new Map<string, Socket>();
+    const connections = new Set<Socket>();
+    const children: ChildProcess[] = [];
+    const completions: Promise<unknown>[] = [];
+    const server = createServer((socket) => {
+      connections.add(socket);
+      socket.on('close', () => connections.delete(socket));
+      let buffer = '';
+      socket.on('data', (chunk) => {
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop()!;
+        for (const line of lines) {
+          const event = JSON.parse(line) as Event;
+          if (event.phase === 'scan') sockets.set(event.id, socket);
+          events.push(event);
+          for (const listener of listeners) listener();
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('missing test server address');
+    const scanner = path.join(dir, 'scanner.mjs');
+    writeFileSync(
+      scanner,
+      String.raw`
+      import fs from 'node:fs';
+      import net from 'node:net';
+      import { spawn } from 'node:child_process';
+      if (process.env.PIPE_HOLDER) {
+        spawn(process.execPath, ['-e', process.env.PIPE_HOLDER], { stdio: 'inherit' });
+      }
+      const paths = ${JSON.stringify(CANARY_PATHS)};
+      const present = () => paths.filter(file => fs.existsSync(file));
+      const socket = net.connect(${address.port}, '127.0.0.1');
+      socket.on('connect', () => socket.write(JSON.stringify({
+        id: process.env.RUN_ID, phase: 'scan', files: present(), pid: process.pid
+      }) + '\n'));
+      let signals = 0;
+      if (process.env.HOLD_SIGNAL) {
+        process.on(process.env.HOLD_SIGNAL, () => socket.write(JSON.stringify({
+          id: process.env.RUN_ID, phase: ++signals === 1 ? 'signalled' : 'repeated'
+        }) + '\n'));
+      }
+      socket.once('data', () => {
+        const files = present().filter(file => file !== process.env.MISSING_CANARY);
+        if (process.env.UNUSED_FILE && fs.existsSync(process.env.UNUSED_FILE)) files.push(process.env.UNUSED_FILE);
+        socket.end(JSON.stringify({ id: process.env.RUN_ID, phase: 'scanned', files }) + '\n');
+        if (process.env.BAD_JSON) console.log('invalid scanner output');
+        else console.log(JSON.stringify({ issues: files.map(file => ({
+          file, owners: [], files: [{ name: file }]
+        })) }));
+        process.exitCode = files.length ? 1 : 0;
+      });
+      socket.on('end', () => process.exit());
+    `,
+    );
+    const preload = path.join(dir, 'barriers.mjs');
+    writeFileSync(
+      preload,
+      String.raw`
+      import fs from 'node:fs';
+      import cp from 'node:child_process';
+      import net from 'node:net';
+      import { syncBuiltinESMExports } from 'node:module';
+      for (const method of ['spawnSync', 'spawn', 'execFile']) {
+        const original = cp[method];
+        cp[method] = (file, args, ...rest) => original(file, [${JSON.stringify(scanner)}, ...args.slice(1)], ...rest);
+      }
+      const rename = fs.renameSync;
+      let notified = false;
+      fs.renameSync = (...args) => {
+        try { return rename(...args); }
+        catch (error) {
+          if (!notified && ['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error.code)) {
+            notified = true;
+            const socket = net.connect(${address.port}, '127.0.0.1');
+            socket.on('connect', () => socket.end(JSON.stringify({ id: process.env.RUN_ID, phase: 'waiting' }) + '\n'));
+          }
+          throw error;
+        }
+      };
+      syncBuiltinESMExports();
+    `,
+    );
+    function wait(id: string, phases: string[]): Promise<Event> {
+      return new Promise((resolve) => {
+        const check = () => {
+          const event = events.find((event) => event.id === id && phases.includes(event.phase));
+          if (!event) return;
+          listeners.delete(check);
+          resolve(event);
+        };
+        listeners.add(check);
+        check();
+      });
+    }
+    function start(id: string, fixtureRoot = root, env: Record<string, string> = {}) {
+      const child = spawn(
+        process.execPath,
+        ['--import', preload, path.join(REPO_ROOT, 'scripts/check-dead-code.mjs')],
+        {
+          // Killed waiters may leave the helper's unpublished staging directory.
+          // Keep all temporary lock state inside this test's disposable directory.
+          env: {
+            ...process.env,
+            TMPDIR: dir,
+            TEMP: dir,
+            TMP: dir,
+            CHECK_DEAD_CODE_ROOT: fixtureRoot,
+            RUN_ID: id,
+            ...env,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      children.push(child);
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+      const done = new Promise<{
+        code: number | null;
+        signal: string | null;
+        stdout: string;
+        stderr: string;
+      }>((resolve, reject) => {
+        child.on('error', reject);
+        child.on('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
+      });
+      completions.push(done);
+      return { child, done };
+    }
+    cleanups.push(async () => {
+      for (const child of children)
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      for (const socket of connections) socket.destroy();
+      await Promise.allSettled(completions);
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    });
+    return {
+      dir,
+      root,
+      port: address.port,
+      start,
+      wait,
+      release: (id: string) => sockets.get(id)!.write('scan\n'),
+    };
+  }
+
+  it('both overlapping gates retain their canaries until each scan finishes', async () => {
+    const h = await harness();
+    const first = h.start('first');
+    expect((await h.wait('first', ['scan'])).files).toEqual(CANARY_PATHS);
+    const second = h.start('second');
+    const overlap = await h.wait('second', ['waiting', 'scan']);
+    // On the broken parent, the second scan overtakes the paused first and removes
+    // its canaries. With serialization, the second waits for the first to finish.
+    if (overlap.phase === 'scan') {
+      h.release('second');
+      await second.done;
+      h.release('first');
+    } else {
+      h.release('first');
+      await first.done;
+      expect((await h.wait('second', ['scan'])).files).toEqual(CANARY_PATHS);
+      h.release('second');
+    }
+    const firstResult = await first.done;
+    const secondResult = await second.done;
+    expect(secondResult.code, secondResult.stderr).toBe(0);
+    expect(firstResult.code, firstResult.stderr).toBe(0);
+    expect((await h.wait('first', ['scanned'])).files).toEqual(CANARY_PATHS);
+    expect((await h.wait('second', ['scanned'])).files).toEqual(CANARY_PATHS);
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+  });
+
+  it.each(['SIGINT', 'SIGTERM', 'SIGHUP'] as const)(
+    'a cancelled %s waiter leaves the live owner alone',
+    async (signal) => {
+      const h = await harness();
+      const owner = h.start('owner');
+      await h.wait('owner', ['scan']);
+      const waiter = h.start('waiter');
+      await h.wait('waiter', ['waiting']);
+      waiter.child.kill(signal);
+      expect((await waiter.done).code).toBe(128 + { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }[signal]);
+      expect(CANARY_PATHS.every((file) => existsSync(path.join(h.root, file)))).toBe(true);
+      h.release('owner');
+      expect((await owner.done).code).toBe(0);
+    },
+  );
+
+  it.each(['SIGINT', 'SIGTERM', 'SIGHUP'] as const)(
+    'a cancelled %s owner keeps the lock until its scanner stops',
+    async (signal) => {
+      const h = await harness();
+      const owner = h.start('owner', h.root, { HOLD_SIGNAL: signal });
+      await h.wait('owner', ['scan']);
+      owner.child.kill(signal);
+      await h.wait('owner', ['signalled']);
+      const waiter = h.start('waiter');
+      await h.wait('waiter', ['waiting']);
+      expect(CANARY_PATHS.every((file) => existsSync(path.join(h.root, file)))).toBe(true);
+      h.release('owner');
+      expect((await owner.done).code).toBe(128 + { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }[signal]);
+      expect((await h.wait('waiter', ['scan'])).files).toEqual(CANARY_PATHS);
+      h.release('waiter');
+      expect((await waiter.done).code).toBe(0);
+      expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    },
+  );
+
+  it('a repeated cancellation kills an unresponsive scanner and releases the lock', async () => {
+    const h = await harness();
+    const owner = h.start('owner', h.root, { HOLD_SIGNAL: 'SIGTERM' });
+    await h.wait('owner', ['scan']);
+    owner.child.kill('SIGTERM');
+    await h.wait('owner', ['signalled']);
+    owner.child.kill('SIGTERM');
+    const outcome = await Promise.race([
+      owner.done.then((result) => ({ phase: 'exited', code: result.code })),
+      h.wait('owner', ['repeated']).then((event) => ({ phase: event.phase, code: null })),
+    ]);
+    expect(outcome).toEqual({ phase: 'exited', code: 143 });
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    const next = h.start('next');
+    await h.wait('next', ['scan']);
+    h.release('next');
+    expect((await next.done).code).toBe(0);
+  });
+
+  it('a single cancellation eventually kills an unresponsive scanner', async () => {
+    const h = await harness();
+    const owner = h.start('owner', h.root, { HOLD_SIGNAL: 'SIGTERM' });
+    await h.wait('owner', ['scan']);
+    owner.child.kill('SIGTERM');
+    await h.wait('owner', ['signalled']);
+    // Await the actual shutdown deadline, not a sleep used to guess process order.
+    expect((await owner.done).code).toBe(143);
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    const next = h.start('next');
+    await h.wait('next', ['scan']);
+    h.release('next');
+    expect((await next.done).code).toBe(0);
+  }, 20_000);
+
+  it('cancellation does not wait for pipes inherited by scanner descendants', async () => {
+    const h = await harness();
+    const owner = h.start('owner', h.root, {
+      PIPE_HOLDER: `
+      const net = require('node:net');
+      const socket = net.connect(${h.port}, '127.0.0.1');
+      socket.on('connect', () => socket.write(JSON.stringify({ id: 'holder', phase: 'scan' }) + '\\n'));
+      socket.on('data', () => socket.end());
+      socket.on('end', () => process.exit());
+    `,
+    });
+    await h.wait('owner', ['scan']);
+    await h.wait('holder', ['scan']);
+    owner.child.kill('SIGTERM');
+    expect((await owner.done).code).toBe(143);
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    h.release('holder');
+    const next = h.start('next');
+    await h.wait('next', ['scan']);
+    h.release('next');
+    expect((await next.done).code).toBe(0);
+  });
+
+  it('a timed-out waiter leaves the live owner and canaries alone', async () => {
+    const h = await harness();
+    const owner = h.start('owner');
+    await h.wait('owner', ['scan']);
+    const waiter = h.start('waiter', h.root, { VERIFY_CHANGED_LOCK_TIMEOUT_MS: '0' });
+    const result = await waiter.done;
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`owner pid ${owner.child.pid}`);
+    expect(CANARY_PATHS.every((file) => existsSync(path.join(h.root, file)))).toBe(true);
+    h.release('owner');
+    expect((await owner.done).code).toBe(0);
+  });
+
+  it('reclaims an abandoned owner without letting its scanner clean up the successor', async () => {
+    const h = await harness();
+    const abandoned = h.start('abandoned');
+    await h.wait('abandoned', ['scan']);
+    const exited = once(abandoned.child, 'exit');
+    abandoned.child.kill('SIGKILL');
+    await exited;
+    const successor = h.start('successor');
+    expect((await h.wait('successor', ['scan'])).files).toEqual(CANARY_PATHS);
+    h.release('abandoned');
+    expect((await abandoned.done).signal).toBe('SIGKILL');
+    expect(CANARY_PATHS.every((file) => existsSync(path.join(h.root, file)))).toBe(true);
+    h.release('successor');
+    expect((await successor.done).code).toBe(0);
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+  });
+
+  it('serializes symlink aliases of one worktree', async () => {
+    const h = await harness();
+    const alias = path.join(h.dir, 'alias');
+    symlinkSync(h.root, alias, 'dir');
+    const first = h.start('first');
+    await h.wait('first', ['scan']);
+    const second = h.start('second', alias);
+    await h.wait('second', ['waiting']);
+    h.release('first');
+    expect((await first.done).code).toBe(0);
+    await h.wait('second', ['scan']);
+    h.release('second');
+    expect((await second.done).code).toBe(0);
+  });
+
+  it('different worktrees scan independently', async () => {
+    const h = await harness();
+    const otherRoot = path.join(h.dir, 'other');
+    mkdirSync(otherRoot);
+    writeFileSync(path.join(otherRoot, 'knip.jsonc'), '{}');
+    const first = h.start('first');
+    await h.wait('first', ['scan']);
+    const second = h.start('second', otherRoot);
+    expect((await h.wait('second', ['scan'])).files).toEqual(CANARY_PATHS);
+    h.release('second');
+    expect((await second.done).code).toBe(0);
+    expect(CANARY_PATHS.every((file) => existsSync(path.join(h.root, file)))).toBe(true);
+    h.release('first');
+    expect((await first.done).code).toBe(0);
+  });
+
+  it.each([
+    ['missing canary', { MISSING_CANARY: CANARY_SVELTE }, 'canary FAILED'],
+    ['unused application file', { UNUSED_FILE: 'unused.ts' }, 'unused.ts'],
+    ['malformed scanner output', { BAD_JSON: '1' }, 'no parseable JSON'],
+  ] as const)(
+    'preserves failure for %s and releases ownership for the next gate',
+    async (_name, env, message) => {
+      const h = await harness();
+      writeFileSync(path.join(h.root, 'unused.ts'), 'export const unused = true;');
+      const failing = h.start('failing', h.root, env);
+      await h.wait('failing', ['scan']);
+      h.release('failing');
+      const result = await failing.done;
+      expect(result.code).toBe(1);
+      expect(result.stdout + result.stderr).toContain(message);
+      expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+      const next = h.start('next');
+      expect((await h.wait('next', ['scan'])).files).toEqual(CANARY_PATHS);
+      h.release('next');
+      expect((await next.done).code).toBe(0);
+    },
+  );
 });

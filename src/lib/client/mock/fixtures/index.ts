@@ -246,6 +246,9 @@ export const mockUserPreferences: UserPreferencesState = {
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
   labsMultiplayerEnabled: false,
+  labsGitLabEnabled: false,
+  labsRemoteAgentsEnabled: false,
+  labsSettingsVisible: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
   codeFontFamily: 'JetBrains Mono',
@@ -254,6 +257,11 @@ export const mockUserPreferences: UserPreferencesState = {
   soundEnabled: true,
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
+  notificationVolumeHydrationEpoch: 0,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
   activityLogPresets: [],
   languagePreference: 'system',
   githubLinkDefaultAction: 'show-choices',
@@ -278,6 +286,8 @@ export const mockMcpServers: McpServerConfig[] = [
 
 /** Background-agent model assignments for the background-agent settings panel. */
 export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {
+  defaultReasoningEffort: '',
+  typeReasoningEffortOverrides: {},
   defaultModel: 'mock-model',
   typeOverrides: { commit: 'mock-model', pr: 'mock-model', review: '', fast: '' },
   providerSettings: {},

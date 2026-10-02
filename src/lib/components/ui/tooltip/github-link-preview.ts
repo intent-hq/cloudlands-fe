@@ -7,7 +7,7 @@
  * request). Resolved previews are NOT cached here: the daemon's shared PR
  * cache (`prCache.maxAgeSeconds`) is the single cache, so every hover asks
  * the daemon and a failed request is retried on the next hover. Failures
- * propagate: the card renders its URL-only fallback. `createPreviewRequest`
+ * propagate: the card keeps the reference and explains the failure. `createPreviewRequest`
  * is the stale-response guard for the singleton tooltip: a late response for
  * a previous hover must never overwrite the current one.
  *
@@ -17,11 +17,25 @@
  */
 import type { GitHubIssueDetails, GitHubPullRequestDetails, IntegrationsClient } from '$lib/client';
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
+import { captureIntegrationContext } from '$features/integrations-request-context';
 import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
 
 /** Discriminated details for one hovered GitHub link. */
 export type GitHubLinkPreview =
   ({ kind: 'pr' } & GitHubPullRequestDetails) | ({ kind: 'issue' } & GitHubIssueDetails);
+
+export type GitHubLinkPreviewFailure = 'rate-limited' | 'unavailable';
+
+/** Use the daemon's structured discriminator, never its raw error prose. */
+export function classifyGitHubLinkPreviewError(error: unknown): GitHubLinkPreviewFailure {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = error.data;
+    if (data && typeof data === 'object' && 'code' in data && data.code === 'rate-limited') {
+      return 'rate-limited';
+    }
+  }
+  return 'unavailable';
+}
 
 /** The slice of the integrations seam the preview loader depends on. */
 export type GitHubLinkPreviewClient = Pick<IntegrationsClient, 'githubPullRequest' | 'githubIssue'>;
@@ -29,10 +43,13 @@ export type GitHubLinkPreviewClient = Pick<IntegrationsClient, 'githubPullReques
 export interface LoadGitHubLinkPreviewOptions {
   /** Rejects the caller's promise on abort; the shared request keeps running for the other hovers sharing it. */
   signal?: AbortSignal;
+  workspaceId?: string;
   /** Injection seam (tests); defaults to the process-wide `appClient.integrations`. */
   client?: GitHubLinkPreviewClient;
 }
 
+const clientIds = new WeakMap<GitHubLinkPreviewClient, number>();
+let nextClientId = 0;
 const inFlight = new Map<string, Promise<GitHubLinkPreview>>();
 
 function requestKey(ref: GitHubIssueOrPrRef): string {
@@ -42,13 +59,24 @@ function requestKey(ref: GitHubIssueOrPrRef): string {
 async function fetchPreview(
   ref: GitHubIssueOrPrRef,
   injected: GitHubLinkPreviewClient | undefined,
+  workspaceId?: string,
 ): Promise<GitHubLinkPreview> {
   const client = injected ?? (await import('$lib/client')).appClient.integrations;
   if (ref.kind === 'pr') {
-    const details = await client.githubPullRequest(ref.owner, ref.repo, ref.number);
+    const details = await client.githubPullRequest(
+      ref.owner,
+      ref.repo,
+      ref.number,
+      ...(workspaceId === undefined ? [] : [workspaceId]),
+    );
     return { kind: 'pr', ...details };
   }
-  const details = await client.githubIssue(ref.owner, ref.repo, ref.number);
+  const details = await client.githubIssue(
+    ref.owner,
+    ref.repo,
+    ref.number,
+    ...(workspaceId === undefined ? [] : [workspaceId]),
+  );
   return { kind: 'issue', ...details };
 }
 
@@ -83,10 +111,17 @@ export async function loadGitHubLinkPreview(
   const ref = parseGitHubIssueOrPrUrl(url);
   if (!ref) return null;
 
-  const key = requestKey(ref);
+  const context = captureIntegrationContext(options.workspaceId);
+  const client = options.client ?? (await import('$lib/client')).appClient.integrations;
+  let clientId = clientIds.get(client);
+  if (clientId === undefined) {
+    clientId = ++nextClientId;
+    clientIds.set(client, clientId);
+  }
+  const key = JSON.stringify([context.key, clientId, requestKey(ref)]);
   let pending = inFlight.get(key);
   if (!pending) {
-    pending = fetchPreview(ref, options.client).finally(() => {
+    pending = fetchPreview(ref, client, context.workspaceId).finally(() => {
       if (inFlight.get(key) === pending) inFlight.delete(key);
     });
     inFlight.set(key, pending);

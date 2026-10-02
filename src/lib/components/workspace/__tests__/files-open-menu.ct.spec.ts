@@ -12,8 +12,10 @@ test('Files menu has aligned icon and label slots for different label lengths', 
 }) => {
   const component = await mount(FilesOpenMenuPreview);
   await component.locator('p').getByRole('button').click();
-  const items = page.getByRole('menuitem');
+  const items = page.getByRole('menuitemradio');
   await expect(items).toHaveCount(5);
+  await expect(items.first()).toHaveAttribute('aria-checked', 'true');
+  await expect(items.nth(1)).toHaveAttribute('aria-checked', 'false');
   const rows = await items.evaluateAll((elements) =>
     elements.map((element) => {
       const bounds = element.getBoundingClientRect();
@@ -57,7 +59,7 @@ test('Files menu keyboard navigation executes each mock action once and restores
 }) => {
   const component = await mount(FilesOpenMenuPreview);
   const trigger = component.locator('p').getByRole('button');
-  const items = page.getByRole('menuitem');
+  const items = page.getByRole('menuitemradio');
   await trigger.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menu')).toBeVisible();
@@ -165,7 +167,7 @@ test('embedded menu preserves the production submenu and launch routing', async 
   await component.getByRole('button', { name: 'File actions' }).click();
   await page.getByRole('menuitem', { name: /Open in/ }).focus();
   await page.keyboard.press('ArrowRight');
-  await page.getByRole('menuitem', { name: 'Visual Studio Code' }).click();
+  await page.getByRole('menuitemradio', { name: 'Visual Studio Code' }).click();
   await expect
     .poll(async () => JSON.parse(await component.getByTestId('files-menu-requests').innerText()))
     .toEqual([{ channel: 'vscode:open', args: ['/tmp/intent-demo/worktrees/sample-project'] }]);
@@ -189,7 +191,7 @@ test('onboarding-style inline trigger retains inherited type and keyboard menu i
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menu')).toBeVisible();
   await page.keyboard.press('Home');
-  await expect(page.getByRole('menuitem').first()).toBeFocused();
+  await expect(page.getByRole('menuitemradio').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
 });
@@ -253,7 +255,7 @@ for (const width of [360, 248]) {
     expect(focus.outlineWidth).toBeGreaterThan(0);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
-    const items = page.getByRole('menuitem');
+    const items = page.getByRole('menuitemradio');
     await page.keyboard.press('Home');
     await expect(items.first()).toBeFocused();
     await page.keyboard.press('ArrowDown');

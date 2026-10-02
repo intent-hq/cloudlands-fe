@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { ListView } from '$lib/components/patterns/collection';
   import { Fa } from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
+  import PersonalDevices from '$features/devices/PersonalDevices.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -16,8 +18,12 @@
     selectConnections,
     selectConnectionsLoaded,
     selectRemoteConnections,
+    selectConnectionWorkflow,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
 
   let { localSettingsRequested = $bindable(0) }: { localSettingsRequested?: number } = $props();
@@ -34,8 +40,21 @@
   let activePanel = $state<DevicePanelMode>(null);
   let removeDialogOpen = $state(false);
   let removeTarget = $state<ConnectionRecord | null>(null);
-  let removeError = $state<string | null>(null);
-  let removing = $state(false);
+  const consumerId = $props.id();
+  const workflow$ = selectConnectionWorkflow(consumerId);
+  const removeError = $derived(
+    $workflow$?.outcome?.kind === 'error' ? m.settings_devices_remove_error() : null,
+  );
+  const removing = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
+  $effect(() => {
+    if ($workflow$?.outcome?.kind !== 'done') return;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
+    untrack(() => {
+      if (activeDeviceId === removeTarget?.id) closePanel();
+      removeTarget = null;
+    });
+  });
 
   $effect(() => {
     if (localSettingsRequested > 0) {
@@ -60,29 +79,18 @@
 
   function requestRemove(device: ConnectionRecord) {
     removeTarget = device;
-    removeError = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
     removeDialogOpen = true;
   }
 
-  async function removeDevice(device = removeTarget) {
+  function removeDevice(device = removeTarget) {
     if (!device || removing) return;
-    removing = true;
-    removeError = null;
-    try {
-      const action = forgetConnectionRequested(device.id);
-      appStore.dispatch(action);
-      await action.promise;
-      if (activeDeviceId === device.id) closePanel();
-      removeTarget = null;
-    } catch {
-      removeError = m.settings_devices_remove_error();
-    } finally {
-      removing = false;
-    }
+    appStore.dispatch(connectionWorkflowRequested(consumerId, { kind: 'forget', id: device.id }));
   }
 </script>
 
 <div class="space-y-5">
+  <PersonalDevices />
   <div>
     <h2 class="type-caption font-medium text-muted-foreground mb-3">
       {m.settings_devices_title()}

@@ -21,13 +21,18 @@ const FILES_MENU_SPEC = 'src/lib/components/workspace/__tests__/files-open-menu.
 const JOBS_PAYLOAD = {
   total_count: 7,
   jobs: [
-    { id: 1, name: 'Lint & Typecheck', conclusion: 'success' },
-    { id: 44, name: 'Component Tests (shard 4/4)', conclusion: 'failure' },
-    { id: 11, name: 'Component Tests (shard 1/4)', conclusion: 'success' },
-    { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'success' },
-    { id: 5, name: 'Component Tests (quarantine, advisory)', conclusion: 'success' },
-    { id: 33, name: 'Component Tests (shard 3/4)', conclusion: null },
-    { id: 6, name: 'Unit Tests', conclusion: 'success' },
+    { id: 1, name: 'Lint & Typecheck', status: 'completed', conclusion: 'success' },
+    { id: 44, name: 'Component Tests (shard 4/4)', status: 'completed', conclusion: 'failure' },
+    { id: 11, name: 'Component Tests (shard 1/4)', status: 'completed', conclusion: 'success' },
+    { id: 22, name: 'Component Tests (shard 2/4)', status: 'completed', conclusion: 'success' },
+    {
+      id: 5,
+      name: 'Component Tests (quarantine, advisory)',
+      status: 'completed',
+      conclusion: 'success',
+    },
+    { id: 33, name: 'Component Tests (shard 3/4)', status: 'in_progress', conclusion: null },
+    { id: 6, name: 'Unit Tests', status: 'completed', conclusion: 'success' },
   ],
 };
 
@@ -203,12 +208,23 @@ function listReporterLog(): string {
 // --- Tests --------------------------------------------------------------------
 
 describe('parseCtJobs', () => {
+  it('finds shard jobs inside reusable workflows on PR and nightly runs', () => {
+    for (const prefix of ['test-ct / ', 'Browser suites / ']) {
+      const name = `${prefix}Component Tests (shard 2/4)`;
+      expect(parseCtJobs([{ id: 22, name, status: 'completed', conclusion: 'failure' }])).toEqual([
+        { jobId: 22, name, shard: 2, shardCount: 4, status: 'completed', conclusion: 'failure' },
+      ]);
+    }
+    expect(parseCtJobs([{ name: 'Not Component Tests (shard 2/4)' }])).toEqual([]);
+  });
+
   it('selects the CT shard jobs sorted by shard, ignoring other jobs', () => {
     expect(parseCtJobs(JOBS_PAYLOAD)).toEqual([
       {
         jobId: 11,
         shard: 1,
         shardCount: 4,
+        status: 'completed',
         conclusion: 'success',
         name: 'Component Tests (shard 1/4)',
       },
@@ -216,14 +232,23 @@ describe('parseCtJobs', () => {
         jobId: 22,
         shard: 2,
         shardCount: 4,
+        status: 'completed',
         conclusion: 'success',
         name: 'Component Tests (shard 2/4)',
       },
-      { jobId: 33, shard: 3, shardCount: 4, conclusion: null, name: 'Component Tests (shard 3/4)' },
+      {
+        jobId: 33,
+        shard: 3,
+        shardCount: 4,
+        status: 'in_progress',
+        conclusion: null,
+        name: 'Component Tests (shard 3/4)',
+      },
       {
         jobId: 44,
         shard: 4,
         shardCount: 4,
+        status: 'completed',
         conclusion: 'failure',
         name: 'Component Tests (shard 4/4)',
       },
@@ -232,7 +257,9 @@ describe('parseCtJobs', () => {
 
   it('accepts a bare jobs array and returns [] when there are no CT jobs', () => {
     expect(parseCtJobs(JOBS_PAYLOAD.jobs)).toHaveLength(4);
-    expect(parseCtJobs({ jobs: [{ id: 1, name: 'Lint', conclusion: 'success' }] })).toEqual([]);
+    expect(
+      parseCtJobs({ jobs: [{ id: 1, name: 'Lint', status: 'completed', conclusion: 'success' }] }),
+    ).toEqual([]);
     expect(parseCtJobs(undefined)).toEqual([]);
   });
 });
@@ -436,6 +463,54 @@ describe('requiredLaneLog', () => {
 });
 
 describe('formatReport', () => {
+  it('separates confirmed counts from unknown totals without treating pending jobs as red', () => {
+    const confirmed = {
+      status: 'failed',
+      specFile: 'a.ct.spec.ts',
+      location: 'a.ct.spec.ts:1:1',
+      title: 'fails',
+    };
+    const { text, json } = formatReport({
+      runId: 1,
+      repo: 'o/r',
+      shards: [
+        {
+          shard: 1,
+          shardCount: 3,
+          jobId: 11,
+          conclusion: 'failure',
+          source: 'json',
+          cases: [confirmed],
+        },
+        {
+          shard: 2,
+          shardCount: 3,
+          jobId: 22,
+          conclusion: 'cancelled',
+          source: null,
+          cases: [],
+        },
+        {
+          shard: 3,
+          shardCount: 3,
+          jobId: 33,
+          conclusion: null,
+          source: null,
+          cases: [],
+          pending: true,
+        },
+      ],
+    });
+    expect(json.totals).toEqual({ failed: null, flaky: null, redShards: 2 });
+    expect(json.knownCounts).toEqual({ failed: 1, flaky: 0 });
+    expect(json.unknownShards).toBe(1);
+    expect(json.shards[0].cases).toEqual([confirmed]);
+    expect(json.shards[1].countsUnknown).toBe(true);
+    expect(json.shards[2]).not.toHaveProperty('countsUnknown');
+    expect(text).toContain('Total: unknown');
+    expect(text).toContain('Known: 1 failed, 0 flaky');
+  });
+
   const shards = [
     { ...parseCtJobs(JOBS_PAYLOAD)[0], source: null, cases: [] },
     { ...parseCtJobs(JOBS_PAYLOAD)[2], source: null, cases: [] },
@@ -463,7 +538,7 @@ describe('formatReport', () => {
       `  flaky   ${FILES_MENU_SPEC}:54:1  Files menu keyboard navigation executes each mock action once and restores focus`,
     );
     expect(lines[6]).toBe(
-      'Total: 1 failed, 1 flaky across 2 red shards (job 33: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/33, job 44: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/44)',
+      'Total: unknown (1 shard without complete counts). Known: 1 failed, 1 flaky across 2 red shards (job 33: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/33, job 44: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/44)',
     );
     expect(lines).toHaveLength(7);
   });
@@ -508,6 +583,7 @@ describe('formatReport', () => {
   it('reports an all-green run with zero red shards and no job list', () => {
     const green = parseCtJobs(JOBS_PAYLOAD).map((s) => ({
       ...s,
+      status: 'completed',
       conclusion: 'success',
       source: null,
       cases: [],

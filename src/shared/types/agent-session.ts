@@ -16,6 +16,7 @@ import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { AgentMessage, MessageAuthor } from './agent-message';
 import { AgentStatus } from './agent.types';
+import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
 
 /**
@@ -88,7 +89,9 @@ export interface QueuedMessage {
   /**
    * Serve-time projection of the principal that enqueued the entry
    * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
-   * stamp. Authoritative when present: `null` means the principal row is
+   * stamp, or a portable human snapshot with principalId:null and no local
+   * admission. Portable display does not change queue edit/send authority.
+   * Authoritative when present: `null` means the principal row is
    * gone (no author, no fallback). Absent on older daemons, where the queue
    * surface falls back to the projections the transcript already carries.
    */
@@ -179,7 +182,7 @@ export interface AgentDelegatedCounts {
  * MIGRATION NOTE: The old `sessionId` field has been renamed to `backendSessionId`
  * for clarity. Use `backendSessionId` for new code.
  */
-export interface AgentSession {
+export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
   id: AgentId;
@@ -600,7 +603,8 @@ export function isPendingAgentSession(
 /**
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
- * Filters out the legacy 'acp' value (protocol name, not a real provider).
+ * Explicit identities, including historical aliases, are preserved verbatim.
+ * Renderer consumers resolve aliases against the daemon's provider catalog.
  * Falls back to inferring provider from the model ID if available —
  * `defaultProviderId` (the settings-derived effective default provider)
  * attributes bare model ids.
@@ -610,10 +614,9 @@ export function getAgentProvider(
   defaultProviderId: string,
 ): string | undefined {
   const explicit =
-    session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
+    session.provider || session.metadata?.provider || (session as any).config?.provider;
 
-  // 'acp' is the protocol name, not a provider ID -- treat it as unset
-  if (explicit && explicit !== 'acp') {
+  if (explicit) {
     return explicit;
   }
 

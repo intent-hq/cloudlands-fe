@@ -18,7 +18,9 @@ export function setupPiIPC() {
   ipcMain.handle(PI_CHANNELS.INSTALL_MCP_ADAPTER, async () => installPiMcpAdapter());
 
   // Get available models for Pi — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(PI_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
-    getProviderModelsEnvelope('pi', params, event),
+  ipcMain.handle(
+    PI_CHANNELS.GET_MODELS,
+    async (event, params?: { forceRefresh?: boolean; workspaceId?: string }) =>
+      getProviderModelsEnvelope('pi', params, event),
   );
 }

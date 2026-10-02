@@ -1,5 +1,6 @@
 import { expect, test } from '../../../../test/ct-test';
 import ActionRowHarness from './ActionRowTestHarness.svelte';
+import { menuTextGeometry } from '../../../../test/menu-geometry';
 
 test('action rows grow with wrapped content and retain independent leading and trailing slots', async ({
   mount,
@@ -36,6 +37,12 @@ test('action rows grow with wrapped content and retain independent leading and t
     }),
   );
   expect(geometry.every((row) => row.contained && row.overflow <= 1)).toBe(true);
+  const title = await menuTextGeometry(multiline.locator('[data-slot="action-row-title"]'));
+  expect(title.lines).toBeGreaterThan(1);
+  for (const slot of ['action-row-leading', 'action-row-trailing']) {
+    const box = (await multiline.locator(`[data-slot="${slot}"]`).boundingBox())!;
+    expect(Math.abs(box.y + box.height / 2 - title.center)).toBeLessThanOrEqual(1.5);
+  }
   for (let index = 1; index < geometry.length; index++) {
     expect(geometry[index].top).toBeGreaterThanOrEqual(geometry[index - 1].bottom);
   }

@@ -1,6 +1,26 @@
 import { expect, test } from '../../../../../test/ct-test';
 import ContextRowsPreview from '../context-rows.preview.svelte';
 
+test('note context menu supports keyboard invocation, Escape return and exact-target opening', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ContextRowsPreview);
+  const row = component.locator('[data-note-id="context-reference"] [data-slot="list-item"]');
+  await row.focus();
+  await row.press('Shift+F10');
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(row).toBeFocused();
+  await row.press('Shift+F10');
+  await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+  await expect(component.getByTestId('opened-note')).toHaveText('context-reference');
+  await expect(menu).toHaveCount(0);
+});
+
 test('unread indicators remain inside clipped rows and disappear when notes are opened', async ({
   mount,
   page,

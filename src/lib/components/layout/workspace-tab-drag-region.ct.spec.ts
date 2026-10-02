@@ -1,0 +1,177 @@
+import type { Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
+import WorkspaceTabDragRegionHarness from './WorkspaceTabDragRegionHarness.svelte';
+
+async function dragRegionGeometry(titlebar: Locator) {
+  return titlebar.evaluate(async (root) => {
+    // Mounting precedes font readiness and frame-scheduled tab/sidebar layout.
+    // Use the same capture boundary as geometry goldens before measuring once.
+    const geometryWindow = window as typeof window & {
+      __INTENT_GEOMETRY_CT__: {
+        waitForCaptureStability: typeof import('$lib/component-catalog/capture-stability').waitForCaptureStability;
+      };
+    };
+    await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(root as HTMLElement);
+    const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
+    const fixed = root.querySelector('[data-titlebar-fixed-controls]')!;
+    const bounds = strip.getBoundingClientRect();
+    const gap = { left: fixed.getBoundingClientRect().right, right: bounds.left };
+    const descendants = Array.from(strip.querySelectorAll('*')).map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        tag: element.tagName,
+        tab: element
+          .closest('[data-workspace-tab-motion]')
+          ?.getAttribute('data-workspace-tab-motion'),
+        region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
+        left: rect.left,
+        right: rect.right,
+        overlapsGap:
+          rect.width > 0 && rect.height > 0 && rect.left < gap.right && rect.right > gap.left,
+      };
+    });
+    return {
+      gap,
+      scrollerRegion: getComputedStyle(strip).getPropertyValue('-webkit-app-region'),
+      overflow: strip.scrollWidth > strip.clientWidth,
+      scrollLeft: strip.scrollLeft,
+      hiddenOverGap: descendants.filter((element) => element.overlapsGap),
+      // Electron uses unclipped rectangles; browser pointer hit testing alone
+      // would miss inherited no-drag on the invisible motion/visual wrappers.
+      leakingNoDrag: descendants.filter(
+        (element) => element.overlapsGap && element.region === 'no-drag',
+      ),
+      descendantRegions: [...new Set(descendants.map((element) => element.region))],
+    };
+  });
+}
+
+test('overflowing tabs leave the empty left titlebar gap draggable after scrolling and resizing', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 720, height: 400 });
+  const component = await mount(WorkspaceTabDragRegionHarness);
+  const titlebar = component.locator('.window-title-bar');
+  const strip = component.locator('[data-workspace-tab-strip]');
+
+  async function expectClippedRegions() {
+    await expect.poll(async () => (await dragRegionGeometry(titlebar)).overflow).toBe(true);
+    await strip.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    const geometry = await dragRegionGeometry(titlebar);
+    await testInfo.attach('drag-region-geometry', {
+      body: JSON.stringify(geometry, null, 2),
+      contentType: 'application/json',
+    });
+    expect(geometry.scrollLeft).toBeGreaterThan(0);
+    expect(geometry.gap.right).toBeGreaterThan(geometry.gap.left);
+    expect(
+      geometry.hiddenOverGap.length,
+      'Scrolled-out tabs actually extend across the drag gap',
+    ).toBeGreaterThan(0);
+    expect(geometry.scrollerRegion, 'Visible tabs stay inside a no-drag container').toBe('no-drag');
+    expect(
+      geometry.leakingNoDrag,
+      'Hidden tab wrappers must not subtract from the drag gap',
+    ).toEqual([]);
+    expect(
+      geometry.descendantRegions,
+      'Only the scroller contributes a tab no-drag rectangle',
+    ).toEqual(['none']);
+    const gapRegion = await titlebar.evaluate((root) => {
+      const fixed = root.querySelector('[data-titlebar-fixed-controls]')!.getBoundingClientRect();
+      const strip = root.querySelector('[data-workspace-tab-strip]')!.getBoundingClientRect();
+      return getComputedStyle(
+        document.elementFromPoint((fixed.right + strip.left) / 2, (strip.top + strip.bottom) / 2)!,
+      ).getPropertyValue('-webkit-app-region');
+    });
+    expect(gapRegion).toBe('drag');
+  }
+
+  await expectClippedRegions();
+  await strip.evaluate((element) => {
+    element.scrollLeft = 0;
+  });
+  await expect.poll(async () => (await dragRegionGeometry(titlebar)).scrollLeft).toBe(0);
+  await expectClippedRegions();
+  await page.setViewportSize({ width: 660, height: 400 });
+  await expectClippedRegions();
+  const gapBeforeSidebarResize = (await dragRegionGeometry(titlebar)).gap;
+  await component.update({ props: { sidebarWidth: 340 } });
+  // Store selectors publish on a frame cadence even with reduced motion.
+  // Wait for the rendered resize before checking the resized drag regions.
+  await expect
+    .poll(async () => (await dragRegionGeometry(titlebar)).gap.right)
+    .toBeGreaterThan(gapBeforeSidebarResize.right);
+  await expectClippedRegions();
+  await expect(component.locator('[data-titlebar-settings]')).toHaveCSS(
+    '-webkit-app-region',
+    'no-drag',
+  );
+  await component.locator('[data-titlebar-settings]').click({ trial: true });
+  await component
+    .locator('[data-workspace-tab="geometry-gamma"] [data-workspace-tab-close]')
+    .click();
+  await expect(component.locator('[data-workspace-tab="geometry-gamma"]')).toHaveCount(0);
+});
+
+test('non-overflowing tabs keep their controls inside the bounded no-drag region', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1200, height: 400 });
+  const component = await mount(WorkspaceTabDragRegionHarness);
+  const titlebar = component.locator('.window-title-bar');
+  // Sidebar selectors and overflow sizing can settle after the capture frames.
+  // Wait for the non-overflow layout, as the narrow-viewport case does above.
+  await expect.poll(async () => (await dragRegionGeometry(titlebar)).overflow).toBe(false);
+  const geometry = await dragRegionGeometry(titlebar);
+  // A percentage width cap combined with the fitting strip's negative margin
+  // can toggle overflow on every ResizeObserver frame. A single settled-frame
+  // measurement (or a poll that eventually sees false) misses that feedback loop.
+  const frames = await component.locator('[data-workspace-tab-strip]').evaluate(async (strip) => {
+    const widths = [];
+    for (let frame = 0; frame < 4; frame++) {
+      await new Promise(requestAnimationFrame);
+      widths.push({ scrollWidth: strip.scrollWidth, clientWidth: strip.clientWidth });
+    }
+    return widths;
+  });
+  await testInfo.attach('non-overflowing-tab-frames', {
+    body: JSON.stringify(frames, null, 2),
+    contentType: 'application/json',
+  });
+  expect(frames.map(({ scrollWidth, clientWidth }) => scrollWidth > clientWidth)).toEqual([
+    false,
+    false,
+    false,
+    false,
+  ]);
+  expect(geometry.overflow).toBe(false);
+  expect(geometry.scrollerRegion).toBe('no-drag');
+  expect(geometry.descendantRegions).toEqual(['none']);
+  const first = component.locator('[data-workspace-tab="geometry-alpha"] [role="tab"]');
+  await first.click();
+  await expect(component.locator('[data-selected-workspace]')).toHaveText('geometry-alpha');
+  const source = (await first.boundingBox())!;
+  const target = (await component.locator('[data-workspace-tab="geometry-beta"]').boundingBox())!;
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width - 10, target.y + target.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect
+    .poll(() =>
+      component
+        .locator('[data-workspace-tab-motion]')
+        .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('data-workspace-tab-motion'))),
+    )
+    .toEqual(['geometry-beta', 'geometry-alpha', 'geometry-gamma']);
+  await component
+    .locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-close]')
+    .click();
+  await expect(component.locator('[data-workspace-tab="geometry-alpha"]')).toHaveCount(0);
+});

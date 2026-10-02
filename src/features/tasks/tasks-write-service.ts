@@ -110,6 +110,7 @@ export async function updateTaskNoteStatus(
     if (reconcileTaskConflict(workspaceId, noteId, result)) return;
     if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
     logger.error('Failed to update task status', result.error);
+    notify.error(m.notes_writeService_updateFailed_error());
   }
 }
 

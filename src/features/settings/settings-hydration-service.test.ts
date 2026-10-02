@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { updateSpy, catalogSpy } = vi.hoisted(() => ({
   updateSpy: vi.fn(),
@@ -17,6 +17,11 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import type { AppliedSettingChange } from '$lib/client/app-client';
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
+import { settingsMigrationsSaga } from '$store/renderer/slices/settings-events/sagas/settings-migrations-saga';
+import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 
 const testStore = appStore as typeof appStore & {
   storeContext?: unknown;
@@ -30,7 +35,7 @@ import { connectionsListReceived } from '$store/renderer/slices/connections/conn
 import {
   activeProviderPersistRejected,
   loadEnabledProvidersFromStorage,
-  setActiveProvider,
+  activeProviderAccepted,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import {
   hydrateDefaultProvider,
@@ -39,11 +44,13 @@ import {
 } from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
-  beforeAll(() => {
-    appStore.init();
-  });
-
+  let dispose: (() => void) | undefined;
+  let stopBackground: () => void;
+  let stopMigrations: () => void;
   beforeEach(() => {
+    dispose = appStore.init();
+    stopBackground = appStore.runSaga(backgroundAgentSettingsSaga);
+    stopMigrations = appStore.runSaga(settingsMigrationsSaga);
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
     catalogSpy.mockReset();
@@ -51,7 +58,12 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     localStorage.removeItem(BG_MODEL_MIGRATION_MARKER_KEY);
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    stopBackground();
+    stopMigrations();
+    dispose?.();
+    vi.clearAllMocks();
+  });
 
   it('hydrates the default provider and enablement map from model.defaultProvider / providers.enabled', async () => {
     applySettingsChanges([
@@ -70,10 +82,10 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
   it('guards default-provider hydration against stale echoes', () => {
     const state = () => appStore.state;
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(activeProviderAccepted('auggie'));
     applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
 
-    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(activeProviderAccepted('claude-code'));
     applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
     expect(state().model.defaultProviderId).toBe('claude-code');
     expect(state().model.pendingDefaultProviderId).toBe('claude-code');
@@ -82,7 +94,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(state().model.defaultProviderId).toBe('claude-code');
     expect(state().model.pendingDefaultProviderId).toBeNull();
 
-    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(activeProviderAccepted('claude-code'));
     appStore.dispatch(activeProviderPersistRejected('claude-code'));
     applySettingsChanges([{ path: 'model.defaultProvider', value: 'auggie' }]);
     expect(state().model.defaultProviderId).toBe('auggie');
@@ -95,7 +107,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       { path: 'model.providerDefaults', value: { auggie: 'opus-4.8' } },
     ]);
 
-    appStore.dispatch(setActiveProvider('claude-code'));
+    appStore.dispatch(activeProviderAccepted('claude-code'));
     appStore.dispatch(
       setSelectedModel({ providerId: 'claude-code', model: 'claude-code:sonnet-4.8' }),
     );
@@ -262,7 +274,13 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       });
     });
 
-    it("migrates legacy persisted haiku4.5 (default + overrides) to '' and persists the migration", () => {
+    it('marks legacy model migration complete only after persistence acknowledges success', async () => {
+      let accept!: (result: { applied: AppliedSettingChange[]; revision: number }) => void;
+      updateSpy.mockReturnValueOnce(
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+      );
       applySettingsChanges([
         { path: 'quickActions.defaultModel', value: 'haiku4.5' },
         {
@@ -286,9 +304,121 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
             path: 'quickActions.typeOverrides',
             value: { commit: '', pr: 'pr-model', review: '', fast: '' },
           },
+          { path: 'quickActions.defaultReasoningEffort', value: '' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+          { path: 'quickActions.providerSettings', value: {} },
         ],
       });
-      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1');
+      expect(appStore.state.backgroundAgentSettings.authoritativeSettings?.values).toMatchObject({
+        defaultModel: 'haiku4.5',
+        typeOverrides: { commit: 'haiku4.5', pr: 'pr-model', review: '', fast: '' },
+      });
+      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBeNull();
+
+      // A partial delta inherits the optimistic models; it must not complete the migration.
+      applySettingsChanges([{ path: 'quickActions.defaultReasoningEffort', value: 'high' }], 9);
+      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBeNull();
+      accept({
+        applied: [
+          { path: 'quickActions.defaultModel', value: '' },
+          {
+            path: 'quickActions.typeOverrides',
+            value: { commit: '', pr: 'pr-model', review: '', fast: '' },
+          },
+        ],
+        revision: 8,
+      });
+      await vi.waitFor(() => expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1'));
+      expect(appStore.state.backgroundAgentSettings.persistencePending).toBe(false);
+      expect(appStore.state.backgroundAgentSettings.authoritativeSettings?.values).toMatchObject({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: 'pr-model', review: '', fast: '' },
+        defaultReasoningEffort: 'high',
+      });
+    });
+
+    it.each([
+      ['transport failure', new Error('connection closed')],
+      [
+        'unsupported effort path',
+        new BackendError({
+          code: 'INVALID_PARAMS',
+          rpcCode: -32602,
+          message: 'Unknown setting path: quickActions.defaultReasoningEffort',
+        }),
+      ],
+    ])('preserves authority and retries a migration after %s', async (_label, error) => {
+      const overrides = { commit: 'haiku4.5', pr: 'pr-model', review: '', fast: '' };
+      const providerSettings = {
+        other: {
+          defaultModel: 'other-model',
+          typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+          defaultReasoningEffort: 'low',
+          typeReasoningEffortOverrides: { walkthrough: 'future-level' },
+        },
+      };
+      const snapshot = [
+        { path: 'model.defaultProvider', value: 'codex' },
+        { path: 'quickActions.defaultModel', value: 'haiku4.5' },
+        { path: 'quickActions.typeOverrides', value: overrides },
+        { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+        { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'medium' } },
+        { path: 'quickActions.providerSettings', value: providerSettings },
+      ];
+      let reject!: (error: unknown) => void;
+      updateSpy.mockReturnValueOnce(
+        new Promise((_resolve, rejectWrite) => {
+          reject = rejectWrite;
+        }),
+      );
+      applySettingsChanges(snapshot, 7);
+      const expectedChanges = [
+        { path: 'model.defaultProvider', value: 'codex' },
+        { path: 'quickActions.defaultModel', value: '' },
+        {
+          path: 'quickActions.typeOverrides',
+          value: { commit: '', pr: 'pr-model', review: '', fast: '' },
+        },
+        { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+        { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'medium' } },
+        { path: 'quickActions.providerSettings', value: providerSettings },
+      ];
+      expect(updateSpy).toHaveBeenCalledExactlyOnceWith({ changes: expectedChanges });
+      reject(error);
+      await vi.waitFor(() =>
+        expect(appStore.state.backgroundAgentSettings.persistencePending).toBe(false),
+      );
+      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBeNull();
+      expect(appStore.state.backgroundAgentSettings).toMatchObject({
+        providerId: 'codex',
+        defaultModel: 'haiku4.5',
+        typeOverrides: overrides,
+        defaultReasoningEffort: 'high',
+        typeReasoningEffortOverrides: { fast: 'medium' },
+        providerSettings,
+        authoritativeSettings: {
+          providerId: 'codex',
+          providerRevision: 7,
+          revisions: { defaultModel: 7, typeOverrides: 7, defaultReasoningEffort: 7 },
+          values: { defaultModel: 'haiku4.5', typeOverrides: overrides, providerSettings },
+        },
+      });
+
+      // A later hydration (e.g. reload against a compatible daemon) can retry the full batch.
+      updateSpy.mockResolvedValueOnce({ applied: expectedChanges.slice(1, 3), revision: 8 });
+      applySettingsChanges(snapshot, 7);
+      await vi.waitFor(() => expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1'));
+      expect(updateSpy).toHaveBeenCalledTimes(2);
+      expect(updateSpy).toHaveBeenNthCalledWith(2, { changes: expectedChanges });
+      expect(appStore.state.backgroundAgentSettings).toMatchObject({
+        defaultModel: '',
+        typeOverrides: { commit: '', pr: 'pr-model', review: '', fast: '' },
+        persistencePending: false,
+        authoritativeSettings: {
+          revisions: { defaultModel: 8, typeOverrides: 8 },
+          values: { defaultModel: '', defaultReasoningEffort: 'high', providerSettings },
+        },
+      });
     });
 
     it('passes any other persisted model id through untouched (and never writes back)', () => {
@@ -308,13 +438,64 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1');
     });
 
-    it('does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim', () => {
+    it('preserves effort, provider snapshots, and revision metadata through the saga migration', async () => {
+      const overrides = { commit: '', pr: '', review: '', fast: '' };
+      const providerSettings = {
+        legacy: {
+          defaultModel: 'balanced',
+          typeOverrides: overrides,
+          defaultReasoningEffort: 'low',
+          typeReasoningEffortOverrides: { walkthrough: 'future-level' },
+        },
+      };
+      applySettingsChanges(
+        [
+          { path: 'model.defaultProvider', value: 'codex' },
+          { path: 'quickActions.defaultModel', value: 'haiku4.5' },
+          { path: 'quickActions.typeOverrides', value: overrides },
+          { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'medium' } },
+          { path: 'quickActions.providerSettings', value: providerSettings },
+        ],
+        7,
+      );
+      expect(updateSpy).toHaveBeenCalledExactlyOnceWith({
+        changes: [
+          { path: 'model.defaultProvider', value: 'codex' },
+          { path: 'quickActions.defaultModel', value: '' },
+          { path: 'quickActions.typeOverrides', value: overrides },
+          { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'medium' } },
+          { path: 'quickActions.providerSettings', value: providerSettings },
+        ],
+      });
+      expect(appStore.state.backgroundAgentSettings.authoritativeSettings).toMatchObject({
+        providerId: 'codex',
+        providerRevision: 7,
+        revisions: { defaultModel: 7, defaultReasoningEffort: 7, providerSettings: 7 },
+        values: { defaultModel: 'haiku4.5', defaultReasoningEffort: 'high', providerSettings },
+      });
+      await vi.waitFor(() =>
+        expect(appStore.state.backgroundAgentSettings.persistencePending).toBe(false),
+      );
+      applySettingsChanges([{ path: 'quickActions.defaultReasoningEffort', value: null }], 8);
+      expect(appStore.state.backgroundAgentSettings.defaultReasoningEffort).toBe('');
+      expect(appStore.state.backgroundAgentSettings.typeReasoningEffortOverrides).toEqual({
+        fast: 'medium',
+      });
+      expect(appStore.state.backgroundAgentSettings.providerSettings).toEqual(providerSettings);
+    });
+
+    it('does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim', async () => {
       // First hydration runs (and completes) the migration.
       applySettingsChanges([
         { path: 'quickActions.defaultModel', value: 'haiku4.5' },
         { path: 'quickActions.typeOverrides', value: { commit: '', pr: '', review: '', fast: '' } },
       ]);
       expect((appStore.state as BgState).backgroundAgentSettings.defaultModel).toBe('');
+      await vi.waitFor(() =>
+        expect(appStore.state.backgroundAgentSettings.persistencePending).toBe(false),
+      );
       updateSpy.mockClear();
 
       // The user re-picks haiku4.5; the daemon echoes it back via settings:changed.
@@ -370,6 +551,11 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
   });
 
   describe('default-provider enablement seeding (monorepo#1947)', () => {
+    let stopProviders: () => void;
+    beforeEach(() => {
+      stopProviders = appStore.runSaga(providerSettingsSaga);
+    });
+    afterEach(() => stopProviders());
     type ProviderState = {
       providerSettings: { enabledProviders: Record<string, boolean> };
     };

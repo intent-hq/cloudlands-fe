@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import type {
@@ -17,6 +18,8 @@
   import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import * as Menu from '$lib/components/ui/menu';
   import PanelTabBar from '../../PanelTabBar.svelte';
+  import WindowTitleBar from '../../../WindowTitleBar.svelte';
+  import NoteViewSettingsDropdown from '$features/layout/tab-types/NoteViewSettingsDropdown.svelte';
 
   let {
     panelType = 'agent',
@@ -29,6 +32,9 @@
     populated = true,
     stackCount = 2,
     longMenuContent = false,
+    noteAppearance = false,
+    showTabStrip = false,
+    titlebarOverlap = false,
   }: {
     panelType?: PanelTabType;
     width?: number;
@@ -40,6 +46,9 @@
     populated?: boolean;
     stackCount?: 1 | 2 | 3 | 4 | 5;
     longMenuContent?: boolean;
+    noteAppearance?: boolean;
+    showTabStrip?: boolean;
+    titlebarOverlap?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -87,6 +96,13 @@
   let moveLeftCount = $state(0);
   let moveRightCount = $state(0);
   let closeCount = $state(0);
+  let openedExternalUrl = $state('');
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only IPC boundary records the external-open command without launching a browser.
+  const restoreExternalOpen = overrideMockIpcHandler('shell:openExternal', (payload) => {
+    openedExternalUrl = (payload as { url: string }).url;
+    return { success: true };
+  });
+  onDestroy(restoreExternalOpen);
 
   const tabs = $derived<PanelTab[]>(
     Array.from({ length: stackCount }, (_, index) => ({
@@ -94,6 +110,7 @@
       type: panelType,
       title: `${panelType} panel ${index + 1}`,
       closable: true,
+      browserUrl: panelType === 'browser' ? 'https://example.com/panel-preview' : undefined,
       agentId: panelType === 'agent' ? `panel-menu-agent-${index + 1}` : undefined,
     })),
   );
@@ -110,29 +127,32 @@
 </script>
 
 {#snippet contentDisplayAction()}
-  <Menu.CommandItem
-    label={longMenuContent
-      ? 'Content display action with a deliberately long label'
-      : 'Content display action'}
-    shortcut={longMenuContent ? 'Ctrl+Shift+Alt+M' : undefined}
-    onclick={() => (displayCount += 1)}
-  />
+  {#if noteAppearance}
+    <NoteViewSettingsDropdown {workspaceId} noteId="panel-note" embedded />
+  {:else}
+    <Menu.CommandItem
+      label={longMenuContent
+        ? 'Content display action with a deliberately long label'
+        : 'Content display action'}
+      shortcut={longMenuContent ? 'Ctrl+Shift+Alt+M' : undefined}
+      onclick={() => (displayCount += 1)}
+    />
+  {/if}
 {/snippet}
 
-{#snippet contentNavigationAction()}
-  <button
-    type="button"
-    class="size-7 shrink-0"
-    aria-label="Content navigation"
-    onclick={() => (navigationCount += 1)}
-  >
-    <span aria-hidden="true">N</span>
-  </button>
+{#snippet additionalAction()}
+  <Menu.CommandItem label="Content navigation" onclick={() => (navigationCount += 1)} />
 {/snippet}
 
 {#snippet contentCommandAction()}
   <Menu.CommandItem label="Content command action" onclick={() => (contentCount += 1)} />
 {/snippet}
+
+{#if titlebarOverlap}
+  <div class="absolute inset-x-0 top-16">
+    <WindowTitleBar />
+  </div>
+{/if}
 
 <section
   class="overflow-hidden bg-background text-foreground"
@@ -147,6 +167,7 @@
   data-move-left-count={moveLeftCount}
   data-move-right-count={moveRightCount}
   data-close-count={closeCount}
+  data-opened-external-url={openedExternalUrl}
   data-current-count={$count$}
   data-active-tab={activeTabId}
 >
@@ -156,15 +177,16 @@
     panelId="panel-actions"
     {workspaceId}
     {isRightmostPanel}
+    {showTabStrip}
     contentActions={{
-      primary: contentNavigationAction,
       display: contentDisplayAction,
       actions: contentCommandAction,
+      additional: additionalAction,
     }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}
-    onMoveLeft={() => (moveLeftCount += 1)}
-    onMoveRight={() => (moveRightCount += 1)}
+    onMovePaneLeft={() => (moveLeftCount += 1)}
+    onMovePaneRight={() => (moveRightCount += 1)}
     onTabClick={(tabId) => (activeTabId = tabId)}
     onTabClose={() => (closeCount += 1)}
     onClosePanel={() => (closeCount += 1)}

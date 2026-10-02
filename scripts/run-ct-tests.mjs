@@ -53,12 +53,12 @@
  * CI helpers and `--help` skip the preflight.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ensureI18nFresh } from './check-deps-fresh.mjs';
+import { CT_BROWSER, resolveCtAlignedPlaywrightCli, resolveCtBrowser } from './ct-browser.mjs';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 import {
   acquireVerificationLock,
@@ -115,17 +115,18 @@ export function usage() {
     '',
     'CI helpers:',
     '  --print-playwright-version   Print the CT-aligned playwright version.',
-    '  --install-browsers [...]     Run `playwright install` with the CT-aligned CLI.',
-    `  ${PRINT_OS_DEPS_FLAG} [...]        Print the non-font OS packages from the CT-aligned`,
+    '  --print-browser-plan        Print the pinned supplier, install/cache paths and identity as JSON.',
+    '  --install-browsers [...]     Install Chromium with the pinned browser supplier CLI.',
+    `  ${PRINT_OS_DEPS_FLAG} [...]        Print missing non-font OS packages from the pinned supplier`,
     '                               `playwright install-deps --dry-run`, space-separated on',
     '                               one line (fonts-*/xfonts-* dropped; intent-hq/intent#4723).',
   ].join('\n');
 }
 
 /**
- * Run the CT-aligned `playwright install-deps --dry-run <browsers...>` and
- * return the non-font packages it would install. The dry run prints the apt
- * command without executing it; the parse is strict (see
+ * Run the pinned supplier's `playwright install-deps --dry-run <browsers...>` and
+ * return the missing non-font packages. The dry run simulates apt and returns
+ * 1 for missing dependencies (including fonts), 0 when ready; the parse is strict (see
  * playwright-os-deps-lib.mjs) and throws on anything unexpected, so CI fails
  * loudly instead of provisioning a partial package list. `spawnSyncImpl` is
  * injectable for tests.
@@ -145,12 +146,15 @@ export function collectNonFontOsDeps({
       stdio: ['ignore', 'pipe', 'inherit'],
     },
   );
-  if (dryRun.error || dryRun.status !== 0) {
+  if (dryRun.error || ![0, 1].includes(dryRun.status)) {
     throw new Error(
       `install-deps --dry-run failed: ${dryRun.error?.message ?? `exit ${dryRun.status}`}`,
     );
   }
-  return { dryRun: dryRun.stdout, packages: nonFontPackagesFromDryRun(dryRun.stdout) };
+  return {
+    dryRun: dryRun.stdout,
+    packages: nonFontPackagesFromDryRun(dryRun.stdout, dryRun.status),
+  };
 }
 
 /**
@@ -364,32 +368,7 @@ export function forwardSignalsToChild({
   return clear;
 }
 
-export function resolveCtAlignedPlaywrightCli() {
-  // Walk the dependency tree: repo root -> ct-svelte -> ct-core -> playwright.
-  // Each hop uses createRequire from the previous package's own location, so
-  // pnpm's nested resolutions are honored without hardcoding .pnpm paths.
-  const rootRequire = createRequire(path.join(repoRoot, 'package.json'));
-  const ctSveltePkgJson = rootRequire.resolve('@playwright/experimental-ct-svelte/package.json');
-  const ctSvelteRequire = createRequire(ctSveltePkgJson);
-  // ct-core's package.json is not an exported subpath; resolve its main entry
-  // and require from there instead.
-  const ctCoreEntry = ctSvelteRequire.resolve('@playwright/experimental-ct-core');
-  const ctCoreRequire = createRequire(ctCoreEntry);
-  // Unlike ct-core, playwright does export its ./package.json subpath.
-  const playwrightPkgJsonPath = ctCoreRequire.resolve('playwright/package.json');
-  const packageDir = path.dirname(playwrightPkgJsonPath);
-
-  const pkg = JSON.parse(readFileSync(playwrightPkgJsonPath, 'utf8'));
-  const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.playwright;
-  if (!binRel) {
-    throw new Error(`playwright bin entry not found in ${playwrightPkgJsonPath}`);
-  }
-  const cliPath = path.join(packageDir, binRel);
-  if (!existsSync(cliPath)) {
-    throw new Error(`playwright CLI not found at ${cliPath}`);
-  }
-  return { cliPath, version: pkg.version };
-}
+export { resolveCtAlignedPlaywrightCli } from './ct-browser.mjs';
 
 /** Heap cap applied to the Playwright child unless the caller chose one. */
 const CT_HEAP_FLAG = '--max-old-space-size=8192';
@@ -514,20 +493,21 @@ async function main(argv) {
     process.exit(1);
   }
 
-  // CI helpers: browsers must match the CT-aligned runner version (not the
-  // repo's top-level playwright), so version printing (for cache keys),
-  // browser installation, and the OS dependency listing go through this
-  // launcher too.
+  // The test runner stays CT-aligned. Only browser provisioning uses the newer
+  // supplier. Cache keys and dependency markers come from this same plan.
   let args;
+  let launchCliPath = cli.cliPath;
   if (forwarded[0] === '--print-playwright-version') {
     process.stdout.write(`${cli.version}\n`);
     process.exit(0);
+  } else if (forwarded[0] === '--print-browser-plan') {
+    process.stdout.write(`${JSON.stringify(resolveCtBrowser({ requireInstalled: false }))}\n`);
+    process.exit(0);
   } else if (forwarded[0] === PRINT_OS_DEPS_FLAG) {
-    console.error(`[run-ct-tests] using playwright@${cli.version} (${cli.cliPath})`);
     try {
       const { dryRun, packages } = collectNonFontOsDeps({
-        cliPath: cli.cliPath,
-        browsers: forwarded.slice(1),
+        cliPath: resolveCtBrowser({ requireInstalled: false }).osDeps.cliPath,
+        browsers: ['chromium'],
       });
       console.error(`[run-ct-tests] install-deps --dry-run: ${dryRun.trim()}`);
       process.stdout.write(`${packages.join(' ')}\n`);
@@ -537,11 +517,21 @@ async function main(argv) {
       process.exit(1);
     }
   } else if (forwarded[0] === '--install-browsers') {
-    args = ['install', ...forwarded.slice(1)];
+    const plan = resolveCtBrowser({ requireInstalled: false });
+    launchCliPath = plan.install.cliPath;
+    const options = forwarded.slice(1).filter((arg) => arg !== 'chromium');
+    if (options.some((arg) => !['--with-deps', '--dry-run', '--force'].includes(arg))) {
+      throw new Error(
+        'CT installs pinned Chromium only; supported options: --with-deps, --dry-run, --force',
+      );
+    }
+    args = [...plan.install.args, ...options];
   } else {
     args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];
   }
-  console.error(`[run-ct-tests] using playwright@${cli.version} (${cli.cliPath})`);
+  console.error(
+    `[run-ct-tests] CT runner ${cli.version}; browser supplier ${CT_BROWSER.supplierVersion}; Chromium ${CT_BROWSER.chromiumVersion} revision ${CT_BROWSER.revision}; CLI ${launchCliPath}`,
+  );
 
   const { env, notice } = buildChildEnv({ isTTY: Boolean(process.stdout.isTTY), openReport });
   if (notice) console.error(notice);
@@ -565,11 +555,14 @@ async function main(argv) {
     releaseLock();
     process.exit(code);
   };
-  const child = runPlaywright({ cliPath: cli.cliPath, args, env, exit });
+  const child = runPlaywright({ cliPath: launchCliPath, args, env, exit });
   forwardSignalsToChild({ child });
 }
 
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
-  main(process.argv.slice(2));
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+  });
 }

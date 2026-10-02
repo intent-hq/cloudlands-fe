@@ -1,3 +1,5 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 /**
  * Wire-contract tests for the daemon-backed diff batcher (D2).
  *
@@ -23,8 +25,7 @@ const storeState = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   return {
     store: {
       get state() {
@@ -99,6 +100,64 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     vi.useRealTimers();
   });
 
+  it('drops an aborted caller before the queued head request starts', async () => {
+    mockDaemon();
+    const controller = new AbortController();
+    const result = batchedGitDiff('cancel-queued', false, 'a.ts', { signal: controller.signal });
+    controller.abort();
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toBeUndefined();
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'does not enrich an aborted path while preserving a live peer (%s same path)',
+    async (samePath) => {
+      let resolveDiff!: (value: unknown) => void;
+      const pending = new Promise((resolve) => {
+        resolveDiff = resolve;
+      });
+      mockedRequest.mockImplementation(async (method) =>
+        method === 'git.diffs' ? pending : { content: 'LOCAL' },
+      );
+      const controller = new AbortController();
+      const abandoned = batchedGitDiff('cancel-peer', false, 'a.ts', { signal: controller.signal });
+      const peer = batchedGitDiff('cancel-peer', false, samePath ? 'a.ts' : 'b.ts');
+      await vi.runAllTimersAsync();
+      controller.abort();
+      resolveDiff([
+        { path: 'a.ts', hunks: [HUNK] },
+        { path: 'b.ts', hunks: [HUNK] },
+      ]);
+      await expect(abandoned).resolves.toBeUndefined();
+      await expect(peer).resolves.toMatchObject({ oldContent: 'LOCAL', newContent: 'LOCAL' });
+      const livePath = samePath ? 'a.ts' : 'b.ts';
+      expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([
+        ['git.showFile', { workspaceId: 'cancel-peer', filePath: livePath, ref: ':0' }],
+        ['file.read', { workspaceId: 'cancel-peer', path: livePath }],
+      ]);
+    },
+  );
+
+  it('does not start full-tree recovery after its only caller aborts', async () => {
+    let resolveDiff!: (value: unknown) => void;
+    mockedRequest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDiff = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const result = batchedGitDiff('cancel-recovery', false, '/elsewhere/a.ts', {
+      signal: controller.signal,
+    });
+    await vi.runAllTimersAsync();
+    controller.abort();
+    resolveDiff([]);
+    await expect(result).resolves.toBeUndefined();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('coalesces same-tick unstaged requests into one git.diffs read and composes ":0" + file.read contents', async () => {
     mockDaemon({
       diffs: [
@@ -165,7 +224,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     mockDaemon({
       diffs: [{ path: 'src/a.ts', hunks: [HUNK] }],
       showFiles: { ':0:src/a.ts': 'old a' },
-      files: { '/workspace/packages/sub/src/a.ts': 'new a' },
+      files: { 'src/a.ts': 'new a' },
     });
 
     const promise = batchedGitDiff('ws-1', false, '/workspace/packages/sub/src/a.ts', {
@@ -188,8 +247,84 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
     expect(mockedRequest).toHaveBeenCalledWith('file.read', {
       workspaceId: 'ws-1',
-      path: '/workspace/packages/sub/src/a.ts',
+      path: 'src/a.ts',
+      gitRootId: 'root-9',
     });
+  });
+
+  it.each([false, true])('isolates external-root diff contents (staged=%s)', async (staged) => {
+    mockedRequest.mockImplementation(async (method, params) => {
+      const p = params as { gitRootId?: string; path?: string; ref?: string };
+      if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile')
+        return { content: p.ref === 'HEAD' || !staged ? 'EXTERNAL ORIGINAL' : 'EXTERNAL STAGED' };
+      if (method === 'file.read') {
+        if (p.gitRootId === 'external-root' && p.path === 'tracked.txt') return 'EXTERNAL MODIFIED';
+        return 'WRONG PRIMARY';
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const pending = batchedGitDiff('external-diff', staged, '/external/repo/tracked.txt', {
+      gitRootId: 'external-root',
+      gitRootPath: '/external/repo',
+    });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({
+      oldContent: 'EXTERNAL ORIGINAL',
+      newContent: staged ? 'EXTERNAL STAGED' : 'EXTERNAL MODIFIED',
+    });
+    if (!staged)
+      expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'external-diff',
+        path: 'tracked.txt',
+        gitRootId: 'external-root',
+      });
+    else expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
+  });
+
+  it.each([
+    new Error('Root reads unsupported'),
+    Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
+    Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+    new BackendError(
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Permission denied (os error 13)',
+      }).toErrorPayload(),
+    ),
+  ])('rejects scoped working-tree failures instead of fabricating deletion: %s', async (error) => {
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'git.diffs') return [{ path: 'tracked.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile') return { content: 'INDEX' };
+      throw error;
+    });
+    const pending = expect(
+      batchedGitDiff('scoped-error', false, 'tracked.txt', {
+        gitRootId: 'external-root',
+      }),
+    ).rejects.toThrow(error.message);
+    await vi.runAllTimersAsync();
+    await pending;
+  });
+
+  it('keeps an explicitly missing scoped file as a deleted working-tree side', async () => {
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'git.diffs') return [{ path: 'gone.txt', hunks: [HUNK] }];
+      if (method === 'git.showFile') return { content: 'INDEX' };
+      throw new BackendError(
+        new JsonRpcError({
+          code: -32603,
+          message: 'Internal error',
+          data: 'No such file or directory (os error 2)',
+        }).toErrorPayload(),
+      );
+    });
+    const pending = batchedGitDiff('scoped-deleted', false, 'gone.txt', {
+      gitRootId: 'external-root',
+    });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ oldContent: 'INDEX', newContent: '' });
   });
 
   it('keeps every diff and file read on explicit workspace B when active workspace is A', async () => {

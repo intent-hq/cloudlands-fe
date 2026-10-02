@@ -1,9 +1,10 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean-preference';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import type { UpdateChannel } from '$features/auto-update/types';
+import type { AgentRulesEditorState, UserPreferencesStoreState } from './user-preferences-types';
 import {
   SHORTCUT_DEFAULTS,
   isShortcutId,
@@ -57,8 +58,14 @@ export type UserPreferencesState = {
   shellTransparencyEnabled: boolean;
   /** Whether motion is reduced while the machine runs on battery. */
   reduceMotionOnBattery: boolean;
+  /** Whether the experimental Labs tab is visible in Settings. */
+  labsSettingsVisible: boolean;
   /** Whether the Multiplayer lab (experimental) is enabled. */
   labsMultiplayerEnabled: boolean;
+  /** Whether new GitLab setup is offered in Labs. Existing connections are preserved. */
+  labsGitLabEnabled: boolean;
+  /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
+  labsRemoteAgentsEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -67,6 +74,12 @@ export type UserPreferencesState = {
   soundEnabled: boolean;
   soundOnlyWhenUnfocused: boolean;
   volume: number;
+  /** Renderer-only write identity; hydration must preserve an unsettled local edit. */
+  notificationVolumeEditId: number;
+  pendingNotificationVolumeEditId: number | null;
+  notificationVolumeHydrationEpoch: number;
+  notificationVolumeConfirmedRevision: number;
+  deferredNotificationVolume: { value: number; revision?: number } | null;
   activityLogPresets: ActivityLogPresetPreference[];
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
@@ -98,7 +111,19 @@ const notificationSettingsInitialState: NotificationSettingsState = {
   volume: 0.5,
 };
 
-export const initialState: UserPreferencesState = {
+const emptyAgentRulesEditor: AgentRulesEditorState = {
+  active: false,
+  generation: 0,
+  content: '',
+  originalContent: '',
+  persistedContent: '',
+  loading: true,
+  errorMessage: null,
+  saveStatus: 'idle',
+};
+
+export const initialState: UserPreferencesStoreState = {
+  agentRulesEditor: emptyAgentRulesEditor,
   updateChannel: 'stable',
   spellcheckEnabled: false,
   zoomFactor: 1.0,
@@ -109,9 +134,17 @@ export const initialState: UserPreferencesState = {
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
+  labsSettingsVisible: false,
   labsMultiplayerEnabled: false,
+  labsGitLabEnabled: false,
+  labsRemoteAgentsEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
+  notificationVolumeHydrationEpoch: 0,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
@@ -122,7 +155,33 @@ export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
   'userPreferences/setUpdateChannel',
 );
 
-const spellcheckPreference = createBooleanPreference<UserPreferencesState>({
+export const agentRulesEditorOpened = createAction('userPreferences/agentRulesEditorOpened');
+export const agentRulesEditorClosed = createAction('userPreferences/agentRulesEditorClosed');
+export const agentRulesContentChanged = createAction<[content: string]>(
+  'userPreferences/agentRulesContentChanged',
+);
+export const undoAgentRulesChanges = createAction('userPreferences/undoAgentRulesChanges');
+export const saveAgentRules = createAction('userPreferences/saveAgentRules');
+export const agentRulesLoaded = createAction<[generation: number, content: string]>(
+  'userPreferences/agentRulesLoaded',
+);
+export const agentRulesSaveStarted = createAction<[generation: number]>(
+  'userPreferences/agentRulesSaveStarted',
+);
+export const agentRulesSaved = createAction<[generation: number, content: string]>(
+  'userPreferences/agentRulesSaved',
+);
+export const agentRulesFailed = createAction<[generation: number, message: string]>(
+  'userPreferences/agentRulesFailed',
+);
+export const agentRulesErrorCleared = createAction<[generation: number]>(
+  'userPreferences/agentRulesErrorCleared',
+);
+export const agentRulesSaveStatusCleared = createAction<[generation: number]>(
+  'userPreferences/agentRulesSaveStatusCleared',
+);
+
+const spellcheckPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'spellcheckEnabled',
   setActionName: 'setSpellcheckEnabled',
@@ -165,6 +224,19 @@ export const setSoundOnlyWhenUnfocused = createAction<[value: boolean]>(
 
 export const setVolume = createAction<[value: number]>('notificationSettings/setVolume');
 
+/** Daemon snapshot/event hydration; never triggers notification persistence. */
+export const hydrateNotificationVolume = createAction<[value: number, revision?: number]>(
+  'notificationSettings/hydrateVolume',
+);
+
+export const notificationVolumeHydrationStarted = createAction(
+  'notificationSettings/volumeHydrationStarted',
+);
+
+export const notificationVolumeWriteSettled = createAction<
+  [editId: number, hydrationEpoch: number, revision?: number]
+>('notificationSettings/volumeWriteSettled');
+
 export const resetNotificationSettings = createAction(
   'notificationSettings/resetNotificationSettings',
 );
@@ -203,7 +275,7 @@ export const resetShortcutOverride = createAction<[id: ShortcutId]>(
 
 export const resetAllShortcutOverrides = createAction('userPreferences/resetAllShortcutOverrides');
 
-const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
+const showArchivedPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'showArchived',
   setActionName: 'setShowArchived',
@@ -214,7 +286,7 @@ export const setShowArchived = showArchivedPreference.setAction;
 
 export const toggleShowArchived = showArchivedPreference.toggleAction;
 
-const groupByRepoPreference = createBooleanPreference<UserPreferencesState>({
+const groupByRepoPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'groupByRepo',
   setActionName: 'setGroupByRepo',
@@ -225,7 +297,7 @@ export const setGroupByRepo = groupByRepoPreference.setAction;
 
 export const toggleGroupByRepo = groupByRepoPreference.toggleAction;
 
-const hasCompletedProviderSetupPreference = createBooleanPreference<UserPreferencesState>({
+const hasCompletedProviderSetupPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'hasCompletedProviderSetup',
   setActionName: 'setHasCompletedProviderSetup',
@@ -236,7 +308,7 @@ export const setHasCompletedProviderSetup = hasCompletedProviderSetupPreference.
 
 export const toggleHasCompletedProviderSetup = hasCompletedProviderSetupPreference.toggleAction;
 
-const showReasoningBlocksPreference = createBooleanPreference<UserPreferencesState>({
+const showReasoningBlocksPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'showReasoningBlocks',
   setActionName: 'setShowReasoningBlocks',
@@ -247,7 +319,7 @@ export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;
 
 export const toggleShowReasoningBlocks = showReasoningBlocksPreference.toggleAction;
 
-const chatAuroraPreference = createBooleanPreference<UserPreferencesState>({
+const chatAuroraPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'chatAuroraEnabled',
   setActionName: 'setChatAuroraEnabled',
@@ -258,7 +330,7 @@ export const setChatAuroraEnabled = chatAuroraPreference.setAction;
 
 export const toggleChatAurora = chatAuroraPreference.toggleAction;
 
-const shellTransparencyPreference = createBooleanPreference<UserPreferencesState>({
+const shellTransparencyPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'shellTransparencyEnabled',
   setActionName: 'setShellTransparencyEnabled',
@@ -269,7 +341,7 @@ export const setShellTransparencyEnabled = shellTransparencyPreference.setAction
 
 export const toggleShellTransparency = shellTransparencyPreference.toggleAction;
 
-const reduceMotionOnBatteryPreference = createBooleanPreference<UserPreferencesState>({
+const reduceMotionOnBatteryPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'reduceMotionOnBattery',
   setActionName: 'setReduceMotionOnBattery',
@@ -280,7 +352,18 @@ export const setReduceMotionOnBattery = reduceMotionOnBatteryPreference.setActio
 
 export const toggleReduceMotionOnBattery = reduceMotionOnBatteryPreference.toggleAction;
 
-const labsMultiplayerPreference = createBooleanPreference<UserPreferencesState>({
+const labsSettingsVisibilityPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsSettingsVisible',
+  setActionName: 'setLabsSettingsVisible',
+  toggleActionName: 'toggleLabsSettingsVisibility',
+});
+
+export const setLabsSettingsVisible = labsSettingsVisibilityPreference.setAction;
+
+export const toggleLabsSettingsVisibility = labsSettingsVisibilityPreference.toggleAction;
+
+const labsMultiplayerPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'labsMultiplayerEnabled',
   setActionName: 'setLabsMultiplayerEnabled',
@@ -291,7 +374,121 @@ export const setLabsMultiplayerEnabled = labsMultiplayerPreference.setAction;
 
 export const toggleLabsMultiplayer = labsMultiplayerPreference.toggleAction;
 
-export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
+const labsGitLabPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsGitLabEnabled',
+  setActionName: 'setLabsGitLabEnabled',
+  toggleActionName: 'toggleLabsGitLab',
+});
+
+export const setLabsGitLabEnabled = labsGitLabPreference.setAction;
+
+export const toggleLabsGitLab = labsGitLabPreference.toggleAction;
+
+const labsRemoteAgentsPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsRemoteAgentsEnabled',
+  setActionName: 'setLabsRemoteAgentsEnabled',
+  toggleActionName: 'toggleLabsRemoteAgents',
+});
+
+export const setLabsRemoteAgentsEnabled = labsRemoteAgentsPreference.setAction;
+
+export const toggleLabsRemoteAgents = labsRemoteAgentsPreference.toggleAction;
+
+export const userPreferencesReducer = createReducer<UserPreferencesStoreState>(initialState);
+userPreferencesReducer.with(agentRulesEditorOpened, (state) => ({
+  ...state,
+  agentRulesEditor: {
+    ...emptyAgentRulesEditor,
+    active: true,
+    generation: state.agentRulesEditor.generation + 1,
+  },
+}));
+userPreferencesReducer.with(agentRulesEditorClosed, (state) =>
+  !state.agentRulesEditor.active
+    ? state
+    : {
+        ...state,
+        agentRulesEditor: {
+          ...state.agentRulesEditor,
+          active: false,
+          loading: false,
+          saveStatus: 'idle',
+        },
+      },
+);
+userPreferencesReducer.with(agentRulesContentChanged, (state, { payload: [content] }) =>
+  !state.agentRulesEditor.active || state.agentRulesEditor.content === content
+    ? state
+    : { ...state, agentRulesEditor: { ...state.agentRulesEditor, content, saveStatus: 'idle' } },
+);
+userPreferencesReducer.with(undoAgentRulesChanges, (state) => {
+  const editor = state.agentRulesEditor;
+  return !editor.active || editor.content === editor.originalContent
+    ? state
+    : {
+        ...state,
+        agentRulesEditor: { ...editor, content: editor.originalContent, saveStatus: 'idle' },
+      };
+});
+userPreferencesReducer.with(agentRulesLoaded, (state, { payload: [generation, content] }) =>
+  !state.agentRulesEditor.active || state.agentRulesEditor.generation !== generation
+    ? state
+    : {
+        ...state,
+        agentRulesEditor: {
+          ...state.agentRulesEditor,
+          content,
+          originalContent: content,
+          persistedContent: content.trim(),
+          loading: false,
+        },
+      },
+);
+userPreferencesReducer.with(agentRulesSaveStarted, (state, { payload: [generation] }) =>
+  !state.agentRulesEditor.active || state.agentRulesEditor.generation !== generation
+    ? state
+    : {
+        ...state,
+        agentRulesEditor: { ...state.agentRulesEditor, saveStatus: 'saving', errorMessage: null },
+      },
+);
+userPreferencesReducer.with(agentRulesSaved, (state, { payload: [generation, content] }) =>
+  !state.agentRulesEditor.active || state.agentRulesEditor.generation !== generation
+    ? state
+    : {
+        ...state,
+        agentRulesEditor: {
+          ...state.agentRulesEditor,
+          persistedContent: content,
+          saveStatus: state.agentRulesEditor.content.trim() === content ? 'saved' : 'saving',
+        },
+      },
+);
+userPreferencesReducer.with(agentRulesFailed, (state, { payload: [generation, message] }) =>
+  !state.agentRulesEditor.active || state.agentRulesEditor.generation !== generation
+    ? state
+    : {
+        ...state,
+        agentRulesEditor: {
+          ...state.agentRulesEditor,
+          loading: false,
+          saveStatus: 'idle',
+          errorMessage: message,
+        },
+      },
+);
+userPreferencesReducer.with(agentRulesErrorCleared, (state, { payload: [generation] }) =>
+  state.agentRulesEditor.generation !== generation || state.agentRulesEditor.errorMessage === null
+    ? state
+    : { ...state, agentRulesEditor: { ...state.agentRulesEditor, errorMessage: null } },
+);
+userPreferencesReducer.with(agentRulesSaveStatusCleared, (state, { payload: [generation] }) =>
+  state.agentRulesEditor.generation !== generation || state.agentRulesEditor.saveStatus === 'idle'
+    ? state
+    : { ...state, agentRulesEditor: { ...state.agentRulesEditor, saveStatus: 'idle' } },
+);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
@@ -300,7 +497,10 @@ showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
+labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
+labsGitLabPreference.register(userPreferencesReducer);
+labsRemoteAgentsPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,
@@ -346,10 +546,58 @@ userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value
 userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
   ...state,
   volume: Math.max(0, Math.min(1, value)),
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
+  deferredNotificationVolume: null,
 }));
+userPreferencesReducer.with(notificationVolumeHydrationStarted, (state) => ({
+  ...state,
+  // Revisions restart with the backend; a late write from the prior connection
+  // must not set a revision floor for the new snapshot/event stream.
+  notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
+}));
+userPreferencesReducer.with(hydrateNotificationVolume, (state, { payload: [value, revision] }) => {
+  if (revision !== undefined && revision < state.notificationVolumeConfirmedRevision) return state;
+  const volume = Math.max(0, Math.min(1, value));
+  if (state.pendingNotificationVolumeEditId !== null) {
+    return { ...state, deferredNotificationVolume: { value: volume, revision } };
+  }
+  return { ...state, volume };
+});
+userPreferencesReducer.with(
+  notificationVolumeWriteSettled,
+  (state, { payload: [editId, hydrationEpoch, revision] }) => {
+    if (state.pendingNotificationVolumeEditId !== editId) return state;
+    const sameEpoch = hydrationEpoch === state.notificationVolumeHydrationEpoch;
+    const deferred = state.deferredNotificationVolume;
+    // Failure leaves the daemon value authoritative. On success only a newer
+    // daemon revision can supersede the edit; legacy daemons use arrival order.
+    const acceptDeferred =
+      deferred &&
+      (!sameEpoch ||
+        revision === undefined ||
+        revision === 0 ||
+        (deferred.revision !== undefined && deferred.revision > revision));
+    return {
+      ...state,
+      volume: acceptDeferred ? deferred.value : state.volume,
+      pendingNotificationVolumeEditId: null,
+      deferredNotificationVolume: null,
+      notificationVolumeConfirmedRevision:
+        sameEpoch && revision !== undefined
+          ? Math.max(state.notificationVolumeConfirmedRevision, revision)
+          : state.notificationVolumeConfirmedRevision,
+    };
+  },
+);
 userPreferencesReducer.with(resetNotificationSettings, (state) => ({
   ...state,
   ...notificationSettingsInitialState,
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
+  deferredNotificationVolume: null,
 }));
 userPreferencesReducer.with(hydrateActivityLogPresets, (state, { payload: [presets] }) => ({
   ...state,

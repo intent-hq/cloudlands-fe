@@ -3,7 +3,7 @@
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
-  import { extractReasoningHistory } from './reasoning-heading';
+  import { extractReasoningHistory, type ReasoningHistoryItem } from './reasoning-heading';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     NESTED_REASONING_SECTION_SEAM_CLASS,
@@ -11,33 +11,38 @@
   } from './operational-disclosure-row';
 
   interface Props {
+    item?: ReasoningHistoryItem;
     content: string;
     isStreaming?: boolean;
     workspaceId?: string;
+    canOpenFile?: () => boolean;
+    allowFileMedia?: boolean;
     adjacentOperationalRow?: boolean;
   }
 
   let {
+    item,
     content,
     isStreaming = false,
     workspaceId,
+    canOpenFile,
+    allowFileMedia = true,
     adjacentOperationalRow = false,
   }: Props = $props();
 
-  const history = $derived(extractReasoningHistory(content));
+  const history = $derived(item ? [item] : extractReasoningHistory(content));
   const instanceId = $props.id();
 </script>
 
 <div class="min-w-0 max-w-full" data-reasoning-history>
   {#each history as item, index (`${item.title ?? 'body'}-${index}`)}
     {@const titleId = item.title ? `reasoning-section-title-${instanceId}-${index}` : undefined}
+    {@const followsBody = !!item.title && index > 0 && !!history[index - 1].body}
     <section
-      class="{index > 0 && item.title
-        ? NESTED_REASONING_SECTION_SEAM_CLASS
-        : ''} min-w-0 max-w-full"
+      class="{followsBody ? NESTED_REASONING_SECTION_SEAM_CLASS : ''} min-w-0 max-w-full"
       aria-labelledby={titleId}
       data-reasoning-section
-      data-reasoning-section-boundary={index > 0 && item.title ? true : undefined}
+      data-reasoning-section-boundary={followsBody ? true : undefined}
     >
       {#if item.title}
         {#snippet leading()}
@@ -66,6 +71,8 @@
           data-reasoning-history-body
         >
           <MarkdownViewer
+            {canOpenFile}
+            {allowFileMedia}
             content={item.body}
             {isStreaming}
             {workspaceId}

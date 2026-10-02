@@ -229,7 +229,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
   it('waits to reveal the launcher grid until the collapsing card reaches its source', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('function launcherGridReveal(_node: Element)');
+    expect(sidebar).toContain('function launcherGridReveal(');
     expect(sidebar).toContain('delay: spring.moderate.settleMs');
     expect(sidebar).toContain('duration: spring.fast.settleMs');
     expect(sidebar).toContain('in:launcherGridReveal|global');

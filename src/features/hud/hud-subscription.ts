@@ -45,7 +45,7 @@ import {
 } from '$lib/client/live/backend-transport';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
 import {
   hydrateAgentsRequested,
@@ -343,7 +343,7 @@ async function hydrateHudWorkspaceAgents(
     const pointReadRows = await Promise.all(
       pointReadIds.map(async (agentId) => {
         try {
-          return await appClient.agents.get(agentId);
+          return await appClient.agents.get(agentId, workspaceId);
         } catch (error) {
           logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
             workspaceId,

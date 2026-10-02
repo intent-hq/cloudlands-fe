@@ -345,15 +345,9 @@ export function createPanelKeyboardShortcuts(
     layoutManager: PanelLayoutManager,
     direction: PanelCycleDirection,
   ): boolean {
-    const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
     const panel = selectFocusedPanel.select(appStore.state, layoutManager.workspaceId);
-    if (!panel?.activeTabId) return false;
-    const currentIndex = panelIds.indexOf(panel.id);
-    const targetIndex = currentIndex + (direction === 'next' ? 1 : -1);
-    const targetPanelId = panelIds[targetIndex];
-    if (!targetPanelId) return false;
-    layoutManager.moveTabToPanel(panel.activeTabId, panel.id, targetPanelId);
-    return true;
+    if (!panel) return false;
+    return layoutManager.moveActivePaneToColumn(panel.id, direction);
   }
 
   function createColumnToRight(layoutManager: PanelLayoutManager): boolean {

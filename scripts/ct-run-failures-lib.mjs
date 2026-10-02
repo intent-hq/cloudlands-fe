@@ -17,7 +17,7 @@
 //      `test.fail()` expected failures (the incident triage on
 //      cloudlands-fe#2533 missed five cases for exactly that reason).
 
-const CT_JOB_NAME = /^Component Tests \(shard (\d+)\/(\d+)\)$/;
+const CT_JOB_NAME = /(?:^| \/ )Component Tests \(shard (\d+)\/(\d+)\)$/;
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 // `gh run view --log` prefixes every line with `<job>\t<step>\t`; the raw job
@@ -50,6 +50,7 @@ export function parseCtJobs(jobs) {
       jobId: job.id,
       shard: Number(match[1]),
       shardCount: Number(match[2]),
+      status: job.status,
       conclusion: job.conclusion ?? null,
       name: job.name,
     });
@@ -132,15 +133,7 @@ export function hasListLogSummary(logText) {
   return cleanLogLines(logText).some((line) => SUMMARY_HEADER.test(line));
 }
 
-/**
- * Failing and flaky cases from a list-reporter log, read from the final
- * summary block only (the last contiguous run of `N failed` / `N flaky` /
- * `N passed` … header lines and their indented case lines). Per-test `✘`
- * lines are never consulted. `specFile` and `location` both come from the
- * summary line's `file:line:col`, so generated tests point at their generator
- * helper. Returns `[]` when the log has no summary block.
- */
-export function casesFromListLog(logText) {
+function listLogSummaryLines(logText) {
   const lines = cleanLogLines(logText);
   const isBlockLine = (line) => SUMMARY_HEADER.test(line) || SUMMARY_CASE.test(line);
   let end = -1;
@@ -154,11 +147,45 @@ export function casesFromListLog(logText) {
   let start = end;
   while (start > 0 && isBlockLine(lines[start - 1])) start -= 1;
   while (end + 1 < lines.length && isBlockLine(lines[end + 1])) end += 1;
+  return lines.slice(start, end + 1);
+}
 
+/**
+ * A header alone is not a complete failed/flaky listing. Count distinct
+ * records within each section before the case parser collapses projects;
+ * repeated log records must not fill a missing case's place.
+ */
+export function hasCompleteListLogSummary(logText) {
+  const lines = listLogSummaryLines(logText);
+  if (lines.length === 0) return false;
+  let expected = null;
+  const records = new Set();
+  for (const line of lines) {
+    const header = SUMMARY_HEADER.exec(line);
+    if (header) {
+      if (expected !== null && records.size !== expected) return false;
+      expected = header[2] === 'failed' || header[2] === 'flaky' ? Number(header[1]) : null;
+      records.clear();
+    } else if (expected !== null && SUMMARY_CASE.test(line)) {
+      records.add(line.trim());
+    }
+  }
+  return expected === null || records.size === expected;
+}
+
+/**
+ * Failing and flaky cases from a list-reporter log, read from the final
+ * summary block only (the last contiguous run of `N failed` / `N flaky` /
+ * `N passed` … header lines and their indented case lines). Per-test `✘`
+ * lines are never consulted. `specFile` and `location` both come from the
+ * summary line's `file:line:col`, so generated tests point at their generator
+ * helper. Returns `[]` when the log has no summary block.
+ */
+export function casesFromListLog(logText) {
   const cases = [];
   const seen = new Set();
   let status = null;
-  for (const line of lines.slice(start, end + 1)) {
+  for (const line of listLogSummaryLines(logText)) {
     const header = SUMMARY_HEADER.exec(line);
     if (header) {
       status = header[2] === 'failed' ? 'failed' : header[2] === 'flaky' ? 'flaky' : null;
@@ -196,10 +223,16 @@ function sortCases(cases) {
  *
  * `shards` is `parseCtJobs` output enriched per shard with `source`
  * (`'json'` | `'log'` | `null` when neither was available), `cases` (from
- * `casesFromJsonReport` / `casesFromListLog`), and optionally `note` to
- * replace the default source annotation. A shard is red when its
- * `conclusion` is not `success`; annotations and cases print only for red
- * shards. Returns `{ text, json }` — `json` is the `--json` output shape.
+ * `casesFromJsonReport` / `casesFromListLog`), optionally `note` to replace
+ * the default source annotation, and `pending: true` for unfinished jobs.
+ * Pending shards are listed without a source annotation or red-shard count.
+ * A finished shard is red when its `conclusion` is not `success`.
+ * Red shards without a report source, or with countsUnknown set by an
+ * incomplete source, have unknown case counts. In that case,
+ * aggregate failed/flaky totals are null; knownCounts retains the confirmed
+ * cases and unknownShards identifies how many shards lack counts. Complete
+ * reports keep their original output shape.
+ * Returns `{ text, json }` — `json` is the `--json` output shape.
  */
 export function formatReport({ runId, repo, attempt, shards }) {
   const lines = [];
@@ -207,13 +240,17 @@ export function formatReport({ runId, repo, attempt, shards }) {
   lines.push(`Run ${runId} (${runLabel}) — Component Tests`);
 
   const totals = { failed: 0, flaky: 0, redShards: 0 };
+  let unknownShards = 0;
   const redJobs = [];
   const jsonShards = [];
   for (const shard of shards) {
     const cases = sortCases(shard.cases ?? []);
-    const red = shard.conclusion !== 'success';
+    const red = !shard.pending && shard.conclusion !== 'success';
     const source = shard.source ?? null;
-    let line = `shard ${shard.shard}/${shard.shardCount}  ${shard.conclusion ?? 'unknown'}`;
+    const countsUnknown = red && (source === null || shard.countsUnknown === true);
+    if (countsUnknown) unknownShards += 1;
+    const label = shard.pending ? 'pending' : (shard.conclusion ?? 'unknown');
+    let line = `shard ${shard.shard}/${shard.shardCount}  ${label}`;
     if (red) {
       const note =
         shard.note ??
@@ -239,6 +276,8 @@ export function formatReport({ runId, repo, attempt, shards }) {
       jobId: shard.jobId,
       jobUrl: jobUrl(repo, runId, shard.jobId),
       conclusion: shard.conclusion ?? null,
+      ...(shard.pending ? { pending: true } : {}),
+      ...(countsUnknown ? { countsUnknown: true } : {}),
       source,
       cases,
     });
@@ -246,12 +285,24 @@ export function formatReport({ runId, repo, attempt, shards }) {
 
   const shardWord = totals.redShards === 1 ? 'red shard' : 'red shards';
   const jobList = redJobs.length ? ` (${redJobs.join(', ')})` : '';
+  const totalLabel = unknownShards
+    ? `Total: unknown (${unknownShards} ${unknownShards === 1 ? 'shard' : 'shards'} without complete counts). Known:`
+    : 'Total:';
   lines.push(
-    `Total: ${totals.failed} failed, ${totals.flaky} flaky across ${totals.redShards} ${shardWord}${jobList}`,
+    `${totalLabel} ${totals.failed} failed, ${totals.flaky} flaky across ${totals.redShards} ${shardWord}${jobList}`,
   );
 
   return {
     text: lines.join('\n'),
-    json: { runId, repo, attempt: attempt ?? null, shards: jsonShards, totals },
+    json: {
+      runId,
+      repo,
+      attempt: attempt ?? null,
+      shards: jsonShards,
+      totals: unknownShards ? { ...totals, failed: null, flaky: null } : totals,
+      ...(unknownShards
+        ? { knownCounts: { failed: totals.failed, flaky: totals.flaky }, unknownShards }
+        : {}),
+    },
   };
 }

@@ -20,6 +20,7 @@
       {@render header.actions.current.display?.()}
       <Menu.Separator />
       {@render header.actions.current.actions?.()}
+      {@render header.actions.current.destructive?.()}
     </Menu.Content>
   </Menu.Root>
 {/if}

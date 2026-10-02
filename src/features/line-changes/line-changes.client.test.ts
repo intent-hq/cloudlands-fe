@@ -93,3 +93,18 @@ describe('line-changes client (§5.20 metrics reads, fake transport)', () => {
     expect(await clearAgentLineStats('agent-123')).toBe(false);
   });
 });
+
+it('carries the agent owner for scoped metrics reads and cleanup', async () => {
+  mockedRequest.mockResolvedValueOnce({ additions: 1, deletions: 0, filesChanged: 1 });
+  await getAgentLineStats('agent-a', 'workspace-a');
+  expect(mockedRequest).toHaveBeenLastCalledWith('metrics.getAgentStats', {
+    agentId: 'agent-a',
+    workspaceId: 'workspace-a',
+  });
+  mockedRequest.mockResolvedValueOnce({ success: true });
+  await clearAgentLineStats('agent-a', 'workspace-a');
+  expect(mockedRequest).toHaveBeenLastCalledWith('metrics.clearAgentStats', {
+    agentId: 'agent-a',
+    workspaceId: 'workspace-a',
+  });
+});

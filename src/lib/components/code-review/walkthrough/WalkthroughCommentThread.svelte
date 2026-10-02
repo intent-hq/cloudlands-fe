@@ -254,7 +254,7 @@
           onkeydown={handleKeydown}
           placeholder={m.codeReview_commentThread_followUp_placeholder()}
           disabled={isSending}
-          class="flex-1 h-8 rounded-md border border-border bg-white dark:bg-slate-800 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50 disabled:opacity-50"
+          class="flex-1 h-8 rounded-md border border-border bg-white dark:bg-slate-800 px-3 text-sm placeholder:text-slate-400 disabled:opacity-50"
         />
         <Button
           type="button"

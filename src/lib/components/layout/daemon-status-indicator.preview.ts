@@ -13,6 +13,7 @@ import {
 import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import type {
   AgentMemoryUsageWirePayload,
+  BackendTransportInfo,
   DaemonStatusCheckFailureKind,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -129,6 +130,7 @@ const lastSuccessAt = () => new Date(Date.now() - LAST_SUCCESS_AGE_MS).toISOStri
 
 interface Scenario {
   stats?: boolean;
+  transport?: BackendTransportInfo;
   /** Report agent-attributed memory and seed the breakdown the row opens. */
   agentMemory?: boolean;
   failures?:
@@ -151,7 +153,7 @@ let liveScenes = 0;
 
 // The trigger is a dot; open it and the "Status - …" submenu to see the
 // details panel this preview is about.
-function setup({ stats = true, agentMemory = false, failures }: Scenario) {
+function setup({ stats = true, transport, agentMemory = false, failures }: Scenario) {
   return () => {
     if (liveScenes > 0) {
       throw new Error(
@@ -159,7 +161,7 @@ function setup({ stats = true, agentMemory = false, failures }: Scenario) {
       );
     }
     liveScenes += 1;
-    store.dispatch(connectionStatusChanged('connected', nextTransport()));
+    store.dispatch(connectionStatusChanged('connected', transport ?? nextTransport()));
     if (stats) {
       store.dispatch(
         systemStatusSuccess(
@@ -201,6 +203,22 @@ export const preview = definePreview<Record<string, never>>({
   defaultState: 'degraded-timeout',
   states: {
     healthy: { props: {}, setup: setup({}) },
+    'remote-route': {
+      props: {},
+      setup: setup({
+        transport: {
+          mode: 'external-ws',
+          target: 'wss:172.16.10.97:5181',
+          connectedVia: 'tunnel',
+        },
+      }),
+    },
+    'long-endpoint': {
+      props: {},
+      setup: setup({
+        transport: { mode: 'external-ws', target: `wss:${'a'.repeat(160)}:5181` },
+      }),
+    },
     'agent-memory': { props: {}, setup: setup({ agentMemory: true }) },
     'degraded-timeout': {
       props: {},

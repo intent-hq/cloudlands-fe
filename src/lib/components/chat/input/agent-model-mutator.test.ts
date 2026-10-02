@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  state: {
+    connections: { hasReceivedList: true, windowBackendId: 'host-a' },
+    daemonHealth: { connectionGeneration: 1 },
+    workspaceEvents: { subscriptionGeneration: 1 },
+  },
   dispatch: vi.fn(),
   setModel: vi.fn(),
   applyReasoningEffort: vi.fn(),
@@ -10,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch: mocks.dispatch });
+  return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
 });
 vi.mock('$features/agent/agent.client', () => ({
   agentClient: { setModel: mocks.setModel },
@@ -40,6 +45,7 @@ function expectNoUnderlyingCalls() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.state.connections.windowBackendId = 'host-a';
   mocks.setModel.mockResolvedValue(SET_MODEL_OK);
   mocks.reconcileAgentReasoningEffort.mockResolvedValue(true);
   mocks.applyReasoningEffort.mockResolvedValue(true);
@@ -95,7 +101,7 @@ describe('createAgentModelMutator — unlocked', () => {
       WORKSPACE,
       'high',
       ['low', 'high'],
-      { canMutate: expect.any(Function) },
+      { canMutate: expect.any(Function), canSend: expect.any(Function) },
     );
   });
 
@@ -103,6 +109,7 @@ describe('createAgentModelMutator — unlocked', () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, null, 'high')).resolves.toBe(true);
     expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, null, 'high', {
       canMutate: expect.any(Function),
+      canSend: expect.any(Function),
     });
   });
 });
@@ -160,7 +167,7 @@ describe('createAgentModelMutator — call-time lock evaluation', () => {
     const second = await mutator.setModel(AGENT, 'auggie:opus4.6', WORKSPACE, 'auggie');
     expect(second).toBe(SKIPPED_MUTATION);
     expect(mocks.setModel).toHaveBeenCalledTimes(1);
-    expect(isLocked).toHaveBeenCalledTimes(2);
+    expect(isLocked).toHaveBeenCalledTimes(3);
   });
 
   it('a lock flip between a model write and the follow-up effort reconcile skips the reconcile', async () => {
@@ -180,6 +187,22 @@ describe('createAgentModelMutator — call-time lock evaluation', () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, 'low', 'high')).resolves.toBe(true);
     expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, 'low', 'high', {
       canMutate: expect.any(Function),
+      canSend: expect.any(Function),
     });
   });
+});
+
+it('skips an old setModel result after the window switches hosts', async () => {
+  let finish!: (value: typeof SET_MODEL_OK) => void;
+  mocks.setModel.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const mutator = createAgentModelMutator({ isLocked: () => false });
+  const pending = mutator.setModel(AGENT, 'host-a-model', WORKSPACE, 'claude-code');
+  mocks.state.connections.windowBackendId = 'host-b';
+  finish(SET_MODEL_OK);
+  await expect(pending).resolves.toBe(SKIPPED_MUTATION);
+  expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'host-a-model', WORKSPACE, 'claude-code');
 });

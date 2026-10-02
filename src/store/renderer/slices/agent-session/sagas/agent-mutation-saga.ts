@@ -1,3 +1,4 @@
+import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import {
   all,
   call,
@@ -17,7 +18,10 @@ import {
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { dismissAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
-import { readAgentSession } from '$features/agent/agent-read-service';
+import {
+  readAgentSession,
+  refreshAgentSessionAfterEvent,
+} from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
@@ -36,6 +40,7 @@ import {
   agentProposalResolveRequested,
   agentSessionDismissQuestionsRequested,
   updateSession,
+  setAgentBackgroundPending,
 } from '../agent-session-slice';
 import {
   agentScopedProposalKey,
@@ -43,14 +48,20 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   activateAgentRequested,
+  agentRetirementSupportRequested,
+  agentRetirementSupportReceived,
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
   removeAgent,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
+  retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  setAgentBackgroundRequested,
+  hydrateAgentsRequested,
+  addAgent,
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
@@ -61,8 +72,15 @@ import {
   upsertSession,
 } from '../agent-session-slice';
 import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
-import { selectAgentSession } from '../agent-session-selectors';
+import { selectAgentBackgroundPending, selectAgentSession } from '../agent-session-selectors';
+import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
+import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
+import {
+  agentMutationUiFinished,
+  agentMutationUiRequested,
+} from '../../agent-mutation-ui/agent-mutation-ui-slice';
+import { selectAgentMutationUi } from '../../agent-mutation-ui/agent-mutation-ui-selectors';
 
 const logger = createLogger('AgentMutationSaga');
 const UNDO_DURATION_MS = 15_000;
@@ -164,6 +182,70 @@ function* restoreHiddenSession(wsId: string, session: StoredAgentSession): SagaG
   yield* put(refreshWorkspaceSubscriptionEntriesRequested(wsId));
 }
 
+function* loadRetirementSupport(
+  action: ReturnType<typeof agentRetirementSupportRequested>,
+): SagaGenerator<void> {
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  let supported = false;
+  try {
+    supported = yield* call([appClient.agents, appClient.agents.supportsRetirement], generation);
+    if (generation === (yield* selectDaemonConnectionGeneration.effect())) {
+      yield* put(agentRetirementSupportReceived(generation, supported));
+    }
+  } catch {
+    supported = false;
+  } finally {
+    yield* put(action.success(supported));
+  }
+}
+
+function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
+  const [wsId, agentId] = action.payload;
+  const initial = yield* selectAgentSession.effect(agentId);
+  // A stale workspace action may still settle its RPC, but cannot claim or
+  // publish into a row now owned by another workspace.
+  const ownership =
+    !initial || initial.workspaceId === wsId
+      ? captureAgentMutationOwnership(agentId, wsId)
+      : undefined;
+  let settled = false;
+  try {
+    const generation = yield* selectDaemonConnectionGeneration.effect();
+    if (
+      !(yield* call([appClient.agents, appClient.agents.supportsRetirement], generation)) ||
+      generation !== (yield* selectDaemonConnectionGeneration.effect())
+    ) {
+      throw new Error(m.agent_mutation_retireUnavailable_error());
+    }
+    const beforeRetire = yield* selectAgentSession.effect(agentId);
+    const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
+    if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
+    const current = yield* selectAgentSession.effect(agentId);
+    if (ownership?.isCurrent(current?.workspaceId)) {
+      if (
+        beforeRetire &&
+        beforeRetire === current &&
+        generation === (yield* selectDaemonConnectionGeneration.effect())
+      ) {
+        yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+      } else {
+        // Events and Restore can overtake this response. Reconcile the same
+        // workspace through the trailing read instead of replaying an old timestamp.
+        yield* spawn(refreshAgentSessionAfterEvent, agentId, wsId);
+      }
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(mutationError(error, m.agent_mutation_retireFailed_error())));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_retireFailed_error())));
+    }
+  }
+}
+
 /**
  * Un-retire a soft-retired agent (`agent.restore`, §5.5 soft retire). The
  * daemon clears `retiredAt` and emits `agent:restored`; the events bridge
@@ -174,6 +256,13 @@ function* restoreRetiredAgent(
   action: ReturnType<typeof restoreRetiredAgentRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const initial = yield* selectAgentSession.effect(agentId);
+  // A stale workspace action may still settle its RPC, but cannot claim or
+  // publish into a row now owned by another workspace.
+  const ownership =
+    !initial || initial.workspaceId === wsId
+      ? captureAgentMutationOwnership(agentId, wsId)
+      : undefined;
   let settled = false;
   try {
     const result = yield* call([appClient.agents, appClient.agents.restore], agentId, wsId);
@@ -185,7 +274,7 @@ function* restoreRetiredAgent(
       return;
     }
     const existing = yield* selectAgentSession.effect(agentId);
-    if (existing?.retiredAt) {
+    if (existing?.retiredAt && ownership?.isCurrent(existing.workspaceId)) {
       yield* put(restoreStoredSessions([{ ...existing, retiredAt: undefined }]));
     }
     yield* put(action.success(undefined as never));
@@ -204,18 +293,30 @@ function* restoreAgent(
   action: ReturnType<typeof restoreAgentSessionRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const existing = yield* selectAgentSession.effect(agentId);
+  // A cached row from another workspace is not this restoration's session.
+  // Do not claim its ownership or hand it back to the send/activation caller.
+  if (existing && existing.workspaceId !== wsId) {
+    yield* put(action.success(null));
+    return;
+  }
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   let settled = false;
   try {
-    const existing = yield* selectAgentSession.effect(agentId);
     if (hasUsableSession(existing)) {
       yield* put(action.success(existing));
     } else {
-      const fetched = yield* call(readAgentSession, agentId);
-      if (!fetched) {
-        yield* put(action.success(existing ?? null));
+      const fetched = yield* call(readAgentSession, agentId, wsId);
+      const current = yield* selectAgentSession.effect(agentId);
+      // readAgentSession returns metadata; this consumer owns the state write.
+      // Recheck before both the persisted projection and fallback resolution.
+      if (!ownership.isCurrent(current?.workspaceId) || (fetched && fetched.workspaceId !== wsId)) {
+        yield* put(action.success(null));
+      } else if (!fetched) {
+        yield* put(action.success(current ?? null));
       } else {
         const session = {
-          ...preserveMessages(fetched, existing),
+          ...preserveMessages(fetched, current),
           workspaceId: wsId as AgentSession['workspaceId'],
         };
         yield* call(persistSession, session);
@@ -224,7 +325,11 @@ function* restoreAgent(
     }
     settled = true;
   } catch (error) {
-    yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    if (ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
+      yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    } else {
+      yield* put(action.success(null));
+    }
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
@@ -235,6 +340,7 @@ function* restoreAgent(
 
 function* activateAgent(action: ReturnType<typeof activateAgentRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
   const existing = yield* selectAgentSession.effect(agentId);
   let settled = false;
   try {
@@ -251,7 +357,12 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
         activationAttempts,
       });
     }
-    const fetched = yield* call(readAgentSession, agentId);
+    const fetched = yield* call(readAgentSession, agentId, wsId);
+    if (!ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
+      yield* put(action.success(null));
+      settled = true;
+      return;
+    }
     if (fetched) {
       const source = preserveMessages(fetched, existing);
       const activated: WireAgentSession = {
@@ -278,7 +389,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
     }
     settled = true;
   } catch (error) {
-    if (existing) {
+    if (existing && ownership.isCurrent((yield* selectAgentSession.effect(agentId))?.workspaceId)) {
       yield* call(patchStoredSession, agentId, {
         workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ERROR,
@@ -334,29 +445,90 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
   }
 }
 
-function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): SagaGenerator<void> {
+type RenameIdentity = Pick<AgentSession, 'name' | 'nameExplicitlySet'>;
+interface RenameAttempt {
+  identity: RenameIdentity;
+  status: 'pending' | 'succeeded' | 'failed';
+}
+interface RenameSequence {
+  initial: RenameIdentity;
+  published: RenameIdentity;
+  attempts: RenameAttempt[];
+}
+
+function* renameAgent(
+  sequences: Map<string, RenameSequence>,
+  action: ReturnType<typeof renameAgentSessionRequested>,
+): SagaGenerator<void> {
   const [wsId, agentId, name] = action.payload;
+  const previous = yield* selectAgentSession.effect(agentId);
+  const ownership =
+    !previous || previous.workspaceId === wsId
+      ? captureAgentMutationOwnership(agentId, wsId)
+      : undefined;
+  const key = `${ownership?.key}:${agentId}`;
+  let sequence = sequences.get(key);
+  const attempt: RenameAttempt = { identity: { name, nameExplicitlySet: true }, status: 'pending' };
+  if (previous && ownership) {
+    if (
+      !sequence ||
+      previous.name !== sequence.published.name ||
+      previous.nameExplicitlySet !== sequence.published.nameExplicitlySet
+    ) {
+      // A daemon hydration supersedes the earlier optimistic identity. A new
+      // rename starts from that authoritative identity, not the stale chain.
+      const initial = { name: previous.name, nameExplicitlySet: previous.nameExplicitlySet };
+      sequence = { initial, published: initial, attempts: [] };
+      sequences.set(key, sequence);
+    }
+    sequence.attempts.push(attempt);
+    sequence.published = attempt.identity;
+    yield* put(updateSession(agentId, attempt.identity));
+  }
   let settled = false;
   try {
     const result = yield* call([appClient.agents, appClient.agents.rename], agentId, name, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_renameFailed_error());
+    attempt.status = 'succeeded';
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
+    attempt.status = 'failed';
     yield* put(action.failure(mutationError(error, m.agent_mutation_renameSessionFailed_error())));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
+      attempt.status = 'failed';
       yield* put(action.failure(new Error(m.agent_mutation_renameSessionFailed_error())));
+    }
+    if (sequence && sequences.get(key) === sequence) {
+      if (attempt.status === 'failed') {
+        const current = yield* selectAgentSession.effect(agentId);
+        // Compare ownership AND the write sequence, not just the name: two
+        // requests can use the same name and the newer one may have succeeded.
+        const identity =
+          sequence.attempts.findLast((item) => item.status !== 'failed')?.identity ??
+          sequence.initial;
+        if (
+          current &&
+          ownership?.isCurrent(current.workspaceId) &&
+          current.name === sequence.published.name &&
+          current.nameExplicitlySet === sequence.published.nameExplicitlySet
+        ) {
+          yield* put(updateSession(agentId, identity));
+          sequence.published = identity;
+        }
+      }
+      if (sequence.attempts.every((item) => item.status !== 'pending')) sequences.delete(key);
     }
   }
 }
 
 function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    const result = yield* call([appClient.agents, appClient.agents.stop], agentId, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_stopFailed_error());
     yield* put(action.success(undefined as never));
     settled = true;
@@ -366,6 +538,63 @@ function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaG
   } finally {
     if (!settled && (yield* cancelled())) {
       yield* put(action.failure(new Error(m.agent_mutation_stopFailed_error())));
+    }
+  }
+}
+
+function* setBackground(
+  action: ReturnType<typeof setAgentBackgroundRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentId, isBackground] = action.payload;
+  // One mutation per agent, including duplicate actions from other mounted cards.
+  if (yield* selectAgentBackgroundPending.effect(agentId)) {
+    yield* put(action.success(undefined as never));
+    return;
+  }
+  const initial = yield* selectAgentSession.effect(agentId);
+  if (!initial || initial.workspaceId !== wsId || initial.retiredAt) {
+    yield* put(action.failure(new Error(m.agent_mutation_setBackgroundFailed_error())));
+    return;
+  }
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
+  yield* put(setAgentBackgroundPending(agentId, true));
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.setBackground], {
+      agentId,
+      workspaceId: wsId,
+      isBackground,
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_setBackgroundFailed_error());
+    const current = yield* selectAgentSession.effect(agentId);
+    if (current && ownership.isCurrent(current.workspaceId)) {
+      // Only patch mode, keeping transcript, runtime flags, and task/parent metadata
+      // that may have changed while the request was in flight.
+      const changes = {
+        isBackground,
+        metadata: { ...current.metadata, isBackground },
+        ...(current.agentMetadata
+          ? { agentMetadata: { ...current.agentMetadata, isBackground } }
+          : {}),
+      };
+      const next = { ...current, ...changes };
+      yield* put(updateSession(agentId, { ...changes, hasUnread: deriveAgentHasUnread(next) }));
+      yield* put(addAgent(wsId, next));
+      // Existing coalesced hydration refreshes authoritative bin counts and loaded groups.
+      yield* put(hydrateAgentsRequested(wsId));
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    const failure = mutationError(error, m.agent_mutation_setBackgroundFailed_error());
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    yield* put(setAgentBackgroundPending(agentId, false));
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_setBackgroundFailed_error())));
     }
   }
 }
@@ -549,7 +778,12 @@ function* clearImmediateTombstoneAfterGrace(entry: PendingAgentDeletion): SagaGe
 function* rollbackImmediateDeletion(entry: PendingAgentDeletion): SagaGenerator<void> {
   if (getPendingAgentDeletion(entry.agentId) !== entry) return;
   removePendingAgentDeletion(entry.agentId);
-  if (entry.snapshot) {
+  const current = yield* selectAgentSession.effect(entry.agentId);
+  if (
+    entry.snapshot &&
+    entry.snapshot.workspaceId === entry.wsId &&
+    (!current || current === entry.snapshot)
+  ) {
     yield* call(restoreHiddenSession, entry.wsId, entry.snapshot);
   }
 }
@@ -583,7 +817,7 @@ function* deleteWithUndo(
       return;
     }
     const snapshot = yield* selectAgentSession.effect(agentId);
-    if (!snapshot) {
+    if (!snapshot || snapshot.workspaceId !== wsId) {
       yield* put(action.success(null));
       settled = true;
       return;
@@ -603,9 +837,8 @@ function* deleteWithUndo(
       };
     }
     if (!result.success) {
-      removePendingAgentDeletion(agentId);
+      yield* call(rollbackImmediateDeletion, entry);
       entry = null;
-      yield* call(restoreHiddenSession, wsId, snapshot);
       const failure = new Error(
         result.forbidden
           ? m.agent_mutation_deleteNotPermitted_error()
@@ -641,11 +874,11 @@ function* deleteWithUndo(
 }
 
 function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [wsId, agentId] = action.payload;
   let settled = false;
   try {
     const pending = getPendingAgentDeletion(agentId);
-    if (!pending) {
+    if (!pending || pending.wsId !== wsId) {
       yield* put(action.success(false));
       settled = true;
       return;
@@ -661,17 +894,26 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
       logger.error('agent.cancelDelete failed', { agentId, error });
       cancel = { success: false as const };
     }
-    if (cancel.success && cancel.cancelled) {
-      removePendingAgentDeletion(agentId);
-      // This saga always registers entries with a snapshot; the guard covers
-      // the registry's snapshot-less entries (events-bridge-registered).
-      if (pending.snapshot) {
-        yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+    const currentPending = getPendingAgentDeletion(agentId);
+    if (cancel.success && cancel.cancelled && (!currentPending || currentPending === pending)) {
+      // The cancellation event may already have restored/refetched the row.
+      // Acknowledge success without replaying the old snapshot in that case.
+      if (currentPending === pending) {
+        removePendingAgentDeletion(agentId);
+        // Events-bridge entries may not have a snapshot.
+        const current = yield* selectAgentSession.effect(agentId);
+        if (
+          pending.snapshot &&
+          pending.snapshot.workspaceId === wsId &&
+          (!current || current === pending.snapshot)
+        ) {
+          yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+        }
       }
       yield* put(action.success(true));
     } else {
-      // Race-safe non-error: the daemon already committed (or the cancel RPC
-      // failed) — never resurrect the agent locally.
+      // Already committed, a failed cancel RPC, or a newer deletion — never
+      // resurrect the agent locally from this request's old snapshot.
       yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
       yield* put(action.success(false));
     }
@@ -691,6 +933,13 @@ function* deleteImmediately(
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
   const snapshot = yield* selectAgentSession.effect(agentId);
+  if (
+    (snapshot && snapshot.workspaceId !== wsId) ||
+    (yield* selectHidesAgentLifecycleActions.effect(wsId))
+  ) {
+    yield* put(action.failure(new Error(m.agent_mutation_deleteNotPermitted_error())));
+    return;
+  }
   const entry: PendingAgentDeletion = { wsId, agentId, snapshot };
   let settled = false;
   let clearerSpawned = false;
@@ -715,24 +964,102 @@ function* deleteImmediately(
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
-      yield* call(rollbackImmediateDeletion, entry);
+      // Cancellation stops observation, not the transport. The daemon may
+      // already have deleted this agent; retain the same read barrier.
       yield* put(action.failure(new Error(m.agent_mutation_deleteSessionFailed_error())));
     }
-    if (settled && getPendingAgentDeletion(agentId) === entry && !clearerSpawned) {
+    if (getPendingAgentDeletion(agentId) === entry && !clearerSpawned) {
       yield* spawn(clearImmediateTombstoneAfterGrace, entry);
     }
   }
 }
 
+/** UI outcomes observe the original request; the existing worker alone owns I/O. */
+function* mutateFromUi(
+  inFlight: Set<string>,
+  action: ReturnType<typeof agentMutationUiRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, consumerId, requestId, agentId, operation] = action.payload;
+  const key = JSON.stringify([workspaceId, consumerId, requestId]);
+  if (inFlight.has(key)) return;
+  const current = yield* selectAgentMutationUi.effect(workspaceId, consumerId);
+  if (current?.requestId !== requestId || current.status !== 'pending') return;
+  const backendId = yield* selectCurrentConnectionId.effect();
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  inFlight.add(key);
+  const request =
+    operation.kind === 'rename'
+      ? renameAgentSessionRequested(workspaceId, agentId, operation.name)
+      : operation.kind === 'retire'
+        ? retireAgentRequested(workspaceId, agentId)
+        : operation.kind === 'delete'
+          ? deleteAgentWithUndoRequested(workspaceId, agentId, operation.name)
+          : operation.kind === 'cancelSubscriptions'
+            ? cancelAgentSubscriptionsRequested(workspaceId, agentId, {
+                subscriptionId: operation.subscriptionId,
+                groupId: operation.groupId,
+              })
+            : stopAgentSessionRequested(workspaceId, agentId);
+  try {
+    yield* put(request);
+    yield* call(() => request.promise);
+    const contextCurrent =
+      (yield* selectCurrentConnectionId.effect()) === backendId &&
+      (yield* selectDaemonConnectionGeneration.effect()) === generation;
+    yield* put(
+      agentMutationUiFinished(
+        workspaceId,
+        consumerId,
+        requestId,
+        contextCurrent ? 'succeeded' : 'cancelled',
+      ),
+    );
+  } catch (error) {
+    const contextCurrent =
+      (yield* selectCurrentConnectionId.effect()) === backendId &&
+      (yield* selectDaemonConnectionGeneration.effect()) === generation;
+    if (!contextCurrent) {
+      yield* put(agentMutationUiFinished(workspaceId, consumerId, requestId, 'cancelled'));
+      return;
+    }
+    const current = yield* selectAgentMutationUi.effect(workspaceId, consumerId);
+    if (current?.requestId === requestId && operation.kind === 'rename') {
+      yield* call(showError, m.chat_agentCard_renameFailed_error());
+    }
+    logger.error('Agent UI mutation failed', { workspaceId, agentId, kind: operation.kind, error });
+    yield* put(
+      agentMutationUiFinished(
+        workspaceId,
+        consumerId,
+        requestId,
+        'failed',
+        mutationError(error, m.ui_dialog_submitFailed_error()).message,
+      ),
+    );
+  } finally {
+    inFlight.delete(key);
+    if (yield* cancelled()) {
+      yield* put(agentMutationUiFinished(workspaceId, consumerId, requestId, 'cancelled'));
+    }
+  }
+}
+
 export function* agentMutationSaga(): SagaGenerator<void> {
+  // In-flight write identities are runtime ownership, never persisted state.
+  const renames = new Map<string, RenameSequence>();
+  const uiRequests = new Set<string>();
   yield* all([
+    takeEvery(agentMutationUiRequested, mutateFromUi, uiRequests),
     takeEvery(restoreAgentSessionRequested, restoreAgent),
     takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
+    takeEvery(retireAgentRequested, retireAgent),
+    takeEvery(agentRetirementSupportRequested, loadRetirementSupport),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
-    takeEvery(renameAgentSessionRequested, renameAgent),
+    takeEvery(renameAgentSessionRequested, renameAgent, renames),
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
+    takeEvery(setAgentBackgroundRequested, setBackground),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
     takeEvery(agentProposalResolveRequested, resolveProposal),
     takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),

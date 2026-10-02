@@ -8,6 +8,12 @@
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { invoke } from '$shared/generated/ipc-client';
 
+  import {
+    captureIntegrationContext,
+    integrationReconnectSettled,
+  } from '$features/integrations-request-context';
+  import { onBackendReconnected } from '$lib/client/live/backend-transport';
+
   const preloadLogger = createLogger('IssueSuggestions:preload');
 
   // Cache configuration
@@ -55,7 +61,7 @@
 
   // Module-level cache (persists across component mounts, but not page refreshes).
   // Only holds the initial unfiltered first page (+ its nextToken cursor).
-  const issueCache: {
+  type IssuesCache = {
     linear?: IssueCache<{
       assigned: LinearIssueResult[];
       created: LinearIssueResult[];
@@ -64,7 +70,23 @@
     }>;
     sentry?: IssueCache<{ issues: SentryIssueResult[]; nextToken: string | null }>;
     github?: IssueCache<{ issues: GitHubIssueLocal[]; nextToken: string | null; key: string }>;
-  } = {};
+  };
+  const issueCaches = new Map<string, IssuesCache>();
+  function issuesCacheFor(workspaceId?: string): IssuesCache {
+    const key = captureIntegrationContext(workspaceId).key;
+    let cache = issueCaches.get(key);
+    if (!cache) {
+      cache = {};
+      issueCaches.set(key, cache);
+    }
+    return cache;
+  }
+  onBackendReconnected(() => {
+    issueCaches.clear();
+    githubPRCache.clear();
+    relatedReposCache.clear();
+    relatedReposInFlight.clear();
+  });
 
   // Per-filter cache for GitHub PRs (keyed by repo set + filter)
   type PRFilterType = 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
@@ -114,8 +136,18 @@
   }
 
   /** Cache key for the repo set a GitHub issues/PRs listing was fetched against. */
-  function repoSetKey(owner: string, repo: string, related: GitHubRepoRef[]): string {
-    return [repoRefKey({ owner, repo }), ...related.map(repoRefKey)].join(',');
+  function repoSetKey(
+    owner: string,
+    repo: string,
+    related: GitHubRepoRef[],
+    workspaceId?: string,
+  ): string {
+    return JSON.stringify([
+      captureIntegrationContext(workspaceId).key,
+      owner,
+      repo,
+      related.map(repoRefKey),
+    ]);
   }
 
   // Related (submodule) repos per primary `owner/repo`, resolved once per
@@ -125,8 +157,12 @@
   const relatedReposCache: Map<string, GitHubRepoRef[]> = new Map();
   const relatedReposInFlight: Map<string, Promise<GitHubRepoRef[]>> = new Map();
 
-  async function resolveRelatedRepos(owner: string, repo: string): Promise<GitHubRepoRef[]> {
-    const key = repoRefKey({ owner, repo });
+  async function resolveRelatedRepos(
+    owner: string,
+    repo: string,
+    workspaceId?: string,
+  ): Promise<GitHubRepoRef[]> {
+    const key = repoSetKey(owner, repo, [], workspaceId);
     const cached = relatedReposCache.get(key);
     if (cached) return cached;
     const inFlight = relatedReposInFlight.get(key);
@@ -136,11 +172,15 @@
         success: boolean;
         data?: GitHubRepoRef[];
         error?: string;
-      }>('git-tracking:list-related-repos', { owner, repo });
+      }>('git-tracking:list-related-repos', {
+        owner,
+        repo,
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
       if (!response?.success) {
         throw new Error(response?.error ?? 'Failed to list related repositories');
       }
-      const seen = new Set<string>([key]);
+      const seen = new Set<string>([repoRefKey({ owner, repo })]);
       const related: GitHubRepoRef[] = [];
       for (const ref of response.data ?? []) {
         const refKey = repoRefKey(ref);
@@ -156,7 +196,7 @@
     try {
       return await request;
     } finally {
-      relatedReposInFlight.delete(key);
+      if (relatedReposInFlight.get(key) === request) relatedReposInFlight.delete(key);
     }
   }
 
@@ -166,16 +206,18 @@
   }
 
   // Track if preloading is already in progress to avoid duplicate requests
-  let isPreloading = false;
+  const preloading = new Set<string>();
 
   /**
    * Preload Linear and Sentry issues in the background.
    * Call this early (e.g., when the parent component mounts) to have issues ready
    * before the user opens the issue picker.
    */
-  export async function preloadIssues(): Promise<void> {
+  export async function preloadIssues(workspaceId?: string): Promise<void> {
+    const context = captureIntegrationContext(workspaceId);
+    const issueCache = issuesCacheFor(workspaceId);
     // Skip if already preloading or cache is still valid
-    if (isPreloading) {
+    if (preloading.has(context.key)) {
       preloadLogger.debug('Preload already in progress, skipping'); // i18n-ignore (log line)
       return;
     }
@@ -188,7 +230,7 @@
       return;
     }
 
-    isPreloading = true;
+    preloading.add(context.key);
     preloadLogger.debug('Starting issues preload'); // i18n-ignore (log line)
 
     try {
@@ -206,15 +248,15 @@
         preloadTasks.push(
           (async () => {
             try {
-              const linearAuthState = await linearAuthClient.getAuthState(true);
+              const linearAuthState = await linearAuthClient.getAuthState(true, workspaceId);
               if (!linearAuthState.isAuthenticated) {
                 preloadLogger.debug('Linear not authenticated, skipping preload'); // i18n-ignore (log line)
                 return;
               }
 
               const [assignedPage, createdPage] = await Promise.all([
-                linearAuthClient.fetchMyIssuesPage('assigned'),
-                linearAuthClient.fetchMyIssuesPage('created'),
+                linearAuthClient.fetchMyIssuesPage('assigned', { workspaceId }),
+                linearAuthClient.fetchMyIssuesPage('created', { workspaceId }),
               ]);
 
               issueCache.linear = {
@@ -244,13 +286,13 @@
         preloadTasks.push(
           (async () => {
             try {
-              const authState = await sentryAuthClient.getAuthState();
+              const authState = await sentryAuthClient.getAuthState(workspaceId);
               if (!authState.isAuthenticated) {
                 preloadLogger.debug('Sentry not authenticated, skipping preload'); // i18n-ignore (log line)
                 return;
               }
 
-              const page = await sentryAuthClient.fetchIssuesPage();
+              const page = await sentryAuthClient.fetchIssuesPage({ workspaceId });
 
               issueCache.sentry = {
                 data: { issues: page.issues, nextToken: page.nextToken },
@@ -270,12 +312,17 @@
     } catch (error) {
       preloadLogger.error('Preload failed', error as Error); // i18n-ignore (log line)
     } finally {
-      isPreloading = false;
+      preloading.delete(context.key);
     }
   }
 </script>
 
 <script lang="ts">
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+  const hostMember$ = selectIsHostMember();
+  const connection$ = selectPrincipalConnectionContext();
+
   /* eslint-disable max-lines */
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { slide } from '$lib/motion';
@@ -309,6 +356,7 @@
   import type { WorkspaceId } from '$shared/types/branded-ids';
 
   import { store as appStore } from '$store/renderer/store';
+  import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import {
     createPagedSource,
@@ -400,7 +448,24 @@
     prFilter,
   }: Props = $props();
 
-  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const routeContext = getWorkspaceRouteContext();
+  const workspaceId = $derived(routeContext?.workspaceId ?? undefined);
+  let disposed = false;
+  let connectionRevision = $state(0);
+  function actionContext() {
+    const context = captureIntegrationContext(workspaceId);
+    const owner = repositoryOwner;
+    const repo = repositoryName;
+    return {
+      ...context,
+      isCurrent: () =>
+        !disposed &&
+        context.isCurrent() &&
+        context.workspaceId === workspaceId &&
+        owner === repositoryOwner &&
+        repo === repositoryName,
+    };
+  }
 
   // Panel state
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the open state
@@ -472,11 +537,12 @@
   // Empty until `git-tracking:list-related-repos` resolves for the current
   // primary repo; the listing then refreshes once with the extras.
   let relatedRepos = $state<GitHubRepoRef[]>([]);
-  const githubRepoSetKey = $derived(
-    repositoryOwner && repositoryName
-      ? repoSetKey(repositoryOwner, repositoryName, relatedRepos)
-      : '',
-  );
+  const githubRepoSetKey = $derived.by(() => {
+    connectionRevision;
+    return repositoryOwner && repositoryName
+      ? repoSetKey(repositoryOwner, repositoryName, relatedRepos, workspaceId)
+      : '';
+  });
   // Row labels are only shown when more than one repo contributes. Short
   // `repo` name, or `owner/repo` when two repos in play share a name.
   const showRepoLabels = $derived(relatedRepos.length > 0);
@@ -521,10 +587,10 @@
   const linearAssignedPager = createPagedSource<LinearIssueResult>({
     getId: (issue) => issue.id,
     fetchPage: async (_query, token) => {
-      const page = await linearAuthClient.fetchMyIssuesPage(
-        'assigned',
-        token ? { nextToken: token } : undefined,
-      );
+      const page = await linearAuthClient.fetchMyIssuesPage('assigned', {
+        ...(token ? { nextToken: token } : {}),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
       return { items: page.issues, nextToken: page.nextToken };
     },
     onChange: (s) => (linearAssignedPage = s),
@@ -534,10 +600,10 @@
   const linearCreatedPager = createPagedSource<LinearIssueResult>({
     getId: (issue) => issue.id,
     fetchPage: async (_query, token) => {
-      const page = await linearAuthClient.fetchMyIssuesPage(
-        'created',
-        token ? { nextToken: token } : undefined,
-      );
+      const page = await linearAuthClient.fetchMyIssuesPage('created', {
+        ...(token ? { nextToken: token } : {}),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
       return { items: page.issues, nextToken: page.nextToken };
     },
     onChange: (s) => (linearCreatedPage = s),
@@ -547,10 +613,10 @@
   const linearSearchPager = createPagedSource<LinearIssueResult>({
     getId: (issue) => issue.id,
     fetchPage: async (query, token) => {
-      const page = await linearAuthClient.searchIssuesPage(
-        query,
-        token ? { nextToken: token } : undefined,
-      );
+      const page = await linearAuthClient.searchIssuesPage(query, {
+        ...(token ? { nextToken: token } : {}),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
       return { items: page.issues, nextToken: page.nextToken };
     },
     onChange: (s) => (linearSearchPage = s),
@@ -561,12 +627,14 @@
     getId: (issue) => issue.id,
     fetchPage: async (query, token) => {
       const page = query
-        ? await sentryAuthClient.searchIssuesPage(
-            query,
-            undefined,
-            token ? { nextToken: token } : undefined,
-          )
-        : await sentryAuthClient.fetchIssuesPage(token ? { nextToken: token } : undefined);
+        ? await sentryAuthClient.searchIssuesPage(query, undefined, {
+            ...(token ? { nextToken: token } : {}),
+            ...(workspaceId === undefined ? {} : { workspaceId }),
+          })
+        : await sentryAuthClient.fetchIssuesPage({
+            ...(token ? { nextToken: token } : {}),
+            ...(workspaceId === undefined ? {} : { workspaceId }),
+          });
       return { items: page.issues, nextToken: page.nextToken };
     },
     onChange: (s) => (sentryPage = s),
@@ -649,10 +717,11 @@
 
   // Watch for GitHub auth state changes (e.g., after user connects via Settings)
   $effect(() => {
-    const storeIsAuth = $githubAuthIsAuthenticated$;
+    const storeIsAuth = $hostMember$ || $githubAuthIsAuthenticated$;
     if (storeIsAuth && !isGitHubAuthenticated) {
       // Auth completed (e.g., user connected via Settings)
-      isGitHubAuthenticated = true;
+      if (workspaceId === undefined) isGitHubAuthenticated = true;
+      else untrack(() => void loadGitHubIssues());
       // Issues will be loaded by the repo context $effect
     }
   });
@@ -886,8 +955,11 @@
   );
 
   async function loadLinearIssues() {
+    const context = actionContext();
+    const issueCache = issuesCacheFor(context.workspaceId);
     try {
-      const linearAuthState = await linearAuthClient.getAuthState(true);
+      const linearAuthState = await linearAuthClient.getAuthState(true, workspaceId);
+      if (!context.isCurrent()) return;
       isLinearAuthenticated = linearAuthState.isAuthenticated;
 
       if (!isLinearAuthenticated) return;
@@ -907,15 +979,17 @@
         isLoadingLinear = true;
       }
 
-      // Fetch both assigned and created issues for grouping
+      // Keep the default groups separate from the active search when rehydrating.
+      const query = committedQueries['linear'];
       const [assignedApplied, createdApplied] = await Promise.all([
         linearAssignedPager.refresh(''),
         linearCreatedPager.refresh(''),
+        ...(query ? [linearSearchPager.refresh(query)] : []),
       ]);
 
       // Update cache (initial unfiltered page only); only when both fetches
       // were applied (not failed / superseded by a newer load)
-      if (assignedApplied && createdApplied) {
+      if (context.isCurrent() && assignedApplied && createdApplied) {
         issueCache.linear = {
           data: {
             assigned: linearAssignedPager.state.items,
@@ -934,21 +1008,27 @@
     } catch (error) {
       logger.error('Failed to load Linear issues', error as Error);
     } finally {
-      isLoadingLinear = false;
-      isRefreshingLinear = false;
+      if (context.isCurrent()) {
+        isLoadingLinear = false;
+        isRefreshingLinear = false;
+      }
     }
   }
 
   async function loadSentryIssues() {
+    const context = actionContext();
+    const issueCache = issuesCacheFor(context.workspaceId);
     try {
-      const authState = await sentryAuthClient.getAuthState();
+      const authState = await sentryAuthClient.getAuthState(workspaceId);
+      if (!context.isCurrent()) return;
       isSentryAuthenticated = authState.isAuthenticated;
 
       if (!isSentryAuthenticated) return;
 
-      // Check cache and populate immediately if valid
+      const query = committedQueries['sentry'];
+      // Default-list cache entries must never seed a committed search.
       const cached =
-        isCacheValid(issueCache.sentry) && issueCache.sentry.data.issues.length > 0
+        query === '' && isCacheValid(issueCache.sentry) && issueCache.sentry.data.issues.length > 0
           ? issueCache.sentry.data
           : null;
 
@@ -959,11 +1039,11 @@
         isLoadingSentry = true;
       }
 
-      const applied = await sentryPager.refresh('');
+      const applied = await sentryPager.refresh(query);
 
       // Update cache (initial unfiltered page only); skip if this fetch
       // failed or a search superseded it while in flight
-      if (applied && committedQueries['sentry'] === '') {
+      if (context.isCurrent() && applied && query === '' && committedQueries['sentry'] === '') {
         issueCache.sentry = {
           data: { issues: sentryPager.state.items, nextToken: sentryPager.state.nextToken },
           timestamp: Date.now(),
@@ -974,8 +1054,10 @@
     } catch (error) {
       logger.error('Failed to load Sentry issues', error as Error);
     } finally {
-      isLoadingSentry = false;
-      isRefreshingSentry = false;
+      if (context.isCurrent()) {
+        isLoadingSentry = false;
+        isRefreshingSentry = false;
+      }
     }
   }
 
@@ -985,6 +1067,7 @@
       return { items: [] as GitHubIssueLocal[], nextToken: null };
     }
     const response = await invoke<any>('git-tracking:search-github-issues', {
+      ...(workspaceId === undefined ? {} : { workspaceId }),
       owner: repositoryOwner,
       repo: repositoryName,
       options: {
@@ -1037,6 +1120,8 @@
   }
 
   async function loadGitHubIssues() {
+    const context = actionContext();
+    const issueCache = issuesCacheFor(context.workspaceId);
     try {
       logger.debug('Loading GitHub issues - checking auth state');
       // Read the current auth state without dispatching initializeGitHubAuth(),
@@ -1044,7 +1129,13 @@
       // this function, causing an infinite loop (effect_update_depth_exceeded).
       // Auth initialization is handled by the components that manage GitHub auth
       // (GitHubAuthBanner, GitHubAuthConnection, etc.).
-      isGitHubAuthenticated = selectGitHubAuthIsAuthenticated.select(appStore.state);
+      const authenticated =
+        selectIsHostMember.select(appStore.state) ||
+        (workspaceId === undefined
+          ? selectGitHubAuthIsAuthenticated.select(appStore.state)
+          : await githubAuthClient.isAuthenticated(context.workspaceId));
+      if (!context.isCurrent()) return;
+      isGitHubAuthenticated = authenticated;
 
       logger.debug('GitHub auth state', {
         isAuthenticated: isGitHubAuthenticated,
@@ -1089,7 +1180,12 @@
           // when the fetch failed or a newer refresh (e.g. a committed
           // search) superseded it; the committed-query re-check guards the
           // window after apply where a search commits before this write.
-          if (applied && query === '' && committedQueries['github-issues'] === '') {
+          if (
+            context.isCurrent() &&
+            applied &&
+            query === '' &&
+            committedQueries['github-issues'] === ''
+          ) {
             issueCache.github = {
               data: {
                 issues: githubIssuesPager.state.items,
@@ -1104,8 +1200,10 @@
             count: githubIssuesPager.state.items.length,
           });
         } finally {
-          isLoadingGitHub = false;
-          isRefreshingGitHub = false;
+          if (context.isCurrent()) {
+            isLoadingGitHub = false;
+            isRefreshingGitHub = false;
+          }
         }
       }
     } catch (error) {
@@ -1125,6 +1223,7 @@
       return { items: [] as GitHubPRLocal[], nextToken: null };
     }
     const response = await invoke<any>('git-tracking:search-pull-requests', {
+      ...(workspaceId === undefined ? {} : { workspaceId }),
       owner: repositoryOwner,
       repo: repositoryName,
       options: {
@@ -1184,6 +1283,7 @@
     // Snapshot the repo set and its cache key together so every page fetched
     // by this loop is stored under the key it was requested against, even if
     // the related set resolves mid-loop.
+    const context = actionContext();
     const repoKey = githubRepoSetKey;
     const repos = reposRequestOption();
     const allFilters: PRFilterType[] = [
@@ -1199,12 +1299,13 @@
     for (const filter of otherFilters) {
       // A new repo set reloads the listing and starts its own prefetch loop;
       // stop filling the superseded key.
-      if (githubRepoSetKey !== repoKey) return;
+      if (!context.isCurrent() || githubRepoSetKey !== repoKey) return;
       // Skip if already cached
       if (getCachedPRs(repoKey, filter)) continue;
 
       try {
         const page = await fetchGitHubPRsPage(filter, '', null, repos);
+        if (!context.isCurrent()) return;
         setCachedPRs(repoKey, filter, page.items, page.nextToken);
         logger.debug('Prefetched GitHub PRs', { filter, count: page.items.length });
       } catch (err) {
@@ -1217,6 +1318,7 @@
   async function loadGitHubPRs(
     filter: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves' = githubPRFilter,
   ) {
+    const context = actionContext();
     try {
       if (!isGitHubAuthenticated) {
         return;
@@ -1249,6 +1351,7 @@
           // query + filter re-checks guard the window after apply where a
           // search or filter switch commits before this write.
           if (
+            context.isCurrent() &&
             applied &&
             query === '' &&
             committedQueries['github-prs'] === '' &&
@@ -1268,8 +1371,10 @@
             filter,
           });
         } finally {
-          isLoadingGitHubPRs = false;
-          _isRefreshingGitHubPRs = false;
+          if (context.isCurrent()) {
+            isLoadingGitHubPRs = false;
+            _isRefreshingGitHubPRs = false;
+          }
         }
       }
     } catch (error) {
@@ -1416,6 +1521,7 @@
   }
 
   async function handleGitHubPRClick(pr: GitHubPRLocal) {
+    const context = actionContext();
     markSourceUsed('github-prs');
     // If we don't have branch info, fetch full PR details (single API call)
     // The search API doesn't return head_ref/base_ref, so we fetch on selection
@@ -1425,6 +1531,7 @@
     if (!sourceBranch && isElectronPlatform()) {
       try {
         const response = await invoke<any>('git-tracking:get-pull-request', {
+          ...(workspaceId === undefined ? {} : { workspaceId }),
           owner: pr.owner,
           repo: pr.repo,
           number: pr.number,
@@ -1444,6 +1551,7 @@
       }
     }
 
+    if (!context.isCurrent()) return;
     const prText = `#${pr.number} ${pr.title}`;
     onSelect?.(prText, {
       type: 'github',
@@ -1508,7 +1616,41 @@
     }
   });
 
+  const resetPages = () => {
+    linearAssignedPager.reset();
+    linearCreatedPager.reset();
+    linearSearchPager.reset();
+    sentryPager.reset();
+    githubIssuesPager.reset();
+    githubPRsPager.reset();
+  };
+  const stopReconnect = onBackendReconnected(() => {
+    resetPages();
+    relatedRepos = [];
+    void integrationReconnectSettled().then(() => {
+      if (disposed) return;
+      connectionRevision += 1;
+      void loadLinearIssues();
+      void loadSentryIssues();
+      void loadGitHubIssues();
+    });
+  });
+  $effect(() => {
+    workspaceId;
+    repositoryOwner;
+    repositoryName;
+    untrack(() => {
+      resetPages();
+      relatedRepos = [];
+      void loadLinearIssues();
+      void loadSentryIssues();
+      void loadGitHubIssues();
+    });
+  });
   onDestroy(() => {
+    disposed = true;
+    stopReconnect();
+    resetPages();
     // Drop any pending debounced search
     searchDebouncer.cancel();
     // Cancel pending callbacks to prevent API calls on unmounted component
@@ -1528,16 +1670,17 @@
   // from what the listing was fetched against), refresh both GitHub tabs
   // once so the blended list includes them.
   async function loadRelatedRepos(owner: string, repo: string) {
+    const context = actionContext();
     if (!isElectronPlatform()) return;
     let related: GitHubRepoRef[];
     try {
-      related = await resolveRelatedRepos(owner, repo);
+      related = await resolveRelatedRepos(owner, repo, workspaceId);
     } catch (error) {
       logger.warn('Failed to list related repositories', { owner, repo, error });
       return;
     }
-    if (repositoryOwner !== owner || repositoryName !== repo) return;
-    if (repoSetKey(owner, repo, related) === githubRepoSetKey) return;
+    if (!context.isCurrent() || repositoryOwner !== owner || repositoryName !== repo) return;
+    if (repoSetKey(owner, repo, related, workspaceId) === githubRepoSetKey) return;
     relatedRepos = related;
     loadGitHubIssues();
     loadGitHubPRs();
@@ -1549,6 +1692,9 @@
     const owner = repositoryOwner;
     const repo = repositoryName;
     const authed = isGitHubAuthenticated;
+    workspaceId;
+    connectionRevision;
+    $connection$;
     // Only reload if we have both and are authenticated
     if (owner && repo && authed) {
       // Use untrack to prevent infinite loop - the load functions update state
@@ -1556,7 +1702,9 @@
       untrack(() => {
         // Search the primary repo alone until the related set is known;
         // a session-cached set applies immediately.
-        relatedRepos = relatedReposCache.get(repoRefKey({ owner, repo })) ?? [];
+        githubIssuesPager.reset();
+        githubPRsPager.reset();
+        relatedRepos = relatedReposCache.get(repoSetKey(owner, repo, [], workspaceId)) ?? [];
         loadGitHubIssues();
         loadGitHubPRs();
         void loadRelatedRepos(owner, repo);
@@ -1785,18 +1933,23 @@
         <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20">
           <span class="text-xs text-subtle">{m.workspace_issueSuggestions_team_label()}</span>
           <Select.Root
-            value={selectedLinearTeam ?? ''}
-            onchange={(value) => (selectedLinearTeam = value || null)}
+            value={selectedLinearTeam ?? '__all-teams__'}
+            onchange={(value) => (selectedLinearTeam = value === '__all-teams__' ? null : value)}
           >
             <Select.Trigger
               variant="ghost"
+              aria-label={m.workspace_issueSuggestions_team_label()}
               class="w-auto gap-1 px-1! py-0.5! text-xs! text-muted-foreground hover:text-foreground"
             >
               <span class="truncate">{selectedLinearTeamLabel}</span>
               <Fa icon={faChevronDown} size={8} class="opacity-50 shrink-0" />
             </Select.Trigger>
             <Select.Content portal class="max-h-[300px] min-w-[10rem]">
-              <Select.Item value="" class="text-xs! py-1.5!">
+              <Select.Item
+                value="__all-teams__"
+                label={m.workspace_issueSuggestions_all_label()}
+                class="text-xs! py-1.5!"
+              >
                 <span class="truncate"
                   >{m.workspace_issueSuggestions_allWithCount_label({
                     count: linearAssignedIssues.length + linearCreatedIssues.length,
@@ -1807,7 +1960,7 @@
                 {@const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
                   (i) => i.teamKey === team.key,
                 ).length}
-                <Select.Item value={team.key} class="text-xs! py-1.5!">
+                <Select.Item value={team.key} label={team.name} class="text-xs! py-1.5!">
                   <span class="truncate">{team.name} ({count})</span>
                 </Select.Item>
               {/each}
@@ -2415,7 +2568,7 @@
         {/if}
 
         <!-- GitHub auth status - only show when not authenticated -->
-        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
+        {#if !$hostMember$ && (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
             transition:slide={{ tier: 'moderate' }}
@@ -2484,13 +2637,13 @@
                 <div class="flex items-center gap-2">
                   <Input
                     type="text"
-                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_organizationSlug_placeholder()}
                     bind:value={sentryOrg}
                   />
                   <Input
                     type="password"
-                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
                     bind:value={sentryToken}
                     onkeydown={(e) => {

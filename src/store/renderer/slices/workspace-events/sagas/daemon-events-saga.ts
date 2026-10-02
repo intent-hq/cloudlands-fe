@@ -22,11 +22,13 @@ import {
   refreshDaemonEventsAfterReconnect,
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
+import { notifyInterruptedAgentsSubscriptionReady } from '$features/agent/interrupted-agents-service';
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
-import { daemonEventsSubscribed } from '../workspace-events-slice';
+import { daemonEventsSubscribed, daemonEventsSubscribing } from '../workspace-events-slice';
+import { selectDaemonEventsSubscriptionAttempt } from '../workspace-events-selectors';
 
 const logger = createLogger('DaemonEventsSaga');
 
@@ -48,8 +50,10 @@ type DaemonChannelMessage =
   { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
 
 interface SubscriptionLease {
+  workspaceId?: string;
   subscriptionId?: string;
   cancelled: boolean;
+  attempt?: number;
 }
 
 /**
@@ -79,6 +83,7 @@ async function subscribeLease(
   lease: SubscriptionLease,
   params: Record<string, unknown>,
 ): Promise<void> {
+  lease.workspaceId = typeof params.workspaceId === 'string' ? params.workspaceId : undefined;
   try {
     const result = await backendSubscribe<{ subscriptionId?: string }>(params);
     const subscriptionId = result?.subscriptionId;
@@ -87,7 +92,7 @@ async function subscribeLease(
       return;
     }
     if (lease.cancelled) {
-      await backendUnsubscribe(subscriptionId);
+      await backendUnsubscribe(subscriptionId, lease.workspaceId);
       return;
     }
     lease.subscriptionId = subscriptionId;
@@ -96,8 +101,10 @@ async function subscribeLease(
   }
 }
 
-function subscribeFirehose(lease: SubscriptionLease): Promise<void> {
-  return subscribeLease(lease, { eventTypes: [...DAEMON_EVENTS_SUBSCRIBE_TYPES] });
+function* subscribeFirehose(lease: SubscriptionLease) {
+  yield* put(daemonEventsSubscribing());
+  lease.attempt = yield* selectDaemonEventsSubscriptionAttempt.effect();
+  yield* call(subscribeLease, lease, { eventTypes: [...DAEMON_EVENTS_SUBSCRIBE_TYPES] });
 }
 
 /**
@@ -106,7 +113,13 @@ function subscribeFirehose(lease: SubscriptionLease): Promise<void> {
  * every later change is guaranteed to arrive as an event.
  */
 function* announceFirehoseSubscribed(lease: SubscriptionLease) {
-  if (lease.subscriptionId) yield* put(daemonEventsSubscribed());
+  if (
+    lease.subscriptionId &&
+    lease.attempt === (yield* selectDaemonEventsSubscriptionAttempt.effect())
+  ) {
+    yield* put(daemonEventsSubscribed(lease.attempt));
+    yield* call(notifyInterruptedAgentsSubscriptionReady);
+  }
 }
 
 function subscribeScopedFileEvents(lease: SubscriptionLease, workspaceId: string): Promise<void> {
@@ -123,7 +136,7 @@ async function unsubscribeLease(lease: SubscriptionLease): Promise<void> {
   lease.subscriptionId = undefined;
   if (!subscriptionId) return;
   try {
-    await backendUnsubscribe(subscriptionId);
+    await backendUnsubscribe(subscriptionId, lease.workspaceId);
   } catch (error) {
     logger.warn('events.unsubscribe failed during saga cleanup', error);
   }
@@ -277,6 +290,7 @@ export function* daemonEventsSaga() {
       // the old firehose lease and subscribe it again, signal the scoped-lease
       // manager to replay its lease (RESUB-1 replays BOTH), and only then —
       // after the manager acks — converge snapshots.
+      yield* put(daemonEventsSubscribing());
       yield* call(unsubscribeLease, leases.firehose);
       leases.firehose = { cancelled: false };
       const ack = sagaChannel<ScopedLeaseReconnectResult>();

@@ -16,6 +16,7 @@
   import Fa from 'svelte-fa';
   import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
   import * as Menu from '$lib/components/ui/menu';
+  import { Button } from '$lib/components/ui/button';
   import Header from '$lib/components/ui/Header.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
@@ -58,9 +59,7 @@
     menuOpen = false;
     openError = null;
     try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
+      const result = await appStore.dispatch(openConnectionRequested(id));
       if (result.status === 'secret-unavailable') {
         openError = m.hud_backendMenu_secretUnavailable_error({
           label: connectionDisplayLabel(id),
@@ -68,36 +67,44 @@
         menuOpen = true;
       }
     } catch {
-      // Other failures are surfaced via the slice's op-status/error; nothing
-      // more to do here (the list/active refresh arrives via connections:changed).
+      openError = m.hud_backendMenu_openFailed_error({ label: connectionDisplayLabel(id) });
+      menuOpen = true;
     }
   }
 </script>
 
 <div class="hud-backend-menu">
   <Menu.Root bind:open={menuOpen}>
-    <Menu.Trigger class="hud-footer-system" data-testid="hud-footer-system">
-      <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
-      <!-- i18n-ignore (brand/daemon name) -->
-      <span class="hud-footer-system-key">INTENTD</span>
-      {#if remoteHostname !== null}
-        <!-- i18n-ignore (daemon-reported hostname is data, not copy) -->
-        <span class="hud-footer-system-key" data-testid="hud-footer-hostname"
-          >({remoteHostname})</span
-        >
-      {/if}
-      {#if online}
-        <span class="hud-footer-online">{m.hud_system_online_label()}</span>
-      {:else}
-        <span class="hud-footer-offline">{m.hud_system_offline_label()}</span>
-      {/if}
+    <Menu.Trigger
+      class="hud-footer-system"
+      data-testid="hud-footer-system"
+      aria-label={m.layout_daemonStatus_connections_header()}
+    >
+      {#snippet child({ props })}
+        <Button {...props} variant="plain" active={menuOpen}>
+          <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
+          <!-- i18n-ignore (brand/daemon name) -->
+          <span class="hud-footer-system-key">INTENTD</span>
+          {#if remoteHostname !== null}
+            <!-- i18n-ignore (daemon-reported hostname is data, not copy) -->
+            <span class="hud-footer-system-key" data-testid="hud-footer-hostname"
+              >({remoteHostname})</span
+            >
+          {/if}
+          {#if online}
+            <span class="hud-footer-online">{m.hud_system_online_label()}</span>
+          {:else}
+            <span class="hud-footer-offline">{m.hud_system_offline_label()}</span>
+          {/if}
+        </Button>
+      {/snippet}
     </Menu.Trigger>
     <Menu.Content
       side="top"
       align="start"
       collisionPadding={8}
       preventScroll={false}
-      aria-label={m.ui_dropdownMenu_ariaLabel()}
+      aria-label={m.layout_daemonStatus_connections_header()}
     >
       <div class="min-w-52 w-max max-w-72 font-mono">
         <Menu.Item class="cursor-pointer text-xs" onSelect={openConnectModal}>
@@ -106,6 +113,7 @@
         </Menu.Item>
 
         {#if $connections$.length > 0}
+          <Menu.Separator />
           <Header class="px-2 pt-1.5 pb-0.5" size={6}
             >{m.layout_daemonStatus_connections_header()}</Header
           >
@@ -116,7 +124,7 @@
               class="cursor-pointer text-xs"
               onSelect={() => handleOpenConnection(conn.id)}
             >
-              <span class="min-w-0 flex-1 truncate">
+              <span class="min-w-0 flex-1 truncate" title={connectionDisplayLabel(conn.id)}>
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}

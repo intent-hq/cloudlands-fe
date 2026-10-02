@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
+  import * as Tabs from '$lib/components/ui/tabs';
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
@@ -68,11 +68,7 @@
   let { onProjectChange, onSelectAndAdvance, hideHeading = false }: Props = $props();
 
   // Tab state
-  const TAB_ORDER: TabId[] = ['local', 'github', 'new'];
   let activeTab = $state<TabId>('local');
-  let previousTabIndex = $state(0);
-  let currentTabIndex = $derived(TAB_ORDER.indexOf(activeTab));
-  let slideDirection = $derived(currentTabIndex >= previousTabIndex ? 1 : -1);
 
   // Local repo state
   let localRepoPath = $state('');
@@ -332,87 +328,81 @@
   {/if}
 
   <!-- Tab bar -->
-  <div
-    class="flex gap-0 rounded-lg p-1 border border-border bg-muted/30"
-    in:fly={{ tier: 'slow', distance: 12 }}
+  <Tabs.Root
+    value={activeTab}
+    activationMode="manual"
+    onValueChange={(value) => {
+      activeTab = value as TabId;
+      notifyParent();
+    }}
   >
-    {#each tabs as tab (tab.id)}
-      <Button
-        variant="ghost"
-        type="button"
-        class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none
-          {activeTab === tab.id
-          ? 'bg-foreground font-medium text-background shadow-sm'
-          : 'text-muted-foreground hover:text-foreground'}"
-        onclick={() => {
-          previousTabIndex = TAB_ORDER.indexOf(activeTab);
-          activeTab = tab.id;
-          notifyParent();
-        }}
-      >
-        {tab.label}
-      </Button>
-    {/each}
-  </div>
+    <Tabs.List class="w-full" aria-label={m.onboarding_projectPicker_chooseProject_title()}>
+      {#each tabs as tab (tab.id)}
+        <Tabs.Trigger value={tab.id} class="flex-1">
+          {tab.label}
+        </Tabs.Trigger>
+      {/each}
+    </Tabs.List>
 
-  <!-- Tab content -->
-  <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
-    {#key activeTab}
-      <div in:fly={{ tier: 'slow', axis: 'x', distance: slideDirection * 150 }}>
-        {#if activeTab === 'local'}
-          <LocalRepoTab
-            selectedPath={localRepoPath}
-            onSelect={(path, scope, initGit) => {
-              localRepoPath = path;
-              localScope = scope;
-              localInitGit = initGit === true;
-              notifyParent();
-            }}
-            onSelectAndAdvance={(path, scope, initGit) => {
-              // Capture reactive prop before state changes invalidate it.
-              // Use typeof guard: during component teardown the Svelte 5
-              // reactive proxy can return a truthy non-callable value,
-              // which ?.() does not guard against.
-              const advance = onSelectAndAdvance;
-              localRepoPath = path;
-              localScope = scope;
-              localInitGit = initGit === true;
-              notifyParent();
-              if (typeof advance === 'function') advance();
-            }}
-          />
-        {:else if activeTab === 'github'}
-          <GitHubRepoTab
-            {githubUrl}
-            onGithubUrlChange={(url) => {
-              githubUrl = url;
-              notifyParent();
-            }}
-            onSelectAndAdvance={(url) => {
-              // Capture reactive prop before state changes invalidate it.
-              // Use typeof guard (see LocalRepoTab callback above).
-              const advance = onSelectAndAdvance;
-              githubUrl = url;
-              notifyParent();
-              if (typeof advance === 'function') advance();
-            }}
-          />
-        {:else if activeTab === 'new'}
-          <NewProjectTab
-            {parentPath}
-            {projectName}
-            nameError={projectNameError || newProjectDirError}
-            onParentPathChange={(path) => {
-              parentPath = path;
-              notifyParent();
-            }}
-            onProjectNameChange={(name) => {
-              projectName = name;
-              notifyParent();
-            }}
-          />
-        {/if}
-      </div>
-    {/key}
-  </div>
+    <!-- Tab content -->
+    <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
+      {#key activeTab}
+        <Tabs.Content value={activeTab}>
+          {#if activeTab === 'local'}
+            <LocalRepoTab
+              selectedPath={localRepoPath}
+              onSelect={(path, scope, initGit) => {
+                localRepoPath = path;
+                localScope = scope;
+                localInitGit = initGit === true;
+                notifyParent();
+              }}
+              onSelectAndAdvance={(path, scope, initGit) => {
+                // Capture reactive prop before state changes invalidate it.
+                // Use typeof guard: during component teardown the Svelte 5
+                // reactive proxy can return a truthy non-callable value,
+                // which ?.() does not guard against.
+                const advance = onSelectAndAdvance;
+                localRepoPath = path;
+                localScope = scope;
+                localInitGit = initGit === true;
+                notifyParent();
+                if (typeof advance === 'function') advance();
+              }}
+            />
+          {:else if activeTab === 'github'}
+            <GitHubRepoTab
+              {githubUrl}
+              onGithubUrlChange={(url) => {
+                githubUrl = url;
+                notifyParent();
+              }}
+              onSelectAndAdvance={(url) => {
+                // Capture reactive prop before state changes invalidate it.
+                // Use typeof guard (see LocalRepoTab callback above).
+                const advance = onSelectAndAdvance;
+                githubUrl = url;
+                notifyParent();
+                if (typeof advance === 'function') advance();
+              }}
+            />
+          {:else if activeTab === 'new'}
+            <NewProjectTab
+              {parentPath}
+              {projectName}
+              nameError={projectNameError || newProjectDirError}
+              onParentPathChange={(path) => {
+                parentPath = path;
+                notifyParent();
+              }}
+              onProjectNameChange={(name) => {
+                projectName = name;
+                notifyParent();
+              }}
+            />
+          {/if}
+        </Tabs.Content>
+      {/key}
+    </div>
+  </Tabs.Root>
 </div>

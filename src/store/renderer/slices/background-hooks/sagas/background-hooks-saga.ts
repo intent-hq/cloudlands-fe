@@ -1,6 +1,6 @@
 import { END, buffers, channel as createChannel, type Channel } from 'redux-saga';
 import { call, delay, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import {
   backendSubscribe,
@@ -94,7 +94,7 @@ function closeTransport(runtime: TransportRuntime): void {
 
 async function releaseSubscription(workspaceId: string, subscriptionId: string): Promise<void> {
   try {
-    await backendUnsubscribe(subscriptionId);
+    await backendUnsubscribe(subscriptionId, workspaceId);
   } catch (error) {
     logger.warn('events.unsubscribe (hook:*) failed', { workspaceId, error });
   }

@@ -24,6 +24,8 @@ import { Logger } from '$shared/logger';
 
 const {
   ctorOptions,
+  clientStates,
+  clientEvents,
   mockGetOrCreateClientId,
   mockPersistClientId,
   mockSetDaemonVersion,
@@ -37,6 +39,8 @@ const {
   mockStartupFailure,
 } = vi.hoisted(() => ({
   ctorOptions: [] as Array<Record<string, unknown>>,
+  clientStates: new Map<object, string>(),
+  clientEvents: new Map<object, Map<string, (value: unknown) => void>>(),
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
   mockPersistClientId: vi.fn(async () => {}),
   mockSetDaemonVersion: vi.fn(async () => false),
@@ -61,10 +65,12 @@ const {
 
 vi.mock('../json-rpc-client', () => ({
   JsonRpcClient: class {
-    constructor(opts: Record<string, unknown>) {
+    constructor(private readonly opts: Record<string, unknown>) {
       ctorOptions.push(opts);
+      clientEvents.set(opts, new Map());
     }
-    on(): this {
+    on(event: string, handler: (value: unknown) => void): this {
+      clientEvents.get(this.opts)!.set(event, handler);
       return this;
     }
     start(): void {}
@@ -79,7 +85,7 @@ vi.mock('../json-rpc-client', () => ({
       return { transport: 'uds', socketPath: '/tmp/test.sock' };
     }
     getStatus(): string {
-      return 'disconnected';
+      return clientStates.get(this.opts) ?? 'disconnected';
     }
     getConnectedVia(): null {
       return null;
@@ -1217,5 +1223,66 @@ describe('backend.ipc local external updateSupported capture on hello', () => {
     const { refreshLocalUpdateSupported } = await import('../backend.ipc');
     await refreshLocalUpdateSupported();
     expect(getLocalUpdateSupported()).toBe(true);
+  });
+});
+
+describe('collaboration auth captures only a negotiated local connection', () => {
+  async function local() {
+    const api = await import('../backend.ipc');
+    api.disconnectBackendClient('local');
+    const client = api.getLocalBackendClient();
+    const options = ctorOptions.at(-1)!;
+    clientStates.set(options, 'connected');
+    const hello = options.onHelloResult as (result: unknown) => void;
+    return { api, client, options, hello };
+  }
+  it.each([undefined, false, true, 0, 2, '1'])(
+    'does not infer support from capability %s',
+    async (collaborationIdentity) => {
+      const { api, hello } = await local();
+      hello({ protocolVersion: '10.8', server: { capabilities: { collaborationIdentity } } }); // protocol-version-ok: documented GitLab seam test
+      expect(api.captureLocalIdentityConnection().supported).toBe(false);
+    },
+  );
+  it('routes identity calls through local B regardless of a remote A hello', async () => {
+    const { api, client, hello } = await local();
+    hello({ protocolVersion: '10.8', server: { capabilities: { collaborationIdentity: 1 } } }); // protocol-version-ok: documented GitLab seam test
+    await api.connectBackendClient('conn-remote');
+    const remote = api.getBackendClientForConnection('conn-remote')!;
+    const remoteHello = ctorOptions.at(-1)!.onHelloResult as (result: unknown) => void;
+    remoteHello({
+      protocolVersion: '10.8',
+      server: { capabilities: { collaborationIdentity: 0 } },
+    }); // protocol-version-ok: fixture remote hello
+    const lease = api.captureLocalIdentityConnection();
+    expect(lease).toMatchObject({ supported: true, gitlabSupported: true });
+    expect(lease.current()).toBe(true);
+    await lease.request('identity.connect', { provider: 'github', method: 'device' });
+    expect(client.request).toHaveBeenCalledWith('identity.connect', {
+      provider: 'github',
+      method: 'device',
+    });
+    expect(remote.request).not.toHaveBeenCalledWith('identity.connect', expect.anything());
+    api.disconnectBackendClient('conn-remote');
+  });
+  it('reconnect invalidates the old lease even when the same client reconnects with support', async () => {
+    const { api, options, hello } = await local();
+    hello({ server: { capabilities: { collaborationIdentity: 1 } } });
+    const old = api.captureLocalIdentityConnection();
+    clientEvents.get(options)!.get('status')!('disconnected');
+    expect(old.current()).toBe(false);
+    expect(api.captureLocalIdentityConnection().supported).toBe(false);
+    hello({ server: { capabilities: { collaborationIdentity: 1 } } });
+    clientEvents.get(options)!.get('status')!('connected');
+    expect(old.current()).toBe(false);
+    expect(api.captureLocalIdentityConnection().current()).toBe(true);
+  });
+  it('a replacement pool member starts unsupported until its own hello', async () => {
+    const { api, hello } = await local();
+    hello({ server: { capabilities: { collaborationIdentity: 1 } } });
+    const old = api.captureLocalIdentityConnection();
+    api.disconnectBackendClient('local');
+    expect(api.captureLocalIdentityConnection().supported).toBe(false);
+    expect(old.current()).toBe(false);
   });
 });

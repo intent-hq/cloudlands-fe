@@ -354,10 +354,19 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
         },
         load(id) {
           if (id === i18nVirtualMessages) {
+            // Paraglide exposes both `import { m }` and per-message exports for
+            // `import * as m`. Keep both backed by the same prebuilt functions.
+            const messageKeys = JSON.parse(
+              readFileSync(
+                join(__dirname, '.svelte-kit/i18n-bundle/used-message-keys.json'),
+                'utf8',
+              ),
+            );
             return (
               'const i18n = globalThis.__INTENT_PARAGLIDE_I18N__;\n' +
               'if (!i18n) throw new Error("Paraglide production bundle was not loaded");\n' +
-              'export const m = i18n.m;\n'
+              'export const m = i18n.m;\n' +
+              messageKeys.map((key) => `export const ${key} = i18n.m.${key};\n`).join('')
             );
           }
           if (id === i18nVirtualRuntime) {
@@ -412,6 +421,15 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
             ? true
             : 'hidden',
       rollupOptions: {
+        onLog(level, log, handler) {
+          if (log.code === 'MISSING_EXPORT') {
+            // Rollup can replace a missing namespace member with undefined.
+            // Vite's default error logger does not throw: reject explicitly,
+            // retaining the importer, binding, exporter, and source location.
+            throw Object.assign(new Error(log.message), log);
+          }
+          handler(level, log);
+        },
         external: [
           'electron',
           'fs',

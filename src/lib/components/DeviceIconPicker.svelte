@@ -37,12 +37,11 @@
   const selectItems = $derived(
     options.map(({ value: optionValue, label }) => ({ value: optionValue, label })),
   );
-  const selectedOption = $derived(
-    options.find((option) => option.value === selected) ?? options[0],
-  );
+  const selectedOption = $derived(options.find((option) => option.value === selected));
+  const automaticOption = $derived(options.find((option) => option.value === 'auto'));
   const selectedRecord = $derived({ ...record, deviceIcon: selected });
   const triggerLabel = $derived(
-    m.deviceIcons_picker_trigger_ariaLabel({ selection: selectedOption.label }),
+    m.deviceIcons_picker_trigger_ariaLabel({ selection: selectedOption?.label ?? selected }),
   );
   const deviceOptions = $derived(options.filter((option) => option.group === 'devices'));
   const wildCardOptions = $derived(options.filter((option) => option.group === 'wildCards'));
@@ -80,9 +79,14 @@
       {/snippet}
     </Select.Trigger>
     <Select.Content {portal} class={cn('w-56', contentClass)}>
-      <Select.Item value="auto" label={options[0].label}
-        >{@render optionRow(options[0])}</Select.Item
-      >
+      {#if automaticOption}
+        <Select.Item value="auto" label={automaticOption.label}>
+          {@render optionRow(automaticOption)}
+        </Select.Item>
+      {/if}
+      {#if !selectedOption}
+        <Select.Item value={selected} disabled>{selected}</Select.Item>
+      {/if}
       <SelectPrimitive.Group>
         <SelectPrimitive.GroupHeading class="px-2 pb-1 pt-2 type-caption text-muted-foreground">
           {m.deviceIcons_group_devices_label()}

@@ -14,6 +14,10 @@
   import { formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+  import {
+    selectGuestLeavingIds,
+    selectGuestLeaveFailedIds,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -23,22 +27,17 @@
   let { session }: Props = $props();
 
   let leaveDialogOpen = $state(false);
-  let leaving = $state(false);
-  let leaveError = $state<string | null>(null);
+  const leavingIds$ = selectGuestLeavingIds();
+  const failedIds$ = selectGuestLeaveFailedIds();
+  const leaving = $derived($leavingIds$.includes(session.id));
+  const leaveError = $derived(
+    $failedIds$.includes(session.id)
+      ? m.settings_guestSessions_leave_error({ name: formatGuestSessionLabel(session) })
+      : null,
+  );
 
-  async function leaveHost() {
-    if (leaving) return;
-    leaving = true;
-    leaveError = null;
-    try {
-      const action = leaveGuestSessionRequested(session.id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      leaveError = m.settings_guestSessions_leave_error({ name: formatGuestSessionLabel(session) });
-    } finally {
-      leaving = false;
-    }
+  function leaveHost() {
+    appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 </script>
 
@@ -53,7 +52,7 @@
       {m.guestSessions_emptyState_description({ host: formatGuestSessionLabel(session) })}
     </p>
     <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
-      <Button variant="outline" onclick={() => void navigateToSettings({ tab: 'guest-sessions' })}>
+      <Button variant="outline" onclick={() => void navigateToSettings({ tab: 'collaboration' })}>
         {m.layout_daemonStatus_manageGuestSessions_action()}
       </Button>
       <Button

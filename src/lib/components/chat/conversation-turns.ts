@@ -7,7 +7,7 @@ export interface ConversationTurn {
   bodyMessages: AgentMessage[];
   /** Assistant-only projection for streaming, model selection, and completion UI. */
   assistantMessages: AgentMessage[];
-  /** Model-change and provider re-home notices retain their placement before the turn body. */
+  /** Model, effort, and provider re-home notices retain their placement before the turn body. */
   noticeMessages: AgentMessage[];
 }
 
@@ -81,9 +81,9 @@ export function hasOperationalAssistantTurnBoundary(
   );
 }
 
-function isModelChangeNotice(message: AgentMessage): boolean {
+function isTurnNotice(message: AgentMessage): boolean {
   const type = message.metadata?.type;
-  return type === 'model_changed' || type === 'provider_rehomed';
+  return type === 'model_changed' || type === 'effort_changed' || type === 'provider_rehomed';
 }
 
 function isInlineSystemNotice(message: AgentMessage): boolean {
@@ -118,7 +118,7 @@ export function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
           assistantMessages: [message],
           noticeMessages: [],
         });
-    } else if (isModelChangeNotice(message)) {
+    } else if (isTurnNotice(message)) {
       if (currentTurn) currentTurn.noticeMessages.push(message);
       else
         turns.push({

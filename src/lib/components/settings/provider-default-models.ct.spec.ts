@@ -72,6 +72,8 @@ for (const scenario of [
     await page.getByRole('option', { name: /Use default quick action model/ }).click();
     await expect(defaults).toContainText('"commit":""');
     await expect(defaults).toContainText(`"defaultModel":"${quickActionDefaultModel}"`);
+    // The foreign-provider row has no effort footer until it inherits the local model.
+    await expect(commit).toHaveAttribute('aria-expanded', 'false');
     await commit.click();
     await expect(
       page.getByRole('option', { name: /Use default quick action model/ }),
@@ -80,3 +82,64 @@ for (const scenario of [
     await expect(commit).toBeFocused();
   });
 }
+
+for (const action of ['default', 'commit', 'pr', 'fast']) {
+  test(`quick-action ${action} effort supports inherited models and keyboard reset`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 1000 });
+    const root = await mount(Preview, {
+      props: {
+        quickActionDefaultModel: 'codex:codex-preview-balanced',
+        quickActionEffort: 'medium',
+      },
+    });
+    const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
+    const output = root.getByTestId('defaults-state');
+    await trigger.click();
+    const effort = page.getByTestId('effort-picker-trigger');
+    await effort.focus();
+    await effort.press('Enter');
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    if (action === 'default') await expect(output).toContainText('"quickEffort":"high"');
+    else await expect(output).toContainText(`"quickEffortOverrides":{"${action}":"high"}`);
+    await expect(output).toContainText('"overrides":{"commit":"","pr":"","review":"","fast":""}');
+    await expect(effort).toBeFocused();
+    await effort.press('Enter');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Enter');
+    if (action === 'default') await expect(output).toContainText('"quickEffort":""');
+    else await expect(output).toContainText('"quickEffortOverrides":{}');
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+  });
+}
+
+test('Auggie catalog effort remains available for ordinary agents but not quick actions', async ({
+  mount,
+  page,
+}) => {
+  const root = await mount(Preview, {
+    props: {
+      quickActionProvider: 'auggie',
+      quickActionDefaultModel: 'auggie-preview-balanced',
+      quickActionEffort: 'medium',
+    },
+  });
+  const main = root.locator('#default-agent-model button[aria-haspopup="listbox"]');
+  await main.click();
+  await expect(page.getByTestId('effort-picker-trigger')).toBeVisible();
+  await page.keyboard.press('Escape');
+  for (const action of ['default', 'commit', 'pr', 'fast']) {
+    const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
+    await expect(trigger).not.toContainText('Medium');
+    await trigger.click();
+    await expect(page.getByTestId('effort-picker-trigger')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+  }
+  await expect(root.getByTestId('quick-action-effort-route-note')).toHaveCount(4);
+  await expect(root.getByTestId('defaults-state')).toContainText('"quickEffort":"medium"');
+  await expect(root.getByTestId('defaults-state')).toContainText('"quickEffortOverrides":{}');
+});

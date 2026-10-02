@@ -29,6 +29,28 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import AgentFeaturesSettings from './AgentFeaturesSettings.svelte';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
+
+async function renderReady() {
+  render(AgentFeaturesSettings);
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('switch', { name: 'Background hooks' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+}
 
 const FEATURE_PATHS = [
   'agentFeatures.backgroundHooks',
@@ -52,6 +74,7 @@ const FEATURE_PATHS = [
 // into the definition itself (no nested `definition` key; that shape is settings.get's).
 function listResponse() {
   return {
+    revision: 0,
     settings: [
       ...FEATURE_PATHS.map((path) => ({
         path,
@@ -61,6 +84,7 @@ function listResponse() {
         type: 'boolean',
         defaultValue: true,
         value: true,
+        origin: 'default',
       })),
       {
         path: 'prMonitor.debounceSeconds',
@@ -74,8 +98,14 @@ function listResponse() {
       },
       {
         path: 'agents.maxTopLevelAgents',
+        label: 'Maximum top-level agents',
+        description: '',
+        category: 'agents',
+        type: 'number',
+        min: 1,
+        defaultValue: 20,
         value: 20,
-        definition: { path: 'agents.maxTopLevelAgents', type: 'number', scope: 'user' },
+        origin: 'default',
       },
     ],
   };
@@ -97,7 +127,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     await waitFor(() => {
       expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.list');
@@ -118,7 +148,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const toggle = await screen.findByRole('switch', { name: 'Background hooks' });
     await fireEvent.click(toggle);
@@ -143,7 +173,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const toggle = await screen.findByRole('switch', { name: 'State snapshot' });
     await fireEvent.click(toggle);
@@ -174,7 +204,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
     await waitFor(() => {
@@ -191,7 +221,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         changes: [{ path: 'agentFeatures.taskGraph', value: false }],
       });
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
   });
 
   it('reverts taskGraph to off when the daemon rolls back a toggle-on', async () => {
@@ -211,7 +241,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
     await waitFor(() => {
@@ -245,7 +275,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const impact = await screen.findByText('~620 tokens/session');
     expect(impact.className).toContain('text-ghost');
@@ -269,7 +299,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const toggle = await screen.findByRole('switch', {
       name: 'Top-level agent spawning & retirement',
@@ -288,28 +318,111 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
         changes: [{ path: 'agentFeatures.peerAgents', value: true }],
       });
     });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
   });
 
-  it('renders peerAgents OFF when settings.list omits it (opt-in default)', async () => {
+  it.each(['toggle', 'cap'])(
+    'does not send a peer %s update when an older daemon does not register peer agents',
+    async (control) => {
+      mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+        if (method === 'settings.list') {
+          return {
+            settings: listResponse().settings.filter(
+              (s) => s.path !== 'agentFeatures.peerAgents' && s.path !== 'agents.maxTopLevelAgents',
+            ),
+          };
+        }
+        throw new Error(`Unsupported method: ${method}`);
+      });
+
+      await renderReady();
+
+      await waitFor(() => {
+        expect(
+          (screen.getByRole('switch', { name: 'Background hooks' }) as HTMLButtonElement).disabled,
+        ).toBe(false);
+      });
+      const toggle = screen.getByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
+      const input = screen.getByRole('spinbutton', {
+        name: 'Maximum top-level agents per workspace',
+      });
+      if (control === 'toggle') {
+        await fireEvent.click(toggle);
+      } else {
+        await fireEvent.input(input, { target: { value: '5' } });
+        const save = await screen.findByRole('button', { name: 'Save' });
+        await fireEvent.click(save);
+        expect.soft((save as HTMLButtonElement).disabled).toBe(true);
+      }
+
+      expect.soft(mocks.mockBackendRequest.mock.calls).toEqual([['settings.list']]);
+      expect.soft(toggle.getAttribute('aria-checked')).toBe('false');
+      expect.soft((toggle as HTMLButtonElement).disabled).toBe(true);
+      expect.soft((input as HTMLInputElement).disabled).toBe(true);
+    },
+  );
+
+  it('renders the registered peerAgents default on and sends the exact toggle-off payload', async () => {
     mocks.mockBackendRequest.mockImplementation(async (method: string) => {
-      if (method === 'settings.list') {
-        // Older daemon: agentFeatures.peerAgents is not registered
-        const response = listResponse();
-        return {
-          settings: response.settings.filter((s) => s.path !== 'agentFeatures.peerAgents'),
-        };
+      if (method === 'settings.list') return listResponse();
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agentFeatures.peerAgents', value: false }], revision: 1 };
       }
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const toggle = await screen.findByRole('switch', {
       name: 'Top-level agent spawning & retirement',
     });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.update', {
+        changes: [{ path: 'agentFeatures.peerAgents', value: false }],
+      });
+    });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  });
+
+  it.each([false, true])('restores peerAgents to %s after a wire rollback', async (value) => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        const response = listResponse();
+        return {
+          ...response,
+          settings: response.settings.map((s) =>
+            s.path === 'agentFeatures.peerAgents' ? { ...s, value } : s,
+          ),
+        };
+      }
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agentFeatures.peerAgents', value }], revision: 0 };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    await renderReady();
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Top-level agent spawning & retirement',
+    });
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    expect(toggle.getAttribute('aria-checked')).toBe(String(value));
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.update', {
+        changes: [{ path: 'agentFeatures.peerAgents', value: !value }],
+      });
+      expect(toggle.getAttribute('aria-checked')).toBe(String(value));
     });
   });
 
@@ -322,7 +435,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const input = await screen.findByRole('spinbutton', {
       name: 'Maximum top-level agents per workspace',
@@ -354,7 +467,7 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    render(AgentFeaturesSettings);
+    await renderReady();
 
     const input = await screen.findByRole('spinbutton', {
       name: 'PR monitor change debounce in seconds',

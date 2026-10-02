@@ -1,9 +1,46 @@
 import { expect, test } from '../../../../test/ct-test';
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 
 test.setTimeout(120_000);
+
+async function settledScrollBaseline(component: Locator) {
+  // Prompt visibility does not establish editor/draft readiness. The initial
+  // editor layout and ResizeObserver delivery can still resize the composer.
+  await expect(component.locator('.tiptap-editor')).toBeVisible();
+  await expect(component.locator('.tiptap-editor')).toBeEditable();
+  await component.evaluate(() => document.fonts.ready);
+  let baseline: { prompts: DOMRect; composer: DOMRect } | undefined;
+  await expect
+    .poll(async () => {
+      const sample = await component.evaluate(async (root) => {
+        const prompts = root.querySelector('[data-testid="suggested-prompts-surface"]')!;
+        const composer = root.querySelector('[data-testid="chat-composer-shell"]')!;
+        const scroll = root.querySelector('[data-testid="chat-transcript-inner"]')!.parentElement!;
+        const read = () => ({
+          prompts: prompts.getBoundingClientRect().toJSON() as DOMRect,
+          composer: composer.getBoundingClientRect().toJSON() as DOMRect,
+          scroll: [scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight],
+        });
+        const frames = [read()];
+        for (let i = 0; i < 2; i++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          frames.push(read());
+        }
+        return {
+          baseline: frames[2],
+          stable: frames.every((frame) => JSON.stringify(frame) === JSON.stringify(frames[0])),
+          atBottom: scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop <= 1,
+        };
+      });
+      baseline = sample.baseline;
+      return sample.stable && sample.atBottom;
+    }, 'editor, composer, and bottom-aligned transcript must settle before the scroll baseline')
+    .toBe(true);
+  return baseline!;
+}
 
 for (const chief of [false, true]) {
   test(`follow-up prompts scroll with the ${chief ? 'Chief' : 'regular'} transcript`, async ({
@@ -33,8 +70,6 @@ for (const chief of [false, true]) {
       .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
       .toBeLessThanOrEqual(1);
 
-    const before = await prompts.boundingBox();
-    const composerBefore = await composer.boundingBox();
     const message = component.locator('[data-message-id="follow-up-assistant"]');
     const prose = message.locator('[data-assistant-prose]').last();
     const label = component.getByTestId('attention-request-label');
@@ -74,7 +109,13 @@ for (const chief of [false, true]) {
     expect(labelTypography).toEqual(proseTypography);
     expect(reasonTypography).toEqual(proseTypography);
 
+    // Focus and capture above are setup, not part of the wheel gesture. Restore
+    // the bottom after focus, then take both baselines in the same settled frame.
+    await scroll.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
     await scroll.hover();
+    const baseline = await settledScrollBaseline(component);
     await page.mouse.wheel(0, -180);
     await expect
       .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
@@ -83,9 +124,12 @@ for (const chief of [false, true]) {
       await component.screenshot({ path: join(captureDir, 'scrolled-up.png') });
     }
     await expect
-      .poll(async () => (await prompts.boundingBox())!.y - before!.y)
+      .poll(async () => (await prompts.boundingBox())!.y - baseline.prompts.y)
       .toBeGreaterThan(150);
-    expect((await composer.boundingBox())!.y).toBeCloseTo(composerBefore!.y, 1);
+    const composerAfter = (await composer.boundingBox())!;
+    for (const dimension of ['x', 'y', 'width', 'height'] as const) {
+      expect(composerAfter[dimension]).toBeCloseTo(baseline.composer[dimension], 1);
+    }
     await expect(prompts).not.toBeInViewport();
 
     await scroll.evaluate((node) => {

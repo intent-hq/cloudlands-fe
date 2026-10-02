@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -14,20 +15,17 @@ vi.mock('$lib/client', async () => {
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store } from '$store/renderer/store';
-import { setAtomicDefaultModel } from '../../provider-settings/provider-settings-slice';
+import { atomicDefaultModelAccepted } from '../../provider-settings/provider-settings-slice';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { settingsHydrationSaga } from '../../settings-events/sagas/settings-hydration-saga';
 import { persistSelectedModelsWorker } from './model-selection-saga';
 
 const request = vi.mocked(backendRequest);
-const tasks: Task[] = [];
+const cancelSagas: (() => void)[] = [];
 let dispose: (() => void) | undefined;
 
-afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+afterEach(() => {
+  for (const cancel of cancelSagas.splice(0)) cancel();
   dispose?.();
   vi.resetAllMocks();
 });
@@ -43,6 +41,7 @@ const selection = (provider = 'grok', model = 'grok4.5'): AppliedSettingChange[]
 
 function startHydration() {
   dispose = store.init();
+  admitLegacyPrincipal();
   const channel = stdChannel();
   const dispatch = (action: { type: string }) => {
     store.dispatch(action);
@@ -50,7 +49,7 @@ function startHydration() {
     return action;
   };
   const environment = { channel, dispatch, getState: () => store.state };
-  tasks.push(runSaga(environment, settingsHydrationSaga));
+  cancelSagas.push(store.runSaga(settingsHydrationSaga));
   return environment;
 }
 
@@ -72,7 +71,7 @@ it.each([
     request.mockResolvedValueOnce({ settings: initial, revision: 7 });
     const environment = startHydration();
     await settle();
-    environment.dispatch(setAtomicDefaultModel({ providerId: 'grok', model: 'grok4.5' }));
+    environment.dispatch(atomicDefaultModelAccepted({ providerId: 'grok', model: 'grok4.5' }));
     request.mockResolvedValueOnce({ applied, revision: 8 });
 
     expect(
@@ -85,7 +84,9 @@ it.each([
     ).toBe('persisted');
     await settle();
 
-    expect(request).toHaveBeenLastCalledWith('settings.update', { changes: selection() });
+    expect(request).toHaveBeenLastCalledWith('settings.update', {
+      changes: expect.arrayContaining(selection()),
+    });
     expect(store.state.model.pendingDefaultProviderId).toBeNull();
     expect(store.state.model.pendingProviderModels).toEqual({});
     environment.dispatch(settingsChangesReceived(selection('codex', 'stale'), 7));
@@ -103,12 +104,12 @@ it('keeps newer provider and model picks pending when an older no-op save settle
   request.mockResolvedValueOnce({ settings: selection(), revision: 7 });
   const environment = startHydration();
   await settle();
-  environment.dispatch(setAtomicDefaultModel({ providerId: 'grok', model: 'grok4.5' }));
+  environment.dispatch(atomicDefaultModelAccepted({ providerId: 'grok', model: 'grok4.5' }));
   let acknowledge!: (response: unknown) => void;
   request.mockReturnValueOnce(new Promise((resolve) => (acknowledge = resolve)));
   const save = runSaga(environment, persistSelectedModelsWorker, { grok: 'grok4.5' }, 'grok');
-  environment.dispatch(setAtomicDefaultModel({ providerId: 'grok', model: 'grok-newer' }));
-  environment.dispatch(setAtomicDefaultModel({ providerId: 'codex', model: 'gpt-newer' }));
+  environment.dispatch(atomicDefaultModelAccepted({ providerId: 'grok', model: 'grok-newer' }));
+  environment.dispatch(atomicDefaultModelAccepted({ providerId: 'codex', model: 'gpt-newer' }));
   acknowledge({ applied: [], revision: 8 });
   await save.toPromise();
   await settle();
@@ -128,7 +129,7 @@ it('orders a no-op acknowledgement after an older in-flight boot snapshot', asyn
   let finishBoot!: (response: unknown) => void;
   request.mockReturnValueOnce(new Promise((resolve) => (finishBoot = resolve)));
   const environment = startHydration();
-  environment.dispatch(setAtomicDefaultModel({ providerId: 'grok', model: 'grok4.5' }));
+  environment.dispatch(atomicDefaultModelAccepted({ providerId: 'grok', model: 'grok4.5' }));
   request.mockResolvedValueOnce({ applied: [], revision: 8 });
   await runSaga(environment, persistSelectedModelsWorker, { grok: 'grok4.5' }, 'grok').toPromise();
   finishBoot({ settings: selection('codex', 'grok-old'), revision: 7 });
@@ -148,7 +149,7 @@ it('ignores an older save response after newer authoritative settings arrive', a
   request.mockResolvedValueOnce({ settings: selection(), revision: 7 });
   const environment = startHydration();
   await settle();
-  environment.dispatch(setAtomicDefaultModel({ providerId: 'grok', model: 'grok4.5' }));
+  environment.dispatch(atomicDefaultModelAccepted({ providerId: 'grok', model: 'grok4.5' }));
   let acknowledge!: (response: unknown) => void;
   request.mockReturnValueOnce(new Promise((resolve) => (acknowledge = resolve)));
   const save = runSaga(environment, persistSelectedModelsWorker, { grok: 'grok4.5' }, 'grok');

@@ -66,8 +66,7 @@ warmImport(() => import('./HardwareConsoleSettings.svelte'));
 async function buildState() {
   const { initialState } =
     await import('$store/renderer/slices/hardware-console/hardware-console-slice');
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   return {
     hardwareConsole: { ...initialState, enabled: true },
     workspace: { workspaces: createCollection('id', []) },

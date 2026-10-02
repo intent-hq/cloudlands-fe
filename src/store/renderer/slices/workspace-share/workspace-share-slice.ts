@@ -18,11 +18,13 @@ import {
   createCollection,
   getItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+} from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   HostPrincipal,
+  InvitePin,
+  PrincipalIdentity,
   WorkspaceInvite,
   WorkspaceMember,
 } from '$features/workspace-sharing/types';
@@ -36,6 +38,8 @@ import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
  * link once the dialog has been closed or retargeted to workspace B.
  */
 export interface WorkspaceShareTarget {
+  /** Captured only by the request owner; omitted on pure presentation actions. */
+  authority?: string | null;
   workspaceId: string;
   session: number;
 }
@@ -49,6 +53,8 @@ export interface WorkspaceShareTarget {
 export interface WorkspaceShareCreatedLink {
   inviteId: string;
   pinLogin?: string;
+  /** The pinned account's forge, as the daemon resolved it. */
+  pinIdentity?: PrincipalIdentity;
 }
 
 /** Hover-card roster of one workspace (see `WorkspaceShareState.byWorkspaceId`). */
@@ -74,6 +80,7 @@ export const initialRosterState: WorkspaceRosterState = {
 };
 
 export interface WorkspaceShareState {
+  integrationAuth: { github: boolean; gitlab: boolean };
   /** Hover-card rosters by workspace id; absent until a card asks for one. */
   byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
@@ -132,6 +139,7 @@ export interface WorkspaceShareState {
 }
 
 export const initialState: WorkspaceShareState = {
+  integrationAuth: { github: false, gitlab: false },
   byWorkspaceId: {},
   open: false,
   workspaceId: null,
@@ -211,10 +219,13 @@ export const shareAccessWithheld = createAction<[payload: { target: WorkspaceSha
   'workspaceShare/accessWithheld',
 );
 
-/** Mint an invite link; `pinLogin` (trimmed, may be empty) restricts redemption. */
-export const shareInviteCreateRequested = createAction<[payload: { pinLogin: string }]>(
-  'workspaceShare/inviteCreateRequested',
-);
+/**
+ * Mint an invite link; `pinLogin` (trimmed, may be empty) restricts redemption
+ * and `pin` names the forge it lives on (absent: the host's identity forge).
+ */
+export const shareInviteCreateRequested = createAction<
+  [payload: { pinLogin: string; pin?: InvitePin }]
+>('workspaceShare/inviteCreateRequested');
 
 /** Saga: the invite for `target` / `request` was created; the link is shown once. */
 export const shareInviteCreated = createAction<
@@ -484,4 +495,18 @@ workspaceShareReducer.with(
       actionError: error,
     };
   },
+);
+
+export const shareIntegrationAuthRequested = createAction<
+  [workspaceId: string, gitlabHost?: string]
+>('workspaceShare/integrationAuthRequested');
+export const shareIntegrationAuthLoaded = createAction<
+  [target: WorkspaceShareTarget, auth: { github: boolean; gitlab: boolean }]
+>('workspaceShare/integrationAuthLoaded');
+workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
+  ...state,
+  integrationAuth: { github: false, gitlab: false },
+}));
+workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) =>
+  targets(state, target) ? { ...state, integrationAuth: auth } : state,
 );

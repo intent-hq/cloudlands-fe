@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatDateTime, formatFullDateTime, formatTime } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import MessageActions from '../MessageActions.svelte';
+import { inspectLazyTurnObserverOwnership } from '../lazy-turn-observer';
 
 describe('MessageActions callbacks', () => {
   it('keeps role-specific action order and invokes each callback exactly once', async () => {
@@ -29,16 +30,18 @@ describe('MessageActions callbacks', () => {
     for (const callback of userCallbacks) expect(callback).toHaveBeenCalledTimes(1);
     user.unmount();
 
+    const onScrollToPrevious = vi.fn();
     const onRegenerate = vi.fn();
     const onFork = vi.fn();
     const onVote = vi.fn();
     const onCopy = vi.fn();
     const assistant = render(MessageActions, {
-      props: { role: 'assistant', onRegenerate, onFork, onVote, onCopy },
+      props: { role: 'assistant', onRegenerate, onScrollToPrevious, onFork, onVote, onCopy },
     });
     const assistantButtons = assistant.getAllByRole('button');
     expect(assistantButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
       m.chat_messageActions_regenerate_ariaLabel(),
+      m.chat_messageActions_previousUserMessage_label(),
       m.chat_messageActions_fork_ariaLabel(),
       m.chat_messageActions_goodResponse_label(),
       m.chat_messageActions_badResponse_label(),
@@ -46,9 +49,27 @@ describe('MessageActions callbacks', () => {
     ]);
     for (const button of assistantButtons) await fireEvent.click(button);
     expect(onRegenerate).toHaveBeenCalledTimes(1);
+    expect(onScrollToPrevious).toHaveBeenCalledTimes(1);
     expect(onFork).toHaveBeenCalledTimes(1);
     expect(onVote.mock.calls).toEqual([['up'], ['down']]);
     expect(onCopy).toHaveBeenCalledTimes(1);
+  });
+
+  it('reflects confirmed vote state without prematurely changing it on activation', async () => {
+    const onVote = vi.fn();
+    const view = render(MessageActions, {
+      props: { role: 'assistant', currentVote: 'up', onVote },
+    });
+    const good = screen.getByRole('button', { name: m.chat_messageActions_goodResponse_label() });
+    const bad = screen.getByRole('button', { name: m.chat_messageActions_badResponse_label() });
+    expect(good.getAttribute('aria-pressed')).toBe('true');
+    expect(bad.getAttribute('aria-pressed')).toBe('false');
+    await fireEvent.click(bad);
+    expect(onVote).toHaveBeenCalledExactlyOnceWith('down');
+    expect(good.getAttribute('aria-pressed')).toBe('true');
+    await view.rerender({ role: 'assistant', currentVote: 'down', onVote });
+    expect(good.getAttribute('aria-pressed')).toBe('false');
+    expect(bad.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('forwards modifier keys through declarative copy actions', async () => {
@@ -75,6 +96,98 @@ describe('MessageActions callbacks', () => {
     if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
     else delete (navigator as { clipboard?: Clipboard }).clipboard;
   });
+});
+
+describe('MessageActions transcript construction', () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps one visibility observer after queued mount, teardown and same-root reacquisition', async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let sequence = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++sequence, callback);
+      return sequence;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const viewport = document.createElement('div');
+    viewport.dataset.messageControlsRoot = '';
+    document.body.append(viewport);
+    const mountMessage = () => {
+      const surface = document.createElement('div');
+      viewport.append(surface);
+      return render(MessageActions, { target: surface, props: { role: 'user', onCopy: vi.fn() } });
+    };
+    try {
+      const first = mountMessage();
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 1, targetCount: 1 });
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(0);
+      await tick();
+      expect(first.getAllByRole('button')).toHaveLength(1);
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
+      const second = mountMessage();
+      first.unmount();
+      const third = mountMessage();
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 1, targetCount: 2 });
+      second.unmount();
+      third.unmount();
+      expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
+      expect(frames.size).toBe(0);
+    } finally {
+      cleanup();
+      viewport.remove();
+    }
+  });
+
+  it.each(['pointerEnter', 'focusIn'] as const)(
+    'keeps timestamps immediate while controls are queued, and responds to %s',
+    async (event) => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let sequence = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(++sequence, callback);
+        return sequence;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+      const viewport = document.createElement('div');
+      viewport.dataset.messageControlsRoot = '';
+      const surface = document.createElement('div');
+      viewport.append(surface);
+      document.body.append(viewport);
+      const onCopy = vi.fn();
+      const view = render(MessageActions, {
+        target: surface,
+        props: {
+          role: 'user',
+          timestamp: '2026-09-28T10:00:00Z',
+          onCopy,
+        },
+      });
+      expect(view.container.querySelector('time')).not.toBeNull();
+      expect(view.queryAllByRole('button')).toHaveLength(0);
+      await fireEvent[event](surface);
+      const copy = view.getByRole('button', {
+        name: m.chat_messageActions_copyMessage_ariaLabel(),
+      });
+      await fireEvent.click(copy);
+      expect(onCopy).toHaveBeenCalledTimes(1);
+      expect(frames.size).toBe(0);
+      view.unmount();
+      viewport.remove();
+    },
+  );
 });
 
 describe('MessageActions timestamp', () => {
@@ -166,6 +279,31 @@ describe('MessageActions timestamp', () => {
       expect(time.getAttribute('datetime')).toBe(timestamp.toISOString());
       expect(time.getAttribute('aria-label')).toBe(formatFullDateTime(timestamp));
     });
+  });
+
+  it('shares one midnight timer and wake listener pair across 200 messages', async () => {
+    const timers = vi.getTimerCount();
+    const focus = vi.spyOn(window, 'addEventListener');
+    const visibility = vi.spyOn(document, 'addEventListener');
+    const views = Array.from({ length: 200 }, () =>
+      render(MessageActions, {
+        props: { role: 'user', timestamp: new Date() },
+      }),
+    );
+    expect(vi.getTimerCount() - timers).toBe(1);
+    expect(focus.mock.calls.filter(([name]) => name === 'focus')).toHaveLength(1);
+    expect(visibility.mock.calls.filter(([name]) => name === 'visibilitychange')).toHaveLength(1);
+    views[0].unmount();
+    vi.setSystemTime(new Date(2026, 5, 4, 8));
+    window.dispatchEvent(new Event('focus'));
+    await tick();
+    expect(views[1].container.querySelector('time')?.textContent).toBe(
+      formatDateTime(new Date(2026, 5, 3, 0, 5)),
+    );
+    for (const view of views.slice(1)) view.unmount();
+    expect(vi.getTimerCount()).toBe(timers);
+    focus.mockRestore();
+    visibility.mockRestore();
   });
 
   it('cleans up its midnight timer and wake listeners on unmount', async () => {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
 import { m } from '$shared/paraglide/messages.js';
 

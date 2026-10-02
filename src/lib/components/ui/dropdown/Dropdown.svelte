@@ -60,6 +60,8 @@
     searchValue?: string;
     /** Selection mode */
     multiple?: boolean;
+    /** Close after a single value pick; composed controls can opt out. */
+    closeOnSelect?: boolean;
     /** Whether the dropdown is disabled */
     disabled?: boolean;
     /** Open state */
@@ -114,6 +116,7 @@
     searchChrome = false,
     searchValue = $bindable(''),
     multiple = false,
+    closeOnSelect = true,
     disabled = false,
     open = $bindable(false),
     variant = 'default',
@@ -432,7 +435,7 @@
     } else {
       value = option.value;
       onchange?.(option.value, event);
-      handleClose();
+      if (closeOnSelect) handleClose();
     }
   }
 
@@ -479,7 +482,13 @@
         control
           .getAttribute('aria-controls')
           ?.split(/\s+/)
-          .some((id) => document.getElementById(id)?.contains(target)),
+          .some((id) => {
+            const popup = document.getElementById(id);
+            // Canonical Select exposes its inner viewport as the listbox.
+            // The owning control also owns that popup's border and padding.
+            const selectSurface = popup?.closest('[data-slot="select-content"]');
+            return popup?.contains(target) || selectSurface?.contains(target);
+          }),
     );
     if (!isInsideContainer && !isInsideContent && !isInsideOwnedPopup) {
       handleClose();
@@ -869,7 +878,9 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div class="type-caption flex flex-col items-center gap-1 py-1 px-2 text-muted-foreground">
+        <div
+          class="type-caption flex flex-col items-start gap-1 py-1 px-2 text-left text-muted-foreground"
+        >
           <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
           <span class="type-caption text-muted-foreground"
             >{m.ui_dropdown_tryDifferentSearch_description()}</span
@@ -879,7 +890,7 @@
         {@render empty()}
       {:else}
         <div
-          class="type-caption min-h-(--control-height-small) px-2 py-1 text-center text-muted-foreground"
+          class="type-caption min-h-(--control-height-small) px-2 py-1 text-left text-muted-foreground"
         >
           {m.ui_dropdown_noResults_label()}
         </div>

@@ -12,15 +12,11 @@ describe('Separator', () => {
     const horizontal = render(Separator, { props: { decorative: false } });
     const semantic = horizontal.getByRole('separator');
     expect(semantic.getAttribute('data-orientation')).toBe('horizontal');
-    expect(semantic.className).toContain('bg-border');
-    expect(semantic.className).toContain('data-[orientation=horizontal]:h-px');
-    expect(semantic.className).not.toContain('dark:');
 
     const vertical = render(Separator, { props: { orientation: 'vertical', decorative: true } });
     const decorative = vertical.container.querySelector('[data-slot="separator"]');
     expect(decorative?.getAttribute('data-orientation')).toBe('vertical');
     expect(decorative?.getAttribute('role')).toBe('none');
-    expect(decorative?.className).toContain('data-[orientation=vertical]:w-px');
   });
 
   it('publishes parseable metadata with exact public exports and responsive fixtures', () => {

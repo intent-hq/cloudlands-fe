@@ -11,7 +11,7 @@
  */
 
 import { store } from '../../store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
 import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
@@ -943,7 +943,7 @@ function hudAgentScopeInputs(
   });
   return {
     parentAgentId: notSelf(info.parentAgentId) ?? notSelf(session?.parentAgentId),
-    isBackground: info.isBackground === true || session?.isBackground === true,
+    isBackground: info.isBackground ?? session?.isBackground,
     metadata: scopeMetadata(session?.metadata),
     agentMetadata: scopeMetadata(session?.agentMetadata),
   };

@@ -32,8 +32,7 @@ describe('Menu keyboard and focus behavior', () => {
     );
     Object.defineProperty(menu, 'clientHeight', { configurable: true, value: 80 });
     enabledItems.forEach((item, index) => {
-      item.getBoundingClientRect = () =>
-        ({ top: index * 20, bottom: index * 20 + 20, height: 20 }) as DOMRect;
+      item.getBoundingClientRect = () => new DOMRect(0, index * 20, 100, 20);
     });
     expect(enabledItems.filter((item) => item.tabIndex === 0)).toEqual([apple]);
     await fireEvent.keyDown(apple, { key: 'ArrowDown' });
@@ -138,6 +137,24 @@ describe('Menu keyboard and focus behavior', () => {
 });
 
 describe('Menu command state behavior', () => {
+  it('explains disabled commands and resumes activation once the reason is removed', async () => {
+    const view = render(MenuTestHarness, { props: { commandDisabledReason: 'Requires access' } });
+    await openMenu();
+    const command = screen.getByRole('menuitem', { name: 'Attach files' });
+    expect(command.getAttribute('aria-disabled')).toBe('true');
+    expect(
+      screen.getByRole('menuitem', { name: 'Attach files', description: 'Requires access' }),
+    ).toBe(command);
+    await fireEvent.click(command);
+    expect(screen.getByTestId('selected').textContent).toBe('none');
+    await view.rerender({ commandDisabledReason: undefined });
+    expect(command.getAttribute('aria-disabled')).not.toBe('true');
+    expect(command.hasAttribute('aria-describedby')).toBe(false);
+    await fireEvent.click(command);
+    expect(screen.getByTestId('selected').textContent).toBe('attach');
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
   it.each([
     { iconWeight: undefined, expectedWeight: 'regular' },
     { iconWeight: 'bold' as const, expectedWeight: 'bold' },
@@ -147,7 +164,7 @@ describe('Menu command state behavior', () => {
       render(MenuTestHarness, { props: { iconWeight } });
       const trigger = await openMenu();
       const menu = screen.getByRole('menu');
-      const icons = menu.querySelectorAll('svg[data-icon]');
+      const icons = menu.querySelectorAll('[data-slot="menu-item-leading"] svg[data-icon]');
       expect(icons).toHaveLength(3);
       for (const icon of icons) expect(icon.getAttribute('data-weight')).toBe(expectedWeight);
       expect(menu.querySelector('[iconweight]')).toBeNull();
@@ -194,12 +211,10 @@ describe('Menu command state behavior', () => {
     expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  it('runs a destructive command with neutral menu styling and closes normally', async () => {
+  it('runs a destructive command once and closes normally', async () => {
     render(MenuTestHarness);
     await openMenu();
     const item = screen.getByRole('menuitem', { name: 'Delete item' });
-    expect(item.hasAttribute('data-destructive')).toBe(true);
-    expect(item.className).toContain('data-[destructive]:text-foreground');
     await fireEvent.click(item);
     expect(screen.getByTestId('selected').textContent).toBe('delete');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
@@ -260,12 +275,14 @@ describe('Menu metadata and compatibility', () => {
     expect(menuMetadata.owner).toBe('007-B5');
     expect(menuSemantics.interaction).toBe('command');
     expect(menuSemantics.selectionReplacement).toBe('$lib/components/ui/select');
-    expect(menuMetadata.callers).toHaveLength(16);
-    expect(menuMetadata.callers).toContain(
+    expect(menuMetadata.callers).toHaveLength(11);
+    expect(menuMetadata.callers).not.toContain(
       'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     );
     expect(menuMetadata.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
-    expect(menuMetadata.callers).toContain('src/lib/components/chat/input/SimpleRichInput.svelte');
+    expect(menuMetadata.callers).not.toContain(
+      'src/lib/components/chat/input/SimpleRichInput.svelte',
+    );
   });
 
   async function verifyLegacyTrigger(stopPropagation: boolean) {

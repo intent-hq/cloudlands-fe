@@ -20,7 +20,7 @@ async function openWorkspaceActionsMenu(component: Locator, page: Page) {
   await component.getByRole('button', { name: 'Workspace actions' }).click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button').first()).toBeVisible();
+  await expect(menu.getByRole('menuitem').first()).toBeVisible();
   await expect.poll(async () => isPositionedOnPage(await menu.boundingBox())).toBe(true);
   return menu;
 }
@@ -53,7 +53,7 @@ async function expectMenuInsideCollisionPadding(menu: Locator, page: Page) {
 
 function collectTruncatedLabels(menu: Locator) {
   return menu.evaluate((node) =>
-    Array.from(node.querySelectorAll<HTMLElement>('button span'))
+    Array.from(node.querySelectorAll<HTMLElement>('[role="menuitem"] span'))
       .filter((span) => getComputedStyle(span).textOverflow === 'ellipsis')
       .map((span) => ({
         text: span.textContent?.trim() ?? '',
@@ -189,7 +189,7 @@ test('keeps the workspace actions menu inside the collision padding at a 320px v
   const menu = await openWorkspaceActionsMenu(component, page);
   const box = await expectMenuInsideCollisionPadding(menu, page);
   // The 12rem row floor still applies: a 320px viewport leaves room for it.
-  const row = await settledBoundingBox(menu.getByRole('button').first());
+  const row = await settledBoundingBox(menu.getByRole('menuitem').first());
   expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   await page.screenshot({ path: testInfo.outputPath('workspace-actions-menu-320.png') });
@@ -209,7 +209,7 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
 
   const menu = await openWorkspaceActionsMenu(component, page);
   const box = await expectMenuInsideCollisionPadding(menu, page);
-  const row = await settledBoundingBox(menu.getByRole('button').first());
+  const row = await settledBoundingBox(menu.getByRole('menuitem').first());
   expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   const labels = await collectTruncatedLabels(menu);

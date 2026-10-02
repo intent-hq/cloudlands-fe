@@ -2,18 +2,34 @@
   /**
    * ProviderPathConfig
    *
-   * A controlled dropdown panel for configuring a provider's CLI executable path.
+   * A controlled form popover for configuring a provider's CLI executable path.
    */
-  import { appClient } from '$lib/client';
+  import { onMount } from 'svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    providerPathSaveRequested,
+    providerSettingsSessionOpened,
+    providerSettingsSessionClosed,
+  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import {
+    selectProviderPaths,
+    selectProviderSettingsSessionRequests,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import { Menu } from '$lib/components/patterns/settings/custom-controls';
+  import { Popover } from '$lib/components/patterns/settings/custom-controls';
   import PathSettingField from './PathSettingField.svelte';
-  import { createLogger } from '$lib/utils/client-logger';
-
-  const logger = createLogger('ProviderPathConfig');
+  const sessionId = crypto.randomUUID();
+  const requests$ = selectProviderSettingsSessionRequests(sessionId);
+  const paths$ = selectProviderPaths();
+  const saving = $derived($requests$.some((request) => request.status === 'pending'));
+  let latestSave = $state<{ id: string; path: string } | null>(null);
+  let deliveredRequestId: string | null = null;
+  onMount(() => {
+    appStore.dispatch(providerSettingsSessionOpened(sessionId));
+    return () => appStore.dispatch(providerSettingsSessionClosed(sessionId));
+  });
 
   interface Props {
     /** Provider ID (e.g., 'auggie', 'claude-code') */
@@ -61,10 +77,12 @@
     npxPackage?: string;
     /** Whether the provider is currently installed */
     isInstalled?: boolean;
-    /** Callback when path changes */
+    /** Completion-only compatibility callback; persistence/refresh remain saga-owned. */
     onPathChange?: (path: string) => void;
-    /** Controlled path dropdown state */
+    /** Controlled path form state */
     open: boolean;
+    /** Overflow trigger that launched this form, used for anchoring and focus return. */
+    anchor?: HTMLElement | null;
   }
 
   let {
@@ -79,31 +97,23 @@
     isInstalled = false,
     onPathChange,
     open = $bindable(),
+    anchor,
   }: Props = $props();
 
-  async function savePath(path: string) {
-    try {
-      // The daemon owns provider path overrides (providers.paths, PROTOCOL
-      // §5.12), keyed by provider id: host.checkAuggie reads
-      // providers.paths.auggie, and ProviderSelector reads the same object
-      // for its configured-path fields. The legacy settings:set IPC is not
-      // bridged in this build.
-      const entry = await appClient.settings.get('providers.paths');
-      const existing =
-        entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
-          ? (entry.value as Record<string, unknown>)
-          : {};
-      await appClient.settings.update([
-        { path: 'providers.paths', value: { ...existing, [providerId]: path } },
-      ]);
-      onPathChange?.(path);
-      notify.success(m.settings_providerPath_saved());
-      logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, path);
-    } catch (error) {
-      logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
-      notify.error(m.settings_providerPath_saveError());
-    }
+  function savePath(path: string) {
+    const id = crypto.randomUUID();
+    latestSave = { id, path };
+    appStore.dispatch(providerPathSaveRequested(providerId, path, { id, sessionId }));
   }
+
+  // Adapt the legacy completion callback only; no domain I/O or refresh lives here.
+  $effect(() => {
+    const save = latestSave;
+    if (!save || deliveredRequestId === save.id) return;
+    if ($requests$.find((request) => request.id === save.id)?.status !== 'success') return;
+    deliveredRequestId = save.id;
+    onPathChange?.(save.path);
+  });
 
   // Determine the display path (configured > resolved > placeholder). For
   // npx-only providers `resolvedPath` is npx, not the adapter the override
@@ -115,10 +125,11 @@
   );
 
   // Remote daemons route browsing to the in-app DirectoryPickerModal, which
-  // portals outside this menu; while it is open the menu must neither close
+  // portals outside this popover; while it is open the form must neither close
   // on outside interaction/Escape/focus loss nor unmount the subtree that
   // renders the modal.
   let pickerOpen = $state(false);
+  let dismissedOutside = false;
 
   // This panel is opened from the provider overflow menu, so bits-ui has no
   // trigger element to position against. An invisible custom anchor keeps the
@@ -126,11 +137,11 @@
   let anchorEl = $state<HTMLElement | null>(null);
 </script>
 
-<Menu.Root
+<Popover.Root
   bind:open={
     () => open,
     (next) => {
-      // The remote picker modal lives inside this menu's subtree; refuse to
+      // The remote picker modal lives inside this popover's subtree; refuse to
       // close (and unmount it) while the modal is open.
       if (!next && pickerOpen) return;
       open = next;
@@ -138,19 +149,38 @@
   }
 >
   <span bind:this={anchorEl} aria-hidden="true"></span>
-  <Menu.Content
+  <Popover.Content
     align="end"
     side="bottom"
     portal={true}
-    customAnchor={anchorEl}
+    role="dialog"
+    trapFocus={false}
+    customAnchor={anchor ?? anchorEl}
     interactOutsideBehavior={pickerOpen ? 'ignore' : 'close'}
     escapeKeydownBehavior={pickerOpen ? 'ignore' : 'close'}
-    onFocusOutside={(event) => {
-      if (pickerOpen) event.preventDefault();
+    onOpenAutoFocus={() => (dismissedOutside = false)}
+    onInteractOutside={() => {
+      if (!pickerOpen) dismissedOutside = true;
     }}
-    aria-label={m.ui_dropdownMenu_ariaLabel()}
+    onFocusOutside={(event) => {
+      if (pickerOpen) {
+        event.preventDefault();
+        return;
+      }
+      dismissedOutside = true;
+      open = false;
+    }}
+    onCloseAutoFocus={(event) => {
+      if (dismissedOutside) {
+        event.preventDefault();
+      } else if (anchor?.isConnected) {
+        event.preventDefault();
+        anchor.focus();
+      }
+    }}
+    aria-label={m.settings_providerPath_header({ name: providerName })}
   >
-    <div class="w-80 p-3 space-y-3 overflow-hidden">
+    <div class="w-80 p-3 space-y-3 overflow-hidden" aria-busy={saving}>
       <!-- Header with helpful copy -->
       <div class="space-y-1">
         <p class="type-body font-medium text-foreground">
@@ -176,7 +206,7 @@
            empty-value semantics as the old free-text input. -->
       <PathSettingField
         mode="file"
-        value={configuredPath}
+        value={$paths$.configured[providerId] ?? configuredPath}
         placeholder={placeholderText}
         ariaLabel={m.settings_providerPath_header({ name: providerName })}
         pickerTitle={m.settings_providerPath_pickerTitle({ command: cliCommand })}
@@ -254,5 +284,5 @@
         </div>
       {/if}
     </div>
-  </Menu.Content>
-</Menu.Root>
+  </Popover.Content>
+</Popover.Root>

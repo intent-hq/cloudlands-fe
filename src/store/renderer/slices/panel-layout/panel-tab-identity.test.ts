@@ -42,6 +42,25 @@ describe('panel tab canonical identity', () => {
     ).toBe(true);
   });
 
+  it('separates scoped file tabs from unscoped editors and other root identities', () => {
+    const scoped = tab('root-file', { filePath: '/repo/new.md', data: { gitRootId: 'root-a' } });
+    expect(panelTabsAreEquivalent(scoped, tab('ordinary', { filePath: '/repo/new.md' }))).toBe(
+      false,
+    );
+    expect(
+      panelTabsAreEquivalent(
+        scoped,
+        tab('other', { filePath: '/repo/new.md', data: { gitRootId: 'root-b' } }),
+      ),
+    ).toBe(false);
+    expect(
+      panelTabsAreEquivalent(
+        scoped,
+        tab('same', { filePath: '/repo/./new.md', data: { gitRootId: 'root-a' } }),
+      ),
+    ).toBe(true);
+  });
+
   it('uses workspace and hook identity for hook script panels', () => {
     const existing = tab('hook', {
       type: 'hook-script',

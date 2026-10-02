@@ -6,7 +6,10 @@ const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
 let server: ViteDevServer | undefined;
 
-test.describe.configure({ mode: 'default' });
+test.describe.configure({ mode: 'default', timeout: 120_000 });
+
+// Keep original failing attempts available alongside their geometry.
+test.use({ trace: 'retain-on-failure', screenshot: 'only-on-failure' });
 
 test.beforeAll(async () => {
   if (externalBaseUrl) return;
@@ -145,7 +148,7 @@ async function open(page: Page, width: number, motion: string) {
     `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=${motion}`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
+    timeout: 90_000,
   });
   await page.evaluate(() => document.fonts.ready);
   const root = page.locator('#custom-walkthrough .diagram-renderer');
@@ -164,26 +167,68 @@ async function sampleChange(
     async (element, { source, index, resizeWidth, interrupt }) => {
       const read = new Function(`return (${source})`)() as typeof geometry;
       const samples = [read(element)];
-      element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
-      if (resizeWidth) {
-        const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
-        host.style.width = `${resizeWidth}px`;
+      let observedFrame: number | undefined;
+      let probeWidth = 1;
+      let probeFrame: number | undefined;
+      // A non-painted probe requests an observation every frame, even when only a
+      // transform changes. Register after the renderer's observer so its synchronous
+      // refit and all rAF callbacks are included before paint.
+      const frameProbe = resizeWidth ? document.createElement('div') : undefined;
+      if (frameProbe) {
+        frameProbe.style.cssText =
+          'position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;contain:strict;' +
+          'transition:none!important;animation:none!important;width:0;height:0';
+        element.append(frameProbe);
       }
-      const start = performance.now();
-      do {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        // ResizeObserver runs after rAF. Sample the resulting paint, not a forced
-        // layout read before the browser has delivered the new lane width.
-        if (resizeWidth) await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        samples.push(read(element));
-        if (interrupt && samples.length === 3) {
-          element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[2].click();
-          element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].click();
+      const observer = resizeWidth
+        ? new ResizeObserver(() => {
+            const frame = Number(document.timeline.currentTime);
+            const sample = read(element);
+            // Multiple observer deliveries can refine one not-yet-painted frame.
+            // A later frame gets its own entry, even if our timer task is delayed.
+            if (frame === observedFrame) samples[samples.length - 1] = sample;
+            else samples.push(sample);
+            observedFrame = frame;
+          })
+        : undefined;
+      if (frameProbe) observer?.observe(frameProbe);
+      observer?.observe(element.querySelector('.diagram-scroll-container')!);
+      const requestProbeFrame = () => {
+        if (!frameProbe) return;
+        probeFrame = requestAnimationFrame(() => {
+          frameProbe.style.width = `${probeWidth}px`;
+          probeWidth = probeWidth === 1 ? 2 : 1;
+          requestProbeFrame();
+        });
+      };
+      try {
+        requestProbeFrame();
+        element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
+        if (resizeWidth) {
+          const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
+          host.style.width = `${resizeWidth}px`;
         }
-      } while (
-        (!samples.at(-1)!.settled || samples.length < 4) &&
-        performance.now() - start < 4_000
-      );
+        const start = performance.now();
+        do {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          // Let ResizeObserver record this frame. Remeasuring in this task can
+          // advance the catalog's 0.01ms ancestor width transition between paints,
+          // before the renderer receives that new lane width.
+          if (resizeWidth) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          else samples.push(read(element));
+          if (interrupt && samples.length === 3) {
+            element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[2].click();
+            element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].click();
+          }
+        } while (
+          (!samples.at(-1)!.settled || samples.length < 4) &&
+          performance.now() - start < 4_000
+        );
+      } finally {
+        if (probeFrame !== undefined) cancelAnimationFrame(probeFrame);
+        observer?.disconnect();
+        frameProbe?.remove();
+      }
       return samples;
     },
     { source: geometry.toString(), index, resizeWidth, interrupt },
@@ -279,21 +324,218 @@ for (const width of [960, 662, 420]) {
       expect(rapid.at(-1)!.edges).toEqual(states[0].edges);
       expect(Math.max(...rapid.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
       const resize = [];
+      const resizeSegments = [];
       for (const [index, resizeWidth] of [
         [1, 420],
         [2, 960],
         [0, width],
       ]) {
-        resize.push(...(await sampleChange(root, index, resizeWidth)));
+        const samples = await sampleChange(root, index, resizeWidth);
+        resize.push(...samples);
+        resizeSegments.push({ index, resizeWidth, samples });
       }
       await testInfo.attach('resize-geometry', {
         body: JSON.stringify(resize, null, 2),
         contentType: 'application/json',
       });
+      await testInfo.attach('resize-segments', {
+        body: JSON.stringify(resizeSegments, null, 2),
+        contentType: 'application/json',
+      });
       expect(resize.at(-1)!.settled).toBe(true);
       expect(resize.every((sample) => sample.finitePaint)).toBe(true);
       expect(Math.max(...resize.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      for (const { index, samples } of resizeSegments) {
+        const final = samples.at(-1)!;
+        expect(final.settled).toBe(true);
+        expect(final.state).toBe(states[index].id);
+        expect(final.nodes).toEqual(states[index].nodes);
+        expect(final.paintedNodes).toEqual(states[index].nodes);
+        expect(final.edges).toEqual(states[index].edges);
+        expect(final.labels).toEqual(states[index].edges);
+        expect(final.fonts.length).toBeGreaterThanOrEqual(5);
+        expect(Math.min(...final.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
+        expect(Math.min(...final.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
+        expect(final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
+          true,
+        );
+        const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+        expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
+        if (motion === 'reduced') {
+          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+        }
+      }
       await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
     });
   }
 }
+
+// Moving an ancestor changes viewport coordinates without changing the diagram's
+// own geometry. It must not keep a completed resize in the settling state.
+test('walkthrough settles a resize while its ancestor moves', async ({ page }, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  const result = await root.evaluate(async (element, source) => {
+    const read = new Function(`return (${source})`)() as typeof geometry;
+    const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
+    const motion = host.animate(
+      [{ transform: 'translateY(0px)' }, { transform: 'translateY(8px)' }],
+      { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'linear' },
+    );
+    const samples = [];
+    try {
+      element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[1].click();
+      host.style.width = '420px';
+      const start = performance.now();
+      do {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        samples.push({ ...read(element), rootTop: element.getBoundingClientRect().top });
+      } while (
+        (!samples.at(-1)!.settled || samples.length < 4) &&
+        performance.now() - start < 4000
+      );
+      return { samples, ancestorStillMoving: motion.playState === 'running' };
+    } finally {
+      motion.cancel();
+    }
+  }, geometry.toString());
+  await testInfo.attach('ancestor-motion-geometry', {
+    body: JSON.stringify(result),
+    contentType: 'application/json',
+  });
+  expect(result.ancestorStillMoving).toBe(true);
+  const tops = result.samples.map((sample) => sample.rootTop);
+  expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.01);
+  expect(result.samples.at(-1)!.settled).toBe(true);
+  expect(result.samples.at(-1)!.state).toBe('execute');
+  expect(result.samples.every((sample) => sample.finitePaint)).toBe(true);
+  expect(Math.max(...result.samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+  // Capture the viewport after the behavioral checks: a locator clip can become
+  // stale while surrounding catalog sections reposition the settled diagram.
+  await root.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
+});
+
+// Reusing the mounted scene exposes resize delivery races that a fresh page can miss.
+test('walkthrough repeated resizing keeps painted content contained', async ({
+  page,
+}, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  const rounds = [];
+  for (let round = 0; round < 3; round += 1) {
+    for (const index of [1, 2, 0]) await sampleChange(root, index);
+    await sampleChange(root, 1, undefined, true);
+    const segments = [];
+    for (const [index, width] of [
+      [1, 420],
+      [2, 960],
+      [0, 662],
+    ]) {
+      segments.push({ index, width, samples: await sampleChange(root, index, width) });
+    }
+    rounds.push(segments);
+  }
+  await testInfo.attach('repeated-resize-geometry', {
+    body: JSON.stringify(rounds, null, 2),
+    contentType: 'application/json',
+  });
+  for (const segments of rounds) {
+    for (const { index, samples } of segments) {
+      expect(Math.max(...samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      expect(samples.every((sample) => sample.finitePaint)).toBe(true);
+      expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+      const final = samples.at(-1)!;
+      expect(final.settled).toBe(true);
+      expect(final.nodes).toEqual(states[index].nodes);
+      expect(final.edges).toEqual(states[index].edges);
+      expect(final.labels).toEqual(states[index].edges);
+    }
+  }
+});
+
+// A cached source frame must not hide a defect introduced by the interaction.
+test('resize sampling detects painted overflow and control movement', async ({
+  page,
+}, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  await root.evaluate((element) => {
+    element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].addEventListener(
+      'click',
+      () => {
+        const node = element.querySelector<SVGElement>('[data-node-id="redux"]')!;
+        const controls = element.querySelector<HTMLElement>('.state-navigation')!;
+        node.style.translate = '200px 0';
+        controls.style.translate = '0 12px';
+      },
+      { once: true },
+    );
+  });
+  const samples = await sampleChange(root, 0, 662);
+  await testInfo.attach('painted-defect-control', {
+    body: JSON.stringify(samples, null, 2),
+    contentType: 'application/json',
+  });
+  expect(samples[0].overflow).toBeLessThanOrEqual(1);
+  expect(Math.max(...samples.map((sample) => sample.overflow))).toBeGreaterThan(1);
+  const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+  expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
+  expect(samples.at(-1)!.overflow).toBeGreaterThan(1);
+  await root.screenshot({ path: testInfo.outputPath('painted-defect-control.png') });
+});
+
+// Unlike a persistent defect, this paint disappears before the following sampler rAF.
+test('resize sampling detects one painted frame from a later callback', async ({
+  page,
+}, testInfo) => {
+  const root = await open(page, 662, 'reduced');
+  await root.evaluate((element, source) => {
+    const read = new Function(`return (${source})`)() as typeof geometry;
+    const target = element as HTMLElement & { paintedDefect: ReturnType<typeof geometry>[] };
+    target.paintedDefect = [];
+    element.querySelector('.stepper-dot')!.addEventListener(
+      'click',
+      () => {
+        // Register after the sampler rAF, then after its post-frame task. The initial
+        // observer delivery has finished before the one-frame defect is introduced.
+        queueMicrotask(() =>
+          requestAnimationFrame(() =>
+            setTimeout(
+              () =>
+                requestAnimationFrame(() => {
+                  const node = element.querySelector<SVGElement>('[data-node-id="redux"]')!;
+                  const controls = element.querySelector<HTMLElement>('.state-navigation')!;
+                  node.style.translate = '200px 0';
+                  controls.style.translate = '0 12px';
+                  target.paintedDefect.push(read(element));
+                  requestAnimationFrame(() => {
+                    node.style.removeProperty('translate');
+                    controls.style.removeProperty('translate');
+                    target.paintedDefect.push(read(element));
+                  });
+                }),
+              0,
+            ),
+          ),
+        );
+      },
+      { once: true },
+    );
+  }, geometry.toString());
+  const samples = await sampleChange(root, 0, 662);
+  const injected = await root.evaluate(
+    (element) =>
+      (element as HTMLElement & { paintedDefect: ReturnType<typeof geometry>[] }).paintedDefect,
+  );
+  await testInfo.attach('one-frame-defect-control', {
+    body: JSON.stringify({ samples, injected }, null, 2),
+    contentType: 'application/json',
+  });
+  expect(injected).toHaveLength(2);
+  expect(injected[0].overflow).toBeGreaterThan(1);
+  expect(injected[1].overflow).toBeLessThanOrEqual(1);
+  expect(samples[0].overflow).toBeLessThanOrEqual(1);
+  expect(Math.max(...samples.map((sample) => sample.overflow))).toBeGreaterThan(1);
+  const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+  expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
+  expect(samples.at(-1)!.overflow).toBeLessThanOrEqual(1);
+});

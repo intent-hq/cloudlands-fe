@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   /* eslint-disable max-lines */
@@ -63,7 +64,6 @@
     selectAcceptChangesStatusLoading,
   } from '$store/renderer/slices/git/git-selectors';
   import FlameGraph from './FlameGraph.svelte';
-  import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
   import {
     requestArchiveWorkspace,
@@ -86,7 +86,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -96,13 +95,15 @@
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
-    presencePersonName,
+    presencePersonNameWithForge,
+    presencePersonLabel,
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
   import {
     selectWorkspacePresenceFocusTargets,
     selectWorkspacePresencePeople,
+    selectPresenceContext,
   } from '$store/renderer/slices/presence/presence-selectors';
   import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -132,7 +133,6 @@
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
   // Sharing is a lab: the Share entry point stays hidden until the user turns
   // the Multiplayer lab on in Settings → Labs (local preference, off by default).
-  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
@@ -410,6 +410,7 @@
   }
 
   const sidebarToggleAction: MenuAction = {
+    id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     iconSnippet: sidebarToggleIconSnippet,
     dividerBefore: true,
@@ -420,6 +421,7 @@
   };
 
   const sidebarSideAction: MenuAction = $derived({
+    id: 'move-sidebar',
     label:
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
@@ -436,14 +438,17 @@
   // On top of that the Multiplayer lab must be on: with it off (the default)
   // even the owner gets no Share item — and no presence-avatar fallback either,
   // since that fallback reuses this action.
+  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const shareAction: MenuAction | null = $derived(
-    $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
+    $canShare$
       ? {
+          id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
           dividerBefore: true,
           onClick: () => {
-            if (!$workspace) return;
+            if (!$workspace || !selectCanShareWorkspace.select(appStore.state, $workspace.id))
+              return;
             appStore.dispatch(
               openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
             );
@@ -465,22 +470,41 @@
     const allNotes = $notes;
     const wsId = $workspace?.id ? String($workspace.id) : undefined;
     const share = shareAction?.onClick ?? null;
+    const context = selectPresenceContext.select(appStore.state);
     return (person: PresenceCircle): PresenceCircleAction => {
-      const name = presencePersonName(person);
+      // The hover names the person's forge too: "Ada · @ada on GitHub · on Coordinator".
+      const name = person.hostRole
+        ? presencePersonLabel(person)
+        : presencePersonNameWithForge(person);
       const target = targets[person.principalId];
+      const guarded = (action: (event: MouseEvent) => void) => (event: MouseEvent) => {
+        if (!wsId || !context || context !== selectPresenceContext.select(appStore.state)) return;
+        if (
+          !selectWorkspacePresencePeople
+            .select(appStore.state, wsId)
+            .some((p) => p.principalId === person.principalId)
+        )
+          return;
+        const currentTarget = selectWorkspacePresenceFocusTargets.select(appStore.state, wsId)[
+          person.principalId
+        ];
+        if (JSON.stringify(currentTarget) !== JSON.stringify(target)) return;
+        action(event);
+      };
       if (target?.kind === 'agent') {
         const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
         return {
           label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
           onSelect: wsId
-            ? (event) =>
+            ? guarded((event) =>
                 appStore.dispatch(
                   openAgentTabRequested(wsId, {
                     agentId: target.agentId,
                     sourcePanelId: findSourcePanelId(event.target),
                     openInAdjacentPanel: isCmdClickModifier({ event }),
                   }),
-                )
+                ),
+              )
             : null,
         };
       }
@@ -488,14 +512,18 @@
         const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
         return {
           label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
-          onSelect: wsId ? () => void navigateToNote(target.noteId, { workspaceId: wsId }) : null,
+          onSelect: wsId
+            ? guarded(() => void navigateToNote(target.noteId, { workspaceId: wsId }))
+            : null,
         };
       }
       return {
-        label: person.online
-          ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
-          : m.workspace_progressCard_presenceOffline_tooltip({ name }),
-        onSelect: share,
+        label: person.hostRole
+          ? name
+          : person.online
+            ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
+            : m.workspace_progressCard_presenceOffline_tooltip({ name }),
+        onSelect: share ? guarded(share) : null,
       };
     };
   });
@@ -503,6 +531,7 @@
   const transferAction: MenuAction | null = $derived(
     $workspace && !$hidesOwnerActions$
       ? {
+          id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
           dividerBefore: !shareAction,
@@ -538,6 +567,7 @@
     const ownClientId = $drivingClient$.ownClientId;
     if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
+      id: 'set-primary-client',
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
       dividerBefore: true,
@@ -1225,11 +1255,6 @@
           </div>
         {/if} -->
       </div>
-    {/if}
-
-    <!-- Token usage row (renders nothing until data is available) -->
-    {#if workspaceId}
-      <WorkspaceTokenUsage {workspaceId} />
     {/if}
 
     <!-- Status follows identity and progress so it reads as the current update. -->

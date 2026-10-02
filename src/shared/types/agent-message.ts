@@ -11,6 +11,7 @@
  * Supports both core messages (with full metadata) and provider messages (simplified).
  */
 
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { ContentBlock } from './content-block';
 import type { AgentId } from './branded-ids';
 
@@ -50,17 +51,17 @@ export interface ToolResult {
 }
 
 /**
- * Serve-time author projection the daemon attaches to every `user` row of a
- * multiplayer workspace (PROTOCOL §5.5, intent-hq/intentd#1869): the
- * principal resolved from the row's `metadata.fromPrincipalId` stamp, else
- * the workspace's legacy author, else its owner. Profile fields are `null`
- * when the principal row is gone; `principalId` is always the row's id.
+ * Daemon-served human author snapshot. A nonempty principalId is local to
+ * this host; explicit null is portable historical display with no local
+ * authority. Nullable profiles and optional qualified identity belong to this
+ * author, never to the destination owner, current viewer or membership roster.
  */
 export interface MessageAuthor {
-  principalId: string;
+  principalId: string | null;
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  identity?: PrincipalIdentity;
 }
 
 /**
@@ -110,6 +111,7 @@ export interface MessageMetadata {
     | 'daemon_shutdown'
     | 'agent_stopped'
     | 'system_suspend'
+    | 'node_link_lost'
     | (string & {});
   interruptedBy?: { kind: 'user' } | { kind: 'agent'; agentId?: string; name?: string };
 
@@ -201,7 +203,7 @@ export interface AgentMessage {
   // Serve-time author projection on `user` rows (PROTOCOL §5.5,
   // intent-hq/intentd#1869). Absent on non-user rows, on local-only optimistic
   // rows before the daemon echo, and on rows from older daemons.
-  author?: MessageAuthor;
+  author?: MessageAuthor | null;
 
   // Metadata
   metadata?: MessageMetadata;

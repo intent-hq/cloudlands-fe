@@ -17,6 +17,8 @@
   import { CHAT_ICON_SIZE } from './chat-icon-size';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import * as Menu from '$lib/components/ui/menu';
+  import { faListCheck } from '@fortawesome/free-solid-svg-icons';
   import { Select } from '$lib/components/ui/select';
   import { EmptyState } from '$lib/components/patterns/screen';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
@@ -31,9 +33,10 @@
   interface Props {
     tasks: TaskProgressItem[];
     presentation?: 'status-stack' | 'checklist';
+    embedded?: boolean;
   }
 
-  let { tasks, presentation = 'status-stack' }: Props = $props();
+  let { tasks, presentation = 'status-stack', embedded = false }: Props = $props();
   let open = $state(false);
   let query = $state('');
   let statusFilter = $state<TaskProgressStatus | 'all'>('all');
@@ -225,6 +228,7 @@
   }
 
   function handleSearchKeydown(event: KeyboardEvent) {
+    if (embedded) event.stopPropagation();
     if (event.key !== 'ArrowDown' && event.key !== 'PageDown') return;
     event.preventDefault();
     pendingEntryFocus = 'list';
@@ -391,7 +395,134 @@
   </span>
 {/snippet}
 
-{#if tasks.length > 0}
+{#snippet taskList()}
+  <div
+    class="shrink-0 px-2 py-1.5 text-muted-foreground"
+    data-testid="task-progress-summary"
+    data-panel-menu-label={embedded || undefined}
+  >
+    {m.chat_taskProgress_summary_label({
+      completed: formatInteger(completedTasks.length),
+      total: formatInteger(tasks.length),
+    })}
+  </div>
+  {#if showFilters}
+    <div class="flex min-w-0 shrink-0 flex-col gap-1 px-1 pb-2">
+      <div class="relative min-w-0">
+        <Input
+          bind:ref={searchElement}
+          bind:value={query}
+          type="search"
+          size="compact"
+          class="pr-8 [&::-webkit-search-cancel-button]:hidden"
+          placeholder={m.chat_taskProgress_search_placeholder()}
+          aria-label={m.chat_taskProgress_search_placeholder()}
+          onkeydown={handleSearchKeydown}
+        />
+        {#if query}
+          <Button
+            variant="ghost-light"
+            size="icon-compact"
+            class="absolute right-0.5 top-1/2 -translate-y-1/2"
+            aria-label={m.chat_taskProgress_clearSearch_ariaLabel()}
+            onclick={clearSearch}
+          >
+            <XIcon aria-hidden="true" />
+          </Button>
+        {/if}
+      </div>
+      <Select.Root
+        value={statusFilter}
+        bind:open={statusFilterOpen}
+        items={filterOptions}
+        onchange={(value) => (statusFilter = value as TaskProgressStatus | 'all')}
+      >
+        <Select.Trigger
+          aria-label={m.chat_taskProgress_filters_ariaLabel()}
+          class="h-(--control-height-small) px-2"
+        >
+          <span class="min-w-0 flex-1 truncate text-left">{selectedFilter?.label}</span>
+          <span class="tabular-nums text-muted-foreground">
+            {formatInteger(selectedFilter?.count ?? 0)}
+          </span>
+        </Select.Trigger>
+        <Select.Content
+          portal
+          wrapperId={statusMenuId}
+          class={embedded ? 'panel-header-menu bg-background' : ''}
+        >
+          {#each filterOptions as option (option.value)}
+            <Select.Item value={option.value} label={option.label}>
+              <span class="flex min-w-0 items-center gap-2">
+                <span class="min-w-0 flex-1 truncate">{option.label}</span>
+                <span class="tabular-nums text-muted-foreground">
+                  {formatInteger(option.count)}
+                </span>
+              </span>
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+  {/if}
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -- keyboard-scrollable region, see WAI-ARIA APG scrollable-region-focusable pattern -->
+  <div
+    bind:this={scrollRegionElement}
+    tabindex={0}
+    aria-label={m.chat_taskProgress_list_ariaLabel()}
+    class="min-h-0 min-w-0 max-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    data-testid="task-progress-scroll-region"
+  >
+    <ul class="min-w-0" data-testid="task-progress-list">
+      {#each filteredTasks as task (task.id)}
+        <li
+          class="flex min-h-7 min-w-0 items-start gap-2 overflow-hidden rounded-md px-2 py-1 text-popover-foreground transition-colors duration-(--motion-fast) motion-reduce:transition-none"
+          data-testid="task-progress-row"
+          data-task-id={task.id}
+          data-task-status={task.status}
+          data-panel-menu-row={embedded || undefined}
+          aria-label={m.chat_taskProgress_task_ariaLabel({
+            status: statusLabel(task.status),
+            title: task.title,
+          })}
+          animate:taskProgressFlip
+          transition:taskProgressRowTransition
+        >
+          {@render taskRowContent(task)}
+        </li>
+      {/each}
+    </ul>
+    {#if filteredTasks.length === 0}
+      <EmptyState density="compact" data-testid="task-progress-no-matches">
+        {#snippet title()}{m.chat_taskProgress_noMatches_label()}{/snippet}
+        {#snippet actions()}
+          <Button variant="ghost" size="compact" onclick={resetFilters}>
+            {m.chat_taskProgress_reset_label()}
+          </Button>
+        {/snippet}
+      </EmptyState>
+    {/if}
+  </div>
+{/snippet}
+
+{#if tasks.length > 0 && embedded}
+  <Menu.Sub bind:open onOpenChange={handleOpenChange}>
+    <Menu.SubTrigger icon={faListCheck} data-testid="task-progress-trigger"
+      >{m.chat_taskProgress_menu_label()}</Menu.SubTrigger
+    >
+    <Menu.SubContent
+      bind:ref={contentElement}
+      class="w-72"
+      data-testid="task-progress-popover"
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        (showFilters ? searchElement : scrollRegionElement)?.focus();
+      }}
+    >
+      {@render taskList()}
+    </Menu.SubContent>
+  </Menu.Sub>
+{:else if tasks.length > 0}
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
     <TooltipShortcut
       label={progressLabel}
@@ -506,104 +637,7 @@
         class="{DROPDOWN_SURFACE_CLASS} type-caption w-72"
         data-testid="task-progress-popover"
       >
-        <div class="shrink-0 px-2 py-1.5 text-muted-foreground" data-testid="task-progress-summary">
-          {m.chat_taskProgress_summary_label({
-            completed: formatInteger(completedTasks.length),
-            total: formatInteger(tasks.length),
-          })}
-        </div>
-        {#if showFilters}
-          <div class="flex min-w-0 shrink-0 flex-col gap-1 px-1 pb-2">
-            <div class="relative min-w-0">
-              <Input
-                bind:ref={searchElement}
-                bind:value={query}
-                type="search"
-                size="compact"
-                class="pr-8 [&::-webkit-search-cancel-button]:hidden"
-                placeholder={m.chat_taskProgress_search_placeholder()}
-                aria-label={m.chat_taskProgress_search_placeholder()}
-                onkeydown={handleSearchKeydown}
-              />
-              {#if query}
-                <Button
-                  variant="ghost-light"
-                  size="icon-compact"
-                  class="absolute right-0.5 top-1/2 -translate-y-1/2"
-                  aria-label={m.chat_taskProgress_clearSearch_ariaLabel()}
-                  onclick={clearSearch}
-                >
-                  <XIcon aria-hidden="true" />
-                </Button>
-              {/if}
-            </div>
-            <Select.Root
-              value={statusFilter}
-              bind:open={statusFilterOpen}
-              items={filterOptions}
-              onchange={(value) => (statusFilter = value as TaskProgressStatus | 'all')}
-            >
-              <Select.Trigger
-                aria-label={m.chat_taskProgress_filters_ariaLabel()}
-                class="h-(--control-height-small) px-2"
-              >
-                <span class="min-w-0 flex-1 truncate text-left">{selectedFilter?.label}</span>
-                <span class="tabular-nums text-muted-foreground">
-                  {formatInteger(selectedFilter?.count ?? 0)}
-                </span>
-              </Select.Trigger>
-              <Select.Content portal wrapperId={statusMenuId}>
-                {#each filterOptions as option (option.value)}
-                  <Select.Item value={option.value} label={option.label}>
-                    <span class="flex min-w-0 items-center gap-2">
-                      <span class="min-w-0 flex-1 truncate">{option.label}</span>
-                      <span class="tabular-nums text-muted-foreground">
-                        {formatInteger(option.count)}
-                      </span>
-                    </span>
-                  </Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-        {/if}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -- keyboard-scrollable region, see WAI-ARIA APG scrollable-region-focusable pattern -->
-        <div
-          bind:this={scrollRegionElement}
-          tabindex={0}
-          aria-label={m.chat_taskProgress_list_ariaLabel()}
-          class="min-h-0 min-w-0 max-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          data-testid="task-progress-scroll-region"
-        >
-          <ul class="min-w-0" data-testid="task-progress-list">
-            {#each filteredTasks as task (task.id)}
-              <li
-                class="flex min-h-7 min-w-0 items-start gap-2 overflow-hidden rounded-md px-2 py-1 text-popover-foreground transition-colors duration-(--motion-fast) motion-reduce:transition-none"
-                data-testid="task-progress-row"
-                data-task-id={task.id}
-                data-task-status={task.status}
-                aria-label={m.chat_taskProgress_task_ariaLabel({
-                  status: statusLabel(task.status),
-                  title: task.title,
-                })}
-                animate:taskProgressFlip
-                transition:taskProgressRowTransition
-              >
-                {@render taskRowContent(task)}
-              </li>
-            {/each}
-          </ul>
-          {#if filteredTasks.length === 0}
-            <EmptyState density="compact" data-testid="task-progress-no-matches">
-              {#snippet title()}{m.chat_taskProgress_noMatches_label()}{/snippet}
-              {#snippet actions()}
-                <Button variant="ghost" size="compact" onclick={resetFilters}>
-                  {m.chat_taskProgress_reset_label()}
-                </Button>
-              {/snippet}
-            </EmptyState>
-          {/if}
-        </div>
+        {@render taskList()}
       </Popover.Content>
     </Popover.Portal>
   </Popover.Root>

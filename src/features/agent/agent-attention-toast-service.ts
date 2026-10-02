@@ -5,7 +5,8 @@
  * conversation tab.
  *
  * Stickiness contract: `duration: Number.POSITIVE_INFINITY` — the toast never
- * auto-dismisses; only the explicit close button or "Switch To" removes it.
+ * auto-dismisses; a daemon request clear, the close button, or "Switch To"
+ * removes it.
  * The toast id is STABLE per agent (`agent-attention:<agentId>`) so a
  * re-raised request updates the existing toast in place instead of stacking.
  *
@@ -66,6 +67,9 @@ export interface AgentAttentionRequest {
 export function agentAttentionToastId(agentId: string): string {
   return `agent-attention:${agentId}`;
 }
+
+/** Only the latest pending show/dismiss for an agent may finish after lazy loading. */
+const pendingToastOperations = new Map<string, symbol>();
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light.
  *  The import promise is cached — concurrent events must not race two
@@ -181,8 +185,7 @@ function isAgentMuted(request: AgentAttentionRequest): boolean {
  * keeps tab state synchronized with route navigation.
  */
 export async function switchToAttentionAgent(workspaceId: string, agentId: string): Promise<void> {
-  const notify = await getToast();
-  notify.dismiss(agentAttentionToastId(agentId));
+  await dismissAgentAttentionToast(agentId);
   appStore.dispatch(openWorkspaceTab(workspaceId));
   try {
     const { navigateToRoute } = await import('$lib/utils/navigation.client');
@@ -217,34 +220,50 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
     });
     return;
   }
-  const [notify, AgentAttentionToast, resolveConnectedWorkspaceKeySlot] = await Promise.all([
-    getToast(),
-    getToastComponent(),
-    getKeySlotResolver(),
-  ]);
-  const title =
-    kind === 'blocker'
-      ? m.agent_attentionToast_blocker_title({ name: agentName })
-      : m.agent_attentionToast_discussion_title({ name: agentName });
-  notify.custom(AgentAttentionToast, {
-    id: agentAttentionToastId(agentId),
-    componentProps: {
-      title,
-      reason: truncate(reason, REASON_MAX_CHARS),
-      kind,
-      timestamp,
-      keySlot: resolveConnectedWorkspaceKeySlot(workspaceId),
-      onSwitchTo: () => void switchToAttentionAgent(workspaceId, agentId),
-      onClose: () => void dismissAgentAttentionToast(agentId),
-    },
-    duration: Number.POSITIVE_INFINITY,
-  });
+  const operation = Symbol();
+  pendingToastOperations.set(agentId, operation);
+  try {
+    const [notify, AgentAttentionToast, resolveConnectedWorkspaceKeySlot] = await Promise.all([
+      getToast(),
+      getToastComponent(),
+      getKeySlotResolver(),
+    ]);
+    if (pendingToastOperations.get(agentId) !== operation) return;
+    const title =
+      kind === 'blocker'
+        ? m.agent_attentionToast_blocker_title({ name: agentName })
+        : m.agent_attentionToast_discussion_title({ name: agentName });
+    notify.custom(AgentAttentionToast, {
+      id: agentAttentionToastId(agentId),
+      componentProps: {
+        title,
+        reason: truncate(reason, REASON_MAX_CHARS),
+        kind,
+        timestamp,
+        keySlot: resolveConnectedWorkspaceKeySlot(workspaceId),
+        onSwitchTo: () => void switchToAttentionAgent(workspaceId, agentId),
+        onClose: () => void dismissAgentAttentionToast(agentId),
+      },
+      duration: Number.POSITIVE_INFINITY,
+    });
+  } finally {
+    if (pendingToastOperations.get(agentId) === operation) pendingToastOperations.delete(agentId);
+  }
 }
 
-/** Explicit user dismissal — the only other way the toast goes away. */
+/** Daemon clear or local dismissal; cancel pending renders before awaiting the toast lib. */
 export async function dismissAgentAttentionToast(agentId: string): Promise<void> {
-  const notify = await getToast();
-  notify.dismiss(agentAttentionToastId(agentId));
+  const operation = Symbol();
+  pendingToastOperations.set(agentId, operation);
+  try {
+    const notify = await getToast();
+    // A fresh request supersedes this dismissal even while the library loads.
+    if (pendingToastOperations.get(agentId) === operation) {
+      notify.dismiss(agentAttentionToastId(agentId));
+    }
+  } finally {
+    if (pendingToastOperations.get(agentId) === operation) pendingToastOperations.delete(agentId);
+  }
 }
 
 /**

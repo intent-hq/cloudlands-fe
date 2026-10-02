@@ -164,10 +164,11 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
     const bounds = await menu.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+    const general = menu.getByRole('menuitemradio', { name: /General/ });
+    await expect(general).toHaveAttribute('aria-checked', 'true');
+    await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
     const choice =
-      state === 'empty'
-        ? menu.getByRole('menuitem').first()
-        : menu.getByRole('menuitem', { name: /A specialist with/ });
+      state === 'empty' ? general : menu.getByRole('menuitemradio', { name: /A specialist with/ });
     const geometry = await choice.evaluate((element) => {
       const row = element.getBoundingClientRect();
       const spans = [...element.querySelectorAll('span')].filter(
@@ -188,7 +189,7 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
     expect(geometry.descriptionTop).toBeGreaterThanOrEqual(geometry.titleBottom - 1);
     expect(geometry.descriptionBottom).toBeLessThanOrEqual(geometry.rowBottom + 1);
     expect(geometry.overflow).toBeLessThanOrEqual(1);
-    await expect(menu.getByRole('menuitem').first()).toBeFocused();
+    await expect(general).toBeFocused();
     if (state !== 'empty') {
       await page.keyboard.press('ArrowDown');
     }
@@ -201,6 +202,8 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
     await expect(trigger).toBeFocused();
     await trigger.press('Enter');
     await expect(menu).toBeVisible();
+    await expect(choice).toHaveAttribute('aria-checked', 'true');
+    await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
     await expect(
       choice
         .locator('span')
@@ -245,13 +248,23 @@ test('welcome specialist prompt expands and rich controls contain their content'
   await trigger.press('Enter');
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  const longChoice = menu.getByRole('menuitem', { name: /A specialist with/ });
+  const developer = menu.getByRole('menuitemradio', { name: /Developer/ });
+  await expect(developer).toHaveAttribute('aria-checked', 'true');
+  const longChoice = menu.getByRole('menuitemradio', { name: /A specialist with/ });
+  await expect(longChoice).toHaveAttribute('aria-checked', 'false');
   await expectContentsInside(longChoice);
   await page.screenshot({ path: info.outputPath('welcome-specialist-open.png') });
-  await expect(menu.getByRole('menuitem').first()).toBeFocused();
+  await expect(menu.getByRole('menuitemradio', { name: /General/ })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(longChoice).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('specialist-selection')).toHaveText('fixture-long');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(longChoice).toHaveAttribute('aria-checked', 'true');
+  await expect(developer).toHaveAttribute('aria-checked', 'false');
+  await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
+  await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
 });

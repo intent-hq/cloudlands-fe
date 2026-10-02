@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
+  import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -11,6 +13,7 @@
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -21,16 +24,8 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { surfaceClasses } from '$lib/components/ui/surface-context';
   import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
-
-  import { agentClient } from '$features/agent/agent.client';
-  import { reconcileAgentReasoningEffort } from '$features/agent/reasoning-effort';
-  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
-
-  import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import {
     faMicrophone,
@@ -65,6 +60,10 @@
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
   import * as Menu from '$lib/components/ui/menu';
+  import * as Popover from '$lib/components/ui/popover';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
   import {
@@ -72,6 +71,7 @@
     selectSkillsError,
     selectSkillsLoading,
   } from '$store/renderer/slices/skills/skills-selectors';
+  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
 
   import {
     togglePanel as togglePanelAction,
@@ -87,7 +87,6 @@
 
   const logger = createLogger('SimpleRichInput');
 
-  const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
@@ -96,10 +95,12 @@
 
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
-    return selectNormalizedProviderId.select(appStore.state, providerId);
+    void $providerCatalogEntries$;
+    return selectNormalizedProviderId.select(appStore.state, providerId, workspace?.id);
   }
   function providerDisplayName(providerId: string): string {
-    return selectProviderDisplayName.select(appStore.state, providerId);
+    void $providerCatalogEntries$;
+    return selectProviderDisplayName.select(appStore.state, providerId, workspace?.id);
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -255,6 +256,13 @@
     onHistoryNext,
   }: Props = $props();
 
+  // Selector readables are created at component init; mirror the reactive prop
+  // so a composer moved between workspaces follows that workspace's skill roster.
+  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
+  const workspaceIdStore = writable(workspace?.id ?? '');
+  const defaultProviderId$ = selectEffectiveDefaultProviderId(workspaceIdStore);
+  const providerCatalogEntries$ = selectProviderCatalogEntries(workspaceIdStore);
+
   function updateValue(nextValue: string) {
     value = nextValue;
     onvaluechange?.(nextValue);
@@ -275,20 +283,23 @@
   let modelPickerRef: {
     open: () => void;
     clearFallbackWarning: () => void;
-    clearPendingUpdate: () => void;
   } | null = $state(null);
   let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
   let promptActionsOpen = $state(false);
+  let contextFlyoutOpen = $state(false);
+  let contextFlyoutTrigger = $state<HTMLDivElement | null>(null);
+  let contextFlyoutRef = $state<HTMLDivElement | null>(null);
+  let contextFlyoutSide = $state<'right' | 'bottom'>('right');
+  const contextFlyoutGap = 4;
+  let restoreContextTrigger = false;
+  let insertingContextMention = false;
+  const contextFlyoutId = $props.id();
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
-  // Selector readables are created at component init; mirror the reactive prop
-  // so a composer moved between workspaces follows that workspace's skill roster.
-  // svelte-ignore state_referenced_locally -- intentional initial prop snapshot.
-  const workspaceIdStore = writable(workspace?.id ?? '');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
   });
@@ -296,11 +307,16 @@
   const skillsLoading$ = selectSkillsLoading(workspaceIdStore);
   const skillsError$ = selectSkillsError(workspaceIdStore);
 
+  const participation$ = selectWorkspaceParticipationContext(workspaceIdStore);
+  const creation$ = selectWorkspaceCreationVisible();
+  const admitted = $derived(workspace?.id ? !!$participation$ : $creation$);
+
   // Derived state: whether there's content to send (text, context items, or inline images).
   // Blocked while any attachment placement is in flight or failed — a failed
   // pill must be retried or removed before the message can go out.
   let canSend = $derived(
-    (value.trim() || contextItems.length > 0 || hasInlineImages) &&
+    admitted &&
+      (value.trim() || contextItems.length > 0 || hasInlineImages) &&
       !hasBlockingAttachments(contextItems),
   );
 
@@ -596,13 +612,7 @@
           ? 'hover'
           : 'rest',
   );
-  const edgeShadow = $derived(
-    ringState === 'drag'
-      ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
-      : ringState === 'hover'
-        ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
-        : undefined,
-  );
+  const edgeShadow = 'none';
   const composerStyle = $derived(
     `${
       isAutoExpand
@@ -643,6 +653,12 @@
     }
   });
 
+  const providerAgentIdStore = writable(agentId ?? '');
+  const agentProvider$ = selectAgentProvider(providerAgentIdStore);
+  $effect(() => {
+    providerAgentIdStore.set(agentId ?? '');
+  });
+
   const hydratedPropProviderId = $derived.by(() => {
     if (propProviderId) {
       return normalizeProviderId(propProviderId);
@@ -652,9 +668,7 @@
       return $defaultProviderId$;
     }
 
-    const session = workspace?.id ? selectAgentSession.select(appStore.state, agentId) : undefined;
-    const provider = session ? getAgentProvider(session, $defaultProviderId$) : undefined;
-    return provider ? normalizeProviderId(provider) : undefined;
+    return $agentProvider$;
   });
   let localProviderId = $state<string | undefined>(undefined);
 
@@ -667,8 +681,6 @@
   const selectedProviderId = $derived.by(() => {
     return localProviderId || hydratedPropProviderId;
   });
-
-  let isChangingProvider = $state(false);
 
   // Mid-conversation switch confirmation dialog state. The pending resolver
   // settles the promise returned to ModelPicker's confirmModelChange gate.
@@ -711,7 +723,7 @@
   function confirmModelSwitch(
     from: string | null | undefined,
     to: string | null,
-    labels?: { from: string; to: string },
+    labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
   ): boolean | Promise<boolean> {
     if (!requiresModelSwitchConfirmation) return true;
 
@@ -719,6 +731,14 @@
     modelSwitchDialog?.resolve(false);
     const fromInfo = describeModelForDialog(from);
     const toInfo = describeModelForDialog(to);
+    if (labels?.fromProviderId) {
+      fromInfo.providerId = labels.fromProviderId;
+      fromInfo.providerName = providerDisplayName(labels.fromProviderId);
+    }
+    if (labels?.toProviderId) {
+      toInfo.providerId = labels.toProviderId;
+      toInfo.providerName = providerDisplayName(labels.toProviderId);
+    }
     return new Promise<boolean>((resolve) => {
       modelSwitchDialog = {
         // Compare normalized provider ids, not display names — unknown ids
@@ -741,86 +761,7 @@
     modelSwitchDialog = null;
   }
 
-  async function handleProviderChangeFromModel(newProvider: string, newModel: string) {
-    if (!agentId || !workspace?.id) return;
-    if (isChangingProvider) return; // prevent re-entry during in-flight switch
-
-    const previousSession =
-      agentId && workspace?.id ? selectAgentSession.select(appStore.state, agentId) : undefined;
-    const previousProvider = selectedProviderId;
-    const previousModel = selectedModel;
-
-    isChangingProvider = true;
-    localProviderId = newProvider;
-    userChangedModel = true;
-    selectedModel = newModel;
-    lastNotifiedModel = newModel;
-
-    appStore.dispatch(
-      updateAgentSessionFields(agentId, {
-        provider: newProvider,
-        model: newModel,
-        metadata: {
-          ...(previousSession?.metadata || {}),
-          provider: newProvider,
-        },
-      }),
-    );
-
-    try {
-      // Pass the target provider explicitly so the daemon resolves a bare
-      // modelId against it instead of the session's current provider.
-      const result = await agentClient.setModel(agentId, newModel, workspace.id, newProvider);
-      if (!result.ok || !result.data.success) {
-        throw new Error(result.ok ? result.data.error : result.error);
-      }
-      const supportedEfforts = selectModelEffortLevels.select(appStore.state, newModel);
-      await reconcileAgentReasoningEffort(
-        agentId,
-        workspace.id,
-        previousSession?.reasoningEffort,
-        supportedEfforts,
-      );
-      onmodelChange?.(newModel);
-    } catch (error) {
-      logger.error('Failed to switch agent provider via model change', {
-        error,
-        agentId,
-        newProvider,
-      });
-      localProviderId = previousProvider === hydratedPropProviderId ? undefined : previousProvider;
-      selectedModel = previousModel;
-      lastNotifiedModel = previousModel;
-      userChangedModel = false;
-      const rollbackProvider =
-        previousProvider ??
-        previousSession?.provider ??
-        (previousSession?.metadata?.provider as string | undefined);
-      const rollbackModel = previousModel ?? previousSession?.model;
-      if (rollbackProvider && rollbackModel) {
-        appStore.dispatch(
-          updateAgentSessionFields(agentId, {
-            provider: rollbackProvider,
-            model: rollbackModel,
-            metadata: {
-              ...(previousSession?.metadata || {}),
-              provider: rollbackProvider,
-            },
-          }),
-        );
-      }
-      notify.error(
-        error instanceof Error
-          ? error.message
-          : m.chat_richInput_switchFailed_error({
-              provider: providerDisplayName(newProvider),
-            }),
-      );
-    } finally {
-      modelPickerRef?.clearPendingUpdate();
-      isChangingProvider = false;
-    }
-  }
+  onDestroy(() => settleModelSwitchDialog(false));
 
   /**
    * In-flight placement cancellers keyed by context-item id. Removing an
@@ -858,7 +799,7 @@
   }
 
   async function handleEnhancePrompt() {
-    if (!enhanceAvailable || disabled) return;
+    if (!admitted || !enhanceAvailable || disabled) return;
     if (!value.trim() || isEnhancing) return;
 
     const originalPrompt = value;
@@ -1393,15 +1334,48 @@
     }
   });
 
-  function withContextPickerContent(
-    groups: StackedMenuGroup[],
-    content: Snippet,
-  ): StackedMenuGroup[] {
-    return groups.map((group) => ({
-      ...group,
-      items: group.items.map((item) => (item.id === 'add-context' ? { ...item, content } : item)),
-    }));
+  function openContextFlyout() {
+    restoreContextTrigger = false;
+    contextFlyoutOpen = true;
   }
+
+  function closeContextFlyout() {
+    restoreContextTrigger = true;
+    contextFlyoutOpen = false;
+  }
+
+  $effect(() => {
+    if (!contextFlyoutOpen) return;
+    return pushEscapeLayer(closeContextFlyout);
+  });
+
+  $effect(() => {
+    // The embedded body is the direct child of the owning Popover surface.
+    const content = contextFlyoutRef?.parentElement;
+    const trigger = contextFlyoutTrigger;
+    if (!contextFlyoutOpen || !content || !trigger) return;
+    function updatePlacement() {
+      const anchor = trigger!.getBoundingClientRect();
+      const horizontalRoom = Math.max(anchor.left, window.innerWidth - anchor.right);
+      // Bits flips horizontally but cannot shift a side flyout across its anchor.
+      // When neither side fits, vertical placement preserves the shared gutters.
+      contextFlyoutSide =
+        horizontalRoom - OVERLAY_VIEWPORT_GUTTER - contextFlyoutGap < content!.offsetWidth
+          ? 'bottom'
+          : 'right';
+    }
+    updatePlacement();
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(content);
+    observer.observe(trigger);
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  });
 
   const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
     const groups: StackedMenuGroup[] = [
@@ -1487,8 +1461,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-    surfaceClasses(2, 2),
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',
@@ -1630,6 +1603,9 @@
       skills={$skills$}
       skillsLoading={$skillsLoading$}
       skillsError={$skillsError$}
+      onSkillsRetry={() => {
+        if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
+      }}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (
@@ -1700,6 +1676,7 @@
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
+        providerId={selectedProviderId}
         variant="ghost-light"
         size="xs"
         triggerClass="relative -left-2 font-medium text-muted-foreground hover:bg-hover hover:text-foreground [&_svg]:size-4"
@@ -1713,23 +1690,13 @@
         showReasoning
         reasoningDisabled={disabled}
         onModelChange={(newModel, pick) => {
-          if (!newModel) return;
-
-          // Check if the model is from a different provider. The picker
-          // resolves the pick's owning provider (catalog rows are bare for
-          // every provider); parsing the id is only a legacy fallback.
-          const rawProvider = pick?.providerId ?? parseCompoundModelId(newModel).providerId;
-          const newProvider = normalizeProviderId(rawProvider);
-          if (agentId && newProvider !== selectedProviderId) {
-            // Provider is changing — run the full provider switch flow
-            void handleProviderChangeFromModel(newProvider, newModel);
-          } else {
-            // Same provider — just update the model
-            userChangedModel = true;
-            lastNotifiedModel = newModel;
-            selectedModel = newModel;
-            onmodelChange?.(newModel);
-          }
+          // The picker and its guarded mutator own the session operation.
+          // This callback only mirrors its local selection (including rollback).
+          localProviderId = pick?.providerId ? normalizeProviderId(pick.providerId) : undefined;
+          userChangedModel = true;
+          lastNotifiedModel = newModel;
+          selectedModel = newModel;
+          onmodelChange?.(newModel);
         }}
       />
 
@@ -1750,22 +1717,13 @@
 
     <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
       <div class="relative inline-block">
-        {#snippet contextPickerSubmenu()}
-          <ContextPickerButton
-            panels={availablePanels}
-            selections={availableSelections}
-            {workspace}
-            {disabled}
-            currentAgentId={agentId}
-            onToggle={handleTogglePanel}
-            onToggleSelection={handleToggleSelection}
-            onInsertMention={(mention) => tiptap?.insertMention(mention)}
-            onPick={() => (promptActionsOpen = false)}
-            renderTrigger={false}
-            embedded
-          />
-        {/snippet}
-        <Menu.Root bind:open={promptActionsOpen}>
+        <Menu.Root
+          bind:open={promptActionsOpen}
+          onOpenChange={(open) => {
+            if (open) insertingContextMention = false;
+            else contextFlyoutOpen = false;
+          }}
+        >
           <Menu.Trigger>
             {#snippet child({ props })}
               <Button
@@ -1780,13 +1738,117 @@
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.StackedContent
-            groups={withContextPickerContent(promptActionGroups, contextPickerSubmenu)}
+          <Menu.Content
             align="end"
             side="top"
-            class="min-w-60"
-            submenuClass="p-0"
-          />
+            class="w-60"
+            onInteractOutside={(event) => {
+              if (event.target instanceof Node && contextFlyoutRef?.contains(event.target)) {
+                event.preventDefault();
+              }
+            }}
+            onCloseAutoFocus={(event) => {
+              if (insertingContextMention) event.preventDefault();
+            }}
+          >
+            {#each promptActionGroups as group, index (group.id)}
+              {#if index > 0}<Menu.Separator />{/if}
+              <Menu.Group>
+                {#each group.items as item (item.id)}
+                  {#if item.id === 'add-context'}
+                    <Popover.Root bind:open={contextFlyoutOpen}>
+                      <Menu.Item
+                        bind:ref={contextFlyoutTrigger}
+                        aria-haspopup="dialog"
+                        aria-expanded={contextFlyoutOpen}
+                        aria-controls={contextFlyoutOpen ? contextFlyoutId : undefined}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openContextFlyout();
+                        }}
+                        onpointermove={(event) => {
+                          if (event.pointerType === 'mouse' && !contextFlyoutOpen) {
+                            openContextFlyout();
+                          }
+                        }}
+                        onkeydown={(event) => {
+                          if (event.key !== 'ArrowRight') return;
+                          event.preventDefault();
+                          openContextFlyout();
+                        }}
+                      >
+                        {#snippet leading()}
+                          <Fa icon={faAt} size={16} class="size-4 text-muted-foreground" />
+                        {/snippet}
+                        <span class="min-w-0 flex-1">{item.label}</span>
+                        <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true">
+                          <ShortcutChip>@</ShortcutChip>
+                        </span>
+                        <Menu.Indicator state="submenu" />
+                      </Menu.Item>
+                      <Popover.Content
+                        id={contextFlyoutId}
+                        customAnchor={contextFlyoutTrigger}
+                        role="dialog"
+                        aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
+                        aria-describedby={`${contextFlyoutId}-description`}
+                        side={contextFlyoutSide}
+                        sideOffset={contextFlyoutGap}
+                        align="start"
+                        class="flex w-80 max-h-(--bits-popover-content-available-height) flex-col p-0"
+                        onCloseAutoFocus={(event) => {
+                          event.preventDefault();
+                          if (restoreContextTrigger && promptActionsOpen) {
+                            contextFlyoutTrigger?.focus();
+                          }
+                        }}
+                        onkeydown={(event) => {
+                          // Text inputs keep Left for moving the caret.
+                          if (event.key !== 'ArrowLeft' || event.target instanceof HTMLInputElement)
+                            return;
+                          event.preventDefault();
+                          closeContextFlyout();
+                        }}
+                      >
+                        <ContextPickerButton
+                          bind:bodyRef={contextFlyoutRef}
+                          panels={availablePanels}
+                          selections={availableSelections}
+                          {workspace}
+                          {disabled}
+                          currentAgentId={agentId}
+                          onToggle={handleTogglePanel}
+                          onToggleSelection={handleToggleSelection}
+                          onInsertMention={async (mention) => {
+                            // The picker calls onPick synchronously; let both focus scopes
+                            // unmount before placing the mention and caret in the editor.
+                            await tick();
+                            tiptap?.insertMention(mention);
+                          }}
+                          onPick={() => {
+                            insertingContextMention = true;
+                            contextFlyoutOpen = false;
+                            promptActionsOpen = false;
+                          }}
+                          renderTrigger={false}
+                          descriptionId={`${contextFlyoutId}-description`}
+                          embedded
+                        />
+                      </Popover.Content>
+                    </Popover.Root>
+                  {:else}
+                    <Menu.CommandItem
+                      icon={item.icon}
+                      label={item.label}
+                      shortcut={item.shortcut}
+                      disabled={item.disabled}
+                      onSelect={item.onSelect}
+                    />
+                  {/if}
+                {/each}
+              </Menu.Group>
+            {/each}
+          </Menu.Content>
         </Menu.Root>
       </div>
 

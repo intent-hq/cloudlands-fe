@@ -18,9 +18,10 @@ import {
   presenceReducer,
   presenceRosterReceived,
 } from '$store/renderer/slices/presence/presence-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
 import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-import type { StoreState } from '$store/renderer/types';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
@@ -754,15 +755,20 @@ describe('WorkspaceHoverCard', () => {
       presenceMembersReceived('ws-1', [accepted('me', 'owner'), accepted('other', 'collaborator')]),
       presenceRosterReceived({ workspaceId: 'ws-1', members: [online('me'), online('other')] }),
       presenceOwnPrincipalReceived('me'),
-    ].reduce((state, action) => presenceReducer(state, action), presenceInitialState);
-    const state = {
+    ].reduce((state, action) => presenceReducer(state, action), {
+      ...presenceInitialState,
+      context: 'fixture',
+      workspaceIds: ['ws-1'],
+    });
+    const state = withLegacyPrincipal({
       presence,
       workspace: {
         workspaces: createCollection('id', [
           { ...baseWorkspace, id: WorkspaceId('ws-1'), ownerPrincipalId: 'me', memberCount: 2 },
         ]),
       },
-    } as unknown as StoreState;
+    });
+    state.presence.context = selectPresenceContext.select(state);
     // The sidebar's people selector does see the other person in this state.
     expect(selectWorkspacePresencePeople.select(state, 'ws-1')).toHaveLength(1);
     mocks.storeState.state = state;

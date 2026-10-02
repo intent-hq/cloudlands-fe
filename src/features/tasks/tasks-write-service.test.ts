@@ -100,6 +100,7 @@ describe('tasksWriteService (fake seam, real store)', () => {
     expect(tasksApi.updateNoteStatus).toHaveBeenCalledWith('t1', 'complete');
     expect(noteStatus()).toBe('not_started');
     expect(taskStatus()).toBe('not_started');
+    expect(notify.error).toHaveBeenCalledOnce();
   });
 
   it('passes the stored rev as expectedVersion when known (§11.4-D)', async () => {

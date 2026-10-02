@@ -54,7 +54,8 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa };
 });
 
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fortawesome/free-solid-svg-icons')>()),
   faChevronDown: { iconName: 'chevron-down' },
 }));
 
@@ -297,7 +298,7 @@ describe('EffortPicker', () => {
       model: 'codex:gpt-5.1-codex-max',
       reasoningEffort: 'xhigh',
     });
-    expect(trigger().textContent).toContain('Auto');
+    expect(trigger().textContent).toContain('Extra high (unavailable)');
     const listbox = await openSelect();
     expect(applyReasoningEffort).not.toHaveBeenCalled();
     await selectOption(listbox, 'Auto');
@@ -321,7 +322,7 @@ describe('EffortPicker', () => {
     expect(applyReasoningEffort).not.toHaveBeenCalled();
   });
 
-  it('re-derives levels on a model switch and resolves unsupported effort to Auto', async () => {
+  it('preserves and explains unsupported effort on a model switch without inventing an option', async () => {
     mount({
       id: 'agent-1',
       workspaceId: 'ws-1',
@@ -339,7 +340,7 @@ describe('EffortPicker', () => {
     bumpVersion();
 
     await waitFor(() => {
-      expect(trigger().getAttribute('aria-label')).toContain('Auto');
+      expect(trigger().getAttribute('aria-label')).toContain('Extra high (unavailable)');
     });
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 

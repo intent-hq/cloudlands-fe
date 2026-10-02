@@ -2,7 +2,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
-import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -797,8 +796,10 @@ describe('panel context menu routing', () => {
     expect(container.querySelector('[data-panel-pin]')).toBeNull();
   });
 
-  it('keeps kebab and Close visible while grouping other panel controls in the menu', async () => {
-    const { container } = renderTabBar({ onSplitHorizontal: vi.fn(), onTabClose: vi.fn() });
+  it('keeps kebab and Close visible and routes tab context commands', async () => {
+    const onSplitHorizontal = vi.fn();
+    const onZoomToggle = vi.fn();
+    const { container } = renderTabBar({ onSplitHorizontal, onZoomToggle, onTabClose: vi.fn() });
     const directActions = container.querySelector<HTMLElement>('.panel-actions')!;
 
     expect(directActions.querySelectorAll('button')).toHaveLength(2);
@@ -806,24 +807,28 @@ describe('panel context menu routing', () => {
     expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
     expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
 
-    await fireEvent.click(
-      directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
-    );
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="one"]')!, {
+      clientX: 120,
+      clientY: 80,
+    });
 
-    const display = document.querySelector<HTMLElement>('[data-panel-actions-section="display"]');
-    const actions = document.querySelector<HTMLElement>('[data-panel-actions-section="actions"]');
-    expect(display?.textContent).toContain('Zoom Panel');
-    expect(actions?.textContent).toContain('Create column to right');
-    expect(actions?.textContent).not.toContain('Split down');
-    expect(document.querySelector('[role="menu"]')?.textContent).not.toContain('Close panel');
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Zoom Panel' }));
+    expect(onZoomToggle).toHaveBeenCalledOnce();
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="one"]')!, {
+      clientX: 120,
+      clientY: 80,
+    });
     expect(
       screen
         .getByRole('menuitem', { name: /Create column to right/i })
         .getAttribute('aria-disabled'),
     ).toBe('false');
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Create column to right' }));
+    expect(onSplitHorizontal).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('disables column creation in the mounted menu at four columns', async () => {
+  it('disables column creation in the tab context menu at four columns', async () => {
     const panelIds = ['panel-1', 'panel-2', 'panel-3', 'panel-4'];
     const panels = Object.fromEntries(panelIds.map((id) => [id, panel(id, [tab(`${id}-tab`)])]));
     const { container } = render(PanelContainer, {
@@ -843,8 +848,9 @@ describe('panel context menu routing', () => {
       },
     });
 
-    await fireEvent.click(
-      container.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
+    await fireEvent.contextMenu(
+      container.querySelector<HTMLElement>('[data-tab-id="panel-1-tab"]')!,
+      { clientX: 120, clientY: 80 },
     );
 
     expect(
@@ -880,11 +886,10 @@ describe('panel context menu routing', () => {
     );
 
     expect(
-      screen.getByRole('menuitem', { name: 'Move active pane left' }).getAttribute('aria-disabled'),
+      screen.getByRole('menuitem', { name: 'Move panel left' }).getAttribute('aria-disabled'),
     ).toBe('true');
-    const moveRight = screen.getByRole('menuitem', { name: 'Move active pane right' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move panel right' });
     expect(moveRight.getAttribute('aria-disabled')).toBe('false');
-    expect(moveRight.textContent).toContain(formatShortcut(SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key));
     await fireEvent.click(moveRight);
     expect(onMoveActivePane).toHaveBeenCalledWith('panel-1', 'next');
   });
@@ -892,52 +897,75 @@ describe('panel context menu routing', () => {
   // Kebab ink, target geometry, focus, and action coverage live in agent-header-icons.ct.spec.ts.
 
   it('opens the shared panel actions menu from the tabless header without tab actions', async () => {
-    const onMoveRight = vi.fn();
-    const { container } = renderTabBar({ showTabStrip: false, onMoveRight });
+    const onMovePaneRight = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMovePaneRight });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
 
-    const menu = screen.getByRole('menu');
-    const moveLeft = screen.getByRole('menuitem', { name: 'Move left' });
-    const moveRight = screen.getByRole('menuitem', { name: 'Move right' });
+    const moveLeft = screen.getByRole('menuitem', { name: 'Move panel left' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move panel right' });
     expect(moveLeft.getAttribute('aria-disabled')).toBe('true');
     expect(moveRight.getAttribute('aria-disabled')).toBe('false');
-    expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
-    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: /Close tabs to the right/ })).toBeNull();
     await fireEvent.click(moveRight);
-    expect(onMoveRight).toHaveBeenCalledOnce();
+    expect(onMovePaneRight).toHaveBeenCalledOnce();
   });
 
   it('disables Move right at the right boundary and keeps Move left enabled', async () => {
-    const onMoveLeft = vi.fn();
-    const { container } = renderTabBar({ showTabStrip: false, onMoveLeft });
+    const onMovePaneLeft = vi.fn();
+    const { container } = renderTabBar({ showTabStrip: false, onMovePaneLeft });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;
 
     await fireEvent.contextMenu(header, { clientX: 120, clientY: 80 });
 
-    const moveLeft = screen.getByRole('menuitem', { name: 'Move left' });
-    const moveRight = screen.getByRole('menuitem', { name: 'Move right' });
+    const moveLeft = screen.getByRole('menuitem', { name: 'Move panel left' });
+    const moveRight = screen.getByRole('menuitem', { name: 'Move panel right' });
     expect(moveLeft.getAttribute('aria-disabled')).toBe('false');
     expect(moveRight.getAttribute('aria-disabled')).toBe('true');
     await fireEvent.click(moveLeft);
-    expect(onMoveLeft).toHaveBeenCalledOnce();
+    expect(onMovePaneLeft).toHaveBeenCalledOnce();
   });
 
-  it('keeps tab actions on the explicit tab-strip menu', async () => {
-    const { container } = renderTabBar();
-    const tabElement = container.querySelector<HTMLElement>('[data-tab-id="one"]')!;
+  it.each([
+    ['Close', 'onTabClose'],
+    ['Close other tabs in panel', 'onCloseOtherTabs'],
+    ['Close tabs to the right', 'onCloseTabsToRight'],
+    ['Close all others', 'onCloseAllOthersEverywhere'],
+  ])('routes %s to the context target rather than the active tab', async (name, callback) => {
+    const action = vi.fn();
+    const onTabClick = vi.fn();
+    const { container } = renderTabBar({ [callback]: action, onTabClick });
+    const tabElement = container.querySelector<HTMLElement>('[data-tab-id="two"]')!;
 
     await fireEvent.contextMenu(tabElement, { clientX: 120, clientY: 80 });
+    await fireEvent.click(await screen.findByRole('menuitem', { name, exact: true }));
 
-    const menu = document.querySelector<HTMLElement>('[data-panel-context-menu="tab"]')!;
-    const labels = Array.from(menu.querySelectorAll('button'), (button) =>
-      button.textContent?.replace(/\s+/g, ' ').trim(),
-    );
-    expect(labels).toContain(`Close ${formatShortcut(SHORTCUTS.CLOSE_TAB.key)}`);
-    expect(labels).toContain('Close other tabs in panel');
-    expect(labels).toContain('Close tabs to the right');
+    expect(action).toHaveBeenCalledExactlyOnceWith('two');
+    expect(onTabClick).not.toHaveBeenCalled();
+  });
+
+  it.each([{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }])(
+    'opens the explicit tab menu using $key without activating the tab',
+    async (key) => {
+      const onTabClick = vi.fn();
+      const onTabClose = vi.fn();
+      const { container } = renderTabBar({ onTabClick, onTabClose });
+      await fireEvent.keyDown(container.querySelector('[data-tab-id="two"]')!, key);
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Close', exact: true }));
+      expect(onTabClose).toHaveBeenCalledExactlyOnceWith('two');
+      expect(onTabClick).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps protected tabs unclosable through the context menu', async () => {
+    const onTabClose = vi.fn();
+    const { container } = renderTabBar({ tabs: [{ ...tab('one'), closable: false }], onTabClose });
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="one"]')!);
+    const close = await screen.findByRole('menuitem', { name: 'Close', exact: true });
+    expect(close.getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(close);
+    expect(onTabClose).not.toHaveBeenCalled();
   });
 });
 

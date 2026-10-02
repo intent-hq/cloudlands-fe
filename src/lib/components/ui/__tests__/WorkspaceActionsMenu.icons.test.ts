@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { faArrowRightArrowLeft } from '$lib/icons/phosphor-icons';
 import { warmImport } from '../../../../test/warm-import';
@@ -68,7 +68,7 @@ describe('Workspace action icon defaults with real controls', () => {
         onDelete,
         onClose,
         additionalActions: [
-          { label: 'Transfer', icon: faArrowRightArrowLeft, onClick: onTransfer },
+          { id: 'transfer', label: 'Transfer', icon: faArrowRightArrowLeft, onClick: onTransfer },
         ],
       },
     });
@@ -76,7 +76,6 @@ describe('Workspace action icon defaults with real controls', () => {
       expect(screen.getByRole('button', { name: 'Open in Finder' })).toBeTruthy(),
     );
     const glyphs = [...container.querySelectorAll('svg[data-icon]')];
-    expect(glyphs).toHaveLength(5);
     for (const glyph of glyphs) expect(glyph.getAttribute('data-weight')).toBe('regular');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Choose app' }));

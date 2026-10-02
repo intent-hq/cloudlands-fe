@@ -39,6 +39,7 @@
     enterKey?: 'submit' | 'ignore';
     modEnter?: 'submit' | 'ignore';
     onfocusin?: (event: FocusEvent) => void;
+    onCloseAutoFocus?: ComponentProps<typeof Dialog.Content>['onCloseAutoFocus'];
     onSubmit: () => void | Promise<void>;
     onCancel?: () => void;
   }
@@ -73,6 +74,7 @@
     enterKey = 'submit',
     modEnter = 'submit',
     onfocusin,
+    onCloseAutoFocus,
     onSubmit,
     onCancel,
   }: Props = $props();
@@ -135,6 +137,7 @@
     {closeLabel}
     {escapeKeydownBehavior}
     onOpenAutoFocus={handleOpenAutoFocus}
+    {onCloseAutoFocus}
     {onfocusin}
     onkeydown={(event) => {
       if (event.key === 'Escape' && escapeKeydownBehavior === 'close') {

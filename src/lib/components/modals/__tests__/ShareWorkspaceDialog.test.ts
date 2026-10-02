@@ -3,7 +3,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   HostPrincipal,
   WorkspaceInvite,
@@ -89,6 +89,62 @@ function renderDialog(props: Record<string, unknown> = {}) {
   return render(ShareWorkspaceDialog, { props: { ...baseProps, ...props } });
 }
 
+it('offers explicit recipient pins on a capable host without repository authentication (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  const onSearchUsers = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+    onSearchUsers,
+  });
+  const field = await screen.findByRole('combobox', { name: /restrict to a github/i });
+  await fireEvent.input(field, { target: { value: 'sam' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', { provider: 'github' });
+  expect(onSearchUsers.mock.calls.filter(([query]) => query !== '')).toEqual([]);
+});
+
+it('lets a capable workspace manager pin a different canonical GitLab instance (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    gitlabEnabled: true,
+    gitlabHost: 'repository.example',
+    gitlabStatusReady: false,
+    canAdministerHost: false,
+    identityProvider: 'gitlab',
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+  });
+  await fireEvent.input(screen.getByLabelText('GitLab instance'), {
+    target: { value: 'Forge.Example:8443' },
+  });
+  await fireEvent.input(screen.getByLabelText(/Restrict to a GitLab user/), {
+    target: { value: 'sam' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', {
+    provider: 'gitlab',
+    host: 'forge.example:8443',
+  });
+});
+
+it('keeps inherited host members non-removable and uses daemon guest seats (#6390)', () => {
+  renderDialog({
+    members: [owner, { ...collaborator, hostRole: 'member' }],
+    guestCount: 0,
+    guestLimit: 5,
+  });
+  expect(screen.queryByRole('button', { name: /remove.*bob/i })).toBeNull();
+  expect(screen.getByText('Host member')).toBeTruthy();
+  expect(screen.getByText('Guests 0 / 5')).toBeTruthy();
+});
+
 beforeEach(() => {
   toastMocks.success.mockReset();
   toastMocks.error.mockReset();
@@ -101,6 +157,37 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('ShareWorkspaceDialog — owner gate', () => {
+  it('keeps new GitLab choices hidden by default and lets the host connect GitHub', async () => {
+    const onConnectGitHub = vi.fn();
+    renderDialog({ githubConnected: false, onConnectGitHub });
+    expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
+    expect(onConnectGitHub).toHaveBeenCalledOnce();
+  });
+
+  it('does not rewrite a selected GitLab pin when Labs is disabled', async () => {
+    const onCreateInvite = vi.fn();
+    const props = {
+      ...baseProps,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: true,
+      identityProvider: 'gitlab' as const,
+      onCreateInvite,
+    };
+    const { rerender } = render(ShareWorkspaceDialog, { props });
+    await fireEvent.input(screen.getByLabelText(/Restrict to a GitLab user/), {
+      target: { value: 'mara' },
+    });
+    await rerender({ ...props, gitlabEnabled: false });
+    await fireEvent.submit(screen.getByLabelText(/Restrict to a GitLab user/).closest('form')!);
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('mara', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
   // Regression (fe#2440 review P1): a collaborator connection (or a -32003
   // refusal) sees the owner-only notice — no rows, no controls, no link.
   it('renders only the owner-only notice when the caller cannot manage sharing', () => {
@@ -126,17 +213,285 @@ describe('ShareWorkspaceDialog — owner gate', () => {
   });
 });
 
-describe('ShareWorkspaceDialog — GitHub gate', () => {
-  it('shows the connect-first state instead of the sharing controls when GitHub is not connected', async () => {
+describe('ShareWorkspaceDialog — forge gate', () => {
+  it('leaves an unpinned invite available while canonical GitLab status is pending', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      identitySeamSupported: true,
+      gitlabHost: '',
+      gitlabStatusReady: false,
+      onCreateInvite,
+    });
+    const input = screen.getByLabelText(/Restrict to a GitLab user/);
+    await fireEvent.input(input, { target: { value: 'mara' } });
+    expect(screen.getByRole('button', { name: /Create invite/ }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    await fireEvent.submit(input.closest('form')!);
+    expect(onCreateInvite).not.toHaveBeenCalled();
+    await fireEvent.input(input, { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+  it('offers account-free sharing without an owner Connect action to a member', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ githubConnected: false, canAdministerHost: false, onCreateInvite });
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+
+  it('offers an optional owner connection alongside account-free sharing', async () => {
     const onConnectGitHub = vi.fn();
-    renderDialog({ githubConnected: false, onConnectGitHub });
+    const onOpenConnections = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabEnabled: true,
+      onConnectGitHub,
+      onOpenConnections,
+    });
 
     expect(screen.getByTestId('share-github-required')).toBeTruthy();
-    expect(screen.queryByLabelText(/Restrict to a GitHub user/)).toBeNull();
-    expect(screen.queryByTestId('share-member-row')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /Restrict to a/ })).toBeNull();
+    expect(screen.getAllByTestId('share-member-row')).toHaveLength(2);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Connections' }));
+    expect(onOpenConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a GitLab connection as no identity forge while the daemon lacks the identity seam', () => {
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: false,
+    });
+
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByLabelText(/Restrict to a/)).toBeNull();
+  });
+
+  it('binds the GitLab-only pin to the canonical host without typeahead', async () => {
+    const onCreateInvite = vi.fn();
+    const onSearchUsers = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: true,
+      onCreateInvite,
+      onSearchUsers,
+    });
+
+    expect(screen.queryByTestId('share-github-required')).toBeNull();
+    expect(screen.queryByTestId('share-pin-provider-trigger')).toBeNull();
+    const pin = screen.getByLabelText(/Restrict to a GitLab user/) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    expect(onSearchUsers).not.toHaveBeenCalledWith('dave');
+    expect(pin.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    // A seam-capable daemon receives the status-confirmed instance even with one forge.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+});
+
+describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
+  const both = {
+    githubConnected: true,
+    gitlabConnected: true,
+    gitlabEnabled: true,
+    gitlabHost: 'gitlab.example.com',
+    identitySeamSupported: true,
+  };
+
+  it('keeps the GitHub-only pin (no selector, bare login) against a daemon without the identity seam', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      ...both,
+      identitySeamSupported: false,
+      identityProvider: 'gitlab',
+      onCreateInvite,
+    });
+
+    expect(screen.queryByTestId('share-pin-provider-trigger')).toBeNull();
+    const pin = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+
+    // No `pinProvider` / `pinHost` ride to a daemon that would reject them.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave');
+  });
+
+  async function pickForge(name: RegExp) {
+    const trigger = screen.getByTestId('share-pin-provider-trigger');
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
+      pointerType: 'mouse',
+    });
+  }
+
+  it("defaults the pin's forge to the host's identity.provider and sends it with the login", async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, identityProvider: 'gitlab', onCreateInvite });
+
+    expect(screen.getByTestId('share-pin-provider-trigger').textContent).toContain(
+      'gitlab.example.com',
+    );
+    const pin = screen.getByLabelText(/Restrict to a GitLab user/) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('falls back to GitHub without an identity.provider and sends the GitHub pin', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, identityProvider: null, onCreateInvite });
+
+    const pin = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', { provider: 'github' });
+  });
+
+  it('switching the forge drops the GitHub typeahead pick and re-labels the field', async () => {
+    const onCreateInvite = vi.fn();
+    const onSearchUsers = vi.fn();
+    renderDialog({
+      ...both,
+      identityProvider: 'github',
+      onCreateInvite,
+      onSearchUsers,
+      userSuggestions: [
+        {
+          login: 'dave',
+          githubUserId: 4,
+          avatarUrl: 'https://avatars.githubusercontent.com/u/4',
+          htmlUrl: null,
+        },
+      ],
+      userSearchQuery: 'da',
+    });
+
+    const github = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
+    await fireEvent.input(github, { target: { value: 'da' } });
+    await fireEvent.click(await screen.findByRole('option', { name: /@dave/ }));
+    expect(screen.getByTestId('share-pin-selected')).toBeTruthy();
+
+    await pickForge(/gitlab\.example\.com/);
+    expect(screen.queryByTestId('share-pin-selected')).toBeNull();
+    expect(onSearchUsers).toHaveBeenLastCalledWith('');
+    const gitlab = screen.getByLabelText(/Restrict to a GitLab user/) as HTMLInputElement;
+    await fireEvent.input(gitlab, { target: { value: 'erin' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+
+    expect(onCreateInvite).toHaveBeenCalledWith('erin', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('keeps a user-picked GitLab pin after Labs is turned off while editing', async () => {
+    const onCreateInvite = vi.fn();
+    const props = { ...baseProps, ...both, identityProvider: 'github' as const, onCreateInvite };
+    const { rerender } = render(ShareWorkspaceDialog, { props });
+    await pickForge(/gitlab\.example\.com/);
+    await fireEvent.input(screen.getByLabelText(/Restrict to a GitLab user/), {
+      target: { value: 'invited-user' },
+    });
+    await rerender({ ...props, gitlabEnabled: false });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('invited-user', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('does not offer a new GitLab pin while off and still sends the explicit GitHub pin', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, gitlabEnabled: false, identityProvider: 'github', onCreateInvite });
+    expect(screen.queryByTestId('share-pin-provider-trigger')).toBeNull();
+    await fireEvent.input(screen.getByLabelText(/Restrict to a GitHub user/), {
+      target: { value: 'octocat' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('octocat', { provider: 'github' });
+  });
+
+  it('an open invite sends no pin regardless of the forge pick', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, identityProvider: 'gitlab', onCreateInvite });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    expect(onCreateInvite).toHaveBeenCalledWith('');
+  });
+});
+
+describe('ShareWorkspaceDialog — provider-aware rows', () => {
+  const gitlabMember: WorkspaceMember = {
+    ...collaborator,
+    principalId: 'p-gina',
+    login: 'gina',
+    identity: { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '77' },
+  };
+  const githubMember: WorkspaceMember = {
+    ...collaborator,
+    identity: { provider: 'github', host: 'github.com', externalUserId: '2' },
+  };
+
+  it('marks each member row with its identity forge and names the GitLab instance', () => {
+    renderDialog({ members: [owner, githubMember, gitlabMember] });
+
+    const rows = screen.getAllByTestId('share-member-row');
+    expect(rows).toHaveLength(3);
+    // A legacy row without an identity triple carries no forge marker.
+    expect(rows[0].querySelector('[data-testid="share-member-identity"]')).toBeNull();
+    expect(
+      rows[1].querySelector('[data-testid="share-member-identity"]')?.getAttribute('data-provider'),
+    ).toBe('github');
+    expect(rows[1].textContent).toContain('@bob');
+    expect(rows[1].textContent).not.toContain('gitlab.example.com');
+    expect(
+      rows[2].querySelector('[data-testid="share-member-identity"]')?.getAttribute('data-provider'),
+    ).toBe('gitlab');
+    expect(rows[2].textContent).toContain('@gina');
+    expect(rows[2].textContent).toContain('gitlab.example.com');
+  });
+
+  it('labels an invite pinned to a GitLab account with its instance', () => {
+    const gitlabInvite: WorkspaceInvite = {
+      ...openInvite,
+      id: 'inv-gl',
+      pinLogin: 'gina',
+      pinGithubUserId: undefined,
+      pinIdentity: { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '77' },
+    };
+    renderDialog({
+      invites: [openInvite, gitlabInvite],
+      inviteLinks: { ...inviteLinks, [gitlabInvite.id]: openInviteUrl },
+    });
+
+    const rows = screen.getAllByTestId('share-invite-row');
+    expect(rows[0].textContent).toContain('@carol');
+    expect(rows[0].textContent).not.toContain('gitlab.example.com');
+    expect(rows[1].textContent).toContain('@gina');
+    expect(rows[1].textContent).toContain('gitlab.example.com');
   });
 });
 
@@ -637,7 +992,7 @@ describe('ShareWorkspaceDialog — revoke and remove', () => {
   });
 });
 
-describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
+describe('ShareWorkspaceDialog — invite an existing user', () => {
   const erin: HostPrincipal = {
     principalId: 'p-erin',
     login: 'erin',
@@ -654,7 +1009,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
   };
 
   async function pick(name: string | RegExp) {
-    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing user/ });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
@@ -676,7 +1031,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     const form = screen.getByLabelText(/Restrict to a GitHub user/).closest('form')!;
     expect(section.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing user/ });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(await screen.findAllByRole('option')).toHaveLength(2);
@@ -700,6 +1055,27 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     await fireEvent.click(invite);
     expect(onAddMember).toHaveBeenCalledWith('p-erin');
     expect(onAddMember).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the invitation target through an in-flight refresh and gates submission until settled', async () => {
+    const onAddMember = vi.fn();
+    const { rerender } = renderDialog({ principals: [erin, frank], onAddMember });
+    await pick('@erin');
+    await rerender({ ...baseProps, principals: [], loading: true, onAddMember });
+    const invite = screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement;
+    const trigger = screen.getByRole('combobox', {
+      name: /Invite an existing user/,
+    }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.getAttribute('aria-busy')).toBe('true');
+    expect(invite.disabled).toBe(true);
+    await fireEvent.click(invite);
+    expect(onAddMember).not.toHaveBeenCalled();
+    await rerender({ ...baseProps, principals: [frank, erin], loading: false, onAddMember });
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute('aria-busy')).toBe('false');
+    await fireEvent.click(screen.getByTestId('share-existing-guest-invite'));
+    expect(onAddMember).toHaveBeenCalledExactlyOnceWith('p-erin');
   });
 
   // The host forwards `selectShareInvitablePrincipals`; after the daemon's
@@ -760,7 +1136,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     expect(
       (
         screen.getByRole('combobox', {
-          name: /Invite an existing GitHub user/,
+          name: /Invite an existing user/,
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);

@@ -74,6 +74,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:user-message:sent',
   // Agent session stats (PROTOCOL §5.24)
   'agent:session-stats-changed',
+  // Hub checkpoint events
+  'hub:checkpoint',
   // Git events
   'git:commit',
   'git:push',
@@ -580,17 +582,6 @@ export const EventsSubscribeSchema = z.object({
 export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
 });
-
-export const EventsGetLastEventSchema = z.object({
-  // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
-  // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
-  // still accepted as query inputs and simply return `null` if no such event
-  // has ever been recorded.
-  type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
-  workspaceId: WorkspaceIdSchema.optional(),
-});
-
-export const EventsGetStatisticsSchema = z.object({});
 
 export const SystemWriteClipboardSchema = z.object({
   text: z.string(),
@@ -1260,7 +1251,7 @@ export const InviteProgressAckSchema = z.object({
 
 export const InviteProgressResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
-  action: z.literal('cancel' satisfies InviteProgressAction),
+  action: z.enum(['cancel', 'retry'] as const satisfies readonly InviteProgressAction[]),
 });
 
 // ============================================================================

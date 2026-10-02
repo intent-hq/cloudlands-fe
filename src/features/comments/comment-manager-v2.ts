@@ -20,10 +20,10 @@ import { generateCommentId } from '$shared/utils/comment-id-generator';
 import * as commentsWrite from './comments-write-service';
 import {
   updateCommentAction,
-  loadCommentsAction,
+  replaceNoteCommentsAction,
 } from '$store/renderer/slices/comments/comments-slice';
 import {
-  selectComments,
+  selectCommentsForNote,
   selectCommentById,
 } from '$store/renderer/slices/comments/comments-selectors';
 import { store as appStore } from '$store/renderer/store';
@@ -66,6 +66,7 @@ export class CommentManagerV2 {
 
     // Load existing comments
     await this.loadComments();
+    if (this.editor !== editor) return;
 
     // Update decorations
     this.updateDecorations();
@@ -107,6 +108,8 @@ export class CommentManagerV2 {
         workspaceId: this.workspaceId,
         noteId: this.noteId,
       });
+
+      if (!this.editor) return;
 
       logger.info('Loading comments from backend', {
         count: backendComments.length,
@@ -207,7 +210,7 @@ export class CommentManagerV2 {
         }
       });
 
-      appStore.dispatch(loadCommentsAction(v2Comments));
+      appStore.dispatch(replaceNoteCommentsAction(this.workspaceId, this.noteId, v2Comments));
       logger.info('Loaded comments from backend', { count: v2Comments.length });
 
       // After loading comments, we need to insert anchors into the document
@@ -876,9 +879,11 @@ export class CommentManagerV2 {
 
     const anchoredCommentIds = getAllAnchoredCommentIds(this.editor.state.doc);
     // Only check comments for the current note
-    const currentNoteComments = selectComments
-      .select(appStore.state)
-      .filter((comment) => comment.noteId === this.noteId);
+    const currentNoteComments = selectCommentsForNote.select(
+      appStore.state,
+      this.workspaceId,
+      this.noteId,
+    );
     const commentById = new Map(currentNoteComments.map((c) => [c.id, c]));
 
     // Thread replies share the thread root's anchors, so also accept the
@@ -931,9 +936,11 @@ export class CommentManagerV2 {
       return;
     }
 
-    const currentNoteComments = selectComments
-      .select(appStore.state)
-      .filter((comment) => comment.noteId === this.noteId);
+    const currentNoteComments = selectCommentsForNote.select(
+      appStore.state,
+      this.workspaceId,
+      this.noteId,
+    );
 
     if (currentNoteComments.length === 0) {
       logger.debug('No comments to reapply anchors for', {
@@ -1259,9 +1266,7 @@ export class CommentManagerV2 {
     }
 
     // Get all comments for this note
-    const comments = selectComments
-      .select(appStore.state)
-      .filter((comment) => comment.noteId === this.noteId);
+    const comments = selectCommentsForNote.select(appStore.state, this.workspaceId, this.noteId);
 
     logger.debug('Scanning anchor health', {
       commentCount: comments.length,

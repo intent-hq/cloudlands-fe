@@ -33,6 +33,7 @@
    * the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
+  import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -65,9 +66,17 @@
     selectIsConnecting,
     selectActiveAuthRejected,
     selectCurrentConnectionCertWarnings,
+    selectConnectionWorkflow,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
-  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
+  } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    selectWindowGuestSession,
+    selectGuestLeavingIds,
+    selectGuestLeaveFailedIds,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -117,7 +126,14 @@
   // failure, not a success. Surfaced inline below the known-backends list with
   // the re-pair modal prefilled for that backend — re-adding the same
   // host:port replaces the stored token. Cleared on dismiss and on retry.
-  let secretUnavailableConnection = $state<ConnectionRecord | null>(null);
+  const consumerId = $props.id();
+  const openWorkflow$ = selectConnectionWorkflow(consumerId);
+  const secretUnavailableConnection = $derived(
+    $openWorkflow$?.outcome?.kind === 'secretUnavailable'
+      ? ($connections$.find((connection) => connection.id === $openWorkflow$?.targetId) ?? null)
+      : null,
+  );
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
   const isSandboxPage = $derived(
     $page.url.pathname === '/sandbox' ||
       $page.url.pathname.startsWith('/sandbox/') ||
@@ -146,7 +162,7 @@
         graceTimer = null;
       }
       visible = false;
-      secretUnavailableConnection = null;
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
     }
     return () => {
       if (graceTimer !== null) {
@@ -226,8 +242,16 @@
   // spawn / open local, other backends) is withheld.
   const guestSession$ = selectWindowGuestSession();
   const isGuestRevoked = $derived(isAuthRejected && $guestSession$ !== null);
-  let guestLeaving = $state(false);
-  let guestLeaveError = $state<string | null>(null);
+  const guestLeavingIds$ = selectGuestLeavingIds();
+  const guestFailedIds$ = selectGuestLeaveFailedIds();
+  const guestLeaving = $derived(
+    $guestSession$ !== null && $guestLeavingIds$.includes($guestSession$.id),
+  );
+  const guestLeaveError = $derived(
+    $guestSession$ && $guestFailedIds$.includes($guestSession$.id)
+      ? m.settings_guestSessions_leave_error({ name: formatGuestSessionLabel($guestSession$) })
+      : null,
+  );
 
   // Offline-host posture (multiplayer): this window is bound to a host joined
   // as a guest and the host is simply unreachable (off, asleep, offline) —
@@ -253,22 +277,10 @@
     appStore.dispatch(closeWindowRequested());
   }
 
-  async function handleLeaveHost() {
+  function handleLeaveHost() {
     const session = $guestSession$;
-    if (!session || guestLeaving) return;
-    guestLeaving = true;
-    guestLeaveError = null;
-    try {
-      const action = leaveGuestSessionRequested(session.id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      guestLeaveError = m.settings_guestSessions_leave_error({
-        name: formatGuestSessionLabel(session),
-      });
-    } finally {
-      guestLeaving = false;
-    }
+    if (!session) return;
+    appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 
   // The re-pair modal serves both the auth-rejected posture and the
@@ -278,7 +290,7 @@
   const repairPort = $derived(secretUnavailableConnection?.port ?? $authRejected$?.port ?? null);
 
   function openRepairForAuthRejected() {
-    secretUnavailableConnection = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
     repairModalOpen = true;
   }
 
@@ -286,13 +298,10 @@
   // successful re-add + open has replaced the token (and this window's overlay
   // may stay up while the other backend's window opens), and a cancel leaves
   // the user free to retry Open, which re-derives the outcome.
-  let wasRepairModalOpen = false;
-  $effect(() => {
-    if (wasRepairModalOpen && !repairModalOpen) {
-      secretUnavailableConnection = null;
-    }
-    wasRepairModalOpen = repairModalOpen;
-  });
+  function setRepairModalOpen(open: boolean) {
+    repairModalOpen = open;
+    if (!open) appStore.dispatch(connectionWorkflowCleared(consumerId));
+  }
 
   /** Display label for a remote connection: `hostname (host:port)`, or its raw label. */
   function connectionLabel(conn: ConnectionRecord): string {
@@ -338,19 +347,8 @@
     appStore.dispatch(spawnSidecarRequested());
   }
 
-  async function handleOpenConnection(id: string) {
-    secretUnavailableConnection = null;
-    try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        secretUnavailableConnection = $connections$.find((c) => c.id === id) ?? null;
-      }
-    } catch {
-      // Other failures surface via the connections slice op-status; the
-      // list/active refresh arrives via the connections:changed push.
-    }
+  function handleOpenConnection(id: string) {
+    appStore.dispatch(connectionWorkflowRequested(consumerId, { kind: 'open', id }));
   }
 
   // "Show logs from last run" — the daemon-health middleware performs the
@@ -729,7 +727,7 @@
   {/key}
 
   <ConnectBackendModal
-    bind:open={repairModalOpen}
+    bind:open={() => repairModalOpen, setRepairModalOpen}
     prefillLabel={repairTarget?.label ?? null}
     prefillAccent={repairTarget?.accent}
     prefillHost={repairHost}

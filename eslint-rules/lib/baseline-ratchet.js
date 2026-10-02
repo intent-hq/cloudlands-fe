@@ -14,6 +14,9 @@ import { ESLint } from 'eslint';
  * enforced at zero debt.
  */
 export const baselinesDir = 'eslint-rules/baselines';
+const legacyDesignSystemBaselinePath = 'eslint-rules/design-system/baseline.json';
+const legacySourceLiteralBaselinePath =
+  'eslint-rules/no-source-literal-assertions-in-tests.baseline.json';
 const rulesIndexPath = 'eslint-rules/design-system/index.js';
 const configPath = 'eslint.config.js';
 
@@ -227,12 +230,29 @@ function gitReadTree(ref, cwd, dir) {
   return files;
 }
 
+// A PR's comparison revision can predate the per-file migration even after main has
+// migrated. Read its original debt; the checked-out baseline still uses only the tree.
+function readLegacyBaseline(ref, cwd) {
+  const baseline = {};
+  const designSystem = gitShow(ref, cwd, legacyDesignSystemBaselinePath);
+  if (designSystem !== undefined) Object.assign(baseline, JSON.parse(designSystem));
+  const sourceLiteral = gitShow(ref, cwd, legacySourceLiteralBaselinePath);
+  if (sourceLiteral !== undefined) {
+    const counts = JSON.parse(sourceLiteral);
+    if (Object.keys(counts).length) {
+      baseline['no-source-literal-assertions-in-tests'] = [{ counts }];
+    }
+  }
+  return baseline;
+}
+
 /**
  * The baseline tree as committed at the comparison revision — `LINT_BASELINE_BASE_REF`
  * (the PR / merge-queue base on CI) or `HEAD` locally — optionally narrowed to `rules`.
- * A rule with no directory at that revision (or no tree at all) was enforced at zero
- * debt there, so only rules absent from the returned design-system `rules` registry
- * (`undefined` when the index is unreadable) may establish an initial baseline.
+ * When the entire tree is absent, read the legacy documents at that same revision.
+ * A rule absent from that baseline was enforced at zero debt there, so only rules
+ * absent from the returned design-system `rules` registry (`undefined` when the index
+ * is unreadable) may establish an initial baseline.
  */
 export function readComparisonBaseline({ cwd, env = process.env, rules } = {}) {
   // DESIGN_SYSTEM_BASELINE_BASE_REF is the pre-rename spelling, honored for one release
@@ -247,7 +267,16 @@ export function readComparisonBaseline({ cwd, env = process.env, rules } = {}) {
   } catch {
     throw new Error(`Could not resolve baseline comparison revision ${ref}`);
   }
-  const baseline = parseBaselineTree(gitReadTree(ref, cwd, baselinesDir), { rules });
+  const files = gitReadTree(ref, cwd, baselinesDir);
+  let baseline = parseBaselineTree(files, { rules });
+  if (!files.length) {
+    baseline = readLegacyBaseline(ref, cwd);
+    if (rules) {
+      baseline = Object.fromEntries(
+        Object.entries(baseline).filter(([rule]) => rules.includes(rule)),
+      );
+    }
+  }
   const rulesIndex = gitShow(ref, cwd, rulesIndexPath);
   return {
     ref,

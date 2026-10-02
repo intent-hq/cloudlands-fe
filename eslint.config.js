@@ -7,7 +7,7 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
-import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
+import { svelte as themisFullConfig } from '@themislib/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 import cssParser from './eslint-rules/design-system/css-parser.js';
@@ -929,6 +929,7 @@ export default [
       'intent/no-native-dialogs': 'error',
       'intent/no-raw-controls': 'error',
       'intent/no-raw-menu-row': 'error',
+      'intent/no-raw-menu-surface': 'error',
       'intent/no-raw-typography': 'error',
       'intent/settings-use-schema': 'error',
     },

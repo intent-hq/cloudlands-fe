@@ -16,6 +16,13 @@
  *   for the revoked overlay's *Leave host*).
  */
 
+import { selectLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-selectors';
+import { openCollaborationSignIn } from '$features/collaboration-auth/renderer/collaboration-auth.client';
+import {
+  selectCollaborationReady,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
+import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import {
   all,
@@ -32,7 +39,7 @@ import {
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -57,7 +64,11 @@ import { authRejectedReceived } from '../../connections/connections-slice';
 import { selectAllTabs, selectHiddenTabs } from '../../panel-layout/panel-layout-selectors';
 import { destroyOwnedTabsForWorkspace } from '../../panel-layout/panel-layout-slice';
 import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
-import { selectWorkspaceItems } from '../../workspace/workspace-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspaceItems,
+  selectWorkspaceManagementDenied,
+} from '../../workspace/workspace-selectors';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -77,12 +88,14 @@ import {
   hostedRosterLoading,
   hostedRosterReceived,
   hostedRosterWithheld,
+  hostedSweepReportReceived,
   leaveGuestSessionRequested,
   leaveGuestWorkspaceRequested,
   leaveOperationSettled,
   leaveOperationStarted,
   leaveWorkspaceOperationSettled,
   leaveWorkspaceOperationStarted,
+  collaborationSignInRequested,
   loadGuestSessionsRequested,
   loadHostedRosterRequested,
   removeAllGuestsOperationSettled,
@@ -94,9 +107,12 @@ import {
 } from '../guest-sessions-slice';
 import {
   selectCanManageHostedWorkspace,
+  selectGuestSessionLifetime,
   selectGuestSessionsLoaded,
   selectHostedRemovingPrincipalIds,
   selectHostedRosterMemberCounts,
+  selectHostedRoster,
+  selectHostedSweepReport,
   selectIsHostedWorkspaceListed,
   selectWindowGuestSession,
 } from '../guest-sessions-selectors';
@@ -169,21 +185,39 @@ function* hydrate(action: ReturnType<typeof loadGuestSessionsRequested>): SagaGe
   }
 }
 
-function* leave(action: ReturnType<typeof leaveGuestSessionRequested>): SagaGenerator<void> {
+function* leave(
+  flights: Map<string, Array<ReturnType<typeof leaveGuestSessionRequested>>>,
+  action: ReturnType<typeof leaveGuestSessionRequested>,
+): SagaGenerator<void> {
   const [id] = action.payload;
-  let settled = false;
+  if (!(yield* selectLabsMultiplayerEnabled.effect())) {
+    yield* put(action.failure(new GuestSessionOperationError('cancelled')));
+    return;
+  }
+  const joiners = flights.get(id);
+  if (joiners) {
+    joiners.push(action);
+    return;
+  }
+  flights.set(id, []);
+  let outcome:
+    { result: LeaveGuestSessionResult } | { failure: GuestSessionOperationError } | null = null;
   yield* put(leaveOperationStarted(id));
   try {
     const result = yield* call(invokeLeave, { id });
-    yield* put(action.success(result));
-    settled = true;
+    outcome = { result };
   } catch (error) {
-    yield* put(action.failure(toGuestSessionFailure(error)));
-    settled = true;
+    outcome = { failure: toGuestSessionFailure(error) };
   } finally {
-    if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new GuestSessionOperationError('cancelled')));
+    outcome ??= { failure: new GuestSessionOperationError('cancelled') };
+    const joined = [action, ...(flights.get(id) ?? [])];
+    flights.delete(id);
     yield* put(leaveOperationSettled(id));
+    for (const request of joined) {
+      yield* put(
+        'result' in outcome ? request.success(outcome.result) : request.failure(outcome.failure),
+      );
+    }
   }
 }
 
@@ -194,22 +228,51 @@ function* leave(action: ReturnType<typeof leaveGuestSessionRequested>): SagaGene
  * refused) leaves the record as is for a retry.
  */
 function* leaveWorkspace(
+  flights: Map<string, Array<ReturnType<typeof leaveGuestWorkspaceRequested>>>,
   action: ReturnType<typeof leaveGuestWorkspaceRequested>,
 ): SagaGenerator<void> {
   const [id, workspaceId] = action.payload;
-  let settled = false;
+  if (!(yield* selectLabsMultiplayerEnabled.effect())) {
+    yield* put(action.failure(new GuestSessionOperationError('cancelled')));
+    return;
+  }
+  const lifetime = yield* selectGuestSessionLifetime.effect(id);
+  const context = yield* selectPrincipalActionContext.effect();
+  const key = JSON.stringify([id, workspaceId]);
+  const joiners = flights.get(key);
+  if (joiners) {
+    joiners.push(action);
+    return;
+  }
+  flights.set(key, []);
+  let outcome:
+    { result: LeaveGuestWorkspaceResult } | { failure: GuestSessionOperationError } | null = null;
   yield* put(leaveWorkspaceOperationStarted(id, workspaceId));
   try {
     const result = yield* call(invokeLeaveWorkspace, { id, workspaceId });
-    yield* put(action.success(result));
-    settled = true;
+    const currentLifetime = yield* selectGuestSessionLifetime.effect(id);
+    outcome =
+      currentLifetime !== lifetime || context !== (yield* selectPrincipalActionContext.effect())
+        ? { failure: new GuestSessionOperationError('cancelled') }
+        : { result };
   } catch (error) {
-    yield* put(action.failure(toGuestSessionFailure(error)));
-    settled = true;
+    const currentLifetime = yield* selectGuestSessionLifetime.effect(id);
+    outcome = {
+      failure:
+        currentLifetime !== lifetime || context !== (yield* selectPrincipalActionContext.effect())
+          ? new GuestSessionOperationError('cancelled')
+          : toGuestSessionFailure(error),
+    };
   } finally {
-    if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new GuestSessionOperationError('cancelled')));
+    outcome ??= { failure: new GuestSessionOperationError('cancelled') };
+    const joined = [action, ...(flights.get(key) ?? [])];
+    flights.delete(key);
     yield* put(leaveWorkspaceOperationSettled(id, workspaceId));
+    for (const request of joined) {
+      yield* put(
+        'result' in outcome ? request.success(outcome.result) : request.failure(outcome.failure),
+      );
+    }
   }
 }
 
@@ -221,6 +284,16 @@ function* leaveWorkspace(
 function toHostedRosterFailure(error: unknown): HostedRosterOperationError {
   if (error instanceof HostedRosterOperationError) return error;
   if (isForbiddenErrorResponse(error)) return new HostedRosterOperationError('forbidden');
+  if (
+    error &&
+    typeof error === 'object' &&
+    'data' in error &&
+    error.data &&
+    typeof error.data === 'object' &&
+    'code' in error.data &&
+    error.data.code === 'host-membership-required'
+  )
+    return new HostedRosterOperationError('host-membership-required');
   if (isDaemonErrorResponse(error)) return new HostedRosterOperationError('daemon');
   return new HostedRosterOperationError('transport');
 }
@@ -286,13 +359,15 @@ function* readHostedRosterOnce(
   requests: RosterLoadAction[],
 ): SagaGenerator<void> {
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
-    yield* call(withholdRoster, workspaceId);
+    if (yield* selectWorkspaceManagementDenied.effect(workspaceId))
+      yield* call(withholdRoster, workspaceId);
     for (const settled of settleRosterRequests(requests, {
       failure: new HostedRosterOperationError('forbidden'),
     }))
       yield* put(settled);
     return;
   }
+  const context = yield* selectPrincipalActionContext.effect();
   yield* put(hostedRosterLoading(workspaceId));
   let outcome: RosterOutcome;
   try {
@@ -301,17 +376,25 @@ function* readHostedRosterOnce(
       'workspace.members.list',
       { workspaceId },
     );
-    if (yield* select(selectCanManageHostedWorkspace.select, workspaceId)) {
-      yield* put(hostedRosterReceived(workspaceId, result.members));
+    if ((yield* selectPrincipalActionContext.effect()) !== context) {
+      outcome = { failure: new HostedRosterOperationError('cancelled') };
+    } else if (yield* select(selectCanManageHostedWorkspace.select, workspaceId)) {
+      yield* put(
+        hostedRosterReceived(workspaceId, result.members, result.guestCount, result.guestLimit),
+      );
       outcome = { result };
     } else {
-      yield* call(withholdRoster, workspaceId);
+      if (yield* selectWorkspaceManagementDenied.effect(workspaceId))
+        yield* call(withholdRoster, workspaceId);
       outcome = { failure: new HostedRosterOperationError('forbidden') };
     }
   } catch (error) {
-    const failure = toHostedRosterFailure(error);
+    const failure =
+      context === (yield* selectPrincipalActionContext.effect())
+        ? toHostedRosterFailure(error)
+        : new HostedRosterOperationError('cancelled');
     if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
-    else yield* put(hostedRosterFailed(workspaceId));
+    else if (failure.code !== 'cancelled') yield* put(hostedRosterFailed(workspaceId));
     outcome = { failure };
   }
   for (const settled of settleRosterRequests(requests, outcome)) yield* put(settled);
@@ -401,14 +484,23 @@ function* removeHostedMember(
   const [workspaceId, principalId] = action.payload;
   let settled = false;
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
-    yield* call(withholdRoster, workspaceId);
+    if (yield* selectWorkspaceManagementDenied.effect(workspaceId))
+      yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(new HostedRosterOperationError('forbidden')));
+    return;
+  }
+  const member = (yield* selectHostedRoster.effect(workspaceId)).members.find(
+    (row) => row.principalId === principalId,
+  );
+  if (member && !isWorkspaceGuest(member)) {
+    yield* put(action.failure(new HostedRosterOperationError('host-membership-required')));
     return;
   }
   if ((yield* select(selectHostedRemovingPrincipalIds.select, workspaceId)).includes(principalId)) {
     yield* put(action.failure(new HostedRosterOperationError('cancelled')));
     return;
   }
+  const context = yield* selectPrincipalActionContext.effect();
   yield* put(removeMemberOperationStarted(workspaceId, principalId));
   try {
     const { result } = yield* race({
@@ -418,7 +510,11 @@ function* removeHostedMember(
       }),
       purged: take(isRosterPurge(workspaceId)),
     });
-    if (!result) {
+    if (
+      !result ||
+      context !== (yield* selectPrincipalActionContext.effect()) ||
+      !(yield* selectCanManageHostedWorkspace.effect(workspaceId))
+    ) {
       yield* put(action.failure(new HostedRosterOperationError('cancelled')));
       settled = true;
       return;
@@ -426,13 +522,14 @@ function* removeHostedMember(
     // The daemon's `workspace:updated` delta bumps `memberCount`, which
     // refetches the roster; a direct refetch keeps the list right even when
     // the count is unchanged (e.g. the member was already gone).
-    const refetch = loadHostedRosterRequested(workspaceId);
-    refetch.promise.catch(() => {});
-    yield* put(refetch);
+    yield* put(loadHostedRosterRequested(workspaceId));
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
-    const failure = toHostedRosterFailure(error);
+    const failure =
+      context === (yield* selectPrincipalActionContext.effect())
+        ? toHostedRosterFailure(error)
+        : new HostedRosterOperationError('cancelled');
     if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(failure));
     settled = true;
@@ -465,7 +562,10 @@ function* sweepStep(
   workspaceId: string,
   method: string,
   params: Record<string, unknown>,
+  context: string | null,
 ): SagaGenerator<HostedRosterFailureCode | null> {
+  if (context !== (yield* selectPrincipalActionContext.effect()))
+    throw new HostedRosterOperationError('cancelled');
   yield* call(assertCanManageHostedWorkspace, workspaceId);
   try {
     yield* call(
@@ -490,6 +590,7 @@ function* sweepStep(
  * {@link assertCanManageHostedWorkspace}).
  */
 function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedGuestsResult> {
+  const context = yield* selectPrincipalActionContext.effect();
   const result: RemoveAllHostedGuestsResult = {
     removedPrincipalIds: [],
     failedMembers: [],
@@ -501,14 +602,21 @@ function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedG
     workspaceId,
   });
   for (const member of roster.members) {
-    if (member.role === 'owner') continue;
-    const code = yield* sweepStep(workspaceId, 'workspace.members.remove', {
+    if (!isWorkspaceGuest(member)) continue;
+    const code = yield* sweepStep(
       workspaceId,
-      principalId: member.principalId,
-    });
+      'workspace.members.remove',
+      {
+        workspaceId,
+        principalId: member.principalId,
+      },
+      context,
+    );
     if (code === null) result.removedPrincipalIds.push(member.principalId);
     else result.failedMembers.push({ principalId: member.principalId, code });
   }
+  if (context !== (yield* selectPrincipalActionContext.effect()))
+    throw new HostedRosterOperationError('cancelled');
   yield* call(assertCanManageHostedWorkspace, workspaceId);
   let invites: WorkspaceInviteListResult;
   try {
@@ -522,10 +630,15 @@ function* sweepHostedGuests(workspaceId: string): SagaGenerator<RemoveAllHostedG
     return result;
   }
   for (const invite of invites.invites) {
-    const code = yield* sweepStep(workspaceId, 'workspace.invite.revoke', {
+    const code = yield* sweepStep(
       workspaceId,
-      inviteId: invite.id,
-    });
+      'workspace.invite.revoke',
+      {
+        workspaceId,
+        inviteId: invite.id,
+      },
+      context,
+    );
     if (code === null) result.revokedInviteIds.push(invite.id);
     else
       result.failedInvites.push({ inviteId: invite.id, pinLogin: invite.pinLogin ?? null, code });
@@ -570,11 +683,29 @@ function* removeAllHostedGuests(
     return;
   }
   if (!(yield* select(selectCanManageHostedWorkspace.select, workspaceId))) {
-    yield* call(withholdRoster, workspaceId);
+    if (yield* selectWorkspaceManagementDenied.effect(workspaceId))
+      yield* call(withholdRoster, workspaceId);
     yield* put(action.failure(new HostedRosterOperationError('forbidden')));
     return;
   }
   inFlight.set(workspaceId, []);
+  const context = yield* selectPrincipalActionContext.effect();
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  const roster = yield* selectHostedRoster.effect(workspaceId);
+  const previous = yield* selectHostedSweepReport.effect(workspaceId);
+  const reportContext = {
+    workspaceId,
+    workspaceTitle: workspace?.title ?? previous?.workspaceTitle ?? '',
+    memberLabels: {
+      ...previous?.memberLabels,
+      ...Object.fromEntries(
+        roster.members.map((member) => [
+          member.principalId,
+          member.displayName ?? member.login ?? member.principalId,
+        ]),
+      ),
+    },
+  };
   let outcome: SweepOutcome | null = null;
   yield* put(removeAllGuestsOperationStarted(workspaceId));
   try {
@@ -582,21 +713,48 @@ function* removeAllHostedGuests(
       result: call(sweepHostedGuests, workspaceId),
       purged: take(isRosterPurge(workspaceId)),
     });
-    if (!result) {
+    if (
+      !result ||
+      context !== (yield* selectPrincipalActionContext.effect()) ||
+      !(yield* selectCanManageHostedWorkspace.effect(workspaceId))
+    ) {
       outcome = { failure: new HostedRosterOperationError('cancelled') };
       return;
     }
-    const refetch = loadHostedRosterRequested(workspaceId);
-    refetch.promise.catch(() => {});
-    yield* put(refetch);
+    yield* put(loadHostedRosterRequested(workspaceId));
     outcome = { result };
   } catch (error) {
-    const failure = toHostedRosterFailure(error);
+    const failure =
+      context === (yield* selectPrincipalActionContext.effect())
+        ? toHostedRosterFailure(error)
+        : new HostedRosterOperationError('cancelled');
     if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
     outcome = { failure };
   } finally {
     // Cancelled (saga teardown) is the only way out without an outcome.
     outcome ??= { failure: new HostedRosterOperationError('cancelled') };
+    if ('result' in outcome) {
+      const result = outcome.result;
+      if (result.failedMembers.length || result.failedInvites.length || result.invitesUnavailable) {
+        yield* put(
+          hostedSweepReportReceived({
+            ...reportContext,
+            failedMemberIds: result.failedMembers.map((member) => member.principalId),
+            failedInviteLabels: result.failedInvites.map((invite) => invite.pinLogin ?? ''),
+            invitesUnavailable: result.invitesUnavailable !== null,
+          }),
+        );
+      }
+    } else if (outcome.failure.code !== 'cancelled' && outcome.failure.code !== 'forbidden') {
+      yield* put(
+        hostedSweepReportReceived({
+          ...reportContext,
+          failedMemberIds: [],
+          failedInviteLabels: [],
+          invitesUnavailable: false,
+        }),
+      );
+    }
     const joined = [action, ...(inFlight.get(workspaceId) ?? [])];
     inFlight.delete(workspaceId);
     for (const request of joined) {
@@ -633,9 +791,7 @@ function* refetchRostersOnMemberCountChange(
     if (!current.has(workspaceId)) seen.delete(workspaceId);
   }
   for (const workspaceId of stale) {
-    const request = loadHostedRosterRequested(workspaceId);
-    request.promise.catch(() => {});
-    yield* put(request);
+    yield* put(loadHostedRosterRequested(workspaceId));
   }
 }
 
@@ -732,7 +888,7 @@ function* tearDownOnGuestAuthRejection(
       cleanups.push([workspaceId, agentId]);
     }
     yield* put(destroyOwnedTabsForWorkspace(workspaceId));
-    yield* put(workspaceDeleted(workspaceId, [...agentIds]));
+    yield* put(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
     try {
       yield* call(closeWorkspaceTabAndNavigateAway, workspaceId);
     } catch (error) {
@@ -748,12 +904,20 @@ function* tearDownOnGuestAuthRejection(
 
 function* watchActions(): SagaGenerator<void> {
   const sweepsInFlight: SweepsInFlight = new Map();
+  const leavesInFlight = new Map<string, Array<ReturnType<typeof leaveGuestSessionRequested>>>();
+  const workspaceLeavesInFlight = new Map<
+    string,
+    Array<ReturnType<typeof leaveGuestWorkspaceRequested>>
+  >();
   yield* all([
     takeLeading(loadGuestSessionsRequested, hydrate),
-    // takeEvery: each leave targets one host id and main serializes the work.
-    takeEvery(leaveGuestSessionRequested, leave),
-    takeEvery(leaveGuestWorkspaceRequested, leaveWorkspace),
+    // Repeated leaves join their existing flight; main orders conflicting host mutations.
+    takeEvery(leaveGuestSessionRequested, leave, leavesInFlight),
+    takeEvery(leaveGuestWorkspaceRequested, leaveWorkspace, workspaceLeavesInFlight),
     call(watchRosterLoads),
+    takeEvery(collaborationSignInRequested, function* () {
+      if (yield* selectCollaborationReady.effect()) yield* call(openCollaborationSignIn);
+    }),
     takeEvery(removeHostedMemberRequested, removeHostedMember),
     // takeEvery, keyed single-flight inside: a same-workspace request joins
     // the in-flight sweep; different workspaces sweep concurrently.
@@ -764,9 +928,8 @@ function* watchActions(): SagaGenerator<void> {
 
 export function* guestSessionsSaga(): SagaGenerator<void> {
   if (!getApi()) {
-    // Outside Electron there is no main to ask and nothing can be joined as a
-    // guest: settle the window's identity (`selectWindowIdentitySettled`) as
-    // owner instead of leaving it a boot-time unknown forever.
+    // Outside Electron there is no local session registry to ask. Mark that
+    // storage read unavailable; principal.me independently resolves authority.
     yield* put(guestSessionsListUnavailable());
     return;
   }
@@ -782,10 +945,7 @@ export function* guestSessionsSaga(): SagaGenerator<void> {
     },
   );
   const initial = loadGuestSessionsRequested();
-  // Nobody awaits the boot hydration: a failed invoke settles the store
-  // (`guestSessionsListUnavailable`) and must not surface as an unhandled
-  // rejection.
-  initial.promise.catch(() => {});
+  // A failed boot hydration is surfaced through `guestSessionsListUnavailable`.
   try {
     yield* call(hydrate, initial);
     yield* all([join(eventTask), join(actionsTask), join(rosterTask)]);

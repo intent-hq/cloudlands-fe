@@ -1,5 +1,6 @@
 <script lang="ts">
   import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
+  import type { MenuAction } from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import * as Menu from '$lib/components/ui/menu';
 
   interface Props {
@@ -7,6 +8,7 @@
     workspaceId?: string;
     workspaceFolderPath?: string;
     isWorkspaceRoot?: boolean;
+    additionalActions?: MenuAction[];
   }
 
   let {
@@ -14,6 +16,7 @@
     workspaceId = '',
     workspaceFolderPath = '',
     isWorkspaceRoot = false,
+    additionalActions = [],
   }: Props = $props();
   let open = $state(false);
 </script>
@@ -27,6 +30,7 @@
       {workspaceId}
       {workspaceFolderPath}
       {isWorkspaceRoot}
+      {additionalActions}
       showFileActions
       onClose={() => (open = false)}
     />

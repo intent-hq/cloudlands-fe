@@ -1,12 +1,8 @@
 ---
 name: core/state-serialization
 description: >-
-  Redux state must be structured-cloneable. Allowed: string, number, boolean,
-  null, undefined, plain objects, arrays of primitives. Forbidden: Date, Map,
-  Set, WeakMap, WeakSet, RegExp, Promise, Function, class instances, Error,
-  Symbol. Alternatives: Date → number (ms), Map → Record<string, T>, Set →
-  string[] or Record<string, true>, RegExp → string, Error → { message,
-  stack }.
+  Use when checking Redux state for structured-clone compatibility or
+  replacing non-serializable values such as Date, Map, Set, and Error.
 type: sub-skill
 requires:
   - core
@@ -17,7 +13,7 @@ triggers:
 ---
 # State Serialization
 
-> Operational checklist for reducer state shape. Full rationale and examples: `@augmentcode/themis/docs/REDUCERS.md` → State Serialization Rules. Reducer API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §12.
+> Operational checklist for reducer state shape. Full rationale and examples: `@themislib/themis/docs/REDUCERS.md` → State Serialization Rules. Reducer API: `@themislib/themis/utils/store/create-reducer`; canonical checklist: [Do](#do) and [Don't](#dont).
 
 ## Use when
 
@@ -55,8 +51,8 @@ type TodosState = {
 ### Store timestamps as numbers or ISO strings
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 const markSynced = createAction("todos/markSynced", (syncedAtMs: number, syncedAtIso: string) => ({ syncedAtMs, syncedAtIso }));
 
@@ -83,7 +79,7 @@ const failedState = { error: toSerializableError(new Error("network failed")) };
 ### Use records or collections instead of Map and Set
 
 ```ts
-import { type Collection, createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
+import { type Collection, createCollection } from "@themislib/themis/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string };
 type TodosState = {
@@ -114,8 +110,8 @@ describe("todos state serialization", () => {
 ### ❌ Bad: non-serializable state and reducer-created values
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 // BAD: Date, Map, Set, Promise, class instances, and Error do not belong in Redux state.
 type Todo = { id: string; title: string };
@@ -144,7 +140,7 @@ export const reducer = createReducer<TodosState>(initialState).with(markTouched,
 
 ## See also
 
-- `@augmentcode/themis/docs/REDUCERS.md` — human reference for serialization rules and examples.
+- `@themislib/themis/docs/REDUCERS.md` — human reference for serialization rules and examples.
 - `core/reducers/SKILL.md` — reducer purity and same-reference no-op behavior.
 - `core/collections/SKILL.md` — serializable normalized entity storage.
 - `core/state-integrity/SKILL.md` — derived values and canonical ownership.

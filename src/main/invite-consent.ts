@@ -231,6 +231,7 @@ export function showInviteConsent(
   };
   const gone = new Promise<'gone'>((resolve) => {
     rendererGone = () => {
+      settleCancelledWhileWaiting();
       abandon();
       resolve('gone');
     };

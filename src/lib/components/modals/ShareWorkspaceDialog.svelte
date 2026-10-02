@@ -3,7 +3,7 @@
    * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
    *
    * Offers the guests already authed on this host (`principal.list`, minus
-   * the current roster) in an "Invite an existing GitHub user" dropdown whose
+   * the current roster) in an "Invite an existing user" dropdown whose
    * Invite attaches the pick directly (`workspace.members.add`, no link);
    * creates `intent://invite` links (optionally pinned to a GitHub login;
    * an unpinned link is reusable until it expires or is revoked, a pinned
@@ -11,9 +11,15 @@
    * lists the member roster with Remove. A reusable row shows the join count
    * ("N joined") from the daemon's `reusable` / `redemptionCount`;
    * a daemon that predates those fields (every link single-use) shows the
-   * pinned presentation for every row. Gated on the GitHub connection: members are identified by
-   * their GitHub account, so a daemon without a configured login cannot mint
-   * invites and the dialog shows a connect-first state instead.
+   * pinned presentation for every row. Gated on a forge connection: members
+   * are identified by their GitHub or GitLab account, so a daemon with neither
+   * configured cannot mint invites and the dialog shows a connect-first state
+   * instead. With both forges connected the pin field gains a provider
+   * selector (seeded from the host's identity forge); with one, the pin is
+   * sent bare and the daemon resolves it on its own identity forge. Member
+   * rows carry the identity's forge icon and `@login` (GitLab rows name the
+   * instance). Everything provider-aware is gated on `identitySeamSupported`:
+   * against an older daemon the dialog is the GitHub-only one.
    *
    * Owner-only: `canManage` is false for a collaborator connection (or once
    * the daemon refused an owner-only method with `-32003`), and the dialog then
@@ -40,10 +46,12 @@
    * link (the daemon's Remote Access listener is down) has its Copy disabled.
    */
 
+  import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+  import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faCopy, faLink, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { faGithub } from '@fortawesome/free-brands-svg-icons';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
@@ -59,6 +67,9 @@
   import type { WorkspaceRole } from '$shared/types';
   import type {
     HostPrincipal,
+    IdentityProvider,
+    InvitePin,
+    PrincipalIdentity,
     WorkspaceInvite,
     WorkspaceMember,
   } from '$features/workspace-sharing/types';
@@ -78,6 +89,28 @@
     workspaceTitle?: string;
     /** `github.authStatus.isConfigured` as mirrored by the github-auth slice. */
     githubConnected?: boolean;
+    /** `sourceControl.authStatus { provider: "gitlab" }.isConfigured` as mirrored by the gitlab-auth slice. */
+    gitlabConnected?: boolean;
+    /** Labs gates new provider choices, never an existing identity or pin. */
+    gitlabEnabled?: boolean;
+    /** The GitLab instance the host's connection targets (`pinHost` for a GitLab pin). */
+    gitlabHost?: string;
+    gitlabStatusReady?: boolean;
+    canAdministerHost?: boolean;
+    /**
+     * The connected daemon serves the identity seam — `pinProvider` /
+     * `pinHost` on `workspace.invite.create` and `identity` on member rows.
+     * While false the dialog keeps the GitHub-only shapes: no provider
+     * selector, a bare pin, and a GitLab connection is not an identity forge.
+     */
+    identitySeamSupported?: boolean;
+    hostMembershipSupported?: boolean;
+    /**
+     * The forge that is the host's identity (its `principal.me` triple, else
+     * the daemon's implied default), `null` while unlinked. Seeds the pin's
+     * provider choice, as the daemon defaults `pinProvider` to it.
+     */
+    identityProvider?: IdentityProvider | null;
     /** Owner of the target workspace and not withheld by the daemon. */
     canManage?: boolean;
     members?: WorkspaceMember[];
@@ -115,7 +148,13 @@
     userSearchQuery?: string;
     onClose?: () => void;
     onConnectGitHub?: () => void;
-    onCreateInvite?: (pinLogin: string) => void;
+    /** Open Settings → Connections (the GitLab connect path). */
+    onOpenConnections?: () => void;
+    /**
+     * `pin` names the forge `pinLogin` lives on; absent when the host has one
+     * forge connected, so the daemon defaults to its own identity provider.
+     */
+    onCreateInvite?: (pinLogin: string, pin?: InvitePin) => void;
     onRevokeInvite?: (inviteId: string) => void;
     onRemoveMember?: (principalId: string) => void;
     /** Attach a `principals` row as a collaborator (`workspace.members.add`). */
@@ -129,6 +168,14 @@
     workspaceId = null,
     workspaceTitle = '',
     githubConnected = false,
+    gitlabConnected = false,
+    gitlabEnabled = false,
+    gitlabHost = '',
+    gitlabStatusReady = true,
+    canAdministerHost = true,
+    identitySeamSupported = false,
+    hostMembershipSupported = false,
+    identityProvider = null,
     canManage = false,
     members = [],
     invites = [],
@@ -151,6 +198,7 @@
     userSearchQuery = '',
     onClose,
     onConnectGitHub,
+    onOpenConnections,
     onCreateInvite,
     onRevokeInvite,
     onRemoveMember,
@@ -161,12 +209,57 @@
   const busy = $derived(
     revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
   );
+  /** GitLab counts as an identity forge only once the daemon serves the seam. */
+  const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
+  /** Any forge identity on the host lets it mint invites. */
+  const forgeConnected = $derived(
+    hostMembershipSupported || githubConnected || gitlabIdentityConnected,
+  );
+  /** Both forges connected on a seam-capable daemon: the pin's forge is the owner's pick. */
+  const pinProviderChoosable = $derived(
+    hostMembershipSupported || (githubConnected && gitlabIdentityConnected),
+  );
+  /** The forge the pin is resolved on; `null` while no forge is connected. */
+  const pinProvider = $derived.by((): IdentityProvider | null => {
+    if (!forgeConnected) return null;
+    if (pinProviderChoosable) {
+      if (pinProviderDraft) return pinProviderDraft;
+      if (
+        identityProvider &&
+        (!hostMembershipSupported || identityProvider !== 'gitlab' || gitlabEnabled)
+      )
+        return identityProvider;
+      return 'github';
+    }
+    return githubConnected ? 'github' : 'gitlab';
+  });
+  /** Only the GitHub typeahead exists; a GitLab pin is free text. */
+  const pinTypeahead = $derived(
+    pinProvider === 'github' && (!hostMembershipSupported || githubConnected),
+  );
+  let pinHostDraft = $state('gitlab.com');
+  const pinProviderItems = $derived(
+    [
+      { value: 'github', label: m.workspace_share_pinProvider_github_label() },
+      {
+        value: 'gitlab',
+        label: m.workspace_share_pinProvider_gitlab_label({
+          host: hostMembershipSupported ? pinHostDraft : gitlabHost,
+        }),
+      },
+    ].filter((item) => item.value !== 'gitlab' || gitlabEnabled || pinProvider === 'gitlab'),
+  );
   /** The cap is known and spent: no further invite can be minted. */
   const atGuestCap = $derived(
     guestCount !== null && guestLimit !== null && guestCount >= guestLimit,
   );
 
   let pinLogin = $state('');
+  const selectedPinHost = $derived(
+    hostMembershipSupported ? canonicalInviteHost('gitlab', pinHostDraft) : gitlabHost,
+  );
+  /** The owner's forge pick for the pin when both are connected; `''` follows `identityProvider`. */
+  let pinProviderDraft = $state<IdentityProvider | ''>('');
   /** Suggestion the user picked; wins over the free-text draft on submit. */
   let selectedUser = $state<GithubUserSearchItem | null>(null);
   /** Escape closes the list until the next keystroke. */
@@ -182,6 +275,14 @@
   /** The existing-guest dropdown pick (`principalId`); `''` for none. */
   let selectedPrincipalId = $state('');
   let existingGuestMenuOpen = $state(false);
+  let pinProviderMenuOpen = $state(false);
+  /** A Select menu is open inside the dialog; Escape closes it before the dialog. */
+  const selectMenuOpen = $derived(existingGuestMenuOpen || pinProviderMenuOpen);
+
+  function closeSelectMenus() {
+    existingGuestMenuOpen = false;
+    pinProviderMenuOpen = false;
+  }
 
   const principalItems = $derived(
     principals.map((principal) => ({
@@ -195,13 +296,11 @@
 
   // A pick that left the list (added to the roster, or revoked itself) is cleared.
   $effect(() => {
-    if (selectedPrincipalId && !selectedPrincipal) selectedPrincipalId = '';
+    if (!loading && !busy && selectedPrincipalId && !selectedPrincipal) selectedPrincipalId = '';
   });
 
   const pinQuery = $derived(normalizeGithubUserQuery(pinLogin));
-  const pinSearchable = $derived(
-    githubConnected && pinQuery.length >= GITHUB_USER_QUERY_MIN_LENGTH,
-  );
+  const pinSearchable = $derived(pinTypeahead && pinQuery.length >= GITHUB_USER_QUERY_MIN_LENGTH);
   /** The slice caught up with the input; anything else is stale or pending. */
   const suggestionsCurrent = $derived(pinSearchable && userSearchQuery === pinQuery);
   const visibleSuggestions = $derived(
@@ -226,6 +325,17 @@
 
   function resetPinDraft() {
     pinLogin = '';
+    pinProviderDraft = '';
+    pinHostDraft = 'gitlab.com';
+    selectedUser = null;
+    suggestionsDismissed = false;
+    activeSuggestion = -1;
+    onSearchUsers?.('');
+  }
+
+  function handlePinProviderChange(value: string) {
+    if (value === 'gitlab' && !gitlabEnabled) return;
+    pinProviderDraft = value === 'github' || value === 'gitlab' ? value : '';
     selectedUser = null;
     suggestionsDismissed = false;
     activeSuggestion = -1;
@@ -239,7 +349,7 @@
     untrack(resetPinDraft);
     confirmRemovePrincipalId = null;
     selectedPrincipalId = '';
-    existingGuestMenuOpen = false;
+    closeSelectMenus();
   });
   $effect(() => {
     if (createdLink) untrack(resetPinDraft);
@@ -248,7 +358,7 @@
   function handlePinInput(value: string) {
     suggestionsDismissed = false;
     activeSuggestion = -1;
-    if (!githubConnected) return;
+    if (!pinTypeahead) return;
     onSearchUsers?.(normalizeGithubUserQuery(value));
   }
 
@@ -297,11 +407,28 @@
 
   function createInvite() {
     if (!workspaceId || !canManage || creating || atGuestCap) return;
-    onCreateInvite?.(selectedUser ? selectedUser.login : pinLogin.trim());
+    const login = selectedUser ? selectedUser.login : pinLogin.trim();
+    let pin: InvitePin | undefined;
+    if (
+      login &&
+      pinProvider === 'gitlab' &&
+      (hostMembershipSupported
+        ? !selectedPinHost || !gitlabEnabled
+        : !gitlabStatusReady || !gitlabHost)
+    )
+      return;
+    if (login && (hostMembershipSupported || identitySeamSupported) && pinProvider) {
+      pin =
+        pinProvider === 'gitlab'
+          ? { provider: 'gitlab', host: selectedPinHost! }
+          : { provider: 'github' };
+    }
+    if (pin) onCreateInvite?.(login, pin);
+    else onCreateInvite?.(login);
   }
 
   function inviteExistingGuest() {
-    if (!workspaceId || !canManage || busy || atGuestCap || !selectedPrincipal) return;
+    if (!workspaceId || !canManage || loading || busy || atGuestCap || !selectedPrincipal) return;
     onAddMember?.(selectedPrincipal.principalId);
   }
 
@@ -342,16 +469,40 @@
     return member.displayName || member.login || member.principalId;
   }
 
+  /** `@login` on the member's forge (GitLab names the instance); the forge alone without a login. */
+  function memberHandle(member: Pick<WorkspaceMember, 'login' | 'identity'>): string {
+    const identity = member.identity;
+    if (!identity) return '';
+    if (identity.provider === 'gitlab') {
+      return member.login
+        ? m.workspace_share_member_gitlabHandle_label({
+            login: `@${member.login}`,
+            host: identity.host,
+          })
+        : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
+    }
+    return member.login ? `@${member.login}` : m.workspace_share_pinProvider_github_label();
+  }
+
+  function providerIcon(identity: Pick<PrincipalIdentity, 'provider'>) {
+    return identity.provider === 'gitlab' ? faGitlab : faGithub;
+  }
+
   function roleLabel(role: WorkspaceRole): string {
     return role === 'owner'
       ? m.workspace_share_role_owner_label()
       : m.workspace_share_role_collaborator_label();
   }
 
-  function inviteAudience(invite: Pick<WorkspaceInvite, 'pinLogin'>): string {
-    return invite.pinLogin
-      ? m.workspace_share_invite_pinned_label({ login: `@${invite.pinLogin}` })
-      : m.workspace_share_invite_anyone_label();
+  function inviteAudience(invite: Pick<WorkspaceInvite, 'pinLogin' | 'pinIdentity'>): string {
+    if (!invite.pinLogin) return m.workspace_share_invite_anyone_label();
+    if (invite.pinIdentity?.provider === 'gitlab') {
+      return m.workspace_share_invite_pinnedGitlab_label({
+        login: `@${invite.pinLogin}`,
+        host: invite.pinIdentity.host,
+      });
+    }
+    return m.workspace_share_invite_pinned_label({ login: `@${invite.pinLogin}` });
   }
 
   /**
@@ -375,10 +526,10 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && existingGuestMenuOpen) {
+    if (e.key === 'Escape' && selectMenuOpen) {
       e.preventDefault();
       e.stopPropagation();
-      existingGuestMenuOpen = false;
+      closeSelectMenus();
     }
   }
 </script>
@@ -407,26 +558,41 @@
         <p class="text-sm text-subtle" role="status" data-testid="share-owner-only">
           {m.workspace_share_ownerOnly_notice()}
         </p>
-      {:else if !githubConnected}
-        <div
-          class="flex flex-col items-start gap-3 rounded border border-border bg-muted/50 p-4"
-          data-testid="share-github-required"
-        >
-          <div class="flex items-center gap-2 text-sm font-medium">
-            <Fa icon={faGithub} />
-            {m.workspace_share_githubRequired_title()}
-          </div>
-          <p class="text-sm text-subtle">{m.workspace_share_githubRequired_description()}</p>
-          <Button variant="secondary" size="sm" onclick={() => onConnectGitHub?.()}>
-            {m.workspace_share_connectGithub_label()}
-          </Button>
-        </div>
       {:else}
+        {#if !forgeConnected && canAdministerHost}
+          <div
+            class="flex flex-col items-start gap-3 rounded border border-border bg-muted/50 p-4"
+            data-testid="share-github-required"
+          >
+            <div class="flex items-center gap-2 text-sm font-medium">
+              <Fa icon={faGithub} />
+              {#if gitlabEnabled}<Fa icon={faGitlab} />{/if}
+              {gitlabEnabled
+                ? m.workspace_share_forgeRequired_title()
+                : m.workspace_share_githubRequired_title()}
+            </div>
+            <p class="text-sm text-subtle">
+              {gitlabEnabled
+                ? m.workspace_share_forgeRequired_description()
+                : m.workspace_share_githubRequired_description()}
+            </p>
+            <div class="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onclick={() => onConnectGitHub?.()}>
+                {m.workspace_share_connectGithub_label()}
+              </Button>
+              {#if gitlabEnabled}
+                <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
+                  {m.workspace_share_openConnections_label()}
+                </Button>
+              {/if}
+            </div>
+          </div>
+        {/if}
         <p class="text-sm text-subtle">
           {m.workspace_share_dialog_description({ title: workspaceTitle })}
         </p>
 
-        {#if principals.length > 0}
+        {#if principals.length > 0 || loading || selectedPrincipalId}
           <section
             class="space-y-2"
             aria-labelledby="share-existing-guest-label"
@@ -441,10 +607,11 @@
                   bind:open={existingGuestMenuOpen}
                   bind:value={selectedPrincipalId}
                   items={principalItems}
-                  disabled={busy}
+                  disabled={busy || loading}
                 >
                   <Select.Trigger
                     id="share-existing-guest"
+                    aria-busy={loading || busy}
                     data-testid="share-existing-guest-trigger"
                   >
                     <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
@@ -468,7 +635,7 @@
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={!selectedPrincipal || busy || atGuestCap}
+                disabled={!selectedPrincipal || loading || busy || atGuestCap}
                 title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
                 onclick={inviteExistingGuest}
                 data-testid="share-existing-guest-invite"
@@ -480,7 +647,14 @@
               </Button>
             </div>
             <p class="text-xs text-subtle">{m.workspace_share_existingGuest_description()}</p>
+            {#if loading}<p role="status" class="text-xs text-subtle">
+                {m.workspace_share_loading_label()}
+              </p>{/if}
           </section>
+        {:else}
+          <p role="status" class="text-xs text-subtle">
+            {m.workspace_share_existingGuest_empty()}
+          </p>
         {/if}
 
         <form
@@ -490,145 +664,196 @@
             createInvite();
           }}
         >
-          <Label id="share-pin-login-label" for="share-pin-login">
-            {m.workspace_share_pinLogin_label()}
-          </Label>
+          {#if forgeConnected}
+            <Label id="share-pin-login-label" for="share-pin-login">
+              {pinProvider === 'gitlab'
+                ? m.workspace_share_pinLogin_gitlab_label()
+                : m.workspace_share_pinLogin_label()}
+            </Label>
+          {/if}
+          {#if hostMembershipSupported && pinProvider === 'gitlab'}
+            <Label for="share-pin-host">{m.collaboration_pin_instance_label()}</Label>
+            <Input id="share-pin-host" bind:value={pinHostDraft} disabled={creating} />
+          {/if}
           <div class="flex flex-wrap items-center gap-2">
-            {#if selectedUser}
-              <div
-                class="flex h-(--control-height-medium) min-w-0 flex-1 basis-44 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
-                role="group"
-                aria-labelledby="share-pin-login-label"
-                data-testid="share-pin-selected"
-                data-login={selectedUser.login}
-              >
-                {@render userAvatar(selectedUser)}
-                <span class="min-w-0 flex-1 truncate text-sm">@{selectedUser.login}</span>
-                <Button
-                  variant="ghost-light"
-                  size="icon-compact"
-                  iconOnly
-                  class="size-5 rounded-full"
+            {#if pinProviderChoosable && (gitlabEnabled || pinProvider === 'gitlab')}
+              <div class="w-40 shrink-0">
+                <Select.Root
+                  bind:open={pinProviderMenuOpen}
+                  value={pinProvider ?? ''}
+                  onchange={handlePinProviderChange}
+                  items={pinProviderItems}
                   disabled={creating}
-                  onclick={() => void clearSelectedUser()}
-                  aria-label={m.workspace_share_pinSelected_clear_ariaLabel({
-                    login: `@${selectedUser.login}`,
-                  })}
                 >
-                  <Fa icon={faXmark} size="xs" />
-                </Button>
-              </div>
-            {:else}
-              <Popover.Root
-                open={suggestionsOpen}
-                onOpenChange={(next) => {
-                  if (!next) dismissSuggestions();
-                }}
-              >
-                <div bind:this={pinAnchor} class="min-w-0 flex-1 basis-44">
-                  <Input
-                    id="share-pin-login"
-                    bind:this={pinInput}
-                    bind:value={pinLogin}
-                    autocomplete="off"
-                    spellcheck={false}
-                    disabled={creating}
-                    placeholder={m.workspace_share_pinLogin_placeholder()}
-                    role="combobox"
-                    aria-autocomplete="list"
-                    aria-controls="share-pin-suggestions"
-                    aria-expanded={suggestionsOpen}
-                    aria-activedescendant={suggestionsOpen && visibleSuggestions[activeSuggestion]
-                      ? `share-pin-suggestion-${activeSuggestion}`
-                      : undefined}
-                    oninput={(e) => handlePinInput(e.currentTarget.value)}
-                    onkeydown={handlePinKeydown}
-                  />
-                  <Popover.Content
-                    portalProps={{ to: dialogContent ?? undefined }}
-                    customAnchor={pinAnchor}
-                    collisionBoundary={dialogContent}
-                    align="start"
-                    collisionPadding={8}
-                    trapFocus={false}
-                    preventScroll={false}
-                    onOpenAutoFocus={(event) => event.preventDefault()}
-                    onCloseAutoFocus={(event) => event.preventDefault()}
-                    onInteractOutside={keepPinInteraction}
-                    onFocusOutside={(event) => {
-                      keepPinInteraction(event);
-                      if (!event.defaultPrevented) dismissSuggestions();
-                    }}
-                    onEscapeKeydown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      dismissSuggestions();
-                    }}
-                    role="presentation"
-                    class="z-(--layer-modal) w-(--bits-popover-anchor-width) max-h-[min(18rem,var(--bits-popover-content-available-height))] overflow-y-auto"
-                    data-testid="share-pin-suggestions"
+                  <Select.Trigger
+                    id="share-pin-provider"
+                    aria-label={m.workspace_share_pinProvider_ariaLabel()}
+                    data-testid="share-pin-provider-trigger"
                   >
-                    {#if visibleSuggestions.length > 0}
-                      <div
-                        bind:this={suggestionList}
-                        id="share-pin-suggestions"
-                        role="listbox"
-                        aria-label={m.workspace_share_userSuggestions_ariaLabel()}
-                        class="py-1"
+                    <Select.Value />
+                  </Select.Trigger>
+                  <Select.Content class="z-(--layer-modal)">
+                    {#each pinProviderItems as item (item.value)}
+                      <Select.Item
+                        value={item.value}
+                        label={item.label}
+                        disabled={item.value === 'gitlab' && !gitlabEnabled}
                       >
-                        {#each visibleSuggestions as user, index (user.login)}
-                          <Button
-                            variant="ghost"
-                            id="share-pin-suggestion-{index}"
-                            role="option"
-                            aria-selected={index === activeSuggestion}
-                            tabindex={-1}
-                            class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
-                            data-testid="share-pin-suggestion"
-                            data-login={user.login}
-                            onpointerdown={(event) => event.preventDefault()}
-                            onclick={() => selectUser(user)}
-                            onmousemove={() => (activeSuggestion = index)}
-                          >
-                            {@render userAvatar(user)}
-                            <span class="truncate">@{user.login}</span>
-                          </Button>
-                        {/each}
-                      </div>
-                    {:else if suggestionsCurrent && userSearchError}
-                      <p
-                        class="px-3 py-2 text-xs text-danger"
-                        role="alert"
-                        data-testid="share-pin-search-error"
-                      >
-                        {userSearchError}
-                      </p>
-                    {:else if !suggestionsCurrent || userSearchLoading}
-                      <p
-                        class="px-3 py-2 text-xs text-subtle"
-                        role="status"
-                        data-testid="share-pin-searching"
-                      >
-                        {m.workspace_share_userSearch_searching_label()}
-                      </p>
-                    {:else}
-                      <p
-                        class="px-3 py-2 text-xs text-subtle"
-                        role="status"
-                        data-testid="share-pin-no-results"
-                      >
-                        {m.workspace_share_userSearch_noResults_label()}
-                      </p>
-                    {/if}
-                  </Popover.Content>
+                        <span class="flex min-w-0 items-center gap-2">
+                          <Fa icon={item.value === 'gitlab' ? faGitlab : faGithub} />
+                          <span class="truncate">{item.label}</span>
+                        </span>
+                      </Select.Item>
+                    {/each}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+            {/if}
+            {#if forgeConnected}
+              {#if selectedUser}
+                <div
+                  class="flex h-(--control-height-medium) min-w-0 flex-1 basis-44 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
+                  role="group"
+                  aria-labelledby="share-pin-login-label"
+                  data-testid="share-pin-selected"
+                  data-login={selectedUser.login}
+                >
+                  {@render userAvatar(selectedUser)}
+                  <span class="min-w-0 flex-1 truncate text-sm">@{selectedUser.login}</span>
+                  <Button
+                    variant="ghost-light"
+                    size="icon-compact"
+                    iconOnly
+                    class="size-5 rounded-full"
+                    disabled={creating}
+                    onclick={() => void clearSelectedUser()}
+                    aria-label={m.workspace_share_pinSelected_clear_ariaLabel({
+                      login: `@${selectedUser.login}`,
+                    })}
+                  >
+                    <Fa icon={faXmark} size="xs" />
+                  </Button>
                 </div>
-              </Popover.Root>
+              {:else}
+                <Popover.Root
+                  open={suggestionsOpen}
+                  onOpenChange={(next) => {
+                    if (!next) dismissSuggestions();
+                  }}
+                >
+                  <div bind:this={pinAnchor} class="min-w-0 flex-1 basis-44">
+                    <Input
+                      id="share-pin-login"
+                      bind:this={pinInput}
+                      bind:value={pinLogin}
+                      autocomplete="off"
+                      spellcheck={false}
+                      disabled={creating}
+                      placeholder={pinProvider === 'github'
+                        ? m.workspace_share_pinLogin_placeholder()
+                        : m.workspace_share_pinLogin_gitlab_placeholder()}
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-controls="share-pin-suggestions"
+                      aria-expanded={suggestionsOpen}
+                      aria-activedescendant={suggestionsOpen && visibleSuggestions[activeSuggestion]
+                        ? `share-pin-suggestion-${activeSuggestion}`
+                        : undefined}
+                      oninput={(e) => handlePinInput(e.currentTarget.value)}
+                      onkeydown={handlePinKeydown}
+                    />
+                    <Popover.Content
+                      portalProps={{ to: dialogContent ?? undefined }}
+                      customAnchor={pinAnchor}
+                      collisionBoundary={dialogContent}
+                      align="start"
+                      collisionPadding={8}
+                      trapFocus={false}
+                      preventScroll={false}
+                      onOpenAutoFocus={(event) => event.preventDefault()}
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                      onInteractOutside={keepPinInteraction}
+                      onFocusOutside={(event) => {
+                        keepPinInteraction(event);
+                        if (!event.defaultPrevented) dismissSuggestions();
+                      }}
+                      onEscapeKeydown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dismissSuggestions();
+                      }}
+                      role="presentation"
+                      class="z-(--layer-modal) w-(--bits-popover-anchor-width) max-h-[min(18rem,var(--bits-popover-content-available-height))] overflow-y-auto"
+                      data-testid="share-pin-suggestions"
+                    >
+                      {#if visibleSuggestions.length > 0}
+                        <div
+                          bind:this={suggestionList}
+                          id="share-pin-suggestions"
+                          role="listbox"
+                          aria-label={m.workspace_share_userSuggestions_ariaLabel()}
+                          class="py-1"
+                        >
+                          {#each visibleSuggestions as user, index (user.login)}
+                            <Button
+                              variant="ghost"
+                              id="share-pin-suggestion-{index}"
+                              role="option"
+                              aria-selected={index === activeSuggestion}
+                              tabindex={-1}
+                              class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
+                              data-testid="share-pin-suggestion"
+                              data-login={user.login}
+                              onpointerdown={(event) => event.preventDefault()}
+                              onclick={() => selectUser(user)}
+                              onmousemove={() => (activeSuggestion = index)}
+                            >
+                              {@render userAvatar(user)}
+                              <span class="truncate">@{user.login}</span>
+                            </Button>
+                          {/each}
+                        </div>
+                      {:else if suggestionsCurrent && userSearchError}
+                        <p
+                          class="px-3 py-2 text-xs text-danger"
+                          role="alert"
+                          data-testid="share-pin-search-error"
+                        >
+                          {userSearchError}
+                        </p>
+                      {:else if !suggestionsCurrent || userSearchLoading}
+                        <p
+                          class="px-3 py-2 text-xs text-subtle"
+                          role="status"
+                          data-testid="share-pin-searching"
+                        >
+                          {m.workspace_share_userSearch_searching_label()}
+                        </p>
+                      {:else}
+                        <p
+                          class="px-3 py-2 text-xs text-subtle"
+                          role="status"
+                          data-testid="share-pin-no-results"
+                        >
+                          {m.workspace_share_userSearch_noResults_label()}
+                        </p>
+                      {/if}
+                    </Popover.Content>
+                  </div>
+                </Popover.Root>
+              {/if}
             {/if}
             <Button
               type="submit"
               variant="secondary"
               size="sm"
-              disabled={creating || atGuestCap}
+              disabled={creating ||
+                atGuestCap ||
+                (!!(selectedUser?.login || pinLogin.trim()) &&
+                  pinProvider === 'gitlab' &&
+                  (hostMembershipSupported
+                    ? !selectedPinHost || !gitlabEnabled
+                    : !gitlabStatusReady || !gitlabHost))}
               title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
             >
               <Fa icon={faLink} />
@@ -787,10 +1012,35 @@
                     </span>
                     <div class="min-w-0">
                       <div class="truncate text-sm">{memberName(member)}</div>
-                      <div class="text-xs text-subtle">{roleLabel(member.role)}</div>
+                      <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
+                        {#if member.identity}
+                          <span
+                            class="flex shrink-0 items-center"
+                            data-testid="share-member-identity"
+                            data-provider={member.identity.provider}
+                          >
+                            <Fa icon={providerIcon(member.identity)} size="xs" />
+                          </span>
+                          <span class="truncate">
+                            {m.workspace_share_member_identityRole_label({
+                              handle: memberHandle(member),
+                              role:
+                                member.hostRole === 'member'
+                                  ? m.collaboration_host_member_label()
+                                  : roleLabel(member.role),
+                            })}
+                          </span>
+                        {:else}
+                          <span
+                            >{member.hostRole === 'member'
+                              ? m.collaboration_host_member_label()
+                              : roleLabel(member.role)}</span
+                          >
+                        {/if}
+                      </div>
                     </div>
                   </div>
-                  {#if member.role !== 'owner'}
+                  {#if isWorkspaceGuest(member)}
                     {#if confirmRemovePrincipalId === member.principalId}
                       <div
                         class="flex shrink-0 items-center gap-1"

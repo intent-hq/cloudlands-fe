@@ -78,6 +78,7 @@ describe('Spaces panel options menu', () => {
   afterEach(() => {
     cleanup();
     appStore.dispatch(closePanel());
+    vi.restoreAllMocks();
   });
 
   it('opens a labeled radio/check menu from an accessible 32px options trigger', async () => {
@@ -104,8 +105,9 @@ describe('Spaces panel options menu', () => {
     ).toBe('false');
   });
 
-  it('selects every explicit view mode exactly once and closes conventionally', async () => {
+  it('selects every explicit view mode exactly once without dismissing the menu', async () => {
     renderPanel();
+    const trigger = await openOptionsWithPointer();
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
     for (const [name, mode] of [
@@ -113,18 +115,27 @@ describe('Spaces panel options menu', () => {
       ['Status', 'status'],
       ['Recent', 'recent'],
     ] as const) {
-      await openOptionsWithPointer();
       const before = dispatchSpy.mock.calls.filter(
         ([action]) => action.type === setAllSpacesViewMode.type,
       ).length;
-      await fireEvent.click(screen.getByRole('menuitemradio', { name }));
-      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      const option = screen.getByRole('menuitemradio', { name });
+      await fireEvent.click(option);
       expect(selectAllSpacesViewMode.select(appStore.state)).toBe(mode);
+      expect(option.getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByRole('menu')).toBeTruthy();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
       const after = dispatchSpy.mock.calls.filter(
         ([action]) => action.type === setAllSpacesViewMode.type,
       ).length;
       expect(after - before).toBe(1);
+      await fireEvent.click(option);
+      expect(
+        dispatchSpy.mock.calls.filter(([action]) => action.type === setAllSpacesViewMode.type),
+      ).toHaveLength(after);
     }
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('toggles archived visibility while search is hidden and keeps the menu open', async () => {

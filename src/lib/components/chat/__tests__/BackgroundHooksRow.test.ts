@@ -93,7 +93,7 @@ describe('BackgroundHooksRow', () => {
     vi.useRealTimers();
   });
 
-  it('renders a rounded semantic card with the Phosphor hourglass icon', () => {
+  it('labels the hook card with its title', () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -101,89 +101,8 @@ describe('BackgroundHooksRow', () => {
     expect(row).toBeTruthy();
     const summary = screen.getByTestId('background-hook-summary');
     const card = screen.getByTestId('background-hook-card');
-    const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
     expect(summary.textContent).toContain('ci-watch');
-    expect(card.tagName).toBe('SECTION');
-    expect(card.className).toContain('mx-2');
-    expect(card.className).toContain('my-2');
-    expect(card.className).toContain('rounded-lg');
-    expect(card.className).toContain('border');
-    expect(card.className).toContain('border-border');
-    expect(card.className).toContain('bg-card');
-    expect(card.className).toContain('shadow-sm');
     expect(card.getAttribute('aria-labelledby')).toBe('background-hook-title-hook-1');
-    expect(document.getElementById('background-hook-title-hook-1')?.className).toContain(
-      'font-medium',
-    );
-    expect(icon?.getAttribute('data-icon')).toBe('hourglass');
-    expect(icon?.getAttribute('width')).toBe('14px');
-    expect(icon?.getAttribute('height')).toBe('14px');
-    const title = screen.getByTestId('background-hook-title');
-    expect(title.className).toContain('text-muted-foreground');
-    expect(title.className).not.toContain('text-foreground');
-  });
-
-  it('renders embedded hooks as full-width flat rows with one shared divider', () => {
-    hooksState.hooks = [makeHook(), makeHook({ hookId: 'hook-2', name: 'release-watch' })];
-    render(BackgroundHooksRow, {
-      props: { workspaceId: 'ws-1', agentId: 'agent-1', embedded: true },
-    });
-
-    const row = screen.getByTestId('background-hooks-row');
-    expect(row.className).not.toContain('divide-y');
-    for (const card of screen.getAllByTestId('background-hook-card')) {
-      expect(card.className).toContain('background-hook-card--embedded');
-      expect(card.className).toContain('m-0');
-      expect(card.className).toContain('w-full');
-      expect(card.className).toContain('rounded-none');
-      expect(card.className).toContain('bg-transparent');
-      expect(card.className).toContain('shadow-none');
-      expect(card.className).not.toContain('rounded-lg');
-      expect(card.className).not.toContain('border-border');
-      expect(card.className).not.toContain('bg-card');
-      expect(card.className).not.toContain('shadow-sm');
-    }
-    for (const title of document.querySelectorAll('[id^="background-hook-title-"]')) {
-      expect(title.className).toContain('font-normal');
-      expect(title.className).not.toContain('font-medium');
-    }
-  });
-
-  it('gives hook chips a pointer cursor', () => {
-    hooksState.hooks = [makeHook()];
-    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const chip = screen.getByTestId('background-hook-chip');
-    expect(chip.className).toContain('cursor-pointer');
-  });
-
-  it('renders the kebab before the far-right disclosure control', () => {
-    hooksState.hooks = [makeHook()];
-    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const kebab = screen.getByTestId('background-hook-chip');
-    const disclosure = screen.getByTestId('background-hook-disclosure');
-    expect(
-      kebab.compareDocumentPosition(disclosure) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it('caps the restored disclosure summary so long names ellipsize, not overflow', () => {
-    hooksState.hooks = [
-      makeHook({ name: 'a-very-long-hook-name-that-would-overflow-a-narrow-row' }),
-    ];
-    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const row = screen.getByTestId('background-hooks-row');
-    const summary = screen.getByTestId('background-hook-summary');
-    const label = summary.querySelector('.truncate') as HTMLElement;
-    expect(row.className).toContain('min-w-0');
-    expect(row.className).toContain('max-w-full');
-    expect(summary.className).toContain('min-w-0');
-    expect(summary.className).toContain('max-w-full');
-    expect(summary.className).toContain('overflow-hidden');
-    expect(label).toBeTruthy();
-    expect(label.className).toContain('min-w-0');
   });
 
   it('renders scheduled state and countdown as one sentence fragment', () => {
@@ -192,7 +111,6 @@ describe('BackgroundHooksRow', () => {
 
     const fragment = screen.getByTestId('background-hook-state');
     expect(fragment.textContent).toBe('scheduled in 9m');
-    expect(fragment.previousElementSibling).toBe(screen.getByTestId('background-hook-title'));
     expect(screen.queryByTestId('background-hook-next-run')).toBeNull();
   });
 
@@ -310,16 +228,12 @@ describe('BackgroundHooksRow', () => {
     ['scheduled', true],
     ['running', false],
     ['running', true],
-  ] as const)('keeps the %s hourglass static when embedded is %s', (state, embedded) => {
+  ] as const)('shows %s state when embedded is %s', (state, embedded) => {
     hooksState.hooks = [makeHook({ state })];
     render(BackgroundHooksRow, {
       props: { workspaceId: 'ws-1', agentId: 'agent-1', embedded },
     });
 
-    const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
-    expect(icon?.getAttribute('class')?.trim()).toBe('h-3.5 w-3.5');
-    expect(icon?.classList.contains('animate-spin')).toBe(false);
-    expect(icon?.classList.contains('motion-reduce:animate-none')).toBe(false);
     expect(screen.getByTestId('background-hook-summary').textContent).toContain(
       state === 'running' ? 'running' : 'scheduled in 3m',
     );

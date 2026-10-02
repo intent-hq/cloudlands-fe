@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Hover-card body for a GitHub issue / PR link. Purely presentational: the
-   * singleton `LinkTooltip` feeds it the loading / ready preview and the
+   * singleton `LinkTooltip` feeds it the loading / ready / error preview and the
    * sandbox scene renders the same variants without the portal.
    */
   import Fa from 'svelte-fa';
@@ -19,12 +19,11 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
-  import type { GitHubLinkPreview } from './github-link-preview';
-  import { formatUrlForDisplay } from './link-tooltip-state.svelte';
+  import { formatUrlForDisplay, type LinkTooltipPreview } from './link-tooltip-state.svelte';
 
   interface Props {
     url: string;
-    preview: { status: 'loading' } | { status: 'ready'; data: GitHubLinkPreview };
+    preview: Exclude<LinkTooltipPreview, { status: 'idle' }>;
   }
 
   let { url, preview }: Props = $props();
@@ -132,6 +131,13 @@
         <span class="truncate">{data.baseRef}</span>
       </div>
     {/if}
+  {:else if preview.status === 'error'}
+    <div class="type-caption text-muted-foreground" role="status">
+      {preview.reason === 'rate-limited'
+        ? m.ui_linkTooltip_gitHubRateLimited_description()
+        : m.ui_linkTooltip_gitHubUnavailable_description()}
+    </div>
+    <div class="link-tooltip-url">{formatUrlForDisplay(url)}</div>
   {:else}
     <div
       class="github-link-card-skeleton"

@@ -30,6 +30,9 @@
     // Scripts are invoked via package.json scripts, CI workflows (.github/workflows),
     // and electron-builder hooks (notarize/sign) — not via imports
     "scripts/*.{js,cjs,mjs,ts}",
+    // Frozen c9 v1 writer: preserve its full exports for executable compatibility
+    // tests. invited-session-key.test.ts verifies the original source hash.
+    "src/features/backend/main/__fixtures__/invited-session-v2/keychain-sync-c9.fixture.ts",
     // Spawned by path from the build-smoke specs (MOCK_AGENT_SCRIPT_PATH), not imported
     "e2e/mock-acp-agent.js",
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
@@ -96,6 +99,7 @@
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts",
     "src/store/renderer/slices/agent-session/agent-session-slice.typecheck.ts",
+    "src/test/fixtures/admitted-legacy-principal.typecheck.ts",
   ],
   "ignore": [
     // Accordion namespace members are used in NavigationPrimitivesCatalogPreview.svelte markup; knip misses them.

@@ -5,7 +5,8 @@ interface RetainedWorkspaceSurface {
   hadEntity: boolean;
 }
 
-// Keep a small working set warm without mounting every open workspace's editors.
+// Keep a small working set warm; browser workspaces are exempt because their
+// live pages cannot be restored from a URL after unmounting.
 const MAX_RETAINED_WORKSPACE_SURFACES = 2;
 
 export interface WorkspaceSurfaceRetentionState {
@@ -25,11 +26,13 @@ export function reconcileWorkspaceSurfaces(
     activeWorkspaceId: string;
     openWorkspaceIds: readonly string[];
     workspaceEntityIds: readonly string[];
+    browserWorkspaceIds?: readonly string[];
   },
 ): WorkspaceSurfaceRetentionState {
   const { activeWorkspaceId } = input;
   const openWorkspaceIds = new Set(input.openWorkspaceIds);
   const workspaceEntityIds = new Set(input.workspaceEntityIds);
+  const browserWorkspaceIds = new Set(input.browserWorkspaceIds);
   let nextSequence = state.nextSequence;
   const continuesCreationSurface =
     state.activeWorkspaceId !== null &&
@@ -88,12 +91,19 @@ export function reconcileWorkspaceSurfaces(
 
   const inactive = new Set(
     surfaces
-      .filter((surface) => surface.workspaceId !== activeWorkspaceId)
+      .filter(
+        (surface) =>
+          surface.workspaceId !== activeWorkspaceId &&
+          !browserWorkspaceIds.has(surface.workspaceId),
+      )
       .sort((left, right) => right.lastActive - left.lastActive)
       .slice(0, MAX_RETAINED_WORKSPACE_SURFACES - 1),
   );
   surfaces = surfaces.filter(
-    (surface) => surface.workspaceId === activeWorkspaceId || inactive.has(surface),
+    (surface) =>
+      surface.workspaceId === activeWorkspaceId ||
+      browserWorkspaceIds.has(surface.workspaceId) ||
+      inactive.has(surface),
   );
 
   const next = { activeWorkspaceId, nextSequence, surfaces };

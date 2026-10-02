@@ -7,8 +7,14 @@
     faClipboard,
     faSquare,
     faCircleExclamation,
+    faUser,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import {
+    memberMentionLabel,
+    memberMentionSubtitle,
+    parseMemberMention,
+  } from '$lib/utils/member-mention-token';
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -19,10 +25,12 @@
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeDisclosureTransition } from './disclosure-motion';
@@ -83,6 +91,7 @@
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -115,7 +124,7 @@
   }
 
   function openChatFile(path: string, event?: MouseEvent, line?: number) {
-    if (readOnly) return;
+    if (readOnly || !canOpenAgentPath(appStore.state, agentId)) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
@@ -174,6 +183,7 @@
     | {
         type: 'mention';
         mentionType: string;
+        description?: string;
         label: string;
         id: string;
         identifier?: string;
@@ -229,6 +239,7 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Keeps an edited virtualized turn materialized until edit mode closes. */
     onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
@@ -268,6 +279,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    previousMessageLoading = false,
     onEditStateChange,
     isSticky = false,
     onStickyClick,
@@ -325,6 +337,7 @@
   );
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
+  let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
@@ -426,11 +439,12 @@
   // more than one member, on plain human rows — agent-to-agent sends and
   // automated wakes carry their own sender header. Reads the daemon's
   // serve-time `author` projection verbatim; single-member workspaces, the
-  // viewer's own rows and rows without the projection render unchanged.
+  // viewer's own local rows and rows without the projection render unchanged.
+  // Portable human snapshots remain visible without current membership.
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
-  // shows the sender chip with the guest role — the preamble itself is
+  // shows the sender chip with its matched historical member or guest role — the preamble itself is
   // display-stripped by the presentation boundary, so the chip is the only
   // place the sender and their role remain visible, for owner and guest alike.
   // The workspace owner's own rows never qualify (the daemon prepends the
@@ -440,14 +454,15 @@
       ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
       : null,
   );
+  const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));
   let humanAuthor = $derived(
     collaboratorSender
       ? collaboratorSender.author
       : role === 'user' &&
-          (workspace?.memberCount ?? 0) >= 2 &&
+          ((workspace?.memberCount ?? 0) >= 2 || projectedHumanAuthor?.principalId === null) &&
           !agentAttribution &&
           !automatedWakePresentation
-        ? getHumanMessageAuthor(message, ownPrincipalId)
+        ? projectedHumanAuthor
         : null,
   );
   let humanAuthorLabel = $derived.by(() => {
@@ -460,7 +475,13 @@
     const login = cleanLogin ? `@${cleanLogin}` : null;
     const name = singleLineName(humanAuthor.displayName);
     // i18n-ignore (handle + name composition, mirrors the daemon preamble)
-    return login && name ? `${login} (${name})` : (login ?? name);
+    const who = login && name ? `${login} (${name})` : (login ?? name);
+    if (collaboratorSender.role === 'member') {
+      // i18n-ignore (principal fallback mirrors the accepted daemon preamble)
+      const label = who ?? `principal ${singleLineName(humanAuthor.principalId) ?? ''}`;
+      return getMessageAuthorLabel({ ...humanAuthor, login: null, displayName: label });
+    }
+    return who;
   });
 
   // Local state
@@ -612,7 +633,21 @@
       const fullMatch = match.fullMatch; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
       const captured = match.captured; // e.g., "context[linear|AU-123|Title]" or "note/spec"
 
-      if (captured.startsWith('context[')) {
+      if (captured.startsWith('member[')) {
+        const member = parseMemberMention(fullMatch);
+        if (member) {
+          segments.push({
+            type: 'mention',
+            mentionType: 'member',
+            label: memberMentionLabel(member.label),
+            description: memberMentionSubtitle(member),
+            id: member.id,
+            icon: faUser,
+          });
+        } else {
+          segments.push({ type: 'text', content: fullMatch });
+        }
+      } else if (captured.startsWith('context[')) {
         // Context mention: @context[provider|identifier|title] or @context[base64JSON]
         const inner = captured.slice(8, -1); // Remove "context[" and "]"
 
@@ -1435,6 +1470,11 @@
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
+{:else if effortChangeNotice}
+  <EffortChangeNotice
+    notice={effortChangeNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if autoUnarchivedNotice}
@@ -1508,6 +1548,7 @@
               onCopy={handleCopy}
               requestId={backendSessionId ?? undefined}
               {onScrollToPrevious}
+              {previousMessageLoading}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
               {queueInfo}
@@ -1536,20 +1577,29 @@
           {/if}
 
           <!-- Human author identity in multi-member workspaces, and the
-               collaborator (guest) sender chip on preamble-carrying rows -->
+               historical member or guest sender chip on preamble-carrying rows -->
           {#if humanAuthor && !isSticky}
             <div
               class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
               data-testid="user-message-author"
               data-principal-id={humanAuthor.principalId}
-              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
-              aria-label={collaboratorSender
-                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+              data-sender-role={collaboratorSender?.role === 'member'
+                ? 'member'
+                : collaboratorSender
+                  ? 'collaborator'
+                  : undefined}
+              aria-label={collaboratorSender?.role === 'member'
+                ? m.workspace_share_member_identityRole_label({
+                    handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    role: m.collaboration_host_member_label(),
                   })
-                : m.chat_chatMessage_author_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                  })}
+                : collaboratorSender
+                  ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })
+                  : m.chat_chatMessage_author_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })}
             >
               <PrincipalAvatar
                 avatarUrl={humanAuthor.avatarUrl}
@@ -1565,7 +1615,9 @@
               {#if collaboratorSender}
                 <span aria-hidden="true" class="shrink-0">·</span>
                 <span class="shrink-0" data-testid="user-message-author-role"
-                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                  >{collaboratorSender.role === 'member'
+                    ? m.collaboration_host_member_label()
+                    : m.chat_chatMessage_collaboratorRole_label()}</span
                 >
               {/if}
             </div>
@@ -1687,7 +1739,8 @@
                       type="button"
                       variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={segment.path ||
+                      title={segment.description ||
+                        segment.path ||
                         segment.noteId ||
                         (segment.identifier
                           ? `${segment.identifier}: ${segment.label}`
@@ -1880,6 +1933,8 @@
           <MessageActions
             role="assistant"
             {onRegenerate}
+            {onScrollToPrevious}
+            {previousMessageLoading}
             {onFork}
             {onVote}
             onCopy={handleCopy}

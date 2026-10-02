@@ -170,7 +170,7 @@ vi.mock('$features/onboarding/steps/OnboardingPromptStep.svelte', async () => ({
   default: (await import('./mocks/MockOnboardingPromptStep.svelte')).default,
 }));
 
-vi.mock('$features/onboarding/steps/OnboardingGitHubStep.svelte', async () => ({
+vi.mock('$features/onboarding/steps/OnboardingForgeStep.svelte', async () => ({
   default: (
     await import('$lib/components/workspace/initializer/__tests__/mocks/MockComponent.svelte')
   ).default,

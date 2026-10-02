@@ -52,6 +52,29 @@
    follows the same single source of truth as the hand-written component CSS. */
 @custom-variant motion-reduce (@container style(--motion-reduced: 1));
 
+/* Keep the 12px inset where the lane has room, without moving the tool column. */
+@utility subscription-card-outward-bleed {
+  --subscription-card-inline-bleed: min(
+    var(--subscription-card-max-bleed, 0.75rem),
+    max(0px, calc(0.75rem - var(--chat-operational-row-inline-padding, 0.5rem)))
+  );
+  --subscription-card-inline-inset: calc(
+    var(--chat-operational-row-inline-padding, 0.5rem) + var(--subscription-card-inline-bleed)
+  );
+  margin-inline: calc(-1 * var(--subscription-card-inline-bleed)) !important;
+  width: calc(100% + 2 * var(--subscription-card-inline-bleed)) !important;
+  max-width: none !important;
+}
+
+@utility subscription-card-row-inset {
+  padding-inline: var(--subscription-card-inline-inset, 0.75rem) !important;
+}
+
+@utility subscription-card-body-inset {
+  padding-inline-start: calc(var(--subscription-card-inline-inset, 0.75rem) + 1.75rem);
+  padding-inline-end: var(--subscription-card-inline-inset, 0.75rem);
+}
+
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
   --row-height-compact: 1.75rem;
@@ -832,23 +855,17 @@ body.panel-resizing webview {
    their invisible rects land (intent-hq/monorepo#2400 — the dead gap left of
    the tabs; same mechanism as #1907). Mark the container itself no-drag (its
    own border box is exactly its visible area) and reset the per-element
-   no-drag on its interactive descendants so their unclipped geometry
-   contributes nothing. Visible descendants stay clickable — they sit inside
-   the container's no-drag region. Keep the reset list in sync with the rule
-   above (drag-region-no-drag-scoping.test.ts asserts the mirror). */
+   no-drag on ALL descendants so their unclipped geometry contributes nothing.
+   app-region is inherited: resetting only interactive elements leaves motion,
+   tooltip and visual wrappers inheriting no-drag from the container. Visible
+   descendants stay clickable inside the container's bounded no-drag region.
+   Computed-style and overflow coverage: workspace-tab-drag-region.ct.spec.ts. */
 .app-drag-region [data-app-region-clip] {
   -webkit-app-region: no-drag;
 }
 
-.app-drag-region [data-app-region-clip] button,
-.app-drag-region [data-app-region-clip] a,
-.app-drag-region [data-app-region-clip] input,
-.app-drag-region [data-app-region-clip] select,
-.app-drag-region [data-app-region-clip] textarea,
-.app-drag-region [data-app-region-clip] [role='button'],
-.app-drag-region [data-app-region-clip] [role='tab'],
-.app-drag-region [data-app-region-clip] [role='menuitem'],
-.app-drag-region [data-app-region-clip] [data-interactive],
+/* The focusable selector also overrides the higher-specificity opt-out above. */
+.app-drag-region [data-app-region-clip] *,
 .app-drag-region [data-app-region-clip] [tabindex]:not([tabindex='-1']) {
   -webkit-app-region: initial;
 }

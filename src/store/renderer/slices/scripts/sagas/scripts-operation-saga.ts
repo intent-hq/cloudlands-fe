@@ -1,3 +1,5 @@
+import { scriptsOutputSaga } from './scripts-output-saga';
+import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
@@ -45,12 +47,15 @@ function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
   const [workspaceId, scriptId] = action.payload;
   const operation = operationFor(action);
+  const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
+  if (!authority) return;
   try {
     const outcome = yield* race({
       result: call([scriptsClient, scriptsClient[operation]], workspaceId, scriptId),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
-    if (outcome.cleanup) return;
+    if (outcome.cleanup || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
+      return;
     if (!outcome.result?.success) {
       yield* put(
         scriptOperationFailed(
@@ -65,6 +70,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
     yield* put(refreshScripts(workspaceId));
   } catch (error) {
+    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, errorMessage(error)));
   }
 }
@@ -77,6 +83,7 @@ function* clearWorkspaceOperations(
 
 export function* scriptsOperationSaga(): SagaGenerator<void> {
   yield* all([
+    call(scriptsOutputSaga),
     takeLeadingInContext(
       [startScriptRequested, stopScriptRequested, restartScriptRequested],
       operationContext,

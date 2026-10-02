@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+const authority = vi.hoisted(() => ({ state: {} as object }));
 const providerLifecycle = vi.hoisted(() => ({
   notification: undefined as
     ((notification: { method: string; params?: unknown }) => void) | undefined,
@@ -43,7 +44,7 @@ vi.mock('$store/renderer/store', async () => {
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
-  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+  return createAppStoreMockModule({ state: () => ({ ...authority.state, providerCatalog }) });
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -151,6 +152,8 @@ describe('provider-status-bridge-seeder', () => {
     },
   );
   beforeAll(async () => {
+    const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');
+    authority.state = withLegacyPrincipal({});
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
     await import('./provider-status-bridge-seeder');
   });

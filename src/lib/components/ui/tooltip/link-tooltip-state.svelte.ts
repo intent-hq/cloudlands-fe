@@ -2,22 +2,25 @@
  * Singleton link tooltip state.
  * Call `showLinkTooltip` / `hideLinkTooltip` from anywhere to control it.
  */
+import { captureIntegrationContext } from '$features/integrations-request-context';
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 import {
+  classifyGitHubLinkPreviewError,
   createPreviewRequest,
   loadGitHubLinkPreview,
   type GitHubLinkPreview,
+  type GitHubLinkPreviewFailure,
 } from './github-link-preview';
 
 /**
- * Hover-card preview for GitHub issue/PR links. `idle` for every other URL
- * (and after a failed load, which renders the URL-only fallback via `error`).
+ * Hover-card preview for GitHub issue/PR links. `idle` keeps every other URL
+ * on the plain tooltip; failures retain the GitHub card and its reference.
  */
 export type LinkTooltipPreview =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'ready'; data: GitHubLinkPreview }
-  | { status: 'error' };
+  | { status: 'error'; reason: GitHubLinkPreviewFailure };
 
 export interface LinkTooltipState {
   visible: boolean;
@@ -50,21 +53,22 @@ const previewRequest = createPreviewRequest();
  * Start loading the GitHub hover card for `url`. A newer hover (or a hide)
  * retires the ticket so a late response never overwrites the current tooltip.
  */
-function startPreview(url: string): void {
+function startPreview(url: string, workspaceId?: string): void {
+  const context = captureIntegrationContext(workspaceId);
   const ticket = previewRequest.next();
   if (!parseGitHubIssueOrPrUrl(url)) {
     state.preview = { status: 'idle' };
     return;
   }
   state.preview = { status: 'loading' };
-  loadGitHubLinkPreview(url).then(
+  loadGitHubLinkPreview(url, { workspaceId }).then(
     (data) => {
-      if (!ticket.isCurrent) return;
+      if (!ticket.isCurrent || !context.isCurrent()) return;
       state.preview = data ? { status: 'ready', data } : { status: 'idle' };
     },
-    () => {
-      if (!ticket.isCurrent) return;
-      state.preview = { status: 'error' };
+    (error: unknown) => {
+      if (!ticket.isCurrent || !context.isCurrent()) return;
+      state.preview = { status: 'error', reason: classifyGitHubLinkPreviewError(error) };
     },
   );
 }
@@ -100,7 +104,11 @@ export function formatUrlForDisplay(url: string): string {
 /**
  * Show the link tooltip near the given anchor element after a delay.
  */
-export function showLinkTooltip(anchor: HTMLAnchorElement, url: string): void {
+export function showLinkTooltip(
+  anchor: HTMLAnchorElement,
+  url: string,
+  workspaceId?: string,
+): void {
   // Clear any pending show
   if (showTimeout) clearTimeout(showTimeout);
 
@@ -118,7 +126,7 @@ export function showLinkTooltip(anchor: HTMLAnchorElement, url: string): void {
     state.x = rect.left + rect.width / 2;
     state.y = rect.top;
     state.anchorBottom = rect.bottom;
-    startPreview(url);
+    startPreview(url, workspaceId);
   }, 300);
 }
 

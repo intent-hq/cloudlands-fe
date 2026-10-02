@@ -288,7 +288,11 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
     logger.debug('tailcat tunnel candidate did not connect within the bound', {
       connectTimeoutMs,
     });
-    facade.destroy(new Error(`tailcat tunnel did not connect within ${connectTimeoutMs}ms`));
+    facade.destroy(
+      Object.assign(new Error(`tailcat tunnel did not connect within ${connectTimeoutMs}ms`), {
+        code: 'ETIMEDOUT',
+      }),
+    );
   }, connectTimeoutMs);
   connectTimer.unref?.();
   createTailcatTunnel(options)

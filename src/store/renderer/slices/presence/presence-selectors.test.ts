@@ -1,4 +1,6 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -45,15 +47,29 @@ const typing = (source: string, pulse: number, agentId = 'agent-1'): PresenceTyp
 });
 
 const reduce = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), initialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...initialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+  });
 
-const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState =>
-  ({
+const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState => {
+  const state = withLegacyPrincipal({
     presence,
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WorkspaceId('ws-1'), memberCount: 2 } as Workspace,
+      ]),
+    },
     tabState: { currentTabId: null },
     panelLayout: { byWorkspaceId: {} },
     ...extra,
-  }) as unknown as StoreState;
+  });
+  return {
+    ...state,
+    presence: { ...presence, context: selectPrincipalActionContext.select(state) },
+  };
+};
 
 const ids = (people: { principalId: string }[]) => people.map((p) => p.principalId);
 
@@ -154,6 +170,35 @@ describe('presence selectors', () => {
         [false, false],
         [false, false],
       ]);
+    });
+
+    it("carries each membership row's forge identity onto the person, none for a row without one", () => {
+      const gitlab = {
+        provider: 'gitlab',
+        host: 'gitlab.example.com',
+        externalUserId: '7',
+      } as const;
+      const github = { provider: 'github', host: 'github.com', externalUserId: '42' } as const;
+      const state = stateWith(
+        reduce(
+          roster,
+          presenceMembersReceived('ws-1', [
+            accepted('me', 'owner'),
+            { ...accepted('viewer'), identity: gitlab },
+            { ...accepted('idle'), identity: github },
+            accepted('away'),
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+        { workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 4 })) },
+      );
+      const people = selectWorkspacePresencePeople.select(state, 'ws-1');
+      expect(people.map((p) => [p.principalId, p.identity])).toEqual([
+        ['viewer', gitlab],
+        ['idle', github],
+        ['away', undefined],
+      ]);
+      expect('identity' in people[2]).toBe(false);
     });
 
     it('resolves where each online member looks: their agent chat first, else their note, nothing for the bare tab', () => {

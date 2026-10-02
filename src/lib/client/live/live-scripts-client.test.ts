@@ -7,7 +7,7 @@
  * `script.list/create/remove/start/stop/restart/output/status/run` and (b)
  * PROTOCOL-shaped responses pass through verbatim.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: the backend bridge is mocked so no request ever
 // reaches the user's real daemon.
@@ -41,7 +41,13 @@ const DEV_SCRIPT: ScriptWithState = {
 };
 
 describe('LiveScriptsClient (fake transport)', () => {
-  afterEach(() => vi.clearAllMocks());
+  beforeEach(() =>
+    vi.spyOn(LiveScriptsClient.prototype, 'supportsLifecycle').mockResolvedValue(false),
+  );
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
 
   it('list forwards script.list with workspaceId and returns scripts verbatim', async () => {
     mockedRequest.mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
@@ -68,12 +74,12 @@ describe('LiveScriptsClient (fake transport)', () => {
     expect(scripts[0].runtime.previouslyRunning).toBe(true);
   });
 
-  it('list folds malformed results and transport failures to an empty list', async () => {
+  it('list surfaces malformed results and transport failures', async () => {
     const client = new LiveScriptsClient();
     mockedRequest.mockResolvedValueOnce({});
-    expect(await client.list('ws-1')).toEqual([]);
+    await expect(client.list('ws-1')).rejects.toThrow();
     mockedRequest.mockRejectedValueOnce(new Error('uds boom'));
-    expect(await client.list('ws-1')).toEqual([]);
+    await expect(client.list('ws-1')).rejects.toThrow();
   });
 
   it('create sends the exact §5.8 request and surfaces the created definition', async () => {
@@ -105,6 +111,29 @@ describe('LiveScriptsClient (fake transport)', () => {
     });
     expect(result).toEqual({ success: true, id: 's-1', script: definition });
   });
+
+  it.each(['saved', 'oneOff'] as const)(
+    'forwards explicit %s purpose and returns the stored definition',
+    async (purpose) => {
+      const { runtime: _runtime, ...definition } = {
+        ...DEV_SCRIPT,
+        mode: 'command' as const,
+        autoStart: false,
+        purpose,
+      };
+      mockedRequest.mockResolvedValueOnce(definition);
+      const input = { name: 'test', command: 'pnpm test', mode: 'command' as const, purpose };
+      expect(await new LiveScriptsClient().create('ws-1', input)).toEqual({
+        success: true,
+        id: definition.id,
+        script: definition,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('script.create', {
+        workspaceId: 'ws-1',
+        ...input,
+      });
+    },
+  );
 
   it('create omits optional params and folds a daemon error to a failed result', async () => {
     const client = new LiveScriptsClient();

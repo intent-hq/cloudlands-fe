@@ -17,7 +17,11 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
@@ -85,12 +89,15 @@
   const canDelete = $derived(item.type !== 'note');
 
   // Context menu state
-  let contextMenu: { x: number; y: number } | null = $state(null);
+  let contextMenu: (SidebarContextPosition & { itemId: string }) | null = $state(null);
 
-  function handleContextMenu(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY };
+  $effect(() => {
+    if (contextMenu && contextMenu.itemId !== item.id) contextMenu = null;
+  });
+
+  function handleContextMenu(e: MouseEvent | KeyboardEvent) {
+    const position = getSidebarContextPosition(e);
+    if (position) contextMenu = { ...position, itemId: item.id };
   }
 
   function closeContextMenu() {
@@ -101,7 +108,7 @@
     const items: SidebarMenuEntry[] = [
       {
         id: 'open',
-        label: 'Open',
+        label: m.ui_fileActions_open_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           onClick?.(item);
@@ -142,7 +149,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div
   class="relative w-full text-left group flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors cursor-pointer border
          {isNested ? 'pl-6' : ''}
@@ -151,48 +157,61 @@
     : isActive
       ? 'bg-background text-foreground border-transparent'
       : 'bg-sidebar border-transparent'}"
-  onclick={handleClick}
-  oncontextmenu={handleContextMenu}
-  role="button"
-  tabindex="0"
-  aria-current={isActive ? 'page' : undefined}
 >
-  <!-- Provider Icon -->
-  {#if item.type === 'note'}
-    <ResourceIconTile kind="note" />
-  {:else}
-    <div class="w-5 h-5 rounded flex items-center justify-center shrink-0">
-      <ProviderIcon
-        provider={item.provider}
-        size={12}
-        class={isSelected ? 'text-primary-ink' : isActive ? 'text-foreground' : 'opacity-70'}
-      />
-    </div>
-  {/if}
+  <Button
+    variant="plain"
+    wrapContent={false}
+    class="flex min-w-0 flex-1 items-center justify-start gap-1.5 text-left"
+    onclick={handleClick}
+    oncontextmenu={handleContextMenu}
+    onkeydown={handleContextMenu}
+    aria-current={isActive ? 'page' : undefined}
+  >
+    <!-- Provider Icon -->
+    {#if item.type === 'note'}
+      <ResourceIconTile kind="note" />
+    {:else}
+      <div class="w-5 h-5 rounded flex items-center justify-center shrink-0">
+        <ProviderIcon
+          provider={item.provider}
+          size={12}
+          class={isSelected ? 'text-primary-ink' : isActive ? 'text-foreground' : 'opacity-70'}
+        />
+      </div>
+    {/if}
 
-  <!-- Content -->
-  <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
-    <div class="w-full min-w-0 flex items-center gap-1.5">
-      <span class="type-body font-normal truncate {isSelected ? 'text-primary-ink' : ''}"
-        >{displayTitle()}</span
-      >
-      {#if item.type === 'note' && item.isSpec}
-        <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
-          >{m.workspace_contextItem_spec_label()}</span
+    <!-- Content -->
+    <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
+      <div class="w-full min-w-0 flex items-center gap-1.5">
+        <span class="type-body font-normal truncate {isSelected ? 'text-primary-ink' : ''}"
+          >{displayTitle()}</span
         >
+        {#if item.type === 'note' && item.isSpec}
+          <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
+            >{m.workspace_contextItem_spec_label()}</span
+          >
+        {/if}
+      </div>
+      {#if subtitle()}
+        <div class="text-xs text-subtle truncate">{subtitle()}</div>
       {/if}
     </div>
-    {#if subtitle()}
-      <div class="text-xs text-subtle truncate">{subtitle()}</div>
+
+    {#if item.type === 'note'}
+      <Fa icon={faChevronRight} size="xs" class="text-muted-foreground" />
     {/if}
-  </div>
+  </Button>
 
   <!-- Action buttons -->
   <div
-    class="absolute right-0 bg-inherit px-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+    class="absolute right-0 bg-inherit px-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
   >
     {#if hasExternalLink}
-      <Tooltip content="Open in browser" side="top" delayDuration={300}>
+      <Tooltip
+        content={m.workspace_contextItem_openInBrowser_label()}
+        side="top"
+        delayDuration={300}
+      >
         <Button
           variant="ghost"
           type="button"
@@ -219,19 +238,14 @@
       </Tooltip>
     {/if} -->
   </div>
-  {#if item.type === 'note'}
-    <Fa
-      icon={faChevronRight}
-      size="xs"
-      class="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-    />
-  {/if}
 </div>
 
 {#if contextMenu}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
+    x={contextMenu?.x ?? 0}
+    y={contextMenu?.y ?? 0}
+    returnFocus={contextMenu?.returnFocus}
+    ariaLabel={item.title}
     items={getContextMenuItems()}
     onClickOutside={closeContextMenu}
   />

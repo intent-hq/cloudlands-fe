@@ -17,6 +17,7 @@ import type { HostRequirementsState } from '$store/renderer/slices/host-requirem
 import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
 import { m } from '$shared/paraglide/messages.js';
 
+const authority = vi.hoisted(() => ({ state: {} as any }));
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const hostRequirements: { value: unknown } = { value: null };
@@ -31,8 +32,9 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
+      ...authority.state,
       hostRequirements: mocks.hostRequirements.value,
-      daemonHealth: { health: mocks.daemonHealth.value },
+      daemonHealth: { ...authority.state.daemonHealth, health: mocks.daemonHealth.value },
     }),
     dispatch: mocks.dispatch,
   });
@@ -51,6 +53,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { warning: mocks.toastWarning },
 }));
 
+import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
 import NodeVersionToast, { resetNodeVersionToastSessionLatch } from './NodeVersionToast.svelte';
 import { store as mockStore } from '$store/renderer/store';
 
@@ -81,6 +84,7 @@ const settleProbe = async (node: HostRequirementsState['node']) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authority.state = withLegacyPrincipal({});
   resetNodeVersionToastSessionLatch();
   mocks.route.pathname = '/workspace/abc123';
   mocks.daemonHealth.value = 'healthy';
@@ -88,6 +92,41 @@ beforeEach(() => {
 });
 
 describe('NodeVersionToast', () => {
+  it('drops an owner probe after demotion and requires a fresh owner connection', async () => {
+    render(NodeVersionToast);
+    await tick();
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    mocks.hostRequirements.value = stateWithNode({ checked: false, ok: false }, true);
+    emitState();
+    await tick();
+    authority.state.principal.snapshot.capabilities.hostMembership = true;
+    authority.state.principal.snapshot.principal.hostRole = 'member';
+    emitState();
+    await tick();
+    await settleProbe({ checked: true, ok: false });
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+    authority.state = withLegacyPrincipal({ connections: { windowBackendId: 'host-B' } });
+    emitState();
+    await tick();
+    expect(mocks.dispatch).toHaveBeenCalledTimes(2);
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+    await settleProbe({ checked: true, ok: false });
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+  });
+  it.each(['member', 'guest', null] as const)(
+    'never requests host setup or warns with %s authority',
+    async (role) => {
+      if (role) {
+        authority.state.principal.snapshot.capabilities.hostMembership = true;
+        authority.state.principal.snapshot.principal.hostRole = role;
+      } else authority.state.principal.status = 'loading';
+      render(NodeVersionToast);
+      await settleProbe({ checked: true, ok: false });
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastWarning).not.toHaveBeenCalled();
+    },
+  );
+
   it('warns once when the fresh probe settles with an unmet node requirement', async () => {
     render(NodeVersionToast);
     await settleProbe({ checked: true, ok: false, version: '18.19.0' });

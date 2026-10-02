@@ -4,12 +4,15 @@ import {
   actionHudHidden,
   actionHudShown,
   consoleOwnerChanged,
+  encoderEffortHudShown,
   encoderHudHidden,
   encoderHudShown,
   hardwareConsoleReducer,
+  hardwareConsoleEncoderBehaviorSaveFailed,
   hydrateHardwareConsoleActionMapping,
   hydrateHardwareConsoleCycleScopes,
   hydrateHardwareConsoleEnabled,
+  hydrateHardwareConsoleEncoderBehavior,
   hydrateHardwareConsoleKeyPins,
   hydrateHardwareConsolePrompts,
   initialState,
@@ -21,6 +24,7 @@ import {
   setActionKeyMapping,
   setCycleScope,
   setHardwareConsoleEnabled,
+  setHardwareConsoleEncoderBehavior,
   setPromptPickerLimit,
   promptUsageRecorded,
   radialPromptPickerClosed,
@@ -37,6 +41,40 @@ describe('hardwareConsoleReducer', () => {
     expect(state).toEqual(initialState);
     expect(state.keyPins).toEqual([null, null, null, null, null, null]);
     expect(state.hydrated).toBe(false);
+    expect(state.encoderBehavior).toBe('agent-effort');
+    expect(state.encoderBehaviorHydrated).toBe(false);
+  });
+
+  it('hydrates one shared encoder choice without changing other hardware preferences', () => {
+    const pinned = hardwareConsoleReducer(initialState, pinWorkspaceToKey(2, 'ws-1'));
+    const state = hardwareConsoleReducer(
+      pinned,
+      hydrateHardwareConsoleEncoderBehavior('workspace-switch'),
+    );
+    expect(state.encoderBehavior).toBe('workspace-switch');
+    expect(state.encoderBehaviorHydrated).toBe(true);
+    expect(state.keyPins).toEqual([null, null, 'ws-1', null, null, null]);
+    expect(state.actionMappingByModel).toBe(pinned.actionMappingByModel);
+  });
+
+  it('applies encoder choices immediately and allows a retry after a failed save', () => {
+    const switched = hardwareConsoleReducer(
+      initialState,
+      setHardwareConsoleEncoderBehavior('workspace-switch'),
+    );
+    expect(switched.encoderBehavior).toBe('workspace-switch');
+    const failed = hardwareConsoleReducer(
+      switched,
+      hardwareConsoleEncoderBehaviorSaveFailed('agent-effort'),
+    );
+    expect(failed.encoderBehavior).toBe('agent-effort');
+    expect(failed.encoderBehaviorSaveFailed).toBe(true);
+    const retried = hardwareConsoleReducer(
+      failed,
+      setHardwareConsoleEncoderBehavior('workspace-switch'),
+    );
+    expect(retried.encoderBehavior).toBe('workspace-switch');
+    expect(retried.encoderBehaviorSaveFailed).toBe(false);
   });
 
   it('hydrates pins (normalized to 6 slots) and marks hydrated', () => {
@@ -245,6 +283,31 @@ describe('hardwareConsoleReducer', () => {
 
     const hidden = hardwareConsoleReducer(retargeted, encoderHudHidden());
     expect(hidden.encoderHudWorkspaceId).toBeNull();
+  });
+
+  it('keeps workspace and effort feedback mutually exclusive and clears either on dismissal', () => {
+    const target = {
+      key: 'agent-target',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      levels: ['low', 'high'],
+    };
+    const workspace = hardwareConsoleReducer(initialState, encoderHudShown('ws-1'));
+    const effort = hardwareConsoleReducer(
+      workspace,
+      encoderEffortHudShown({ target, effort: 'low' }),
+    );
+    expect(effort.encoderHudWorkspaceId).toBeNull();
+    expect(effort.encoderEffortFeedback?.effort).toBe('low');
+    const changed = hardwareConsoleReducer(
+      effort,
+      encoderEffortHudShown({ target, effort: 'high' }),
+    );
+    expect(changed.encoderEffortFeedback?.effort).toBe('high');
+    expect(hardwareConsoleReducer(changed, encoderHudHidden()).encoderEffortFeedback).toBeNull();
+    expect(
+      hardwareConsoleReducer(changed, encoderHudShown('ws-2')).encoderEffortFeedback,
+    ).toBeNull();
   });
 
   it('returns the same state for redundant HUD updates', () => {

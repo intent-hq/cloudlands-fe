@@ -1,5 +1,5 @@
-import { Store } from '@augmentcode/themis/svelte-store';
-import type { StoreMiddleware, StoreStateFromReducers } from '@augmentcode/themis/types';
+import { Store } from '@themislib/themis/svelte-store';
+import type { StoreMiddleware, StoreStateFromReducers } from '@themislib/themis/types';
 import { readable, type Readable } from 'svelte/store';
 
 import { safeLocalStorage } from '$lib/utils/safe-storage';

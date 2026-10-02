@@ -98,6 +98,7 @@
   --theme-light-input: 0 0% 0%;
   --theme-light-ring: 217.2 91.2% 59.8%;
   --theme-light-info: 260 58% 46%;
+  --theme-light-token-usage-input: 217 72% 53%;
   --theme-light-info-foreground: 0 0% 100%;
   --theme-light-success: 145 67% 28%;
   --theme-light-success-foreground: 0 0% 100%;
@@ -141,6 +142,7 @@
   --theme-dark-input: 20 4.7619047619% 87.6470588235%;
   --theme-dark-ring: 213.1 93.9% 67.8%;
   --theme-dark-info: 260 80% 72%;
+  --theme-dark-token-usage-input: 213 88% 68%;
   --theme-dark-info-foreground: 154 25% 9%;
   --theme-dark-success: 145 58% 55%;
   --theme-dark-success-foreground: 154 25% 9%;
@@ -292,6 +294,7 @@
   --theme-input: var(--theme-light-input);
   --theme-ring: var(--theme-light-ring);
   --theme-info: var(--theme-light-info);
+  --theme-token-usage-input: var(--theme-light-token-usage-input);
   --theme-info-foreground: var(--theme-light-info-foreground);
   --theme-success: var(--theme-light-success);
   --theme-success-foreground: var(--theme-light-success-foreground);
@@ -361,6 +364,7 @@
   --active: var(--theme-active);
   --selected: var(--theme-selected);
   --info: var(--theme-info);
+  --token-usage-input: var(--theme-token-usage-input);
   --info-foreground: var(--theme-info-foreground);
   --success: var(--theme-success);
   --success-foreground: var(--theme-success-foreground);
@@ -538,7 +542,7 @@
   --elevation-raised: var(--theme-light-elevation-raised);
   --elevation-overlay: var(--theme-light-elevation-overlay);
   --status-in-progress-hatch-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='5' height='5' viewBox='0 0 5 5'%3E%3Cpath d='M-2 2L2-2M-2 7L7-2M3 7L7 3' fill='none' stroke='white' stroke-width='0.5'/%3E%3C/svg%3E");
-  /* Spring enters follow the reference 80/160/240ms tiers; exits are crisp tweens. */
+  /* Bounded 80/160/240ms easing; spring names are compatibility aliases, never bounce. */
   --spring-fast: 80ms;
   --spring-fast-exit: 60ms;
   --spring-fast-ease: linear(0, 0.19 10%, 0.48 22%, 0.73 36%, 0.88 50%, 0.96 64%, 0.99 78%, 1);
@@ -642,6 +646,7 @@
   --theme-input: var(--theme-dark-input);
   --theme-ring: var(--theme-dark-ring);
   --theme-info: var(--theme-dark-info);
+  --theme-token-usage-input: var(--theme-dark-token-usage-input);
   --theme-info-foreground: var(--theme-dark-info-foreground);
   --theme-success: var(--theme-dark-success);
   --theme-success-foreground: var(--theme-dark-success-foreground);

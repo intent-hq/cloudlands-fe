@@ -5,8 +5,8 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import type {
   AgentSubscriptionUIState,
@@ -89,10 +89,11 @@ export const removeWatchedAgent = createAction<[workspaceId: string, watchedAgen
 
 /** Dispatched by the AgentSubscriptions component to request an initial fetch
  *  when the component mounts or the agentId changes. The saga handles the
- *  actual IPC call so no side effects live in the component. */
-export const requestSubscriptionFetch = createAction<[workspaceId: string, agentId: string]>(
-  'agentSubscriptionUI/requestSubscriptionFetch',
-);
+ *  actual IPC call so no side effects live in the component. Mount callers pass
+ *  ensure=true to reuse ready/in-flight snapshots; invalidations omit it. */
+export const requestSubscriptionFetch = createAction<
+  [workspaceId: string, agentId: string, ensure?: boolean]
+>('agentSubscriptionUI/requestSubscriptionFetch');
 
 /** Saga → reducer: preserve cached rows and surface the failed snapshot read. */
 export const subscriptionSnapshotFetchFailed = createAction<[workspaceId: string, agentId: string]>(
@@ -108,9 +109,9 @@ export const cancelAgentSubscriptionsRequested = createAsyncAction<
 );
 
 /** Refresh every subscription entry currently tracked for a workspace. */
-export const refreshWorkspaceSubscriptionEntriesRequested = createAction<[workspaceId: string]>(
-  'agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested',
-);
+export const refreshWorkspaceSubscriptionEntriesRequested = createAction<
+  [workspaceId: string, agentId?: string]
+>('agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested');
 
 // ---------------------------------------------------------------------------
 // Reducer

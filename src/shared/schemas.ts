@@ -1,3 +1,4 @@
+import { AgentNodeFieldsSchema } from './types/agent-node';
 /**
  * Zod Schemas for Runtime Validation
  *
@@ -399,6 +400,7 @@ export const AgentMessageSchema = z.object({
 
 // Agent Session Schema
 export const AgentSessionSchema = z.object({
+  ...AgentNodeFieldsSchema.shape,
   id: AgentIdSchema,
   backendSessionId: z.string().nullable().optional(),
   acpSessionId: z.string().optional(),

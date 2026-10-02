@@ -1,3 +1,4 @@
+import type { AgentNodeFields } from '$shared/types/agent-node';
 /**
  * Type definitions for the Workspace Event System
  *
@@ -37,7 +38,7 @@ export interface EventActor {
  * Properties are required for in-scope lifecycle event payloads; use explicit
  * null when a value is not semantically known for a refresh-style notification.
  */
-export interface CanonicalAgentStatusFields {
+export interface CanonicalAgentStatusFields extends AgentNodeFields {
   status: string | null;
   activationState: string | null;
   isActive: boolean | null;
@@ -116,6 +117,7 @@ export const WorkspaceEventType = {
   AgentRenamed: 'agent:renamed',
   AgentIdle: 'agent:idle',
   AgentStatusChanged: 'agent:status-changed',
+  HubCheckpoint: 'hub:checkpoint',
   AgentMessageSent: 'agent:message:sent',
   AgentMessageReceived: 'agent:message:received',
   AgentSubscribed: 'agent:subscribed',
@@ -468,8 +470,26 @@ export interface AgentStatusChangedEvent extends WorkspaceEventBase {
   type: 'agent:status-changed';
   data: Omit<CanonicalAgentStatusFields, 'status'> & {
     agentId: string;
-    previousStatus: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
-    status: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
+    previousStatus:
+      | 'pending'
+      | 'active'
+      | 'idle'
+      | 'responding'
+      | 'waiting'
+      | 'completed'
+      | 'failed'
+      | 'halted'
+      | 'resuming';
+    status:
+      | 'pending'
+      | 'active'
+      | 'idle'
+      | 'responding'
+      | 'waiting'
+      | 'completed'
+      | 'failed'
+      | 'halted'
+      | 'resuming';
   };
 }
 

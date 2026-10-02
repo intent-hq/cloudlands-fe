@@ -16,11 +16,17 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   interface Props {
     file: UIFileChange;
+    /** Workspace/root/commit scope supplied by the host, independent of file labels. */
+    contextKey?: string;
     /** Compact, unfilled rows for staged and unstaged changes. */
     compact?: boolean;
     showStageAction?: boolean;
@@ -53,6 +59,7 @@
 
   let {
     file,
+    contextKey = '',
     compact = false,
     showStageAction = false,
     showRevertAction = false,
@@ -72,13 +79,34 @@
   }: Props = $props();
 
   // Context menu state
-  let contextMenu: { x: number; y: number } | null = $state(null);
+  let rowButton: HTMLButtonElement | null = $state(null);
+  let contextMenu:
+    (SidebarContextPosition & { path: string; staged: boolean; key: string }) | null = $state(null);
 
-  function handleContextMenu(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY };
+  function handleContextMenu(e: MouseEvent | KeyboardEvent) {
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    contextMenu = {
+      ...position,
+      returnFocus: rowButton,
+      path: file.path,
+      staged: file.staged,
+      key: contextKey,
+    };
   }
+
+  function isContextTargetCurrent(target: typeof contextMenu): boolean {
+    return (
+      !!target &&
+      target.path === file.path &&
+      target.staged === file.staged &&
+      target.key === contextKey
+    );
+  }
+
+  $effect(() => {
+    if (contextMenu && !isContextTargetCurrent(contextMenu)) closeContextMenu();
+  });
 
   function closeContextMenu() {
     contextMenu = null;
@@ -155,6 +183,7 @@
     if (!isLocked) {
       // Stage/Unstage action
       if (showStageAction) {
+        items.push({ type: 'separator' });
         items.push({
           id: file.staged ? 'unstage' : 'stage',
           label: file.staged
@@ -188,7 +217,21 @@
       }
     }
 
-    return items;
+    const target = contextMenu;
+    return items.map((item) =>
+      'onClick' in item
+        ? {
+            ...item,
+            onClick: () => {
+              if (contextMenu !== target || !isContextTargetCurrent(target)) return;
+              if (['stage', 'unstage', 'revert'].includes(item.id) && isLocked) return;
+              if ((item.id === 'stage' || item.id === 'unstage') && !showStageAction) return;
+              if (item.id === 'revert' && (!showRevertAction || file.staged)) return;
+              item.onClick();
+            },
+          }
+        : item,
+    );
   }
 </script>
 
@@ -202,6 +245,7 @@
   oncontextmenu={handleContextMenu}
 >
   <Button
+    bind:ref={rowButton}
     type="button"
     variant={compact ? 'ghost' : 'default'}
     size={compact ? 'compact' : undefined}
@@ -219,6 +263,8 @@
       }
     }}
     onkeydown={(event: KeyboardEvent) => {
+      handleContextMenu(event);
+      if (event.defaultPrevented) return;
       if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
       event.preventDefault();
       onFileClick?.(file.path, undefined, file.staged, event);
@@ -262,6 +308,7 @@
             onOpenFile?.(file.path);
           }}
           tooltip={m.fileTracking_fileRow_openFile_tooltip()}
+          aria-label={m.fileTracking_fileRow_openFile_tooltip()}
         >
           <Fa icon={faFileAlt} class="h-2.5! w-2.5!" />
         </Button>
@@ -278,6 +325,7 @@
             onRevert?.(file.path);
           }}
           tooltip={revertTooltip}
+          aria-label={revertTooltip}
         >
           <Fa icon={faRotateLeft} class="h-2.5! w-2.5!" />
         </Button>
@@ -300,6 +348,9 @@
           tooltip={file.staged
             ? m.fileTracking_fileRow_unstage_label()
             : m.fileTracking_fileRow_stage_label()}
+          aria-label={file.staged
+            ? m.fileTracking_fileRow_unstage_label()
+            : m.fileTracking_fileRow_stage_label()}
         >
           <Fa icon={file.staged ? faMinus : faPlus} class="h-2.5! w-2.5!" />
         </Button>
@@ -317,8 +368,10 @@
 
 {#if contextMenu}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
+    x={contextMenu?.x ?? 0}
+    y={contextMenu?.y ?? 0}
+    ariaLabel={file.path}
+    returnFocus={contextMenu?.returnFocus}
     items={getContextMenuItems()}
     onClickOutside={closeContextMenu}
   />

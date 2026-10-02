@@ -13,11 +13,16 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { AppliedSettingChange, SpecialistDef } from '$lib/client/app-client';
+import type {
+  AppliedSettingChange,
+  SpecialistDef,
+  SpecialistCatalog,
+} from '$lib/client/app-client';
 import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { SpecialistFileScope } from '$shared/specialist-file-types';
+import { workspaceCatalogRequested } from '../../provider-catalog/provider-catalog-slice';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
   selectBundledSpecialists,
@@ -28,6 +33,7 @@ import {
   deleteFileSpecialist,
   refetchSpecialistsRequested,
   saveFileSpecialist,
+  setSpecialistImportDiagnostics,
   setBundledSpecialists,
   setBundledSpecialistsLoaded,
   setCustomSpecialistsLoaded,
@@ -139,6 +145,10 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
+    importedFrom: def.importedFrom,
+    unsupportedFields: def.unsupportedFields,
+    requiredSkills: def.requiredSkills,
+    missingSkills: def.missingSkills,
     hidden: def.hidden,
     modelOptions: def.modelOptions,
     // Must be mapped from the daemon def: the post-mutation refetch replaces the
@@ -153,11 +163,16 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
   };
 }
 
-function* applySpecialistList(defs: SpecialistDef[]) {
+function* applySpecialistCatalog(catalog: SpecialistCatalog) {
+  yield* put(setSpecialistImportDiagnostics(catalog.importDiagnostics ?? []));
+  yield* call(applySpecialistList, catalog.specialists, true);
+}
+
+function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
   // The daemon always ships bundled specialists. The live client folds a
   // transport failure into [], so an empty result after initial load is a
   // failed read and must not replace the last-known-good roster or loaded flags.
-  if (defs.length === 0 && (yield* selectBundledSpecialistsLoaded.effect())) {
+  if (!authoritative && defs.length === 0 && (yield* selectBundledSpecialistsLoaded.effect())) {
     logger.warn('Ignoring empty specialist list after initial load');
     return;
   }
@@ -168,9 +183,10 @@ function* applySpecialistList(defs: SpecialistDef[]) {
   // not resurrect (daemon replacement mode). A successful response with only
   // user/project defs means the base set is intentionally empty, so the
   // hardcoded SPECIALISTS fallback only applies to an empty initial load.
-  const bundled = defs.length
-    ? bundledDefs.map(toBundledSpecialist)
-    : SPECIALISTS.map(bundledFallback);
+  const bundled =
+    authoritative || defs.length
+      ? bundledDefs.map(toBundledSpecialist)
+      : SPECIALISTS.map(bundledFallback);
 
   yield* put(setBundledSpecialists(bundled));
   yield* put(setBundledSpecialistsLoaded(true));
@@ -183,8 +199,13 @@ function* applySpecialistList(defs: SpecialistDef[]) {
 function* refetchSpecialists(context: ListContext) {
   const generation = ++context.generation;
   try {
-    const defs: SpecialistDef[] = yield* call([appClient.specialists, appClient.specialists.list]);
-    if (generation === context.generation) yield* call(applySpecialistList, defs);
+    if (appClient.specialists.listCatalog) {
+      const catalog = yield* call([appClient.specialists, appClient.specialists.listCatalog]);
+      if (generation === context.generation) yield* call(applySpecialistCatalog, catalog);
+    } else {
+      const defs = yield* call([appClient.specialists, appClient.specialists.list]);
+      if (generation === context.generation) yield* call(applySpecialistList, defs);
+    }
   } catch (error) {
     logger.error('Failed to refetch specialist list', error);
     const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
@@ -206,16 +227,11 @@ function* showMutationError(error: unknown, fallback: string) {
   yield* call([notify, notify.error], errorMessage(error, fallback));
 }
 
-/**
- * Reject the per-dispatch promise with `error`. The promise is marked handled
- * first so fire-and-forget dispatchers (e.g. the settings editor) don't
- * surface unhandled-rejection noise; awaiting callers still get the rejection.
- */
+/** Reject the per-dispatch promise while publishing its failure stage. */
 function* rejectAction(
   action: ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>,
   error: Error,
 ) {
-  action.promise.catch(() => {});
   yield* put(action.failure(error));
 }
 
@@ -223,7 +239,10 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
   const [payload] = action.payload;
   let settled = false;
   try {
-    const existing = yield* selectGetFileSpecialist.effect(payload.id);
+    const existing = yield* selectGetFileSpecialist.effect(payload.id, payload.workspaceId);
+    if (existing?.importedFrom) {
+      throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
+    }
     const bundledSpecialists = yield* selectBundledSpecialists.effect();
     const bundled = (bundledSpecialists.length ? bundledSpecialists : SPECIALISTS).find(
       (specialist) => specialist.id === payload.id,
@@ -252,6 +271,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
         spec,
         scope,
         payload.workspacePath,
+        ...(payload.workspaceId ? [payload.workspaceId] : []),
       );
     } else {
       yield* call(
@@ -260,13 +280,16 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
         spec,
         scope,
         payload.workspacePath,
+        ...(payload.workspaceId ? [payload.workspaceId] : []),
       );
     }
     // The daemon write succeeded: settle the promise before the list refetch
     // (which handles its own failures) so awaiting callers aren't blocked on it.
     yield* put(action.success(undefined as never));
     settled = true;
-    yield* call(refetchSpecialists, context);
+    if (scope === 'project' && payload.workspaceId)
+      yield* put(workspaceCatalogRequested(payload.workspaceId));
+    else yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to save file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_saveFailed_error());
@@ -287,15 +310,22 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
   const [ref] = action.payload;
   let settled = false;
   try {
+    const existing = yield* selectGetFileSpecialist.effect(ref.id, ref.workspaceId);
+    if (existing?.importedFrom) {
+      throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
+    }
     yield* call(
       [appClient.specialists, appClient.specialists.delete],
       ref.id,
       ref.scope ?? 'user',
       ref.workspacePath,
+      ...(ref.workspaceId ? [ref.workspaceId] : []),
     );
     yield* put(action.success(undefined as never));
     settled = true;
-    yield* call(refetchSpecialists, context);
+    if (ref.scope === 'project' && ref.workspaceId)
+      yield* put(workspaceCatalogRequested(ref.workspaceId));
+    else yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to delete file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_deleteFailed_error());
@@ -331,10 +361,13 @@ function* watchSpecialistRefetches(context: ListContext) {
   }
 }
 
-function createSpecialistsChannel(): EventChannel<SpecialistDef[]> {
-  return eventChannel<SpecialistDef[]>(
-    (emit) => appClient.specialists.subscribe(emit),
-    buffers.expanding<SpecialistDef[]>(),
+function createSpecialistsChannel(): EventChannel<SpecialistCatalog | SpecialistDef[]> {
+  return eventChannel<SpecialistCatalog | SpecialistDef[]>(
+    (emit) =>
+      appClient.specialists.subscribeCatalog
+        ? appClient.specialists.subscribeCatalog(emit)
+        : appClient.specialists.subscribe(emit),
+    buffers.expanding<SpecialistCatalog | SpecialistDef[]>(),
   );
 }
 
@@ -342,10 +375,11 @@ function* watchSpecialistsSubscription(context: ListContext) {
   const channel = createSpecialistsChannel();
   try {
     while (true) {
-      const defs: SpecialistDef[] = yield* take(channel);
-      if (defs === (END as unknown as SpecialistDef[])) break;
+      const catalog: SpecialistCatalog | SpecialistDef[] = yield* take(channel);
+      if (catalog === (END as unknown as SpecialistCatalog)) break;
       ++context.generation;
-      yield* call(applySpecialistList, defs);
+      if (Array.isArray(catalog)) yield* call(applySpecialistList, catalog);
+      else yield* call(applySpecialistCatalog, catalog);
     }
   } finally {
     channel.close();

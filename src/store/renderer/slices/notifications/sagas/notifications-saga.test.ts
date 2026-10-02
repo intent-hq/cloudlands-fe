@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -52,10 +53,11 @@ class MockNotification {
   }
 }
 
-const state = (currentTabId: string | null = null) => ({
-  userPreferences: { enabled: true, soundOnlyWhenUnfocused: false },
-  tabState: { currentTabId },
-});
+const state = (currentTabId: string | null = null) =>
+  withLegacyPrincipal({
+    userPreferences: { enabled: true, soundOnlyWhenUnfocused: false },
+    tabState: { currentTabId },
+  });
 const idle = (data: Record<string, unknown> = {}, workspaceId = 'ws-1') => ({
   type: 'agent:idle',
   workspaceId,

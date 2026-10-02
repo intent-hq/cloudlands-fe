@@ -79,6 +79,23 @@ describe('DeviceIconPicker', () => {
     await fireEvent.pointerDown(trigger);
     expect(screen.queryByRole('listbox')).toBeNull();
   });
+
+  it('preserves an unknown saved icon until the user explicitly chooses a supported one', async () => {
+    const onchange = vi.fn();
+    render(DeviceIconPicker, {
+      props: { record: { deviceIcon: 'future-icon' as never }, onchange },
+    });
+    const trigger = screen.getByTestId('device-icon-picker-trigger');
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const unknown = screen.getByRole('option', { name: 'future-icon' });
+    expect(unknown.getAttribute('aria-disabled')).toBe('true');
+    expect(onchange).not.toHaveBeenCalled();
+    await fireEvent.pointerUp(screen.getByRole('option', { name: 'Rocket' }), {
+      pointerType: 'mouse',
+    });
+    expect(onchange).toHaveBeenCalledExactlyOnceWith('rocket');
+  });
 });
 
 describe('DeviceIcon', () => {

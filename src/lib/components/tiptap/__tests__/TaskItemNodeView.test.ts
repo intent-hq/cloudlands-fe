@@ -145,6 +145,8 @@ function createMockEditor(node?: any) {
     state: {
       doc: {
         textBetween: vi.fn(() => 'Task text'),
+        content: { size: 0 },
+        resolve: () => ({ parent: { type: { name: 'doc' } } }),
         nodeAt: vi.fn(() => nodeToReturn),
       },
     },

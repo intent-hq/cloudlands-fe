@@ -25,6 +25,7 @@
    */
 
   import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -37,13 +38,14 @@
   import { openExternalUrl } from '$lib/utils/open-external';
   import { store as appStore } from '$store/renderer/store';
   import {
-    captureFingerprintRequested,
-    addConnectionRequested,
-    openConnectionRequested,
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
     loadKeychainSyncStateRequested,
-    setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
-  import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectKeychainSyncState,
+    selectConnectionWorkflow,
+  } from '$store/renderer/slices/connections/connections-selectors';
   import {
     DEFAULT_CONNECTION_ACCENT,
     type ConnectionAccent,
@@ -111,8 +113,29 @@
   let detectHosts = $state(true);
   let saveToICloud = $state(true);
   let fingerprint = $state('');
-  let busy = $state(false);
-  let error = $state<string | null>(null);
+  const consumerId = $props.id();
+  const workflow$ = selectConnectionWorkflow(consumerId);
+  const busy = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
+  const error = $derived.by(() => {
+    const outcome = $workflow$?.outcome;
+    if (outcome?.kind === 'error') return outcome.message;
+    if (outcome?.kind === 'syncError') return outcome.message;
+    if (outcome?.kind === 'secretUnavailable') return m.modals_connect_secretUnavailable_error();
+    if (outcome?.kind === 'captureRejected')
+      return outcome.statusCode === 403
+        ? m.modals_connect_wsApiDisabled_error()
+        : m.modals_connect_tokenRejected_error();
+    return null;
+  });
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
+  $effect(() => {
+    const outcome = $workflow$?.outcome;
+    if (outcome?.kind === 'captured') {
+      fingerprint = outcome.fingerprint;
+      step = 'confirm';
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
+    } else if (outcome?.kind === 'done') untrack(close);
+  });
   let firstInput: HTMLInputElement | null = $state(null);
   const accentOptions = $derived(
     connectionAccentOptions(prefillAccent === undefined ? defaultAccent : prefillAccent),
@@ -176,8 +199,7 @@
     detectHosts = true;
     saveToICloud = true;
     fingerprint = '';
-    busy = false;
-    error = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
   }
 
   /**
@@ -211,109 +233,65 @@
     reset();
   }
 
-  function toMessage(e: unknown): string {
-    return e instanceof Error ? e.message : String(e);
-  }
-
-  async function handleCapture() {
+  function handleCapture() {
     if (!canSubmitDetails) return;
-    busy = true;
-    error = null;
-    try {
-      const action = captureFingerprintRequested({
-        host: host.trim(),
-        port: portNumber,
-        token: token.trim(),
-      });
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (!result.tokenValid) {
-        // The daemon rejected the token on the capture upgrade (PROTOCOL §2.1:
-        // 401 bad token, 403 WS API disabled) — stay on the details step so the
-        // user can correct it instead of storing a connection that cannot auth.
-        error =
-          result.statusCode === 403
-            ? m.modals_connect_wsApiDisabled_error()
-            : m.modals_connect_tokenRejected_error();
-        return;
-      }
-      fingerprint = result.fingerprint;
-      step = 'confirm';
-    } catch (e) {
-      error = toMessage(e);
-    } finally {
-      busy = false;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'capture',
+        params: {
+          host: host.trim(),
+          port: portNumber,
+          token: token.trim(),
+        },
+      }),
+    );
   }
 
-  async function handleConfirm() {
+  function handleConfirm() {
     // Sync explicitly off but the switch kept on: enabling iCloud sync is
     // machine-global, so ask first instead of flipping it silently. Both
     // answers still add the backend (decline just excludes it from sync).
     if (syncSupported && !syncEnabled && saveToICloud) {
-      error = null;
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
       step = 'syncConfirm';
       return;
     }
-    await storeAndOpen(syncSupported && !saveToICloud);
+    storeAndOpen(syncSupported && !saveToICloud);
   }
 
-  async function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
-    busy = true;
-    error = null;
+  function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
     const trimmedHost = host.trim();
-    try {
-      const addAction = addConnectionRequested({
-        label: name.trim(),
-        accent,
-        deviceIcon,
-        host: trimmedHost,
-        port: portNumber,
-        fingerprint,
-        token: token.trim(),
-        ...(tcAddress ? { tcAddress } : {}),
-        detectHosts,
-        ...(syncExcluded ? { syncExcluded: true } : {}),
-      });
-      appStore.dispatch(addAction);
-      const { connection } = await addAction.promise;
-      if (opts.enableSyncAfterAdd) {
-        // Enable machine-global sync only once the add succeeded, so a failed
-        // add (bad token, WSS off on the target) leaves no machine-global
-        // side effect. A retry re-runs the add as an idempotent upsert.
-        const syncAction = setKeychainSyncEnabledRequested(true);
-        appStore.dispatch(syncAction);
-        await syncAction.promise;
-      }
-      const openAction = openConnectionRequested(connection.id);
-      appStore.dispatch(openAction);
-      const openResult = await openAction.promise;
-      if (openResult.status === 'secret-unavailable') {
-        // The device was stored but its token could not be read back (keychain
-        // locked or entry gone) — a resolved failure, not a success (#3783).
-        // Stay open so the outcome is visible; recovery lives in Devices settings.
-        error = m.modals_connect_secretUnavailable_error();
-        busy = false;
-        return;
-      }
-      close();
-    } catch (e) {
-      error = toMessage(e);
-      busy = false;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'connect',
+        enableSync: opts.enableSyncAfterAdd === true,
+        params: {
+          label: name.trim(),
+          accent,
+          deviceIcon,
+          host: trimmedHost,
+          port: portNumber,
+          fingerprint,
+          token: token.trim(),
+          ...(tcAddress ? { tcAddress } : {}),
+          detectHosts,
+          ...(syncExcluded ? { syncExcluded: true } : {}),
+        },
+      }),
+    );
   }
 
-  async function handleEnableSyncAndAdd() {
-    await storeAndOpen(false, { enableSyncAfterAdd: true });
+  function handleEnableSyncAndAdd() {
+    storeAndOpen(false, { enableSyncAfterAdd: true });
   }
 
-  async function handleDeclineSync() {
-    await storeAndOpen(true);
+  function handleDeclineSync() {
+    storeAndOpen(true);
   }
 
   function back() {
     step = 'details';
-    error = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
   }
 
   const inputClass =
@@ -348,7 +326,9 @@
   let wasOpen = false;
   $effect(() => {
     const justOpened = open && !wasOpen;
+    const justClosed = !open && wasOpen;
     wasOpen = open;
+    if (justClosed) untrack(reset);
     if (justOpened) {
       if (prefillLabel && name === '') name = prefillLabel;
       accent = prefillAccent === undefined ? defaultAccent : prefillAccent;
@@ -357,9 +337,7 @@
       // Refresh the keychain sync state so the iCloud switch gate is current
       // even when settings never loaded it. A failed load leaves the state
       // null → the platform fallback determines whether the switch is visible.
-      const loadAction = loadKeychainSyncStateRequested();
-      appStore.dispatch(loadAction);
-      loadAction.promise.catch(() => {});
+      appStore.dispatch(loadKeychainSyncStateRequested());
     }
   });
 </script>
@@ -391,10 +369,15 @@
     onClose={close}
     dismissOnInteractOutside={false}
   >
-    <div class="space-y-4">
+    <div class="space-y-4" aria-busy={busy}>
+      <p class="text-sm text-subtle" role="status" aria-live="polite">
+        {step === 'details'
+          ? m.modals_connect_details_description()
+          : step === 'confirm'
+            ? m.modals_connect_confirmStep_description()
+            : m.modals_connect_enableSync_description()}
+      </p>
       {#if step === 'details'}
-        <p class="text-sm text-subtle">{m.modals_connect_details_description()}</p>
-
         <div class="space-y-1">
           <label class="text-xs text-subtle" for="connect-name"
             >{m.modals_connect_name_label()}</label
@@ -522,18 +505,15 @@
           {m.modals_connect_headless_after()}
         </p>
       {:else if step === 'confirm'}
-        <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
         <div class="space-y-1">
           <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
           <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
           <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
         </div>
-      {:else}
-        <p class="text-sm text-subtle">{m.modals_connect_enableSync_description()}</p>
       {/if}
 
       {#if error}
-        <p class="text-xs text-danger">{error}</p>
+        <p class="text-xs text-danger" role="alert">{error}</p>
       {/if}
     </div>
 

@@ -74,9 +74,12 @@ export class LiveSystemClient implements SystemClient {
    * contract, `cowSupported` is present as a boolean when the daemon's
    * workspaces-root probe ran and omitted when it could not.
    */
-  async capabilities(): Promise<SystemCapabilities> {
+  async capabilities(workspaceId?: string): Promise<SystemCapabilities> {
     try {
-      const result = await backendRequest<SystemCapabilities>('system.capabilities');
+      const result = await backendRequest<SystemCapabilities>(
+        'system.capabilities',
+        ...(workspaceId ? [{ workspaceId }] : []),
+      );
       if (!result || typeof result !== 'object') {
         return {};
       }
