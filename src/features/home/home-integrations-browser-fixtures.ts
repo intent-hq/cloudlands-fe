@@ -48,7 +48,11 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
     htmlUrl: 'https://github.com/acme/studio/pull/142',
     createdAt: '2026-09-28T20:00:00Z',
     updatedAt: '2026-09-28T22:10:00Z',
-    user: { login: 'avery', avatarUrl: '', htmlUrl: 'https://github.com/avery' },
+    user: {
+      login: 'avery',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/12345?v=4',
+      htmlUrl: 'https://github.com/avery',
+    },
     headRef: 'fix/reconnect',
     baseRef: 'main',
     headSha: 'abc123',

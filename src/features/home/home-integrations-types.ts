@@ -20,6 +20,7 @@ export interface HomeIntegrationItem {
   description?: string;
   state?: string;
   author?: string;
+  authorAvatarUrl?: string;
   updatedAt?: string;
   labels?: string[];
   owner?: string;
@@ -42,7 +43,7 @@ export interface HomeReviewComment {
   body: string;
   path: string;
   line: number | null;
-  user: { login: string };
+  user: { login: string; avatarUrl?: string };
   htmlUrl: string;
 }
 export interface HomeIntegrationsState {

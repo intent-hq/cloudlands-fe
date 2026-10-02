@@ -56,7 +56,7 @@ interface PullWire {
   state: string;
   draft?: boolean;
   merged?: boolean;
-  user?: { login: string };
+  user?: { login: string; avatarUrl?: string };
   updatedAt?: string;
   labels?: string[];
   owner?: string;
@@ -79,6 +79,7 @@ function pullItem(pull: PullWire, owner: string, repo: string): HomeIntegrationI
     description: pull.body,
     state: pull.merged ? 'merged' : pull.draft ? 'draft' : pull.state,
     author: pull.user?.login,
+    authorAvatarUrl: pull.user?.avatarUrl,
     updatedAt: pull.updatedAt,
     labels: pull.labels,
     headRef: pull.headRef,

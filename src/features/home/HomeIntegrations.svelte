@@ -468,6 +468,7 @@
                                 >
                                   <GitHubAvatar
                                     identity={item.author ?? ''}
+                                    avatarUrl={item.authorAvatarUrl}
                                     alt={item.author}
                                     size={20}
                                     class="rounded-full"
@@ -606,7 +607,12 @@
                     class="home-pr-metadata inline-flex min-w-0 items-center gap-2"
                   >
                     <span class="flex size-5 shrink-0 items-center justify-center">
-                      <GitHubAvatar identity={detail.author} size={20} class="rounded-full" />
+                      <GitHubAvatar
+                        identity={detail.author}
+                        avatarUrl={detail.authorAvatarUrl}
+                        size={20}
+                        class="rounded-full"
+                      />
                     </span>
                     <span class="truncate">{detail.author}</span>
                   </span>{/if}
@@ -744,6 +750,7 @@
                     >
                       {#if detail.author}<GitHubAvatar
                           identity={detail.author}
+                          avatarUrl={detail.authorAvatarUrl}
                           size={20}
                           class="rounded-full"
                         /><span>{detail.author}</span><span aria-hidden="true">·</span>{/if}
@@ -880,6 +887,7 @@
                               <HomePullComment
                                 threaded
                                 author={comment.user.login}
+                                avatarUrl={comment.user.avatarUrl}
                                 body={comment.body}
                                 date={comment.createdAt}
                                 url={comment.htmlUrl}

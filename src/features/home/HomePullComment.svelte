@@ -9,6 +9,7 @@
   import { m } from '$shared/paraglide/messages.js';
   let {
     author,
+    avatarUrl,
     body,
     date,
     caption,
@@ -18,6 +19,7 @@
   }: {
     threaded?: boolean;
     author: string;
+    avatarUrl?: string;
     body: string;
     date?: string | null;
     caption?: string;
@@ -43,7 +45,7 @@
 >
   <header class="flex min-w-0 items-center gap-2 px-4 pt-4 pb-1 type-caption">
     <span class="flex size-6 shrink-0 items-center justify-center">
-      <GitHubAvatar identity={author} size={24} class="rounded-full">
+      <GitHubAvatar identity={author} {avatarUrl} size={24} class="rounded-full">
         {#snippet fallback()}<span
             class="flex size-6 items-center justify-center rounded-full bg-muted type-caption"
             >{author.slice(0, 1).toUpperCase()}</span
