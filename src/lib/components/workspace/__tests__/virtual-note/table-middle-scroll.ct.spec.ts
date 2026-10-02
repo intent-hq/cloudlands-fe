@@ -13,6 +13,8 @@ for (const tail of [true, false])
       ' | neighbor |' +
       (tail ? '\n| tail | end |' : '');
     await mount(Pair, { props: { sourceOverride: source } });
+    for (const side of ['native', 'bounded'])
+      await expect(page.getByTestId(side).locator('.tiptap')).toHaveCount(1);
     const observations = [];
     for (const side of ['native', 'bounded']) {
       const root = page.getByTestId(side).getByTestId('proof');

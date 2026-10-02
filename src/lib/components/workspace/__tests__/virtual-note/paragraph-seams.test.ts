@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { SourceJournal } from './source-journal';
+import { SourceProjection } from './source-projection';
 const selection = { anchor: 0, head: 0, affinity: 1 as const, revision: 1 };
 const record = (s: SourceJournal) =>
   s.record(
@@ -15,6 +16,60 @@ const seeded = () => {
   record(s);
   return s;
 };
+for (const newline of ['\n', '\r\n'])
+  it(`retains surviving leading blank paragraphs through remote edits and rollback ${JSON.stringify(newline)}`, () => {
+    const source = newline.repeat(3) + 'suffix';
+    const s = new SourceJournal(() => source, 1);
+    const seam = { from: 0, to: newline.length, kind: 'leading' as const };
+    s.beginChanges();
+    s.setParagraphSeam(seam);
+    record(s);
+    const view = () => new SourceProjection(s.region(0), 0, s.inlineContext(0, s.length));
+    expect(view().content.content!.map((n) => n.content?.[0]?.text ?? '')).toEqual([
+      '',
+      '',
+      'suffix',
+    ]);
+    const remote = { from: newline.length * 3, to: newline.length * 3, insert: 'REMOTE' };
+    s.atomic(() => {
+      s.apply(remote);
+      s.rebase(remote);
+    });
+    const accepted = view().content;
+    expect(accepted.content!.map((n) => n.content?.[0]?.text ?? '')).toEqual([
+      '',
+      '',
+      'REMOTEsuffix',
+    ]);
+    const revision = s.revision;
+    expect(() =>
+      s.atomic(() => {
+        s.beginChanges();
+        s.stage({ from: newline.length, to: newline.length * 2, insert: '' });
+        record(s);
+        throw Error('write fault');
+      }),
+    ).toThrow('write fault');
+    expect(s.revision).toBe(revision);
+    expect(view().content).toEqual(accepted);
+    expect(s.region(0)).toBe(newline.repeat(3) + 'REMOTEsuffix');
+    s.atomic(() => {
+      for (const c of s.changes(0, true)) s.replay(c, false);
+    });
+    s.atomic(() => {
+      for (const c of s.changes(0)) s.replay(c, true);
+    });
+    expect(view().content).toEqual(accepted);
+    expect(() =>
+      s.atomic(() => {
+        const conflict = { from: 0, to: newline.length, insert: '' };
+        s.apply(conflict);
+        s.rebase(conflict);
+      }),
+    ).toThrow('retained paragraph seam');
+    expect(view().content).toEqual(accepted);
+    expect(s.stats.maxJournalRead).toBeLessThanOrEqual(4096);
+  });
 it('pages deletion boundary state, preserves source and distinguishes a fresh session', () => {
   const s = seeded();
   expect(seams(s)).toEqual([{ from: 8, to: 9 }]);
