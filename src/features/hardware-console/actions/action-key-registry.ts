@@ -48,7 +48,7 @@ import {
   setShowCreateModal,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import {
-  createAgentWithSpecialistRequested,
+  createAgentRequested,
   hydrateAgentsRequested,
   setActiveAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -673,7 +673,7 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       const { dispatch } = context;
       const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
-      dispatch(createAgentWithSpecialistRequested(wsId, null));
+      dispatch(createAgentRequested(wsId));
     },
   },
   {

@@ -597,6 +597,7 @@ describe('agentMutationSaga', () => {
     const action = saveAgentSessionRequested(WS, A1, true, {
       specialistUpdate: {
         specialist: 'spec-writer',
+        rememberSpecialist: true,
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },
@@ -608,6 +609,7 @@ describe('agentMutationSaga', () => {
       agentId: A1,
       workspaceId: WS,
       specialist: 'spec-writer',
+      rememberSpecialist: true,
       model: 'grok4.6',
       systemPrompt: 'Coordinate the work.',
     });
@@ -618,7 +620,7 @@ describe('agentMutationSaga', () => {
     mocks.updateSpecialist.mockResolvedValue({ success: true });
     const { channel, task } = start();
     const action = saveAgentSessionRequested(WS, A1, true, {
-      specialistUpdate: { specialist: null, systemPrompt: null },
+      specialistUpdate: { specialist: null, systemPrompt: null, rememberSpecialist: true },
     });
     channel.put(action);
 
@@ -628,6 +630,7 @@ describe('agentMutationSaga', () => {
       workspaceId: WS,
       specialist: null,
       systemPrompt: null,
+      rememberSpecialist: true,
     });
     await stop(task);
   });
@@ -647,6 +650,7 @@ describe('agentMutationSaga', () => {
     const action = saveAgentSessionRequested(WS, A1, true, {
       specialistUpdate: {
         specialist: 'spec-writer',
+        rememberSpecialist: true,
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },

@@ -5243,9 +5243,10 @@ describe.each(['workspace-a', 'workspace-b'])(
         {
           specialistUpdate:
             c.selection === null
-              ? { specialist: null, systemPrompt: null }
+              ? { specialist: null, systemPrompt: null, rememberSpecialist: true }
               : {
                   specialist: c.selection,
+                  rememberSpecialist: true,
                   model,
                   ...(selected ? { systemPrompt: `Prompt ${workspaceId}` } : {}),
                 },
