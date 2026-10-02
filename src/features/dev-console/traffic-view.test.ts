@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   orderTraffic,
+  trafficBytes,
   selectedPayloadReader,
   payloadDocument,
   payloadSupportsRichView,
@@ -191,4 +192,22 @@ it('combines exactly the existing streams chronologically, with arrival-order ti
   expect(ids()).toEqual(['earlier', 'out', 'event', 'in']);
   expect(orderTraffic(traffic, 'all', '', 'bytes', true)[0]).toBe(traffic[0]);
   expect(traffic.map((record) => record.id)).toEqual(['out', 'event', 'in', 'earlier', 'excluded']);
+});
+
+it('sorts by cumulative stream bytes without recounting the retained acknowledgement', () => {
+  const streaming = {
+    ...row('stream', 'note.subscribe'),
+    totalBytes: 1000,
+    response: { state: 'complete' as const, originalBytes: 20, retainedBytes: 20 },
+  };
+  const ordinary = {
+    ...row('ordinary', 'workspace.list'),
+    response: { state: 'complete' as const, originalBytes: 40, retainedBytes: 40 },
+  };
+  expect(trafficBytes(streaming)).toBe(1000);
+  expect(trafficBytes(ordinary)).toBe(40);
+  expect(orderTraffic([ordinary, streaming], 'all', '', 'bytes', true).map((r) => r.id)).toEqual([
+    'stream',
+    'ordinary',
+  ]);
 });

@@ -7,7 +7,7 @@ export function trafficStream(row: DevConsoleRow): Exclude<TrafficTab, 'all'> | 
   return row.direction === 'inbound' ? 'events' : null;
 }
 export function trafficBytes(row: DevConsoleRow) {
-  return (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
+  return row.totalBytes ?? (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
 }
 export function orderTraffic(
   rows: DevConsoleRow[],
