@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    findQueuedMessageForEdit,
+    queuedMessagePermissions,
+  } from '$lib/utils/queued-message-permissions';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
   /**
@@ -26,6 +30,7 @@
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { Textarea } from '$lib/components/ui/textarea';
   import TipTapEditor from './input/TipTapEditor.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -59,17 +64,22 @@
     ) => QueuedMessageSendOutcome | void | Promise<QueuedMessageSendOutcome | void>;
     ondone?: () => void;
     /**
-     * Queue-surface attribution (multiplayer w2). `null` = off (single-member
-     * workspace). Otherwise a user-authored entry renders its own `author`
+     * Local queue attribution (multiplayer w2). `null` disables local fallback
+     * in a single-member workspace. Portable author snapshots remain visible
+     * independently. Otherwise a user-authored entry renders its own `author`
      * projection, or — on a daemon that stamps `fromPrincipalId` only — the
      * transcript author this map resolves it to.
      */
     authors?: ReadonlyMap<string, MessageAuthor> | null;
     /**
-     * The viewer's own principal (`presence.ownPrincipalId`): their own
-     * entries render no author. `null` = not yet known, every author shown.
+     * The admitted principal used for authorization; never inferred from presence.
+     * Null keeps all mutations disabled until identity is verified.
      */
     ownPrincipalId?: string | null;
+    /** Presence identity affects attribution display only. */
+    presentationPrincipalId?: string | null;
+    ownerPrincipalId?: string | null;
+    isHostOwner?: boolean;
   }
 
   let {
@@ -81,12 +91,29 @@
     ondone,
     authors = null,
     ownPrincipalId = null,
+    presentationPrincipalId = ownPrincipalId,
+    ownerPrincipalId = null,
+    isHostOwner = false,
   }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
+  function permissions(message: QueuedMessage | undefined) {
+    return queuedMessagePermissions(message, ownPrincipalId, ownerPrincipalId, isHostOwner);
+  }
+
+  function canStartEdit(message: QueuedMessage) {
+    return (
+      permissions(message).edit &&
+      !(message.editing && message.editingMessageId && message.editingMessageId !== message.id)
+    );
+  }
+
   // Track which message is being edited
   let editingId = $state<string | null>(null);
+  let conflictedDrafts = $state<
+    Array<{ id: string; content: string; pendingOperationId?: number }>
+  >([]);
   let editContent = $state('');
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
@@ -96,7 +123,9 @@
   const editHasMembers = $derived(
     memberMentionsToText(editOriginalContent) !== editOriginalContent,
   );
-  let activeEditOperation: { messageId: string } | null = null;
+  type EditOperation = { messageId: string; token: number; releasing: boolean };
+  let editOperationSequence = 0;
+  let activeEditOperation: EditOperation | null = null;
   let pendingFocusRestore: { messageId: string; element: HTMLElement } | null = null;
   let expanded = $state(true);
   let previousMessageCount = $state(0);
@@ -126,6 +155,7 @@
       !onsendnow ||
       disabled ||
       !message ||
+      !permissions(message).sendNow ||
       message.editing ||
       editingId === id ||
       sendingIds.has(id) ||
@@ -178,23 +208,23 @@
     play();
   }
 
-  function beginEditOperation(messageId: string) {
-    const operation = { messageId };
+  function beginEditOperation(messageId: string, releasing = false) {
+    const operation = { messageId, token: ++editOperationSequence, releasing };
     activeEditOperation = operation;
     return operation;
   }
 
-  function ownsEditOperation(operation: { messageId: string }) {
+  function ownsEditOperation(operation: EditOperation) {
     return activeEditOperation === operation && editingId === operation.messageId;
   }
 
-  function finishEditOperation(operation: { messageId: string }) {
+  function finishEditOperation(operation: EditOperation) {
     if (!ownsEditOperation(operation)) return false;
     activeEditOperation = null;
     return true;
   }
 
-  function clearEditState(operation?: { messageId: string }) {
+  function clearEditState(operation?: EditOperation) {
     if (operation && !ownsEditOperation(operation)) return false;
     editingId = null;
     editContent = '';
@@ -205,7 +235,37 @@
     return true;
   }
 
-  async function clearOwnedEditState(operation: { messageId: string }) {
+  function preserveConflictedDraft(pendingOperationId?: number) {
+    if (editingId) {
+      conflictedDrafts = [
+        ...conflictedDrafts.filter((draft) => draft.id !== editingId),
+        { id: editingId, content: editContent, pendingOperationId },
+      ];
+    }
+    clearEditState();
+  }
+
+  // Queue events may release or drain a row before its save/cancel reply. Keep
+  // that draft private until the reply settles, without blocking another editor.
+  function settleDetachedEdit(operation: EditOperation, success: boolean) {
+    if (!conflictedDrafts.some((draft) => draft.pendingOperationId === operation.token))
+      return false;
+    conflictedDrafts = conflictedDrafts.flatMap((draft) => {
+      if (draft.pendingOperationId !== operation.token) return [draft];
+      return success ? [] : [{ id: draft.id, content: draft.content }];
+    });
+    return true;
+  }
+
+  function preserveServerConflict(error: string | undefined, operation: EditOperation) {
+    if (settleDetachedEdit(operation, false)) return true;
+    if (!ownsEditOperation(operation) || !error?.includes('queued edit conflict:')) return false;
+    preserveConflictedDraft();
+    return true;
+  }
+
+  async function clearOwnedEditState(operation: EditOperation) {
+    if (settleDetachedEdit(operation, true)) return false;
     if (!ownsEditOperation(operation)) return false;
     let cleared = false;
     await animateRowMutation(operation.messageId, () => {
@@ -223,7 +283,11 @@
   });
 
   $effect(() => {
-    if (editingId && !messages.some((message) => message.id === editingId)) clearEditState();
+    if (editingId && !findQueuedMessageForEdit(messages, editingId)) {
+      preserveConflictedDraft(
+        activeEditOperation?.releasing ? activeEditOperation.token : undefined,
+      );
+    }
   });
 
   $effect.pre(() => {
@@ -388,7 +452,13 @@
   });
 
   async function startEdit(message: QueuedMessage, programmatic = false) {
-    if (disabled || isSending(message.id) || activeEditOperation || editingId === message.id)
+    if (
+      !canStartEdit(message) ||
+      disabled ||
+      isSending(message.id) ||
+      activeEditOperation ||
+      editingId === message.id
+    )
       return;
     const operation = beginEditOperation(message.id);
     await animateRowMutation(message.id, () => {
@@ -406,6 +476,7 @@
       try {
         const result = await onedit(message.id, message.content, true);
         if (!result.success) {
+          if (preserveServerConflict(result.error, operation)) return;
           // Message was already dequeued - clear edit state
           // TODO STAB-27: Drop content into composer as draft instead of losing it
           console.warn('Failed to hold queued message for editing:', result.error);
@@ -423,9 +494,14 @@
   }
 
   async function cancelEdit() {
-    if (activeEditOperation || !editingId) return;
+    if (
+      activeEditOperation ||
+      !editingId ||
+      !permissions(findQueuedMessageForEdit(messages, editingId)).edit
+    )
+      return;
     const wasProgrammatic = editStartedProgrammatically;
-    const operation = beginEditOperation(editingId);
+    const operation = beginEditOperation(editingId, true);
     const originalContent = editOriginalContent;
 
     // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
@@ -434,6 +510,7 @@
       try {
         const result = await onedit(operation.messageId, originalContent, false);
         if (!result.success) {
+          if (preserveServerConflict(result.error, operation)) return;
           // Release failed - stay in edit mode
           console.error('Failed to release queued message hold on cancel:', result.error);
           finishEditOperation(operation);
@@ -442,6 +519,7 @@
       } catch (error) {
         // IPC/network failure - stay in edit mode
         console.error('Exception while releasing queued message hold on cancel:', error);
+        if (settleDetachedEdit(operation, false)) return;
         finishEditOperation(operation);
         return;
       }
@@ -454,10 +532,11 @@
   }
 
   async function saveEdit() {
-    if (activeEditOperation) return;
+    if (activeEditOperation || !permissions(findQueuedMessageForEdit(messages, editingId)).edit)
+      return;
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
-      const operation = beginEditOperation(editingId);
+      const operation = beginEditOperation(editingId, true);
       const newContent = editContent.trim();
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
@@ -466,6 +545,7 @@
         try {
           const result = await onedit(operation.messageId, newContent, false);
           if (!result.success) {
+            if (preserveServerConflict(result.error, operation)) return;
             // Save failed - stay in edit mode
             console.error('Failed to save queued message edit:', result.error);
             finishEditOperation(operation);
@@ -474,6 +554,7 @@
         } catch (error) {
           // IPC/network failure - stay in edit mode
           console.error('Exception while saving queued message edit:', error);
+          if (settleDetachedEdit(operation, false)) return;
           finishEditOperation(operation);
           return;
         }
@@ -500,7 +581,13 @@
   }
 
   function handleRemove(id: string) {
-    if (disabled || isSending(id) || sendingIds.has(id)) return;
+    if (
+      disabled ||
+      !permissions(messages.find((message) => message.id === id)).remove ||
+      isSending(id) ||
+      sendingIds.has(id)
+    )
+      return;
     onremove?.(id);
   }
 
@@ -533,8 +620,9 @@
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
-    const last = messages[messages.length - 1];
-    if (!last) return false;
+    const last = messages.findLast(canStartEdit);
+    if (!last || disabled || activeEditOperation || editingId === last.id || isSending(last.id))
+      return false;
     void startEdit(last, true);
     return true;
   }
@@ -604,6 +692,31 @@
   {/if}
 {/snippet}
 
+{#each conflictedDrafts.filter((draft) => draft.pendingOperationId === undefined) as draft (draft.id)}
+  <div
+    class="border-b border-border p-3 space-y-2"
+    data-testid="queued-draft-conflict"
+    data-conflict-message-id={draft.id}
+  >
+    <p class="type-caption text-warning-ink" role="status">
+      {m.chat_queuedMessages_draftConflict_description()}
+    </p>
+    <pre class="type-body whitespace-pre-wrap break-words select-text">{draft.content}</pre>
+    <div class="flex items-center gap-2">
+      <CopyButton text={draft.content} />
+      <Button
+        type="button"
+        variant="plain"
+        onclick={() => {
+          conflictedDrafts = conflictedDrafts.filter((item) => item.id !== draft.id);
+        }}
+      >
+        {m.chat_queuedMessages_discardDraft_label()}
+      </Button>
+    </div>
+  </div>
+{/each}
+
 {#if messages.length > 0}
   <div
     class="queued-messages-surface relative z-20 border-b border-border bg-transparent"
@@ -662,7 +775,7 @@
               transition:queuedMessageRowTransition
               title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
             >
-              {#if editingId === message.id}
+              {#if editingId && findQueuedMessageForEdit([message], editingId)}
                 <!-- Edit mode -->
                 <div
                   class="col-span-full row-span-full min-w-0 flex flex-1 gap-2 py-1"
@@ -722,7 +835,11 @@
                   </Button>
                 </div>
               {:else}
-                {@const queuedAuthor = getQueuedMessageAuthor(message, authors, ownPrincipalId)}
+                {@const queuedAuthor = getQueuedMessageAuthor(
+                  message,
+                  authors,
+                  presentationPrincipalId,
+                )}
                 {@const queuedAuthorLabel = queuedAuthor
                   ? getMessageAuthorLabel(queuedAuthor)
                   : null}
@@ -781,23 +898,25 @@
                   </Button>
                   {#if !disabled}
                     <div class={QUEUE_ACTION_CLUSTER_CLASS} data-testid="queued-message-actions">
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        iconOnly
-                        class="-my-1"
-                        aria-label={m.chat_queuedMessages_edit_tooltip()}
-                        disabled={isSending(message.id)}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={(event) => {
-                          event.stopPropagation();
-                          void startEdit(message);
-                        }}
-                        tooltip={m.chat_queuedMessages_edit_tooltip()}
-                      >
-                        <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
-                      </Button>
-                      {#if onsendnow}
+                      {#if permissions(message).edit}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          iconOnly
+                          class="-my-1"
+                          aria-label={m.chat_queuedMessages_edit_tooltip()}
+                          disabled={isSending(message.id) || !canStartEdit(message)}
+                          onpointerdown={(event) => event.stopPropagation()}
+                          onclick={(event) => {
+                            event.stopPropagation();
+                            void startEdit(message);
+                          }}
+                          tooltip={m.chat_queuedMessages_edit_tooltip()}
+                        >
+                          <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
+                        </Button>
+                      {/if}
+                      {#if onsendnow && permissions(message).sendNow}
                         <Button
                           variant="ghost-light"
                           size="icon-xs"
@@ -815,19 +934,21 @@
                           <Fa icon={faArrowUp} class="w-3 h-3" />
                         </Button>
                       {/if}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        iconOnly
-                        class="-my-1"
-                        aria-label={m.chat_queuedMessages_remove_tooltip()}
-                        disabled={isSending(message.id)}
-                        onpointerdown={(event) => event.stopPropagation()}
-                        onclick={() => handleRemove(message.id)}
-                        tooltip={m.chat_queuedMessages_remove_tooltip()}
-                      >
-                        <XIcon size={13} weight="regular" aria-hidden="true" />
-                      </Button>
+                      {#if permissions(message).remove}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          iconOnly
+                          class="-my-1"
+                          aria-label={m.chat_queuedMessages_remove_tooltip()}
+                          disabled={isSending(message.id)}
+                          onpointerdown={(event) => event.stopPropagation()}
+                          onclick={() => handleRemove(message.id)}
+                          tooltip={m.chat_queuedMessages_remove_tooltip()}
+                        >
+                          <XIcon size={13} weight="regular" aria-hidden="true" />
+                        </Button>
+                      {/if}
                     </div>
                   {/if}
                 </div>

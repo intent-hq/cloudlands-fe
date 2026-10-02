@@ -48,7 +48,10 @@
     selectWorkspaceTasksInitialized,
     selectWorkspaceTasksState,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import {
+    acquireWorkspaceTasksDemand,
+    releaseWorkspaceTasksDemand,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import type { TaskProgressItem } from './workspace-task-fallback';
   import {
     createAgentTaskProgressDeriver,
@@ -96,6 +99,8 @@
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
     getFinishedAgentsExpanded,
@@ -123,6 +128,8 @@
     compact?: boolean;
     embedded?: boolean;
     visible?: boolean;
+    /** Whether the owning chat and surrounding disclosure are displayed. */
+    isActive?: boolean;
     count?: number;
     participantAgentIds?: string[];
     participantAvatarItems?: AgentAvatarStackItem[];
@@ -144,6 +151,7 @@
     workspaceId,
     agentId,
     compact = false,
+    isActive = true,
     embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
@@ -192,14 +200,7 @@
     const nextKey = `${workspaceId}::${agentId}`;
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
-    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
-  });
-
-  let lastTaskWorkspaceId: string | null = null;
-  $effect(() => {
-    if (isolatedPreview || !workspaceId || workspaceId === lastTaskWorkspaceId) return;
-    lastTaskWorkspaceId = workspaceId;
-    untrack(() => appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId)));
+    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId, true)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
@@ -520,6 +521,14 @@
     }
     return ungroupedAgentRows;
   });
+  const hasDisplayedTaskConsumers = $derived(retainedTranscriptRows.length > 0);
+  $effect(() => {
+    if (isolatedPreview || !isActive || !workspaceId || !hasDisplayedTaskConsumers) return;
+    const currentWorkspaceId = workspaceId;
+    const demandId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireWorkspaceTasksDemand(currentWorkspaceId, demandId)));
+    return () => appStore.dispatch(releaseWorkspaceTasksDemand(currentWorkspaceId, demandId));
+  });
   let retainedTranscriptWorkspaceId: string | null = null;
   let retainedTranscriptKey = '';
   $effect(() => {
@@ -675,7 +684,7 @@
     clearWatchedAgentFocusTimers();
   });
 
-  function openWatchedAgent(_event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
+  function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
@@ -684,7 +693,13 @@
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }
-    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: watchedAgentId }));
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: watchedAgentId,
+        sourcePanelId: findSourcePanelId(event.currentTarget),
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
     focusWatchedAgentPanel(watchedAgentId);
   }
 </script>

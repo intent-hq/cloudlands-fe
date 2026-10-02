@@ -1,9 +1,13 @@
 import type { DevConsoleRecord, DevConsoleRow } from '$shared/types/dev-console';
-export type TrafficTab = 'outbound' | 'inbound' | 'events';
+export type TrafficTab = 'all' | 'outbound' | 'inbound' | 'events';
 export type TrafficColumn =
   'timestamp' | 'method' | 'kind' | 'requestId' | 'status' | 'durationMs' | 'bytes' | 'backendId';
+export function trafficStream(row: DevConsoleRow): Exclude<TrafficTab, 'all'> | null {
+  if (row.kind === 'request') return row.direction;
+  return row.direction === 'inbound' ? 'events' : null;
+}
 export function trafficBytes(row: DevConsoleRow) {
-  return (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
+  return row.totalBytes ?? (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
 }
 export function orderTraffic(
   rows: DevConsoleRow[],
@@ -18,9 +22,7 @@ export function orderTraffic(
   return rows
     .filter(
       (r) =>
-        (tab === 'events'
-          ? r.direction === 'inbound' && r.kind === 'notification'
-          : r.direction === tab && r.kind === 'request') &&
+        (tab === 'all' ? trafficStream(r) !== null : trafficStream(r) === tab) &&
         r.method.toLocaleLowerCase().includes(needle),
     )
     .sort((a, b) => {
@@ -59,7 +61,9 @@ export function selectedPayloadReader(
         if (!row) return;
         const result = await read(row.id);
         if (stopped || token.version !== version) return;
-        if (!token.dirty) change(result);
+        // Publish progress even if another frame arrived during this read.
+        // Waiting for a quiet interval can starve a continuously active stream.
+        change(result);
       } while (token.dirty);
     } catch (error) {
       if (!stopped && token.version === version) fail(String(error));
@@ -90,10 +94,30 @@ export function selectedPayloadReader(
     },
   };
 }
-export function readablePayload(text: string): string {
+export function payloadDocument(text: string): { text: string; language: 'json' | 'plaintext' } {
   try {
-    return JSON.stringify(JSON.parse(text), null, 2);
+    return { text: JSON.stringify(JSON.parse(text), null, 2), language: 'json' };
   } catch {
-    return text;
+    return { text, language: 'plaintext' };
   }
+}
+
+/**
+ * Viewer policy matching Monaco's default large-file safeguards: at most
+ * 20 * 1024 * 1024 UTF-16 code units and 300,000 logical lines. Keep this explicit policy covered at both
+ * boundaries; Monaco's internal capability flag is not part of its public API.
+ * Count formatted text, since small captures can expand past the line limit.
+ */
+export function payloadSupportsRichView(text: string): boolean {
+  if (text.length > 20 * 1024 * 1024) return false;
+  let lines = 1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\r') {
+      if (text[i + 1] === '\n') i++;
+    } else if (text[i] !== '\n') {
+      continue;
+    }
+    if (++lines > 300000) return false;
+  }
+  return true;
 }

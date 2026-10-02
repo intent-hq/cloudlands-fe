@@ -1,3 +1,4 @@
+import { identitiesEqual } from '$features/collaboration-auth/identity';
 /**
  * Comments read service — live-applies daemon `comment:*` events into the
  * global comments slice per PROTOCOL §6.5 (`comment:added`, `comment:resolved`).
@@ -108,6 +109,20 @@ export function applyCommentFromEvent(
  */
 function diffComment(prev: CommentV2, next: CommentV2): Partial<CommentV2> | null {
   const updates: Partial<CommentV2> = {};
+  if (prev.author !== next.author) updates.author = next.author;
+  if (prev.authorType !== next.authorType) updates.authorType = next.authorType;
+  if (prev.authorPrincipalId !== next.authorPrincipalId) {
+    updates.authorPrincipalId = next.authorPrincipalId;
+  }
+  if (
+    prev.authorIdentity !== next.authorIdentity &&
+    (!prev.authorIdentity ||
+      !next.authorIdentity ||
+      !identitiesEqual(prev.authorIdentity, next.authorIdentity))
+  ) {
+    // This is a canonical full read: omission clears a previous creator stamp.
+    updates.authorIdentity = next.authorIdentity;
+  }
   if (prev.status !== next.status) updates.status = next.status;
   if (prev.content !== next.content) updates.content = next.content;
   if (prev.updatedAt !== next.updatedAt) updates.updatedAt = next.updatedAt;

@@ -7,7 +7,9 @@
 // shape-based match, fail-safe fallback to full CI).
 //
 // Usage: node scripts/release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]
-//   <head> defaults to HEAD.
+//   <head> defaults to HEAD. Pass --release-only to exclude sidecar pin bumps
+//   when authorizing a direct release merge (CI keeps both shapes by default).
+//   Direct release eligibility also requires unchanged regular-file modes.
 //
 // Output contract (for CI):
 //   - Prints `fast_path=true` and exits 0 when the diff matches the shape.
@@ -78,7 +80,12 @@ function noMatch(reason) {
  * or { fastPath: false, reason }.
  * Throws on unexpected errors (unresolvable refs, git failures).
  */
-export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
+export function evaluateFastPath(
+  baseRef,
+  headRef,
+  cwd = process.cwd(),
+  { releaseOnly = false } = {},
+) {
   const rev = (ref) => {
     try {
       return git(cwd, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`).trim();
@@ -105,7 +112,7 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   const show = (revision, path) => git(cwd, 'show', `${revision}:${path}`);
 
   // --- Pin-bump shape: intentd.version alone, pure modification --------------
-  if (diff.length === 1 && diff[0][1] === PIN_FILE) {
+  if (!releaseOnly && diff.length === 1 && diff[0][1] === PIN_FILE) {
     const [status] = diff[0];
     if (status !== 'M') return noMatch(`non-modification change (${status} ${PIN_FILE})`);
     const pinBase = show(mergeBase, PIN_FILE);
@@ -138,6 +145,15 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   for (const [status, path] of diff) {
     if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
     if (!ALLOWED_FILES.has(path)) return noMatch(`disallowed file: ${path}`);
+    if (releaseOnly) {
+      // name-status M includes chmod and changed symlink targets. Neither
+      // qualifies as release metadata for bypassing the merge queue.
+      const baseMode = git(cwd, 'ls-tree', mergeBase, '--', path).split(' ')[0];
+      const headMode = git(cwd, 'ls-tree', head, '--', path).split(' ')[0];
+      if (!/^100(644|755)$/.test(baseMode) || headMode !== baseMode) {
+        return noMatch(`non-regular file or mode change: ${path}`);
+      }
+    }
   }
   const changed = new Set(diff.map(([, path]) => path));
   if (!changed.has('package.json')) return noMatch('package.json unchanged (no version delta)');
@@ -164,8 +180,10 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   if (verA === verB) return noMatch('no version change in package.json');
 
   // --- Condition 3: package.json is version-only -----------------------------
+  // Replace only one literal occurrence so nested version changes cannot
+  // hide alongside the top-level version delta.
   // Literal (non-regex) replacement of `"version": "B"` -> `"version": "A"`.
-  if (pkgHead.replaceAll(`"version": "${verB}"`, `"version": "${verA}"`) !== pkgBase) {
+  if (pkgHead.replace(`"version": "${verB}"`, `"version": "${verA}"`) !== pkgBase) {
     return noMatch('non-version change in package.json');
   }
 
@@ -179,7 +197,7 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
     if (parseJson(mfHead)?.['.'] !== verB) {
       return noMatch(`manifest "." at head is not '${verB}'`);
     }
-    if (mfHead.replaceAll(`"${verB}"`, `"${verA}"`) !== mfBase) {
+    if (mfHead.replace(`"${verB}"`, `"${verA}"`) !== mfBase) {
       return noMatch('non-version change in .release-please-manifest.json');
     }
   }
@@ -190,13 +208,17 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isDirectRun) {
   const args = process.argv.slice(2);
+  const releaseOnly = args[0] === '--release-only';
+  if (releaseOnly) args.shift();
   if (args.length < 1 || args.length > 2) {
-    console.error('usage: release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]');
+    console.error(
+      'usage: release-pr-fast-path.mjs [--release-only] <base-ref-or-sha> [<head-ref-or-sha>]',
+    );
     process.exit(2);
   }
   let result;
   try {
-    result = evaluateFastPath(args[0], args[1] ?? 'HEAD');
+    result = evaluateFastPath(args[0], args[1] ?? 'HEAD', process.cwd(), { releaseOnly });
   } catch (err) {
     console.error(`error: ${err instanceof Error ? err.message : err}`);
     process.exit(2);

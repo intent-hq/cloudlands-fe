@@ -74,7 +74,7 @@ function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
 }
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
-function normalizeAgent(raw: Record<string, unknown>): AgentSession {
+export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const now = new Date().toISOString();
   const id = String(raw.id ?? '');
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
@@ -428,7 +428,12 @@ export class LiveAgentsClient implements AgentsClient {
     };
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
-    if (request.specialist !== undefined && request.specialist !== null) {
+    if (request.rememberSpecialist !== undefined)
+      params.rememberSpecialist = request.rememberSpecialist;
+    if (
+      request.specialist !== undefined &&
+      (request.specialist !== null || request.rememberSpecialist)
+    ) {
       params.specialistId = request.specialist;
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
@@ -592,8 +597,9 @@ export class LiveAgentsClient implements AgentsClient {
     // a missing entry (already drained/removed) rejects with -32602, folded
     // into `{ success: false, error }` — callers surface it non-destructively
     // (the entry is gone; nothing to roll back). The delivered arm carries
-    // `turnId` (the entry's preserved turn-correlation id — this path emits
-    // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
+    // `turnId` (the entry's preserved turn-correlation id). The processing event
+    // carries the authoritative consumed entries; this response remains a legacy
+    // promotion fallback (§5.5),
     // surfaced on the MutationResult (monorepo#1057).
     try {
       const result = await backendRequest<{
@@ -786,17 +792,35 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult> {
     const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.rememberSpecialist !== undefined)
+      changes.rememberSpecialist = params.rememberSpecialist;
     if (params.model !== undefined) changes.model = params.model;
     if (params.systemPrompt !== undefined) changes.systemPrompt = params.systemPrompt;
-    return runMutation('agent.update', {
-      agentId: params.agentId,
-      workspaceId: params.workspaceId,
-      changes,
-    });
+    const request = { agentId: params.agentId, workspaceId: params.workspaceId, changes };
+    try {
+      await backendRequest('agent.update', request);
+      return { success: true };
+    } catch (error) {
+      // Older daemons reject unknown change keys before applying any fields.
+      // Retry only that refusal; all validation/storage failures keep rollback.
+      if (
+        params.rememberSpecialist !== undefined &&
+        (error as { rpcCode?: number })?.rpcCode === -32602 &&
+        mutationErrorMessage(error).includes(
+          'agent.update: unknown field `rememberSpecialist` in `changes`',
+        )
+      ) {
+        const legacyChanges = { ...changes };
+        delete legacyChanges.rememberSpecialist;
+        return runMutation('agent.update', { ...request, changes: legacyChanges });
+      }
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async rename(
     agentId: string,

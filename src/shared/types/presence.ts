@@ -1,3 +1,5 @@
+import type { HostRole } from './principal';
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 /**
  * Workspace presence wire types (multiplayer w5, PROTOCOL §5.46,
  * intent-hq/intentd#1887): `presence.update`, `presence.snapshot` and the
@@ -43,6 +45,9 @@ export interface PresenceTypingEntry {
  * deduplicated across all of the principal's connections.
  */
 export interface PresenceMember {
+  /** Additive, server-authoritative effective role and qualified identity. */
+  hostRole?: HostRole;
+  identity?: PrincipalIdentity;
   principalId: string;
   login: string | null;
   displayName: string | null;
@@ -94,6 +99,57 @@ export interface PresenceReportResult {
 /** JSON-RPC code an older daemon answers `presence.*` with (method not found). */
 export const PRESENCE_UNSUPPORTED_RPC_CODE = -32601;
 
+/** Within one trusted effective snapshot, a retained guest row cannot override host membership. */
+export function effectivePresenceRows<T extends { principalId: string; hostRole?: HostRole }>(
+  rows: readonly T[],
+): T[] {
+  const people = new Map<string, T>();
+  const rank = (role: HostRole | undefined) =>
+    role === 'owner' ? 3 : role === 'member' ? 2 : role === 'guest' ? 1 : 0;
+  for (const row of rows) {
+    const previous = people.get(row.principalId);
+    if (!previous || rank(row.hostRole) > rank(previous.hostRole)) people.set(row.principalId, row);
+  }
+  return [...people.values()];
+}
+
+/** Validate the additive identity seam without deriving authority from profile text. */
+export function isPresenceIdentity(
+  value: unknown,
+): value is Pick<
+  PresenceMember,
+  'principalId' | 'login' | 'displayName' | 'avatarUrl' | 'hostRole' | 'identity'
+> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.principalId !== 'string' ||
+    !row.principalId.trim() ||
+    !isNullableString(row.login) ||
+    !isNullableString(row.displayName) ||
+    !isNullableString(row.avatarUrl)
+  )
+    return false;
+  if (
+    row.hostRole !== undefined &&
+    row.hostRole !== 'owner' &&
+    row.hostRole !== 'member' &&
+    row.hostRole !== 'guest'
+  )
+    return false;
+  if (row.identity === undefined) return true;
+  if (!row.identity || typeof row.identity !== 'object' || Array.isArray(row.identity))
+    return false;
+  const identity = row.identity as Record<string, unknown>;
+  return (
+    (identity.provider === 'github' || identity.provider === 'gitlab') &&
+    typeof identity.host === 'string' &&
+    identity.host.trim().length > 0 &&
+    typeof identity.externalUserId === 'string' &&
+    identity.externalUserId.trim().length > 0
+  );
+}
+
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
@@ -123,7 +179,7 @@ function isPresenceMember(value: unknown): value is PresenceMember {
   if (!value || typeof value !== 'object') return false;
   const member = value as Record<string, unknown>;
   return (
-    typeof member.principalId === 'string' &&
+    isPresenceIdentity(value) &&
     isNullableString(member.login) &&
     isNullableString(member.displayName) &&
     isNullableString(member.avatarUrl) &&

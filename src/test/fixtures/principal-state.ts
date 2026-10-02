@@ -4,58 +4,25 @@ import { connectionsListReceived } from '$store/renderer/slices/connections/conn
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import type { StoreState } from '$store/renderer/types';
-import { initialState as connections } from '$store/renderer/slices/connections/connections-slice';
-import { initialState as daemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import { initialState as workspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { initialState as userPreferences } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
-  initialState,
   principalContextChanged,
   principalReceived,
-  principalReducer,
 } from '$store/renderer/slices/principal/principal-slice';
-import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { createAdmittedLegacyPrincipal } from './admitted-legacy-principal';
 
 /** An admitted legacy caller for consumer tests that previously assumed a saved window was authority. */
 export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'owner'): StoreState {
   const state = input as Partial<StoreState>;
-  const bound = {
+  const { hasReceivedList: _hasReceivedList, ...connections } = state.connections ?? {};
+  const { health: _health, ...daemonHealth } = state.daemonHealth ?? {};
+  const { subscriptionPending: _subscriptionPending, ...workspaceEvents } =
+    state.workspaceEvents ?? {};
+  return {
     ...state,
-    connections: { ...connections, ...state.connections, hasReceivedList: true },
-    daemonHealth: { ...daemonHealth, ...state.daemonHealth, health: 'healthy' as const },
-    workspaceEvents: {
-      ...workspaceEvents,
-      ...state.workspaceEvents,
-      subscriptionPending: false,
-      subscriptionGeneration: state.workspaceEvents?.subscriptionGeneration || 1,
-    },
+    ...createAdmittedLegacyPrincipal({ connections, daemonHealth, workspaceEvents }, role),
     userPreferences: { ...userPreferences, labsMultiplayerEnabled: true, ...state.userPreferences },
   } as StoreState;
-  const context = selectPrincipalConnectionContext.select(bound)!;
-  return {
-    ...bound,
-    principal: principalReducer(
-      principalReducer(initialState, principalContextChanged(context)),
-      principalReceived(
-        { context, invalidation: 0, presentationVersion: 0 },
-        {
-          principal: {
-            id: 'principal',
-            login: null,
-            displayName: null,
-            avatarUrl: null,
-            isAdministrator: role === 'owner',
-          },
-          capabilities: {
-            hostMembership: false,
-            personalPairing: false,
-            authenticatedDevices: false,
-            collaborationIdentity: false,
-          },
-        },
-      ),
-    ),
-  };
 }
 
 /** Admit a caller in component tests using the real store but no transport sagas. */
@@ -78,4 +45,33 @@ export function admitLegacyPrincipal(role: 'owner' | 'guest' = 'owner'): void {
       principal.snapshot!,
     ),
   );
+}
+
+/** Current admitted host roles for consumer tests, without a linked external profile. */
+export function withHostPrincipal(
+  input: object,
+  role: 'owner' | 'member' | 'guest' = 'owner',
+): StoreState {
+  const state = withLegacyPrincipal(input);
+  return {
+    ...state,
+    principal: {
+      ...state.principal,
+      snapshot: {
+        ...state.principal.snapshot!,
+        principal: {
+          ...state.principal.snapshot!.principal,
+          hostRole: role,
+          isAdministrator: role === 'owner',
+          hostMembershipRevision: 1,
+        },
+        capabilities: {
+          hostMembership: true,
+          collaborationIdentity: true,
+          personalPairing: true,
+          authenticatedDevices: true,
+        },
+      },
+    },
+  };
 }

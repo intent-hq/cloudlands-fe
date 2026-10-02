@@ -109,6 +109,36 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     );
   });
 
+  it.each(['implementor', null])(
+    'create remembers only an explicit successful specialist choice: %s',
+    async (specialist) => {
+      backend.onRequest('agent.create', () => ({
+        agent: {
+          id: 'remembered-agent',
+          workspaceId: 'ws-memory',
+          name: 'Chosen',
+          status: 'pending',
+        },
+      }));
+      const client = new LiveAgentsClient();
+      const result = await client.create({
+        workspaceId: 'ws-memory',
+        specialist,
+        rememberSpecialist: true,
+      });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.create',
+        params: {
+          workspaceId: 'ws-memory',
+          specialistId: specialist,
+          rememberSpecialist: true,
+          idempotencyKey: expect.any(String),
+        },
+      });
+      expect(result.id).toBe('remembered-agent');
+    },
+  );
+
   it('create forwards nameExplicitlySet:true verbatim (user-chosen name)', async () => {
     backend.onRequest('agent.create', () => ({
       agent: { id: 'agent-explicit-1', workspaceId: 'ws-p212a', status: 'pending' },
@@ -616,6 +646,59 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       method: 'agent.getQueue',
       params: { agentId: 'agent-1' },
     });
+  });
+
+  it('retains portable author snapshots and opaque provenance on queue reads and scrollback pages', async () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab', host: 'one.example', externalUserId: '42' },
+    };
+    const metadata = {
+      humanAuthor: { sourcePrincipalId: 'local-collision' },
+      originalMetadata: ['inert'],
+    };
+    const queue = [
+      {
+        id: 'portable',
+        content: '  body\n',
+        queuedAt: '2026-01-01T00:00:00Z',
+        position: 0,
+        author,
+        messageMetadata: metadata,
+      },
+    ];
+    const messages = [
+      {
+        id: 'portable',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        author,
+        metadata,
+        contentBlocks: [{ type: 'text', text: '  body\n' }],
+      },
+    ];
+    backend.onRequest('agent.getQueue', () => ({ success: true, queue }));
+    backend.onRequest('agent.getConversation', () => ({
+      messages,
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    }));
+    const before = JSON.stringify({ queue, messages });
+    const client = new LiveAgentsClient();
+    expect(await client.getQueue('agent-1')).toEqual(queue);
+    expect((await client.getConversation('agent-1', 100, 'older')).messages).toEqual(messages);
+    expect(backend.requests).toEqual([
+      { method: 'agent.getQueue', params: { agentId: 'agent-1' } },
+      {
+        method: 'agent.getConversation',
+        params: { agentId: 'agent-1', limit: 100, nextToken: 'older', projection: 'slim' },
+      },
+    ]);
+    expect(JSON.stringify({ queue, messages })).toBe(before);
   });
 
   it('getQueue returns [] when the daemon body omits queue', async () => {
@@ -1137,6 +1220,149 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain('unsupported reasoningEffort');
+  });
+
+  it.each(['implementor', null])(
+    'welcome picker remembers only its specialist on agent.update: %s',
+    async (specialist) => {
+      backend.onRequest('agent.update', () => ({ success: true }));
+      const client = new LiveAgentsClient();
+      await expect(
+        client.updateSpecialist({
+          agentId: 'a',
+          workspaceId: 'ws',
+          specialist,
+          rememberSpecialist: true,
+        }),
+      ).resolves.toEqual({ success: true });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.update',
+        params: {
+          agentId: 'a',
+          workspaceId: 'ws',
+          changes: { specialist, rememberSpecialist: true },
+        },
+      });
+    },
+  );
+
+  it('retries welcome selection without memory only for the older-daemon unknown flag error', async () => {
+    backend.onRequest('agent.update', (params) => {
+      if ((params as { changes: Record<string, unknown> }).changes.rememberSpecialist) {
+        throw new BackendError(
+          buildErrorPayload(
+            'INVALID_PARAMS',
+            'agent.update: unknown field `rememberSpecialist` in `changes`',
+            { rpcCode: -32602 },
+          ),
+        );
+      }
+      return { success: true };
+    });
+    const client = new LiveAgentsClient();
+    await expect(
+      client.updateSpecialist({
+        agentId: 'a',
+        workspaceId: 'ws',
+        specialist: 'implementor',
+        rememberSpecialist: true,
+        model: 'gpt-5.4',
+        systemPrompt: 'Implement the task.',
+      }),
+    ).resolves.toEqual({ success: true });
+    expect(backend.requests).toEqual([
+      {
+        method: 'agent.update',
+        params: {
+          agentId: 'a',
+          workspaceId: 'ws',
+          changes: {
+            specialist: 'implementor',
+            rememberSpecialist: true,
+            model: 'gpt-5.4',
+            systemPrompt: 'Implement the task.',
+          },
+        },
+      },
+      {
+        method: 'agent.update',
+        params: {
+          agentId: 'a',
+          workspaceId: 'ws',
+          changes: {
+            specialist: 'implementor',
+            model: 'gpt-5.4',
+            systemPrompt: 'Implement the task.',
+          },
+        },
+      },
+    ]);
+  });
+
+  it('returns a failed compatibility retry without retrying a third time', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload(
+          'INVALID_PARAMS',
+          'agent.update: unknown field `rememberSpecialist` in `changes`',
+          { rpcCode: -32602 },
+        ),
+      );
+    });
+    const result = await new LiveAgentsClient().updateSpecialist({
+      agentId: 'a',
+      workspaceId: 'ws',
+      specialist: null,
+      rememberSpecialist: true,
+    });
+    expect(result).toMatchObject({ success: false });
+    expect(backend.requests).toHaveLength(2);
+    expect(backend.requests[1]?.params).toEqual({
+      agentId: 'a',
+      workspaceId: 'ws',
+      changes: { specialist: null },
+    });
+  });
+
+  it.each([-32003, -32603])(
+    'never retries welcome selection after RPC error %s',
+    async (rpcCode) => {
+      backend.onRequest('agent.update', () => {
+        throw new BackendError(
+          buildErrorPayload(
+            'INTERNAL_ERROR',
+            'agent.update: unknown field `rememberSpecialist` in `changes`',
+            { rpcCode },
+          ),
+        );
+      });
+      const result = await new LiveAgentsClient().updateSpecialist({
+        agentId: 'a',
+        workspaceId: 'ws',
+        specialist: null,
+        rememberSpecialist: true,
+      });
+      expect(result).toMatchObject({ success: false });
+      expect(backend.requests).toHaveLength(1);
+    },
+  );
+
+  it('does not retry failed welcome selection for other invalid params', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('INVALID_PARAMS', 'unknown specialist: removed', { rpcCode: -32602 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+    await expect(
+      client.updateSpecialist({
+        agentId: 'a',
+        workspaceId: 'ws',
+        specialist: 'removed',
+        rememberSpecialist: true,
+      }),
+    ).resolves.toMatchObject({ success: false });
+    expect(backend.requests).toHaveLength(1);
   });
 
   it('updateSpecialist forwards the resolved specialist fields through agent.update', async () => {

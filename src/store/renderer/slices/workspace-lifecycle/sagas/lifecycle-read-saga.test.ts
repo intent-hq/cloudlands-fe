@@ -103,11 +103,18 @@ import {
 } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
+  clearWorkspaceTasks,
+  acquireWorkspaceTasksDemand,
+  releaseWorkspaceTasksDemand,
+  invalidateWorkspaceTasks,
+  workspaceTasksReducer,
+  loadWorkspaceTasksSucceeded,
   loadWorkspaceTasksRequested,
 } from '../../workspace-tasks/workspace-tasks-slice';
 import {
   loadWorkspacesRequested,
   refreshWorkspaceMembershipRequested,
+  removeWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import { consoleOwnerChanged } from '../../hardware-console/hardware-console-slice';
@@ -158,11 +165,34 @@ function start(current = state()) {
   const channel = stdChannel();
   const actions: unknown[] = [];
   const task = runSaga(
-    { channel, dispatch: (action) => actions.push(action), getState: () => current },
+    {
+      channel,
+      dispatch: (action) => {
+        current.workspaceTasks = workspaceTasksReducer(current.workspaceTasks, action);
+        current.scripts = scriptsReducer(current.scripts, action);
+        if (
+          !['scripts/readStarted', 'scripts/readFinished', 'scripts/readReconciled'].includes(
+            action.type,
+          )
+        )
+          actions.push(action);
+      },
+      getState: () => current,
+    },
     lifecycleReadSaga,
   );
   runningTasks.push(task);
-  return { channel, actions, task };
+  return {
+    channel: {
+      ...channel,
+      put: (action: { type: string }) => {
+        current.workspaceTasks = workspaceTasksReducer(current.workspaceTasks, action);
+        channel.put(action);
+      },
+    },
+    actions,
+    task,
+  };
 }
 
 // Flows that dispatch loadWorkspacesRequested from inside the saga, or that
@@ -222,7 +252,10 @@ describe('lifecycleReadSaga', () => {
     mocks.workspaces.getTokenUsage.mockResolvedValue(null);
     mocks.workspaces.getContext.mockResolvedValue([]);
     mocks.workspaces.get.mockResolvedValue(null);
-    mocks.tasks.list.mockResolvedValue({ tasks: [], stats: { total: 0 } });
+    mocks.tasks.list.mockResolvedValue({
+      tasks: [],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
     mocks.tasks.listAgentLinks.mockResolvedValue({});
     mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
     mocks.skills.list.mockResolvedValue([]);
@@ -594,274 +627,212 @@ describe('lifecycleReadSaga', () => {
     });
   });
 
-  it('guards ensure-tasks and coalesces explicit loads per workspace', async () => {
-    const current = state();
-    current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
-    const run = start(current);
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([]);
-    expect(run.actions).toEqual([]);
-
-    let resolve!: (value: { tasks: unknown[]; stats: { total: number } }) => void;
-    mocks.tasks.list.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
-    resolve({ tasks: [], stats: { total: 0 } });
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
-    ]);
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toHaveLength(2);
-    await stop(run.task);
-  });
-
-  it('does not cancel concurrent ensure-tasks loads across workspaces (#1934)', async () => {
-    const OTHER = 'ws-lifecycle-other';
-    const resolvers: Record<
-      string,
-      (value: { tasks: unknown[]; stats: { total: number } }) => void
-    > = {};
-    mocks.tasks.list.mockImplementation(
-      (workspaceId: string) =>
-        new Promise((done) => {
-          resolvers[workspaceId] = done;
+  describe('task reads with visible demand', () => {
+    const response = (id = 'task-1') => ({
+      tasks: [{ id, title: id, status: 'not_started' as const }],
+      stats: { total: 1, completed: 0, inProgress: 0 },
+    });
+    function startTasks() {
+      const channel = stdChannel();
+      const current = state();
+      let tasks = workspaceTasksReducer(undefined, { type: '@@init' });
+      const dispatch = (action: { type: string }) => {
+        tasks = workspaceTasksReducer(tasks, action);
+        channel.put(action);
+      };
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ ...current, workspaceTasks: tasks }) },
+        lifecycleReadSaga,
+      );
+      runningTasks.push(task);
+      return { dispatch, get: (id = WS) => tasks.byWorkspaceId[id] };
+    }
+    function deferredRead() {
+      let resolve!: (value: ReturnType<typeof response>) => void;
+      let reject!: (reason: Error) => void;
+      mocks.tasks.list.mockReturnValueOnce(
+        new Promise((done, fail) => {
+          resolve = done;
+          reject = fail;
         }),
+      );
+      return { resolve, reject };
+    }
+
+    it('blocks ensure and forced reads without demand, even for loaded caches', async () => {
+      const run = startTasks();
+      run.dispatch(loadWorkspaceTasksSucceeded(WS, response().tasks, response().stats));
+      run.dispatch(ensureWorkspaceTasksLoaded(WS));
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      await settle();
+      expect(mocks.tasks.list).not.toHaveBeenCalled();
+      expect(run.get()).toMatchObject({ stale: true, loading: false });
+    });
+
+    it('shares the initial read and reuses clean cache across demand releases', async () => {
+      const pending = deferredRead();
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat-a'));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat-b'));
+      run.dispatch(ensureWorkspaceTasksLoaded(WS));
+      await settle();
+      expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
+      pending.resolve(response());
+      await settle();
+      expect(run.get()).toMatchObject({ initialized: true, stale: false, loading: false });
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'chat-a'));
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'chat-b'));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat-c'));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains in-flight invalidation and coalesces refreshes even when ensure arrives last', async () => {
+      const pending = deferredRead();
+      const followup = deferredRead();
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      run.dispatch(invalidateWorkspaceTasks(WS));
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      run.dispatch(ensureWorkspaceTasksLoaded(WS));
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(1);
+      pending.resolve(response('old'));
+      await settle();
+      expect(run.get().stale).toBe(true);
+      expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
+      followup.resolve(response('new'));
+      await settle();
+      expect(run.get().stale).toBe(false);
+      expect(run.get().tasks).toEqual(createCollection('id', response('new').tasks));
+    });
+
+    it('keeps an event stale when the reply arrives before the debounce check', async () => {
+      const pending = deferredRead();
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      run.dispatch(invalidateWorkspaceTasks(WS));
+      pending.resolve(response());
+      await settle();
+      expect(run.get()).toMatchObject({ stale: true, loading: false });
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(1);
+      run.dispatch(ensureWorkspaceTasksLoaded(WS));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(2);
+      expect(run.get().stale).toBe(false);
+    });
+
+    it('does not start a queued read after the last release and loads stale cache on return', async () => {
+      const pending = deferredRead();
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'chat'));
+      pending.resolve(response());
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(1);
+      expect(run.get().stale).toBe(true);
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'returned'));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps demand idempotent and refreshes while another consumer remains', async () => {
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'a'));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'a'));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'b'));
+      await settle();
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'a'));
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'a'));
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(2);
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'b'));
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(2);
+    });
+
+    it('retains failed cache for a later retry without a hot loop', async () => {
+      mocks.tasks.list.mockRejectedValueOnce(new Error('offline'));
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(1);
+      expect(run.get()).toMatchObject({ stale: true, loading: false, error: 'Error: offline' });
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'chat'));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'return'));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(2);
+      expect(run.get()).toMatchObject({ stale: false, error: null });
+    });
+
+    it('preserves a queued invalidation after failure', async () => {
+      const pending = deferredRead();
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      run.dispatch(ensureWorkspaceTasksLoaded(WS));
+      pending.reject(new Error('offline'));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(2);
+      expect(run.get().stale).toBe(false);
+    });
+
+    it('checks demand again after waiting for a scheduler slot', async () => {
+      const pending = Array.from({ length: MAX_CONCURRENT_WORKSPACE_READS }, () => deferredRead());
+      const run = startTasks();
+      for (let i = 0; i < pending.length; i++)
+        run.dispatch(acquireWorkspaceTasksDemand(`busy-${i}`, 'chat'));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'queued-chat'));
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(pending.length);
+      run.dispatch(releaseWorkspaceTasksDemand(WS, 'queued-chat'));
+      for (const read of pending) read.resolve(response());
+      await settle();
+      expect(mocks.tasks.list).toHaveBeenCalledTimes(pending.length);
+      expect(run.get().loading).toBe(false);
+    });
+
+    it.each([clearWorkspaceTasks, removeWorkspaceEntity])(
+      'does not restore cleared or deleted cache from an old read (%s)',
+      async (cleanup) => {
+        const pending = deferredRead();
+        const run = startTasks();
+        run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+        await settle();
+        run.dispatch(cleanup(WS));
+        pending.resolve(response());
+        await settle();
+        expect(run.get()).toBeUndefined();
+      },
     );
-    const run = start();
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(OTHER));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [OTHER]]);
-    resolvers[WS]({ tasks: [], stats: { total: 1 } });
-    resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
-    await settle();
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
-    ]);
-    await stop(run.task);
-  });
 
-  it('preserves queued force intent when ensure is the latest trailing task trigger', async () => {
-    const current = state();
-    current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
-    let resolve!: (value: { tasks: unknown[]; stats: { total: number } }) => void;
-    mocks.tasks.list.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const run = start(current);
-
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
-
-    resolve({ tasks: [], stats: { total: 1 } });
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
-    ]);
-    await stop(run.task);
-  });
-
-  it('keeps ensure-only task bursts guarded while coalescing one trailing check', async () => {
-    const current = state();
-    let resolve!: (value: { tasks: unknown[]; stats: { total: number } }) => void;
-    mocks.tasks.list.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const run = start(current);
-
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    await settle();
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
-    resolve({ tasks: [], stats: { total: 1 } });
-    await settle();
-
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
-    ]);
-    await stop(run.task);
-  });
-
-  it('preserves queued force intent after an in-flight task failure', async () => {
-    const current = state();
-    current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
-    let reject!: (reason?: unknown) => void;
-    mocks.tasks.list.mockReturnValueOnce(
-      new Promise((_, fail) => {
-        reject = fail;
-      }),
-    );
-    const run = start(current);
-
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    reject(new Error('offline'));
-    await settle();
-
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
-    ]);
-
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toHaveLength(2);
-    await stop(run.task);
-  });
-
-  it('clears queued task force intent on workspace cleanup and reuses the key', async () => {
-    const current = state();
-    current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
-    let resolve!: (value: { tasks: unknown[]; stats: { total: number } }) => void;
-    mocks.tasks.list.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const run = start(current);
-
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    run.channel.put(workspaceUnmounted(WS));
-    await settle();
-    resolve({ tasks: [], stats: { total: 1 } });
-    await settle();
-
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
-
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
-    ]);
-    await stop(run.task);
-  });
-
-  it('keeps queued task force intent isolated across workspaces', async () => {
-    const OTHER = 'ws-lifecycle-other';
-    const current = state();
-    current.workspaceTasks.byWorkspaceId[WS] = { loading: false, initialized: true };
-    current.workspaceTasks.byWorkspaceId[OTHER] = { loading: false, initialized: true };
-    const resolvers: Record<
-      string,
-      Array<(value: { tasks: unknown[]; stats: { total: number } }) => void>
-    > = {};
-    mocks.tasks.list.mockImplementation(
-      (workspaceId: string) =>
-        new Promise((done) => {
-          (resolvers[workspaceId] ??= []).push(done);
-        }),
-    );
-    const run = start(current);
-
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(loadWorkspaceTasksRequested(OTHER));
-    await settle();
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(WS));
-    run.channel.put(ensureWorkspaceTasksLoaded(OTHER));
-    resolvers[WS][0]({ tasks: [], stats: { total: 1 } });
-    resolvers[OTHER][0]({ tasks: [], stats: { total: 2 } });
-    await settle();
-
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [OTHER], [WS]]);
-    resolvers[WS][1]({ tasks: [], stats: { total: 3 } });
-    await settle();
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
-    ]);
-    await stop(run.task);
-  });
-
-  it('does not cancel concurrent explicit task loads across workspaces (#1934)', async () => {
-    const OTHER = 'ws-lifecycle-other';
-    const resolvers: Record<
-      string,
-      (value: { tasks: unknown[]; stats: { total: number } }) => void
-    > = {};
-    mocks.tasks.list.mockImplementation(
-      (workspaceId: string) =>
-        new Promise((done) => {
-          resolvers[workspaceId] = done;
-        }),
-    );
-    const run = start();
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(loadWorkspaceTasksRequested(OTHER));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [OTHER]]);
-    resolvers[WS]({ tasks: [], stats: { total: 1 } });
-    resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
-    await settle();
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
-    ]);
-    await stop(run.task);
-  });
-
-  it('reuses a completed task key and runs one trailing read for a new burst', async () => {
-    const resolvers: Array<(value: { tasks: unknown[]; stats: { total: number } }) => void> = [];
-    mocks.tasks.list.mockImplementation(
-      () =>
-        new Promise((done) => {
-          resolvers.push(done);
-        }),
-    );
-    const run = start();
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    resolvers[0]({ tasks: [], stats: { total: 1 } });
-    await settle();
-
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    run.channel.put(loadWorkspaceTasksRequested(WS));
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
-    resolvers[1]({ tasks: [], stats: { total: 2 } });
-    await settle();
-    expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS], [WS]]);
-    resolvers[2]({ tasks: [], stats: { total: 3 } });
-    await settle();
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 2 }] },
-      { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
-    ]);
-    await stop(run.task);
+    it('unmount cancels old results and demand without affecting another workspace', async () => {
+      const pending = deferredRead();
+      const other = deferredRead();
+      const run = startTasks();
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      run.dispatch(acquireWorkspaceTasksDemand('other', 'chat'));
+      await settle();
+      run.dispatch(loadWorkspaceTasksRequested(WS));
+      run.dispatch(workspaceUnmounted(WS));
+      pending.resolve(response('old'));
+      other.resolve(response('other-task'));
+      await settle();
+      expect(mocks.tasks.list.mock.calls).toEqual([[WS], ['other']]);
+      expect(run.get()).toMatchObject({ initialized: false, loading: false, demandIds: [] });
+      expect(run.get('other').tasks).toEqual(createCollection('id', response('other-task').tasks));
+      run.dispatch(acquireWorkspaceTasksDemand(WS, 'new-chat'));
+      await settle();
+      expect(mocks.tasks.list.mock.calls).toEqual([[WS], ['other'], [WS]]);
+    });
   });
 
   it('routes event, context, task-link, skill, script, and terminal reads exactly', async () => {
@@ -932,7 +903,12 @@ describe('lifecycleReadSaga', () => {
         {
           channel,
           dispatch: (action) => {
-            actions.push(action);
+            if (
+              !['scripts/readStarted', 'scripts/readFinished', 'scripts/readReconciled'].includes(
+                action.type,
+              )
+            )
+              actions.push(action);
             current = {
               ...current,
               terminals: terminalsReducer(current.terminals, action as never),
@@ -1147,10 +1123,16 @@ describe('lifecycleReadSaga', () => {
     }
   });
 
-  it('recovers missed retirement state for open output without scanning archives', async () => {
+  it('recovers missed retirement metadata for retained rows from the all partition', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list.mockResolvedValue([]);
-    mocks.scripts.status.mockResolvedValue({ status: 'exited', exitCode: 1, restartCount: 0 });
+    mocks.scripts.list.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: 'open-output',
+        archivedAt: 'now',
+        lastRun: { outcome: 'failed', stoppedAt: 'now' },
+        runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+      },
+    ]);
     const run = startScriptCache();
     try {
       const row = { id: 'open-output', runtime: { status: 'running', restartCount: 0 } };
@@ -1160,8 +1142,15 @@ describe('lifecycleReadSaga', () => {
       await settle();
       await settle();
       await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([[WS, { archive: 'active' }]]);
-      expect(mocks.scripts.status.mock.calls).toEqual([[WS, 'open-output']]);
+      expect(mocks.scripts.list.mock.calls).toEqual([
+        [WS, { archive: 'active' }],
+        [WS, { archive: 'all' }],
+      ]);
+      expect(mocks.scripts.status).not.toHaveBeenCalled();
+      expect(run.getState().byWorkspaceId[WS].scripts['closed-output']).toBeUndefined();
+      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].lastRun?.outcome).toBe(
+        'failed',
+      );
       expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
         status: 'exited',
         exitCode: 1,
@@ -1173,11 +1162,11 @@ describe('lifecycleReadSaga', () => {
     }
   });
 
-  it('keeps a newer live event when an open retired viewer status read finishes late', async () => {
+  it('keeps a newer live event when retained metadata reconciliation finishes late', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
     mocks.scripts.list.mockResolvedValue([]);
     let resolveStatus!: (value: unknown) => void;
-    mocks.scripts.status.mockReturnValue(
+    mocks.scripts.list.mockResolvedValueOnce([]).mockReturnValueOnce(
       new Promise((resolve) => {
         resolveStatus = resolve;
       }),
@@ -1193,11 +1182,17 @@ describe('lifecycleReadSaga', () => {
       run.dispatch(refreshScripts(WS));
       await settle();
       await settle();
-      expect(mocks.scripts.status).toHaveBeenCalledOnce();
+      expect(mocks.scripts.list).toHaveBeenCalledTimes(2);
       run.dispatch(
         updateRuntimeState(WS, 'open-output', { status: 'starting', startedAt: 'new run' }),
       );
-      resolveStatus({ status: 'exited', exitCode: 1, restartCount: 0 });
+      resolveStatus([
+        {
+          id: 'open-output',
+          archivedAt: 'now',
+          runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+        },
+      ]);
       await settle();
       await settle();
       expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
@@ -3873,7 +3868,8 @@ describe('lifecycleReadSaga', () => {
       const pending = parkTaskReads();
       const run = start();
 
-      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      for (let i = 0; i < FAN_OUT; i += 1)
+        run.channel.put(acquireWorkspaceTasksDemand(`ws-${i}`, 'visible-chat'));
       await settle();
 
       // Without the scheduler this was one read per registered workspace.
@@ -3896,7 +3892,8 @@ describe('lifecycleReadSaga', () => {
       const pending = parkTaskReads();
       const run = start();
 
-      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      for (let i = 0; i < FAN_OUT; i += 1)
+        run.channel.put(acquireWorkspaceTasksDemand(`ws-${i}`, 'visible-chat'));
 
       let resolved = 0;
       while (resolved < FAN_OUT) {
@@ -3917,12 +3914,13 @@ describe('lifecycleReadSaga', () => {
       const pending = parkTaskReads();
       const run = start(state(HOT));
 
-      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      for (let i = 0; i < FAN_OUT; i += 1)
+        run.channel.put(acquireWorkspaceTasksDemand(`ws-${i}`, 'visible-chat'));
       await settle();
       expect(issuedFor(pending)).not.toContain(HOT);
 
       // The workspace the user just opened queues ahead of the backlog.
-      run.channel.put(loadWorkspaceTasksRequested(HOT));
+      run.channel.put(acquireWorkspaceTasksDemand(HOT, 'visible-chat'));
       await settle();
       expect(issuedFor(pending)).not.toContain(HOT);
 
@@ -3950,7 +3948,8 @@ describe('lifecycleReadSaga', () => {
       const current = state();
       const run = start(current);
 
-      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      for (let i = 0; i < FAN_OUT; i += 1)
+        run.channel.put(acquireWorkspaceTasksDemand(`ws-${i}`, 'visible-chat'));
       await settle();
 
       // Focus moves to this workspace only now, long after the saga started.
@@ -3978,9 +3977,9 @@ describe('lifecycleReadSaga', () => {
       const run = start();
 
       for (let i = 0; i < MAX_CONCURRENT_WORKSPACE_READS; i += 1) {
-        run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+        run.channel.put(acquireWorkspaceTasksDemand(`ws-${i}`, 'visible-chat'));
       }
-      run.channel.put(loadWorkspaceTasksRequested('ws-queued'));
+      run.channel.put(acquireWorkspaceTasksDemand('ws-queued', 'visible-chat'));
       await settle();
       expect(pending).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
 

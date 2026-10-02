@@ -45,6 +45,8 @@ export class DevConsoleWindows {
         sandbox: true,
       },
     });
+    // Keep the native tool title when the shared app document loads or reloads.
+    window.on('page-title-updated', (event) => event.preventDefault());
     stampWindowWithBackend(window, backendId);
     const entry: ConsoleWindow = { window, sessionId: '', stop: () => {}, notified: false };
     this.windows.set(backendId, entry);

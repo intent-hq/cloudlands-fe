@@ -55,6 +55,8 @@ import {
   workspaceMounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
+import { initialState as availabilityInitial } from '../agent-availability/agent-availability-slice';
+
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
@@ -92,15 +94,34 @@ describe('workspace catalog ownership', () => {
     ]);
     mocks.mcpStatuses.mockResolvedValue([]);
     const channel = stdChannel();
-    let state = { providerCatalog: initialState, workspaceLifecycle: lifecycleInitial };
+    let state = {
+      providerCatalog: initialState,
+      workspaceLifecycle: lifecycleInitial,
+      agentAvailability: availabilityInitial,
+    };
+    const listeners = new Set<() => void>();
     const dispatch = (action: StoreAction<unknown>) => {
       state = {
+        ...state,
         providerCatalog: providerCatalogReducer(state.providerCatalog, action),
         workspaceLifecycle: workspaceLifecycleReducer(state.workspaceLifecycle, action),
       };
       channel.put(action);
+      listeners.forEach((listener) => listener());
     };
-    const task = runSaga({ channel, dispatch, getState: () => state }, workspaceCatalogSaga);
+    const reduxStore = {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
+      workspaceCatalogSaga,
+    );
     try {
       dispatch(workspaceMounted('A'));
       dispatch(workspaceMounted('B'));
@@ -111,10 +132,7 @@ describe('workspace catalog ownership', () => {
       expect(mocks.specialists).toHaveBeenCalledWith(undefined, 'A');
       expect(mocks.request).toHaveBeenCalledWith('host.providerDiscovery', { workspaceId: 'A' });
       expect(mocks.auth).toHaveBeenCalledWith({ workspaceId: 'B' });
-      expect(mocks.request).toHaveBeenCalledWith('host.findBinary', {
-        name: 'claude',
-        workspaceId: 'B',
-      });
+      expect(mocks.request).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
       expect(state.providerCatalog.byWorkspaceId?.B.readiness['claude-code'].available).toBe(true);
       expect(mocks.mcpStatuses).toHaveBeenCalledWith(['server-B'], 'B');
       expect(state.providerCatalog.byWorkspaceId?.B.mcpServers?.[0]).toEqual({

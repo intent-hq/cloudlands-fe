@@ -14,7 +14,11 @@
    */
 
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
-  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectCollaborationCapabilities,
+    selectPrincipalActionContext,
+    selectCanAdministerHost,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { readInviteLink } from '$features/workspace-sharing/invite-link-vault';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -69,6 +73,7 @@
   } from '$store/renderer/slices/github-user-search/github-user-search-selectors';
   import { openGitHubAuthModal } from '$store/renderer/slices/global-modals/global-modals-slice';
 
+  const collaboration$ = selectCollaborationCapabilities();
   const canAdministerHost$ = selectCanAdministerHost();
   const gitlabStatusReady$ = selectGitLabStatusReady();
   const open$ = selectShareDialogOpen();
@@ -83,6 +88,7 @@
   const canManage$ = selectShareCanManage();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
+  const principalContext$ = selectPrincipalActionContext();
   const principals$ = selectShareInvitablePrincipals();
   const guestCount$ = selectShareGuestCount();
   const guestLimit$ = selectShareGuestLimit();
@@ -132,52 +138,56 @@
   });
 </script>
 
-<ShareWorkspaceDialog
-  open={$open$}
-  workspaceId={$workspaceId$}
-  workspaceTitle={$workspaceTitle$}
-  githubConnected={$integrationAuth$.github}
-  gitlabConnected={$integrationAuth$.gitlab}
-  gitlabEnabled={$gitlabEnabled$}
-  gitlabHost={$gitlabHost$}
-  gitlabStatusReady={$gitlabStatusReady$}
-  canAdministerHost={$canAdministerHost$}
-  identitySeamSupported={$identitySeamSupported$}
-  identityProvider={$identityProvider$}
-  canManage={$canManage$}
-  members={$members$}
-  invites={$invites$}
-  principals={$principals$}
-  {inviteLinks}
-  guestCount={$guestCount$}
-  guestLimit={$guestLimit$}
-  loading={$loading$}
-  loadError={$loadError$}
-  creating={$creating$}
-  createError={$createError$}
-  createdLink={$createdLink$}
-  revokingInviteId={$revokingInviteId$}
-  removingPrincipalId={$removingPrincipalId$}
-  addingPrincipalId={$addingPrincipalId$}
-  actionError={$actionError$}
-  userSuggestions={matchingUserSearch ? $userSuggestions$ : []}
-  userSearchLoading={matchingUserSearch && $userSearchLoading$}
-  userSearchError={matchingUserSearch ? $userSearchError$ : null}
-  userSearchQuery={matchingUserSearch ? $userSearchQuery$ : ''}
-  onClose={() => appStore.dispatch(closeShareDialog())}
-  onConnectGitHub={() => {
-    if (selectCanAdministerHost.select(appStore.state))
-      appStore.dispatch(openGitHubAuthModal(null));
-  }}
-  onOpenConnections={() => {
-    if (!selectCanAdministerHost.select(appStore.state)) return;
-    appStore.dispatch(closeShareDialog());
-    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
-  }}
-  onCreateInvite={(pinLogin, pin) =>
-    appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}
-  onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
-  onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
-  onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}
-  onSearchUsers={(query) => appStore.dispatch(searchGithubUsers(query, $workspaceId$ ?? undefined))}
-/>
+{#key $principalContext$}
+  <ShareWorkspaceDialog
+    open={$open$}
+    workspaceId={$workspaceId$}
+    workspaceTitle={$workspaceTitle$}
+    githubConnected={$integrationAuth$.github}
+    gitlabConnected={$integrationAuth$.gitlab}
+    gitlabEnabled={$gitlabEnabled$}
+    gitlabHost={$gitlabHost$}
+    gitlabStatusReady={$gitlabStatusReady$}
+    canAdministerHost={$canAdministerHost$}
+    identitySeamSupported={$identitySeamSupported$}
+    hostMembershipSupported={$collaboration$.hostMembership}
+    identityProvider={$identityProvider$}
+    canManage={$canManage$}
+    members={$members$}
+    invites={$invites$}
+    principals={$principals$}
+    {inviteLinks}
+    guestCount={$guestCount$}
+    guestLimit={$guestLimit$}
+    loading={$loading$}
+    loadError={$loadError$}
+    creating={$creating$}
+    createError={$createError$}
+    createdLink={$createdLink$}
+    revokingInviteId={$revokingInviteId$}
+    removingPrincipalId={$removingPrincipalId$}
+    addingPrincipalId={$addingPrincipalId$}
+    actionError={$actionError$}
+    userSuggestions={matchingUserSearch ? $userSuggestions$ : []}
+    userSearchLoading={matchingUserSearch && $userSearchLoading$}
+    userSearchError={matchingUserSearch ? $userSearchError$ : null}
+    userSearchQuery={matchingUserSearch ? $userSearchQuery$ : ''}
+    onClose={() => appStore.dispatch(closeShareDialog())}
+    onConnectGitHub={() => {
+      if (selectCanAdministerHost.select(appStore.state))
+        appStore.dispatch(openGitHubAuthModal(null));
+    }}
+    onOpenConnections={() => {
+      if (!selectCanAdministerHost.select(appStore.state)) return;
+      appStore.dispatch(closeShareDialog());
+      void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
+    }}
+    onCreateInvite={(pinLogin, pin) =>
+      appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}
+    onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
+    onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
+    onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}
+    onSearchUsers={(query) =>
+      appStore.dispatch(searchGithubUsers(query, $workspaceId$ ?? undefined))}
+  />
+{/key}

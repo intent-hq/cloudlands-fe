@@ -30,10 +30,19 @@ on:
   workflow_dispatch:
     inputs:
       build_macos:
-        description: 'Build macOS (Apple Silicon + Intel DMG/zip)'
+        description: 'Build macOS DMGs for the selected architectures'
         required: false
         type: boolean
         default: false
+      macos_arch:
+        description: 'Mac architectures: both, Apple Silicon (arm64), or Intel (x64)'
+        required: false
+        type: choice
+        default: both
+        options:
+          - both
+          - arm64
+          - x64
       smoke_macos:
         description: 'Run fixture-only packaged journeys on a separate disposable macOS runner (requires build_macos and sign)'
         required: false
@@ -79,6 +88,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Resolve before allocating native Mac runners: unselected CPUs never get a job.
+  select-macos:
+    if: ${{ inputs.build_macos }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      matrix: ${{ steps.macos.outputs.matrix }}
+      smoke_runner: ${{ steps.macos.outputs.smoke_runner }}
+      smoke_artifact: ${{ steps.macos.outputs.smoke_artifact }}
+    steps:
+      - name: Select manual Mac targets
+        id: macos
+        env:
+          MACOS_ARCH: ${{ inputs.macos_arch }}
+        run: |
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
+          case "${MACOS_ARCH:-both}" in
+            both) TARGETS="[$ARM,$INTEL]" ;;
+            arm64) TARGETS="[$ARM]" ;;
+            x64) TARGETS="[$INTEL]" ;;
+            *) echo "::error::macos_arch must be both, arm64, or x64"; exit 1 ;;
+          esac
+          # Smoke one built artifact on its native CPU; prefer ARM when both are built.
+          {
+            echo "matrix={\"include\":$TARGETS}"
+            echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
+            echo "smoke_artifact=manual-macos-dmg-$(jq -r '.[0].arch' <<< "$TARGETS")"
+          } >> "$GITHUB_OUTPUT"
+
   smoke-inputs:
     if: ${{ inputs.smoke_macos }}
     runs-on: ubuntu-latest
@@ -92,8 +131,8 @@ jobs:
 
   smoke-macos:
     if: ${{ inputs.smoke_macos }}
-    needs: [build-macos, smoke-inputs]
-    runs-on: macos-15-xlarge
+    needs: [select-macos, build-macos, smoke-inputs]
+    runs-on: ${{ needs.select-macos.outputs.smoke_runner }}
     timeout-minutes: 60
     env:
       CI: 'true'
@@ -117,7 +156,7 @@ jobs:
       - uses: actions/download-artifact@v8
         timeout-minutes: 2
         with:
-          name: manual-macos-dmg
+          name: ${{ needs.select-macos.outputs.smoke_artifact }}
           path: smoke-artifact
       - name: Test the signed artifact with disposable fixture state
         timeout-minutes: 45
@@ -138,19 +177,11 @@ jobs:
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
     if: ${{ inputs.build_macos }}
+    needs: [select-macos]
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            label: Apple Silicon
-            runner: macos-15-xlarge
-            intentd_target: aarch64-apple-darwin
-          - arch: x64
-            label: Intel
-            runner: macos-15-large
-            intentd_target: x86_64-apple-darwin
+      matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}

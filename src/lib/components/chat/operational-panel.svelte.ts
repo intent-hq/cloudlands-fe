@@ -393,7 +393,9 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
             entry.kind === 'group' ? rowTop + (summary?.height ?? 28) * scale : bottom;
           if (rowBottom > rowTop && rowTop < clipBottom && rowBottom > clipTop) {
             visible.push(entry.key);
-            if (scroll && !nextAnchors.has(scroll) && entry.kind !== 'group')
+            // Keep the visible group header steady when its details move below it.
+            // Skipping groups lets an animated child take over the scroll anchor.
+            if (scroll && !nextAnchors.has(scroll))
               nextAnchors.set(scroll, {
                 key: entry.key,
                 top,

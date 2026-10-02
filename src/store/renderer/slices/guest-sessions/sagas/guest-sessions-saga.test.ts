@@ -1,3 +1,5 @@
+import type { StoreState } from '$store/renderer/types';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,6 +42,7 @@ import {
 } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  guestSessionsListReceived,
   guestSessionsReducer,
   initialState,
   leaveGuestSessionRequested,
@@ -141,7 +144,9 @@ let callbacks: Record<string, (payload: unknown) => void>;
 let invoke: ReturnType<typeof vi.fn>;
 let offById: ReturnType<typeof vi.fn>;
 
-function start(options: { windowBackendId?: string } = {}) {
+function start(
+  options: { windowBackendId?: string; project?: (state: StoreState) => StoreState } = {},
+) {
   const channel = stdChannel();
   const listeners = new Set<() => void>();
   const connections: ConnectionsState = {
@@ -169,8 +174,18 @@ function start(options: { windowBackendId?: string } = {}) {
     for (const listener of listeners) listener();
     return action;
   };
+  // Preserve Redux read identity while applying the admitted-principal fixture.
+  let projectedFrom: typeof state | undefined;
+  let admitted: StoreState;
+  const getState = () => {
+    if (projectedFrom !== state) {
+      admitted = withLegacyPrincipal(state);
+      projectedFrom = state;
+    }
+    return options.project ? options.project(admitted) : admitted;
+  };
   const reduxStore = {
-    getState: () => state,
+    getState,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -180,7 +195,12 @@ function start(options: { windowBackendId?: string } = {}) {
     { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
     guestSessionsSaga,
   );
-  return { dispatch, getState: () => state, task, actions };
+  return {
+    dispatch,
+    getState,
+    task,
+    actions,
+  };
 }
 
 async function stop(task: Task): Promise<void> {
@@ -281,6 +301,80 @@ describe('guestSessionsSaga', () => {
     expect(run.getState().guestSessions.leavingIds).toEqual([]);
     expect(run.getState().guestSessions.failedLeaveIds).toEqual([GUEST.id]);
 
+    await stop(run.task);
+  });
+
+  it.each([
+    ['new pairing', { pairedAt: 200 }],
+    ['guest readmission', { hostRole: 'guest' as const }],
+  ])(
+    'C2 expires an inherited refusal on same-id %s but preserves unrelated refreshes',
+    async (_name, replacement) => {
+      const saved = { ...GUEST, pairedAt: 100, hostRole: 'member' as const };
+      invoke.mockImplementation(async (channel) =>
+        channel === GUEST_SESSIONS.LIST
+          ? { sessions: [saved], openIds: [], connectedIds: [] }
+          : {
+              id: saved.id,
+              workspaceId: 'ws-guest',
+              left: false,
+              refused: 'host-membership-required',
+            },
+      );
+      const run = start();
+      await settle();
+      const action = leaveGuestWorkspaceRequested(saved.id, 'ws-guest');
+      run.dispatch(action);
+      await action.promise;
+      const key = guestWorkspaceKey(saved.id, 'ws-guest');
+      expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([key]);
+      run.dispatch(
+        guestSessionsListReceived({
+          sessions: [{ ...saved, hostname: 'new label', updatedAt: 999 }],
+          openIds: [saved.id],
+          connectedIds: [],
+        }),
+      );
+      expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([key]);
+      const next = { ...saved, ...replacement };
+      run.dispatch(guestSessionsListReceived({ sessions: [next], openIds: [], connectedIds: [] }));
+      expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([]);
+      expect(getItems(run.getState().guestSessions.sessions)).toEqual([next]);
+      await stop(run.task);
+    },
+  );
+
+  it('C2 ignores a held old refusal after the same saved id receives a new pairing', async () => {
+    const held = Promise.withResolvers<{
+      id: string;
+      workspaceId: string;
+      left: boolean;
+      refused: 'host-membership-required';
+    }>();
+    const saved = { ...GUEST, pairedAt: 100, hostRole: 'member' as const };
+    invoke.mockImplementation(async (channel) =>
+      channel === GUEST_SESSIONS.LIST
+        ? { sessions: [saved], openIds: [], connectedIds: [] }
+        : held.promise,
+    );
+    const run = start();
+    await settle();
+    const action = leaveGuestWorkspaceRequested(saved.id, 'ws-guest');
+    run.dispatch(action);
+    const outcome = action.promise.catch((error: unknown) => error);
+    const replacement = { ...saved, pairedAt: 200, hostRole: 'guest' as const };
+    run.dispatch(
+      guestSessionsListReceived({ sessions: [replacement], openIds: [], connectedIds: [] }),
+    );
+    held.resolve({
+      id: saved.id,
+      workspaceId: 'ws-guest',
+      left: false,
+      refused: 'host-membership-required',
+    });
+    expect(await outcome).toMatchObject({ code: 'cancelled' });
+    expect(run.getState().guestSessions.inheritedWorkspaceKeys).toEqual([]);
+    expect(getItems(run.getState().guestSessions.sessions)).toEqual([replacement]);
     await stop(run.task);
   });
 
@@ -422,6 +516,29 @@ describe('guestSessionsSaga', () => {
     function calls(method: string) {
       return mocks.request.mock.calls.filter(([m]) => m === method).map(([, params]) => params);
     }
+
+    it('does not sweep an inherited host member retaining a collaborator row (#6390)', async () => {
+      mocks.request.mockImplementation(async (method) => {
+        if (method === 'workspace.members.list')
+          return { members: [OWNER, { ...MEMBER, hostRole: 'member' }, SECOND_MEMBER] };
+        if (method === 'workspace.members.remove') return { removed: true };
+        if (method === 'workspace.invite.list') return { invites: [] };
+        throw new Error(`unexpected method ${method}`);
+      });
+      const run = start();
+      await settle();
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 3)]));
+      const action = removeAllHostedGuestsRequested('ws-1');
+      run.dispatch(action);
+      try {
+        await action.promise;
+        expect(calls('workspace.members.remove')).toEqual([
+          { workspaceId: 'ws-1', principalId: SECOND_MEMBER.principalId },
+        ]);
+      } finally {
+        await stop(run.task);
+      }
+    });
 
     it('removes every collaborator, revokes every open invite, then refetches the roster', async () => {
       mocks.request.mockImplementation(async (method) => {
@@ -1746,5 +1863,67 @@ describe('guestSessionsSaga', () => {
     expect(run.getState().guestSessions.hasReceivedList).toBe(false);
     expect(run.getState().guestSessions.listUnavailable).toBe(true);
     expect(invoke).not.toHaveBeenCalled();
+  });
+  it('drops a stale roster denial after the principal lifetime changes (#6390)', async () => {
+    let invalidation = 0;
+    let reject!: (error: unknown) => void;
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    const run = start({
+      project: (state) => ({ ...state, principal: { ...state.principal, invalidation } }),
+    });
+    try {
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+      run.dispatch(loadHostedRosterRequested('ws-1'));
+      await settle();
+      invalidation = 1;
+      reject(daemonError(-32003, 'old identity'));
+      await settle();
+      expect(run.getState().guestSessions.hostedRosters['ws-1']?.status).not.toBe('withheld');
+      expect(
+        run.actions.some(
+          (a) =>
+            a.type === loadHostedRosterRequested.failure.type &&
+            JSON.stringify(a.payload).includes('cancelled'),
+        ),
+      ).toBe(true);
+    } finally {
+      await stop(run.task);
+    }
+  });
+  it('does not continue a guest sweep after a principal lifetime changes (#6390)', async () => {
+    let invalidation = 0;
+    let resolve!: (value: unknown) => void;
+    mocks.request.mockImplementation((method) =>
+      method === 'workspace.members.list'
+        ? Promise.resolve({ members: [MEMBER, { ...MEMBER, principalId: 'second' }] })
+        : new Promise((done) => {
+            resolve = done;
+          }),
+    );
+    const run = start({
+      project: (state) => ({ ...state, principal: { ...state.principal, invalidation } }),
+    });
+    try {
+      run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 3)]));
+      run.dispatch(removeAllHostedGuestsRequested('ws-1'));
+      await settle();
+      invalidation = 1;
+      resolve({ removed: true });
+      await settle();
+      expect(
+        mocks.request.mock.calls.filter(([method]) => method === 'workspace.members.remove'),
+      ).toHaveLength(1);
+      expect(
+        mocks.request.mock.calls.filter(([method]) => method === 'workspace.invite.list'),
+      ).toHaveLength(0);
+      expect(run.getState().guestSessions.hostedRosters['ws-1']?.status).not.toBe('withheld');
+    } finally {
+      await stop(run.task);
+    }
   });
 });

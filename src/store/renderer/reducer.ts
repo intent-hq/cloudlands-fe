@@ -1,3 +1,4 @@
+import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
@@ -63,6 +64,7 @@ import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
 import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
+import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
@@ -177,6 +179,7 @@ export const reducers = {
   stats: statsReducer,
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
+  scriptMonitor: scriptMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   gitWrite: gitWriteReducer,
@@ -224,4 +227,5 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  hostMembership: hostMembershipReducer,
 } as const;

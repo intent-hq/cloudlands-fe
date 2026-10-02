@@ -165,6 +165,9 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     async (reasoningEffort) => {
       const initialAgent = {
         name: 'Developer',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
+        specialist: 'developer',
         model: 'gpt-fixture',
         provider: 'codex',
         prompt: 'Build the thing',
@@ -198,6 +201,35 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
         workspace: { id: 'ws-effort' },
         initialAgent: agent,
       });
+    },
+  );
+
+  it.each([undefined, 'エージェント', 'Agente'])(
+    'preserves General name omission or explicit custom name %j on the wire',
+    async (name) => {
+      const initialAgent = {
+        ...(name !== undefined ? { name } : {}),
+        nameExplicitlySet: name !== undefined,
+        rememberSpecialist: true,
+        provider: 'codex',
+      };
+      const agent = {
+        id: 'agent-general',
+        workspaceId: 'ws-general',
+        name: name ?? 'Agent',
+        provider: 'codex',
+        status: 'idle',
+      };
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-general', title: 'General', branch: 'general', status: 'Active' },
+        initialAgent: agent,
+      });
+      const request = { idempotencyKey: 'general-create', repositoryPath: '/repo', initialAgent };
+      const result = await new LiveWorkspacesClient().create(request);
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
+        timeoutMs: 120_000,
+      });
+      expect(result).toMatchObject({ success: true, initialAgent: agent });
     },
   );
 

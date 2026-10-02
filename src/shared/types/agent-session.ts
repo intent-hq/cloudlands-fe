@@ -69,6 +69,8 @@ export interface QueuedMessage {
    * and skips it during queue drain. Only included in responses when true.
    */
   editing?: boolean;
+  /** Original active edit identity when a held entry was absorbed into this survivor. */
+  editingMessageId?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished
@@ -89,7 +91,9 @@ export interface QueuedMessage {
   /**
    * Serve-time projection of the principal that enqueued the entry
    * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
-   * stamp. Authoritative when present: `null` means the principal row is
+   * stamp, or a portable human snapshot with principalId:null and no local
+   * admission. Portable display does not change queue edit/send authority.
+   * Authoritative when present: `null` means the principal row is
    * gone (no author, no fallback). Absent on older daemons, where the queue
    * surface falls back to the projections the transcript already carries.
    */
@@ -453,6 +457,14 @@ export interface AgentSession extends AgentNodeFields {
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
 
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the

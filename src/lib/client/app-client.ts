@@ -54,7 +54,7 @@ import type {
   ScriptWithState,
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
-import type { ScriptCategory, ScriptMode, ScriptPurpose } from '$features/scripts/types';
+import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
@@ -197,6 +197,7 @@ export interface AgentCreateRequest {
   /** Reasoning effort for the session's model (Option B session field, §5.5). */
   reasoningEffort?: string;
   specialist?: string | null;
+  rememberSpecialist?: boolean;
   name?: string;
   nameExplicitlySet?: boolean;
   agentId?: string;
@@ -273,13 +274,6 @@ export interface UserMessageIndexItem {
 export type UserMessageIndexResult =
   | { ok: true; items: UserMessageIndexItem[]; total: number }
   | { ok: false; unsupported: boolean; error: string };
-
-/** Pull-request summary surfaced by the git domain. */
-export interface PrStatusSummary {
-  prNumber?: number;
-  url?: string;
-  state?: string;
-}
 
 /**
  * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
@@ -755,8 +749,8 @@ export interface AgentsClient {
    * NOT idempotent: a missing entry (already drained/removed) rejects with
    * `-32602`, folded into `{ success: false, error }` like the other
    * mutations. The delivered arm carries `turnId` (the entry's preserved
-   * turn-correlation id, §5.5 — this RPC's response replaces the
-   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * turn-correlation id, §5.5). Admitted sends also emit `agent:queue:processing`
+   * with the complete consumed entries; the response is a legacy promotion fallback,
    * surfaced on the MutationResult (monorepo#1057).
    */
   sendQueuedNow(params: {
@@ -891,6 +885,7 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult>;
@@ -1416,12 +1411,11 @@ export interface GitClient {
     commitHash: string,
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null>;
-  prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
    * relink-after-merge, stale-link clearing) for one workspace on demand and
-   * returns the post-refresh linkage state. Unlike `pr.status` it does NOT
-   * require an active PR. Errors fold to `null`.
+   * returns the post-refresh linkage state. An active PR is not required.
+   * Errors fold to `null`.
    */
   prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
   /**
@@ -1846,7 +1840,7 @@ export interface ScriptCreateInput {
   mode: ScriptMode;
   cwd?: string;
   env?: Record<string, string>;
-  category?: ScriptCategory;
+  category?: string;
   autoStart?: boolean;
   scriptId?: string;
 }
