@@ -1,3 +1,4 @@
+import { tableNodeBudget, tableResourceBound, measureTableDOM } from './table-resources';
 import { tableRunWork } from './table-run-context';
 import {
   decodeTablePages,
@@ -703,6 +704,15 @@ export class DocumentSession {
     const window = this.readWindow(id, position);
     try {
       const next = this.project(window.source, window.from, window.table);
+      if (next.table) {
+        try {
+          tableNodeBudget(next.content);
+        } catch (error) {
+          this.error = String(error);
+          this.changed();
+          return false;
+        }
+      }
       if (preserveView && this.editor) {
         if (this.pointerSelecting) this.pointerRemapped = true;
         // Keep Chromium's active keyboard or mouse gesture on the same focused view.
@@ -1163,7 +1173,10 @@ export class DocumentSession {
           tr.doc.descendants(() => {
             nodes++;
           });
-          if (nodes > (this.projection?.table ? TABLE_NODE_LIMIT : LIMITS.nodes))
+          if (
+            nodes + Number(!!this.projection?.table) >
+            (this.projection?.table ? TABLE_NODE_LIMIT : LIMITS.nodes)
+          )
             throw new Error('Proof projection exceeds node budget');
           if (index) this.acceptedAppended++;
           else this.acceptedRoots++;
@@ -1468,23 +1481,18 @@ export class DocumentSession {
       }
       return value;
     });
+    const tableBound =
+      this.projection?.table && this.editor ? tableResourceBound(this.editor.getJSON()) : undefined;
+    const tableDOM =
+      tableBound && this.editor ? measureTableDOM(this.editor.view.dom, tableBound) : undefined;
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
       tableRunParseCalls: tableRunWork.calls,
       tableRunParseBytes: tableRunWork.bytes,
       maxTableRunParseBytes: tableRunWork.maxBytes,
-      tableDomElements: this.projection?.table
-        ? (this.editor?.view.dom.querySelectorAll('*').length ?? 0)
-        : 0,
-      tableDomTextNodes:
-        this.projection?.table && this.editor
-          ? (() => {
-              let count = 0;
-              const walker = document.createTreeWalker(this.editor!.view.dom, NodeFilter.SHOW_TEXT);
-              while (walker.nextNode()) count++;
-              return count;
-            })()
-          : 0,
+      tableResourceBound: tableBound,
+      tableDomElements: tableDOM?.elements ?? 0,
+      tableDomTextNodes: tableDOM?.textNodes ?? 0,
       maxTableTransferPageBytes: this.maxTableTransferPageBytes,
       maxTableTransferBytes: this.maxTableTransferBytes,
       maxTableAssemblyBytes: this.maxTableAssemblyBytes,
@@ -1584,7 +1592,7 @@ export class DocumentSession {
       created: this.created,
       destroyed: this.destroyed,
       mounted: this.created - this.destroyed,
-      pmNodes: nodes,
+      pmNodes: nodes + Number(!!this.projection?.table),
       pmBytes: bytes(JSON.stringify(this.editor?.getJSON() ?? {})),
       pluginCount: this.editor?.state.plugins.length ?? 0,
       nativeHistoryPlugins:
