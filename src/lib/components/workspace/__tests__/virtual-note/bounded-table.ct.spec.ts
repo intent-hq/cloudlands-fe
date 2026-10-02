@@ -289,3 +289,91 @@ test('oversized unbreakable cells wrap inside stable columns and resize keeps th
     contentType: 'application/json',
   });
 });
+
+test('scrolling an oversized table cell reaches its final text without a source seek', async ({
+  mount,
+  page,
+}, info) => {
+  const text =
+    'CELL_START ' +
+    Array.from({ length: 4000 }, (_, i) => `t${String(i).padStart(5, '0')}`).join(' ') +
+    ' CELL_END';
+  const source = `| H | R |\n| --- | --- |\n| ${text} | right |`;
+  await mount(Pair, { props: { sourceOverride: source } });
+  for (const side of ['native', 'bounded']) {
+    const root = page.getByTestId(side).getByTestId('proof');
+    await expect(root.locator('.tiptap')).toHaveCount(1);
+    if (side === 'native')
+      await root.evaluate((el) => {
+        const editor = (el as Host).native,
+          dom = editor.view.dom;
+        dom.classList.add('proof-table-projection');
+        dom.style.setProperty('--proof-column-width', '275px');
+        dom.style.setProperty('--proof-table-width', '550px');
+        dom.style.width = '550px';
+        Object.assign(dom.querySelector('table')!.parentElement!.style, {
+          position: 'static',
+          left: 'auto',
+          transform: 'none',
+          width: '100%',
+          minWidth: '0',
+          maxWidth: 'none',
+          overflow: 'visible',
+        });
+      });
+    await settled(page);
+    const before = await root.evaluate((el) => {
+      const scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+      return { height: scroller.scrollHeight, viewport: scroller.clientHeight };
+    });
+    await root.evaluate((el) => {
+      const scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+      scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+    });
+    await settled(page);
+    const result = await root.evaluate((el, source) => {
+      const h = el as Host,
+        editor = h.proof?.editor ?? h.native,
+        scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!,
+        viewport = scroller.getBoundingClientRect();
+      const cell = Array.from(editor!.view.dom.querySelectorAll('td')).find((c) =>
+        c.textContent?.includes('CELL_END'),
+      );
+      let tail: { top: number; bottom: number } | undefined;
+      if (cell) {
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const at = node.textContent!.indexOf('CELL_END');
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + 8);
+          const rect = range.getBoundingClientRect();
+          tail = { top: rect.top, bottom: rect.bottom };
+        }
+      }
+      return {
+        tail,
+        viewport: { top: viewport.top, bottom: viewport.top + scroller.clientHeight },
+        height: scroller.scrollHeight,
+        scroll: scroller.scrollTop,
+        error: h.proof?.error,
+        stats: h.proof?.snapshot(),
+        unchanged: !h.proof || h.proof.service.region(0) === source,
+      };
+    }, source);
+    await info.attach(`table-${side}-oversized-scroll.json`, {
+      body: JSON.stringify({ before, result, oracleSourceBytes: source.length }),
+      contentType: 'application/json',
+    });
+    expect(result.tail, `${side} final cell text must be admitted by scrolling`).toBeDefined();
+    expect(result.tail!.top).toBeGreaterThanOrEqual(result.viewport.top);
+    expect(result.tail!.bottom).toBeLessThanOrEqual(result.viewport.bottom + 1);
+    expect(result.unchanged).toBe(true);
+    if (result.stats) {
+      expect(result.error).toBe('');
+      expect(result.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+      expect(result.stats.pmNodes).toBeLessThanOrEqual(256);
+    }
+  }
+});
