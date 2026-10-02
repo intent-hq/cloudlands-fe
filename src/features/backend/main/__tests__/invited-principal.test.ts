@@ -76,7 +76,7 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
   );
 
   it.each([undefined, true, '1', 2, 0, null])(
-    'rejects protocol 10.2 with unrecognized identity capability %s',
+    'rejects a backend without the required identity contract for capability %s',
     async (capability) => {
       rpc.request.mockResolvedValue({
         server: {
