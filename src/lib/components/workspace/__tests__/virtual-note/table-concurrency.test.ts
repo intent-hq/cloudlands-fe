@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { CellSelection } from '@tiptap/pm/tables';
+import { Editor } from '@tiptap/core';
+import { createEditorConfig } from '$lib/utils/editor-config';
+import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { store } from '$store/renderer/configured-store';
 import { SourceJournal } from './source-journal';
 import { DocumentSession } from './document-session';
@@ -59,9 +62,37 @@ it('maps session structure and global history through remote prose and row inser
 it('rolls back cell metadata, source, view and history if journal recording fails', async () => {
   const { service, session } = await start();
   try {
+    const native = new Editor(
+      createEditorConfig({
+        element: document.createElement('div'),
+        content: await processMarkdownToHTML(source),
+        editable: true,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: false,
+        onUpdate: () => {},
+      }),
+    );
+    try {
+      expect(native.state.doc.childCount).toBe(1);
+      native.commands.setTextSelection(session.editor!.state.selection.head);
+      expect(native.state.doc.childCount).toBe(2);
+      expect(session.editor!.getJSON()).toEqual(native.getJSON());
+      expect(session.editor!.state.selection.toJSON()).toEqual(native.state.selection.toJSON());
+    } finally {
+      native.destroy();
+    }
     const doc = session.editor!.state.doc.toJSON(),
       selection = session.editor!.state.selection.toJSON(),
-      revision = service.revision;
+      revision = service.revision,
+      depth = service.depth,
+      metadataBytes = service.stats.backingTableMetadataBytes,
+      metadata = [...(service as unknown as { tableStates: Map<string, string> }).tableStates],
+      history = Array.from({ length: service.depth }, (_, i) => ({
+        event: structuredClone(service.event(i)),
+        changes: [...service.changes(i)],
+      }));
+    expect(metadata).toEqual([['tail:0', '1']]);
     const fail = vi.spyOn(service, 'record').mockImplementationOnce(() => {
       throw new Error('injected table admission failure');
     });
@@ -70,8 +101,17 @@ it('rolls back cell metadata, source, view and history if journal recording fail
     expect(session.error).toContain('injected table admission failure');
     expect(service.region(0)).toBe(source);
     expect(service.revision).toBe(revision);
-    expect(service.depth).toBe(0);
-    expect(service.stats.backingTableMetadataBytes).toBe(0);
+    expect(service.depth).toBe(depth);
+    expect(service.stats.backingTableMetadataBytes).toBe(metadataBytes);
+    expect([...(service as unknown as { tableStates: Map<string, string> }).tableStates]).toEqual(
+      metadata,
+    );
+    expect(
+      Array.from({ length: service.depth }, (_, i) => ({
+        event: service.event(i),
+        changes: [...service.changes(i)],
+      })),
+    ).toEqual(history);
     expect(session.editor!.state.doc.toJSON()).toEqual(doc);
     expect(session.editor!.state.selection.toJSON()).toEqual(selection);
   } finally {
