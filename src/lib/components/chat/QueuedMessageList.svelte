@@ -777,21 +777,6 @@
         </span>
       </Button>
       {#if !disabled}
-        {#if onclearall}
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            iconOnly
-            aria-label={m.chat_queuedMessages_clearAll_ariaLabel()}
-            tooltip={m.chat_queuedMessages_clearAll_label()}
-            disabled={busy}
-            loading={bulkAction === 'clear'}
-            onpointerdown={(event) => event.preventDefault()}
-            onclick={() => handleBulkAction('clear')}
-          >
-            <XIcon size={13} weight="regular" aria-hidden="true" />
-          </Button>
-        {/if}
         {#if onsendall}
           <Button
             variant="ghost-light"
@@ -805,6 +790,21 @@
             onclick={() => handleBulkAction('send')}
           >
             <Fa icon={faArrowUp} class="h-3 w-3" />
+          </Button>
+        {/if}
+        {#if onclearall}
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            iconOnly
+            aria-label={m.chat_queuedMessages_clearAll_ariaLabel()}
+            tooltip={m.chat_queuedMessages_clearAll_label()}
+            disabled={busy}
+            loading={bulkAction === 'clear'}
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={() => handleBulkAction('clear')}
+          >
+            <XIcon size={13} weight="regular" aria-hidden="true" />
           </Button>
         {/if}
       {/if}
