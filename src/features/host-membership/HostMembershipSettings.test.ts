@@ -10,14 +10,30 @@ import {
   hostMembershipLoaded,
 } from '$store/renderer/slices/host-membership/host-membership-slice';
 import type { StoreState } from '$store/renderer/types';
-const mocks = vi.hoisted(() => ({ state: {} as StoreState, dispatch: vi.fn(), emit: () => {} }));
+const mocks = vi.hoisted(() => ({
+  state: {} as StoreState,
+  dispatch: vi.fn(),
+  request: vi.fn(),
+  emit: () => {},
+}));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   const mod = createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
+  const { select } = await import('typed-redux-saga');
+  const createSelector = mod.store.createSelector;
+  mod.store.createSelector = (selectorFunc) => {
+    const selector = createSelector(selectorFunc);
+    selector.effect = function* (...args) {
+      return yield* select(selectorFunc, ...args);
+    };
+    return selector;
+  };
   mocks.emit = mod.store.emitState;
   return mod;
 });
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { success: vi.fn() } }));
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
@@ -233,46 +249,91 @@ it.each(['member', 'unknown', 'host', 'withheld'] as const)(
   },
 );
 
-it('keeps create busy, copies its exact result, and starts a fresh draft after closing', async () => {
-  const {
-    hostMembershipStarted,
-    hostMembershipCreated,
-    hostMembershipFinished,
-    hostMembershipFailed,
-  } = await import('$store/renderer/slices/host-membership/host-membership-slice');
-  const { retainHostInviteLink, clearHostInviteLinks } = await import('./invite-links');
-  render(HostMembershipSettings, {
-    props: { context: selectPrincipalActionContext.select(mocks.state)! },
+it('keeps the real refresh failure through copy, close and a fresh draft until lists refresh', async () => {
+  const { runSaga, stdChannel } = await import('redux-saga');
+  const { hostMembershipSaga } =
+    await import('$store/renderer/slices/host-membership/sagas/host-membership-saga');
+  const channel = stdChannel();
+  const reduce = mocks.dispatch.getMockImplementation()!;
+  mocks.dispatch.mockImplementation((action) => {
+    reduce(action);
+    channel.put(action);
   });
-  const target = mocks.dispatch.mock.calls.find(
-    ([action]) => action.type === hostMembershipOpened.type,
-  )![0].payload[0];
-  await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
-  await fireEvent.input(screen.getByLabelText('Account username'), { target: { value: 'sam' } });
-  await fireEvent.click(screen.getByRole('checkbox'));
-  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
-  mocks.dispatch(hostMembershipStarted(target));
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Creating…' }).hasAttribute('disabled')).toBe(true),
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+  let created = false;
+  let failRefresh = true;
+  const url = 'intent://invite?controlled=created-exact';
+  const invite = {
+    id: 'created-exact',
+    scope: 'host',
+    role: 'member',
+    createdByPrincipalId: 'owner',
+    pinLogin: 'sam',
+    pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '2' },
+    reusable: false,
+    redemptionCount: 0,
+    createdAt: '2026-10-02T00:00:00Z',
+    expiresAt: '2026-10-09T00:00:00Z',
+  };
+  mocks.request.mockImplementation(async (method) => {
+    if (method === 'host.invite.create') {
+      created = true;
+      return {
+        invite,
+        url,
+        secret: 'controlled-only',
+        hosts: [],
+        port: 8080,
+        fingerprint: 'test',
+        version: 1,
+        tcAddress: 'test',
+      };
+    }
+    if (method === 'host.members.list') {
+      if (created && failRefresh) throw new Error('refresh failed');
+      return { members: [], revision: created ? 2 : 1 };
+    }
+    if (method === 'host.invite.list') return { invites: created ? [{ ...invite, url }] : [] };
+    throw new Error('unexpected method');
+  });
+  const saga = runSaga(
+    { channel, dispatch: mocks.dispatch, getState: () => mocks.state },
+    hostMembershipSaga,
   );
-  retainHostInviteLink(target.session, 'created-exact', 'intent://invite?controlled=1');
-  mocks.dispatch(hostMembershipCreated(target, 'created-exact'));
-  mocks.dispatch(hostMembershipFinished(target));
-  const dialog = screen.getByRole('dialog');
-  await fireEvent.click(await within(dialog).findByRole('button', { name: 'Copy link' }));
-  expect(mocks.dispatch).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: 'hostMembership/requested',
-      payload: [target, { kind: 'copy', inviteId: 'created-exact' }],
-    }),
-  );
-  mocks.dispatch(hostMembershipFailed(target, 'Could not refresh the member list.'));
-  await fireEvent.click(
-    within(dialog).getAllByRole('button', { name: 'Close', exact: true }).at(-1)!,
-  );
-  expect(screen.getByRole('alert').textContent).toContain('Could not refresh the member list.');
-  await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
-  expect((screen.getByLabelText('Account username') as HTMLInputElement).value).toBe('');
-  expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false');
-  clearHostInviteLinks(target.session);
+  try {
+    render(HostMembershipSettings, {
+      props: { context: selectPrincipalActionContext.select(mocks.state)! },
+    });
+    await waitFor(() => expect(mocks.state.hostMembership.loaded).toBe(true));
+    await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+    await fireEvent.input(screen.getByLabelText('Account username'), { target: { value: 'sam' } });
+    await fireEvent.click(screen.getByRole('checkbox'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+    await waitFor(() => expect(mocks.state.hostMembership.error).toBeTruthy());
+    const refreshError = mocks.state.hostMembership.error!;
+    let dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('alert').textContent).toBe(refreshError);
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Copy link' }));
+    await waitFor(() => expect(mocks.state.hostMembership.busy).toBe(false));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(url);
+    await fireEvent.click(
+      within(dialog).getAllByRole('button', { name: 'Close', exact: true }).at(-1)!,
+    );
+    expect(screen.getByRole('alert').textContent).toBe(refreshError);
+    await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+    dialog = screen.getByRole('dialog');
+    expect((screen.getByLabelText('Account username') as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false');
+    expect(within(dialog).getByRole('alert').textContent).toBe(refreshError);
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    failRefresh = false;
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Refresh', exact: true }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.getByRole('list', { name: 'Open invites' }).textContent).toContain('@sam');
+  } finally {
+    cleanup();
+    saga.cancel();
+    vi.unstubAllGlobals();
+  }
 });

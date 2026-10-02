@@ -61,6 +61,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
   const [target, command] = action.payload;
   if (!(yield* current(target)) || (yield* selectHostMembershipState.effect()).busy) return;
   yield* put(hostMembershipStarted(target));
+  let refreshing = false;
   let created: { id: string; url: string } | undefined;
   try {
     if (command.kind === 'copy') {
@@ -104,6 +105,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       yield* call(hostMembershipClient.revokeInvite, command.inviteId);
     }
     if (!(yield* current(target))) return;
+    refreshing = true;
     const { roster, invitationList } = yield* all({
       roster: call(hostMembershipClient.listMembers),
       invitationList: call(hostMembershipClient.listInvites),
@@ -152,7 +154,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
     if (isForbiddenErrorResponse(error)) {
       clearHostInviteLinks(target.session);
       yield* put(hostMembershipDenied(target, message));
-    } else yield* put(hostMembershipFailed(target, message));
+    } else yield* put(hostMembershipFailed(target, message, refreshing));
   }
 }
 

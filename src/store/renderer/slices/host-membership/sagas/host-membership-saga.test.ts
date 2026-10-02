@@ -151,6 +151,77 @@ describe('owner host membership wire and authority', () => {
       h.task.cancel();
     }
   });
+  it.each([false, true])(
+    'recovers from a copy failure while retaining refresh warnings: %s',
+    async (failedRefresh) => {
+      const h = harness();
+      const writeText = vi.fn().mockRejectedValue(new Error('clipboard unavailable'));
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      try {
+        h.dispatch(hostMembershipOpened(h.target));
+        await settle();
+        if (failedRefresh) {
+          mocks.request.mockRejectedValue(new Error('refresh failed'));
+          h.dispatch(hostMembershipRequested(h.target, { kind: 'load' }));
+          await settle();
+        }
+        const refreshError = h.state().hostMembership.error;
+        mocks.request.mockClear();
+        h.dispatch(hostMembershipRequested(h.target, { kind: 'copy', inviteId: 'invite' }));
+        await settle();
+        expect(h.state().hostMembership.error).toBeTruthy();
+        expect(h.state().hostMembership.busy).toBe(false);
+        expect(h.actions.at(-1)).toMatchObject({ type: 'hostMembership/failed' });
+        writeText.mockResolvedValue(undefined);
+        h.dispatch(hostMembershipRequested(h.target, { kind: 'copy', inviteId: 'invite' }));
+        await settle();
+        expect(writeText.mock.calls).toEqual([[url], [url]]);
+        expect(mocks.request).not.toHaveBeenCalled();
+        expect(h.state().hostMembership.error).toBe(refreshError);
+      } finally {
+        h.dispatch(hostMembershipClosed(h.target));
+        h.task.cancel();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+  it.each(['resolve', 'reject'] as const)(
+    'ignores a late copy %s after switching invitation sessions',
+    async (outcome) => {
+      const h = harness();
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      const writeText = vi.fn(
+        () =>
+          new Promise<void>((yes, no) => {
+            resolve = yes;
+            reject = no;
+          }),
+      );
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      try {
+        h.dispatch(hostMembershipOpened(h.target));
+        await settle();
+        h.dispatch(hostMembershipRequested(h.target, { kind: 'copy', inviteId: 'invite' }));
+        await settle();
+        h.dispatch(hostMembershipClosed(h.target));
+        h.dispatch(hostMembershipOpened({ ...h.target, session: 'new-session' }));
+        await settle();
+        const state = h.state().hostMembership;
+        const actionCount = h.actions.length;
+        if (outcome === 'resolve') resolve();
+        else reject(new Error('late clipboard failure'));
+        await settle();
+        expect(writeText).toHaveBeenCalledExactlyOnceWith(url);
+        expect(h.state().hostMembership).toBe(state);
+        expect(h.actions).toHaveLength(actionCount);
+      } finally {
+        h.dispatch(hostMembershipClosed({ ...h.target, session: 'new-session' }));
+        h.task.cancel();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
   it('rejects duplicate creation while the first request is pending', async () => {
     const h = harness();
     try {

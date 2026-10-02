@@ -24,6 +24,7 @@ export interface HostMembershipState {
   withheld: boolean;
   busy: boolean;
   error: string | null;
+  refreshError: string | null;
   revision: number | null;
   createdInviteId: string | null;
 }
@@ -35,6 +36,7 @@ export const initialState: HostMembershipState = {
   withheld: false,
   busy: false,
   error: null,
+  refreshError: null,
   revision: null,
   createdInviteId: null,
 };
@@ -61,7 +63,9 @@ export const hostMembershipDenied =
 export const hostMembershipFinished =
   createAction<[target: HostMembershipTarget]>('hostMembership/finished');
 export const hostMembershipFailed =
-  createAction<[target: HostMembershipTarget, error: string]>('hostMembership/failed');
+  createAction<[target: HostMembershipTarget, error: string, refresh?: boolean]>(
+    'hostMembership/failed',
+  );
 export const hostMembershipReducer = createReducer(initialState);
 const matches = (state: HostMembershipState, target: HostMembershipTarget) =>
   state.target?.session === target.session && state.target.context === target.context;
@@ -73,7 +77,7 @@ hostMembershipReducer.with(hostMembershipClosed, (state, { payload: [target] }) 
   matches(state, target) ? initialState : state,
 );
 hostMembershipReducer.with(hostMembershipStarted, (state, { payload: [target] }) =>
-  matches(state, target) ? { ...state, busy: true, error: null } : state,
+  matches(state, target) ? { ...state, busy: true, error: state.refreshError } : state,
 );
 hostMembershipReducer.with(
   hostMembershipLoaded,
@@ -84,18 +88,21 @@ hostMembershipReducer.with(
           busy: false,
           loaded: true,
           error: null,
+          refreshError: null,
           revision,
           members: createCollection('principalId', members),
           invites: createCollection('id', invites),
         }
       : state,
 );
-hostMembershipReducer.with(hostMembershipFailed, (state, { payload: [target, error] }) =>
-  matches(state, target) ? { ...state, busy: false, error } : state,
+hostMembershipReducer.with(hostMembershipFailed, (state, { payload: [target, error, refresh] }) =>
+  matches(state, target)
+    ? { ...state, busy: false, error, refreshError: refresh ? error : state.refreshError }
+    : state,
 );
 
 hostMembershipReducer.with(hostMembershipFinished, (state, { payload: [target] }) =>
-  matches(state, target) ? { ...state, busy: false, error: null } : state,
+  matches(state, target) ? { ...state, busy: false, error: state.refreshError } : state,
 );
 
 hostMembershipReducer.with(hostMembershipDenied, (state, { payload: [target, error] }) =>
