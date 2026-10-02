@@ -125,8 +125,7 @@ for (const preserveAnchors of [true, false]) {
     const saved = processHTMLToMarkdown(host.innerHTML, { preserveAnchors });
     host.innerHTML = await processMarkdownToHTML(saved);
     expect(host.querySelector('script,[onclick],[onerror],[style]')).toBeNull();
-    for (const a of host.querySelectorAll('a'))
-      expect(a.getAttribute('href')).toBeNull();
+    for (const a of host.querySelectorAll('a')) expect(a.getAttribute('href')).toBeNull();
     expect(host.textContent).toContain('safe');
     expect(host.textContent).toContain('<script>literal</script>');
   });
