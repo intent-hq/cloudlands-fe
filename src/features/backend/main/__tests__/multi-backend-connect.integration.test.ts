@@ -63,6 +63,9 @@ const electronState = vi.hoisted(() => ({
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
   ownerIdentityAvailable: true,
+  hello: null as unknown,
+  identityMethods: [] as string[],
+  identityFailure: null as { method: string; code: number } | null,
 }));
 
 vi.mock('electron', () => ({
@@ -129,8 +132,13 @@ vi.mock('../json-rpc-client', () => {
     start(): void {}
     dispose(): void {}
     request = vi.fn(async (method: string) => {
+      if (rpc.identityFailure?.method === method) {
+        const { JsonRpcError } = await import('../json-rpc-errors');
+        throw new JsonRpcError({ code: rpc.identityFailure.code, message: 'Method not found' });
+      }
+      if (method === 'client.hello' || method === 'principal.me') rpc.identityMethods.push(method);
       // Controlled legacy-owner wire responses exercise the real import classifier.
-      if (method === 'client.hello') return { server: { capabilities: {} } };
+      if (method === 'client.hello') return rpc.hello ?? { server: { capabilities: {} } };
       if (method === 'principal.me')
         return rpc.ownerIdentityAvailable
           ? { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true }
@@ -272,6 +280,9 @@ beforeEach(async () => {
   electronState.decryptShouldFail = false;
   rpc.handler = async () => ({});
   rpc.ownerIdentityAvailable = true;
+  rpc.hello = null;
+  rpc.identityMethods = [];
+  rpc.identityFailure = null;
   vi.resetModules();
   vi.clearAllMocks();
   mockCaptureFingerprint.mockResolvedValue({
@@ -293,6 +304,45 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-backend connect — end-to-end journey', () => {
+  it('rejects the old backend before principal.me and writes neither connection registry', async () => {
+    rpc.hello = {
+      server: { version: '0.9.12', protocolVersion: '9.4', capabilities: { liveState: true } },
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const error = await invoke('connections:add', {
+      ...REMOTE_INPUT,
+      fingerprint: FINGERPRINT,
+    }).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('0.9.12');
+    expect((error as Error).message).toContain('0.1.0');
+    expect(rpc.identityMethods).toEqual(['client.hello']);
+    expect(await fs.readdir(tmpDir)).not.toContain('backend-connections.json');
+    expect(await fs.readdir(tmpDir)).not.toContain('guest-sessions.json');
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it.each(['client.hello', 'principal.me'])(
+    'names missing %s and preserves the real registry on failed re-pair',
+    async (method) => {
+      const { mod, openOrFocus } = await loadModule();
+      mod.registerBackendHandlers();
+      await invoke('connections:add', { ...REMOTE_INPUT, fingerprint: FINGERPRINT });
+      const before = await fs.readFile(path.join(tmpDir, 'backend-connections.json'), 'utf8');
+      rpc.identityFailure = { method, code: -32601 };
+      await expect(
+        invoke('connections:add', {
+          ...REMOTE_INPUT,
+          token: 'replacement-secret',
+          fingerprint: FINGERPRINT,
+        }),
+      ).rejects.toThrow(method);
+      expect(await fs.readFile(path.join(tmpDir, 'backend-connections.json'), 'utf8')).toBe(before);
+      expect(openOrFocus).not.toHaveBeenCalled();
+    },
+  );
+
   it('refuses an unclassified credential before writing the real owner registry', async () => {
     rpc.ownerIdentityAvailable = false;
     const { mod, openOrFocus } = await loadModule();
