@@ -219,7 +219,7 @@
   let isEditing = $state(false);
   let editingValue = $state('');
   let editInputRef: HTMLInputElement | null = $state(null);
-  let contextMenu: SidebarContextPosition | null = $state(null);
+  let contextMenu: (SidebarContextPosition & { sourcePanelId?: string }) | null = $state(null);
   let harnessModalOpen = $state(false);
   let replaceAgentModalOpen = $state(false);
   let retireAgentModalOpen = $state(false);
@@ -317,7 +317,7 @@
     if (readOnly) return;
     const position = getSidebarContextPosition(e);
     if (!position) return;
-    contextMenu = position;
+    contextMenu = { ...position, sourcePanelId: findSourcePanelId(e.currentTarget) };
     if ($agent$?.effectiveIsolation === 'isolated') appStore.dispatch(nodeCapabilitiesRequested());
     void appStore.dispatch(agentRetirementSupportRequested());
     // Read detail-only menu fields on demand; items update when they arrive.
@@ -345,7 +345,9 @@
                 ? String(workspace.id)
                 : undefined;
             if (wsId) {
-              appStore.dispatch(openAgentTabRequested(wsId, { agentId }));
+              appStore.dispatch(
+                openAgentTabRequested(wsId, { agentId, sourcePanelId: contextMenu?.sourcePanelId }),
+              );
             }
           }
           closeContextMenu();
@@ -692,7 +694,7 @@
     if (onclick) {
       onclick(event);
     } else {
-      const sourcePanelId = findSourcePanelId(event.target);
+      const sourcePanelId = findSourcePanelId(event.currentTarget);
       const openInAdjacentPanel = isCmdClickModifier({ event });
       const wsId = $agent$?.workspaceId
         ? String($agent$.workspaceId)

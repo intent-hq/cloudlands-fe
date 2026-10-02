@@ -96,6 +96,8 @@
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
     getFinishedAgentsExpanded,
@@ -686,7 +688,7 @@
     clearWatchedAgentFocusTimers();
   });
 
-  function openWatchedAgent(_event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
+  function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
@@ -695,7 +697,13 @@
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }
-    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: watchedAgentId }));
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: watchedAgentId,
+        sourcePanelId: findSourcePanelId(event.currentTarget),
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
     focusWatchedAgentPanel(watchedAgentId);
   }
 </script>
