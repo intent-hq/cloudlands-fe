@@ -299,7 +299,8 @@ test('keyboard message navigation releases follow and can return to bottom', asy
   const down = bottomArrow(component);
   await down.expectAtBottom(true);
   const bottom = await scroll.evaluate((node) => node.scrollTop);
-  for (let step = 0; step < 3; step++) {
+  const navigationSteps = 4;
+  for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(
         new CustomEvent('navigate-message', { detail: { direction: 'previous' } }),
@@ -308,9 +309,20 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     await page.waitForTimeout(200);
   }
   await page.waitForTimeout(500);
+  const target = component.locator('[data-message-id="user-24"]');
+  const centerOffset = await target.evaluate(
+    (node, container) => {
+      const message = node.getBoundingClientRect();
+      const viewport = (container as HTMLElement).getBoundingClientRect();
+      return message.top + message.height / 2 - (viewport.top + viewport.height / 2);
+    },
+    await scroll.elementHandle(),
+  );
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
-  expect(readingPosition).toBeLessThan(bottom - 20);
-  for (let step = 0; step < 3; step++) {
+  expect(Math.abs(centerOffset)).toBeLessThanOrEqual(3);
+  expect(readingPosition).toBeLessThan(bottom);
+  await down.expectAtBottom(false);
+  for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent('navigate-message', { detail: { direction: 'next' } })),
     );
@@ -324,6 +336,7 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     body: JSON.stringify({
       bottom,
       readingPosition,
+      centerOffset,
       returnedPosition: await scroll.evaluate((node) => node.scrollTop),
       bottomDistance: await scroll.evaluate(
         (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
