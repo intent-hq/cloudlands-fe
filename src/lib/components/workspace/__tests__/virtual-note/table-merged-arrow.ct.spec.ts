@@ -133,6 +133,33 @@ for (const key of ['ArrowUp', 'ArrowDown'])
         editor.view.dispatch(editor.state.tr.scrollIntoView());
       }, target);
     await settled(page);
+    const nativeBefore = await page
+      .getByTestId('native')
+      .getByTestId('proof')
+      .evaluate((el) => {
+        const editor = (el as Host).native,
+          dom = window.getSelection();
+        return {
+          active: document.activeElement === editor.view.dom,
+          pm: editor.state.selection.toJSON(),
+          dom:
+            dom?.focusNode && editor.view.dom.contains(dom.focusNode)
+              ? {
+                  anchor: editor.view.posAtDOM(dom.anchorNode!, dom.anchorOffset),
+                  head: editor.view.posAtDOM(dom.focusNode, dom.focusOffset),
+                }
+              : null,
+        };
+      });
+    await info.attach('native-arrow-precondition.json', {
+      body: JSON.stringify(nativeBefore),
+      contentType: 'application/json',
+    });
+    expect(nativeBefore.active).toBe(true);
+    expect(nativeBefore.dom).toEqual({
+      anchor: nativeBefore.pm.anchor,
+      head: nativeBefore.pm.head,
+    });
     await page.keyboard.press(key);
     await settled(page);
     const native = await page
