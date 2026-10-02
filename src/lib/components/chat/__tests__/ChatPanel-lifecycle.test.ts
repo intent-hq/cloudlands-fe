@@ -45,6 +45,9 @@ const mocks = vi.hoisted(() => {
         value = next;
         for (const subscriber of subscribers) subscriber(value);
       },
+      get() {
+        return value;
+      },
     };
   };
   const readable = <T>(value: T) => ({
@@ -92,6 +95,17 @@ const mocks = vi.hoisted(() => {
     >(undefined),
     chatError: mutableReadable<string | null>(null),
     chatQuotaExceeded: mutableReadable<{ providerId: string } | null>(null),
+    userMessageIndexUi: mutableReadable<
+      | {
+          id: string;
+          requestId: string;
+          agentId: string;
+          epoch: number;
+          status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+          result?: { ok: true; items: unknown[]; total: number };
+        }
+      | undefined
+    >(undefined),
     // Store state served by the app-store mock; tests seed real slice state
     // here when a code path reads the store directly through `select`.
     storeState: {} as unknown,
@@ -233,6 +247,12 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectTranscriptSnapshotMeta: Object.assign(() => mocks.transcriptSnapshotMeta, {
     select: () => undefined,
   }),
+}));
+vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', () => ({
+  selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
+    select: () => mocks.userMessageIndexUi.get(),
+  }),
+  selectRetryAgentUi: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
@@ -782,6 +802,7 @@ beforeEach(() => {
       setWorkspaceEntity({ ...workspace('workspace-b'), myRole: 'owner' }),
     ),
   };
+  mocks.userMessageIndexUi.set(undefined);
   mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -4212,8 +4233,6 @@ describe('ChatPanel mounted lifecycle', () => {
         contentBlocks: [{ type: 'text', text: 'User prompt' }],
       },
     ]);
-    const pending = deferred<{ ok: true; items: unknown[]; total: number }>();
-    mocks.listUserMessages.mockReturnValue(pending.promise);
     const onNavigationStateChange = vi.fn();
     const view = render(ChatPanel, {
       props: {
@@ -4225,21 +4244,44 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
 
     view.component.refreshUserMessageIndex();
+    const request = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'chatPanelUi/userMessageIndexRequested');
+    expect(request?.payload).toEqual([
+      'workspace-a',
+      expect.any(String),
+      expect.any(String),
+      'agent-a',
+      0,
+    ]);
+    const [, consumerId, requestId] = request.payload as string[];
+    mocks.userMessageIndexUi.set({
+      id: consumerId,
+      requestId,
+      agentId: 'agent-a',
+      epoch: 0,
+      status: 'pending',
+    });
     await tick();
-    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a', undefined, 'workspace-a');
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ isLoadingUserMessageIndex: true }),
     );
 
-    pending.resolve({
-      ok: true,
-      items: [
-        { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
-        { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
-      ],
-      total: 2,
+    mocks.userMessageIndexUi.set({
+      id: consumerId,
+      requestId,
+      agentId: 'agent-a',
+      epoch: 0,
+      status: 'succeeded',
+      result: {
+        ok: true,
+        items: [
+          { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
+          { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+        ],
+        total: 2,
+      },
     });
-    await vi.advanceTimersByTimeAsync(0);
     await tick();
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -4253,8 +4295,6 @@ describe('ChatPanel mounted lifecycle', () => {
 
     // Reopen with a cached index: single-flight refresh must not re-report loading.
     onNavigationStateChange.mockClear();
-    mocks.listUserMessages.mockClear();
-    mocks.listUserMessages.mockReturnValue(new Promise(() => {}));
     view.component.refreshUserMessageIndex();
     await tick();
     expect(

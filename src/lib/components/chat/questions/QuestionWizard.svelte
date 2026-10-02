@@ -11,24 +11,22 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import { AskUserQuestions } from '$lib/components/ui/ask-user-questions';
   import type { AskUserAnswer, AskUserQuestion } from '$lib/components/ui/ask-user-questions';
   import { Button } from '$lib/components/ui/button';
   import { crispOut, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
+  import type {
+    QuestionWizardDraft,
+    QuestionWizardDraftAnswer,
+  } from '$store/renderer/slices/question-ui/question-ui-types';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
-  import {
-    clearWizardDraft,
-    loadWizardDraft,
-    saveWizardDraft,
-    type WizardDraft,
-  } from './wizard-draft-storage';
 
   interface Props {
     questions: Question[];
-    /** Immutable per mounted question set; absent means no persistence. */
-    draftKey?: string;
+    draft?: QuestionWizardDraft;
+    onDraftChange?: (draft: QuestionWizardDraft) => void;
+    onResolved?: () => void;
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
     /** Return false to decline admission; legacy notification callbacks remain valid. */
@@ -36,33 +34,26 @@
     onDismiss?: () => Promise<void> | void;
   }
 
-  interface DraftAnswer {
-    sel: number[];
-    text: string;
-    skipped: boolean;
-  }
-
   let {
     questions,
-    draftKey = undefined,
+    draft = undefined,
+    onDraftChange,
+    onResolved,
     collapsed = false,
     onToggleCollapsed,
     onComplete,
     onDismiss,
   }: Props = $props();
 
-  // svelte-ignore state_referenced_locally
-  const draftStorageKey = draftKey;
-  // svelte-ignore state_referenced_locally
-  const restoredDraft = draftStorageKey ? loadWizardDraft(draftStorageKey, questions) : null;
-
-  let idx = $state(restoredDraft?.idx ?? 0);
+  let localDraft = $state<QuestionWizardDraft>({
+    idx: 0,
+    answers: questions.map(() => ({ sel: [], text: '', skipped: false })),
+  });
+  const activeDraft = $derived(draft ?? localDraft);
+  const idx = $derived(activeDraft.idx);
+  const answers = $derived(activeDraft.answers);
   let completed = $state(false);
   let confirmingDismiss = $state(false);
-  // svelte-ignore state_referenced_locally
-  let answers = $state<DraftAnswer[]>(
-    restoredDraft?.answers ?? questions.map(() => ({ sel: [], text: '', skipped: false })),
-  );
 
   const multiStep = $derived(questions.length > 1);
   const primitiveQuestions = $derived<AskUserQuestion[]>(
@@ -103,62 +94,21 @@
     ),
   );
 
-  const DRAFT_SAVE_DEBOUNCE_MS = 300;
-  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingDraftSave: WizardDraft | null = null;
   let draftResolved = false;
-  let draftEffectPrimed = false;
-
-  function cancelPendingDraftSave() {
-    if (draftSaveTimer !== null) {
-      clearTimeout(draftSaveTimer);
-      draftSaveTimer = null;
-    }
-    pendingDraftSave = null;
-  }
 
   function resolveDraft() {
-    if (!draftStorageKey) return;
+    if (draftResolved) return;
     draftResolved = true;
-    cancelPendingDraftSave();
-    clearWizardDraft(draftStorageKey);
+    onResolved?.();
   }
 
-  $effect(() => {
-    const key = draftStorageKey;
-    if (!key) return;
-    const snapshot: WizardDraft = {
-      idx,
-      answers: answers.map((answer) => ({
-        sel: [...answer.sel],
-        text: answer.text,
-        skipped: answer.skipped,
-      })),
-    };
-    if (!draftEffectPrimed) {
-      draftEffectPrimed = true;
-      return;
-    }
+  function updateDraft(next: QuestionWizardDraft) {
     if (draftResolved) return;
-    pendingDraftSave = snapshot;
-    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
-    draftSaveTimer = setTimeout(() => {
-      draftSaveTimer = null;
-      if (pendingDraftSave && !draftResolved) {
-        saveWizardDraft(key, pendingDraftSave);
-        pendingDraftSave = null;
-      }
-    }, DRAFT_SAVE_DEBOUNCE_MS);
-  });
+    if (onDraftChange) onDraftChange(next);
+    else localDraft = next;
+  }
 
-  onDestroy(() => {
-    if (draftStorageKey && pendingDraftSave && !draftResolved) {
-      saveWizardDraft(draftStorageKey, pendingDraftSave);
-    }
-    cancelPendingDraftSave();
-  });
-
-  function toDraftAnswers(next: Record<string, AskUserAnswer>): DraftAnswer[] {
+  function toDraftAnswers(next: Record<string, AskUserAnswer>): QuestionWizardDraftAnswer[] {
     return questions.map((question) => {
       const answer = next[question.attachmentId];
       if (!answer || answer.skipped)
@@ -180,7 +130,7 @@
     });
   }
 
-  function buildAnswers(source: DraftAnswer[]): QuestionAnswer[] {
+  function buildAnswers(source: QuestionWizardDraftAnswer[]): QuestionAnswer[] {
     return questions.map((question, questionIndex) => {
       const answer = source[questionIndex];
       return {
@@ -193,21 +143,20 @@
   }
 
   function handleAnswersChange(next: Record<string, AskUserAnswer>) {
-    if (!completed) answers = toDraftAnswers(next);
+    if (!completed) updateDraft({ idx, answers: toDraftAnswers(next) });
   }
 
   function handleComplete(next: Record<string, AskUserAnswer>) {
     if (completed) return;
     const completedAnswers = toDraftAnswers(next);
-    answers = completedAnswers;
-    // A declined local admission must leave this draft editable and retryable.
+    updateDraft({ idx, answers: completedAnswers });
     if (onComplete?.(buildAnswers(completedAnswers)) === false) return;
     completed = true;
     resolveDraft();
   }
 
   function handleBack(currentIndex: number) {
-    if (!completed) idx = Math.max(0, currentIndex - 1);
+    if (!completed) updateDraft({ idx: Math.max(0, currentIndex - 1), answers });
   }
 
   let root = $state<HTMLDivElement>();
@@ -333,7 +282,7 @@
         currentIndex={idx}
         answers={primitiveAnswers}
         onCurrentIndexChange={(nextIndex) => {
-          if (!completed) idx = nextIndex;
+          if (!completed) updateDraft({ idx: nextIndex, answers });
         }}
         onAnswersChange={handleAnswersChange}
         onComplete={handleComplete}

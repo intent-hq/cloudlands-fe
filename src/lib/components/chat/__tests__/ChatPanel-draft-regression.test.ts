@@ -526,6 +526,50 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     expect(composer().readOnly).toBe(false);
   });
 
+  // REGRESSION: a drafts.set already in flight when the send clears the
+  // composer must reach the daemon before drafts.clear, and its late success
+  // must not write the sent prompt back into the switch-back cache.
+  it('orders an in-flight save before the send clear and keeps the cleared cache', async () => {
+    const drafts = {
+      ...makeDrafts(() => Promise.resolve(null)),
+      clear: vi.fn<DraftsClient['clear']>(() => Promise.resolve({ ok: true as const })),
+    };
+    const inFlight = deferred<{ ok: true; updatedAt: string }>();
+    drafts.set.mockReturnValueOnce(inFlight.promise);
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+
+    await typeInComposer('prompt being sent');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(drafts.set).toHaveBeenCalledWith(WS, AGENT, 'prompt being sent', undefined);
+
+    view.component.simulateSendCleanup();
+    flushSync();
+    await flushMicrotasks();
+    expect(drafts.clear).not.toHaveBeenCalled();
+
+    inFlight.resolve({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
+    await flushMicrotasks(10);
+    expect(drafts.clear).toHaveBeenCalledOnce();
+    expect(drafts.clear).toHaveBeenCalledWith(WS, AGENT);
+    expect(drafts.set.mock.invocationCallOrder[0]).toBeLessThan(
+      drafts.clear.mock.invocationCallOrder[0],
+    );
+
+    view.unmount();
+    render(ChatDraftHarness, {
+      props: {
+        drafts: makeDrafts(() => deferred<Draft | null>().promise),
+        workspaceId: WS,
+        agentId: AGENT,
+      },
+    });
+    flushSync();
+    expect(composer().value).toBe('');
+  });
+
   it('releases an active gate immediately when invalidatePendingRestore() is called', async () => {
     const pending = deferred<Draft | null>();
     const drafts = makeDrafts(() => pending.promise);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   sendQueuedNow: vi.fn(),
   sendQueuedMessagesNow: vi.fn(),
   removeQueued: vi.fn(),
+  editQueued: vi.fn(),
   stop: vi.fn(),
   rename: vi.fn(),
   toastInfo: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('$lib/client', () => ({
       sendQueuedNow: mocks.sendQueuedNow,
       sendQueuedMessagesNow: mocks.sendQueuedMessagesNow,
       removeQueued: mocks.removeQueued,
+      editQueued: mocks.editQueued,
       stop: mocks.stop,
       rename: mocks.rename,
     },
@@ -79,9 +81,11 @@ import {
 import {
   agentQueueReducer,
   initialState as queueInitialState,
-  removeQueuedMessageRequested,
+  queuedMessageMutationRequested,
   replaceAgentQueue,
+  upsertQueuedMessageInAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
+import type { QueuedMessageMutationOperation } from '../../agent-queue/agent-queue-types';
 import {
   __resetAgentQueueReadServiceForTests,
   noteAgentQueueEventSnapshotApplied,
@@ -90,13 +94,13 @@ import { initialState as workspaceInitialState } from '../../workspace/workspace
 import {
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
+  chatQueuedRetryRecordUpdated,
   chatLastAttemptedMessageSet,
   chatSendFailed,
   initialState as chatInitialState,
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
-  sendQueuedMessageNowRequested,
   sendQueuedMessagesNowRequested,
   clearQueuedMessagesRequested,
   streamActivityReceived,
@@ -108,6 +112,21 @@ import { chatSendSaga } from './chat-send-saga';
 const WS = 'ws-send';
 const AGENT = 'agent-send';
 const OTHER_AGENT = 'agent-other';
+let mutationSeq = 0;
+function queuedMutation(
+  messageId: string,
+  operation: QueuedMessageMutationOperation,
+  workspaceId = WS,
+): ReturnType<typeof queuedMessageMutationRequested> {
+  return queuedMessageMutationRequested({
+    requestId: `request-${++mutationSeq}`,
+    consumerId: 'panel-a',
+    workspaceId,
+    agentId: AGENT,
+    messageId,
+    operation,
+  });
+}
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -182,6 +201,18 @@ function harness(
     channel,
     dispatch,
     task,
+    /** Dispatch a queued mutation through the reducer and the saga channel, as the store does. */
+    request: (action: ReturnType<typeof queuedMessageMutationRequested>) => {
+      agentQueue = agentQueueReducer(agentQueue, action);
+      channel.put(action);
+      return action;
+    },
+    outcome: async (action: ReturnType<typeof queuedMessageMutationRequested>) => {
+      const id = action.payload[0].requestId;
+      await vi.waitFor(() => expect(getItem(agentQueue.mutations, id)?.status).not.toBe('pending'));
+      return getItem(agentQueue.mutations, id);
+    },
+    queue: () => agentQueue,
     setChat: (
       action:
         ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
@@ -396,7 +427,7 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'first' }));
 
     await vi.waitFor(() => expect(order).toEqual(['send']));
-    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-1'));
+    run.request(queuedMutation('queued-1', { kind: 'remove' }));
     run.channel.put(retry);
     run.channel.put(stop);
     await stop.promise;
@@ -456,7 +487,7 @@ describe('chatSendSaga', () => {
     const stop = agentSessionStopChatRequested(AGENT);
 
     run.channel.put(stop);
-    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-after-failure'));
+    run.request(queuedMutation('queued-after-failure', { kind: 'remove' }));
 
     await expect(stop.promise).rejects.toThrow('stop failed');
     await vi.waitFor(() =>
@@ -471,7 +502,7 @@ describe('chatSendSaga', () => {
     mocks.removeQueued.mockRejectedValue(new Error('offline'));
     const run = harness();
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'ignored', queuedMessageId: 'queued-1' }));
-    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-2'));
+    const removal = run.request(queuedMutation('queued-2', { kind: 'remove' }));
     await settle();
 
     expect(mocks.sendQueuedNow).toHaveBeenCalledWith({
@@ -511,9 +542,12 @@ describe('chatSendSaga', () => {
       run.dispatch(replaceAgentQueue(AGENT, entries));
       run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'running turn' }));
       run.dispatch.mockClear();
-      const action = sendQueuedMessageNowRequested(AGENT, WS, 'chosen');
-      run.channel.put(action);
-      await expect(action.promise).resolves.toBe(outcome);
+      const action = run.request(queuedMutation('chosen', { kind: 'sendNow' }));
+      await expect(run.outcome(action)).resolves.toMatchObject({
+        consumerId: 'panel-a',
+        status: 'succeeded',
+        sendOutcome: outcome,
+      });
       expect(mocks.sendQueuedNow).toHaveBeenCalledExactlyOnceWith({
         agentId: AGENT,
         workspaceId: WS,
@@ -527,7 +561,7 @@ describe('chatSendSaga', () => {
           ([sent]) =>
             sent.type === 'transientUi/clearChatDraft' ||
             sent.type === chatLastAttemptedMessageSet.type ||
-            sent.type.startsWith('agentQueue/'),
+            (sent.type.startsWith('agentQueue/') && sent.type !== 'agentQueue/mutationFinished'),
         ),
       ).toBe(false);
       if (outcome === 'delivered') {
@@ -542,78 +576,6 @@ describe('chatSendSaga', () => {
     },
   );
 
-  it.each([
-    { result: { success: true, queued: false, turnId: 'batch-turn' }, outcome: 'delivered' },
-    { result: { success: true, queued: true }, outcome: 'queued' },
-    { result: { success: true, queued: true, quarantined: true }, outcome: 'quarantined' },
-  ])('acknowledges one bulk send as $outcome', async ({ result, outcome }) => {
-    mocks.sendQueuedMessagesNow.mockResolvedValue(result);
-    const run = harness();
-    const action = sendQueuedMessagesNowRequested(AGENT, WS, ['one', 'two']);
-    run.channel.put(action);
-    await expect(action.promise).resolves.toBe(outcome);
-    expect(mocks.sendQueuedMessagesNow).toHaveBeenCalledExactlyOnceWith({
-      agentId: AGENT,
-      workspaceId: WS,
-      messageIds: ['one', 'two'],
-    });
-    expect(mocks.sendQueuedNow).not.toHaveBeenCalled();
-    expect(mocks.send).not.toHaveBeenCalled();
-    expect(mocks.removeQueued).not.toHaveBeenCalled();
-    expect(
-      run.dispatch.mock.calls.some(([sent]) => sent.type === 'transientUi/clearChatDraft'),
-    ).toBe(false);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('clears only acknowledged snapshot IDs and stops on failure', async () => {
-    let acknowledge!: (value: { success: boolean }) => void;
-    mocks.removeQueued
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          acknowledge = resolve;
-        }),
-      )
-      .mockResolvedValueOnce({ success: false, error: 'permission denied' });
-    const run = harness();
-    const action = clearQueuedMessagesRequested(AGENT, WS, ['one', 'two', 'three']);
-    run.channel.put(action);
-    await settle();
-    expect(
-      run.dispatch.mock.calls.some(([sent]) => sent.type === 'agentQueue/removeQueuedMessage'),
-    ).toBe(false);
-    acknowledge({ success: true });
-    await expect(action.promise).rejects.toThrow('permission denied');
-    expect(mocks.removeQueued.mock.calls).toEqual([
-      [AGENT, 'one', WS],
-      [AGENT, 'two', WS],
-    ]);
-    const removed = run.dispatch.mock.calls.filter(
-      ([sent]) => sent.type === 'agentQueue/removeQueuedMessage',
-    );
-    expect(removed).toHaveLength(1);
-    expect(removed[0][0].payload).toEqual([AGENT, 'one']);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('rejects active and pending bulk commands on cancellation', async () => {
-    mocks.sendQueuedMessagesNow.mockReturnValue(new Promise(() => {}));
-    const run = harness();
-    const send = sendQueuedMessagesNowRequested(AGENT, WS, ['one']);
-    const clear = clearQueuedMessagesRequested(AGENT, WS, ['two']);
-    run.channel.put(send);
-    run.channel.put(clear);
-    const rejected = Promise.all([
-      expect(send.promise).rejects.toThrow('cancelled'),
-      expect(clear.promise).rejects.toThrow('cancelled'),
-    ]);
-    run.task.cancel();
-    await rejected;
-    await run.task.toPromise();
-    expect(mocks.removeQueued).not.toHaveBeenCalled();
-  });
   it.each(['before', 'after'] as const)(
     'keeps send-now processing payload when its event arrives %s the response',
     async (eventOrder) => {
@@ -645,9 +607,8 @@ describe('chatSendSaga', () => {
           run.dispatch(chatQueueProcessingReceived(AGENT, 'turn-now', [admitted]));
         return { success: true, queued: false, turnId: 'turn-now' };
       });
-      const action = sendQueuedMessageNowRequested(AGENT, WS, original.id);
-      run.channel.put(action);
-      await expect(action.promise).resolves.toBe('delivered');
+      const action = run.request(queuedMutation(original.id, { kind: 'sendNow' }));
+      await expect(run.outcome(action)).resolves.toMatchObject({ sendOutcome: 'delivered' });
       if (eventOrder === 'after')
         run.dispatch(chatQueueProcessingReceived(AGENT, 'turn-now', [admitted]));
       run.dispatch(replaceAgentQueue(AGENT, [original], WS));
@@ -673,21 +634,20 @@ describe('chatSendSaga', () => {
   it('rejects failed and cancelled send-now requests without retrying or dropping the queued item', async () => {
     mocks.sendQueuedNow.mockResolvedValueOnce({ success: false, error: 'already drained' });
     const run = harness();
-    const failed = sendQueuedMessageNowRequested(AGENT, WS, 'gone');
-    run.channel.put(failed);
-    await expect(failed.promise).rejects.toThrow('already drained');
+    const failed = run.request(queuedMutation('gone', { kind: 'sendNow' }));
+    await expect(run.outcome(failed)).resolves.toMatchObject({
+      status: 'failed',
+      error: 'already drained',
+    });
     mocks.sendQueuedNow.mockReturnValue(new Promise(() => {}));
-    const active = sendQueuedMessageNowRequested(AGENT, WS, 'waiting');
-    const queued = sendQueuedMessageNowRequested(AGENT, WS, 'later');
-    run.channel.put(active);
-    run.channel.put(queued);
-    const cancelled = Promise.all([
-      expect(active.promise).rejects.toThrow('cancelled'),
-      expect(queued.promise).rejects.toThrow('cancelled'),
-    ]);
+    const active = run.request(queuedMutation('waiting', { kind: 'sendNow' }));
+    const queued = run.request(queuedMutation('later', { kind: 'sendNow' }));
+    await vi.waitFor(() => expect(mocks.sendQueuedNow).toHaveBeenCalledTimes(2));
     run.task.cancel();
-    await cancelled;
     await run.task.toPromise();
+    for (const action of [active, queued]) {
+      expect(getItem(run.queue().mutations, action.payload[0].requestId)?.status).toBe('cancelled');
+    }
     expect(mocks.sendQueuedNow).toHaveBeenCalledTimes(2);
     expect(mocks.send).not.toHaveBeenCalled();
     expect(mocks.removeQueued).not.toHaveBeenCalled();

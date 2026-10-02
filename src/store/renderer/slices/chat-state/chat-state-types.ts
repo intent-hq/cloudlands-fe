@@ -137,6 +137,26 @@ interface PendingQuestionRecovery {
 }
 
 /**
+ * One correlated anchored backward walk resolving the human predecessor of
+ * `currentMessageId` when it is outside the loaded transcript. The saga holds
+ * the shared seek slot from `loading` until the requesting panel releases the
+ * request (after its DOM positioning), so serial/gap/ordinal paging cannot
+ * replace the landing segment mid-positioning.
+ */
+export interface PreviousUserMessageLoad {
+  requestId: string;
+  currentMessageId: string;
+  /** `start`: confirmed conversation start without an earlier human prompt. */
+  status: 'loading' | 'found' | 'start' | 'error' | 'cancelled';
+  /** Id of the landed human prompt (`found` only). */
+  targetId?: string;
+  /** `scrollbackDiscardEpoch` the outcome was minted under; a bump invalidates it. */
+  epoch?: number;
+  /** True once the requesting panel took the outcome for positioning. */
+  consumed?: boolean;
+}
+
+/**
  * One bounded lookup for a pending-proposal carrying message outside the
  * loaded window. Unlike the single-slot question recovery, proposals may span
  * multiple carrying messages, so these are kept in a per-messageId record.
@@ -329,6 +349,8 @@ export interface ChatAgentState {
    * pruned when the metadata refs no longer name the message.
    */
   pendingProposalRecovery?: Record<string, PendingProposalRecovery>;
+  /** Current unloaded previous-user-message walk, until its panel releases it. */
+  previousUserMessageLoad?: PreviousUserMessageLoad;
   /**
    * Switch-back transcript reveal gate: true while the VIEWED conversation is
    * awaiting a fresh seq-0 snapshot from its (re)opening standing
