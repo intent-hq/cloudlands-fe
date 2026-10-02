@@ -4,7 +4,7 @@
  * before its last shutdown. The overlay must render a bottom-bar tab for each
  * (unopened, not auto-selected) and let the user dismiss it — dismissal calls
  * `script.stop`, which clears the daemon-side marker even when the script is
- * not live, then refetches the list.
+ * not live. The resulting state event clears the marker without a list read.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -239,16 +239,19 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     expect(dispatchedTypes()).not.toContain('terminals/selectScript');
   });
 
-  it('still renders live scripts as tabs, without a dismiss button', async () => {
-    seedScripts([makeScript('live-1', { status: 'running', pid: 42 })]);
+  it.each(['starting', 'running', 'restarting'] as const)(
+    'renders %s scripts as tabs without a dismiss button',
+    async (status) => {
+      seedScripts([makeScript('live-1', { status, pid: 42 })]);
 
-    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+      const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
 
-    await waitFor(() => expect(scriptTabs(container)).toHaveLength(1));
-    const labels = scriptTabs(container).map((tab) => tab.textContent ?? '');
-    expect(labels.some((text) => text.includes('script-live-1'))).toBe(true);
-    expect(container.querySelector('[data-dismiss-script-tab]')).toBeNull();
-  });
+      await waitFor(() => expect(scriptTabs(container)).toHaveLength(1));
+      const labels = scriptTabs(container).map((tab) => tab.textContent ?? '');
+      expect(labels.some((text) => text.includes('script-live-1'))).toBe(true);
+      expect(container.querySelector('[data-dismiss-script-tab]')).toBeNull();
+    },
+  );
 
   it('labels bottom-tab status without relying on color', async () => {
     seedScripts([
@@ -277,7 +280,7 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     expect(labels['script-idle-1']).toBe('Idle');
   });
 
-  it('dismissing a previously-running tab calls script.stop and refetches the list', async () => {
+  it('dismissing a previously-running tab calls script.stop without refetching the list', async () => {
     seedScripts([makeScript('prev-1', { previouslyRunning: true })]);
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
@@ -289,11 +292,17 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
       '[data-dismiss-script-tab="prev-1"]',
     );
     await fireEvent.click(dismiss!);
-    // The handler awaits scriptsClient.stop before dispatching the refresh.
+    // Let the successful stop handler settle before checking for redundant reads.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scriptsClient.stop).toHaveBeenCalledWith(WS_A, 'prev-1');
-    expect(dispatchedTypes()).toContain('scripts/refreshScripts');
+    expect((appStore as any).__dispatched).toContainEqual(
+      expect.objectContaining({
+        type: 'scripts/stopScriptRequested',
+        payload: [WS_A, 'prev-1', m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()],
+      }),
+    );
+    expect(scriptsClient.stop).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('scripts/refreshScripts');
   });
 
   it('removes the dismiss control from the document while its script tab is being renamed', async () => {

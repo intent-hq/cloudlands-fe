@@ -19,9 +19,7 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
       return;
     }
     res.setHeader('Content-Type', 'text/html');
-    res.end(
-      '<!doctype html><title>Dev Console native fixture</title><main>Native lifecycle fixture</main>',
-    );
+    res.end('<!doctype html><title>Intent</title><main>Native lifecycle fixture</main>');
   });
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
   try {
@@ -88,6 +86,13 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
       .toBe(2)
       .then(async () => (await app.windows()).find((page) => page !== opener)!);
     await consolePage.waitForLoadState();
+    const nativeConsoleTitle = () =>
+      app.evaluate(
+        ({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.getTitle(),
+        firstId.windowId,
+      );
+    await expect.poll(nativeConsoleTitle).toBe('Dev Console');
+    expect(await app.evaluate(() => (globalThis as any).fixture.opener.getTitle())).toBe('Intent');
     const identity = await consolePage.evaluate(() =>
       window.electronAPI.invoke('dev-console:connect', {}),
     );
@@ -113,6 +118,7 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
       ),
     ).rejects.toThrow('Unauthorized');
     await consolePage.reload();
+    await expect.poll(nativeConsoleTitle).toBe('Dev Console');
     const next = await consolePage.evaluate(() =>
       window.electronAPI.invoke('dev-console:connect', {}),
     );
