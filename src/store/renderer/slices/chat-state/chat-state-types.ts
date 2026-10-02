@@ -150,6 +150,8 @@ export interface PendingProposalRecovery {
  * older-history fetch without a second conversation transfer.
  */
 export interface TranscriptSnapshotMeta {
+  /** Exclusive older-page continuation from the authoritative snapshot. */
+  nextToken?: string | null;
   /** Daemon `truncated` flag: older history exists beyond the snapshot page. */
   truncated: boolean;
   /** Daemon `totalMessages` count at snapshot time. */
@@ -272,6 +274,9 @@ export interface ChatAgentState {
   transcriptSnapshot?: TranscriptSnapshotMeta;
   /** True while an on-demand older-history scrollback page fetch is in flight. */
   fetchingOlderHistory: boolean;
+  /** Automatic paging stops after a failed or non-advancing page. */
+  scrollbackOlderBlocked: boolean;
+  scrollbackGapBlocked: boolean;
   /** True while an on-demand gap-refill scrollback page fetch is in flight. */
   fetchingGapFill: boolean;
   /**

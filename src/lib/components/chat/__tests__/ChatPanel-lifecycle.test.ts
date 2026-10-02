@@ -187,6 +187,10 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
   selectWorkspaceTasksInitialized: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
+  selectChatAgentState: mocks.selector({
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
+  }),
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
   }),

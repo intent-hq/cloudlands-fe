@@ -80,6 +80,7 @@ interface ChatSnapshotPayload {
 
 /** Decoded seq-0 snapshot page (mirrors `agent.getConversation` shape). */
 interface ChatSnapshotResult {
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;
@@ -219,6 +220,9 @@ function extractSnapshot(raw: unknown, expectedAgentId?: string): ChatSnapshotRe
     : [];
   return {
     messages,
+    ...(raw.nextToken === null || typeof raw.nextToken === 'string'
+      ? { nextToken: raw.nextToken }
+      : {}),
     truncated: Boolean(raw.truncated),
     totalMessages: typeof raw.totalMessages === 'number' ? raw.totalMessages : 0,
   };
@@ -457,6 +461,7 @@ function fingerprintSnapshot(raw: unknown): number {
 export class ChatTranscriptReconciler {
   private messages: AgentMessage[] = [];
   private truncated = false;
+  private nextToken: string | null | undefined;
   private totalMessages = 0;
   private streaming = false;
   private expectedSeq = 0;
@@ -470,6 +475,7 @@ export class ChatTranscriptReconciler {
   reset(): void {
     this.messages = [];
     this.truncated = false;
+    this.nextToken = undefined;
     this.totalMessages = 0;
     this.streaming = false;
     this.expectedSeq = 0;
@@ -501,6 +507,7 @@ export class ChatTranscriptReconciler {
     const snap = extractSnapshot(raw, this.expectedAgentId);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
+    this.nextToken = snap.nextToken;
     this.totalMessages = snap.totalMessages;
     // Mid-turn hydration: streaming is on when the snapshot carries a
     // synthetic in-flight assistant message or the §7.1 activity-flag overlay
@@ -565,6 +572,7 @@ export class ChatTranscriptReconciler {
     return {
       messages: this.messages,
       truncated: this.truncated,
+      ...(this.nextToken !== undefined ? { nextToken: this.nextToken } : {}),
       totalMessages: this.totalMessages,
       isStreaming: this.streaming,
     };

@@ -224,7 +224,7 @@ describe('openMessage', () => {
 
     expect(mockGetConversation).toHaveBeenCalledWith(
       'agent-1',
-      50,
+      5,
       undefined,
       'msg-1',
       undefined,
@@ -309,7 +309,7 @@ describe('seekConversationToMessage', () => {
 
     expect(mockGetConversation).toHaveBeenCalledWith(
       'agent-1',
-      50,
+      5,
       undefined,
       'msg-target',
       undefined,

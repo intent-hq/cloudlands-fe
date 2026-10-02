@@ -114,7 +114,7 @@ describe('chatReadService (fake seam, real store)', () => {
     expect(agentsApi.get).toHaveBeenCalledWith(AGENT, undefined);
     expect(agentsApi.getConversation).toHaveBeenCalledWith(
       AGENT,
-      50,
+      5,
       undefined,
       undefined,
       undefined,
@@ -413,130 +413,33 @@ describe('chatReadService (fake seam, real store)', () => {
     expect(inFlightRendered.contentBlocks?.map((b) => b.type)).toEqual(['text', 'tool_use']);
   });
 
-  // Regression (STAB-15): chat transcript flicker/truncation when conversation
-  // has > 50 messages. Root cause: loadChatTranscript was using
-  // chat.subscribeSnapshot (which returns only the newest ~50 messages, one
-  // page) instead of agent.getConversation with pagination. Fix: page through
-  // getConversation with limit=50 per page, looping on nextToken until the
-  // complete conversation is assembled.
-  it('pages through getConversation to assemble full transcript (>50 messages regression)', async () => {
-    const agentId = 'agent-pagination';
-    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
-
-    // Simulate a conversation with 125 messages (3 pages).
-    // The first call (no token) returns the NEWEST page, then nextToken walks
-    // backward to older pages (PROTOCOL §5.5, app-client.ts:287-288).
-    // Page 1 (no token): messages 101-125 (newest 25, nextToken="page2")
-    // Page 2 (token="page2"): messages 51-100 (middle 50, nextToken="page3")
-    // Page 3 (token="page3"): messages 1-50 (oldest 50, nextToken=null)
-    const page1Newest = Array.from({ length: 25 }, (_, i) =>
-      makeMessage(`msg-${i + 101}`, `message ${i + 101}`),
-    );
-    const page2Middle = Array.from({ length: 50 }, (_, i) =>
-      makeMessage(`msg-${i + 51}`, `message ${i + 51}`),
-    );
-    const page3Oldest = Array.from({ length: 50 }, (_, i) =>
-      makeMessage(`msg-${i + 1}`, `message ${i + 1}`),
-    );
-
-    // getConversation is called three times with the pagination token.
-    agentsApi.getConversation
-      .mockResolvedValueOnce({ ...conversation(page1Newest, 'page2') } as never)
-      .mockResolvedValueOnce({ ...conversation(page2Middle, 'page3') } as never)
-      .mockResolvedValueOnce({ ...conversation(page3Oldest, null) } as never);
-
-    await loadChatTranscript(agentId);
-
-    // Verify three calls with correct pagination.
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(3);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
-      1,
-      agentId,
-      50,
-      undefined,
-      undefined,
-      undefined,
-      WS,
-    );
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
-      2,
-      agentId,
-      50,
-      'page2',
-      undefined,
-      undefined,
-      WS,
-    );
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
-      3,
-      agentId,
-      50,
-      'page3',
-      undefined,
-      undefined,
-      WS,
-    );
-
-    // All 125 messages should be in the store, oldest-first.
-    const stored = selectAgentMessages.select(appStore.state, agentId);
-    expect(stored.length).toBe(125);
-    expect(stored.map((m) => m.id)).toEqual(Array.from({ length: 125 }, (_, i) => `msg-${i + 1}`));
-  });
-
-  // Pager bound (intent-hq/monorepo#2627): the agent-session slice prunes to
-  // the newest MAX_MESSAGES_PER_AGENT (200) messages, so paging past that cap
-  // fetches rows only to discard them. The newest-first walk must stop once
-  // the cap has accumulated instead of draining every page of a huge
-  // transcript.
-  it('stops paging at the store cap instead of draining the full transcript', async () => {
-    const agentId = 'agent-pagination-cap';
-    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
-
-    // An 800-message conversation served in conforming 50-message pages,
-    // newest page first: Page 1 (no token): messages 751-800, Page 2:
-    // 701-750, …, Page 4: 601-650. Page 4 still advertises
-    // nextToken="page5" — the bound must stop there (the page-5 mock is
-    // deliberately NOT queued; an unbounded pager would fetch the afterEach
-    // default empty page instead and fail the call-count assertion below).
-    const page = (start: number) =>
-      Array.from({ length: 50 }, (_, i) => makeMessage(`msg-${start + i}`, `m ${start + i}`));
-    for (let n = 1; n <= 4; n++) {
-      const start = 800 - n * 50 + 1;
+  it.each([125, 800])(
+    'reads only the newest five messages of a %i-row transcript',
+    async (total) => {
+      const agentId = 'agent-pagination';
+      agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+      const newest = Array.from({ length: 5 }, (_, i) =>
+        makeMessage(`msg-${total - 4 + i}`, `message ${i}`),
+      );
       agentsApi.getConversation.mockResolvedValueOnce({
-        ...conversation(page(start), `page${n + 1}`),
+        ...conversation(newest, 'older-page'),
+        totalMessages: total,
       } as never);
-    }
-
-    await loadChatTranscript(agentId);
-
-    // 4 pages accumulate 200 >= MAX_MESSAGES_PER_AGENT — the fifth page is
-    // never requested.
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(4);
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
-      1,
-      agentId,
-      50,
-      undefined,
-      undefined,
-      undefined,
-      WS,
-    );
-    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(
-      4,
-      agentId,
-      50,
-      'page4',
-      undefined,
-      undefined,
-      WS,
-    );
-
-    // The store keeps the newest 200 (the slice's prune cap), oldest-first.
-    const stored = selectAgentMessages.select(appStore.state, agentId);
-    expect(stored.length).toBe(200);
-    expect(stored[0].id).toBe('msg-601');
-    expect(stored[stored.length - 1].id).toBe('msg-800');
-  });
+      await loadChatTranscript(agentId);
+      expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
+      expect(agentsApi.getConversation).toHaveBeenCalledWith(
+        agentId,
+        5,
+        undefined,
+        undefined,
+        undefined,
+        WS,
+      );
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(
+        newest.map((m) => m.id),
+      );
+    },
+  );
 
   it('tab-switch mid-turn keeps interim blocks via full transcript reload', async () => {
     // The in-flight assistant message may be included in the conversation
@@ -915,7 +818,7 @@ it('drops old connection transcript pages without replaying a trailing request',
   expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
   expect(agentsApi.getConversation).toHaveBeenLastCalledWith(
     agentId,
-    50,
+    5,
     undefined,
     undefined,
     undefined,

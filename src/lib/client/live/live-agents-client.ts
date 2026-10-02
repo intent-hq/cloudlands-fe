@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -270,7 +271,7 @@ export class LiveAgentsClient implements AgentsClient {
   // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 50,
+    limit = CHAT_PAGE_SIZE,
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,

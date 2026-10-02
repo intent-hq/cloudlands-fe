@@ -1013,6 +1013,8 @@ export interface AgentsClient {
  * terminal `streamingComplete` frames.
  */
 export interface ChatTranscript {
+  /** Exclusive older-page continuation from the authoritative snapshot. */
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;

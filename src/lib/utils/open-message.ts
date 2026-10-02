@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Deep-open a conversation at a specific message.
  *
@@ -66,7 +67,7 @@ const HYDRATION_TIMEOUT_MS = 15_000;
 const MIN_POLLS_BEFORE_SETTLED = 2;
 /** Retry ladder for the scroll hand-off event (ChatPanel may still be mounting). */
 const SCROLL_DISPATCH_DELAYS_MS = [150, 400, 800, 1500, 3000];
-const SEEK_PAGE_LIMIT = 50;
+const SEEK_PAGE_LIMIT = CHAT_PAGE_SIZE;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -1,10 +1,11 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 /**
  * Chat scrollback saga — on-demand history page fetches driven by UI request
  * actions, feeding the bounded scrollback HISTORY SEGMENT (agent-session
  * slice). Tail hydration paths (chat-read-saga) are untouched.
  *
- * Two directions, ONE 200-row page per request, deduped per agent per
+ * Two directions, ONE five-row page per request, deduped per agent per
  * direction by the chat-state fetching flags (takeLeading semantics — the
  * flag is set synchronously before the wire call, so a second request
  * arriving mid-flight is dropped):
@@ -97,7 +98,7 @@ import {
 import { selectChatAgentIds, selectChatAgentState } from '../chat-state-selectors';
 
 const logger = createLogger('ChatScrollbackSaga');
-const PAGE_LIMIT = 200;
+const PAGE_LIMIT = CHAT_PAGE_SIZE;
 const MARKED_QUESTION_LIMIT = 1;
 const MARKED_QUESTION_RETRY_DELAYS_MS = [250, 1_000] as const;
 
@@ -218,7 +219,7 @@ function* fetchOlderPageWorker(
   const [workspaceId, agentId] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
-  if (chat.fetchingOlderHistory) return;
+  if (chat.fetchingOlderHistory || chat.fetchingGapFill) return;
   // Mirror of the seek worker's serial guard: a settling seek REPLACES the
   // segment, so a page anchored at the pre-seek segment must never merge
   // into the seeded one. The panel re-classifies once the seek settles.
@@ -243,6 +244,7 @@ function* fetchOlderPageWorker(
   const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'older'));
   let continuation: string | null = null;
+  let blocked = true;
   try {
     const page = yield* fetchPage(agentId, token, anchor, workspaceId);
     if (yield* call(isAgentDeletionPending, agentId)) return;
@@ -250,10 +252,11 @@ function* fetchOlderPageWorker(
     // fetched against the discarded transcript — drop it entirely (the
     // reducer already reset the flags/cursors atomically with the snapshot).
     if (yield* discardedSince(agentId, epoch)) return;
-    if (page.messages.length > 0) {
-      yield* put(prependHistoryMessages(agentId, page.messages));
-    }
+    // Keep a segment record even for filtered/empty pages so its advancing
+    // continuation survives the post-settle hygiene check.
+    yield* put(prependHistoryMessages(agentId, page.messages));
     continuation = page.nextToken;
+    blocked = token !== null && page.nextToken === token;
     if (page.nextToken === null) {
       yield* put(setHistoryOldestReached(agentId));
     }
@@ -261,8 +264,8 @@ function* fetchOlderPageWorker(
     logger.error('Failed to fetch older scrollback page', error);
   } finally {
     if (!(yield* discardedSince(agentId, epoch))) {
-      yield* put(scrollbackOlderPageSettled(agentId, continuation));
-      yield* dropContinuationIfSegmentGone(agentId);
+      yield* put(scrollbackOlderPageSettled(agentId, continuation, blocked));
+      yield* dropContinuationIfSegmentGone(agentId, blocked);
     }
   }
 }
@@ -273,7 +276,7 @@ function* fetchGapFillWorker(
   const [workspaceId, agentId] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
-  if (chat.fetchingGapFill) return;
+  if (chat.fetchingGapFill || chat.fetchingOlderHistory) return;
   // Mirror of the seek worker's serial guard (see fetchOlderPageWorker).
   if (chat.fetchingHistorySeek) return;
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
@@ -285,6 +288,7 @@ function* fetchGapFillWorker(
   const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'gap'));
   let continuation: string | null = null;
+  let blocked = true;
   try {
     const page = yield* fetchPage(agentId, token, anchor, workspaceId);
     if (yield* call(isAgentDeletionPending, agentId)) return;
@@ -294,12 +298,13 @@ function* fetchGapFillWorker(
       yield* put(appendHistoryMessages(agentId, page.messages));
     }
     continuation = page.prevToken;
+    blocked = page.prevToken === null || (token !== null && page.prevToken === token);
   } catch (error) {
     logger.error('Failed to fetch scrollback gap-refill page', error);
   } finally {
     if (!(yield* discardedSince(agentId, epoch))) {
-      yield* put(scrollbackGapPageSettled(agentId, continuation));
-      yield* dropContinuationIfSegmentGone(agentId);
+      yield* put(scrollbackGapPageSettled(agentId, continuation, blocked));
+      yield* dropContinuationIfSegmentGone(agentId, blocked);
     }
   }
 }
@@ -649,7 +654,10 @@ function* discardedSince(agentId: string, epoch: number): SagaGenerator<boolean>
  * already tail-resident (prependHistoryMessages keeps the record), and the
  * persisted cursor is the walk's only way to make progress — keep it.
  */
-function* dropContinuationIfSegmentGone(agentId: string): SagaGenerator<void> {
+function* dropContinuationIfSegmentGone(agentId: string, blocked = false): SagaGenerator<void> {
+  // A first-page error has no segment yet; preserve its stop signal while
+  // the session exists. Deletions still clear every continuation field.
+  if (blocked && (yield* selectAgentSession.effect(agentId))) return;
   if (!(yield* selectHasHistorySegment.effect(agentId))) {
     yield* put(scrollbackContinuationReset(agentId));
   }
@@ -693,6 +701,9 @@ function* snapshotResetWorker(
   const [agentId, meta] = action.payload;
   if (meta.resumed !== false) return;
   yield* put(clearHistorySegment(agentId));
+  if (meta.nextToken !== undefined) {
+    yield* put(scrollbackOlderPageSettled(agentId, meta.nextToken));
+  }
 }
 
 export function* chatScrollbackSaga(): SagaGenerator<void> {

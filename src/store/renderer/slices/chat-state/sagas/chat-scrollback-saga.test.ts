@@ -179,6 +179,57 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     vi.clearAllMocks();
   });
 
+  it('keeps an advancing cursor across an empty page and latches a repeated cursor', async () => {
+    const run = harness();
+    try {
+      run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+      run.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 11,
+          nextToken: 'before-10',
+        }),
+      );
+      mocks.getConversation
+        .mockResolvedValueOnce(page([], { nextToken: 'before-5' }))
+        .mockResolvedValueOnce(page([], { nextToken: 'before-5' }));
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      expect(run.chat()?.scrollbackOlderToken).toBe('before-5');
+      expect(run.chat()?.scrollbackOlderBlocked).toBe(false);
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      expect(mocks.getConversation.mock.calls[1][2]).toBe('before-5');
+      expect(run.chat()?.scrollbackOlderBlocked).toBe(true);
+      run.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 11,
+          nextToken: 'before-10',
+          resumed: false,
+        }),
+      );
+      await settle();
+      expect(run.chat()?.scrollbackOlderBlocked).toBe(false);
+    } finally {
+      run.task.cancel();
+    }
+  });
+
+  it('retains a failure latch before the first history segment exists', async () => {
+    const run = harness();
+    try {
+      run.dispatch(bulkUpsertSessions([session({ messages: [message('m-10', 10)] })]));
+      mocks.getConversation.mockRejectedValueOnce(new Error('offline'));
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      expect(run.chat()?.fetchingOlderHistory).toBe(false);
+      expect(run.chat()?.scrollbackOlderBlocked).toBe(true);
+    } finally {
+      run.task.cancel();
+    }
+  });
+
   it.each([undefined, false] as const)(
     'starts older history from a byte-shortened snapshot cursor (resumed=%s)',
     async (resumed) => {
@@ -363,8 +414,8 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-10', undefined, WS],
-      [AGENT, 200, 'older-1', undefined, undefined, WS],
+      [AGENT, 5, undefined, 'm-10', undefined, WS],
+      [AGENT, 5, 'older-1', undefined, undefined, WS],
     ]);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-06', 'm-07', 'm-08', 'm-09']);
     expect(run.history()?.oldestReached).toBe(true);
@@ -389,14 +440,7 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(olderHistoryPageRequested(WS, AGENT));
     await settle();
 
-    expect(mocks.getConversation).toHaveBeenCalledWith(
-      AGENT,
-      200,
-      undefined,
-      'm-05',
-      undefined,
-      WS,
-    );
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 5, undefined, 'm-05', undefined, WS);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-04', 'm-05']);
     expect(run.history()?.oldestReached).toBe(true);
     run.task.cancel();
@@ -441,9 +485,9 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     await settle();
 
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-10', undefined, WS],
-      [AGENT, 200, 'older-1', undefined, undefined, WS],
-      [AGENT, 200, 'older-2', undefined, undefined, WS],
+      [AGENT, 5, undefined, 'm-10', undefined, WS],
+      [AGENT, 5, 'older-1', undefined, undefined, WS],
+      [AGENT, 5, 'older-2', undefined, undefined, WS],
     ]);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-07', 'm-08']);
     expect(run.history()?.oldestReached).toBe(true);
@@ -942,8 +986,8 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(olderHistoryPageRequested(WS, AGENT));
     await settle();
     expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined, 'm-10', undefined, WS],
-      [AGENT, 200, undefined, 'm-10', undefined, WS],
+      [AGENT, 5, undefined, 'm-10', undefined, WS],
+      [AGENT, 5, undefined, 'm-10', undefined, WS],
     ]);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-09']);
     run.task.cancel();
@@ -976,14 +1020,7 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     run.channel.put(historyGapFillRequested(WS, AGENT));
     await settle();
 
-    expect(mocks.getConversation).toHaveBeenCalledWith(
-      AGENT,
-      200,
-      undefined,
-      newest,
-      undefined,
-      WS,
-    );
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 5, undefined, newest, undefined, WS);
     expect(run.history()?.gapToTail).toBe(false);
     expect(run.chat()?.fetchingGapFill).toBe(false);
     expect(run.chat()?.scrollbackGapToken).toBeNull();
@@ -1019,7 +1056,7 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
 
     expect(mocks.getConversation.mock.calls[1]).toEqual([
       AGENT,
-      200,
+      5,
       'fwd-1',
       undefined,
       undefined,
