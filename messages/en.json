@@ -6330,7 +6330,7 @@
   "layout_daemonStatus_localConnection_label": "This machine (local)",
   "layout_daemonStatus_connectionActive_label": "Active",
   "layout_daemonStatus_secretUnavailable_error": "Could not open {label}: its stored access token is unavailable. Re-enter it in Devices settings.",
-  "layout_daemonStatus_guestSecretUnavailable_error": "Could not open {label}: its stored access token is unavailable. Leave the host in Guest Sessions settings and join again from a new invite.",
+  "layout_daemonStatus_guestSecretUnavailable_error": "Could not open {label}: its stored access token is unavailable. Leave the host in Collaboration settings and join again from a new invite.",
   "layout_daemonStatus_open_action": "Open",
   "layout_daemonStatus_update_action": "Update",
   "layout_daemonStatus_update_tooltip": "Update this backend's intentd from v{daemonVersion} to v{pinnedVersion}",
