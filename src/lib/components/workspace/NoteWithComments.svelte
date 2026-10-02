@@ -12,7 +12,7 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { untrack, onMount, onDestroy } from 'svelte';
+  import { untrack, onMount, onDestroy, tick } from 'svelte';
   import { createTaskAgentStatusMountManager } from './note-with-comments/task-agent-status-mount-manager';
   import { runAssignAgentTaskMenuAction } from './note-with-comments/task-menu-assign-agent-action';
   import {
