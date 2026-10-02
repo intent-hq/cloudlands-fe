@@ -12,7 +12,7 @@ import type {
  * brief colours by when the caller knows them (a typing row knows none).
  */
 export type PresenceCircle = PresenceIdentity &
-  Partial<Pick<PresencePerson, 'owner' | 'online' | 'self'>>;
+  Partial<Pick<PresencePerson, 'owner' | 'online' | 'viewing' | 'self'>>;
 
 /**
  * What makes one avatar of a stack a button: its accessible label (also the
@@ -25,13 +25,13 @@ export interface PresenceCircleAction {
 }
 
 /**
- * The ring around an avatar: the owner blue whether online or not, an online
- * member green, an offline member grey. Offline is drawn on the avatar itself
- * (greyscale), so the owner ring never has to give way to it.
+ * Modern role rings never change with connectivity. Legacy callers keep their
+ * owner/online/offline presentation without asserting host membership.
  */
-export type PresenceRing = 'owner' | 'member' | 'offline';
+export type PresenceRing = 'owner' | 'member' | 'guest' | 'offline';
 
 export function presencePersonRing(person: PresenceCircle): PresenceRing | null {
+  if (person.hostRole) return person.hostRole;
   if (person.owner) return 'owner';
   if (person.online === false) return 'offline';
   return person.online === true ? 'member' : null;
@@ -74,7 +74,20 @@ export function presencePersonNameWithForge(person: PresenceIdentity): string {
 /** The name (with the forge handle when known), marked "(you)" for this window's own principal. */
 export function presencePersonLabel(person: PresenceCircle): string {
   const name = presencePersonNameWithForge(person);
-  return person.self ? m.presence_person_you_label({ name }) : name;
+  const ownName = person.self ? m.presence_person_you_label({ name }) : name;
+  if (!person.hostRole) return ownName;
+  const role =
+    person.hostRole === 'owner'
+      ? m.presence_role_owner()
+      : person.hostRole === 'member'
+        ? m.presence_role_member()
+        : m.presence_role_guest();
+  const status = person.online
+    ? person.viewing
+      ? m.presence_status_viewing()
+      : m.presence_status_online()
+    : m.presence_status_offline();
+  return m.presence_person_roleStatus({ name: ownName, role, status });
 }
 
 /** Stable hue per principal so the same person keeps one color everywhere. */

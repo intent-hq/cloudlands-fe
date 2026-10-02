@@ -37,7 +37,11 @@ import {
   setSubscriptionSnapshot,
   makeKey,
 } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { initializeChatRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  initializeChatRequested,
+  transcriptHydrationStarted,
+  transcriptHydrationSettled,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   routeDaemonEventsNotification,
   __resetDaemonEventsBridgeForTests,
@@ -46,6 +50,25 @@ import {
 import { markAgentAsViewed } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { AgentStatus, type AgentSession } from '$shared/types';
+
+import {
+  bootstrapNewWorkspaceLayout,
+  initializeLayout,
+  setActiveTab,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  openWorkspaceTab,
+  workspaceTabsHydrated,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
+import { panelLayoutSaga } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
+import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  selectAwaitingSwitchBackSnapshot,
+  selectTranscriptHydratedOnce,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
+import { shouldDeferTranscriptReveal } from '$lib/components/chat/chat-panel-visibility';
+import { selectSubscriptionSnapshotStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 const WS = 'read-workspace';
 const AGENT = 'read-agent';
@@ -99,6 +122,223 @@ describe('background reads through the real store, sagas, clients and event brid
     dispose();
     resetMockBackend();
     vi.useRealTimers();
+  });
+
+  function conversationLayout(wsId = WS, agentId = AGENT) {
+    store.dispatch(
+      initializeLayout(wsId, {
+        root: { type: 'panel', panelId: 'conversation' },
+        panels: {
+          conversation: {
+            id: 'conversation',
+            activeTabId: 'visible',
+            tabs: [
+              { id: 'visible', type: 'agent', title: 'Visible', agentId },
+              { id: 'hidden', type: 'agent', title: 'Hidden', agentId: 'hidden-agent' },
+            ],
+          },
+        },
+        focusedPanelId: 'conversation',
+      }),
+    );
+  }
+
+  it.each(['pending', 'completed'] as const)(
+    'prefetches on workspace selection and shares %s demand with chat mounting',
+    async (timing) => {
+      const pending = deferred<ReturnType<typeof empty>>();
+      backend.onRequest('agent.getSubscriptions', () => pending.promise);
+      conversationLayout();
+      store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+      expect(reads('agent.getSubscriptions')).toHaveLength(0);
+      store.dispatch(openWorkspaceTab(WS));
+      expect(reads('agent.getSubscriptions')).toEqual([
+        { method: 'agent.getSubscriptions', params: { workspaceId: WS, agentId: AGENT } },
+      ]);
+      if (timing === 'completed') {
+        pending.resolve(empty());
+        await settle();
+      }
+      store.dispatch(
+        bulkUpsertSessions([
+          {
+            id: AGENT,
+            workspaceId: WS,
+            name: AGENT,
+            status: AgentStatus.Pending,
+            messages: [],
+            createdAt: '2026-01-01',
+            updatedAt: '2026-01-01',
+          } as AgentSession,
+        ]),
+      );
+      store.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
+      store.dispatch(markAgentAsViewed(AGENT));
+      store.dispatch(requestSubscriptionFetch(WS, AGENT, true));
+      pending.resolve(empty());
+      await settle();
+      expect(reads('agent.getSubscriptions')).toHaveLength(1);
+      expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].snapshotStatus).toBe(
+        'ready',
+      );
+      store.dispatch(openWorkspaceTab('elsewhere'));
+      store.dispatch(openWorkspaceTab(WS));
+      await settle();
+      expect(reads('agent.getSubscriptions')).toHaveLength(2);
+    },
+  );
+
+  it('waits for the destination layout and refreshes only newly displayed conversations', async () => {
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    store.dispatch(openWorkspaceTab(WS));
+    expect(reads('agent.getSubscriptions')).toHaveLength(0);
+    conversationLayout('inactive-workspace', 'inactive-agent');
+    expect(reads('agent.getSubscriptions')).toHaveLength(0);
+    conversationLayout();
+    await settle();
+    expect(reads('agent.getSubscriptions').map((r) => r.params)).toEqual([
+      { workspaceId: WS, agentId: AGENT },
+    ]);
+    store.dispatch(setActiveTab(WS, 'hidden', 'conversation'));
+    await settle();
+    store.dispatch(setActiveTab(WS, 'visible', 'conversation'));
+    await settle();
+    expect(reads('agent.getSubscriptions').map((r) => r.params)).toEqual([
+      { workspaceId: WS, agentId: AGENT },
+      { workspaceId: WS, agentId: 'hidden-agent' },
+      { workspaceId: WS, agentId: AGENT },
+    ]);
+  });
+
+  it('starts demand when delayed sessions resolve the initial conversation through the layout saga', async () => {
+    cancel.push(store.runSaga(panelLayoutSaga));
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    store.dispatch(openWorkspaceTab(WS));
+    store.dispatch(bootstrapNewWorkspaceLayout(WS, null, 'Initial agent'));
+    expect(reads('agent.getSubscriptions')).toHaveLength(0);
+    const session = {
+      id: AGENT,
+      workspaceId: WS,
+      name: AGENT,
+      status: AgentStatus.Pending,
+      messages: [],
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      isInitialAgent: true,
+    } as AgentSession;
+    store.dispatch(
+      setAgents(WS, [
+        { ...session, id: 'background-agent', isInitialAgent: false, isBackground: true },
+        session,
+      ]),
+    );
+    await settle();
+    expect(reads('agent.getSubscriptions')).toEqual([
+      { method: 'agent.getSubscriptions', params: { workspaceId: WS, agentId: AGENT } },
+    ]);
+  });
+
+  it('prefetches each displayed conversation once across restored columns', async () => {
+    store.dispatch(
+      initializeLayout(WS, {
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          sizes: [34, 33, 33],
+          children: [
+            { type: 'panel', panelId: 'left' },
+            { type: 'panel', panelId: 'middle' },
+            { type: 'panel', panelId: 'right' },
+          ],
+        },
+        panels: Object.fromEntries(
+          [
+            ['left', AGENT],
+            ['middle', 'second-agent'],
+            ['right', AGENT],
+          ].map(([id, agentId]) => [
+            id,
+            {
+              id,
+              activeTabId: id,
+              tabs: [{ id, type: 'agent', agentId, title: id }],
+            },
+          ]),
+        ),
+        focusedPanelId: 'left',
+        columnCount: 3,
+      }),
+    );
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    store.dispatch(openWorkspaceTab(WS));
+    await settle();
+    expect(reads('agent.getSubscriptions').map((r) => r.params)).toEqual([
+      { workspaceId: WS, agentId: AGENT },
+      { workspaceId: WS, agentId: 'second-agent' },
+    ]);
+  });
+
+  it('settles the transcript reveal while the selected conversation subscription read is still pending', async () => {
+    const pending = deferred<ReturnType<typeof empty>>();
+    backend.onRequest('agent.getSubscriptions', () => pending.promise);
+    conversationLayout();
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    store.dispatch(openWorkspaceTab(WS));
+    store.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
+    store.dispatch(transcriptHydrationStarted(AGENT));
+    store.dispatch(transcriptHydrationSettled(AGENT));
+    expect(reads('agent.getSubscriptions')).toHaveLength(1);
+    expect(selectSubscriptionSnapshotStatus.select(store.state, WS, AGENT)).toBe('loading');
+    expect(
+      shouldDeferTranscriptReveal({
+        awaitingSwitchBackSnapshot: selectAwaitingSwitchBackSnapshot.select(store.state, AGENT),
+        transcriptHydratedOnce: selectTranscriptHydratedOnce.select(store.state, AGENT),
+        hasPendingInitialPrompt: false,
+      }),
+    ).toBe(false);
+    pending.resolve(empty());
+    await settle();
+  });
+
+  it('keeps rapid workspace switches isolated and retains invalidation during prefetch', async () => {
+    const first = deferred<ReturnType<typeof empty>>();
+    backend.onRequest('agent.getSubscriptions', (params) =>
+      params.workspaceId === WS ? first.promise : empty(),
+    );
+    conversationLayout();
+    conversationLayout('second-workspace', 'second-agent');
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    store.dispatch(openWorkspaceTab(WS));
+    store.dispatch(openWorkspaceTab('second-workspace'));
+    store.dispatch(openWorkspaceTab(WS));
+    event('agent:subscriptions-changed', { agentId: AGENT });
+    first.resolve(empty());
+    await settle();
+    expect(reads('agent.getSubscriptions').map((r) => r.params)).toEqual([
+      { workspaceId: WS, agentId: AGENT },
+      { workspaceId: 'second-workspace', agentId: 'second-agent' },
+      { workspaceId: WS, agentId: AGENT },
+    ]);
+    expect(store.state.agentSubscriptionUI.entries[makeKey(WS, AGENT)].snapshotStatus).toBe(
+      'ready',
+    );
+    expect(
+      store.state.agentSubscriptionUI.entries[makeKey('second-workspace', 'second-agent')]
+        .snapshotStatus,
+    ).toBe('ready');
+    expect(store.state.agentSubscriptionUI.entries[makeKey(WS, 'second-agent')]).toBeUndefined();
+  });
+
+  it('does not prefetch the previous backend tab strip before hydration', async () => {
+    conversationLayout();
+    store.dispatch(openWorkspaceTab(WS));
+    store.dispatch(workspaceTabsHydrated('other-backend'));
+    expect(reads('agent.getSubscriptions')).toHaveLength(0);
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    await settle();
+    expect(reads('agent.getSubscriptions')).toEqual([
+      { method: 'agent.getSubscriptions', params: { workspaceId: WS, agentId: AGENT } },
+    ]);
   });
 
   it('joins concurrent note content demand without an unnecessary trailing note.get', async () => {

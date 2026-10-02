@@ -47,7 +47,9 @@
 #   that waited on the concurrency group behind another run's cut (whose
 #   tag lands ~1 min after its merge) still defers. Fails OPEN on any
 #   tag/date lookup error (an unreadable tag list must never block
-#   releases). workflow_dispatch BYPASSES the throttle: manual means
+#   releases). A push proving a new pin advance still on main and newer
+#   than the latest release pin bypasses only this throttle, with the proof
+#   repeated immediately before merge. workflow_dispatch BYPASSES it: manual means
 #   urgent.
 # - The `hold-release` label on the Release PR pauses auto-merge (skip with
 #   a notice) until the label is removed.
@@ -91,7 +93,8 @@
 #   Release PR must not wedge the release train; humans engage by replying
 #   (which makes the thread blocking) or resolving it. Anything else logs
 #   and exits 0 (push runs first retry transient states within their
-#   bounded wait) — the next scheduled run retries. Never force-merges.
+#   bounded wait) — the next scheduled run retries. Metadata-only PRs use
+#   the CI identity exemption to merge directly; other diffs use the queue.
 # - The PR branch is never updated from here: release-please owns the
 #   Release PR branch content and force-refreshes it on every release-worthy
 #   push to main.
@@ -135,10 +138,14 @@ on:
 # Serialize runs so scheduled, push-triggered, and manually dispatched runs
 # can never race a merge of the same Release PR. `cancel-in-progress: false`
 # because a run that has already decided to merge must not be cancelled
-# mid-merge.
+# mid-merge. Retain pending pin pushes: the default single pending slot
+# lets a later ordinary push discard the only run with pin-advance evidence.
+# GitHub bounds this queue at 100 pending runs; overflow still has the hourly
+# backstop. Existing readiness polling remains bounded to 15 minutes per run.
 concurrency:
   group: auto-cut-alpha
   cancel-in-progress: false
+  queue: max
 
 jobs:
   # Read-only queries authenticate with the implicit GITHUB_TOKEN, so the
@@ -185,6 +192,19 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::warning::RELEASE_PAT secret is not configured; skipping Release PR auto-merge"
           fi
+      - name: Checkout trusted release helpers
+        if: steps.token.outputs.enabled == 'true'
+        uses: actions/checkout@v7
+        # Missing helper means no exemption; retain the original guard even
+        # if checkout is unavailable. No package install/build is needed.
+        continue-on-error: true
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/intentd-release-readiness.mjs
+            /scripts/intentd-pin-advance.sh
+            /scripts/release-pr-fast-path.mjs
       # 60-minute release throttle (cron and push runs; workflow_dispatch
       # bypasses it — manual means urgent): the broadened push trigger fires
       # on every push to main, so without a floor a busy merge hour could
@@ -199,13 +219,17 @@ jobs:
       # list must never block releases. Worst-case quiet-period latency:
       # a throttled run does not reschedule itself and cron is check-once,
       # so with no further pushes a cut can trail the previous one by up to
-      # ~2h (throttle floor + up to one full cron interval).
+      # ~2h (throttle floor + up to one full cron interval). A proven new
+      # unshipped pin push alone is exempt; all readiness guards still run.
       - name: Throttle to one cut per hour
         id: throttle
         if: steps.token.outputs.enabled == 'true' && github.event_name != 'workflow_dispatch'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
           # Deliberately no `set -e`: every lookup failure must fail OPEN
           # (defer=false), never fail the run.
@@ -242,6 +266,11 @@ jobs:
           fi
           age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
           if (( age_min < 60 )); then
+            if bash scripts/intentd-pin-advance.sh "$EVENT_NAME" "$PUSH_BEFORE" "$PUSH_SHA" "$tag"; then
+              echo "pin_advance=true" >> "$GITHUB_OUTPUT"
+              echo "New unshipped intentd pin; bypassing only the hourly throttle."
+              exit 0
+            fi
             echo "::notice::last release $tag was cut ${age_min} min ago (<60 min); throttling this cut — the next cron tick retries"
             echo "defer=true" >> "$GITHUB_OUTPUT"
           else
@@ -334,20 +363,6 @@ jobs:
           else
             echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
           fi
-      - name: Checkout release readiness helper
-        if: >-
-          steps.token.outputs.enabled == 'true' &&
-          steps.throttle.outputs.defer != 'true' &&
-          steps.inflight.outputs.defer != 'true' &&
-          github.event_name != 'workflow_dispatch'
-        uses: actions/checkout@v7
-        # Missing helper means no exemption; retain the original guard even
-        # if checkout is unavailable. No package install/build is needed.
-        continue-on-error: true
-        with:
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
-          sparse-checkout: /scripts/intentd-release-readiness.mjs
       - name: Merge the Release PR when green
         if: >-
           steps.token.outputs.enabled == 'true' &&
@@ -364,6 +379,8 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run == true }}
           EVENT_NAME: ${{ github.event_name }}
           PUSH_SHA: ${{ github.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PIN_ADVANCE: ${{ steps.throttle.outputs.pin_advance }}
           # The newest release tag the throttle step observed (empty when
           # the throttle was skipped, i.e. workflow_dispatch); used by the
           # pre-merge re-check below.
@@ -705,10 +722,18 @@ jobs:
             fi
 
             detail=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
-              --json isDraft,mergeable,mergeStateStatus,statusCheckRollup)
+              --json isDraft,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,baseRefOid,reviewDecision)
 
             if [[ $(jq -r '.isDraft' <<<"$detail") != "false" ]]; then
               echo "Release PR #$number is a draft; skipping."
+              exit 0
+            fi
+
+            # Direct merging must preserve review requirements that the
+            # ordinary queue would enforce, including changes requested.
+            review_decision=$(jq -r '.reviewDecision // empty' <<<"$detail")
+            if [[ "$review_decision" == "CHANGES_REQUESTED" || "$review_decision" == "REVIEW_REQUIRED" ]]; then
+              echo "Release PR #$number has outstanding review requirements ($review_decision); skipping."
               exit 0
             fi
 
@@ -796,8 +821,9 @@ jobs:
             # its early throttle read saw the old tag and passed. If the
             # newest vX.Y.Z tag differs from the one the throttle step
             # observed, another cut landed while this run was waiting:
-            # defer to the next cron tick instead of cutting a second
-            # release inside the 60-min floor. Fail-open like the throttle
+            # defer unless a proven new pin still needs shipping. Recheck
+            # an early pin exemption even without tag movement, preventing
+            # stale/duplicate pin cuts. Fail-open like the throttle
             # (an unreadable tag list never blocks the merge); skipped on
             # workflow_dispatch (THROTTLE_TAG empty — the throttle was
             # bypassed).
@@ -806,14 +832,41 @@ jobs:
                 "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
                 --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || current_tag=""
-              if [[ -n "$current_tag" && "$current_tag" != "$THROTTLE_TAG" ]]; then
-                echo "::notice::newest release tag moved from $THROTTLE_TAG to $current_tag while this run was waiting (another cut landed); deferring — the next cron tick retries"
-                exit 0
+              if [[ -n "$current_tag" ]] && { [[ "$current_tag" != "$THROTTLE_TAG" ]] || [[ "$PIN_ADVANCE" == "true" ]]; }; then
+                # Re-prove even when the tag is unchanged: main may have
+                # superseded the pin while readiness was polling. A new tag
+                # only permits this cut if it still carries an older pin.
+                if ! bash scripts/intentd-pin-advance.sh "$EVENT_NAME" "$PUSH_BEFORE" "$PUSH_SHA" "$current_tag"; then
+                  echo "::notice::release tag moved or pin exemption no longer proven (initial: $THROTTLE_TAG, current: $current_tag); deferring — the next cron tick retries"
+                  exit 0
+                fi
               fi
             fi
 
+            # Bind both shape validation and the merge to the head whose
+            # CI Gate was read above. Never check out or execute PR code:
+            # fetch its blobs and use only the trusted workflow helper.
+            tested_head=$(jq -r '.headRefOid // empty' <<<"$detail")
+            tested_base=$(jq -r '.baseRefOid // empty' <<<"$detail")
+            if [[ ! "$tested_head" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::warning::Release PR #$number has no readable tested head; skipping."
+              exit 0
+            fi
+            merge_args=(--squash --match-head-commit "$tested_head")
+            merge_route="queue"
+            shape=""
+            if [[ "$tested_base" =~ ^[0-9a-f]{40}$ ]] &&
+              git fetch --no-tags --depth=1 origin "$tested_base" "$tested_head" &&
+              shape=$(node scripts/release-pr-fast-path.mjs --release-only "$tested_base" "$tested_head") &&
+              [[ "$shape" == "fast_path=true" ]]; then
+              merge_args+=(--admin)
+              merge_route="direct"
+            else
+              echo "Release metadata shape unconfirmed; retaining the ordinary merge queue."
+            fi
+
             if [[ "$DRY_RUN" == "true" ]]; then
-              echo "DRY RUN: would squash-merge Release PR #$number ($title)."
+              echo "DRY RUN: would squash-merge Release PR #$number ($title) via $merge_route at $tested_head."
               exit 0
             fi
 
@@ -825,8 +878,12 @@ jobs:
             # form as the PR title. A failure here is not fatal: the PR
             # state may have changed under us, and the next scheduled run
             # retries.
-            if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
-              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
+            if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" "${merge_args[@]}"; then
+              if [[ "$merge_route" == "direct" ]]; then
+                echo "Directly squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
+              else
+                echo "Submitted Release PR #$number ($title) to the merge queue; publication starts after it merges."
+              fi
             else
               echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
             fi

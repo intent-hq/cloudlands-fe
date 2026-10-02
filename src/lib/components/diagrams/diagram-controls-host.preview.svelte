@@ -12,7 +12,10 @@
       return m.sandbox_diagramWorkbench_review_title();
     },
     defaultState: 'notes',
-    captureReadiness: { selector: '[data-diagram-settled="true"]', count: 4 },
+    captureReadiness: {
+      selector: '[data-diagram-presentation-settled="true"] [data-diagram-settled="true"]',
+      count: 4,
+    },
     states: { notes: { props: {} } },
   });
 </script>

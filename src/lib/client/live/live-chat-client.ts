@@ -367,7 +367,7 @@ function parseDeltaEntity(raw: unknown, incremental: boolean): ChatDeltaEntity |
     ...(typeof e.appMessageId === 'string' && e.appMessageId.length > 0
       ? { appMessageId: e.appMessageId }
       : {}),
-    ...(e.author && typeof e.author === 'object' && !Array.isArray(e.author)
+    ...(e.author === null || (e.author && typeof e.author === 'object' && !Array.isArray(e.author))
       ? { author: e.author as AgentMessage['author'] }
       : {}),
   };
@@ -639,7 +639,7 @@ export class ChatTranscriptReconciler {
     if (entity.messageSeq !== undefined) next.seq = entity.messageSeq;
     if (entity.metadata) next.metadata = entity.metadata;
     if (entity.appMessageId) next.appMessageId = entity.appMessageId;
-    if (entity.author) next.author = entity.author;
+    if ('author' in entity) next.author = entity.author;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];
   }
 }

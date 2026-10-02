@@ -175,10 +175,15 @@ it('uses the latest payload if it changes during worker startup', async () => {
   );
   const view = render(PayloadViewer, { text: '"old"', label: 'Response' });
   await waitFor(() => expect(configureMonacoWorkers).toHaveBeenCalled());
+  expect(view.container.querySelector('pre')?.textContent).toBe('"old"');
+  expect((view.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(true);
   await view.rerender({ text: '{"latest":true}', label: 'Response' });
+  expect(view.container.querySelector('pre')?.textContent).toBe('{\n  "latest": true\n}');
   ready();
   await waitFor(() => expect(models).toHaveLength(1));
   expect(models[0].getValue()).toBe('{\n  "latest": true\n}');
+  await waitFor(() => expect(view.container.querySelector('pre')).toBeNull());
+  expect((view.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it('does not create an editor after being closed during worker startup', async () => {

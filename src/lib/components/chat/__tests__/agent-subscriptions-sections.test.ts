@@ -56,7 +56,12 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     ),
   selectAgentSessionsById: Object.assign(
     () => makeReadable(Object.fromEntries(sessionState.byId)),
-    { select: () => Object.fromEntries(sessionState.byId) },
+    {
+      select: () => Object.fromEntries(sessionState.byId),
+      effect: function* () {
+        return Object.fromEntries(sessionState.byId);
+      },
+    },
   ),
   selectAgentHistoryMessages: Object.assign(() => makeReadable([]), {
     select: (_state: unknown, agentId: string) => sessionState.historyById.get(agentId) ?? [],

@@ -111,4 +111,6 @@ export interface LeaveGuestWorkspaceResult {
   id: string;
   workspaceId: string;
   left: boolean;
+  /** Inherited access remains saved; only host membership can remove it. */
+  refused?: 'host-membership-required';
 }

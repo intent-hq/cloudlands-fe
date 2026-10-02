@@ -757,8 +757,8 @@ export interface AgentsClient {
    * NOT idempotent: a missing entry (already drained/removed) rejects with
    * `-32602`, folded into `{ success: false, error }` like the other
    * mutations. The delivered arm carries `turnId` (the entry's preserved
-   * turn-correlation id, §5.5 — this RPC's response replaces the
-   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * turn-correlation id, §5.5). Admitted sends also emit `agent:queue:processing`
+   * with the complete consumed entries; the response is a legacy promotion fallback,
    * surfaced on the MutationResult (monorepo#1057).
    */
   sendQueuedNow(params: {

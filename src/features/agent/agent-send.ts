@@ -1,3 +1,4 @@
+import { reconcileQueuedMessage } from './utils/reconcile-queued-message';
 import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 /**
@@ -33,14 +34,21 @@ import {
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
+  removeMessage as removeAgentSessionMessage,
   setAgentStreaming,
   updateMessage as updateAgentSessionMessage,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
-import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
-import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  chatQueuedSendStarted,
+  chatQueuedRetryRecordParked,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  buildRecordedAttempt,
+  buildQueuedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import { getAgentQueueEventSnapshotSeq, hydrateAgentQueue } from './agent-queue-read-service';
@@ -359,7 +367,10 @@ export async function sendMessage(
                   // hydrate-reconciled fold (monorepo#2486) — advances this
                   // seq, and the queued-response queue seed below must then
                   // yield to it.
+                  dispatchRedux(chatQueuedSendStarted(agentId));
                   const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
+                  const attemptGenerationAtSend =
+                    appStore.state.chatState?.byAgentId[agentId]?.attemptGeneration ?? 0;
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
                   // persistence); legacy-only fields (messages, resetHistory,
@@ -439,51 +450,16 @@ export async function sendMessage(
 
                       // Reset streaming flag so UI doesn't stay in "Thinking"
                       dispatchRedux(setAgentStreaming(session.id, false));
+                      dispatchRedux(removeAgentSessionMessage(session.id, userMessage.id));
 
                       // Seed the local queue from queuedMessage (like chat-send-service
                       // queue-on-send path does) so the UI immediately shows queued state
                       const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
                       if (queuedMessage) {
-                        // #1011: the daemon echoed a stable id for the queued
-                        // entry, so park the retry payload under it (turn-scoped
-                        // records, #999) instead of leaving it in the caller's
-                        // mid-turn `lastAttemptedMessage` overwrite — the park
-                        // action also undoes that overwrite when the slot still
-                        // holds this payload. buildRecordedAttempt is the same
-                        // construction site chat-send-service records with, so
-                        // the structural match holds. The turnId (monorepo#1057
-                        // — the queued arm's top-level result field, falling
-                        // back to the echoed entry's) keys the record for exact
-                        // agent:queue:processing / agent:failed attribution —
-                        // it is the ONLY attribution path (pinned daemon
-                        // ≥0.2.12 always returns it), so nothing is parked
-                        // without one.
                         const rawTurnId = (response as { turnId?: unknown }).turnId;
                         const turnId =
-                          typeof rawTurnId === 'string'
-                            ? rawTurnId
-                            : typeof queuedMessage.turnId === 'string'
-                              ? queuedMessage.turnId
-                              : undefined;
-                        if (turnId !== undefined) {
-                          dispatchRedux(
-                            chatQueuedRetryRecordParked(
-                              agentId,
-                              queuedMessage.id,
-                              buildRecordedAttempt(content, options),
-                              turnId,
-                            ),
-                          );
-                        } else {
-                          // Unreachable against the pinned daemon; if it ever
-                          // fires, the caller's mid-turn lastAttemptedMessage
-                          // overwrite is left standing (a failure banner could
-                          // pair with the auto-queued payload) — surface it.
-                          logger.warn(
-                            'auto-queued sendMessage response carried no turnId; retry record not parked',
-                            { agentId, queuedMessageId: queuedMessage.id },
-                          );
-                        }
+                          typeof rawTurnId === 'string' ? rawTurnId : queuedMessage.turnId;
+                        let retryMessage: QueuedMessage | undefined = queuedMessage;
                         // Seed only when no authoritative snapshot — live
                         // agent:queue:updated fold or hydrate-reconciled fold
                         // — landed since the send started: a snapshot
@@ -499,9 +475,7 @@ export async function sendMessage(
                             agentId,
                             workspace.id,
                           );
-                          const next = existing.some((m) => m.id === queuedMessage.id)
-                            ? existing
-                            : [...existing, queuedMessage];
+                          const next = reconcileQueuedMessage(existing, queuedMessage);
                           dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
                         } else if (isCurrent()) {
                           logger.debug(
@@ -519,6 +493,33 @@ export async function sendMessage(
                           // send itself succeeded, and the service leaves the
                           // prior mirror intact on error.
                           await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
+                          retryMessage = selectAgentQueueMessages
+                            .select(appStore.state, agentId, workspace.id)
+                            .find(
+                              (message) =>
+                                message.id === queuedMessage.id || message.turnId === turnId,
+                            );
+                        }
+                        if (isCurrent() && typeof turnId === 'string') {
+                          const attempt = buildRecordedAttempt(content, options);
+                          // A superseding snapshot may already have promoted this turn.
+                          // Clear our optimistic attempt without re-parking a stale echo.
+                          dispatchRedux(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              attempt,
+                              turnId,
+                              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
+                              !retryMessage,
+                              attemptGenerationAtSend,
+                            ),
+                          );
+                        } else if (isCurrent()) {
+                          logger.warn(
+                            'auto-queued sendMessage response carried no turnId; retry record not parked',
+                            { agentId, queuedMessageId: queuedMessage.id },
+                          );
                         }
                       }
 

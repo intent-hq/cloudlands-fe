@@ -3,6 +3,7 @@
  * and #1872): the `workspace.members.*` roster and the `workspace.invite.*`
  * link lifecycle. Field names match the daemon structs 1:1 (camelCase).
  */
+import type { HostRole } from '$shared/types/principal';
 import type { WorkspaceRole } from '$shared/types';
 
 /** The forges a principal identity can live on (`Principal.identity.provider`). */
@@ -34,6 +35,7 @@ export interface InvitePin {
 /** One `workspace.members.list` row — a membership joined to its principal. */
 export interface WorkspaceMember {
   principalId: string;
+  hostRole?: HostRole;
   /** Forge login; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
@@ -65,6 +67,7 @@ export interface WorkspaceMembersList {
  */
 export interface HostPrincipal {
   principalId: string;
+  hostRole?: HostRole;
   /** Forge login; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
@@ -165,6 +168,8 @@ export const INVITE_ERROR_CODES = [
   'invite-flow-error',
   'invite-flow-not-found',
   'invite-flow-busy',
+  'host-membership-required',
+  'identity-unverifiable',
   'guest-limit',
   'workspace-full',
 ] as const;
