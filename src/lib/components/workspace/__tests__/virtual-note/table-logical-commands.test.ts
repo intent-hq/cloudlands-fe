@@ -20,6 +20,19 @@ const cases = [
   { command: 'deleteColumn', row: 21, column: 4 },
   { command: 'mergeCells', row: 2, column: 0, endRow: 35, endColumn: 1 },
   { command: 'mergeCells', row: 35, column: 1, endRow: 2, endColumn: 0 },
+  { command: 'addRowAfter', row: 0, column: 1 },
+  { command: 'addRowBefore', row: 21, column: 4 },
+  { command: 'addRowAfter', row: 60, column: 7 },
+  { command: 'deleteRow', row: 21, column: 4 },
+  { command: 'addColumnBefore', row: 21, column: 0 },
+  { command: 'addColumnAfter', row: 21, column: 7 },
+  { command: 'toggleHeaderCell', row: 35, column: 4, endRow: 2, endColumn: 1 },
+  { command: 'mergeOrSplit', row: 35, column: 1, endRow: 2, endColumn: 0 },
+  { command: 'mergeCells', row: 21, column: 4, accepted: false },
+  { command: 'splitCell', row: 21, column: 4, accepted: false },
+  { command: 'mergeOrSplit', row: 21, column: 4, accepted: false },
+  { command: 'deleteRow', row: 0, column: 0, endRow: 60, endColumn: 7 },
+  { command: 'deleteColumn', row: 60, column: 7, endRow: 0, endColumn: 0 },
 ] as const;
 for (const test of cases) {
   it(`matches native logical ${test.command} at ${test.row},${test.column} ${'endRow' in test ? `to ${test.endRow},${test.endColumn}` : ''}`, async () => {
@@ -65,6 +78,7 @@ for (const test of cases) {
         }),
       );
       try {
+        if (!table) return canonical.state.doc.firstChild!.toJSON();
         return {
           type: 'table',
           content: table.rows.map((r, ri) => ({
@@ -109,9 +123,16 @@ for (const test of cases) {
       expect(session.editor!.can()[test.command]()).toBe(native.can()[test.command]());
       expect(service.revision).toBe(revisionBeforeCan);
       expect(service.region(0)).toBe(source);
-      expect(native.commands[test.command]()).toBe(true);
-      expect(session.editor!.commands[test.command]()).toBe(true);
+      const accepted = !('accepted' in test) || test.accepted;
+      expect(native.commands[test.command]()).toBe(accepted);
+      expect(session.editor!.commands[test.command]()).toBe(accepted);
       expect(session.error).toBe('');
+      if (!accepted) {
+        expect(service.region(0)).toBe(source);
+        expect(service.revision).toBe(revisionBeforeCan);
+        expect(await backingJSON()).toEqual(before);
+        return;
+      }
       expect(await backingJSON()).toEqual(native.state.doc.firstChild!.toJSON());
       const backing = service as unknown as {
         tableIndex: (s: string, start: number) => TableIndex[];
@@ -124,11 +145,18 @@ for (const test of cases) {
         block: cells ? 0 : pos.index(3),
         offset: cells ? 0 : pos.parentOffset,
       });
-      expect(session.selection.table).toEqual({
-        kind: cells ? 'cell' : 'text',
-        anchor: point(cells ? selection.$anchorCell : selection.$anchor),
-        head: point(cells ? selection.$headCell : selection.$head),
-      });
+      if (afterIndex) {
+        expect(session.selection.table).toEqual({
+          kind: cells ? 'cell' : 'text',
+          anchor: point(cells ? selection.$anchorCell : selection.$anchor),
+          head: point(cells ? selection.$headCell : selection.$head),
+        });
+      } else {
+        expect(session.selection.table).toBeUndefined();
+        expect(session.selection.anchor).toBe(0);
+        expect(session.selection.head).toBe(0);
+        expect(service.region(0)).toBe('');
+      }
       const old = session.editor!;
       const saved = service.region(0);
       await session.seek(session.selection.head);
