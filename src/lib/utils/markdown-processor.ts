@@ -1799,13 +1799,20 @@ export function processHTMLToMarkdown(
           (node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim(),
         );
         const paragraphs = Array.from(cell.children).filter((node) => node.tagName === 'P');
-        if (paragraphs.length && (paragraphs.length !== 1 || children.length !== 1)) {
-          // Multiple native blocks have no lossless GFM pipe-cell representation.
-          // Keep that legacy path separate from single-paragraph roundtrips.
+        if (
+          paragraphs.length &&
+          children.some((node) => !(node instanceof Element && node.tagName === 'P'))
+        ) {
+          // Other block shapes retain their legacy serialization path.
           logger.warn('[markdown-processor] Table cell contains unsupported multiple blocks');
           return processInlineContent(cell).trim();
         }
-        const content = (paragraphs[0] ?? cell).cloneNode(true) as Element;
+        const content = cell.cloneNode(false) as Element;
+        // Pipe Markdown already flattens native paragraphs without a separator.
+        // Flatten before escaping so adjacent marks/code share one inline stream;
+        // paragraph boundaries remain session metadata, not persisted Markdown.
+        for (const parent of paragraphs.length ? paragraphs : [cell])
+          for (const node of Array.from(parent.childNodes)) content.append(node.cloneNode(true));
         const escapeText = (value: string) =>
           value
             .replace(/&/g, '&amp;')

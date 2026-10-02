@@ -278,3 +278,65 @@ for (const preserveAnchors of [true, false]) {
     expect(result.anchorCanonical.includes('data-anchor-id="review:start"')).toBe(preserveAnchors);
   });
 }
+
+for (const preserveAnchors of [true, false]) {
+  test(`native Enter keeps marked cell text through flattened save and destroyed reload (anchors=${preserveAnchors})`, async ({
+    mount,
+    page,
+  }, info) => {
+    const originalSource =
+      '| H | R |\n| :---: | --- |\n| **bold** _italic_ `code` \\| \\\\ TARGET [link](https://example.com) | untouched |';
+    await mount(Harness, { props: { oracle: true, sourceOverride: originalSource } });
+    const host = page.getByTestId('proof');
+    await expect.poll(() => host.evaluate((el) => !!(el as Host).native)).toBe(true);
+    const before = await host.evaluate((el) => {
+      const e = (el as Host).native;
+      let target = -1;
+      e.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text!.includes('TARGET'))
+          target = pos + node.text!.indexOf('TARGET');
+      });
+      if (target < 0) throw new Error('Native Enter target missing');
+      e.commands.setTextSelection(target);
+      e.view.focus();
+      return e.state.doc.firstChild!.toJSON();
+    });
+    await page.keyboard.press('Enter');
+    const live = await host.evaluate((el) => (el as Host).native.state.doc.firstChild!.toJSON());
+    expect(live.content![1].content![0].content).toHaveLength(2);
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await host.evaluate((el) => (el as Host).native.state.doc.firstChild!.toJSON())).toEqual(
+      before,
+    );
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    expect(await host.evaluate((el) => (el as Host).native.state.doc.firstChild!.toJSON())).toEqual(
+      live,
+    );
+    const result = await host.evaluate(async (el, anchors) => {
+      const h = el as Host & {
+        nativeMarkdown: (anchors: boolean) => string;
+        reloadNative: (source: string) => Promise<void>;
+      };
+      const saved = h.nativeMarkdown(anchors).trim();
+      const canonical = await h.parseSource(saved);
+      const old = h.native;
+      await h.reloadNative(saved);
+      return {
+        saved,
+        canonical,
+        destroyed: old.isDestroyed,
+        fresh: h.native.state.doc.firstChild!.toJSON(),
+      };
+    }, preserveAnchors);
+    await info.attach('table-multiple-paragraphs.json', {
+      body: JSON.stringify({ before, live, result }),
+      contentType: 'application/json',
+    });
+    expect(result.destroyed).toBe(true);
+    expect(result.saved.split('\n')).toHaveLength(3);
+    expect(result.saved.split('\n')[1]).toBe('| :---: | --- |');
+    // Fresh canonical state deliberately has the original single paragraph.
+    expect(result.fresh).toEqual(before);
+    expect(result.canonical.doc.content![0]).toEqual(before);
+  });
+}
