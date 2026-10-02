@@ -1,4 +1,6 @@
 {
+  "settings_devices_mobile_title": "Intent Mobile",
+  "settings_devices_mobileDisabled_description": "Intent Mobile을 연결하려면 이 기기에서 원격 액세스를 활성화하세요.",
   "devConsole_title_label": "개발 콘솔",
   "ui_viewSettings_font_label": "글꼴",
   "chat_taskProgress_menu_label": "작업",

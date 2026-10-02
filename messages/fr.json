@@ -1,4 +1,6 @@
 {
+  "settings_devices_mobile_title": "Intent Mobile",
+  "settings_devices_mobileDisabled_description": "Activez l’accès à distance sur cet appareil pour connecter Intent Mobile.",
   "devConsole_title_label": "Console de développement",
   "ui_viewSettings_font_label": "Police",
   "chat_taskProgress_menu_label": "Tâches",

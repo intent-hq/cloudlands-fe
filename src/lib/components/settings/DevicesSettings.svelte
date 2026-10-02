@@ -8,6 +8,7 @@
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import PersonalDevices from '$features/devices/PersonalDevices.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
+  import WebSocketApiSettings from './WebSocketApiSettings.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     LOCAL_CONNECTION_ID,
@@ -25,6 +26,7 @@
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { selectHostAdministrationDenied } from '$store/renderer/slices/principal/principal-selectors';
 
   let { localSettingsRequested = $bindable(0) }: { localSettingsRequested?: number } = $props();
 
@@ -34,6 +36,7 @@
   const connections$ = selectConnections();
   const devices$ = selectRemoteConnections();
   const loaded$ = selectConnectionsLoaded();
+  const hostAdministrationDenied$ = selectHostAdministrationDenied();
 
   let connectModalOpen = $state(false);
   let activeDeviceId = $state<string | null>(null);
@@ -89,70 +92,86 @@
   }
 </script>
 
-<div class="space-y-5">
-  <PersonalDevices />
-  <div>
-    <h2 class="type-caption font-medium text-muted-foreground mb-3">
-      {m.settings_devices_title()}
-    </h2>
-    <p class="max-w-2xl type-body text-muted-foreground">
-      {m.settings_devices_description()}
-    </p>
-  </div>
-
-  <ListView
-    virtualize={false}
-    items={$connections$}
-    getKey={(device) => device.id}
-    getText={(device) => device.label}
-    status={$loaded$ ? 'ready' : 'loading'}
-    ariaLabel={m.settings_devices_title()}
-    class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
-  >
-    {#snippet row({ item: device })}
-      <DeviceRow
-        {device}
-        panelMode={activeDeviceId === device.id ? activePanel : null}
-        onOpenPanel={(panel) => openPanel(device.id, panel)}
-        onClosePanel={closePanel}
-        onRequestRemove={requestRemove}
-      />
-    {/snippet}
-    {#snippet loading()}
-      <p
-        class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
-        role="status"
-      >
-        {m.settings_devices_loading_label()}
-      </p>
-    {/snippet}
-    {#snippet empty()}
-      <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
-        <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
+<WebSocketApiSettings
+  active={!$hostAdministrationDenied$ && $connections$.some((device) => device.isLocal)}
+  expanded={activeDeviceId === LOCAL_CONNECTION_ID && activePanel === 'edit'}
+  onEnabled={() => openPanel(LOCAL_CONNECTION_ID, 'edit')}
+>
+  {#snippet layout(connectionSettings, mobilePairing)}
+    <div class="space-y-5">
+      <PersonalDevices />
+      <div>
+        <h2 class="type-title mb-3 text-foreground">
+          {m.settings_devices_title()}
+        </h2>
+        <p class="max-w-2xl type-body text-muted-foreground">
+          {m.settings_devices_description()}
+        </p>
       </div>
-    {/snippet}
-  </ListView>
 
-  <div class="flex justify-end">
-    <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
-      <Fa icon={faPlus} class="mr-1.5" size="xs" />
-      {m.settings_devices_add_label()}
-    </Button>
-  </div>
+      <ListView
+        virtualize={false}
+        items={$connections$}
+        getKey={(device) => device.id}
+        getText={(device) => device.label}
+        status={$loaded$ ? 'ready' : 'loading'}
+        ariaLabel={m.settings_devices_title()}
+        class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
+      >
+        {#snippet row({ item: device })}
+          <DeviceRow
+            {connectionSettings}
+            {device}
+            panelMode={activeDeviceId === device.id ? activePanel : null}
+            onOpenPanel={(panel) => openPanel(device.id, panel)}
+            onClosePanel={closePanel}
+            onRequestRemove={requestRemove}
+          />
+        {/snippet}
+        {#snippet loading()}
+          <p
+            class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
+            role="status"
+          >
+            {m.settings_devices_loading_label()}
+          </p>
+        {/snippet}
+        {#snippet empty()}
+          <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
+            <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
+            <p class="mt-1 type-body text-muted-foreground">
+              {m.settings_devices_empty_description()}
+            </p>
+          </div>
+        {/snippet}
+      </ListView>
 
-  {#if removeError}
-    <div
-      class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
-      role="alert"
-    >
-      <p class="type-body text-danger">{removeError}</p>
-      <Button variant="ghost" disabled={removing || !removeTarget} onclick={() => removeDevice()}>
-        {m.settings_devices_retry_label()}
-      </Button>
+      <div class="flex justify-end">
+        <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
+          <Fa icon={faPlus} class="mr-1.5" size="xs" />
+          {m.settings_devices_add_label()}
+        </Button>
+      </div>
+
+      {#if removeError}
+        <div
+          class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
+          role="alert"
+        >
+          <p class="type-body text-danger">{removeError}</p>
+          <Button
+            variant="ghost"
+            disabled={removing || !removeTarget}
+            onclick={() => removeDevice()}
+          >
+            {m.settings_devices_retry_label()}
+          </Button>
+        </div>
+      {/if}
+      {@render mobilePairing()}
     </div>
-  {/if}
-</div>
+  {/snippet}
+</WebSocketApiSettings>
 
 <ConnectBackendModal bind:open={connectModalOpen} {defaultAccent} />
 

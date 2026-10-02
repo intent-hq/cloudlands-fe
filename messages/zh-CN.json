@@ -1,4 +1,6 @@
 {
+  "settings_devices_mobile_title": "Intent Mobile",
+  "settings_devices_mobileDisabled_description": "在此设备上启用远程访问以连接 Intent Mobile。",
   "devConsole_title_label": "开发控制台",
   "ui_viewSettings_font_label": "字体",
   "chat_taskProgress_menu_label": "任务",

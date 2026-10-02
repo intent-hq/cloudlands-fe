@@ -190,7 +190,8 @@ describe('WebSocketApiSettings', () => {
         hostname: 'fixture-device',
       });
       await renderExpandedSettings();
-      await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() });
+      const qr = screen.getByRole('button', { name: m.settings_wsApi_showQrCode() });
+      await waitFor(() => expect((qr as HTMLButtonElement).disabled).toBe(false));
     }
 
     it('removes the sensitive pairing image after 30 seconds without a settings write', async () => {
@@ -1256,6 +1257,11 @@ describe('WebSocketApiSettings', () => {
         name: m.settings_wsApi_shareLink_label(),
       });
       expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(
+        (screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      await waitFor(() => expect(resolvePairing).toBeTypeOf('function'));
       resolvePairing({
         token: 'token',
         port: 5181,

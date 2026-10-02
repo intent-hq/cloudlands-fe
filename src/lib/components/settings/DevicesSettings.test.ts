@@ -47,7 +47,10 @@ const mocks = vi.hoisted(() => ({
   settingsList: vi.fn(),
   settingsUpdate: vi.fn(),
   pairingInfo: vi.fn(),
+  qrCode: vi.fn().mockResolvedValue('data:image/png;base64,'),
 }));
+
+vi.mock('qrcode', () => ({ default: { toDataURL: mocks.qrCode } }));
 
 vi.mock('$lib/client', () => ({
   localMachineClient: {
@@ -235,6 +238,58 @@ describe('DevicesSettings', () => {
     stopConnections = undefined;
     dispatchSpy.mockRestore();
     store.dispose();
+  });
+
+  it('enables mobile pairing with remote access and disables it again when access is turned off', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(DevicesSettings);
+    const mobile = screen.getByRole('region', { name: m.settings_devices_mobile_title() });
+    const qr = within(mobile).getByRole('button', { name: m.settings_wsApi_showQrCode() });
+    const copy = within(mobile).getByRole('button', { name: m.settings_wsApi_shareLink_label() });
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    expect(qr.hasAttribute('disabled')).toBe(true);
+    expect(copy.hasAttribute('disabled')).toBe(true);
+    await fireEvent.click(qr);
+    await fireEvent.click(copy);
+    expect(mocks.qrCode).not.toHaveBeenCalled();
+    expect(writeText).not.toHaveBeenCalled();
+
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(copy.hasAttribute('disabled')).toBe(false));
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'server.wsApi.enabled', value: true },
+    ]);
+    await fireEvent.click(copy);
+    const expected =
+      'intent://pair?token=test-token&host=127.0.0.1&port=5181&path=/ws&certFingerprint=AA%3ABB';
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expected));
+    await fireEvent.click(qr);
+    await waitFor(() => expect(mocks.qrCode).toHaveBeenCalledWith(expected, expect.anything()));
+    const dialog = await screen.findByRole('dialog');
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+    expect(qr.hasAttribute('disabled')).toBe(true);
+    expect(copy.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('offers local-machine mobile pairing from a remote window without expanding the local row', async () => {
+    mocks.currentConnectionId = remote.id;
+    mocks.settingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    render(DevicesSettings);
+    const mobile = screen.getByRole('region', { name: m.settings_devices_mobile_title() });
+    const qr = within(mobile).getByRole('button', { name: m.settings_wsApi_showQrCode() });
+    await waitFor(() => expect(qr.hasAttribute('disabled')).toBe(false));
+    await fireEvent.click(qr);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(mocks.pairingInfo).toHaveBeenCalledOnce();
   });
 
   it('shows named remotes without duplicating their address or visible status text', () => {

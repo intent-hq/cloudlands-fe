@@ -1,7 +1,6 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
-  import { onDestroy, untrack } from 'svelte';
-  import WebSocketApiSettings from './WebSocketApiSettings.svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   import {
     Button,
     Input,
@@ -64,9 +63,11 @@
     onOpenPanel: (panel: Exclude<DevicePanelMode, null>) => void;
     onClosePanel: () => void;
     onRequestRemove: (device: ConnectionRecord) => void;
+    connectionSettings?: Snippet<[Snippet?]>;
   }
 
-  let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
+  let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove, connectionSettings }: Props =
+    $props();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
   const currentConnectionId$ = selectCurrentConnectionId();
@@ -560,7 +561,7 @@
       class="px-4 pb-4 sm:px-5"
       hidden={$currentConnectionId$ !== device.id && panelMode !== 'edit'}
     >
-      <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
+      {#snippet localIcon()}
         <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
           {#snippet control()}
             <DeviceIconPicker
@@ -572,7 +573,8 @@
             />
           {/snippet}
         </SettingsFieldRow>
-      </WebSocketApiSettings>
+      {/snippet}
+      {@render connectionSettings?.(localIcon)}
     </div>
   {/if}
 

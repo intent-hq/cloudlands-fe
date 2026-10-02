@@ -1,4 +1,6 @@
 {
+  "settings_devices_mobile_title": "Intent Mobile",
+  "settings_devices_mobileDisabled_description": "Intent Mobile を接続するには、このデバイスでリモートアクセスを有効にしてください。",
   "devConsole_title_label": "開発コンソール",
   "ui_viewSettings_font_label": "フォント",
   "chat_taskProgress_menu_label": "タスク",

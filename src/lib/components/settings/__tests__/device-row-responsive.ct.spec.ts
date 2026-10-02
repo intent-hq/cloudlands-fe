@@ -57,7 +57,7 @@ for (const width of [360, 1024]) {
       hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'local-expanded' } },
     });
     const local = page.getByRole('article', { name: 'This machine (local)' });
-    await expect(local.getByRole('button', { name: 'Show QR Code' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show QR Code' })).toBeEnabled();
     const advanced = local.getByRole('button', { name: 'Advanced', exact: true });
     await expect(advanced).toHaveAttribute('aria-expanded', 'false');
     await expect(local.getByRole('spinbutton', { name: 'Port' })).toBeHidden();
@@ -82,17 +82,20 @@ for (const width of [360, 1024]) {
     await page.keyboard.press('Escape');
     await expect(networks).toHaveValue('127.0.0.1 (localhost), 192.0.2.10');
     await page.evaluate(() => document.fonts.ready);
-    const overflowing = await local.evaluate((row) => {
-      const bounds = row.getBoundingClientRect();
-      return [...row.querySelectorAll('button, input, code')]
-        .filter((node) => node.getClientRects().length > 0)
-        .filter((node) => {
-          const rect = node.getBoundingClientRect();
-          return rect.left < bounds.left - 1 || rect.right > bounds.right + 1;
-        })
-        .map((node) => node.getAttribute('aria-label') ?? node.textContent);
-    });
-    expect(overflowing).toEqual([]);
+    const mobile = page.getByRole('region', { name: 'Intent Mobile', exact: true });
+    for (const section of [local, mobile]) {
+      const overflowing = await section.evaluate((row) => {
+        const bounds = row.getBoundingClientRect();
+        return [...row.querySelectorAll('button, input, code')]
+          .filter((node) => node.getClientRects().length > 0)
+          .filter((node) => {
+            const rect = node.getBoundingClientRect();
+            return rect.left < bounds.left - 1 || rect.right > bounds.right + 1;
+          })
+          .map((node) => node.getAttribute('aria-label') ?? node.textContent);
+      });
+      expect(overflowing).toEqual([]);
+    }
     await page.getByRole('button', { name: 'Actions for Studio Mac' }).click();
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
     await expect(local.getByRole('spinbutton', { name: 'Port' })).toHaveCount(0);

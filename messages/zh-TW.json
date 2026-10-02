@@ -1,4 +1,6 @@
 {
+  "settings_devices_mobile_title": "Intent Mobile",
+  "settings_devices_mobileDisabled_description": "在此裝置上啟用遠端存取以連線至 Intent Mobile。",
   "devConsole_title_label": "開發主控台",
   "ui_viewSettings_font_label": "字型",
   "chat_taskProgress_menu_label": "任務",
