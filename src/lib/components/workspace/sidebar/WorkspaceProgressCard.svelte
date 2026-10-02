@@ -134,11 +134,10 @@
   // Sharing is a lab: the Share entry point stays hidden until the user turns
   // the Multiplayer lab on in Settings → Labs (local preference, off by default).
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
-  // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
+  // (workspace.list §5.1 or task.list §5.4). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
-  // Gate the progress placeholder on "not yet initialized" rather than "any
-  // fetch in flight" so event-driven refetches never remount the bar and
-  // replay its entrance animation (the flex-grow transition animates the diff).
+  // Aggregate progress is ready from workspace.list even when no chat has
+  // requested individual task rows. Refreshes must not replay the placeholder.
   const tasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
@@ -684,7 +683,8 @@
   // BE-owned task progress rollup (PROTOCOL §5.4): rendered verbatim from the
   // workspace-tasks slice — no client classification of task status.
   const taskStats = $derived($taskStats$);
-  const showFlameGraph = $derived(!$tasksInitialized$ || taskStats.total > 0);
+  const taskProgressReady = $derived($tasksInitialized$ || !!$workspace?.taskStats);
+  const showFlameGraph = $derived(!taskProgressReady || taskStats.total > 0);
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -1169,13 +1169,13 @@
 
   <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
     {#if showFlameGraph}
-      <!-- Keep the task progress placeholder visible until canonical tasks first load. -->
+      <!-- Keep the task progress placeholder visible until daemon progress arrives. -->
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
         <FlameGraph
           notes={$notes}
           onTaskClick={_onOpenNote}
           progress={completionRatio}
-          loading={!$tasksInitialized$}
+          loading={!taskProgressReady}
           animationKey={workspaceId}
         />
       </div>

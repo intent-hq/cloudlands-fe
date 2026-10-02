@@ -15,6 +15,7 @@ export type ScriptMode = 'service' | 'command';
 export type ScriptArchiveFilter = 'active' | 'archived' | 'all';
 export type ScriptPurpose = 'saved' | 'oneOff';
 interface ScriptLastRun {
+  runId?: string;
   outcome: 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   exitCode?: number;
   startedAt?: string;
@@ -68,6 +69,7 @@ export interface WorkspaceScript {
  * Runtime state of a script process — kept in memory, not persisted.
  */
 export interface ScriptRuntimeState {
+  runId?: string;
   status: ScriptStatus;
   pid?: number;
   exitCode?: number | null;
