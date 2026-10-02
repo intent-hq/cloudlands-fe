@@ -55,6 +55,7 @@
     cardSeamMessages,
     liveMessages,
     pendingProposals,
+    chiefWorkspace = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -75,6 +76,7 @@
     cardSeamMessages?: AgentMessage[];
     liveMessages?: AgentMessage[];
     pendingProposals?: PendingProposalRef[];
+    chiefWorkspace?: boolean;
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
@@ -82,7 +84,9 @@
   const cardSeamFixture = untrack(() => cardSeamMessages);
   const liveFixture = untrack(() => liveMessages);
   const pendingProposalFixture = untrack(() => pendingProposals);
-  const workspaceId = 'chat-panel-operational-geometry';
+  const workspaceId = untrack(() => chiefWorkspace)
+    ? '__chief__'
+    : 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
   const watchedFixture = untrack(() => watchedAgent);
