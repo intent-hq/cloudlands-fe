@@ -11,7 +11,7 @@ import { bytes } from './bounded-note-service';
 
 beforeAll(() => store.init());
 afterAll(() => store.dispose());
-function copy(editor: Editor) {
+function copy(editor: Editor, external?: () => Record<string, string>) {
   const values: Record<string, string> = {};
   const event = new Event('copy', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'clipboardData', {
@@ -26,8 +26,11 @@ function copy(editor: Editor) {
   });
   editor.view.dom.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(true);
-  expect(values['text/html']).toContain('<table');
-  return values;
+  // The bridge seam publishes outside renderer ownership; no full strings enter event.setData.
+  if (external) expect(values).toEqual({});
+  const published = external ? external() : values;
+  expect(published['text/html']).toContain('<table');
+  return published;
 }
 for (const [rows, length] of [
   [8, 6],
@@ -79,7 +82,8 @@ for (const [rows, length] of [
       };
       await session.seek(raw.rows[Math.floor(rows / 2)].cells[0].body);
       expect(session.editor!.state.selection).toBeInstanceOf(CellSelection);
-      const projected = copy(session.editor!);
+      const projected = copy(session.editor!, () => service.clipboardSink.published);
+      expect(session.error).toBe('');
       console.info('Native rectangle clipboard evidence', {
         rows,
         length,
@@ -93,6 +97,11 @@ for (const [rows, length] of [
       expect(projected['text/plain']).toBe(full['text/plain']);
       expect(projected['text/html']).toBe(full['text/html']);
       expect(service.region(0)).toBe(source);
+      expect(session.clipboardRelay.maxPageBytes).toBeLessThanOrEqual(4096);
+      expect(session.clipboardRelay.maxOutstandingPages).toBe(1);
+      expect(session.clipboardRelay.maxTransientBytes).toBeLessThanOrEqual(3 * 4096 + 4096);
+      expect(service.clipboardBacking.retainedBytes).toBe(0);
+      expect(service.clipboardSink.stagingBytes).toBe(0);
       expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
     } finally {
       native.destroy();

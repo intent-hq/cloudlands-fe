@@ -1,3 +1,4 @@
+import { relayClipboard, type ClipboardRelayStats } from './table-clipboard';
 import { tableEditWork } from './table-inline-source';
 import { tableNodeBudget, tableResourceBound, measureTableDOM } from './table-resources';
 import { tableRunWork } from './table-run-context';
@@ -28,6 +29,27 @@ import { CellSelection, tableEditingKey } from '@tiptap/pm/tables';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
+  readonly clipboardRelay: ClipboardRelayStats = {
+    maxPageBytes: 0,
+    maxTransientBytes: 0,
+    maxOutstandingPages: 0,
+    pages: 0,
+  };
+  copyTableSelection() {
+    const manifest = this.service.openTableClipboard(this.selection, this.editor!.schema);
+    try {
+      relayClipboard(
+        manifest,
+        (index) => this.service.clipboardBacking.page(manifest.id, index),
+        this.service.clipboardSink,
+        () => this.service.revision,
+        this.clipboardRelay,
+      );
+    } finally {
+      this.service.clipboardBacking.close(manifest.id);
+    }
+  }
+
   editor?: Editor;
   projection?: SourceProjection;
   selection: Selection = { anchor: 0, head: 0, affinity: 1, revision: 1 };
@@ -898,6 +920,17 @@ export class DocumentSession {
           ...config.editorProps,
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
+            copy: (_view, event) => {
+              if (this.selection.table?.kind !== 'cell') return false;
+              event.preventDefault();
+              try {
+                this.copyTableSelection();
+                this.error = '';
+              } catch (error) {
+                this.error = String(error);
+              }
+              return true;
+            },
             beforeinput: (_view, event) => {
               if (this.replayingInput || !event.cancelable) return false;
               const p = this.projection!;
@@ -1568,6 +1601,16 @@ export class DocumentSession {
       tableBound && this.editor ? measureTableDOM(this.editor.view.dom, tableBound) : undefined;
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
+      clipboardRelay: { ...this.clipboardRelay },
+      externalClipboardBacking: {
+        ...this.service.clipboardBacking.stats,
+        retainedBytes: this.service.clipboardBacking.retainedBytes,
+      },
+      externalClipboardSink: {
+        maxStagingBytes: this.service.clipboardSink.maxStagingBytes,
+        stagingBytes: this.service.clipboardSink.stagingBytes,
+        publications: this.service.clipboardSink.publications,
+      },
       tableEditWork: { ...tableEditWork },
       tableRunParseCalls: tableRunWork.calls,
       tableRunParseBytes: tableRunWork.bytes,

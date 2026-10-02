@@ -1,3 +1,9 @@
+import {
+  ClipboardBacking,
+  ExternalClipboardSink,
+  serializeTableClipboard,
+} from './table-clipboard';
+import type { Schema } from '@tiptap/pm/model';
 import { encodeTablePages, TABLE_ACTIVE_BYTES } from './table-transfer';
 import { TableHeights } from './table-heights';
 import { cloneTableWindow, packTableWindow } from './table-payload';
@@ -87,6 +93,30 @@ export const mapSelection = (r: Selection, s: Splice, revision: number): Selecti
 });
 
 export class SourceJournal {
+  readonly clipboardBacking = new ClipboardBacking();
+  readonly clipboardSink = new ExternalClipboardSink();
+  openTableClipboard(selection: Selection, schema: Schema) {
+    const request = JSON.stringify(selection);
+    if (bytes(request) > LIMITS.request) throw new Error('Clipboard intent exceeds budget');
+    const received = JSON.parse(request) as Selection;
+    if (received.revision !== this.revision || received.table?.kind !== 'cell')
+      throw new Error('Stale clipboard request');
+    const { id, start } = this.locate(received.table.anchor.cell),
+      source = this.region(id);
+    const table = this.tableIndex(source, start).find(
+      (t) =>
+        received.table!.anchor.cell - start >= t.from && received.table!.anchor.cell - start < t.to,
+    );
+    if (!table) throw new Error('Clipboard table no longer exists');
+    return this.clipboardBacking.open(
+      this.revision,
+      serializeTableClipboard(source, start, table, received.table, schema, (cell) => {
+        const stored = this.tableStates.get(`cell:${cell}`);
+        return stored ? JSON.parse(stored) : undefined;
+      }),
+    );
+  }
+
   // These serialized blobs model backing-store records, never renderer caches.
   private tableStates = new Map<string, string>();
   private applyTableState(change: Splice & { tableState: string }) {
