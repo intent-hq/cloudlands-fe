@@ -22,6 +22,24 @@ test('native cell pointer selection crosses a projected column edge without disa
   const results = [];
   for (const side of ['native', 'bounded']) {
     const root = page.getByTestId(side).getByTestId('proof');
+    const phases: unknown[] = [];
+    const capture = async (phase: string) => {
+      phases.push({
+        phase,
+        ...(await root.evaluate((el) => {
+          const h = el as Host,
+            editor = h.proof?.editor ?? h.native;
+          const plugin = editor!.state.plugins.find((p) =>
+            (p as unknown as { key: string }).key.startsWith('selectingCells'),
+          );
+          return {
+            selection: editor!.state.selection.toJSON(),
+            dragAnchor: plugin?.getState(editor!.state),
+            logical: h.proof?.selection.table,
+          };
+        })),
+      });
+    };
     await expect(root.locator('.tiptap')).toHaveCount(1);
     if (side === 'native')
       await root.evaluate((el) => {
@@ -67,15 +85,23 @@ test('native cell pointer selection crosses a projected column edge without disa
       // screen coordinates away; the native plugin initially resolves that point.
       const next = await point('r1c1');
       await page.mouse.move(next.x, next.y, { steps: 4 });
+      await capture('established');
       await root.evaluate((el) => {
         const host = el.querySelector('[data-testid="editor-host"]')!;
         host.parentElement!.scrollLeft = 183 * 2;
       });
       await expect.poll(() => root.locator('td').allTextContents()).toContain('r1c4');
+      await capture('paged');
       const end = await point('r1c4');
       await page.mouse.move(end.x, end.y, { steps: 8 });
+      await capture('moved');
     } finally {
       await page.mouse.up();
+      await capture('released');
+      await info.attach(`table-${side}-pointer-phases.json`, {
+        body: JSON.stringify(phases),
+        contentType: 'application/json',
+      });
     }
     await settled(page);
     const result = await root.evaluate((el) => {
