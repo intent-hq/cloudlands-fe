@@ -18,14 +18,14 @@ for (const scenario of [
     openLabel: 'Open GitLab',
     settings: false,
   },
-  {
-    name: 'compact GitLab settings with a long instance URI',
-    forge: 'gitlab-device',
-    width: 360,
+  ...[360, 420, 720].map((width) => ({
+    name: `GitLab settings at ${width}px with a long instance URI`,
+    forge: 'gitlab-device' as const,
+    width,
     uri: 'https://engineeringgitlabinstancewithaverylongunbrokensubdomain.internal.example.test:8443/company/platform/identity/authorization/device',
     openLabel: 'Open GitLab',
     settings: true,
-  },
+  })),
 ] as const) {
   test(`${scenario.name} keeps the complete device URI selectable and actions usable`, async ({
     mount,
@@ -47,6 +47,49 @@ for (const scenario of [
     const uri = component.getByText(scenario.uri, { exact: true });
     await expect(uri).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
+    if (scenario.settings) {
+      const title = component.getByText('GitLab', { exact: true });
+      await expect(title).toBeVisible();
+      const header = await title.evaluate((element) => {
+        const content = element.parentElement!.parentElement!;
+        const description = content.nextElementSibling!;
+        const bounds = content.getBoundingClientRect();
+        const descriptionBounds = description.getBoundingClientRect();
+        const titleBounds = element.getBoundingClientRect();
+        const statusElement = content.lastElementChild!;
+        const statusBounds = statusElement.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNodeContents(description);
+        return {
+          content: bounds.toJSON(),
+          title: titleBounds.toJSON(),
+          status: statusBounds.toJSON(),
+          statusText: statusElement.textContent?.trim(),
+          description: descriptionBounds.toJSON(),
+          descriptionLines: [...text.getClientRects()].map((rect) => rect.toJSON()),
+          width: content.clientWidth,
+          scrollWidth: content.scrollWidth,
+        };
+      });
+      expect(header.statusText).toBe('Waiting for authorization...');
+      expect(header.scrollWidth).toBeLessThanOrEqual(header.width + 1);
+      // The explanation gets the content width, independent of the status width.
+      expect(Math.abs(header.description.left - header.content.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(header.description.right - header.content.right)).toBeLessThanOrEqual(1);
+      expect(header.description.top).toBeGreaterThanOrEqual(header.status.bottom - 1);
+      expect(
+        header.status.left >= header.title.right - 1 ||
+          header.status.top >= header.title.bottom - 1,
+      ).toBe(true);
+      for (const bounds of [header.title, header.status, ...header.descriptionLines]) {
+        expect(bounds.left).toBeGreaterThanOrEqual(header.content.left - 1);
+        expect(bounds.right).toBeLessThanOrEqual(header.content.right + 1);
+      }
+      await testInfo.attach('connection-header-layout', {
+        body: JSON.stringify(header, null, 2),
+        contentType: 'application/json',
+      });
+    }
     const geometry = await uri.evaluate((element) => {
       const paragraph = element.parentElement!;
       const bounds = paragraph.getBoundingClientRect();
