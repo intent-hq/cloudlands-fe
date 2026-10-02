@@ -8,7 +8,7 @@ import {
 } from '@tiptap/pm/model';
 import { __clipCells, __pastedCells, removeColSpan } from '@tiptap/pm/tables';
 import { Transform } from '@tiptap/pm/transform';
-import { EditorState, TextSelection } from '@tiptap/pm/state';
+import { EditorState, TextSelection, type Plugin } from '@tiptap/pm/state';
 import {
   getTextBetween,
   getTextSerializersFromSchema,
@@ -110,6 +110,28 @@ export function fitCellTextPaste(
     for (let i = 0; i < point.block; i++) pos += cell.child(i).nodeSize;
     return pos + point.offset;
   };
+  const result = fitNativeTextPaste(cell, position(anchor), position(head), value, editor);
+  return {
+    cell: result.state.doc,
+    point: {
+      cell: head.cell,
+      block: result.state.selection.$head.index(0),
+      offset: result.state.selection.$head.parentOffset,
+    },
+    costs: result.costs,
+  };
+}
+
+/** External mock backing only. Additional native plugins can repair structure;
+ * all documents and appended transactions are counted outside renderer bounds. */
+export function fitNativeTextPaste(
+  cell: PMNode,
+  anchor: number,
+  head: number,
+  value: ClipboardValue,
+  editor: Editor,
+  structuralPlugins: Plugin[] = [],
+) {
   const plugins = sortExtensions([...editor.extensionManager.extensions].reverse()).flatMap(
     (extension) => {
       const add = getExtensionField<(() => PasteRule[]) | undefined>(extension, 'addPasteRules', {
@@ -125,10 +147,10 @@ export function fitCellTextPaste(
     },
   );
   const state = EditorState.create({
-    plugins,
+    plugins: [...structuralPlugins, ...plugins],
     schema: cell.type.schema,
     doc: cell,
-    selection: TextSelection.create(cell, position(anchor), position(head)),
+    selection: TextSelection.create(cell, anchor, head),
   });
   const container = document.createElement('div');
   const plain = !value['text/html'];
@@ -165,12 +187,7 @@ export function fitCellTextPaste(
     nodes++;
   });
   return {
-    cell: result.state.doc,
-    point: {
-      cell: head.cell,
-      block: result.state.selection.$head.index(0),
-      offset: result.state.selection.$head.parentOffset,
-    },
+    state: result.state,
     costs: {
       elements: container.querySelectorAll('*').length,
       nodes,

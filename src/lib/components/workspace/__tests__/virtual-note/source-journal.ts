@@ -1,3 +1,4 @@
+import { planTableTextPaste } from './table-text-paste-plan';
 import { planTablePaste } from './table-paste-plan';
 import {
   ClipboardBacking,
@@ -110,6 +111,9 @@ export class SourceJournal {
   maxClipboardTextFitNodes = 0;
   maxClipboardTextFitBytes = 0;
   maxClipboardTextFitDOM = 0;
+  maxClipboardRangeFitNodes = 0;
+  maxClipboardRangeFitBytes = 0;
+  maxClipboardRangePlanBytes = 0;
   maxClipboardPastePlanBytes = 0;
   maxClipboardPastePlanCells = 0;
   maxClipboardPasteMetadataBytes = 0;
@@ -159,8 +163,67 @@ export class SourceJournal {
       parsed.costs.repeatedBytes,
     );
     if (textSelection && !parsed.tableInput) {
-      if (anchor.from !== head.from)
-        throw new Error('Cross-cell text paste still needs native range fitting');
+      if (anchor.from !== head.from) {
+        const plan = planTableTextPaste(
+          source,
+          start,
+          table,
+          logical.anchor,
+          logical.head,
+          this.clipboardInputSink.published,
+          editor,
+          (from) => {
+            const value = this.tableStates.get(`cell:${from + start}`);
+            return value ? JSON.parse(value) : undefined;
+          },
+        );
+        this.maxClipboardRangeFitNodes = Math.max(this.maxClipboardRangeFitNodes, plan.costs.nodes);
+        this.maxClipboardRangeFitBytes = Math.max(
+          this.maxClipboardRangeFitBytes,
+          plan.costs.serializedBytes,
+        );
+        this.maxClipboardRangePlanBytes = Math.max(
+          this.maxClipboardRangePlanBytes,
+          plan.costs.planBytes,
+        );
+        for (const cell of all)
+          if (this.tableStates.has(`cell:${cell.from + start}`))
+            this.stageTableState(`cell:${cell.from + start}`, '');
+        const previous = source.slice(table.from, table.to);
+        let prefix = 0,
+          suffix = 0;
+        while (
+          prefix < previous.length &&
+          prefix < plan.text.length &&
+          previous[prefix] === plan.text[prefix]
+        )
+          prefix++;
+        while (
+          suffix < previous.length - prefix &&
+          suffix < plan.text.length - prefix &&
+          previous[previous.length - suffix - 1] === plan.text[plan.text.length - suffix - 1]
+        )
+          suffix++;
+        this.stage({
+          from: table.from + start + prefix,
+          to: table.to + start - suffix,
+          insert: plan.text.slice(prefix, plan.text.length - suffix),
+        });
+        for (const cell of plan.states)
+          this.stageTableState(`cell:${cell.from}`, JSON.stringify(cell.node));
+        const after: Selection = {
+          anchor: plan.caret,
+          head: plan.caret,
+          affinity: 1,
+          revision: this.revision,
+          table: { kind: 'text', anchor: plan.point, head: plan.point },
+        };
+        this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(encoded));
+        const response = JSON.stringify(after);
+        if (bytes(response) > LIMITS.request)
+          throw new Error('Clipboard paste response exceeds budget');
+        return JSON.parse(response) as Selection;
+      }
       const stored = this.tableStates.get(`cell:${head.from + start}`);
       const cell = schema.nodeFromJSON(
         stored
