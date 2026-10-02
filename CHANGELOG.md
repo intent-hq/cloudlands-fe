@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.198.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.198.0...v2.198.1) (2026-10-02)
+
+
+### 🐛 Bug Fixes
+
+* insert sub-agent panes after their opener ([#3106](https://github.com/intent-hq/cloudlands-fe/issues/3106)) ([bebabfa](https://github.com/intent-hq/cloudlands-fe/commit/bebabfad867d52d60058dddd45fc68dfeeee29c5))
+
 ## [2.198.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.197.0...v2.198.0) (2026-10-02)
 
 
