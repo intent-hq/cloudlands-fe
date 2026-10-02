@@ -420,8 +420,14 @@ for (const scenario of ['nested', 'oversized'] as const) {
           await expect(region.getByRole('textbox', { name: 'Find', exact: true })).toBeInViewport({
             ratio: 1,
           });
+          // Activate this editor's find widget before sending its navigation shortcut.
+          // Wait for focus and search readiness separately from the key action.
+          const find = region.getByRole('textbox', { name: 'Find', exact: true });
+          await find.click();
+          await expect(find).toBeFocused();
+          await expect(region.locator('.matchesCount')).toHaveText('1 of 1');
           // Resizing may change native scroll position; navigation must reveal the match again.
-          await region.getByRole('textbox', { name: 'Find', exact: true }).press('Enter');
+          await find.press('Enter');
           await expect(region.locator('.currentFindMatch')).toBeInViewport({ ratio: 1 });
           await expect(region.getByRole('button', { name: 'Search', exact: true })).toBeInViewport({
             ratio: 1,
