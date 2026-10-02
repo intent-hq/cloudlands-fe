@@ -167,6 +167,8 @@ describe('streaming RPC capture', () => {
     );
   });
 
+  // Includes synthetic delivery for the broader documented search contract:
+  // the current daemon returns search.inFiles/fileNames inline.
   it.each([
     'git.clone',
     'search.inFiles',
@@ -520,3 +522,40 @@ it.each(['host.execStream.write', 'host.execStream.cancel'])(
     );
   },
 );
+
+it('releases a completed inline message search before reusing its ID for streaming', async () => {
+  const h = setup();
+  const match = {
+    agentId: 'a',
+    messageId: 'm',
+    workspaceId: 'w',
+    agentName: 'Example',
+    role: 'user',
+    timestamp: '2026-10-02T00:00:00Z',
+    preview: 'hello',
+  };
+  const first = h.client.request('search.messages', {
+    workspaceId: 'w',
+    query: 'hello',
+    requestId: 'query',
+  });
+  h.socket.receive({ id: 1, result: { requestId: 'query', matches: [match] } });
+  await first;
+  expect(h.rows()[0]).toMatchObject({ streamState: 'ended', frameCount: 2 });
+  const params = { workspaceId: 'w', query: 'hell', requestId: 'query' };
+  const second = h.client.request('search.messages', params);
+  const ack = { requestId: 'query', matches: [] };
+  h.socket.receive({ id: 2, result: ack });
+  await second;
+  const matches = Array.from({ length: 26 }, (_, n) => ({ ...match, messageId: `m${n}` }));
+  const batch = bus('s', 'search:result', { requestId: 'query', matches });
+  h.socket.receive({ method: 'events.event', params: batch });
+  expect(h.rows()[1]).toMatchObject({ streamState: 'open', frameCount: 3 });
+  const done = bus('s', 'search:done', { requestId: 'query', total: 26, truncated: false });
+  h.socket.receive({ method: 'events.event', params: done });
+  expect(h.rows()[1]).toMatchObject({ streamState: 'ended', frameCount: 4 });
+  expect(trafficBytes(h.rows()[1])).toBe(
+    [params, ack, batch, done].reduce((n, p) => n + bytes(p), 0),
+  );
+  expect(h.rows()[0].frameCount).toBe(2);
+});

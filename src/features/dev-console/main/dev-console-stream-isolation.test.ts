@@ -267,36 +267,3 @@ it('does not guess ownership of trailing output when a completed host ID is reus
   expect(h.rows()[0].frameCount).toBe(3);
   expect(h.rows().find((r) => r.requestId === 'new')?.frameCount).toBe(2);
 });
-
-it.each([
-  'search.inFiles',
-  'search.fileNames',
-  'search.messages',
-  'search.events',
-  'search.codebase',
-])('releases a completed nonempty inline %s result before ID reuse', (method) => {
-  const h = setup();
-  h.source.request('first', 'outbound', method, {
-    workspaceId: 'w',
-    query: 'x',
-    pattern: 'x',
-    requestId: 'query',
-  });
-  h.source.reply('first', {
-    requestId: 'query',
-    ...(method === 'search.fileNames' ? { files: ['x.ts'] } : { matches: [{ preview: 'x' }] }),
-  });
-  expect(h.rows()[0]).toMatchObject({ streamState: 'ended', frameCount: 2 });
-  h.source.request('second', 'outbound', method, {
-    workspaceId: 'w',
-    query: 'xy',
-    pattern: 'xy',
-    requestId: 'query',
-  });
-  h.source.reply('second', { requestId: 'query', matches: [] });
-  h.source.notification('inbound', 'events.event', {
-    event: { type: 'search:result', data: { requestId: 'query', matches: [{ preview: 'xy' }] } },
-  });
-  expect(h.rows()[1]).toMatchObject({ streamState: 'open', frameCount: 3 });
-  expect(h.rows()[0].frameCount).toBe(2);
-});
