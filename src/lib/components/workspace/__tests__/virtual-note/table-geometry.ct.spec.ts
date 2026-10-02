@@ -167,3 +167,202 @@ test('viewport resize and font changes preserve logical and pixel caret anchors'
     expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
   }
 });
+
+test('actual table glyph resizing preserves the native caret and invalidates row measurements', async ({
+  mount,
+  page,
+}, info) => {
+  await mount(Harness, {
+    props: {
+      sourceOverride:
+        '| H | R |\n| --- | --- |\n| ' + 'word '.repeat(120) + 'TARGET tail | right |',
+    },
+  });
+  const root = page.getByTestId('proof');
+  await expect(root.locator('.tiptap')).toHaveCount(1);
+  await root.evaluate(async (el) => {
+    const p = (el as Host).proof;
+    const at = p.service.region(0).indexOf('TARGET') + 2;
+    await p.seek(at);
+    p.editor!.commands.setTextSelection(p.projection!.pmAt(at));
+    p.editor!.view.focus();
+  });
+  await settled(page);
+  const snapshot = () =>
+    root.evaluate((el) => {
+      const p = (el as Host).proof;
+      return {
+        native: p.projection!.table!.pointAt(p.editor!.state.selection.head),
+        point: p.selection.table!.head,
+        coords: p.editor!.view.coordsAtPos(p.editor!.state.selection.head),
+        font: getComputedStyle(p.editor!.view.dom.querySelector('td')!).fontSize,
+        geometry: p.projection!.table!.window.geometry,
+        stats: p.snapshot(),
+      };
+    });
+  const before = await snapshot();
+  // Tables use rem sizing independently of the editor root's inline font size.
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '20px';
+  });
+  await settled(page);
+  await expect
+    .poll(() =>
+      root.evaluate((el) =>
+        (el as Host).proof.projection!.table!.window.geometry!.font.includes('|20px|'),
+      ),
+    )
+    .toBe(true);
+  const after = await snapshot();
+  await info.attach('table-actual-font-anchor.json', {
+    body: JSON.stringify({ before, after }),
+    contentType: 'application/json',
+  });
+  expect(before.font).toBe('16px');
+  expect(after.font).toBe('20px');
+  expect(after.geometry!.font).not.toBe(before.geometry!.font);
+  expect(after.native).toEqual(before.native);
+  expect(after.native).toEqual(after.point);
+  expect(Math.abs(after.coords.top - before.coords.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.coords.left - before.coords.left)).toBeLessThanOrEqual(1);
+  expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+});
+
+test('horizontal and vertical revisits restore the native cell after actual view eviction', async ({
+  mount,
+  page,
+}, info) => {
+  await mount(Harness, { props: { sourceOverride: source } });
+  const root = page.getByTestId('proof');
+  await expect(root.locator('.tiptap')).toHaveCount(1);
+  await root.evaluate(async (el) => {
+    const p = (el as Host).proof,
+      at = p.service.region(0).indexOf('r101c42') + 3;
+    await p.seek(at);
+    p.editor!.commands.setTextSelection(p.projection!.pmAt(at));
+    p.editor!.view.focus();
+  });
+  await settled(page);
+  const before = await root.evaluate((el) => {
+    const p = (el as Host).proof;
+    return { point: p.selection.table, destroyed: p.destroyed, width: p.tableColumnWidth };
+  });
+  const visits = [];
+  for (let visit = 0; visit < 2; visit++) {
+    for (const [row, column] of [
+      [10, 10],
+      [100, 40],
+    ]) {
+      await root.evaluate(
+        (el, [row, column]) => {
+          const p = (el as Host).proof,
+            scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+          scroller.scrollTop = row * 41;
+          scroller.scrollLeft = column * p.tableColumnWidth;
+        },
+        [row, column],
+      );
+      await expect
+        .poll(() =>
+          root.evaluate(
+            (el, [row, column]) =>
+              (el as Host).proof.projection!.table!.window.cells.some(
+                (c) => c.row === row && c.column === column,
+              ),
+            [row, column],
+          ),
+        )
+        .toBe(true);
+      await settled(page);
+    }
+    visits.push(
+      await root.evaluate((el) => {
+        const p = (el as Host).proof;
+        return {
+          point: p.selection.table,
+          native: p.projection!.table!.pointAt(p.editor!.state.selection.head),
+          stats: p.snapshot(),
+          source: p.service.region(0),
+        };
+      }),
+    );
+  }
+  await info.attach('table-revisit-native.json', {
+    body: JSON.stringify({ before, visits }),
+    contentType: 'application/json',
+  });
+  for (const visit of visits) {
+    expect(visit.point).toEqual(before.point);
+    expect(visit.native).toEqual(before.point!.head);
+    expect(visit.stats.destroyed).toBeGreaterThan(before.destroyed);
+    expect(visit.stats.tableColumnWidth).toBe(before.width);
+    expect(visit.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+    expect(visit.source).toBe(source);
+  }
+});
+
+test('remote row insertion and deletion retain the active native cell and its pixel anchor', async ({
+  mount,
+  page,
+}, info) => {
+  await mount(Harness, { props: { sourceOverride: source } });
+  const root = page.getByTestId('proof');
+  await expect(root.locator('.tiptap')).toHaveCount(1);
+  await root.evaluate(async (el) => {
+    const p = (el as Host).proof,
+      at = p.service.region(0).indexOf('r101c42') + 3;
+    await p.seek(at);
+    p.editor!.commands.setTextSelection(p.projection!.pmAt(at));
+    p.editor!.view.focus();
+  });
+  await settled(page);
+  const snapshot = () =>
+    root.evaluate((el) => {
+      const p = (el as Host).proof;
+      return {
+        native: p.projection!.table!.pointAt(p.editor!.state.selection.head),
+        point: p.selection.table!.head,
+        coords: p.editor!.view.coordsAtPos(p.editor!.state.selection.head),
+        revision: p.projection!.table!.window.revision,
+        stats: p.snapshot(),
+      };
+    });
+  const before = await snapshot();
+  const row = '| ' + Array(100).fill('remote').join(' | ') + ' |\n';
+  const at = source.indexOf('| r0c0');
+  await root.evaluate(
+    (el, { at, row }) => {
+      (el as Host).proof.remote({ from: at, to: at, insert: row });
+    },
+    { at, row },
+  );
+  await expect
+    .poll(() => root.evaluate((el) => (el as Host).proof.projection!.table!.window.revision))
+    .toBe(before.revision + 1);
+  await settled(page);
+  const inserted = await snapshot();
+  await root.evaluate(
+    (el, { at, row }) => {
+      (el as Host).proof.remote({ from: at, to: at + row.length, insert: '' });
+    },
+    { at, row },
+  );
+  await expect
+    .poll(() => root.evaluate((el) => (el as Host).proof.projection!.table!.window.revision))
+    .toBe(before.revision + 2);
+  await settled(page);
+  const deleted = await snapshot();
+  await info.attach('table-remote-anchor.json', {
+    body: JSON.stringify({ before, inserted, deleted }),
+    contentType: 'application/json',
+  });
+  expect(inserted.native).toEqual({ ...before.native, cell: before.native.cell + row.length });
+  expect(deleted.native).toEqual(before.native);
+  for (const after of [inserted, deleted]) {
+    expect(after.native).toEqual(after.point);
+    expect(Math.abs(after.coords.top - before.coords.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.coords.left - before.coords.left)).toBeLessThanOrEqual(1);
+    expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
+  }
+  expect(await root.evaluate((el) => (el as Host).proof.service.region(0))).toBe(source);
+});
