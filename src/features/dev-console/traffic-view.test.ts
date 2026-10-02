@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   orderTraffic,
+  trafficBytes,
   selectedPayloadReader,
   payloadDocument,
   payloadSupportsRichView,
@@ -191,4 +192,53 @@ it('combines exactly the existing streams chronologically, with arrival-order ti
   expect(ids()).toEqual(['earlier', 'out', 'event', 'in']);
   expect(orderTraffic(traffic, 'all', '', 'bytes', true)[0]).toBe(traffic[0]);
   expect(traffic.map((record) => record.id)).toEqual(['out', 'event', 'in', 'earlier', 'excluded']);
+});
+
+it('sorts by cumulative stream bytes without recounting the retained acknowledgement', () => {
+  const streaming = {
+    ...row('stream', 'note.subscribe'),
+    totalBytes: 1000,
+    response: { state: 'complete' as const, originalBytes: 20, retainedBytes: 20 },
+  };
+  const ordinary = {
+    ...row('ordinary', 'workspace.list'),
+    response: { state: 'complete' as const, originalBytes: 40, retainedBytes: 40 },
+  };
+  expect(trafficBytes(streaming)).toBe(1000);
+  expect(trafficBytes(ordinary)).toBe(40);
+  expect(orderTraffic([ordinary, streaming], 'all', '', 'bytes', true).map((r) => r.id)).toEqual([
+    'stream',
+    'ordinary',
+  ]);
+});
+
+it('publishes completed stream reads during continuous updates while coalescing the next read', async () => {
+  const pending: Array<(record: DevConsoleRecord) => void> = [];
+  const read = vi.fn(() => new Promise<DevConsoleRecord>((resolve) => pending.push(resolve)));
+  const change = vi.fn();
+  const reader = selectedPayloadReader(read, change, vi.fn());
+  const selected = row('stream', 'host.execStream');
+  const result = (frameCount: number): DevConsoleRecord => ({
+    ...selected,
+    frameCount,
+    payload: { text: '{}', state: 'complete', originalBytes: 2, retainedBytes: 2 },
+  });
+  reader.select('one', { ...selected, frameCount: 2 });
+  reader.select('one', { ...selected, frameCount: 3 });
+  reader.select('one', { ...selected, frameCount: 4 });
+  expect(read).toHaveBeenCalledTimes(1);
+  pending[0](result(2));
+  await Promise.resolve();
+  expect(change).toHaveBeenLastCalledWith(result(2));
+  expect(read).toHaveBeenCalledTimes(2);
+  reader.select('one', { ...selected, frameCount: 5 });
+  reader.select('one', { ...selected, frameCount: 6 });
+  pending[1](result(4));
+  await Promise.resolve();
+  expect(change).toHaveBeenLastCalledWith(result(4));
+  expect(read).toHaveBeenCalledTimes(3);
+  reader.dispose();
+  pending[2](result(6));
+  await Promise.resolve();
+  expect(change).toHaveBeenLastCalledWith(null);
 });

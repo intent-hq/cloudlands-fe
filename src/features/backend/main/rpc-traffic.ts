@@ -14,7 +14,7 @@ export type RpcTrafficMessage =
       status: 'success' | 'error' | 'timeout' | 'send-error';
       payload: unknown;
     }
-  | { type: 'notification'; method: string; payload: unknown }
+  | { type: 'notification'; direction?: 'outbound' | 'inbound'; method: string; payload: unknown }
   | { type: 'disconnected' };
 
 export type RpcTrafficEvent = RpcTrafficMessage & { connectionGeneration: number };
