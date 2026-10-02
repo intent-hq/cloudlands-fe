@@ -96,6 +96,17 @@ for (const columns of [1, 6]) {
       const outcomes = [];
       for (const side of ['native', 'bounded']) {
         await focus(page, side);
+        if (side === 'bounded') {
+          const admission = await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => (el as Host).proof.snapshot());
+          await info.attach('span-focus-admission.json', {
+            body: JSON.stringify(admission),
+            contentType: 'application/json',
+          });
+          expect(admission.rejectedTransactions).toBe(0);
+        }
         if (side === 'bounded')
           await page
             .getByTestId(side)
