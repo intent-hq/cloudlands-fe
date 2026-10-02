@@ -2,6 +2,12 @@
 
 Quick routing guide for AI agents. Start here, then open the smallest relevant doc.
 
+**Assistant app guide:** When adding, changing, moving, renaming, or removing a
+user-facing feature, update the affected section of the canonical
+[`packages/intentd/crates/intent-services/resources/assistant-app-guide.md`](../intentd/crates/intent-services/resources/assistant-app-guide.md)
+in the same change, coordinating the companion intentd change (also from standalone
+frontend checkouts). Keep it concise; replace obsolete paths, labels, and prerequisites.
+
 > **Merge permission**: never merge a PR or arm auto-merge without explicit permission
 > from a human — approved + green is not enough. See the monorepo root
 > [`AGENTS.md`](../../AGENTS.md) (resolves in a monorepo checkout) for the full rule.
