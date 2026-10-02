@@ -291,6 +291,54 @@ describe('script lifecycle event to transport', () => {
     expect(transport.request.mock.calls.map(([method]) => method)).toEqual(['script.stop']);
   });
 
+  it.each(['connection', 'authority'] as const)(
+    'retires a legacy stop on %s change and allows retry before its stale reply',
+    async (change) => {
+      const staleStatus = deferred<unknown>();
+      const retryStop = deferred<unknown>();
+      const run = start();
+      run.dispatch(
+        setScriptsData(WS, [
+          row({ purpose: 'saved', runtime: { status: 'exited', exitCode: 0, restartCount: 0 } }),
+        ]),
+      );
+      transport.request.mockImplementation(async (method) =>
+        method === 'script.status' ? staleStatus.promise : { ok: true },
+      );
+      run.dispatch(stopScriptRequested(WS, ID));
+      await settle();
+      expect(run.scripts().operations[ID]?.pending).toBe(true);
+      if (change === 'connection') run.dispatch(backendReconnected());
+      else {
+        run.state.principal.status = 'loading';
+        run.dispatch({ type: 'test/principalChanged' });
+      }
+      await settle();
+      expect(run.scripts().scripts[ID].runtime.status).toBe('exited');
+      expect(run.scripts().operations[ID]?.pending).not.toBe(true);
+      if (change === 'authority') run.state.principal.status = 'ready';
+      transport.request.mockImplementation(async (method) =>
+        method === 'script.stop' ? retryStop.promise : { status: 'idle', restartCount: 0 },
+      );
+      run.dispatch(stopScriptRequested(WS, ID));
+      await settle();
+      expect(
+        transport.request.mock.calls.filter(([method]) => method === 'script.stop'),
+      ).toHaveLength(2);
+      const newerOperation = run.scripts().operations[ID];
+      expect(newerOperation?.pending).toBe(true);
+      staleStatus.resolve({ status: 'idle', restartCount: 0 });
+      await settle();
+      expect(run.scripts().scripts[ID].runtime.status).toBe('exited');
+      expect(run.scripts().operations[ID]).toBe(newerOperation);
+      retryStop.resolve({ ok: true });
+      await settle();
+      expect(run.scripts().operations[ID]?.pending).not.toBe(true);
+      expect(run.scripts().scripts[ID].runtime.status).toBe('idle');
+      expect(listCalls()).toHaveLength(0);
+    },
+  );
+
   it.each(['rerun', 'removed', 'connection', 'authority', 'workspace'] as const)(
     'rejects a delayed legacy stop status after %s',
     async (change) => {

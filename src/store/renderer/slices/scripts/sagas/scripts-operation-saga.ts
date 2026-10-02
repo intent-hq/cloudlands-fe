@@ -6,8 +6,12 @@ import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 import { notify } from '$lib/components/patterns/notify';
 import { scriptsClient } from '$features/scripts/scripts.client';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
-import { beginScriptRead, isScriptReadCurrent } from '../utils/script-read-context';
-import { selectScriptById } from '../scripts-selectors';
+import {
+  beginScriptRead,
+  isScriptReadCurrent,
+  type ScriptReadContext,
+} from '../utils/script-read-context';
+import { selectScriptById, selectWorkspaceScriptOperations } from '../scripts-selectors';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
 import {
   workspaceDeleted,
@@ -49,11 +53,17 @@ function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
   return action.type === restartScriptRequested.type ? 'restart' : 'start';
 }
 
+function* waitForReadInvalidation(context: ScriptReadContext): SagaGenerator<true> {
+  while (yield* isScriptReadCurrent(context)) yield* take('*');
+  return true;
+}
+
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
   const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   if (!authority) return;
+  const pendingOperation = (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId];
   const before = yield* selectScriptById.effect(workspaceId, scriptId);
   // Older daemons reset finished scripts silently. A changed row proves that
   // an event/read already supplied authority; otherwise reconcile runtime only.
@@ -80,8 +90,11 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       before === (yield* selectScriptById.effect(workspaceId, scriptId))
     ) {
       try {
-        const result = yield* call([scriptsClient, scriptsClient.getStatus], workspaceId, scriptId);
-        const runtime = result.success ? scriptRuntimeSnapshot(result.status) : undefined;
+        const { result } = yield* race({
+          result: call([scriptsClient, scriptsClient.getStatus], workspaceId, scriptId),
+          invalidated: call(waitForReadInvalidation, stoppedRead),
+        });
+        const runtime = result?.success ? scriptRuntimeSnapshot(result.status) : undefined;
         if (
           runtime &&
           (yield* isScriptReadCurrent(stoppedRead)) &&
@@ -102,6 +115,13 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
     if (failureMessage) yield* call([notify, notify.error], message || failureMessage);
   } finally {
+    // Retire only this request's pending state. Failed or newer operations must
+    // survive cleanup from a cancelled compatibility read.
+    if (
+      pendingOperation?.pending &&
+      pendingOperation === (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId]
+    )
+      yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
     if (stoppedRead) yield* put(scriptReadFinished(workspaceId, stoppedRead.requestId));
   }
 }
