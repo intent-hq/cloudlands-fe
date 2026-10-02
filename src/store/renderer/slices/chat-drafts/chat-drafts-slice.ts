@@ -64,6 +64,9 @@ export const chatDraftSaveOutcomesAcknowledged = createAction<
 export const chatDraftClearRequested = createAction<[workspaceId: string, agentId: string]>(
   'chatDrafts/clearRequested',
 );
+/** Saga-internal FIFO handoff after immediate clear invalidation. */
+export const chatDraftClearStarted =
+  createAction<[workspaceId: string, agentId: string]>('chatDrafts/clearStarted');
 
 function updateOwner(
   state: ChatDraftsState,
