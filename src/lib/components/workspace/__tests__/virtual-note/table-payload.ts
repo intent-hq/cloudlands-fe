@@ -76,7 +76,7 @@ class PackedCell implements TableFragment {
     return this.data;
   }
 }
-export function packTableCell(c: TableFragment): TableFragment {
+function packTableCell(c: TableFragment): TableFragment {
   if (c instanceof PackedCell) return c;
   const extra: Extra = {};
   if (c.first !== c.body) extra.first = c.first;
