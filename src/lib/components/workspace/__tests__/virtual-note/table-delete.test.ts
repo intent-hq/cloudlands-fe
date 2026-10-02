@@ -76,10 +76,29 @@ for (const fault of ['none', 'stage', 'record'] as const) {
         }),
       );
       try {
-        expect(canonical.getJSON()).toEqual(native.getJSON());
+        // Fresh parsing intentionally expands the retained three-newline boundary.
+        // Live native deletion has only the two surviving paragraphs.
+        expect(saved).toContain('prefix**\n\n\nuntouched');
+        const live = native.getJSON();
+        expect(live.content).toHaveLength(2);
+        expect(canonical.getJSON()).toEqual({
+          type: 'doc',
+          content: [live.content![0], { type: 'paragraph' }, live.content![1]],
+        });
+        const fresh = new DocumentSession(
+          new SourceJournal(() => saved, 1),
+          document.createElement('div'),
+        );
+        try {
+          await fresh.show(0);
+          expect(fresh.editor!.getJSON()).toEqual(canonical.getJSON());
+        } finally {
+          fresh.destroy();
+        }
       } finally {
         canonical.destroy();
       }
+      session.save();
       const old = session.editor!;
       await session.seek(session.selection.head);
       expect(old.isDestroyed).toBe(true);
