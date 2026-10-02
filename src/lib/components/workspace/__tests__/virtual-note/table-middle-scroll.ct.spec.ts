@@ -91,6 +91,12 @@ for (const tail of [true, false])
           }
           return {
             visible,
+            hit: p?.projection?.table?.pointAt(
+              editor!.view.posAtCoords({
+                left: rect.left + 60,
+                top: rect.top + scroll.clientHeight / 2,
+              })?.pos ?? -1,
+            ),
             scroll: scroll.scrollTop,
             height: scroll.scrollHeight,
             click: { x: rect.left + 60, y: rect.top + scroll.clientHeight / 2 },
@@ -131,7 +137,12 @@ for (const tail of [true, false])
               logical: p?.selection.table?.head,
               actual: p?.projection?.table?.pointAt(editor!.state.selection.head),
               source: p?.service.region(0),
+              stats: p?.snapshot(),
             };
+          });
+          await info.attach(`pointer-${side}-${observations.length}.json`, {
+            body: JSON.stringify({ frame, selected }),
+            contentType: 'application/json',
           });
           expect(selected.text).toContain('abcdefghij');
           if (side === 'bounded') {
