@@ -1,6 +1,31 @@
 import { expect, test } from '../../../../test/ct-test';
 import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
 
+for (const submit of ['button', 'Enter'] as const) {
+  test(`sends a Chief message with ${submit} without project-role fields`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(SimpleRichInputQueueHost, {
+      props: { chief: true, queueCount: 0, width: 560 },
+    });
+    const input = component.getByTestId('message-input');
+    const editor = input.locator('.tiptap-editor');
+    const send = input.getByRole('button', { name: 'Send message', exact: true });
+    await expect(send).toBeDisabled();
+    await editor.fill('How many PRs were merged in intent-hq over the last two weeks?');
+    await expect(send).toBeEnabled();
+    await testInfo.attach('assistant-send-enabled.png', {
+      body: await input.screenshot(),
+      contentType: 'image/png',
+    });
+    if (submit === 'button') await send.click();
+    else await editor.press('Enter');
+    await expect(component.locator('output')).toHaveText('sent');
+  });
+}
+
 // Measured inside the border, the prompt text sits below the composer padding-top
 // (8px) plus the `.tiptap-editor` padding-top (0.25rem = 4px) scoped in
 // TipTapEditor.svelte. The value is asserted as a constant rather than sampled

@@ -1,39 +1,24 @@
 /**
- * Collaborator sender preamble (multiplayer).
- *
- * When a workspace collaborator (guest) sends a human message to an agent,
- * the daemon prepends a single plain-prose line naming the sender and their
- * role to the persisted content (`agent.sendMessage`, `agent.queueMessage`
- * and its drain, `agent.editQueuedMessage`; PROTOCOL §5.5, intentd#1987):
- *
- *   `Message from @{login} ({displayName}), a collaborator (guest) of this
- *   workspace — not the workspace owner.` + one blank line
- *
- * The chip conveys the sender instead, so presentation copies drop the
- * preamble — exact match only, the same way `stripAgentMessageHeader` strips
- * the A2A sender header: the literal preamble is rebuilt from the row's own
- * serve-time `author` projection (login / displayName / principalId are the
- * same fields the daemon built it from) and compared byte-for-byte. No regex
- * heuristic, so user-typed prose that merely resembles the preamble is left
- * byte-identical. The daemon only ever prepends the preamble for a
- * collaborator, so a row authored by the workspace owner
- * (`author.principalId === workspace.ownerPrincipalId`) never qualifies even
- * when its first line is the exact text — the owner typed it. That exclusion
- * needs the owner id, so a caller without the workspace at hand gets no
- * attribution at all (nothing is stripped) rather than an unguarded guess.
- * Display-only — the stored message is never mutated. Dependency-light on
- * purpose: type-only imports.
+ * Exact historical human-sender presentation. The daemon emits distinct host-member
+ * and legacy guest templates from the bound caller's durable role. Rebuild only
+ * from the served local author snapshot and a known, unequal workspace owner;
+ * never infer an author or current permission from the prose. Portable snapshots
+ * cannot qualify. The accepted producer appends exactly two newlines.
+ * Matching and stripping create presentation copies only; stored bytes stay intact.
  */
 
 import type { AgentMessage, MessageAuthor, MessageRole } from '$shared/types/agent-message';
 import { stripLiteralHeader } from './agent-message-attribution';
 import { isUserAuthoredMetadata } from './message-authorship';
+import { isCollaborationIdentity } from '$features/collaboration-auth/identity';
 
 export interface CollaboratorSenderAttribution {
   /** The row's `author` projection the preamble was rebuilt from. */
   author: MessageAuthor;
   /** The exact preamble line the daemon prepended (no trailing newlines). */
   preamble: string;
+  /** Historical display role from the exact template, never current authority. */
+  role: 'member' | 'guest';
 }
 
 /**
@@ -53,7 +38,7 @@ export function singleLineName(name: string | null | undefined): string | null {
 }
 
 /**
- * Byte-exact rebuild of `Harness::collaborator_sender_preamble` (v1): login +
+ * Byte-exact rebuild of the accepted guest and host member templates: login +
  * display name, then login alone, then display name alone, then the
  * principal id.
  */
@@ -61,24 +46,59 @@ export function buildCollaboratorSenderPreamble(
   login: string | null | undefined,
   displayName: string | null | undefined,
   principalId: string,
+  sender?: { role: 'member'; identity?: MessageAuthor['identity'] },
 ): string {
   const cleanLogin = singleLineName(login);
   const cleanName = singleLineName(displayName);
+  const principal = sender ? (singleLineName(principalId) ?? '') : principalId;
   let who: string;
   if (cleanLogin && cleanName) who = `@${cleanLogin} (${cleanName})`;
   else if (cleanLogin) who = `@${cleanLogin}`;
   else if (cleanName) who = cleanName;
-  else who = `principal ${principalId}`;
+  else who = `principal ${principal}`;
+  if (sender) {
+    const identity = sender.identity;
+    // i18n-ignore (byte-exact accepted daemon host member template)
+    const clause = identity
+      ? `; ${singleLineName(identity.provider) ?? ''}@${singleLineName(identity.host) ?? ''} user ${singleLineName(identity.externalUserId) ?? ''}`
+      : '';
+    // i18n-ignore (byte-exact accepted daemon host member template)
+    return `Message from ${who}, a host member (principal ${principal}${clause}) — not the workspace owner.`;
+  }
   // i18n-ignore (mirrors the daemon's collaborator sender preamble, PROTOCOL §5.5)
   return `Message from ${who}, a collaborator (guest) of this workspace — not the workspace owner.`;
 }
 
-/** The value as a `MessageAuthor` when it carries a principal id, else null. */
-function asMessageAuthor(value: unknown): MessageAuthor | null {
-  if (!value || typeof value !== 'object') return null;
-  const { principalId } = value as { principalId?: unknown };
-  if (typeof principalId !== 'string' || principalId.length === 0) return null;
-  return value as MessageAuthor;
+/** Narrow a served local author without trusting provenance or unknown additive fields. */
+function asMessageAuthor(value: unknown): (MessageAuthor & { principalId: string }) | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const { principalId } = raw;
+  if (typeof principalId !== 'string' || !singleLineName(principalId)) return null;
+  for (const field of ['login', 'displayName', 'avatarUrl']) {
+    if (raw[field] !== undefined && raw[field] !== null && typeof raw[field] !== 'string')
+      return null;
+  }
+  if (
+    raw.identity !== undefined &&
+    (!isCollaborationIdentity(raw.identity) || !singleLineName(raw.identity.externalUserId))
+  )
+    return null;
+  return {
+    principalId,
+    login: typeof raw.login === 'string' ? raw.login : null,
+    displayName: typeof raw.displayName === 'string' ? raw.displayName : null,
+    avatarUrl: typeof raw.avatarUrl === 'string' ? raw.avatarUrl : null,
+    ...(isCollaborationIdentity(raw.identity)
+      ? {
+          identity: {
+            provider: raw.identity.provider,
+            host: raw.identity.host,
+            externalUserId: raw.identity.externalUserId,
+          },
+        }
+      : {}),
+  };
 }
 
 /** Leading text of a row, as the daemon persisted it (first text block onward). */
@@ -115,19 +135,24 @@ export function getCollaboratorSenderAttribution(
     | undefined,
   ownerPrincipalId: string | null | undefined,
 ): CollaboratorSenderAttribution | null {
-  if (!ownerPrincipalId) return null;
+  if (typeof ownerPrincipalId !== 'string' || !ownerPrincipalId.trim()) return null;
   if (!message || message.role !== 'user') return null;
   if (!isUserAuthoredMetadata(message.metadata)) return null;
   const author = asMessageAuthor(message.author);
   if (!author) return null;
   if (author.principalId === ownerPrincipalId) return null;
-  const preamble = buildCollaboratorSenderPreamble(
-    author.login,
-    author.displayName,
-    author.principalId,
-  );
-  if (stripLiteralHeader(leadingText(message), preamble) === null) return null;
-  return { author, preamble };
+  const text = leadingText(message);
+  for (const role of ['member', 'guest'] as const) {
+    const preamble = buildCollaboratorSenderPreamble(
+      author.login,
+      author.displayName,
+      author.principalId,
+      role === 'member' ? { role, identity: author.identity } : undefined,
+    );
+    if (!text.startsWith(`${preamble}\n\n`)) continue;
+    if (stripLiteralHeader(text, preamble) !== null) return { author, preamble, role };
+  }
+  return null;
 }
 
 /**
@@ -139,6 +164,6 @@ export function stripCollaboratorSenderPreamble(
   text: string,
   attribution: CollaboratorSenderAttribution | null | undefined,
 ): string {
-  if (!attribution) return text;
+  if (!attribution || !text.startsWith(`${attribution.preamble}\n\n`)) return text;
   return stripLiteralHeader(text, attribution.preamble) ?? text;
 }

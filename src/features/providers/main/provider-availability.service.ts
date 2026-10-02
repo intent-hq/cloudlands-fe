@@ -20,7 +20,7 @@ import {
 import type { ProviderAuthVerdict } from '../../../shared/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { findBinaryStrict } from '../../../shared/main/find-binary';
 import { findAuggiePathStrict } from '../../auggie/main/auggie-path';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
 import { clearCodexCache, isCodexInstalled } from '../../codex/main/codex-resolver';
@@ -61,56 +61,17 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
 }
 
 /**
- * Check whether the claude CLI resolves on the daemon host
- * (`host.findBinary`) — the prerequisite for the claude-code provider.
- * Rejects when the probe itself fails.
+ * Claude's adapter runtime and overrides are resolved by daemon discovery.
+ * Reuse the aggregate snapshot; single checks fetch their own fresh snapshot.
  */
-async function isClaudeCliInstalled(): Promise<boolean> {
-  return (
-    (await findBinaryStrict('claude', {
-      commonPaths: getCommonNpmPaths('claude'),
-    })) !== null
-  );
-}
-
-/**
- * Whether the daemon will exec a `providers.paths["claude-code"]` override in
- * place of the pinned npx adapter (intentd#1714). Discovery reports the
- * npx-only provider `installed` from npx presence OR a valid override while
- * `resolvedPath` stays the auto-detected npx — so `installed` with no
- * resolved npx can only mean the override is in use. An invalid override
- * contributes nothing on the daemon side, so it never suppresses the warning.
- */
-function claudeCodeRunsViaOverride(
-  row: ProviderDiscoveryResponse['providers'][number] | undefined,
-): boolean {
-  return row?.installed === true && (row.resolvedPath ?? null) === null;
-}
-
-/**
- * Check if claude-code is available by checking if the claude CLI is installed.
- * The ACP adapter runs via npx (intentd pins the package) unless a valid
- * `providers.paths` override is configured; when the CLI is installed, npx is
- * authoritatively missing, and the daemon reports no override in use, the
- * status carries an explicit warning so the UI can tell the user the adapter
- * cannot run. A FAILED npx probe or discovery RPC rejects instead — it must
- * not fabricate (or guess away) the warning.
- */
-async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
-  const installed = await isClaudeCliInstalled();
-  const status: ProviderStatus = { available: installed };
-  if (!installed) {
-    return status;
-  }
-  const npxPath = await findBinaryStrict('npx', {
-    commonPaths: getCommonNpmPaths('npx'),
-  });
-  if (npxPath === null) {
-    const discovery = await callProviderDiscovery();
-    const row = discovery?.providers.find((provider) => provider.id === 'claude-code');
-    if (!claudeCodeRunsViaOverride(row)) {
-      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
-    }
+function claudeCodeStatusFromDiscovery(discovery: ProviderDiscoveryResponse): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === 'claude-code');
+  const status: ProviderStatus = {
+    available: row?.installed === true && !row.gatedOff,
+    hasNpxFallback: row?.hasNpxFallback ?? false,
+  };
+  if (row && !row.installed && !row.gatedOff && discovery.npx?.resolvedPath === null) {
+    status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
   return status;
 }
@@ -369,7 +330,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     authVerdicts,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
-    makeProviderStatus('claude-code', checkClaudeCodeAvailability),
+    claudeCodeStatusFromDiscovery(discoveryResponse),
     makeProviderStatus('codex', checkCodexAvailability),
     makeProviderStatus('cortex', checkCortexAvailability),
     isMockHidden
@@ -393,27 +354,6 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     // same Promise.all.
     getProviderAuthVerdicts(),
   ]);
-
-  // claude-code runs its ACP adapter via npx (intentd pins the package) unless
-  // a valid `providers.paths` override is configured (intentd#1714). On the
-  // discovery path the daemon reports "installed" from npx presence or the
-  // override (npx-only provider), so re-gate availability on the claude CLI
-  // prerequisite: without the CLI the provider is unavailable regardless of
-  // npx, and with the CLI but no npx — and no override in use — surface an
-  // explicit warning instead of a silently broken provider. The fallback path
-  // already handles all of these.
-  const claudeCodeDisc = discoveryById.get('claude-code');
-  if (claudeCodeDisc) {
-    if (!(await isClaudeCliInstalled())) {
-      claudeCodeResult.available = false;
-    } else if (
-      !claudeCodeResult.warning &&
-      npxStatus?.resolvedPath === null &&
-      !claudeCodeRunsViaOverride(claudeCodeDisc)
-    ) {
-      claudeCodeResult.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
-    }
-  }
 
   // The wire's `null` (unknown/uninstalled) folds to `undefined` so no
   // indicator renders; verdicts attach only to providers that are available.
@@ -602,7 +542,7 @@ export function setupProviderAvailabilityIPC(): void {
             }
             break;
           case 'claude-code':
-            status = await checkClaudeCodeAvailability();
+            status = claudeCodeStatusFromDiscovery(await callProviderDiscovery());
             if (status.available) {
               authenticated = await checkAuth();
             }

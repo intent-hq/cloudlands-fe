@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -44,6 +44,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
 }));
 
+vi.mock('$store/renderer/slices/accept-workflow/accept-workflow-selectors', () => ({
+  selectAcceptOperationPending: mocks.selector(() => mocks.gitOps.isResettingToTrunk),
+}));
+
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitOperationFlags: mocks.selector(() => mocks.gitOps),
   selectPostMergeState: Object.assign(
@@ -55,21 +59,6 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     }),
     { select: () => mocks.postMerge },
   ),
-}));
-
-vi.mock('$store/renderer/slices/git/git-slice', () => ({
-  loadGitStatus: vi.fn((wsId: string, force: boolean) => ({
-    type: 'git/loadStatus',
-    payload: [wsId, force],
-  })),
-  setPostMergeState: vi.fn((wsId: string, state: unknown) => ({
-    type: 'git/setPostMergeState',
-    payload: [wsId, state],
-  })),
-  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({
-    type: 'git/setGitOperationFlag',
-    payload: [wsId, flag, val],
-  })),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
@@ -190,88 +179,34 @@ describe('PostMergeActions', () => {
     expect(resetBtn.disabled).toBe(true);
   });
 
-  it('reset success path: updates baseCommitSha, refreshes, and dispatches post-merge cleanup', async () => {
-    mockResetToTrunk.mockResolvedValue({ success: true, result: { newHeadSha: 'new-sha' } });
-
+  it('dispatches a reset intent without executing or refreshing from the component', async () => {
     const { container } = await renderPostMerge();
     const resetBtn = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Reset and continue'),
     ) as HTMLButtonElement;
     await fireEvent.click(resetBtn);
 
-    await waitFor(() => expect(mockResetToTrunk).toHaveBeenCalledWith('ws-1'));
-
-    // flag flipped on then off
-    expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        type: 'git/setGitOperationFlag',
-        payload: ['ws-1', 'isResettingToTrunk', true],
+        type: 'acceptWorkflow/resetAndContinueRequested',
+        payload: ['ws-1'],
       }),
     );
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'git/setGitOperationFlag',
-          payload: ['ws-1', 'isResettingToTrunk', false],
-        }),
-      ),
-    );
-
-    // baseCommitSha persisted
-    await waitFor(() =>
-      expect(mockWorkspaceUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ baseCommitSha: 'new-sha' }),
-      ),
-    );
-
-    // refresh dispatches
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'changes/clearOlderCommits', payload: 'ws-1' }),
-    );
-    expect(
-      reduxDispatch.mock.calls
-        .map(([action]) => action)
-        .filter(
-          (action) =>
-            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-        ),
-    ).toEqual([
-      { type: 'git/loadStatus', payload: ['ws-1', true] },
-      { type: 'changes/refreshRequested', payload: 'ws-1' },
-    ]);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'changes/refreshAcceptChangesStatus' }),
-    );
-
-    // post-merge state updated with hasResetToTrunk=true
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'git/setPostMergeState',
-        payload: expect.arrayContaining([
-          'ws-1',
-          expect.objectContaining({ hasResetToTrunk: true, isMergedToTrunk: false }),
-        ]),
-      }),
-    );
+    expect(mockResetToTrunk).not.toHaveBeenCalled();
+    expect(mockWorkspaceUpdate).not.toHaveBeenCalled();
   });
 
-  it('reset failure path: shows toast error and does not update post-merge', async () => {
-    mockResetToTrunk.mockResolvedValue({ success: false, error: 'boom' });
-    const { notify } = await import('$lib/components/patterns/notify');
-
-    const { container } = await renderPostMerge();
-    const resetBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Reset and continue'),
-    ) as HTMLButtonElement;
-    await fireEvent.click(resetBtn);
-
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('boom'));
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'git/setPostMergeState' }),
-    );
+  it('does not replay reset or navigation side effects on remount', async () => {
+    const first = await renderPostMerge();
+    first.unmount();
+    mocks.dispatch.mockClear();
+    await renderPostMerge();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mockResetToTrunk).not.toHaveBeenCalled();
+    expect(mockArchive).not.toHaveBeenCalled();
   });
 
-  it('archive and start new: archives workspace, writes prefill, opens create modal', async () => {
+  it('dispatches archive-and-start intent without persistence or navigation in the component', async () => {
     mocks.workspaceEntity.worktreePath = '/worktrees/ws-1';
     const { container } = await renderPostMerge();
     const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
@@ -279,57 +214,28 @@ describe('PostMergeActions', () => {
     ) as HTMLButtonElement;
     await fireEvent.click(archiveBtn);
 
-    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/loadWorkspacesRequested' }),
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: 'acceptWorkflow/archiveAndStartRequested',
+        payload: ['ws-1'],
+      }),
     );
-    await waitFor(() => {
-      const prefill = sessionStorage.getItem('workspace-prefill');
-      expect(prefill).not.toBeNull();
-      expect(JSON.parse(prefill as string)).toEqual({ repoPath: '/repo' });
-    });
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
+    expect(mockArchive).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
   });
 
-  it('archive and start new: does not prefill a workspace-owned standalone checkout (GitHub pick)', async () => {
-    // GitHub-pick workspaces: repositoryPath IS the worktreePath — a
-    // daemon-owned standalone checkout, not a copyable local source.
-    mocks.workspaceEntity.repositoryPath = '/workspaces/ws-1/repo';
-    mocks.workspaceEntity.worktreePath = '/workspaces/ws-1/repo';
-    const { container } = await renderPostMerge();
+  it('scopes archive intent to the explicit component workspace', async () => {
+    const { container } = await renderPostMerge({ workspaceId: 'ws-2' });
     const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Archive and start new'),
     ) as HTMLButtonElement;
     await fireEvent.click(archiveBtn);
 
-    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: 'acceptWorkflow/archiveAndStartRequested',
+        payload: ['ws-2'],
+      }),
     );
-    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
-  });
-
-  it('archive and start new: does not prefill a daemon-managed repo path (.repo-cache)', async () => {
-    mocks.workspaceEntity.repositoryPath = '/workspaces/.repo-cache/owner/repo';
-    mocks.workspaceEntity.worktreePath = '/worktrees/ws-1';
-    const { container } = await renderPostMerge();
-    const archiveBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Archive and start new'),
-    ) as HTMLButtonElement;
-    await fireEvent.click(archiveBtn);
-
-    await waitFor(() => expect(mockArchive).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'sidebarNav/setShowCreateModal', payload: true }),
-      ),
-    );
-    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
   });
 });

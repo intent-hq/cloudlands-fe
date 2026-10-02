@@ -37,6 +37,9 @@ export interface LiveTypingEntry {
 }
 
 export interface PresenceState {
+  /** Admission/presentation lifetime owning these ephemeral rows. */
+  context: string | null;
+  workspaceIds: string[];
   /** Latest roster per workspace id — a full replacement each time. */
   rosters: Record<string, PresenceMemberCollection>;
   /** Accepted membership per shared workspace on display — a full replacement each time. */
@@ -55,15 +58,15 @@ export interface PresenceState {
 
 /** The identity part of a roster or membership row — what a name or a typing line needs. */
 export interface PresenceIdentity {
+  hostRole?: import('$shared/types/principal').HostRole;
   principalId: string;
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   /**
    * The forge the person is identified by (`Principal.identity`), carried by
-   * a membership row of a daemon that serves the identity seam. The presence
-   * roster (`presence:changed`) has no such field, so a roster-only person
-   * stays neutral.
+   * a membership row of a daemon that serves the identity seam. Modern presence rosters carry the same qualified identity; older
+   * daemons remain neutral.
    */
   identity?: PrincipalIdentity;
 }

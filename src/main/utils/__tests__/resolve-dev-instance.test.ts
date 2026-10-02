@@ -92,6 +92,18 @@ describe('resolveDevUserDataDirName', () => {
 });
 
 describe('resolveUserDataBasePath', () => {
+  it('honors an explicit profile rather than reopening the account profile', () => {
+    expect(resolveUserDataBasePath('/account', '/fixture/one/electron')).toBe(
+      '/fixture/one/electron',
+    );
+    expect(resolveUserDataBasePath('/account', '/fixture/two/electron')).toBe(
+      '/fixture/two/electron',
+    );
+    expect(() => resolveUserDataBasePath('/account', 'relative/profile')).toThrow(
+      'must be absolute',
+    );
+  });
+
   it('joins the appData path with the intent-cloudlands dir name', () => {
     expect(resolveUserDataBasePath('/Users/me/Library/Application Support')).toBe(
       path.join('/Users/me/Library/Application Support', 'intent-cloudlands'),

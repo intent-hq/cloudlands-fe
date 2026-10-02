@@ -8,7 +8,13 @@ export function describeHomeIntegrationScope(scope: HomeIntegrationScope) {
       scope.kind,
       scope.workspaceId,
       organization || null,
-      (organization ? [] : scope.repositories).map((repo) => [repo.key, repo.owner, repo.name]),
+      [
+        ...new Set(
+          (organization ? [] : scope.repositories).map((repo) =>
+            JSON.stringify([repo.key, repo.owner, repo.name]),
+          ),
+        ),
+      ].sort(),
     ]),
     hasGitHubRepositories: !!organization || scope.repositories.some((repo) => !!repo.owner),
     hasLocalRepositories: !organization && scope.repositories.some((repo) => !repo.owner),

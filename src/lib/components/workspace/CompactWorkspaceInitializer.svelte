@@ -2137,7 +2137,10 @@
       // and returns it on the create result (supersedes the fresh-id-per-
       // attempt fix — with no client id there is nothing to poison retries).
       const initialAgent = {
-        name: agentName,
+        // General uses the daemon placeholder so naming does not depend on UI locale.
+        ...(specialistId !== undefined ? { name: agentName } : {}),
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
         model: resolvedModel,
         // Omission inherits the daemon's defaults; blank explicitly clears.
         // Persist with creation so prompt/attachment turns cannot race an update.

@@ -12,7 +12,9 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
+import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import { Logger } from '$shared/logger';
+import type { RpcTrafficMessage, RpcTrafficObserver } from './rpc-traffic';
 import { JsonRpcError, type JsonRpcErrorShape } from './json-rpc-errors';
 import {
   AuthRejectedError,
@@ -133,6 +135,7 @@ export class JsonRpcClient extends EventEmitter {
   private readonly onHelloResult?: (result: unknown) => void;
 
   private socket: Duplex | null = null;
+  private protocolVersion: unknown;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -143,6 +146,9 @@ export class JsonRpcClient extends EventEmitter {
   private buffer = '';
   private decoder = new StringDecoder('utf8');
   private requestId = 0;
+  private reverseSequence = 0;
+  private connectionGeneration = 0;
+  private readonly trafficObservers = new Set<RpcTrafficObserver>();
   private status: ConnectionStatus = 'disconnected';
   private disposed = false;
   private currentReconnectDelay: number;
@@ -253,10 +259,37 @@ export class JsonRpcClient extends EventEmitter {
     return this.connectionLimited && this.reconnectTimer !== null;
   }
 
+  /** Observe only while a diagnostic session is open. Inactive capture never inspects payloads. */
+  observeTraffic(observer: RpcTrafficObserver): () => void {
+    if (this.disposed) return () => {};
+    this.trafficObservers.add(observer);
+    return () => {
+      this.trafficObservers.delete(observer);
+    };
+  }
+
+  private observeFrame(build: () => RpcTrafficMessage): void {
+    if (this.trafficObservers.size === 0) return;
+    try {
+      const event = { ...build(), connectionGeneration: this.connectionGeneration };
+      for (const observer of this.trafficObservers) {
+        try {
+          void observer(event)?.catch(() => {});
+        } catch {
+          /* Diagnostics must never affect transport behavior. */
+        }
+      }
+    } catch {
+      /* Diagnostic parsing must not fail a live request. */
+    }
+  }
+
   /** Tear down the client: close the socket, clear timers, reject pending. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.observeFrame(() => ({ type: 'disconnected' }));
+    this.trafficObservers.clear();
     this.clearReconnect();
     this.stopHeartbeat();
     this.failPending(new Error('JSON-RPC client disposed'));
@@ -333,27 +366,61 @@ export class JsonRpcClient extends EventEmitter {
    * usable: either `status === 'connected'` or the §5.17 handshake window.
    */
   private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
+    const socket = this.socket;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
+      assertScopedFileReadSupport(method, params, this.protocolVersion);
       const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
+      this.observeOutboundRequest(id, method, payload);
       const timeout = setTimeout(() => {
         this.pending.delete(id);
+        this.observeFrame(() => ({
+          type: 'response',
+          key: `out:${id}`,
+          status: 'timeout',
+          payload: undefined,
+        }));
         reject(new Error(`JSON-RPC request timed out: ${method}`));
       }, timeoutMs);
       this.pending.set(id, {
         method,
         timeout,
-        resolve: (result) => resolve(result as T),
+        resolve: (result) => {
+          if (method === HELLO_METHOD && this.socket === socket) {
+            this.protocolVersion = (result as { protocolVersion?: unknown } | null)
+              ?.protocolVersion;
+          }
+          resolve(result as T);
+        },
         reject,
       });
       try {
-        this.socket?.write(payload);
+        socket?.write(payload);
       } catch (error) {
         clearTimeout(timeout);
         this.pending.delete(id);
+        this.observeFrame(() => ({
+          type: 'response',
+          key: `out:${id}`,
+          status: 'send-error',
+          payload: { message: error instanceof Error ? error.message : String(error) },
+        }));
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  private observeOutboundRequest(id: number, method: string, frame: string): void {
+    // Keep the frame out of sendNow's shared closure context: its timeout and
+    // pending callbacks outlive the write even when no observer is installed.
+    this.observeFrame(() => ({
+      type: 'request',
+      key: `out:${id}`,
+      direction: 'outbound',
+      requestId: id,
+      method,
+      payload: JSON.parse(frame).params,
+    }));
   }
 
   /** Caller-issued `client.hello`: merge in the persisted identity and observe the result. */
@@ -401,6 +468,7 @@ export class JsonRpcClient extends EventEmitter {
       return;
     }
     this.socket = socket;
+    this.connectionGeneration++;
     const onConnect = (info?: RaceConnectInfo) => this.onConnected(info);
     socket.once('connect', onConnect);
     socket.once('secureConnect', onConnect);
@@ -478,6 +546,7 @@ export class JsonRpcClient extends EventEmitter {
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
     this.hasConnectionFailed = true;
+    this.observeFrame(() => ({ type: 'disconnected' }));
     this.emitError(error);
     this.stopHeartbeat();
     this.teardownSocket();
@@ -562,6 +631,12 @@ export class JsonRpcClient extends EventEmitter {
       if (entry) {
         this.pending.delete(numericId);
         clearTimeout(entry.timeout);
+        this.observeFrame(() => ({
+          type: 'response',
+          key: `out:${numericId}`,
+          status: message.error ? 'error' : 'success',
+          payload: message.error ?? message.result,
+        }));
         if (message.error) {
           entry.reject(new JsonRpcError(message.error));
         } else {
@@ -572,38 +647,54 @@ export class JsonRpcClient extends EventEmitter {
     }
     // Notification: has a method and no id.
     if (hasMethod && !hasId) {
+      this.observeFrame(() => ({
+        type: 'notification',
+        direction: 'inbound',
+        method: message.method as string,
+        payload: message.params,
+      }));
       this.emit('notification', { method: message.method as string, params: message.params });
     }
   }
 
   private dispatchInboundRequest(id: number | string, method: string, params: unknown): void {
+    const key = `in:${++this.reverseSequence}`;
+    this.observeFrame(() => ({
+      type: 'request',
+      key,
+      direction: 'inbound',
+      requestId: id,
+      method,
+      payload: params,
+    }));
     const handler = this.reverseHandlers.get(method);
     if (!handler) {
       // i18n-ignore (wire-protocol error)
-      this.sendReverseError(id, -32601, `Method not found: ${method}`);
+      this.sendReverseError(key, id, -32601, `Method not found: ${method}`);
       return;
     }
     Promise.resolve()
       .then(() => handler(params))
       .then(
-        (result) => this.sendReverseResult(id, result),
+        (result) => this.sendReverseResult(key, id, result),
         (error: unknown) => {
           if (error instanceof ReverseRpcHandlerError) {
-            this.sendReverseError(id, error.code, error.message, error.data);
+            this.sendReverseError(key, id, error.code, error.message, error.data);
             return;
           }
           const message = error instanceof Error ? error.message : String(error);
-          this.sendReverseError(id, -32603, message);
+          this.sendReverseError(key, id, -32603, message);
         },
       );
   }
 
-  private sendReverseResult(id: number | string, result: unknown): void {
+  private sendReverseResult(key: string, id: number | string, result: unknown): void {
     const payload = `${JSON.stringify({ jsonrpc: '2.0', id, result: result ?? null })}\n`;
-    this.writeFrame(payload);
+    this.writeReverseFrame(key, payload, 'success');
   }
 
   private sendReverseError(
+    key: string,
     id: number | string,
     code: number,
     message: string,
@@ -612,13 +703,25 @@ export class JsonRpcClient extends EventEmitter {
     const error: { code: number; message: string; data?: unknown } = { code, message };
     if (data !== undefined) error.data = data;
     const payload = `${JSON.stringify({ jsonrpc: '2.0', id, error })}\n`;
-    this.writeFrame(payload);
+    this.writeReverseFrame(key, payload, 'error');
   }
 
-  private writeFrame(payload: string): void {
+  private writeReverseFrame(key: string, payload: string, status: 'success' | 'error'): void {
     try {
       this.socket?.write(payload);
+      this.observeFrame(() => ({
+        type: 'response',
+        key,
+        status,
+        payload: status === 'error' ? JSON.parse(payload).error : JSON.parse(payload).result,
+      }));
     } catch (error) {
+      this.observeFrame(() => ({
+        type: 'response',
+        key,
+        status: 'send-error',
+        payload: { message: error instanceof Error ? error.message : String(error) },
+      }));
       this.emitError(error instanceof Error ? error : new Error(String(error)));
     }
   }
@@ -689,6 +792,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
+    this.protocolVersion = undefined;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

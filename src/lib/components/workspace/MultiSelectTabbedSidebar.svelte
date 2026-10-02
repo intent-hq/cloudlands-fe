@@ -9,7 +9,6 @@
     selectUnstagedWorkingChanges,
   } from '$store/renderer/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { loadChatTranscript } from '$features/agent/chat-read-service';
   import {
     selectActiveTab,
     selectAllTabs,
@@ -928,8 +927,6 @@
       open={openLauncherHoverKey === `agent:${agent.id}`}
       onOpenChange={(open) => {
         handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
-        if (open && agent.messages.length === 0)
-          void loadChatTranscript(agent.id, agent.workspaceId);
       }}
     >
       <Button

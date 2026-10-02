@@ -846,3 +846,71 @@ describe('BrowserWebSocketTransport', () => {
     expect(transport.isAvailable()).toBe(false);
   });
 });
+
+// protocol-version-ok-file: connection-generation compatibility regression fixtures.
+describe('root file reads on the sending connection', () => {
+  it.each(
+    ['file.read', 'file.readChunk'].flatMap((method) =>
+      ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
+        ['11.0', '12.0', '13.0', '14.0', 'invalid', undefined].map((nextVersion) => ({
+          method,
+          protocolVersion,
+          nextVersion,
+        })),
+      ),
+    ),
+  )(
+    'rechecks $method after reconnecting from $protocolVersion to $nextVersion',
+    async ({ method, protocolVersion, nextVersion }) => {
+      vi.useFakeTimers();
+      const { transport, sockets } = createHarness({ reconnectDelayMs: 10 });
+      const params = {
+        workspaceId: 'ws',
+        path: 'same.txt',
+        gitRootId: 'root-a',
+        ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+      };
+      const response = method === 'file.read' ? 'R' : { content: 'Ug==', size: 1, bytesRead: 1 };
+      const first = transport.request(method, params);
+      sockets[0].open();
+      await flush();
+      sockets[0].receive({
+        jsonrpc: '2.0',
+        id: sockets[0].lastFrame().id,
+        result: { clientId: 'client', protocolVersion },
+      });
+      await flush();
+      expect(sockets[0].lastFrame()).toMatchObject({ method, params });
+      sockets[0].receive({ jsonrpc: '2.0', id: sockets[0].lastFrame().id, result: response });
+      expect(await first).toEqual(response);
+      sockets[0].drop();
+      await vi.advanceTimersByTimeAsync(10);
+      const second = transport.request(method, params).catch((error) => error);
+      sockets[1].open();
+      await flush();
+      expect(sockets[1].sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      sockets[1].receive({
+        jsonrpc: '2.0',
+        id: sockets[1].lastFrame().id,
+        result: { clientId: 'client', protocolVersion: nextVersion },
+      });
+      await flush();
+      if (sockets[1].lastFrame().method === method) {
+        sockets[1].receive({
+          jsonrpc: '2.0',
+          id: sockets[1].lastFrame().id,
+          result: response,
+        });
+      }
+      const result = await second;
+      transport.dispose();
+      if (nextVersion === '12.0' || nextVersion === '13.0') {
+        expect(result).toEqual(response);
+        expect(sockets[1].lastFrame()).toMatchObject({ method, params });
+      } else {
+        expect(result).toBeInstanceOf(Error);
+        expect(sockets[1].sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      }
+    },
+  );
+});

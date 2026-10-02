@@ -39,6 +39,7 @@ export interface SettingsFormOutcome {
 }
 
 export type SettingsFormKind =
+  | 'personal-devices'
   | 'agent-backend'
   | 'agent-features'
   | 'workspace-api'

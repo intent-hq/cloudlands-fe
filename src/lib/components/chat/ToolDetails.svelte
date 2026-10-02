@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commentAuthorLabel } from '$features/comments/comment-attribution';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
@@ -14,6 +15,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     focusBrowserTabRequested,
@@ -644,6 +646,7 @@
                     appStore.dispatch(
                       openAgentTabRequested(workspaceId, {
                         agentId: agent.agentId,
+                        sourcePanelId: findSourcePanelId(e.currentTarget),
                         openInAdjacentPanel: e.metaKey || e.ctrlKey,
                       }),
                     );
@@ -766,6 +769,7 @@
                       appStore.dispatch(
                         openAgentTabRequested(workspaceId, {
                           agentId,
+                          sourcePanelId: findSourcePanelId(e.currentTarget),
                           openInAdjacentPanel: e.metaKey || e.ctrlKey,
                         }),
                       );
@@ -826,6 +830,21 @@
                         {m.chat_toolDetails_noAnchor_label()}
                       {/if}
                     </span>
+                    {#if thread.latestAuthor || thread.latestAuthorIdentity}
+                      {@const authorLabel = commentAuthorLabel({
+                        author: thread.latestAuthor,
+                        authorType: thread.latestAuthorType,
+                        authorIdentity: thread.latestAuthorIdentity,
+                      })}
+                      <span
+                        data-comment-author
+                        aria-label={authorLabel}
+                        title={authorLabel}
+                        class="text-xs text-subtle truncate"
+                      >
+                        {authorLabel}
+                      </span>
+                    {/if}
                     <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle shrink-0">
                       {thread.status}
                     </span>

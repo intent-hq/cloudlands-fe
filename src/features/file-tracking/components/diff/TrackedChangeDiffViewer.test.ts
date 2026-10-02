@@ -1,7 +1,20 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { fileContentKey } from '$features/file/utils/file-content-key';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import TrackedChangeDiffViewer from './TrackedChangeDiffViewer.svelte';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { gitReducer, initialState } from '$store/renderer/slices/git/git-slice';
+import { gitConsumerReadSaga } from '$store/renderer/slices/git/sagas/git-consumer-read-saga';
+import { store as appStore } from '$store/renderer/store';
+
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
+
+let gitState = initialState;
+let readTask: Task;
 
 const testState = vi.hoisted(() => {
   function createReadable<T>(initialValue: T) {
@@ -39,7 +52,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({ git: gitState }),
     dispatch: testState.dispatchMock,
   });
 });
@@ -60,12 +73,14 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: testState.invokeMock,
+  listenSync: vi.fn(() => () => {}),
 }));
 
 vi.mock('./diff-ipc-batcher', () => ({
   batchedGitDiff: testState.batchedGitDiffMock,
   batchedGitBranchBaseDiff: testState.batchedGitBranchBaseDiffMock,
   dedupedShowFile: testState.dedupedShowFileMock,
+  dedupedGitNumstat: vi.fn(),
 }));
 
 vi.mock('./DiffViewer.svelte', async () => {
@@ -105,6 +120,18 @@ function createChange(overrides: Partial<TrackedChange> = {}): TrackedChange {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  gitState = initialState;
+  const channel = stdChannel();
+  testState.dispatchMock.mockImplementation((action) => {
+    gitState = gitReducer(gitState, action);
+    (appStore as unknown as { emitState(): void }).emitState();
+    channel.put(action);
+    return action;
+  });
+  readTask = runSaga(
+    { channel, dispatch: testState.dispatchMock, getState: () => ({ git: gitState }) },
+    gitConsumerReadSaga,
+  );
   testState.originalContentStore.set(null);
   testState.invokeMock.mockResolvedValue({ success: true, data: { content: 'disk content' } });
   testState.batchedGitDiffMock.mockResolvedValue(undefined);
@@ -112,7 +139,11 @@ beforeEach(() => {
   testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'index content' });
 });
 
-afterEach(() => cleanup());
+afterEach(async () => {
+  cleanup();
+  readTask.cancel();
+  await readTask.toPromise();
+});
 
 describe('TrackedChangeDiffViewer content loading regressions', () => {
   it('uses provided chat diff content without dispatching a full file-content load', async () => {
@@ -277,6 +308,106 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
       workspaceId: 'ws-1',
       path: '/repo/src/app.ts',
     });
+  });
+
+  it('renders external tracked contents and scopes fallback/cache reads to that root', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'tracked.txt',
+      oldContent: 'old',
+      newContent: '',
+    });
+    testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'EXTERNAL ORIGINAL' });
+    vi.mocked(backendRequest).mockResolvedValue('EXTERNAL MODIFIED');
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: '/external/repo/tracked.txt', relativePath: 'tracked.txt' }),
+        workspaceId: 'ws-1',
+        gitRootId: 'external-root',
+        gitRootPath: '/external/repo',
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('new-content').textContent).toBe('EXTERNAL MODIFIED'),
+    );
+    expect(screen.getByTestId('old-content').textContent).toBe('EXTERNAL ORIGINAL');
+    expect(backendRequest).toHaveBeenCalledWith('file.read', {
+      workspaceId: 'ws-1',
+      path: 'tracked.txt',
+      gitRootId: 'external-root',
+    });
+    expect(testState.invokeMock).not.toHaveBeenCalled();
+    expect(testState.dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'files/loadFileContentRequested',
+        payload: [
+          'ws-1',
+          fileContentKey('/external/repo/tracked.txt', 'external-root'),
+          '/external/repo/tracked.txt',
+          { gitRoot: { id: 'external-root', relativePath: 'tracked.txt' } },
+        ],
+      }),
+    );
+  });
+
+  it.each([
+    new Error('Root reads unsupported'),
+    Object.assign(new Error('Unknown root'), { rpcCode: -32602 }),
+    Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+    new BackendError(
+      new JsonRpcError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'Permission denied (os error 13)',
+      }).toErrorPayload(),
+    ),
+  ])('shows scoped fallback read errors without a deletion diff: %s', async (error) => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'tracked.txt',
+      oldContent: 'INDEX',
+      newContent: '',
+    });
+    testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'INDEX' });
+    vi.mocked(backendRequest).mockRejectedValue(error);
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: '/external/repo/tracked.txt', relativePath: 'tracked.txt' }),
+        workspaceId: 'ws-1',
+        gitRootId: 'external-root',
+        gitRootPath: '/external/repo',
+      },
+    });
+    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
+    expect(screen.queryByTestId('new-content')).toBeNull();
+    expect(testState.invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves verified scoped deletion in the fallback reader', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'gone.txt',
+      oldContent: 'INDEX',
+      newContent: '',
+    });
+    testState.dedupedShowFileMock.mockResolvedValue({ success: true, data: 'INDEX' });
+    vi.mocked(backendRequest).mockRejectedValue(
+      new BackendError(
+        new JsonRpcError({
+          code: -32603,
+          message: 'Internal error',
+          data: 'No such file or directory (os error 2)',
+        }).toErrorPayload(),
+      ),
+    );
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({ file: '/external/repo/gone.txt', relativePath: 'gone.txt' }),
+        workspaceId: 'ws-1',
+        gitRootId: 'external-root',
+        gitRootPath: '/external/repo',
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('old-content').textContent).toBe('INDEX'));
+    expect(screen.getByTestId('new-content').textContent).toBe('');
+    expect(testState.invokeMock).not.toHaveBeenCalled();
   });
 
   it('passes secondary-root identity and path to working-tree diff reads', async () => {

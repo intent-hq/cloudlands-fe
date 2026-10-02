@@ -10,10 +10,8 @@ import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-tr
 import { sagas, startAllAppSagas } from './sagas';
 
 describe('renderer app saga registry', () => {
-  it('registers every audited root saga exactly once', () => {
-    const names = sagas.map((saga) => saga.name);
-
-    expect(names).toEqual([
+  function getAuditedSagaNames() {
+    return [
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
@@ -35,10 +33,16 @@ describe('renderer app saga registry', () => {
       'agentCreationSaga',
       'backgroundExecutorSaga',
       'agentMutationSaga',
+      'agentModelSaga',
       'editRegenerateSaga',
       'regenerateFromMessageSaga',
       'agentFailureToastSaga',
       'gitReadSaga',
+      'gitWriteSaga',
+      'acceptWorkflowSaga',
+      'acceptWorkflowObserverSaga',
+      'prWorkflowSaga',
+      'chatChangesSaga',
       'acceptChangesStatusSaga',
       'fileExplorerSaga',
       'filesReadSaga',
@@ -54,6 +58,7 @@ describe('renderer app saga registry', () => {
       'workspaceOperationsSaga',
       'workspaceTransferSaga',
       'workspaceShareSaga',
+      'hostMembershipSaga',
       'workspaceImportSaga',
       'scriptsOperationSaga',
       'lifecycleReadSaga',
@@ -89,6 +94,7 @@ describe('renderer app saga registry', () => {
       'legacyImportSaga',
       'statsReadSaga',
       'prMonitorSaga',
+      'scriptMonitorSaga',
       'gitRootsSaga',
       'uiLayoutPersistenceSaga',
       'tabStateSaga',
@@ -101,6 +107,7 @@ describe('renderer app saga registry', () => {
       'releaseNotesSaga',
       'browserPersistenceSaga',
       'browserClientsSaga',
+      'personalDevicesSaga',
       'fileContentPruneSaga',
       'terminalCreationSaga',
       'terminalPersistenceSaga',
@@ -117,19 +124,27 @@ describe('renderer app saga registry', () => {
       'webNotificationSaga',
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
-    ]);
-    expect(new Set(sagas).size).toBe(103);
+    ];
+  }
+
+  it('registers every audited root saga exactly once', () => {
+    const auditedSagaNames = getAuditedSagaNames();
+    const names = sagas.map((saga) => saga.name);
+
+    expect(names).toEqual(auditedSagaNames);
+    expect(new Set(sagas).size).toBe(auditedSagaNames.length);
   });
 
   it('returns one cancellation handler per registered saga', () => {
+    const auditedSagaNames = getAuditedSagaNames();
     const cancel = vi.fn();
     const store = { runSaga: vi.fn(() => cancel) };
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(103);
+    expect(store.runSaga).toHaveBeenCalledTimes(auditedSagaNames.length);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(103).fill(cancel));
+    expect(handlers).toEqual(Array(auditedSagaNames.length).fill(cancel));
   });
 
   it('starts every hardware-console owner exactly once under one cancellable composition', () => {

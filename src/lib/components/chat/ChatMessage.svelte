@@ -426,12 +426,6 @@
   let automatedWakePresentation = $derived(
     role === 'user' ? getAutomatedWakePresentation(message) : null,
   );
-  let hookWakeAttribution = $derived(
-    automatedWakePresentation?.kind === 'hook' ? automatedWakePresentation.attribution : null,
-  );
-  let prMonitorWakeAttribution = $derived(
-    automatedWakePresentation?.kind === 'pr' ? automatedWakePresentation.attribution : null,
-  );
   let isAutomatedWakeExpanded = $state(false);
   let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
 
@@ -439,11 +433,12 @@
   // more than one member, on plain human rows — agent-to-agent sends and
   // automated wakes carry their own sender header. Reads the daemon's
   // serve-time `author` projection verbatim; single-member workspaces, the
-  // viewer's own rows and rows without the projection render unchanged.
+  // viewer's own local rows and rows without the projection render unchanged.
+  // Portable human snapshots remain visible without current membership.
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
-  // shows the sender chip with the guest role — the preamble itself is
+  // shows the sender chip with its matched historical member or guest role — the preamble itself is
   // display-stripped by the presentation boundary, so the chip is the only
   // place the sender and their role remain visible, for owner and guest alike.
   // The workspace owner's own rows never qualify (the daemon prepends the
@@ -453,14 +448,15 @@
       ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
       : null,
   );
+  const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));
   let humanAuthor = $derived(
     collaboratorSender
       ? collaboratorSender.author
       : role === 'user' &&
-          (workspace?.memberCount ?? 0) >= 2 &&
+          ((workspace?.memberCount ?? 0) >= 2 || projectedHumanAuthor?.principalId === null) &&
           !agentAttribution &&
           !automatedWakePresentation
-        ? getHumanMessageAuthor(message, ownPrincipalId)
+        ? projectedHumanAuthor
         : null,
   );
   let humanAuthorLabel = $derived.by(() => {
@@ -473,7 +469,13 @@
     const login = cleanLogin ? `@${cleanLogin}` : null;
     const name = singleLineName(humanAuthor.displayName);
     // i18n-ignore (handle + name composition, mirrors the daemon preamble)
-    return login && name ? `${login} (${name})` : (login ?? name);
+    const who = login && name ? `${login} (${name})` : (login ?? name);
+    if (collaboratorSender.role === 'member') {
+      // i18n-ignore (principal fallback mirrors the accepted daemon preamble)
+      const label = who ?? `principal ${singleLineName(humanAuthor.principalId) ?? ''}`;
+      return getMessageAuthorLabel({ ...humanAuthor, login: null, displayName: label });
+    }
+    return who;
   });
 
   // Local state
@@ -1522,16 +1524,11 @@
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
-          !hookWakeAttribution &&
-          !prMonitorWakeAttribution
+          !automatedWakePresentation
             ? 'cursor-pointer'
             : 'cursor-default'}"
           ondblclick={() =>
-            onEditSubmit &&
-            !agentAttribution &&
-            !hookWakeAttribution &&
-            !prMonitorWakeAttribution &&
-            handleStartEdit()}
+            onEditSubmit && !agentAttribution && !automatedWakePresentation && handleStartEdit()}
         >
           <!-- Actions -->
           {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded || (automatedWakePresentation && isAutomatedWakeExpanded && queueInfo)}
@@ -1569,20 +1566,29 @@
           {/if}
 
           <!-- Human author identity in multi-member workspaces, and the
-               collaborator (guest) sender chip on preamble-carrying rows -->
+               historical member or guest sender chip on preamble-carrying rows -->
           {#if humanAuthor && !isSticky}
             <div
               class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
               data-testid="user-message-author"
               data-principal-id={humanAuthor.principalId}
-              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
-              aria-label={collaboratorSender
-                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+              data-sender-role={collaboratorSender?.role === 'member'
+                ? 'member'
+                : collaboratorSender
+                  ? 'collaborator'
+                  : undefined}
+              aria-label={collaboratorSender?.role === 'member'
+                ? m.workspace_share_member_identityRole_label({
+                    handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    role: m.collaboration_host_member_label(),
                   })
-                : m.chat_chatMessage_author_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                  })}
+                : collaboratorSender
+                  ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })
+                  : m.chat_chatMessage_author_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })}
             >
               <PrincipalAvatar
                 avatarUrl={humanAuthor.avatarUrl}
@@ -1598,7 +1604,9 @@
               {#if collaboratorSender}
                 <span aria-hidden="true" class="shrink-0">·</span>
                 <span class="shrink-0" data-testid="user-message-author-role"
-                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                  >{collaboratorSender.role === 'member'
+                    ? m.collaboration_host_member_label()
+                    : m.chat_chatMessage_collaboratorRole_label()}</span
                 >
               {/if}
             </div>
@@ -1632,10 +1640,7 @@
                     : automatedWakePresentation
                       ? 'max-w-full [overflow-wrap:anywhere]'
                       : 'line-clamp-6'} {isSticky ||
-                (onEditSubmit &&
-                  !agentAttribution &&
-                  !hookWakeAttribution &&
-                  !prMonitorWakeAttribution)
+                (onEditSubmit && !agentAttribution && !automatedWakePresentation)
                   ? 'cursor-pointer'
                   : 'cursor-text'}"
                 data-expanded={agentAttribution
@@ -1650,122 +1655,133 @@
                     onStickyClick();
                     return;
                   }
-                  if (
-                    onEditSubmit &&
-                    !agentAttribution &&
-                    !hookWakeAttribution &&
-                    !prMonitorWakeAttribution
-                  ) {
+                  if (onEditSubmit && !agentAttribution && !automatedWakePresentation) {
                     e.preventDefault();
                     e.stopPropagation();
                     handleStartEdit();
                   }
                 }}
               >
-                <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
-                {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
-                  {@const isClickable = !!(
-                    pill.path ||
-                    pill.noteId ||
-                    pill.url ||
-                    pill.type === 'spec'
-                  )}
-                  <Button
-                    type="button"
-                    variant="plain"
-                    class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                    title={pill.content || pill.path || pill.noteId || pill.label}
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      handlePillClick(pill, e);
-                    }}
-                    disabled={!isClickable}
-                  >
-                    <Fa icon={pill.icon} size="12" class="opacity-50" />
-                    <span class="truncate font-medium" style="max-width: 180px;" title={pill.label}
-                      >{pill.label}</span
-                    >
-                  </Button>
-                {/each}
-                <!-- Render text with inline @mentions as chips -->
-                {#each parsedMessage.segments as segment, i (i)}
-                  {#if segment.type === 'text'}
-                    <span class="whitespace-pre-wrap"
-                      >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
-                            href={part.url}
-                            class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
-                            title={part.url}
-                            onclick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const wsId = getOwningWorkspaceId();
-                              handleLink(part.url, {
-                                workspaceId: wsId ? WorkspaceId(wsId) : undefined,
-                                event: e,
-                              });
-                            }}>{part.url}</a
-                          >{:else}{part.content}{/if}{/each}</span
-                    >
-                  {:else if segment.type === 'mention'}
-                    {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
-                      segment.mentionType,
-                    )}
+                {#if automatedWakePresentation?.kind === 'script'}
+                  <span class="whitespace-pre-wrap">{automatedWakePresentation.bodyText}</span>
+                  {#if automatedWakePresentation.attribution.matchedLine !== undefined}
+                    <p class="type-caption text-muted-foreground">
+                      {m.chat_scriptMonitor_untrusted_description()}
+                    </p>
+                    <pre class="whitespace-pre-wrap break-all font-mono">{automatedWakePresentation
+                        .attribution.matchedLine}</pre>
+                  {/if}
+                {:else}
+                  <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
+                  {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
                     {@const isClickable = !!(
-                      segment.path ||
-                      segment.noteId ||
-                      segment.mentionType === 'spec' ||
-                      segment.url
+                      pill.path ||
+                      pill.noteId ||
+                      pill.url ||
+                      pill.type === 'spec'
                     )}
                     <Button
                       type="button"
                       variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={segment.description ||
-                        segment.path ||
-                        segment.noteId ||
-                        (segment.identifier
-                          ? `${segment.identifier}: ${segment.label}`
-                          : segment.label)}
+                      title={pill.content || pill.path || pill.noteId || pill.label}
                       onclick={(e) => {
                         e.stopPropagation();
-                        if (segment.url) {
-                          const wsId = getOwningWorkspaceId();
-                          if (wsId) {
-                            handleLink(segment.url, {
-                              workspaceId: WorkspaceId(wsId),
-                              event: e,
-                            });
-                          }
-                        } else if (segment.path) {
-                          openChatFile(segment.path, e, segment.line);
-                        } else if (segment.noteId) {
-                          if (segment.mentionType === 'spec') {
-                            openChatNote('spec', e);
-                          } else {
-                            openChatNote(segment.noteId, e);
-                          }
-                        }
+                        handlePillClick(pill, e);
                       }}
                       disabled={!isClickable}
                     >
-                      {#if isContextProvider}
-                        <ProviderIcon
-                          provider={segment.mentionType as ContextProvider}
-                          size={12}
-                          class="shrink-0 opacity-30"
-                        />
-                      {:else}
-                        <Fa icon={segment.icon} size="12" class="opacity-30" />
-                      {/if}
-                      {#if segment.identifier}
-                        <span class="text-subtle shrink-0">{segment.identifier}</span>
-                      {/if}
-                      <span class="truncate" style="max-width: 180px;" title={segment.label}
-                        >{segment.label}</span
+                      <Fa icon={pill.icon} size="12" class="opacity-50" />
+                      <span
+                        class="truncate font-medium"
+                        style="max-width: 180px;"
+                        title={pill.label}>{pill.label}</span
                       >
                     </Button>
-                  {/if}
-                {/each}
+                  {/each}
+                  <!-- Render text with inline @mentions as chips -->
+                  {#each parsedMessage.segments as segment, i (i)}
+                    {#if segment.type === 'text'}
+                      <span class="whitespace-pre-wrap"
+                        >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
+                              href={part.url}
+                              class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
+                              title={part.url}
+                              onclick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const wsId = getOwningWorkspaceId();
+                                handleLink(part.url, {
+                                  workspaceId: wsId ? WorkspaceId(wsId) : undefined,
+                                  event: e,
+                                });
+                              }}>{part.url}</a
+                            >{:else}{part.content}{/if}{/each}</span
+                      >
+                    {:else if segment.type === 'mention'}
+                      {@const isContextProvider = [
+                        'linear',
+                        'github',
+                        'sentry',
+                        'browser',
+                      ].includes(segment.mentionType)}
+                      {@const isClickable = !!(
+                        segment.path ||
+                        segment.noteId ||
+                        segment.mentionType === 'spec' ||
+                        segment.url
+                      )}
+                      <Button
+                        type="button"
+                        variant="plain"
+                        class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                        title={segment.description ||
+                          segment.path ||
+                          segment.noteId ||
+                          (segment.identifier
+                            ? `${segment.identifier}: ${segment.label}`
+                            : segment.label)}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          if (segment.url) {
+                            const wsId = getOwningWorkspaceId();
+                            if (wsId) {
+                              handleLink(segment.url, {
+                                workspaceId: WorkspaceId(wsId),
+                                event: e,
+                              });
+                            }
+                          } else if (segment.path) {
+                            openChatFile(segment.path, e, segment.line);
+                          } else if (segment.noteId) {
+                            if (segment.mentionType === 'spec') {
+                              openChatNote('spec', e);
+                            } else {
+                              openChatNote(segment.noteId, e);
+                            }
+                          }
+                        }}
+                        disabled={!isClickable}
+                      >
+                        {#if isContextProvider}
+                          <ProviderIcon
+                            provider={segment.mentionType as ContextProvider}
+                            size={12}
+                            class="shrink-0 opacity-30"
+                          />
+                        {:else}
+                          <Fa icon={segment.icon} size="12" class="opacity-30" />
+                        {/if}
+                        {#if segment.identifier}
+                          <span class="text-subtle shrink-0">{segment.identifier}</span>
+                        {/if}
+                        <span class="truncate" style="max-width: 180px;" title={segment.label}
+                          >{segment.label}</span
+                        >
+                      </Button>
+                    {/if}
+                  {/each}
+                {/if}
               </div>
               <!-- Attached images -->
               {#if imageBlocks.length > 0 && !isSticky}

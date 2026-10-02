@@ -126,7 +126,7 @@ export interface OpenInPanelOptions {
  * Returns undefined if not found (e.g., not in a panel layout)
  */
 export function findSourcePanelId(element: HTMLElement | EventTarget | null): string | undefined {
-  if (!element || !(element instanceof HTMLElement)) return undefined;
+  if (!element || !(element instanceof Element)) return undefined;
   const panelElement = element.closest('[data-panel-id]');
   return panelElement?.getAttribute('data-panel-id') ?? undefined;
 }

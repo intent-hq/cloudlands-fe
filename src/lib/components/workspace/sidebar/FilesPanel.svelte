@@ -14,7 +14,6 @@
   import { notify, type ProgressHandle } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { refreshFileExplorer } from '$store/renderer/slices/file-explorer/file-explorer-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
@@ -353,7 +352,6 @@
 
       // Refresh git status to show new files in Changes panel
       if (workspaceId) {
-        gitCache.invalidate(`git-status-${workspaceId}`);
         appStore.dispatch(loadGitStatus(workspaceId, true));
       }
     }

@@ -77,7 +77,13 @@ function pullItem(pull: PullWire, owner: string, repo: string): HomeIntegrationI
     title: pull.title,
     url: pull.htmlUrl,
     description: pull.body,
-    state: pull.merged ? 'merged' : pull.draft ? 'draft' : pull.state,
+    state: pull.merged
+      ? 'merged'
+      : pull.state === 'closed'
+        ? 'closed'
+        : pull.draft
+          ? 'draft'
+          : pull.state,
     author: pull.user?.login,
     authorAvatarUrl: pull.user?.avatarUrl,
     updatedAt: pull.updatedAt,

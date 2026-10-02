@@ -1,5 +1,7 @@
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
+import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
+import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
@@ -17,6 +19,7 @@ import { providerAvailabilitySaga } from './slices/agent-availability/sagas/prov
 import { agentEventsIpcSaga } from './slices/agent-events/sagas/agent-events-ipc-saga';
 import { agentFailureToastSaga } from './slices/agent-session/sagas/agent-failure-toast-saga';
 import { agentMutationSaga } from './slices/agent-session/sagas/agent-mutation-saga';
+import { agentModelSaga } from './slices/agent-model/sagas/agent-model-saga';
 import { agentStreamSaga } from './slices/agent-session/sagas/agent-stream-saga';
 import { editRegenerateSaga } from './slices/agent-session/sagas/edit-regenerate-saga';
 import { regenerateFromMessageSaga } from './slices/agent-session/sagas/regenerate-from-message-saga';
@@ -49,6 +52,11 @@ import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
+import { gitWriteSaga } from './slices/git/sagas/git-write-saga';
+import { acceptWorkflowSaga } from './slices/accept-workflow/sagas/accept-workflow-saga';
+import { acceptWorkflowObserverSaga } from './slices/accept-workflow/sagas/accept-workflow-observer-saga';
+import { prWorkflowSaga } from './slices/pr-workflow/sagas/pr-workflow-saga';
+import { chatChangesSaga } from './slices/chat-changes/sagas/chat-changes-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
@@ -73,6 +81,7 @@ import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
+import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
@@ -144,10 +153,16 @@ export const sagas = [
   agentCreationSaga,
   backgroundExecutorSaga,
   agentMutationSaga,
+  agentModelSaga,
   editRegenerateSaga,
   regenerateFromMessageSaga,
   agentFailureToastSaga,
   gitReadSaga,
+  gitWriteSaga,
+  acceptWorkflowSaga,
+  acceptWorkflowObserverSaga,
+  prWorkflowSaga,
+  chatChangesSaga,
   acceptChangesStatusSaga,
   fileExplorerSaga,
   filesReadSaga,
@@ -163,6 +178,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceShareSaga,
+  hostMembershipSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,
@@ -198,6 +214,7 @@ export const sagas = [
   legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
+  scriptMonitorSaga,
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
@@ -210,6 +227,7 @@ export const sagas = [
   releaseNotesSaga,
   browserPersistenceSaga,
   browserClientsSaga,
+  personalDevicesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

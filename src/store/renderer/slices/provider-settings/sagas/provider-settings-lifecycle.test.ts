@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { BackendError } from '$lib/client/live/backend-transport-types';
-import { initialState as modelInitialState, modelReducer } from '../../model/model-slice';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
+import {
+  hydrateDefaultProvider,
+  loadProviderModelsFromStorage,
+  initialState as modelInitialState,
+  modelReducer,
+} from '../../model/model-slice';
 import { initialState as availabilityInitialState } from '../../agent-availability/agent-availability-slice';
 import {
   backgroundAgentSettingsReducer,
@@ -25,10 +31,12 @@ import {
 } from '../provider-settings-slice';
 import { providerSettingsSaga } from './provider-settings-saga';
 import { selectProviderFastModeValues } from '../provider-settings-selectors';
-import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import { settingsFieldsRefreshRequested } from '../../settings-events/settings-events-slice';
+import type { AppSettingChange } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  list: vi.fn(),
   update: vi.fn(),
   updateSnapshot: vi.fn(),
   success: vi.fn(),
@@ -36,7 +44,12 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
-    settings: { get: mocks.get, update: mocks.update, updateSnapshot: mocks.updateSnapshot },
+    settings: {
+      get: mocks.get,
+      list: mocks.list,
+      update: mocks.update,
+      updateSnapshot: mocks.updateSnapshot,
+    },
   },
 }));
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -56,10 +69,25 @@ const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 const tasks: Task[] = [];
-function harness(backgroundAgentSettings?: BackgroundAgentSettingsState) {
+const emptyQuickActions = {
+  defaultModel: '',
+  typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+  defaultReasoningEffort: '',
+  typeReasoningEffortOverrides: {},
+};
+const daemonSettings: AppSettingChange[] = [
+  { path: 'model.defaultProvider', value: 'codex' },
+  { path: 'model.providerDefaults', value: {} },
+  { path: 'quickActions.defaultModel', value: '' },
+  { path: 'quickActions.typeOverrides', value: { commit: '', pr: '', review: '', fast: '' } },
+  { path: 'quickActions.defaultReasoningEffort', value: '' },
+  { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+  { path: 'quickActions.providerSettings', value: {} },
+];
+function harness(backgroundAgentSettings: BackgroundAgentSettingsState = backgroundInitialState) {
   let current = {
     providerSettings: initialState,
-    model: modelInitialState,
+    model: modelReducer(modelInitialState, hydrateDefaultProvider('codex')),
     backgroundAgentSettings,
     agentAvailability: availabilityInitialState,
     providerCatalog: {
@@ -77,9 +105,10 @@ function harness(backgroundAgentSettings?: BackgroundAgentSettingsState) {
       ...current,
       providerSettings: providerSettingsReducer(current.providerSettings, action),
       model: modelReducer(current.model, action),
-      backgroundAgentSettings: current.backgroundAgentSettings
-        ? backgroundAgentSettingsReducer(current.backgroundAgentSettings, action)
-        : undefined,
+      backgroundAgentSettings: backgroundAgentSettingsReducer(
+        current.backgroundAgentSettings,
+        action,
+      ),
     };
     channel.put(action);
   };
@@ -101,6 +130,7 @@ const invalid = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.get.mockResolvedValue({ value: {} });
+  mocks.list.mockImplementation(async () => structuredClone(daemonSettings));
   mocks.update.mockResolvedValue([]);
   mocks.updateSnapshot.mockImplementation(async (changes) => ({
     applied: await mocks.update(changes),
@@ -115,6 +145,75 @@ afterEach(async () => {
 });
 
 describe('provider settings ordered ownership', () => {
+  it.each(['resolve', 'reject'] as const)(
+    'ignores a previous connection provider %s after its UI request ledger is cleared',
+    async (outcome) => {
+      const first = deferred<unknown[]>();
+      mocks.update.mockReturnValueOnce(first.promise);
+      const h = harness();
+      h.send(setActiveProvider('codex', context('old-host')));
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      h.send(hostExecutionConnectionChanged('remote'));
+      h.send(hydrateDefaultProvider('grok'));
+      if (outcome === 'resolve') first.resolve([]);
+      else first.reject(invalid());
+      await settle();
+      expect(h.state().model.defaultProviderId).toBe('grok');
+      // Connection changes clear the old host's UI request ledger.
+      expect(h.request('old-host')).toBeUndefined();
+      expect(h.actions.filter(({ type }) => type === 'settings/changesReceived')).toEqual([]);
+    },
+  );
+
+  it.each(['resolve', 'reject'] as const)(
+    'keeps daemon state through a later rejection after an older %s until a receipt arrives',
+    async (outcome) => {
+      const first = deferred<unknown[]>();
+      const second = deferred<unknown[]>();
+      mocks.update.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      const h = harness();
+      h.send(hydrateDefaultProvider('codex'));
+      h.send(loadProviderModelsFromStorage({ codex: 'balanced', grok: 'shared' }));
+      mocks.list
+        .mockResolvedValueOnce([
+          ...daemonSettings.filter(({ path }) => path !== 'model.providerDefaults'),
+          { path: 'model.providerDefaults', value: { codex: 'balanced', grok: 'shared' } },
+        ])
+        .mockResolvedValueOnce([
+          ...daemonSettings.filter(({ path }) => path !== 'model.providerDefaults'),
+          {
+            path: 'model.providerDefaults',
+            value: { codex: outcome === 'resolve' ? 'shared' : 'balanced', grok: 'shared' },
+          },
+        ]);
+      h.send(setAtomicDefaultModel({ providerId: 'codex', model: 'shared' }));
+      h.send(setAtomicDefaultModel({ providerId: 'grok', model: 'shared' }));
+      await settle();
+      expect(h.state().model.defaultProviderId).toBe('codex');
+      expect(h.state().model.providerModels).toEqual({ codex: 'balanced', grok: 'shared' });
+      if (outcome === 'resolve') first.resolve([]);
+      else first.reject(invalid());
+      await settle();
+      expect(h.state().model.defaultProviderId).toBe('codex');
+      expect(mocks.update).toHaveBeenCalledTimes(2);
+      second.reject(invalid());
+      await settle();
+      expect(h.state().model.defaultProviderId).toBe('codex');
+      expect(h.state().model.providerModels).toEqual({ codex: 'balanced', grok: 'shared' });
+      h.send(
+        loadProviderModelsFromStorage({
+          codex: outcome === 'resolve' ? 'shared' : 'balanced',
+          grok: 'shared',
+        }),
+      );
+      expect(h.state().model.providerModels).toEqual({
+        codex: outcome === 'resolve' ? 'shared' : 'balanced',
+        grok: 'shared',
+      });
+    },
+  );
+
   for (const pendingAtomic of [false, true]) {
     for (const blockedAtomic of [false, true]) {
       it(`settles an accepted default after a blocked choice (pending atomic ${pendingAtomic}, blocked atomic ${blockedAtomic})`, async () => {
@@ -134,7 +233,8 @@ describe('provider settings ordered ownership', () => {
         );
         await settle();
         expect(mocks.update).toHaveBeenCalledTimes(1);
-        expect(h.state().model.pendingDefaultProviderId).toBe('codex');
+        expect(h.state().model.defaultProviderId).toBe('codex');
+        expect(h.state().model.providerModels).toEqual({});
         const acceptedBackground = h.state().backgroundAgentSettings;
         h.send(
           blockedAtomic
@@ -149,7 +249,16 @@ describe('provider settings ordered ownership', () => {
 
         pending.reject(invalid());
         await settle();
-        expect(h.state().model.pendingDefaultProviderId).toBeNull();
+        expect(h.state().model.defaultProviderId).toBe('codex');
+        expect(h.state().model.providerModels).toEqual({});
+        expect(h.actions).toContainEqual(
+          settingsFieldsRefreshRequested(
+            pendingAtomic
+              ? ['model.defaultProvider', 'model.providerDefaults']
+              : ['model.defaultProvider'],
+            null,
+          ),
+        );
         if (!pendingAtomic) expect(h.request('accepted')?.status).toBe('failure');
         expect(mocks.update).toHaveBeenCalledTimes(1);
       });
@@ -157,9 +266,9 @@ describe('provider settings ordered ownership', () => {
   }
 
   it('keeps default request acknowledgement independent of Fast mode rollback and retry', async () => {
-    const pendingDefault = deferred<{ applied: []; revision: number }>();
+    const pendingDefault = deferred<unknown[]>();
+    mocks.update.mockReturnValueOnce(pendingDefault.promise);
     mocks.updateSnapshot
-      .mockReturnValueOnce(pendingDefault.promise)
       .mockRejectedValueOnce(invalid())
       .mockImplementation(async (changes) => ({ applied: changes, revision: 3 }));
     const h = harness();
@@ -180,19 +289,19 @@ describe('provider settings ordered ownership', () => {
     expect(selectProviderFastModeValues.select(h.state() as never)).toEqual({ codex: true });
     expect(h.request('default')?.status).toBe('pending');
     expect(mocks.updateSnapshot.mock.calls).toEqual([
-      [[{ path: 'model.defaultProvider', value: 'codex' }]],
       [[{ path: 'providers.fastMode', value: { codex: true } }]],
       [[{ path: 'providers.fastMode', value: { codex: true } }]],
     ]);
 
-    pendingDefault.resolve({ applied: [], revision: 4 });
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith([
+      { path: 'model.defaultProvider', value: 'codex' },
+    ]);
+    pendingDefault.resolve([]);
     await settle();
     expect(h.request('default')?.status).toBe('success');
-    expect(h.actions).toContainEqual(
-      settingsChangesReceived([{ path: 'model.defaultProvider', value: 'codex' }], 4),
-    );
+    expect(h.actions.filter(({ type }) => type === 'settings/changesReceived')).toEqual([]);
     expect(h.actions.filter(({ type }) => type === 'model/reloadModelsForProvider')).toHaveLength(
-      1,
+      0,
     );
     expect(mocks.success).toHaveBeenCalledTimes(1);
     expect(h.state().providerSettings.fastMode.pending).toEqual({});
@@ -217,6 +326,8 @@ describe('provider settings ordered ownership', () => {
   });
 
   it('serializes atomic provider/model batches with provider-only defaults in both directions', async () => {
+    const persisted = structuredClone(daemonSettings);
+    mocks.list.mockImplementation(async () => structuredClone(persisted));
     const first = deferred<unknown[]>();
     const second = deferred<unknown[]>();
     mocks.update.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -233,20 +344,40 @@ describe('provider settings ordered ownership', () => {
         ],
       ],
     ]);
+    persisted.find(({ path }) => path === 'model.providerDefaults')!.value = { codex: 'first' };
     first.resolve([]);
     await settle();
     expect(mocks.update).toHaveBeenCalledTimes(2);
     expect(mocks.update).toHaveBeenLastCalledWith([
       { path: 'model.defaultProvider', value: 'grok' },
+      { path: 'quickActions.defaultModel', value: '' },
+      { path: 'quickActions.typeOverrides', value: { commit: '', pr: '', review: '', fast: '' } },
+      { path: 'quickActions.defaultReasoningEffort', value: '' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      { path: 'quickActions.providerSettings', value: { codex: emptyQuickActions } },
     ]);
+    persisted.find(({ path }) => path === 'model.defaultProvider')!.value = 'grok';
+    persisted.find(({ path }) => path === 'quickActions.providerSettings')!.value = {
+      codex: emptyQuickActions,
+    };
     second.resolve([]);
     await settle();
     expect(mocks.update).toHaveBeenLastCalledWith([
       { path: 'model.defaultProvider', value: 'codex' },
       { path: 'model.providerDefaults', value: { codex: 'last' } },
+      { path: 'quickActions.defaultModel', value: '' },
+      { path: 'quickActions.typeOverrides', value: { commit: '', pr: '', review: '', fast: '' } },
+      { path: 'quickActions.defaultReasoningEffort', value: '' },
+      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+      {
+        path: 'quickActions.providerSettings',
+        value: { codex: emptyQuickActions, grok: emptyQuickActions },
+      },
     ]);
-    expect(h.request('default')?.status).toBe('cancelled');
+    expect(mocks.list.mock.calls).toEqual([[], [], []]);
+    expect(h.request('default')?.status).toBe('success');
     expect(h.state().model.defaultProviderId).toBe('codex');
+    expect(h.state().model.providerModels).toEqual({});
   });
 
   it('reads each full paths map only after the preceding provider write acknowledges', async () => {

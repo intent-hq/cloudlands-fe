@@ -1,11 +1,13 @@
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
+import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
+import { agentModelReducer } from './slices/agent-model/agent-model-slice';
 import { backgroundAgentSettingsReducer } from './slices/background-agent-settings/background-agent-settings-slice';
 import { externalEditorsReducer } from './slices/external-editors/external-editors-slice';
 import { uiLayoutReducer } from './slices/ui-layout/ui-layout-slice';
@@ -29,6 +31,7 @@ import { systemStatusReducer } from './slices/system-status/system-status-slice'
 import { transientUiReducer } from './slices/transient-ui/transient-ui-slice';
 import { workspaceOperationsReducer } from './slices/workspace-operations/workspace-operations-slice';
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
+import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -64,9 +67,13 @@ import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
 import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
+import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
+import { gitWriteReducer } from './slices/git/git-write-slice';
+import { acceptWorkflowReducer } from './slices/accept-workflow/accept-workflow-slice';
+import { prWorkflowReducer } from './slices/pr-workflow/pr-workflow-slice';
 import { gitRootsReducer } from './slices/git-roots/git-roots-slice';
 import { fileTrackingReducer } from './slices/changes/changes-slice';
 import { agentLockReducer } from './slices/agent-lock/agent-lock-slice';
@@ -131,6 +138,7 @@ export const reducers = {
   knownRepos: knownReposReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
+  agentModel: agentModelReducer,
   pip: pipReducer,
   power: powerReducer,
   specialists: specialistsReducer,
@@ -138,6 +146,7 @@ export const reducers = {
   transientUi: transientUiReducer,
   userPreferences: userPreferencesReducer,
   workspaceAgents: workspaceAgentsReducer,
+  agentMutationUi: agentMutationUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   workspaceTasks: workspaceTasksReducer,
@@ -176,8 +185,12 @@ export const reducers = {
   stats: statsReducer,
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
+  scriptMonitor: scriptMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
+  gitWrite: gitWriteReducer,
+  acceptWorkflow: acceptWorkflowReducer,
+  prWorkflow: prWorkflowReducer,
   gitRoots: gitRootsReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
@@ -220,4 +233,5 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  hostMembership: hostMembershipReducer,
 } as const;

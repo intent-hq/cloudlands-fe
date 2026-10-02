@@ -111,7 +111,7 @@ for (const zoom of [1, 2]) {
     await trigger.click();
     const menu = page.getByRole('menu', { name: 'Panes in this stack' });
     await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(7);
-    await menu.locator('[data-pane-stack-item]').last().click();
+    await menu.locator('[data-pane-stack-item]').first().click();
     await expect(component).toHaveAttribute('data-active-tab', 'changes-pane');
   });
 }
@@ -155,7 +155,7 @@ test('switches agent panes with keyboard-accessible menu identity and current st
   await expect(trigger).toBeFocused();
 });
 
-test('updates pane choices as panes are added and removed without losing the selected pane', async ({
+test('offers new panes first without losing the selected pane as choices change', async ({
   mount,
   page,
 }, testInfo) => {
@@ -170,7 +170,17 @@ test('updates pane choices as panes are added and removed without losing the sel
   await component.update({ props: { paneTypes: ['note', 'browser'], stackCount: 2 } });
   await trigger.press('Enter');
   await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(2);
-  await menu.getByRole('menuitem', { name: 'Preview browser', exact: true }).click();
+  await expect(menu.locator('[data-pane-stack-item="note-pane"]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Home');
+  await expect(menu.getByRole('menuitem', { name: 'Preview browser', exact: true })).toBeFocused();
+  await testInfo.attach('newest-pane-first', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Enter');
   await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
   await component.update({ props: { paneTypes: ['browser'], stackCount: 1 } });
   await trigger.press('Enter');

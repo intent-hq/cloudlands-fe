@@ -5,12 +5,19 @@
  * Independent from the main e2e test-helpers — these target the packaged binary.
  */
 
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  _electron as electron,
+  expect,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
 import { execFileSync, execSync } from 'child_process';
 
 import {
   existsSync,
+  mkdtempSync,
   readFileSync,
+  realpathSync,
   mkdirSync,
   writeFileSync,
   rmSync,
@@ -18,7 +25,7 @@ import {
   appendFileSync,
 } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { basename, join, resolve } from 'path';
+import { basename, join, resolve, relative, isAbsolute } from 'path';
 
 // ---------------------------------------------------------------------------
 // findPackagedApp
@@ -67,188 +74,172 @@ function findPackagedApp(): string {
   );
 }
 
-// ---------------------------------------------------------------------------
-// killExistingPackagedApp
-// ---------------------------------------------------------------------------
-
-/**
- * Kill every process of the packaged "Intent" app (main process and Chromium
- * helpers) on the current platform.
- *
- * @param force - send SIGKILL (`pkill -9` / `taskkill /F`) instead of SIGTERM.
- */
-function killPackagedAppProcesses(force = false): void {
-  if (process.platform === 'win32') {
+/** Observe only descendants of this launch; never search by app name. */
+function ownedDescendants(parent: number): number[] {
+  const found = new Set<number>();
+  const queue = [parent];
+  while (queue.length) {
+    const pid = queue.shift()!;
+    let output: string;
     try {
-      execSync('taskkill /F /IM "Intent.exe"', { stdio: 'ignore', windowsHide: true });
-    } catch {
-      // No matching processes — that's fine
+      output = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8', timeout: 2_000 });
+    } catch (error) {
+      if ((error as { status?: number }).status === 1) continue;
+      throw error;
     }
-    return;
+    for (const line of output.trim().split('\n')) {
+      const child = Number(line);
+      if (!Number.isSafeInteger(child) || child <= 0 || child === parent || found.has(child)) {
+        throw new Error('Ambiguous owned-process observation');
+      }
+      found.add(child);
+      queue.push(child);
+      if (found.size > 128) throw new Error('Owned process count exceeded 128');
+    }
   }
-  // Match the packaged binary path so unrelated processes (a developer's own
-  // intentd, other Electron apps) are never touched.
-  pkill(
-    process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent',
-    force,
-  );
+  return [...found];
 }
 
-/** `pkill -f` without an intermediate shell whose own command line would match. */
-function pkill(pattern: string, force = false): void {
-  try {
-    execFileSync('pkill', [...(force ? ['-9'] : []), '-f', pattern], { stdio: 'ignore' });
-  } catch {
-    // No matching processes — that's fine
-  }
-}
-
-/**
- * Path of the intentd sidecar bundled with the packaged app binary — the
- * `process.resourcesPath/intentd/intentd` contract of
- * `src/features/backend/main/intentd-sidecar.ts::resolveIntentdBinaryPath`.
- */
-function packagedSidecarPath(executablePath: string): string {
-  return process.platform === 'darwin'
-    ? resolve(executablePath, '..', '..', 'Resources', 'intentd', 'intentd')
-    : resolve(executablePath, '..', 'resources', 'intentd', 'intentd');
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function pgrepPids(args: string[]): number[] {
-  try {
-    const out = execFileSync('pgrep', args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out
-      .split('\n')
-      .map((line) => Number.parseInt(line, 10))
-      .filter((pid) => Number.isInteger(pid) && pid > 0);
-  } catch {
-    return [];
-  }
-}
-
-/** Every live descendant of `pid` (children, grandchildren, ...). */
-function descendantPids(pid: number): number[] {
-  const found: number[] = [];
-  const queue = [pid];
-  while (queue.length > 0) {
-    const children = pgrepPids(['-P', String(queue.shift())]);
-    found.push(...children);
-    queue.push(...children);
-  }
-  return found;
-}
-
-/**
- * PIDs of the sidecar processes spawned by the given Electron main process:
- * direct children (`pgrep -P`) whose command line is exactly the bundled
- * sidecar binary. A daemon the app adopted instead of spawning, another
- * worktree's packaged sidecar or a developer's own intentd never match.
- */
-function ownedSidecarPids(electronPid: number, executablePath: string): number[] {
-  const pattern = `^${escapeRegExp(packagedSidecarPath(executablePath))}( |$)`;
-  return pgrepPids(['-P', String(electronPid), '-f', pattern]);
-}
-
-function isAlive(pid: number): boolean {
+function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    throw error;
   }
 }
 
-function signal(pids: number[], sig: NodeJS.Signals): void {
-  for (const pid of pids) {
-    try {
-      process.kill(pid, sig);
-    } catch {
-      // Already gone — that's fine
-    }
-  }
-}
+/** Each launch owns a fresh daemon/profile; no process-name cleanup is allowed. */
+const launchedProfiles = new WeakMap<ElectronApplication, string>();
+const logFailures = new WeakMap<ElectronApplication, Error>();
+const logSettlements = new WeakMap<ElectronApplication, Promise<void>>();
+const shutdowns = new WeakMap<ElectronApplication, Promise<void>>();
 
 /**
- * Stop the intentd sidecar processes the launched app spawned.
- *
- * `app.exit()` skips the app's own shutdown, so the sidecar outlives the
- * Electron process — and it holds the extra stdio pipes Playwright opened on
- * that process, so Node never emits `close` for it and Playwright's worker
- * teardown waits the full 300 s (observed on Linux CI: only the spec whose
- * instance spawned the sidecar hung; the ones that reused it exited at once).
- * SIGTERM first so intentd shuts down cleanly, SIGKILL if it is still around
- * after the grace period. The next launch spawns a fresh sidecar.
- */
-async function stopOwnedSidecar(pids: number[]): Promise<void> {
-  if (pids.length === 0) return;
-  signal(pids, 'SIGTERM');
-  const deadline = Date.now() + 5_000;
-  while (pids.some(isAlive) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  signal(pids.filter(isAlive), 'SIGKILL');
-}
-
-/** Executable each launched app was started from (see `exitPackagedApp`). */
-const launchedExecutables = new WeakMap<ElectronApplication, string>();
-
-/**
- * Terminate a packaged app launched by a spec (call from `afterAll`).
- *
- * `app.exit(0)` is used instead of `app.close()`: `close()` fires Electron's
- * `before-quit`, whose native "Quit anyway?" dialog blocks forever while
- * agents are still running. The `evaluate` is raced against a grace period
- * rather than awaited: Playwright launches Electron with `--inspect` and keeps
- * that session attached, so Node parks the exiting process on "Waiting for
- * the debugger to disconnect..." and the call never resolves (observed on
- * Linux). The launched process tree is then force-killed by PID — the
- * Electron main process and its descendants, whatever directory the package
- * lives in — which also releases the single-instance lock for the next spec;
- * an unrelated packaged Intent instance is never touched. The sidecar the app
- * spawned is stopped separately (see `stopOwnedSidecar`), together with its
- * own subtree. All PIDs are resolved before the exit: once the Electron
- * process is gone its children are re-parented and ownership can no longer
- * be established.
+ * Exercise the app's SIGTERM shutdown (including its sidecar shutdown), then
+ * wait on Playwright's direct child. A failed/unknown shutdown fails teardown;
+ * it never authorizes deleting another profile or killing processes by name.
  */
 export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
   if (!app) return;
-  const electronPid = app.process().pid;
-  const owned = process.platform !== 'win32' && electronPid;
-  const sidecarPids = owned
-    ? ownedSidecarPids(electronPid, launchedExecutables.get(app) ?? findPackagedApp())
-    : [];
-  const sidecarTree = sidecarPids.flatMap((pid) => [pid, ...descendantPids(pid)]);
-  const appTree = owned
-    ? [...descendantPids(electronPid), electronPid].filter((pid) => !sidecarTree.includes(pid))
-    : [];
-  const exited = app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => undefined);
-  await Promise.race([exited, new Promise((r) => setTimeout(r, 2_000))]);
-  if (owned) {
-    signal(appTree, 'SIGKILL');
-  } else {
-    killPackagedAppProcesses(true);
+  let shutdown = shutdowns.get(app);
+  if (!shutdown) {
+    shutdown = stopPackagedApp(app);
+    shutdowns.set(app, shutdown);
   }
-  await stopOwnedSidecar(sidecarPids);
-  signal(sidecarTree.filter(isAlive), 'SIGKILL');
+  return shutdown;
 }
 
-/**
- * Kill any running packaged "Intent" processes to release the single instance lock.
- * The packaged app uses app.requestSingleInstanceLock() which prevents a second
- * instance from launching.
- */
-async function killExistingPackagedApp(): Promise<void> {
-  console.log('⚠️  Killing existing packaged "Intent" processes for clean test launch...');
-  killPackagedAppProcesses();
-  // Wait for processes to fully terminate and release the lock file
-  await new Promise((r) => setTimeout(r, 2000));
+async function stopPackagedApp(app: ElectronApplication): Promise<void> {
+  const proc = app.process();
+  const profile = launchedProfiles.get(app);
+  if (!profile) throw new Error('Cannot stop an app not owned by launchPackagedApp');
+  const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
+  let descendants: number[] = [];
+  const receipt = {
+    observedDescendants: descendants,
+    descendantSettlement: 'unknown',
+    pid: proc.pid,
+    profile,
+    requestedAt: new Date().toISOString(),
+    exitCode: proc.exitCode,
+    signalCode: proc.signalCode,
+    settled: false,
+    error: null as string | null,
+    loggingError: null as string | null,
+    cleanupError: null as string | null,
+    observationError: null as string | null,
+    logClose: 'unconfirmed',
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let primary: unknown;
+  let firstError: unknown = logFailures.get(app);
+  let observationError: unknown;
+  try {
+    try {
+      descendants = process.platform === 'win32' || !proc.pid ? [] : ownedDescendants(proc.pid);
+      receipt.observedDescendants = descendants;
+    } catch (error) {
+      observationError = error;
+      firstError ??= error;
+    }
+    const closed = new Promise<void>((resolve, reject) => {
+      if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+      proc.once('close', () => resolve());
+      proc.once('error', reject);
+    });
+    if (proc.exitCode === null && proc.signalCode === null && !proc.kill('SIGTERM')) {
+      throw new Error('Owned Electron child rejected SIGTERM');
+    }
+    // Disconnect the inspector as part of close so Electron does not wait for
+    // its debugger forever. SIGTERM bypasses the interactive quit prompt.
+    await Promise.race([
+      Promise.all([
+        closed,
+        app.close(),
+        logSettlements.get(app)?.then(
+          () => {
+            receipt.logClose = 'closed';
+          },
+          () => {
+            receipt.logClose = 'failed; close unconfirmed';
+          },
+        ),
+      ]),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Owned app shutdown exceeded 30s; settlement unknown')),
+          30_000,
+        );
+      }),
+    ]);
+    receipt.exitCode = proc.exitCode;
+    receipt.signalCode = proc.signalCode;
+    if (observationError) throw observationError;
+    const deadline = Date.now() + 5_000;
+    while (descendants.some(processExists) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (descendants.some(processExists))
+      throw new Error('Observed app descendants still present; settlement unknown');
+    receipt.descendantSettlement =
+      process.platform === 'win32' ? 'not observed' : 'observed descendants absent';
+    receipt.settled = true;
+    if (proc.exitCode !== 0 || proc.signalCode !== null) {
+      throw new Error(
+        `Owned app unsuccessful exit: code=${proc.exitCode}, signal=${proc.signalCode}`,
+      );
+    }
+    const loggingFailure = logFailures.get(app);
+    if (loggingFailure) throw loggingFailure;
+  } catch (error) {
+    const loggingError = logFailures.get(app);
+    receipt.loggingError = loggingError ? String(loggingError) : null;
+    receipt.observationError = observationError ? String(observationError) : null;
+    receipt.cleanupError =
+      error !== loggingError && error !== observationError ? String(error) : null;
+    const errors = [
+      ...new Set([firstError, loggingError, observationError, error].filter(Boolean)),
+    ];
+    primary =
+      errors.length > 1 ? new AggregateError(errors, 'Logging/observation/shutdown failed') : error;
+    receipt.error = String(primary);
+    throw primary;
+  } finally {
+    if (timer) clearTimeout(timer);
+    try {
+      mkdirSync(logDir, { recursive: true });
+      writeFileSync(join(logDir, `shutdown-${proc.pid}.json`), JSON.stringify(receipt, null, 2));
+    } catch (recording) {
+      throw new AggregateError(
+        [primary, recording].filter(Boolean),
+        'App shutdown/receipt failure',
+      );
+    }
+    // Retain the fixture state for diagnosis; the disposable runner owns its
+    // lifetime. Direct-child close is not a claim about every descendant.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,81 +267,160 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   page: Page;
   logPaths: { mainProcess: string; renderer: string };
 }> {
-  await killExistingPackagedApp();
   // A behavior left over from an earlier spec must not leak into this launch.
-  rmSync(MOCK_AGENT_BEHAVIOR_FILE, { force: true });
+  if (!options.extraEnv?.MOCK_AGENT_BEHAVIOR) rmSync(MOCK_AGENT_BEHAVIOR_FILE, { force: true });
 
   const executablePath = findPackagedApp();
 
+  const profile = mkdtempSync(join(tmpdir(), 'ip-'));
   const app = await electron.launch({
+    timeout: 60_000,
     executablePath,
     args: [
       ...(process.env.CI ? ['--disable-gpu', '--disable-software-rasterizer'] : []),
+      `--user-data-dir=${join(profile, 'electron')}`,
       ...(options.extraArgs || []),
     ],
     env: {
       ...process.env,
       TESTING: 'true',
+      INTENTD_DATA_DIR: join(profile, 'intentd'),
       MOCK_AGENT_BEHAVIOR_FILE,
       ...(options.workspaceDir ? { TEST_WORKSPACE_DIR: options.workspaceDir } : {}),
       ...(options.extraEnv || {}),
     },
   });
-  launchedExecutables.set(app, executablePath);
-
-  // --- Capture Electron main-process stdout/stderr ---
-  const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
-  mkdirSync(logDir, { recursive: true });
-
-  const mainProcessLogPath = join(logDir, 'electron-main-process.log');
-  const rendererLogPath = join(logDir, 'electron-renderer.log');
-
-  const proc = app.process();
-  // Append (like the renderer log) so every instance a run launches is kept,
-  // not just the last one.
-  const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
-  if (proc.stdout) {
-    proc.stdout.pipe(logStream);
-  }
-  if (proc.stderr) {
-    proc.stderr.pipe(logStream);
-  }
-
-  const page = await app.firstWindow();
-
-  // --- Capture renderer console output ---
-  page.on('console', (msg) => {
-    const line = `[${msg.type()}] ${msg.text()}\n`;
-    try {
-      appendFileSync(rendererLogPath, line);
-    } catch {
-      // best-effort — don't let logging failures break the test
-    }
-  });
-  // The app has no data-testid="app-ready" attribute.
-  // Instead, wait for the splash screen to be removed (signals Svelte layout mounted)
-  // and then for the home page content to render.
-  await page.waitForFunction(() => document.getElementById('splash') === null, {
-    timeout: 30_000,
-  });
-  // Give the home page components time to initialize
-  await page.waitForTimeout(2_000);
-
-  // --- Dismiss "Update check failed" toast if visible ---
-  // The auto-updater may show an error toast that can interfere with UI interactions.
+  launchedProfiles.set(app, profile);
   try {
-    const toastClose = page.locator('[data-sonner-toast] button[data-close-button]').first();
-    const toastVisible = await toastClose.isVisible().catch(() => false);
-    if (toastVisible) {
-      console.log('🔕 Dismissing update-check toast');
-      await toastClose.click();
-      await page.waitForTimeout(500);
-    }
-  } catch {
-    // No toast or already gone — fine
-  }
+    // --- Capture Electron main-process stdout/stderr ---
+    const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
+    mkdirSync(logDir, { recursive: true });
 
-  return { app, page, logPaths: { mainProcess: mainProcessLogPath, renderer: rendererLogPath } };
+    const mainProcessLogPath = join(logDir, 'electron-main-process.log');
+    const rendererLogPath = join(logDir, 'electron-renderer.log');
+
+    const proc = app.process();
+    // Append (like the renderer log) so every instance a run launches is kept,
+    // not just the last one.
+    const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
+    let handedOff = false;
+    let rejectLogging!: (error: Error) => void;
+    const loggingFailed = new Promise<never>((_, reject) => {
+      rejectLogging = reject;
+    });
+    // Also handle failures between awaited setup steps and after handoff.
+    void loggingFailed.catch(() => undefined);
+    const logSettled = new Promise<void>((resolve, reject) => {
+      logStream.once('close', resolve);
+      logStream.once('error', reject);
+    });
+    void logSettled.catch(() => undefined);
+    logSettlements.set(app, logSettled);
+    logStream.on('error', (error) => {
+      if (!logFailures.has(app)) logFailures.set(app, error);
+      rejectLogging(error);
+      if (handedOff) void exitPackagedApp(app).catch(() => undefined);
+    });
+    const withLogging = <T>(operation: Promise<T>): Promise<T> =>
+      Promise.race([operation, loggingFailed]);
+    if (proc.stdout) {
+      proc.stdout.pipe(logStream, { end: false });
+    }
+    if (proc.stderr) {
+      proc.stderr.pipe(logStream, { end: false });
+    }
+
+    proc.once('close', () => logStream.end());
+    await withLogging(new Promise<void>((resolve) => logStream.once('open', () => resolve())));
+    const runtime = await withLogging(
+      app.evaluate(({ app: electronApp }) => {
+        // Playwright close() calls app.quit() to disconnect its inspector. Keep
+        // that second quit from bypassing the SIGTERM cleanup already in flight.
+        // The app's graceful handler ends with app.exit(), which bypasses this
+        // event; only the test-owned instance receives this listener.
+        electronApp.on('before-quit', (event) => event.preventDefault());
+        return {
+          arch: process.arch,
+          platform: process.platform,
+          versions: process.versions,
+          packaged: electronApp.isPackaged,
+          executable: process.execPath,
+          appPath: electronApp.getAppPath(),
+          userData: electronApp.getPath('userData'),
+          home: electronApp.getPath('home'),
+          environmentHome: process.env.HOME,
+          workspacesRoot: process.env.INTENTD_WORKSPACES_DIR,
+          dataDir: process.env.INTENTD_DATA_DIR,
+        };
+      }),
+    );
+    writeFileSync(join(logDir, `runtime-${proc.pid}.json`), JSON.stringify(runtime, null, 2));
+    if (
+      !runtime.packaged ||
+      runtime.arch !== process.arch ||
+      runtime.platform !== process.platform ||
+      resolve(runtime.userData) !== resolve(profile, 'electron') ||
+      runtime.dataDir !== join(profile, 'intentd')
+    ) {
+      throw new Error(`Packaged runtime identity mismatch: ${JSON.stringify(runtime)}`);
+    }
+    const fixtureWorkspaces = process.env.BUILD_SMOKE_WORKSPACES_ROOT;
+    if (
+      fixtureWorkspaces &&
+      (runtime.workspacesRoot !== fixtureWorkspaces ||
+        !runtime.environmentHome ||
+        resolve(runtime.environmentHome, 'intent/workspaces') !== resolve(fixtureWorkspaces))
+    ) {
+      throw new Error(`Packaged worktree boundary mismatch: ${JSON.stringify(runtime)}`);
+    }
+    const page = await withLogging(app.firstWindow());
+
+    // --- Capture renderer console output ---
+    page.on('console', (msg) => {
+      const line = `[${msg.type()}] ${msg.text()}\n`;
+      try {
+        appendFileSync(rendererLogPath, line);
+      } catch {
+        // best-effort — don't let logging failures break the test
+      }
+    });
+    // The app has no data-testid="app-ready" attribute.
+    // Instead, wait for the splash screen to be removed (signals Svelte layout mounted)
+    // and then for the home page content to render.
+    await withLogging(
+      page.waitForFunction(() => document.getElementById('splash') === null, undefined, {
+        timeout: 30_000,
+      }),
+    );
+    // Give the home page components time to initialize
+    await withLogging(page.waitForTimeout(2_000));
+
+    // --- Dismiss "Update check failed" toast if visible ---
+    // The auto-updater may show an error toast that can interfere with UI interactions.
+    try {
+      const toastClose = page.locator('[data-sonner-toast] button[data-close-button]').first();
+      const toastVisible = await withLogging(toastClose.isVisible().catch(() => false));
+      if (toastVisible) {
+        console.log('🔕 Dismissing update-check toast');
+        await withLogging(toastClose.click());
+        await withLogging(page.waitForTimeout(500));
+      }
+    } catch {
+      // No toast or already gone — fine
+    }
+
+    if (logFailures.has(app)) throw logFailures.get(app);
+    handedOff = true;
+    return { app, page, logPaths: { mainProcess: mainProcessLogPath, renderer: rendererLogPath } };
+  } catch (primary) {
+    try {
+      await exitPackagedApp(app);
+    } catch (cleanup) {
+      if (cleanup === primary) throw primary;
+      throw new AggregateError([primary, cleanup], 'Packaged launch failed; cleanup also failed');
+    }
+    throw primary;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -360,21 +430,13 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
 /**
  * Create a temporary git repository with an initial commit.
  *
- * Uses a **stable** path (`/tmp/build-smoke-repo`) so that stale localStorage
- * references from a previous test run still point to a valid directory.
- * The directory is deleted and recreated fresh each time.
+ * A unique fixture prevents parallel workers from deleting each other's repo.
  *
  * Returns the absolute path to the repo. The caller should call the returned
  * `cleanup` function when done.
  */
 export function createTempRepo(): { repoPath: string; cleanup: () => void } {
-  const repoPath = join(tmpdir(), 'build-smoke-repo');
-
-  // Delete any leftover directory from a previous run and recreate fresh
-  rmSync(repoPath, { recursive: true, force: true });
-  mkdirSync(repoPath, { recursive: true });
-
-  console.log(`📂 Created temp repo at stable path: ${repoPath}`);
+  const repoPath = mkdtempSync(join(tmpdir(), 'build-smoke-repo-'));
 
   // Onboarding preselects `main`; make the fixture independent of the
   // developer machine's `init.defaultBranch` Git configuration.
@@ -387,6 +449,7 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
   execSync('git commit -m "initial commit"', { cwd: repoPath, stdio: 'ignore' });
 
   const cleanup = () => {
+    if (process.env.BUILD_SMOKE_RETAIN_FIXTURES === '1') return;
     try {
       rmSync(repoPath, { recursive: true, force: true });
     } catch {
@@ -589,50 +652,16 @@ export async function createWorkspaceWithPrompt(
     const letsGo = page.getByRole('button', { name: "Let's go" }).first();
     await letsGo.waitFor({ state: 'visible', timeout: 20_000 });
 
-    // Wait for the "Let's go" button to become enabled.  The button requires
-    // at least one provider to be available + authenticated, which involves
-    // async IPC calls + CLI checks that can be slow on cold CI runners.
-    const isEnabled = await letsGo.isEnabled().catch(() => false);
-    if (!isEnabled) {
-      console.log('⏳ "Let\'s go" button is disabled — waiting for provider availability...');
-      try {
-        await page.waitForFunction(
-          () => {
-            const btn = [...document.querySelectorAll('button')].find((b) =>
-              b.textContent?.includes("Let's go"),
-            );
-            return btn && !btn.disabled;
-          },
-          { timeout: 45_000 },
-        );
-        console.log('✅ "Let\'s go" button is now enabled');
-      } catch {
-        // Provider check didn't complete in time — bypass the welcome step
-        // by dispatching goToStep('project') through the Redux store.
-        console.warn(
-          '⚠️ "Let\'s go" button still disabled after 45s — bypassing welcome step via Redux',
-        );
-        await page.evaluate(() => {
-          const ctx = (window as any).intent?.reduxContext;
-          const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
-          if (store) {
-            store.dispatch({ type: 'onboarding/goToStep', payload: ['project'] });
-          }
-        });
-        await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
-        onboardingStep = 'project';
-      }
-    }
-
-    if (onboardingStep === 'welcome') {
-      await letsGo.click();
-      await page.locator('[data-onboarding-step="github"]').waitFor({ timeout: 10_000 });
-      onboardingStep = 'github';
-    }
+    // A real provider readiness failure must fail the journey, not bypass
+    // onboarding by mutating its store.
+    await expect(letsGo).toBeEnabled({ timeout: 45_000 });
+    await letsGo.click();
+    await page.locator('[data-onboarding-step="forge"]').waitFor({ timeout: 10_000 });
+    onboardingStep = 'forge';
   }
 
-  if (onboardingStep === 'github') {
-    // The GitHub connect step is optional — advance to project selection.
+  if (onboardingStep === 'forge') {
+    // The forge connect step is optional — advance to project selection.
     // Already-authenticated environments render "Continue" instead of
     // "Skip for now", so accept either button.
     const advanceGitHub = page.getByRole('button', { name: /Skip for now|Continue/ }).first();
@@ -742,6 +771,7 @@ export async function createWorkspaceWithPrompt(
     throw new Error(`Failed to extract workspace ID from URL: ${url}`);
   }
   console.log(`✅ Workspace created: ${workspaceId} (URL: ${url})`);
+  if (process.env.BUILD_SMOKE_WORKSPACES_ROOT) await getSmokeWorkspace(page, workspaceId);
   return workspaceId;
 }
 
@@ -1944,7 +1974,10 @@ export async function waitForAssistantResponse(
  * env var set on the Electron main process after launch never reaches the
  * daemon-spawned agent.
  */
-const MOCK_AGENT_BEHAVIOR_FILE = join(tmpdir(), 'build-smoke-mock-agent-behavior.json');
+const MOCK_AGENT_BEHAVIOR_FILE = join(
+  tmpdir(),
+  `build-smoke-mock-agent-behavior-${process.pid}.json`,
+);
 
 /**
  * Configure the mock ACP provider's behavior for subsequent prompts.
@@ -1964,6 +1997,8 @@ const MOCK_AGENT_BEHAVIOR_FILE = join(tmpdir(), 'build-smoke-mock-agent-behavior
 export function setMockAgentBehavior(
   options: {
     files?: Record<string, string>;
+    delegate?: { name: string; prompt: string };
+    child?: { response: string; files?: Record<string, string> };
     response?: string;
     chunks?: string[];
     chunkDelayMs?: number;
@@ -1971,6 +2006,8 @@ export function setMockAgentBehavior(
 ): Record<string, string> {
   const behavior: Record<string, unknown> = {
     files: options.files ?? {},
+    ...(options.delegate ? { delegate: options.delegate } : {}),
+    ...(options.child ? { child: options.child } : {}),
   };
 
   if (options.chunks) {
@@ -2029,10 +2066,13 @@ export async function archiveAndGoHome(page: Page, workspaceId: string): Promise
     // Page may be in a bad state — proceed
   }
 
-  // Archive the workspace via IPC
-  await page.evaluate((id) => {
-    return (window as any).electronAPI.invoke('workspace:archive', { id });
-  }, workspaceId);
+  // Hosted fixture validation retains the real worktree/database until the
+  // runner collects its bounded diagnostic bundle, including on test failure.
+  if (process.env.BUILD_SMOKE_RETAIN_FIXTURES !== '1') {
+    await page.evaluate((id) => {
+      return (window as any).electronAPI.invoke('workspace:archive', { id });
+    }, workspaceId);
+  }
 
   // Brief settle time for background processes to wind down
   await new Promise((r) => setTimeout(r, 2_000));
@@ -2043,4 +2083,43 @@ export async function archiveAndGoHome(page: Page, workspaceId: string): Promise
   await page.waitForLoadState('domcontentloaded');
 
   console.log('🏠 Navigated to homepage');
+}
+
+/** Resolve the actual daemon-created worktree; never guess a fallback path. */
+export async function getSmokeWorkspace(
+  page: Page,
+  id: string,
+): Promise<{ id: string; worktreePath: string; title?: string; name?: string }> {
+  const workspace = await page.evaluate(async (workspaceId) => {
+    const result = await (window as any).electronAPI.invoke('workspace:get', { id: workspaceId });
+    if (result?.success === false) throw new Error(JSON.stringify(result));
+    const workspace = result?.data ?? result?.workspace ?? result;
+    if (
+      workspace?.id !== workspaceId ||
+      typeof workspace.worktreePath !== 'string' ||
+      !workspace.worktreePath
+    ) {
+      throw new Error(`Missing exact workspace worktree: ${JSON.stringify(result)}`);
+    }
+    return workspace;
+  }, id);
+  const expectedRoot = process.env.BUILD_SMOKE_WORKSPACES_ROOT;
+  if (expectedRoot) {
+    const actual = realpathSync(workspace.worktreePath);
+    const root = realpathSync(expectedRoot);
+    const owned = relative(root, actual);
+    if (
+      !owned ||
+      owned === '..' ||
+      owned.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+      isAbsolute(owned)
+    ) {
+      throw new Error(`Workspace escaped fixture root: ${JSON.stringify({ id, root, actual })}`);
+    }
+    appendFileSync(
+      join(process.cwd(), 'e2e-reports/build-smoke/worktree-identities.jsonl'),
+      JSON.stringify({ id, root, actual }) + '\n',
+    );
+  }
+  return workspace;
 }

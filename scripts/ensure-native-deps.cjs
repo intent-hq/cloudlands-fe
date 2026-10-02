@@ -134,7 +134,7 @@ function main() {
   // fails to load (node-pty).
   console.log('🔨 Rebuilding node-pty for Electron...');
   try {
-    execSync('npx @electron/rebuild -f -o node-pty', {
+    execSync(`npx @electron/rebuild -f -o node-pty --arch ${process.arch}`, {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 300000,

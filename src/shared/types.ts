@@ -1661,6 +1661,10 @@ export interface CreateWorkspaceRequest {
      */
     agentId?: string;
     name?: string;
+    /** False for a generated label so first-message naming remains available. */
+    nameExplicitlySet?: boolean;
+    /** Remember the successful manual initial specialist selection. */
+    rememberSpecialist?: boolean;
     model?: string;
     /** Persisted before the first turn. Omit to inherit defaults; blank explicitly clears. */
     reasoningEffort?: string;

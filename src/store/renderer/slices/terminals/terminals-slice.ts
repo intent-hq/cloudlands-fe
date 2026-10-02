@@ -14,7 +14,7 @@ import {
   clampTerminalOverlayHeight,
   isValidTerminalOverlayHeight,
 } from '$shared/utils/terminal-overlay-height';
-import { setScriptsData } from '../scripts/scripts-slice';
+import { setScriptsData, removeScript } from '../scripts/scripts-slice';
 
 // ============================================================================
 // Constants
@@ -633,6 +633,16 @@ terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) =>
   const ws = state.workspaces[wsId];
   if (!ws?.selectedScriptId) return state;
   if (scripts.some((script) => script.id === ws.selectedScriptId)) return state;
+  return setWs(state, wsId, {
+    ...ws,
+    selectedScriptId: null,
+    isOpen: ws.activeTerminalId !== null ? ws.isOpen : false,
+  });
+});
+
+terminalsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
+  const ws = state.workspaces[wsId];
+  if (ws?.selectedScriptId !== scriptId) return state;
   return setWs(state, wsId, {
     ...ws,
     selectedScriptId: null,

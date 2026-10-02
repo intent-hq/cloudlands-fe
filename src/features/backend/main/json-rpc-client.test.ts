@@ -889,6 +889,124 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
     return { client, sockets, onHelloResult };
   }
 
+  // protocol-version-ok: retained registered-root contract across known generations.
+  describe.each(['file.read', 'file.readChunk'])('scoped %s support', (method) => {
+    it.each([
+      ['11.1', true],
+      ['11.2', true],
+      ['12.0', true],
+      ['12.0.1', true],
+      ['11.0', false],
+      ['10.9', false],
+      ['13.0', true],
+      ['13.0.1', true],
+      ['14.0', false],
+      ['12', false],
+      ['12.0-preview', false],
+      [undefined, false],
+    ])('checks the socket hello version %s before writing', async (protocolVersion, supported) => {
+      const { client, sockets } = makeHelloClient();
+      const params = {
+        workspaceId: 'ws',
+        path: 'same.txt',
+        gitRootId: 'root-a',
+        ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+      };
+      const response = method === 'file.read' ? 'R' : { content: 'Ug==', size: 1, bytesRead: 1 };
+      const result = client.request(method, params).catch((error) => error);
+      sockets[0].open();
+      await flush();
+      expect(sockets[0].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      const hello = JSON.parse(sockets[0].writes[0]);
+      sockets[0].receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { protocolVersion } })}\n`,
+      );
+      await flush();
+      if (supported) {
+        const read = JSON.parse(sockets[0].writes.at(-1)!);
+        expect(read).toMatchObject({ method, params });
+        sockets[0].receive(
+          `${JSON.stringify({ jsonrpc: '2.0', id: read.id, result: response })}\n`,
+        );
+        expect(await result).toEqual(response);
+      } else {
+        expect(await result).toBeInstanceOf(Error);
+        expect(sockets[0].writes).toHaveLength(1);
+      }
+      client.dispose();
+    });
+  });
+
+  // protocol-version-ok: connection-generation compatibility fixtures.
+  it.each(
+    ['file.read', 'file.readChunk'].flatMap((method) =>
+      ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
+        ['11.0', '12.0', '13.0', '14.0', 'invalid', undefined].map((nextVersion) => ({
+          method,
+          protocolVersion,
+          nextVersion,
+        })),
+      ),
+    ),
+  )(
+    'rechecks scoped $method after reconnecting from $protocolVersion to $nextVersion',
+    async ({ method, protocolVersion, nextVersion }) => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeHelloClient();
+      client.start();
+      sockets[0].open();
+      await vi.advanceTimersByTimeAsync(1);
+      let hello = JSON.parse(sockets[0].writes[0]);
+      sockets[0].receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { protocolVersion } })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      const params = {
+        workspaceId: 'ws',
+        path: 'same.txt',
+        gitRootId: 'root-a',
+        ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+      };
+      const response = method === 'file.read' ? 'R' : { content: 'Ug==', size: 1, bytesRead: 1 };
+      const first = client.request(method, params);
+      const read = JSON.parse(sockets[0].writes.at(-1)!);
+      sockets[0].receive(`${JSON.stringify({ jsonrpc: '2.0', id: read.id, result: response })}\n`);
+      expect(await first).toEqual(response);
+      sockets[0].emit('close');
+      await vi.advanceTimersByTimeAsync(100);
+      const second = client.request(method, params).catch((error) => error);
+      sockets[1].open();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      hello = JSON.parse(sockets[1].writes[0]);
+      sockets[1].receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { protocolVersion: nextVersion } })}\n`,
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      const next = JSON.parse(sockets[1].writes.at(-1)!);
+      if (next.method === method) {
+        expect(next.params).toEqual(params);
+        sockets[1].receive(
+          `${JSON.stringify({ jsonrpc: '2.0', id: next.id, result: response })}\n`,
+        );
+      }
+      const result = await second;
+      client.dispose();
+      if (nextVersion === '12.0' || nextVersion === '13.0') {
+        expect(result).toEqual(response);
+        expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([
+          'client.hello',
+          method,
+        ]);
+      } else {
+        expect(result).toBeInstanceOf(Error);
+        expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([
+          'client.hello',
+        ]);
+      }
+    },
+  );
+
   it('sends client.hello with the persisted clientId as the FIRST frame on connect, before scoped work', async () => {
     const { client, sockets, onHelloResult } = makeHelloClient();
     client.start();

@@ -32,7 +32,15 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
-  import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
+  import { createAgentModelMutator } from './agent-model-mutator';
+  import {
+    selectAgentModelMutationPending,
+    selectAgentModelMutations,
+  } from '$store/renderer/slices/agent-model/agent-model-selectors';
+  import {
+    agentModelMutationRequested,
+    agentModelMutationConsumed,
+  } from '$store/renderer/slices/agent-model/agent-model-slice';
 
   import {
     selectAvailableModels,
@@ -67,7 +75,7 @@
     selectContextAvailableProviderIds,
     selectContextEnabledProviders,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
-  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
     providerModelsObserved,
     providerModelsReleased,
@@ -328,7 +336,7 @@
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
   $effect(() => {
-    if (workspaceId) appStore.dispatch(workspaceCatalogRequested(workspaceId));
+    if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
   });
 
   // `default`-variant pickers stack the notice directly under a full-width
@@ -349,7 +357,11 @@
     connection: string | null;
   };
   let pendingModelUpdate = $state<ModelChange | null>(null);
-  let isApplyingModelUpdate = $state(false);
+  const mutationConsumerId = crypto.randomUUID();
+  const mutationPending$ = selectAgentModelMutationPending(mutationConsumerId);
+  const mutations$ = selectAgentModelMutations(mutationConsumerId);
+  let submittedModelChange = $state<{ requestId: string; change: ModelChange } | null>(null);
+  const isApplyingModelUpdate = $derived($mutationPending$);
   let localPickedProviderId = $state<string | null>(null);
   let modelChangeRevision = 0;
   let confirmationRevision = 0;
@@ -359,12 +371,20 @@
     modelChangeRevision++;
     confirmationRevision++;
     pendingModelUpdate = null;
+    if (submittedModelChange)
+      appStore.dispatch(
+        agentModelMutationConsumed(submittedModelChange.requestId, mutationConsumerId),
+      );
   });
 
   // Provider from the prop or agent session, or null when neither determines
   // one (fetching then uses the active provider; the trigger icon prefers the
   // displayed model's provider).
   const explicitProviderId = $derived.by(() => {
+    if (updateGlobalStore) {
+      const selection = currentSessionSelection();
+      if (selection) return selection.providerId;
+    }
     if (providerId) return normalizeProviderId(providerId);
     if (agentId && workspaceId) {
       const session = $agentSession$;
@@ -389,9 +409,12 @@
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
   const effectiveLocked = $derived(isLocked || isGuestLocked);
-  // Every agent-session mutation goes through this funnel; it re-reads the
-  // live lock on each call, so no call site needs to re-check after an await.
-  const mutate = createAgentModelMutator({ isLocked: () => effectiveLocked || destroyed });
+  // Effort callbacks retain the compatibility lock funnel. Model intents below
+  // carry the same live lease to the shared saga owner.
+  const mutate = createAgentModelMutator({
+    isLocked: () => effectiveLocked || destroyed,
+    consumerId: mutationConsumerId,
+  });
 
   import { store as appStore } from '$store/renderer/store';
 
@@ -584,14 +607,28 @@
 
   const USE_DEFAULT_VALUE = '__use_default__';
 
-  // undefined/null means "use default" and shows "Default model" instead of falling back to store
-  let localModel = $state<string | null | undefined>(untrack(() => selectedModel));
+  // Settings/spawn callers own their draft. Agent callers only use it while
+  // their optimistic/deferred request is live; accepted selections render
+  // directly from Redux, even if a parent's prop has not caught up yet.
+  let draftModel = $state<string | null | undefined>(
+    untrack(() => (updateGlobalDefault ? undefined : selectedModel)),
+  );
+  const localModel = $derived.by(() => {
+    // The global default owner already publishes its accepted/rolled-back
+    // selection through Redux. Never keep a competing draft for Settings.
+    if (updateGlobalDefault) return $selectedModel$;
+    const change = pendingModelUpdate ?? submittedModelChange?.change;
+    if (change && isCurrentModelChange(change)) return draftModel;
+    const selection = updateGlobalStore ? currentSessionSelection() : undefined;
+    return selection ? selection.model : draftModel;
+  });
   let userChangedModel = $state(false);
   let propModelAtLocalChange = $state<string | null | undefined>(undefined);
 
-  // Keep a local user selection until the parent prop catches up to localModel.
+  // Keep a draft selection until its owning parent catches up.
   $effect(() => {
-    if (selectedModel === localModel) {
+    if (updateGlobalDefault) return;
+    if (selectedModel === draftModel) {
       userChangedModel = false;
       propModelAtLocalChange = undefined;
       return;
@@ -604,7 +641,7 @@
       return;
     }
 
-    localModel = selectedModel;
+    draftModel = selectedModel;
     localPickedProviderId = null;
     pendingModelUpdate = null;
     modelChangeRevision++;
@@ -615,7 +652,8 @@
 
   function currentSessionSelection(): ModelChange['previous'] | undefined {
     const session = $agentSession$;
-    if (!agentId || !workspaceId || !session) return undefined;
+    if (!agentId || !workspaceId || session?.id !== agentId || session.workspaceId !== workspaceId)
+      return undefined;
     const provider = getAgentProvider(session, $defaultProviderId$);
     if (!provider) return undefined;
     // An omitted model on a present session is authoritative Auto, not missing data.
@@ -682,7 +720,7 @@
     // A rejected request must not restore an old snapshot over a newer
     // authoritative selection received while the request was in flight.
     const selection = currentSessionSelection() ?? change.previous;
-    localModel = selection.model;
+    draftModel = selection.model;
     localPickedProviderId = selection.providerId;
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -698,65 +736,58 @@
     );
   }
 
-  async function applyBackendModelUpdate(change: ModelChange) {
+  function applyBackendModelUpdate(change: ModelChange) {
     if (!isCurrentModelChange(change) || isApplyingModelUpdate) return;
     if (!hasResolvedProvider(change.pick.providerId)) {
       restoreLocalSelection(change);
       return;
     }
-    isApplyingModelUpdate = true;
-    let modelAccepted = false;
-    try {
-      const { providerId: pickedProviderId, modelId } = change.pick;
-      const result = await mutate.setModel(
-        change.agentId,
-        modelId,
-        change.workspaceId,
-        pickedProviderId,
-      );
-      if (!isCurrentModelChange(change)) return;
-      if (isSkippedMutation(result)) {
-        restoreLocalSelection(change);
-        return;
-      }
-      if (!result.ok || !result.data.success) {
-        restoreLocalSelection(change);
-        const error = result.ok ? result.data.error : result.error;
-        if (error) notify.error(error, { duration: 6000 });
-        return;
-      }
-      // Only the accepted selection reaches shared session state. Failed or
-      // deferred picks stay local, so they cannot leave a partial provider/model.
-      if (!mutate.setSessionModel(change.agentId, modelId, pickedProviderId)) {
-        restoreLocalSelection(change);
-        return;
-      }
-      modelAccepted = true;
-      const targetOption = findCatalogOption(modelId, pickedProviderId);
-      const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
-      const currentEffort = selectAgentReasoningEffort.select(appStore.state, change.agentId);
-      await mutate.reconcileEffort(
-        change.agentId,
-        change.workspaceId,
-        currentEffort,
-        supportedEfforts,
-        () => isCurrentModelChange(change),
-      );
-    } catch (error) {
-      if (!isCurrentModelChange(change)) return;
-      if (!modelAccepted) restoreLocalSelection(change);
-      logger.error('Error updating agent model:', { agentId: change.agentId, error });
-      notify.error(
-        error instanceof Error
-          ? error.message
-          : m.chat_richInput_switchFailed_error({
-              provider: providerDisplayName(change.pick.providerId),
-            }),
-      );
-    } finally {
-      isApplyingModelUpdate = false;
-    }
+    const requestId = crypto.randomUUID();
+    submittedModelChange = { requestId, change };
+    const canWrite = () =>
+      isCurrentModelChange(change) &&
+      !effectiveLocked &&
+      hasResolvedProvider(change.pick.providerId) &&
+      canUseProviderModels(change.pick.providerId);
+    const action = agentModelMutationRequested(
+      {
+        requestId,
+        consumerId: mutationConsumerId,
+        agentId: change.agentId,
+        workspaceId: change.workspaceId,
+        connection: change.connection,
+        operation: {
+          kind: 'model',
+          model: change.pick.modelId,
+          providerId: change.pick.providerId,
+          commit: true,
+        },
+      },
+      { canSend: canWrite, canMutate: canWrite },
+    );
+    // The correlated selector result below owns presentation, not this Promise.
+    void appStore.dispatch(action).catch(() => {});
   }
+
+  $effect(() => {
+    const submitted = submittedModelChange;
+    if (!submitted) return;
+    const outcome = $mutations$.find((entry) => entry.requestId === submitted.requestId);
+    if (!outcome || outcome.status === 'pending') return;
+    untrack(() => {
+      submittedModelChange = null;
+      appStore.dispatch(agentModelMutationConsumed(outcome.requestId, mutationConsumerId));
+      if (!isCurrentModelChange(submitted.change)) return;
+      if (
+        outcome.status === 'cancelled' ||
+        (outcome.status === 'failure' && !outcome.modelAccepted)
+      ) {
+        restoreLocalSelection(submitted.change);
+        if (outcome.status === 'failure' && outcome.error && !effectiveLocked)
+          notify.error(outcome.error, { duration: 6000 });
+      }
+    });
+  });
 
   async function handleModelSelect(model: string | undefined, picked?: ModelPick) {
     if (effectiveLocked || destroyed || isApplyingModelUpdate) {
@@ -779,6 +810,14 @@
       appStore.dispatch(backgroundProviderSwitchBlocked(pick.providerId));
       return;
     }
+    if (updateGlobalDefault) {
+      // Defaults have one Redux-rendered selection. Dispatch before returning
+      // from the click; never stage a component draft or an agent request.
+      onModelChange?.(model ?? '', pick);
+      if (pick && !effectiveLocked && !destroyed && !$hostMember$)
+        appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+      return;
+    }
     const previous = pendingModelUpdate?.previous ?? {
       model: localModel,
       providerId: selectedModelProviderId || effectiveProviderId,
@@ -790,7 +829,7 @@
     }
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
-    localModel = model;
+    draftModel = model;
     localPickedProviderId = pick?.providerId ?? null;
 
     if (!pick || model === undefined) {
@@ -800,8 +839,6 @@
     }
     onModelChange?.(model, pick);
     if (effectiveLocked || destroyed) return;
-    if (updateGlobalDefault && !$hostMember$)
-      appStore.dispatch(selectModel(pick.modelId, pick.providerId));
     if (!updateGlobalStore || !agentId || !workspaceId) return;
     const change: ModelChange = {
       pick,
@@ -1008,6 +1045,7 @@
     // wait behind the disabled provider's catalog, which may never load.
     if (isSelectedModelProviderDisabled) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
+    if (selectedCatalogOption) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
     }
@@ -1272,10 +1310,18 @@
       activeBrowseProviderId !== selectedModelProviderId
     )
       return '';
-    return legacyDefaultMappedOption?.value ?? localModel ?? USE_DEFAULT_VALUE;
+    return (
+      (hasExplicitModel ? selectedCatalogOption?.value : undefined) ??
+      localModel ??
+      USE_DEFAULT_VALUE
+    );
   }
   $effect(() => {
-    dropdownValue = currentDropdownValue();
+    // A fast rejection can restore the same authoritative value within one
+    // render turn. Also observe the dropdown's attempted write so its row
+    // selection cannot outlive that rejected attempt.
+    const value = currentDropdownValue();
+    if (dropdownValue !== value) dropdownValue = value;
   });
 
   // Keep an explicit local choice until the daemon/parent has caught up.
@@ -1283,7 +1329,7 @@
   // another provider advertises the same model ID.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? (localPickedProviderId ??
+      ? ((updateGlobalDefault ? null : localPickedProviderId) ??
           normalizeProviderId(
             explicitProviderId ||
               splitLegacyCompoundId(localModel).providerId ||
@@ -1300,7 +1346,7 @@
     const legacyProviderId =
       hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
     return (
-      localPickedProviderId ??
+      (updateGlobalDefault ? null : localPickedProviderId) ??
       normalizeProviderId(explicitProviderId || legacyProviderId || effectiveProviderId)
     );
   });

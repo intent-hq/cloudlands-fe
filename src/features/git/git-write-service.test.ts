@@ -30,6 +30,7 @@ import {
 import { ChangeStage } from '$features/file-tracking/types';
 import type { TrackedChange } from '$features/file-tracking/types';
 import { commit, discardFiles, stageFiles, unstageFiles } from './git-write-service';
+import { gitWriteSaga } from '$store/renderer/slices/git/sagas/git-write-saga';
 
 const gitApi = appClient.git as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = 'ws-git-1';
@@ -59,7 +60,14 @@ function makeTracked(path: string, stage: ChangeStage): TrackedChange {
 }
 
 describe('gitWriteService (fake seam, real store)', () => {
-  beforeAll(() => appStore.init());
+  beforeAll(() => {
+    const dispose = appStore.init();
+    const cancel = appStore.runSaga(gitWriteSaga);
+    return () => {
+      cancel();
+      dispose();
+    };
+  });
   afterEach(() => {
     vi.clearAllMocks();
     gitApi.stage.mockResolvedValue({ success: true } as never);
@@ -76,7 +84,7 @@ describe('gitWriteService (fake seam, real store)', () => {
 
     expect(gitApi.stage).toHaveBeenCalledWith(WS, ['a.ts']);
     expect(gitApi.stage).toHaveBeenCalledTimes(1);
-    expect(gitApi.status).toHaveBeenCalledWith(WS);
+    expect(gitApi.status).toHaveBeenCalledWith(WS, { forceRefresh: true });
     expect(gitApi.status).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true });
     const file = selectGitStatus.select(appStore.state, WS)?.files.find((f) => f.path === 'a.ts');
@@ -281,7 +289,7 @@ describe('gitWriteService (fake seam, real store)', () => {
     const result = await discardFiles(WS, ['a.ts']);
 
     expect(result).toEqual({ success: false, error: 'boom' });
-    expect(gitApi.status).toHaveBeenCalledWith(WS);
+    expect(gitApi.status).toHaveBeenCalledWith(WS, { forceRefresh: true });
   });
 
   it('converges the changes slice even when discard fails (reconciled regardless of outcome)', async () => {
@@ -332,6 +340,6 @@ describe('gitWriteService (fake seam, real store)', () => {
     const result = await commit(WS, { message: 'msg', userRequested: true });
 
     expect(result).toEqual({ success: false, error: 'boom' });
-    expect(gitApi.status).toHaveBeenCalledWith(WS);
+    expect(gitApi.status).toHaveBeenCalledWith(WS, { forceRefresh: true });
   });
 });

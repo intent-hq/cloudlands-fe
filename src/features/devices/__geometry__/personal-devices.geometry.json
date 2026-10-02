@@ -1,0 +1,77 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "guest": {
+    "390": {
+      "probes": {
+        "data-personal-devices-ready=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 354,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 292,
+          "x": 49,
+          "y": 49
+        }
+      },
+      "root": {
+        "height": 452,
+        "width": 390
+      }
+    }
+  },
+  "member": {
+    "390": {
+      "probes": {
+        "data-personal-devices-ready=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 354,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 292,
+          "x": 49,
+          "y": 49
+        }
+      },
+      "root": {
+        "height": 452,
+        "width": 390
+      }
+    }
+  },
+  "owner-no-profile": {
+    "390": {
+      "probes": {
+        "data-personal-devices-ready=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 318,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 292,
+          "x": 49,
+          "y": 49
+        }
+      },
+      "root": {
+        "height": 416,
+        "width": 390
+      }
+    }
+  }
+}

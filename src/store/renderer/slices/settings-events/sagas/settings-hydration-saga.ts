@@ -1,22 +1,23 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, all, call, delay, put, take } from 'typed-redux-saga';
+import { actionChannel, all, call, delay, flush, put, take } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { settingsFormSaga } from './settings-form-saga';
 import { settingsMigrationsSaga } from './settings-migrations-saga';
 import { websocketApiSaga } from '../../websocket-api/sagas/websocket-api-saga';
 import { rtkSettingsSaga } from '../../rtk-settings/sagas/rtk-settings-saga';
 
-import { appClient } from '$lib/client';
+import { readSettingsSnapshot } from './read-settings-snapshot';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { createLogger } from '$lib/utils/client-logger';
-import { settingsChangesReceived } from '../settings-events-slice';
+import { settingsChangesReceived, settingsFieldsRefreshRequested } from '../settings-events-slice';
 import {
   selectCanAdministerHost,
   selectHostAdministrationContext,
 } from '../../principal/principal-selectors';
 import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
+import { selectModelSelectionState } from '../../model/model-selectors';
 
 import {
   fastModeHydrationStarted,
@@ -49,12 +50,7 @@ function* readSettingsSnapshotSaga() {
   let attempt = 0;
   while (yield* selectCanAdministerHost.effect()) {
     try {
-      const snapshot = appClient.settings.listSnapshot
-        ? yield* call([appClient.settings, appClient.settings.listSnapshot])
-        : {
-            settings: yield* call([appClient.settings, appClient.settings.list]),
-            revision: 0,
-          };
+      const snapshot = yield* call(readSettingsSnapshot);
       const settings = snapshot.settings;
       if (Array.isArray(settings) && settings.length > 0) {
         const changes: AppliedSettingChange[] = settings.map(({ path, value, origin }) => ({
@@ -105,19 +101,58 @@ function* settingsSnapshotLoop() {
     yield* put(notificationVolumeHydrationStarted());
     yield* put(fastModeHydrationStarted());
     const snapshot = yield* call(readSettingsSnapshotSaga);
-    let revision = snapshot?.revision ?? -1;
+    const revisions = new Map<string, number>();
     if (snapshot) {
       yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
+      for (const { path } of snapshot.changes) revisions.set(path, snapshot.revision);
       yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
     }
     while (true) {
-      const settings = yield* take(channel);
-      const incomingRevision = settings.payload[1];
-      // Older daemons omit revisions. Accept those only until this backend has
-      // demonstrated revision support, preserving additive compatibility.
-      if (incomingRevision === undefined ? revision > 0 : incomingRevision < revision) continue;
-      yield* call(applySettingsChanges, settings.payload[0], incomingRevision);
-      if (incomingRevision !== undefined) revision = incomingRevision;
+      const first = yield* take(channel);
+      const buffered = yield* flush(channel);
+      for (const action of [first, ...(Array.isArray(buffered) ? buffered : [])]) {
+        const [changes, revision] = action.payload;
+        // A field-only recovery must not suppress unrelated event deltas.
+        const current = changes.filter(
+          ({ path }) =>
+            revision === undefined || revision >= (revisions.get(path) ?? snapshot?.revision ?? -1),
+        );
+        if (!current.length) continue;
+        yield* call(applySettingsChanges, current, revision);
+        if (revision !== undefined) for (const { path } of current) revisions.set(path, revision);
+      }
+    }
+  } finally {
+    channel.close();
+  }
+}
+
+function* refreshFailedFieldsLoop() {
+  const channel = yield* actionChannel(settingsFieldsRefreshRequested, buffers.expanding());
+  try {
+    while (true) {
+      const first = yield* take(channel);
+      const buffered = yield* flush(channel);
+      const connection = (yield* selectModelSelectionState.effect()).selectionConnection;
+      const paths = new Set(
+        [first, ...(Array.isArray(buffered) ? buffered : [])]
+          .filter(({ payload }) => payload[1] === connection)
+          .flatMap(({ payload }) => payload[0]),
+      );
+      if (!paths.size) continue;
+      try {
+        const snapshot = yield* call(readSettingsSnapshot);
+        if (connection !== (yield* selectModelSelectionState.effect()).selectionConnection)
+          continue;
+        yield* put(
+          settingsChangesReceived(
+            snapshot.settings.filter(({ path }) => paths.has(path)),
+            snapshot.revision,
+          ),
+        );
+      } catch (error) {
+        logger.error('Failed to refresh rejected settings', error);
+      }
     }
   } finally {
     channel.close();
@@ -132,6 +167,7 @@ export function* settingsHydrationSaga() {
       yield* all([
         call(settingsMigrationsSaga),
         call(settingsSnapshotLoop),
+        call(refreshFailedFieldsLoop),
         call(settingsFormSaga),
         call(websocketApiSaga),
         call(rtkSettingsSaga),

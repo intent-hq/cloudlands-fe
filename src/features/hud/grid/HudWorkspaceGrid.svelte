@@ -19,7 +19,6 @@
     selectHudGridFilter,
     selectHudWorkspaceCards,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import HudWorkspaceCard from './HudWorkspaceCard.svelte';
   import { applyHudGridFilter } from './hud-grid-filter';
@@ -52,20 +51,17 @@
     };
   });
 
-  // Request the per-workspace rollups the cards join in (task stats §5.4,
-  // token usage §5.23) once per workspace id; both triggers are
-  // dispatch-safely idempotent (ensure* no-ops when loaded/loading, the
-  // read-service coalesces in-flight token fetches).
+  // Task progress comes from daemon workspace summaries. Only token usage
+  // (§5.23) needs a per-workspace read; the read service coalesces it.
   const requested = new Set<string>();
   function requestRollups(workspaceId: string): void {
     if (requested.has(workspaceId)) return;
     requested.add(workspaceId);
-    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
     appStore.dispatch(fetchWorkspaceTokenUsage(workspaceId));
   }
 
   // A card only asks for its rollups once it is on screen: on a ~130-workspace
-  // profile the eager fan-out was ~260 reads in one tick, of which the user
+  // profile an eager token-usage fan-out would read every workspace, while the user
   // could see a dozen. The gate is rooted at the grid's scroll container (the
   // element that actually clips the cards) — see `hud-card-visibility`.
   let gridEl = $state<HTMLDivElement | undefined>();
