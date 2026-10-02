@@ -86,7 +86,10 @@ chatPanelUiReducer.with(
       userMessageIndexes: upsertItem(workspace.userMessageIndexes, {
         ...entry,
         status,
-        ...(result ? { result } : {}),
+        // A transient refresh failure must leave a usable prior index in
+        // place. `unsupported` and `error` describe this request separately.
+        ...(result?.ok ? { result } : {}),
+        ...(result && !result.ok ? { unsupported: result.unsupported } : {}),
         ...(error ? { error } : {}),
       }),
     });

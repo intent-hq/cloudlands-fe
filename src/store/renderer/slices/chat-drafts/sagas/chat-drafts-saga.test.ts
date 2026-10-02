@@ -162,6 +162,33 @@ describe('chatDraftsSaga', () => {
     task.cancel();
   });
 
+  it('keeps a post-clear save rollback anchored to the cleared draft', async () => {
+    const { drafts, dispatch, task } = createHarness();
+    const beforeClear = deferred<typeof SAVED>();
+    drafts.set.mockReturnValueOnce(beforeClear.promise).mockRejectedValueOnce(new Error('offline'));
+
+    dispatch(chatDraftSaveScheduled(OWNER, 'before-clear', request('sent prompt')));
+    await vi.advanceTimersByTimeAsync(CHAT_DRAFT_SAVE_DEBOUNCE_MS);
+    dispatch(chatDraftClearRequested(WS, AGENT));
+    dispatch(
+      chatDraftSaveScheduled(
+        OWNER,
+        'after-clear',
+        request('new prompt', { text: '', attachments: [] }),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(CHAT_DRAFT_SAVE_DEBOUNCE_MS);
+
+    beforeClear.resolve(SAVED);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(drafts.clear).toHaveBeenCalledWith(WS, AGENT);
+    expect(drafts.set).toHaveBeenLastCalledWith(WS, AGENT, 'new prompt', undefined);
+    expect(getCachedDraft(WS, AGENT)).toEqual({ text: '', attachments: [] });
+    task.cancel();
+  });
+
   it('rolls the cache back and reports a failed save without a clear superseding it', async () => {
     const { drafts, dispatch, task, owner } = createHarness();
     drafts.set.mockRejectedValueOnce(new Error('disk full'));

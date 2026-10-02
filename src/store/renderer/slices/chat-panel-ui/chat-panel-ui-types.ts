@@ -10,6 +10,7 @@ interface UserMessageIndexUiEntry {
   epoch: number;
   status: ChatPanelUiStatus;
   result?: UserMessageIndexResult;
+  unsupported?: boolean;
   error?: string;
 }
 

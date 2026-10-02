@@ -108,6 +108,13 @@ const mocks = vi.hoisted(() => {
         }
       | undefined
     >(undefined),
+    questionUiConsumer: mutableReadable<
+      | {
+          storageKey: string;
+          draft: { idx: number; answers: Array<{ sel: number[]; text: string; skipped: boolean }> };
+        }
+      | undefined
+    >(undefined),
     // Store state served by the app-store mock; tests seed real slice state
     // here when a code path reads the store directly through `select`.
     storeState: {} as unknown,
@@ -257,6 +264,11 @@ vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', () => ({
     select: () => mocks.userMessageIndexUi.get(),
   }),
   selectRetryAgentUi: mocks.selector(undefined),
+}));
+vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', () => ({
+  selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
+    select: () => mocks.questionUiConsumer.get(),
+  }),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
@@ -442,7 +454,7 @@ vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../questions/QuestionWizard.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/QuestionWizardCapture.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
   default: (await import('./mocks/MockChatMessage.svelte')).default,
@@ -795,6 +807,7 @@ beforeEach(() => {
   mocks.chatError.set(null);
   mocks.chatQuotaExceeded.set(null);
   mocks.userMessageIndexUi.set(undefined);
+  mocks.questionUiConsumer.set(undefined);
   mocks.storeState = {};
   mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
@@ -2185,6 +2198,24 @@ describe('ChatPanel mounted lifecycle', () => {
       'keep this draft',
     );
     expect(mocks.draftGet).toHaveBeenCalledOnce();
+  });
+
+  it('does not pass a replaced question set the preceding set draft', async () => {
+    mocks.pendingQuestions = { messageId: 'question-old', questions: [{}] };
+    mocks.questionUiConsumer.set({
+      storageKey: 'chat.questionWizardDraft/agent-a/question-old',
+      draft: { idx: 0, answers: [{ sel: [], text: 'old answer', skipped: false }] },
+    });
+    mocks.agentMessages.set([{ id: 'question-old' }]);
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('1');
+
+    mocks.pendingQuestions = { messageId: 'question-new', questions: [{}, {}] };
+    mocks.agentMessages.set([{ id: 'question-new' }]);
+    await tick();
+
+    expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('0');
   });
 
   it('retains the empty composer as noninteractive while questions are expanded and restores it when cleared', async () => {
