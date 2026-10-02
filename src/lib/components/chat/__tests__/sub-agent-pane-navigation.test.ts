@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
 import {
@@ -16,6 +16,12 @@ import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types';
 import AgentCard from '../AgentCard.svelte';
 import ToolDetails from '../ToolDetails.svelte';
+import AgentSubscriptions from '../AgentSubscriptions.svelte';
+import {
+  setSubscriptionSnapshot,
+  deleteSubscriptionUI,
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 const workspaceId = 'sub-agent-pane-navigation';
 const agentId = 'navigation-child';
@@ -90,15 +96,45 @@ afterEach(() => {
   cleanup();
   appStore.dispatch(clearPanelLayout(workspaceId));
   appStore.dispatch(removeSession(agentId));
+  appStore.dispatch(deleteSubscriptionUI(workspaceId, 'parent'));
   vi.unstubAllGlobals();
 });
 
 describe('sub-agent links in chat panes', () => {
-  it.each(['card-avatar', 'agent-list', 'agent-message'] as const)(
+  it.each([
+    'card-avatar',
+    'agent-list',
+    'agent-message',
+    'watched',
+    'finished',
+    'context-menu',
+  ] as const)(
     'inserts a child after the clicked pane and returns on close via %s',
     async (entry) => {
-      const view =
-        entry === 'card-avatar'
+      const watched = entry === 'watched' || entry === 'finished';
+      if (watched) {
+        appStore.dispatch(openWorkspaceTab(workspaceId));
+        appStore.dispatch(
+          setSubscriptionSnapshot(workspaceId, 'parent', {
+            subscriptions: [
+              {
+                id: 'watch',
+                agentId: 'parent',
+                actorIds: [agentId],
+                eventTypes: ['agent:idle'],
+                createdAt: '2026-10-02T00:00:00Z',
+                description: 'Watch child',
+              },
+            ],
+            delegationGroups: [],
+            agentStatuses: { [agentId]: entry === 'finished' ? 'completed' : 'idle' },
+            waitingState: entry === 'finished' ? 'completed' : 'waiting',
+          }),
+        );
+      }
+      const view = watched
+        ? render(AgentSubscriptions, { workspaceId, agentId: 'parent' })
+        : entry === 'card-avatar' || entry === 'context-menu'
           ? render(AgentCard, { agentId, hidePreview: true })
           : render(ToolDetails, {
               workspaceId,
@@ -119,7 +155,12 @@ describe('sub-agent links in chat panes', () => {
       view.container.setAttribute('data-panel-id', 'source');
       const avatar = view.container.querySelector('[data-agent-avatar]')!;
       const target = avatar.querySelector('path') ?? avatar;
-      await fireEvent.click(target);
+      if (entry === 'context-menu') {
+        await fireEvent.contextMenu(target);
+        await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open', exact: true }));
+      } else {
+        await fireEvent.click(target);
+      }
       const layout = () => appStore.state.panelLayout.byWorkspaceId[workspaceId];
       expect(layout().panels.source.tabs.map((tab) => tab.noteId ?? tab.agentId)).toEqual([
         'A',
@@ -132,6 +173,7 @@ describe('sub-agent links in chat panes', () => {
       appStore.dispatch(closeActiveTab(workspaceId, 'source'));
       expect(layout().panels.source.activeTabId).toBe('B');
       expect(layout().panels.source.tabs.map((tab) => tab.id)).toEqual(['A', 'B', 'C']);
+      if (entry === 'context-menu') return;
       await fireEvent.click(target, { ctrlKey: true });
       expect(layout().panels.source.tabs.map((tab) => tab.id)).toEqual(['A', 'B', 'C']);
       expect(layout().panels.other.tabs.map((tab) => tab.noteId ?? tab.agentId)).toEqual([
