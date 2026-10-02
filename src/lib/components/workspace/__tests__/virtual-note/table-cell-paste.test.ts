@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { Editor } from '@tiptap/core';
 import { CellSelection, TableMap } from '@tiptap/pm/tables';
 import { store } from '$store/renderer/configured-store';
@@ -11,11 +11,18 @@ import { bytes } from './bounded-note-service';
 
 beforeAll(() => store.init());
 afterAll(() => store.dispose());
-for (const [rows, inputRows, length] of [
-  [12, 2, 4],
-  [40, 40, 256],
-]) {
-  it(`pastes exact native rich cells across ${rows} logical rows from ${inputRows} input rows`, async () => {
+for (const [rows, inputRows, length, mode] of [
+  [12, 2, 4, 'rich'],
+  [40, 40, 256, 'rich'],
+  [12, 2, 4, 'backward'],
+  [12, 2, 4, 'plain'],
+  [12, 2, 4, 'inline'],
+  [12, 2, 4, 'publish-failure'],
+  [12, 2, 4, 'missing-page'],
+  [12, 2, 4, 'stale'],
+  [12, 2, 4, 'journal-failure'],
+] as const) {
+  it(`pastes exact native cells across ${rows} logical rows from ${inputRows} input rows: ${mode}`, async () => {
     const source =
       '| H | R | Keep |\n| :--- | ---: | --- |\n' +
       Array.from({ length: rows }, (_, r) => `| old${r} | value${r} | KEEP${r} |`).join('\n');
@@ -28,6 +35,15 @@ for (const [rows, inputRows, length] of [
           `<td><p><a href="https://example.test">B${r}</a><code>a|b\\c</code></p></td></tr>`,
       ).join('') +
       '</tbody></table>';
+    const input = {
+      'text/plain': mode === 'plain' ? 'literal **not bold** | pipe\\slash 漢🌍\n\nlast' : '',
+      'text/html':
+        mode === 'plain'
+          ? ''
+          : mode === 'inline'
+            ? '<p><strong>bold</strong><em>italic</em></p><p></p><p><code>a|b\\c</code></p>'
+            : html,
+    };
     const raw = scanTables(source)[0];
     const native = new Editor(
       createEditorConfig({
@@ -42,11 +58,16 @@ for (const [rows, inputRows, length] of [
     );
     const service = new SourceJournal(() => source, 1);
     const session = new DocumentSession(service, document.createElement('div'));
+    const restores: Array<() => void> = [];
     try {
       const map = TableMap.get(native.state.doc.firstChild!);
       native.view.dispatch(
         native.state.tr.setSelection(
-          CellSelection.create(native.state.doc, 1 + map.map[3], 1 + map.map[rows * 3 + 1]),
+          CellSelection.create(
+            native.state.doc,
+            1 + map.map[mode === 'backward' ? rows * 3 + 1 : 3],
+            1 + map.map[mode === 'backward' ? 3 : rows * 3 + 1],
+          ),
         ),
       );
       session.selection = {
@@ -60,6 +81,16 @@ for (const [rows, inputRows, length] of [
           head: { cell: raw.rows[rows].cells[1].from, block: 0, offset: 0 },
         },
       };
+      if (mode === 'backward') {
+        [session.selection.anchor, session.selection.head] = [
+          session.selection.head,
+          session.selection.anchor,
+        ];
+        [session.selection.table!.anchor, session.selection.table!.head] = [
+          session.selection.table!.head,
+          session.selection.table!.anchor,
+        ];
+      }
       const before = structuredClone(session.selection);
       await session.seek(raw.rows[Math.floor(rows / 2)].cells[0].body);
       const paste = (editor: Editor, external = false) => {
@@ -68,7 +99,7 @@ for (const [rows, inputRows, length] of [
           value: {
             getData: (mime: string) => {
               if (external) throw new Error('Renderer must not read whole clipboard input');
-              return mime === 'text/html' ? html : '';
+              return input[mime as keyof typeof input] ?? '';
             },
             files: [],
           },
@@ -79,8 +110,49 @@ for (const [rows, inputRows, length] of [
       // Full input/native document and output comparisons are external test-oracle costs.
       paste(native);
       const old = session.editor!;
-      session.clipboardInput = service.openClipboardInput({ 'text/plain': '', 'text/html': html });
+      const oldDoc = old.getJSON(),
+        oldSelection = old.state.selection.toJSON(),
+        revision = service.revision;
+      session.clipboardInput = service.openClipboardInput(input);
+      if (mode === 'publish-failure') {
+        const spy = vi.spyOn(service.clipboardInputSink, 'publish').mockImplementationOnce(() => {
+          throw new Error('injected input publication failure');
+        });
+        restores.push(() => spy.mockRestore());
+      }
+      if (mode === 'journal-failure') {
+        const spy = vi.spyOn(service, 'record').mockImplementationOnce(() => {
+          throw new Error('injected paste journal failure');
+        });
+        restores.push(() => spy.mockRestore());
+      }
+      if (mode === 'missing-page' || mode === 'stale') {
+        const read = service.clipboardInput.page.bind(service.clipboardInput);
+        const spy = vi.spyOn(service.clipboardInput, 'page').mockImplementation((id, index) => {
+          if (index === 1 && mode === 'missing-page') throw new Error('Missing clipboard page');
+          const page = read(id, index);
+          if (index === 1 && mode === 'stale')
+            service.apply({ from: service.length, to: service.length, insert: '\n\nREMOTE' });
+          return page;
+        });
+        restores.push(() => spy.mockRestore());
+      }
       paste(old, true);
+      restores.splice(0).forEach((restore) => restore());
+      if (['publish-failure', 'journal-failure', 'stale', 'missing-page'].includes(mode)) {
+        expect(session.error).toMatch(/failure|stale|Missing clipboard/);
+        expect(service.region(0)).toBe(source + (mode === 'stale' ? '\n\nREMOTE' : ''));
+        expect(service.revision).toBe(revision + (mode === 'stale' ? 1 : 0));
+        expect(service.depth).toBe(0);
+        expect(session.selection).toEqual(before);
+        expect(session.editor).toBe(old);
+        expect(old.getJSON()).toEqual(oldDoc);
+        expect(old.state.selection.toJSON()).toEqual(oldSelection);
+        expect(service.clipboardInput.retainedBytes).toBe(0);
+        expect(service.clipboardInputSink.stagingBytes).toBe(0);
+        expect(service.clipboardInputSink.published).toEqual({ 'text/plain': '', 'text/html': '' });
+        return;
+      }
       console.info('Native table paste baseline', {
         rows,
         inputRows,
@@ -140,6 +212,7 @@ for (const [rows, inputRows, length] of [
       expect(session.clipboardRelay.maxPageBytes).toBeLessThanOrEqual(4096);
       expect(session.clipboardRelay.maxOutstandingPages).toBe(1);
     } finally {
+      restores.forEach((restore) => restore());
       native.destroy();
       session.destroy();
     }
