@@ -21,8 +21,7 @@
    * membership delta drops the row from *Shared by me* mid-flight still
    * reports each failed step, with its retry, until dismissed by a retry.
    */
-  import HostMembershipSettings from '$features/host-membership/HostMembershipSettings.svelte';
-  import { selectHostMembershipContext } from '$store/renderer/slices/host-membership/host-membership-selectors';
+  import HostMembershipSettingsHost from '$features/host-membership/HostMembershipSettingsHost.svelte';
   import {
     selectPrincipalSnapshot,
     selectCanCreateWorkspace,
@@ -120,7 +119,6 @@
     $connectionsLoaded$ && $connectionId$ === LOCAL_CONNECTION_ID,
   );
   const currentIdentity = $derived($ready$ ? $principal$?.principal.identity : undefined);
-  const hostContext$ = selectHostMembershipContext();
   const leavingIds$ = selectGuestLeavingIds();
   const leavingWorkspaceKeys$ = selectGuestLeavingWorkspaceKeys();
   const failedLeaves$ = selectGuestFailedLeaves();
@@ -349,9 +347,7 @@
       />
     </SettingsSection>
 
-    {#if $hostContext$}
-      {#key $hostContext$}<HostMembershipSettings context={$hostContext$} />{/key}
-    {/if}
+    <HostMembershipSettingsHost />
 
     <SettingsSection
       id="collaboration-workspaces"

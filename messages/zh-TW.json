@@ -7018,7 +7018,7 @@
   "collaboration_host_remove_title": "移除主機存取權限",
   "collaboration_host_remove_description": "移除成員將終止其工作階段、授權、排隊提示及已發出的可用連結。已加入的訪客和共用工作會保留。撤銷邀請只會關閉該邀請。",
   "collaboration_host_forbidden_error": "只有目前的主機擁有者可以管理成員。",
-  "collaboration_host_request_error": "要求失敗。請重新整理以檢查目前狀態後重試。",
+  "collaboration_host_request_error": "請求失敗。顯示的清單可能不是最新的。",
   "collaboration_workspace_inherited_error": "此工作區透過主機成員身分授予存取權限。請讓主機擁有者移除成員身分；離開此工作區無法移除繼承的存取權限。",
   "collaboration_host_revoke_title": "撤銷主機邀請",
   "collaboration_host_revoke_description": "此邀請將無法再接納成員。已加入的使用者將保留存取權限。",

@@ -7018,7 +7018,7 @@
   "collaboration_host_remove_title": "Remove host access",
   "collaboration_host_remove_description": "Removing a member ends their sessions, grants, queued prompts and usable links they issued. Guests they already admitted and shared work remain. Revoking an invitation only closes that invitation.",
   "collaboration_host_forbidden_error": "Only the current host owner can administer membership.",
-  "collaboration_host_request_error": "The request failed. Refresh to check the current state before trying again.",
+  "collaboration_host_request_error": "The request failed. The displayed lists may be out of date.",
   "collaboration_workspace_inherited_error": "This workspace is accessible through host membership. Ask the host owner to remove that membership; leaving this workspace cannot remove inherited access.",
   "collaboration_host_revoke_title": "Revoke host invitation",
   "collaboration_host_revoke_description": "This invitation will no longer admit a member. People who already joined keep their access.",

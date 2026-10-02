@@ -11,6 +11,7 @@
 
   let {
     busy = false,
+    creating = busy,
     error = null,
     gitlabEnabled = false,
     createdLink = null,
@@ -19,6 +20,7 @@
     onClose,
   }: {
     busy?: boolean;
+    creating?: boolean;
     error?: string | null;
     gitlabEnabled?: boolean;
     createdLink?: string | null;
@@ -149,7 +151,9 @@
     >
     {#if !createdLink}
       <Button disabled={busy || invalid || !consent} onclick={create}
-        >{busy ? m.workspace_share_creating_label() : m.workspace_share_createLink_label()}</Button
+        >{creating
+          ? m.workspace_share_creating_label()
+          : m.workspace_share_createLink_label()}</Button
       >
     {/if}
   {/snippet}

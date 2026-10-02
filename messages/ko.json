@@ -7018,7 +7018,7 @@
   "collaboration_host_remove_title": "호스트 접근 제거",
   "collaboration_host_remove_description": "멤버를 제거하면 세션, 권한, 대기 중인 프롬프트 및 발급한 사용 가능한 링크가 종료됩니다. 이미 참여한 게스트와 공유 작업은 유지됩니다. 초대 취소는 해당 초대만 닫습니다.",
   "collaboration_host_forbidden_error": "현재 호스트 소유자만 멤버십을 관리할 수 있습니다.",
-  "collaboration_host_request_error": "요청에 실패했습니다. 다시 시도하기 전에 새로 고침하여 현재 상태를 확인하세요.",
+  "collaboration_host_request_error": "요청이 실패했습니다. 표시된 목록이 최신 상태가 아닐 수 있습니다.",
   "collaboration_workspace_inherited_error": "이 워크스페이스는 호스트 멤버십으로 접근할 수 있습니다. 호스트 소유자에게 멤버십 제거를 요청하세요. 워크스페이스를 떠나도 상속된 접근은 제거되지 않습니다.",
   "collaboration_host_revoke_title": "호스트 초대 취소",
   "collaboration_host_revoke_description": "이 초대로는 더 이상 멤버를 추가할 수 없습니다. 이미 참여한 사용자의 접근 권한은 유지됩니다.",

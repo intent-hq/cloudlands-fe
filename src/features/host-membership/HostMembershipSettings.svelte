@@ -16,6 +16,7 @@
   } from '$store/renderer/slices/host-membership/host-membership-selectors';
   import {
     hostMembershipOpened,
+    hostMembershipRebound,
     hostMembershipClosed,
     hostMembershipRequested,
     hostMembershipInviteCleared,
@@ -24,9 +25,16 @@
   import HostInvitationDialog from './HostInvitationDialog.svelte';
   import { readHostInviteLink } from './invite-links';
 
-  const { context }: { context: string } = $props();
+  const { context, suspended = false }: { context: string; suspended?: boolean } = $props();
   const session = $props.id();
-  const target = { session, context: untrack(() => context) };
+  const target = $derived({ session, context });
+  let openedContext = untrack(() => context);
+  $effect(() => {
+    if (context !== openedContext) {
+      openedContext = context;
+      appStore.dispatch(hostMembershipRebound(target));
+    }
+  });
   const state$ = selectHostMembershipState();
   const members$ = selectHostMembers();
   const invites$ = selectHostInvites();
@@ -49,7 +57,7 @@
     $state$.createdInviteId ? readHostInviteLink(session, $state$.createdInviteId) : null,
   );
   $effect(() => {
-    if (!allowed) {
+    if (!allowed && !suspended) {
       invitationOpen = false;
       confirmOpen = false;
       confirmation = null;
@@ -60,6 +68,8 @@
     if (
       selectHostMembershipContext.select(appStore.state) !== target.context ||
       context !== target.context ||
+      current.target?.session !== target.session ||
+      current.target.context !== target.context ||
       current.busy ||
       current.withheld
     )
@@ -125,21 +135,12 @@
   <div class="space-y-4 p-4" data-testid="host-membership-settings">
     {#if $state$.error}
       <p role="alert" class="type-body text-danger">{$state$.error}</p>
-      <Button disabled={!allowed || $state$.busy} onclick={() => send({ kind: 'load' })}
-        >{m.collaboration_host_refresh_label()}</Button
-      >
     {/if}
     <div>
       <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h3 class="type-body font-medium text-foreground">
           {m.collaboration_host_members_title()}
         </h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!allowed || $state$.busy}
-          onclick={() => send({ kind: 'load' })}>{m.collaboration_host_refresh_label()}</Button
-        >
       </div>
       <ListView
         items={$members$}
@@ -245,9 +246,10 @@
 
 {#snippet confirmBody()}<p class="type-body font-medium">{confirmationLabel}</p>{/snippet}
 
-{#if invitationOpen && allowed}
+{#if invitationOpen && (allowed || suspended)}
   <HostInvitationDialog
-    busy={$state$.busy}
+    busy={$state$.busy || suspended}
+    creating={$state$.creating}
     error={$state$.error}
     gitlabEnabled={$gitlab$}
     {createdLink}

@@ -7018,7 +7018,7 @@
   "collaboration_host_remove_title": "移除主机访问权限",
   "collaboration_host_remove_description": "移除成员将终止其会话、授权、排队提示和已发出的可用链接。已加入的访客和共享工作会保留。撤销邀请只会关闭该邀请。",
   "collaboration_host_forbidden_error": "只有当前主机所有者可以管理成员。",
-  "collaboration_host_request_error": "请求失败。请刷新检查当前状态后重试。",
+  "collaboration_host_request_error": "请求失败。显示的列表可能不是最新的。",
   "collaboration_workspace_inherited_error": "此工作区通过主机成员身份授予访问权限。请让主机所有者移除成员身份；离开此工作区无法移除继承的访问权限。",
   "collaboration_host_revoke_title": "撤销主机邀请",
   "collaboration_host_revoke_description": "此邀请将无法再接纳成员。已加入的用户将保留访问权限。",

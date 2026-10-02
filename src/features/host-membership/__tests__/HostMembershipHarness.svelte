@@ -10,9 +10,8 @@
     setLabsMultiplayerEnabled,
     setLabsGitLabEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { selectHostMembershipContext } from '$store/renderer/slices/host-membership/host-membership-selectors';
   import { hostMembershipSaga } from '$store/renderer/slices/host-membership/sagas/host-membership-saga';
-  import HostMembershipSettings from '../HostMembershipSettings.svelte';
+  import HostMembershipSettingsHost from '../HostMembershipSettingsHost.svelte';
 
   const previous = store.state.principal;
   const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
@@ -35,7 +34,6 @@
     );
   }
   admit('owner');
-  const context$ = selectHostMembershipContext();
   const stop = store.runSaga(hostMembershipSaga);
   onDestroy(() => {
     stop();
@@ -64,5 +62,5 @@
   <button onclick={() => store.dispatch(setLabsMultiplayerEnabled(false))}
     >Disable Multiplayer</button
   >
-  {#if $context$}{#key $context$}<HostMembershipSettings context={$context$} />{/key}{/if}
+  <HostMembershipSettingsHost />
 </section>

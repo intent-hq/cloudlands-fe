@@ -33,6 +33,7 @@ for (const width of [390, 960]) {
     await mount(Harness, { hooksConfig: { mockBackend } });
     await expect(page.getByText('Local owner', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toHaveCount(0);
     const roster = page.getByRole('list', { name: 'Host members', exact: true });
     await expect(roster).toContainText('Sam');
     await expect(roster).toContainText('Host member · @sam · GitLab (forge.example:8443)');

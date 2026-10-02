@@ -7018,7 +7018,7 @@
   "collaboration_host_remove_title": "Retirer l’accès à l’hôte",
   "collaboration_host_remove_description": "Retirer un membre met fin à ses sessions, autorisations, messages en attente et liens utilisables émis. Les invités déjà admis et le travail partagé restent. Révoquer une invitation ferme uniquement cette invitation.",
   "collaboration_host_forbidden_error": "Seul le propriétaire actuel de l’hôte peut gérer les membres.",
-  "collaboration_host_request_error": "La demande a échoué. Actualisez pour vérifier l’état avant de réessayer.",
+  "collaboration_host_request_error": "La demande a échoué. Les listes affichées peuvent ne plus être à jour.",
   "collaboration_workspace_inherited_error": "Cet espace est accessible via l’appartenance à l’hôte. Demandez au propriétaire de la retirer ; quitter cet espace ne supprime pas l’accès hérité.",
   "collaboration_host_revoke_title": "Révoquer l’invitation à l’hôte",
   "collaboration_host_revoke_description": "Cette invitation ne permettra plus d’ajouter un membre. Les personnes déjà inscrites conservent leur accès.",

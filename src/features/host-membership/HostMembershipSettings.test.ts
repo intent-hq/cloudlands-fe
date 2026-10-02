@@ -9,6 +9,12 @@ import {
   hostMembershipOpened,
   hostMembershipLoaded,
 } from '$store/renderer/slices/host-membership/host-membership-slice';
+import {
+  principalReducer,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import HostMembershipSettingsHost from './HostMembershipSettingsHost.svelte';
 import type { StoreState } from '$store/renderer/types';
 const mocks = vi.hoisted(() => ({
   state: {} as StoreState,
@@ -40,11 +46,13 @@ vi.mock('svelte-fa', async () => ({
 import HostMembershipSettings from './HostMembershipSettings.svelte';
 beforeEach(() => {
   mocks.dispatch.mockReset();
+  mocks.request.mockReset();
   mocks.state = withHostPrincipal({ hostMembership: initialState });
   mocks.dispatch.mockImplementation((action) => {
     mocks.state = {
       ...mocks.state,
       hostMembership: hostMembershipReducer(mocks.state.hostMembership, action),
+      principal: principalReducer(mocks.state.principal, action),
     };
     mocks.emit();
   });
@@ -54,6 +62,7 @@ it('renders truthful host scope and submits a confirmed account pin without exte
   render(HostMembershipSettings, {
     props: { context: selectPrincipalActionContext.select(mocks.state)! },
   });
+  expect(screen.queryByRole('button', { name: 'Refresh', exact: true })).toBeNull();
   expect(screen.queryByLabelText('Account username')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
   expect(screen.getByRole('dialog', { name: 'Invite to this instance' })).toBeTruthy();
@@ -312,6 +321,7 @@ it('keeps the real refresh failure through copy, close and a fresh draft until l
     await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
     await waitFor(() => expect(mocks.state.hostMembership.error).toBeTruthy());
     const refreshError = mocks.state.hostMembership.error!;
+    expect(screen.queryByRole('button', { name: 'Refresh', exact: true })).toBeNull();
     let dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('alert').textContent).toBe(refreshError);
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Copy link' }));
@@ -328,12 +338,160 @@ it('keeps the real refresh failure through copy, close and a fresh draft until l
     expect(within(dialog).getByRole('alert').textContent).toBe(refreshError);
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     failRefresh = false;
-    await fireEvent.click(screen.getAllByRole('button', { name: 'Refresh', exact: true }).at(-1)!);
+    const { routeDaemonEventsNotification } =
+      await import('$features/events/daemon-events-bridge.client');
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'current',
+        event: { type: 'host:invites-changed', data: { inviteId: invite.id, action: 'created' } },
+      },
+      'current',
+    );
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
     expect(screen.getByRole('list', { name: 'Open invites' }).textContent).toContain('@sam');
   } finally {
     cleanup();
     saga.cancel();
     vi.unstubAllGlobals();
+  }
+});
+
+it('keeps the draft disabled through member revalidation, reloads external changes and recovers on reconnect', async () => {
+  const { runSaga, stdChannel } = await import('redux-saga');
+  const { hostMembershipSaga } =
+    await import('$store/renderer/slices/host-membership/sagas/host-membership-saga');
+  const { routeDaemonEventsNotification, DAEMON_EVENTS_SUBSCRIBE_TYPES } =
+    await import('$features/events/daemon-events-bridge.client');
+  const channel = stdChannel();
+  const reduce = mocks.dispatch.getMockImplementation()!;
+  mocks.dispatch.mockImplementation((action) => {
+    reduce(action);
+    channel.put(action);
+  });
+  let fail = false;
+  let members: object[] = [];
+  mocks.request.mockImplementation(async (method) => {
+    if (method === 'host.invite.create') throw new Error('controlled create rejection');
+    if (fail) throw new Error('offline');
+    return method === 'host.members.list' ? { members, revision: 2 } : { invites: [] };
+  });
+  const saga = runSaga(
+    { channel, dispatch: mocks.dispatch, getState: () => mocks.state },
+    hostMembershipSaga,
+  );
+  const snapshot = mocks.state.principal.snapshot!;
+  const event = (subscriptionId: string, type: string, data: object) =>
+    routeDaemonEventsNotification(
+      'events.event',
+      { subscriptionId, event: { type, data } },
+      'current',
+    );
+  const admit = (role: 'owner' | 'member' = 'owner') =>
+    mocks.dispatch(
+      principalReceived(
+        {
+          context: mocks.state.principal.context!,
+          invalidation: mocks.state.principal.invalidation,
+          presentationVersion: mocks.state.principal.presentationVersion,
+        },
+        {
+          ...snapshot,
+          principal: {
+            ...snapshot.principal,
+            hostMembershipRevision: 2,
+            hostRole: role,
+            isAdministrator: role === 'owner',
+          },
+        },
+      ),
+    );
+  try {
+    render(HostMembershipSettingsHost);
+    await waitFor(() => expect(mocks.state.hostMembership.loaded).toBe(true));
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('host:invites-changed');
+    expect(screen.queryByRole('button', { name: 'Refresh', exact: true })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+    await fireEvent.input(screen.getByLabelText('Account username'), {
+      target: { value: 'draft' },
+    });
+    await fireEvent.click(screen.getByRole('checkbox'));
+    mocks.request.mockClear();
+    event('old-host', 'host:invites-changed', {
+      inviteId: 'external',
+      action: 'created',
+      secret: 'never-dispatch',
+    });
+    expect(mocks.request).not.toHaveBeenCalled();
+    event('current', 'host:members-changed', {
+      revision: 2,
+      principalId: 'external',
+      hostRole: 'member',
+      action: 'added',
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Create invite link' }).hasAttribute('disabled'),
+      ).toBe(true),
+    );
+    expect((screen.getByLabelText('Account username') as HTMLInputElement).value).toBe('draft');
+    members = [
+      {
+        principalId: 'external',
+        hostRole: 'member',
+        login: 'new-person',
+        displayName: 'New person',
+        avatarUrl: null,
+        addedAt: '2026-10-02T00:00:00Z',
+      },
+    ];
+    admit();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Create invite link' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    expect((screen.getByLabelText('Account username') as HTMLInputElement).value).toBe('draft');
+    const freshContext = selectPrincipalActionContext.select(mocks.state)!;
+    await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+    await waitFor(() => expect(mocks.state.hostMembership.busy).toBe(false));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'hostMembership/requested',
+        payload: [
+          expect.objectContaining({ context: freshContext }),
+          {
+            kind: 'create',
+            input: { pinLogin: 'draft', pinProvider: 'github', pinHost: 'github.com' },
+          },
+        ],
+      }),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('list', { name: 'Host members' }).textContent).toContain('New person');
+    fail = true;
+    event('current', 'host:invites-changed', {
+      inviteId: 'external',
+      action: 'revoked',
+      secret: 'never-dispatch',
+    });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Refresh', exact: true })).toBeNull();
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain('never-dispatch');
+    fail = false;
+    members = [];
+    mocks.dispatch(backendReconnected());
+    await waitFor(() => expect(screen.queryByTestId('host-membership-settings')).toBeNull());
+    admit();
+    await waitFor(() => expect(mocks.state.hostMembership.loaded).toBe(true));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('New person', { exact: true })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
+    admit('member');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByTestId('host-membership-settings')).toBeNull();
+  } finally {
+    cleanup();
+    saga.cancel();
   }
 });

@@ -10,6 +10,8 @@ import {
   hostMembershipOpened,
   hostMembershipClosed,
   hostMembershipRequested,
+  hostMembershipListsChanged,
+  hostMembershipRebound,
   initialState,
 } from '../host-membership-slice';
 import { hostMembershipSaga } from './host-membership-saga';
@@ -219,6 +221,224 @@ describe('owner host membership wire and authority', () => {
         h.dispatch(hostMembershipClosed({ ...h.target, session: 'new-session' }));
         h.task.cancel();
         vi.unstubAllGlobals();
+      }
+    },
+  );
+  it('coalesces event bursts into one trailing load and retains exact links without wire URLs', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      let finish!: (value: unknown) => void;
+      mocks.request.mockClear();
+      mocks.request.mockImplementation(async (method) => {
+        if (method === 'host.invite.list') return { invites: [invitation] };
+        return await new Promise((resolve) => {
+          finish = resolve;
+        });
+      });
+      h.dispatch(hostMembershipListsChanged());
+      h.dispatch(hostMembershipListsChanged());
+      h.dispatch(hostMembershipListsChanged());
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      finish({ members: [owner], revision: 2 });
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(4);
+      finish({ members: [owner, member], revision: 3 });
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(4);
+      expect(h.state().hostMembership.revision).toBe(3);
+      expect(readHostInviteLink('session', 'invite')).toBe(url);
+      expect(JSON.stringify(h.actions)).not.toContain(secret);
+      expect(JSON.stringify(h.state())).not.toContain(secret);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
+  it('performs a trailing reload after events received during copy', async () => {
+    const h = harness();
+    let copied!: () => void;
+    vi.stubGlobal('navigator', {
+      clipboard: {
+        writeText: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              copied = resolve;
+            }),
+        ),
+      },
+    });
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      mocks.request.mockClear();
+      h.dispatch(hostMembershipRequested(h.target, { kind: 'copy', inviteId: 'invite' }));
+      h.dispatch(hostMembershipListsChanged());
+      h.dispatch(hostMembershipListsChanged());
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+      copied();
+      await settle();
+      expect(mocks.request.mock.calls.map(([method]) => method)).toEqual([
+        'host.members.list',
+        'host.invite.list',
+      ]);
+      expect(h.state().hostMembership.busy).toBe(false);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+      vi.unstubAllGlobals();
+    }
+  });
+  it.each(['closed', 'host', 'role'] as const)(
+    'drops event reload results after %s and does not start a queued reload',
+    async (change) => {
+      const h = harness();
+      try {
+        h.dispatch(hostMembershipOpened(h.target));
+        await settle();
+        let finish!: (value: unknown) => void;
+        mocks.request.mockClear();
+        mocks.request.mockImplementation(async (method) =>
+          method === 'host.invite.list'
+            ? { invites: [] }
+            : await new Promise((resolve) => {
+                finish = resolve;
+              }),
+        );
+        h.dispatch(hostMembershipListsChanged());
+        h.dispatch(hostMembershipListsChanged());
+        await settle();
+        if (change === 'closed') h.dispatch(hostMembershipClosed(h.target));
+        if (change === 'host')
+          h.change({
+            ...h.state(),
+            connections: { ...h.state().connections, windowBackendId: 'other-host' },
+          });
+        if (change === 'role') h.change(withHostPrincipal(h.state(), 'member'));
+        const state = h.state().hostMembership;
+        finish({ members: [], revision: 99 });
+        await settle();
+        h.dispatch(hostMembershipListsChanged());
+        await settle();
+        expect(h.state().hostMembership.revision).toBe(state.revision);
+        expect(mocks.request).toHaveBeenCalledTimes(2);
+      } finally {
+        h.dispatch(hostMembershipClosed(h.target));
+        h.task.cancel();
+      }
+    },
+  );
+  it('waits for an old authority flight before reloading the same owner session', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      let finish!: (value: unknown) => void;
+      mocks.request.mockClear();
+      mocks.request.mockImplementation(async (method) =>
+        method === 'host.invite.list'
+          ? { invites: [invitation] }
+          : await new Promise((resolve) => {
+              finish = resolve;
+            }),
+      );
+      h.dispatch(hostMembershipListsChanged());
+      await settle();
+      h.change({
+        ...h.state(),
+        principal: { ...h.state().principal, invalidation: h.state().principal.invalidation + 1 },
+      });
+      const rebound = { ...h.target, context: selectPrincipalActionContext.select(h.state())! };
+      h.dispatch(hostMembershipRebound(rebound));
+      h.dispatch(
+        hostMembershipRequested(rebound, {
+          kind: 'create',
+          input: { pinLogin: 'sam', pinProvider: 'github' },
+        }),
+      );
+      expect(h.state().hostMembership.busy).toBe(true);
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      finish({ members: [], revision: 99 });
+      await settle();
+      expect(h.state().hostMembership.revision).toBe(1);
+      expect(mocks.request).toHaveBeenCalledTimes(4);
+      finish({ members: [owner, member], revision: 2 });
+      await settle();
+      expect(h.state().hostMembership.revision).toBe(2);
+      expect(h.state().hostMembership.busy).toBe(false);
+      h.dispatch(hostMembershipClosed(rebound));
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it.each(['before', 'after'] as const)(
+    'keeps one created link when creation settles %s same-owner revalidation',
+    async (order) => {
+      const h = harness();
+      try {
+        h.dispatch(hostMembershipOpened(h.target));
+        await settle();
+        const authority = h.state().principal;
+        let finish!: (value: unknown) => void;
+        mocks.request.mockClear();
+        mocks.request.mockImplementation(async (method) => {
+          if (method === 'host.invite.create')
+            return await new Promise((resolve) => {
+              finish = resolve;
+            });
+          return method === 'host.members.list'
+            ? { members: [owner], revision: 2 }
+            : { invites: [invitation] };
+        });
+        h.dispatch(
+          hostMembershipRequested(h.target, {
+            kind: 'create',
+            input: { pinLogin: 'sam', pinProvider: 'github' },
+          }),
+        );
+        await settle();
+        h.change({
+          ...h.state(),
+          principal: {
+            ...authority,
+            snapshot: null,
+            status: 'loading',
+            invalidation: authority.invalidation + 1,
+            minimumRevision: 2,
+          },
+        });
+        h.dispatch(hostMembershipListsChanged());
+        if (order === 'before') {
+          finish({ invite: invitation, url, secret });
+          await settle();
+        }
+        h.change({
+          ...h.state(),
+          principal: {
+            ...h.state().principal,
+            snapshot: {
+              ...authority.snapshot!,
+              principal: { ...authority.snapshot!.principal, hostMembershipRevision: 2 },
+            },
+            status: 'ready',
+          },
+        });
+        const rebound = { ...h.target, context: selectPrincipalActionContext.select(h.state())! };
+        h.dispatch(hostMembershipRebound(rebound));
+        if (order === 'after') finish({ invite: invitation, url, secret });
+        await settle();
+        expect(
+          mocks.request.mock.calls.filter(([method]) => method === 'host.invite.create'),
+        ).toHaveLength(1);
+        expect(h.state().hostMembership.createdInviteId).toBe('invite');
+        expect(h.state().hostMembership.busy).toBe(false);
+        expect(readHostInviteLink('session', 'invite')).toBe(url);
+        h.dispatch(hostMembershipClosed(rebound));
+      } finally {
+        h.task.cancel();
       }
     },
   );

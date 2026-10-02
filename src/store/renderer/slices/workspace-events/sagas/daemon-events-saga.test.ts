@@ -306,6 +306,7 @@ describe('daemonEventsSaga', () => {
       'app:workspace-open',
       'presence:changed',
       'host:members-changed',
+      'host:invites-changed',
       'host:execution-context-changed',
     ]);
   });
