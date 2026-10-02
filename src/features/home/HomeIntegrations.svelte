@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import { selectHomeWorkspaceView } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { normalizeHomeConfiguration } from './home-workspaces-persistence';
@@ -431,34 +432,57 @@
                   />{/if}{/snippet}
               {#snippet title()}
                 <div class="flex min-w-0 items-center gap-3">
-                  <span class="min-w-0 flex-1 truncate font-medium" title={item.title}
-                    >{item.title}</span
+                  <Tooltip.Provider
+                    ><Tooltip.Root
+                      ><Tooltip.Trigger
+                        >{#snippet child({ props: homeTooltipProps })}<span
+                            {...homeTooltipProps}
+                            class="min-w-0 flex-1 truncate font-medium">{item.title}</span
+                          >{/snippet}</Tooltip.Trigger
+                      ><Tooltip.Content>{item.title}</Tooltip.Content></Tooltip.Root
+                    ></Tooltip.Provider
                   >
                   <span
                     class="type-caption flex min-w-0 max-w-[45%] items-center gap-2 text-muted-foreground"
                   >
                     <span class="shrink-0">{item.identifier}</span>
-                    {#if isPr && repositories.length !== 1}<span
-                        class="truncate"
-                        title={item.owner + '/' + item.repo}>{item.repo}</span
+                    {#if isPr && repositories.length !== 1}<Tooltip.Provider
+                        ><Tooltip.Root
+                          ><Tooltip.Trigger
+                            >{#snippet child({ props: homeTooltipProps })}<span
+                                {...homeTooltipProps}
+                                class="truncate">{item.repo}</span
+                              >{/snippet}</Tooltip.Trigger
+                          ><Tooltip.Content>{item.owner + '/' + item.repo}</Tooltip.Content
+                          ></Tooltip.Root
+                        ></Tooltip.Provider
                       >
                     {:else if !isPr && item.team}<span class="truncate">{item.team}</span>{/if}
                     {#if item.author}
-                      {#if isPr}<span class="shrink-0" title={item.author}>
-                          <GitHubAvatar
-                            identity={item.author}
-                            alt={item.author}
-                            size={20}
-                            class="rounded-full"
-                          >
-                            {#snippet fallback()}<span
-                                class="flex size-5 items-center justify-center rounded-full bg-muted text-xs"
-                                role="img"
-                                aria-label={item.author}
-                                >{item.author?.slice(0, 1).toUpperCase()}</span
-                              >{/snippet}
-                          </GitHubAvatar>
-                        </span>
+                      {#if isPr}<Tooltip.Provider
+                          ><Tooltip.Root
+                            ><Tooltip.Trigger
+                              >{#snippet child({ props: homeTooltipProps })}<span
+                                  {...homeTooltipProps}
+                                  class="shrink-0"
+                                >
+                                  <GitHubAvatar
+                                    identity={item.author ?? ''}
+                                    alt={item.author}
+                                    size={20}
+                                    class="rounded-full"
+                                  >
+                                    {#snippet fallback()}<span
+                                        class="flex size-5 items-center justify-center rounded-full bg-muted text-xs"
+                                        role="img"
+                                        aria-label={item.author}
+                                        >{item.author?.slice(0, 1).toUpperCase()}</span
+                                      >{/snippet}
+                                  </GitHubAvatar>
+                                </span>{/snippet}</Tooltip.Trigger
+                            ><Tooltip.Content>{item.author}</Tooltip.Content></Tooltip.Root
+                          ></Tooltip.Provider
+                        >
                       {:else}<span class="truncate">{item.author}</span>{/if}
                     {/if}
                   </span>
@@ -474,7 +498,7 @@
                       variant="secondary"
                       size="sm"
                       class="h-7 max-w-full gap-2 rounded-full px-3"
-                      title={m.home_integrations_open_workspace()}
+                      tooltip={m.home_integrations_open_workspace()}
                       onclick={(event) => {
                         event.stopPropagation();
                         workspacePreviewId = linked.workspaceId;
@@ -571,7 +595,7 @@
                   size="icon-sm"
                   variant="ghost"
                   aria-label={m.home_integrations_close()}
-                  title={m.home_integrations_close()}
+                  tooltip={m.home_integrations_close()}
                   onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
                 >
               </div>
@@ -586,20 +610,34 @@
                     </span>
                     <span class="truncate">{detail.author}</span>
                   </span>{/if}
-                <span
-                  class="home-pr-metadata inline-flex min-w-0 items-center gap-2"
-                  title={detail.owner + '/' + detail.repo}
+                <Tooltip.Provider
+                  ><Tooltip.Root
+                    ><Tooltip.Trigger
+                      >{#snippet child({ props: homeTooltipProps })}<span
+                          {...homeTooltipProps}
+                          class="home-pr-metadata inline-flex min-w-0 items-center gap-2"
+                        >
+                          <span class="flex size-5 shrink-0 items-center justify-center"
+                            ><Fa icon={faBook} /></span
+                          ><span class="truncate">{detail.owner}/{detail.repo}</span>
+                        </span>{/snippet}</Tooltip.Trigger
+                    ><Tooltip.Content>{detail.owner + '/' + detail.repo}</Tooltip.Content
+                    ></Tooltip.Root
+                  ></Tooltip.Provider
                 >
-                  <span class="flex size-5 shrink-0 items-center justify-center"
-                    ><Fa icon={faBook} /></span
-                  ><span class="truncate">{detail.owner}/{detail.repo}</span>
-                </span>
-                {#if detail.headRef}<span
-                    class="home-pr-metadata inline-flex min-w-0 items-center gap-2"
-                    title={`${detail.headRef} → ${detail.baseRef}`}
-                    ><span class="flex size-5 shrink-0 items-center justify-center"
-                      ><Fa icon={faCodeBranch} /></span
-                    ><span class="truncate">{detail.headRef} → {detail.baseRef}</span></span
+                {#if detail.headRef}<Tooltip.Provider
+                    ><Tooltip.Root
+                      ><Tooltip.Trigger
+                        >{#snippet child({ props: homeTooltipProps })}<span
+                            {...homeTooltipProps}
+                            class="home-pr-metadata inline-flex min-w-0 items-center gap-2"
+                            ><span class="flex size-5 shrink-0 items-center justify-center"
+                              ><Fa icon={faCodeBranch} /></span
+                            ><span class="truncate">{detail.headRef} → {detail.baseRef}</span></span
+                          >{/snippet}</Tooltip.Trigger
+                      ><Tooltip.Content>{`${detail.headRef} → ${detail.baseRef}`}</Tooltip.Content
+                      ></Tooltip.Root
+                    ></Tooltip.Provider
                   >{/if}
               </div>
               <div class="flex flex-wrap items-center gap-2">
@@ -621,7 +659,7 @@
                       variant="secondary"
                       class="h-7 max-w-full gap-2 rounded-full px-3"
                       onclick={openWorkspace}
-                      title={m.home_integrations_open_workspace()}
+                      tooltip={m.home_integrations_open_workspace()}
                       ><Fa icon={faLayerGroup} /><span class="truncate">{linkedWorkspace.name}</span
                       ></Button
                     >
@@ -649,9 +687,16 @@
               class="flex shrink-0 items-center gap-2 border-b border-border px-6 py-3"
             >
               <span class="shrink-0 type-caption text-muted-foreground">{detail.identifier}</span>
-              {#if detail.state}<span
-                  class="min-w-0 truncate rounded-md bg-muted px-2 py-1 type-caption"
-                  title={detail.state}>{detail.state}</span
+              {#if detail.state}<Tooltip.Provider
+                  ><Tooltip.Root
+                    ><Tooltip.Trigger
+                      >{#snippet child({ props: homeTooltipProps })}<span
+                          {...homeTooltipProps}
+                          class="min-w-0 truncate rounded-md bg-muted px-2 py-1 type-caption"
+                          >{detail.state}</span
+                        >{/snippet}</Tooltip.Trigger
+                    ><Tooltip.Content>{detail.state}</Tooltip.Content></Tooltip.Root
+                  ></Tooltip.Provider
                 >{/if}
               <div class="ml-auto flex shrink-0 items-center gap-1">
                 {#if detail.url}<Button
@@ -667,7 +712,7 @@
                   variant="ghost"
                   size="icon-sm"
                   aria-label={m.home_integrations_close()}
-                  title={m.home_integrations_close()}
+                  tooltip={m.home_integrations_close()}
                   onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
                 >
               </div>
@@ -682,7 +727,7 @@
                   variant="ghost"
                   size="icon-sm"
                   aria-label={m.home_integrations_close()}
-                  title={m.home_integrations_close()}
+                  tooltip={m.home_integrations_close()}
                   onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
                 >
               </div>

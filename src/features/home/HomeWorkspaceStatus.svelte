@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { faCircleCheck, faCircleQuestion, faCircleExclamation } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
@@ -63,32 +64,39 @@
   });
 </script>
 
-<span
-  class={cn(
-    'inline-flex shrink-0 items-center gap-1.5 type-caption',
-    presentation.color,
-    className,
-  )}
-  class:needs-you={group === 'needs-you'}
-  role={showLabel ? undefined : 'img'}
-  aria-label={showLabel ? undefined : `${presentation.label}. ${explanation}`}
-  title={explanation}
-  data-home-status={group}
-  data-home-status-error={failed || undefined}
+<Tooltip.Provider
+  ><Tooltip.Root
+    ><Tooltip.Trigger
+      >{#snippet child({ props: homeTooltipProps })}<span
+          {...homeTooltipProps}
+          class={cn(
+            'inline-flex shrink-0 items-center gap-1.5 type-caption',
+            presentation.color,
+            className,
+          )}
+          class:needs-you={group === 'needs-you'}
+          role={showLabel ? undefined : 'img'}
+          aria-label={showLabel ? undefined : `${presentation.label}. ${explanation}`}
+          data-home-status={group}
+          data-home-status-error={failed || undefined}
+        >
+          <span
+            class="inline-flex size-3.5 shrink-0 items-center justify-center"
+            class:needs-you-icon={group === 'needs-you'}
+            aria-hidden="true"
+          >
+            {#if presentation.icon}
+              <Fa icon={presentation.icon} weight="fill" class="size-full!" />
+            {:else}
+              <span class="size-1.5 rounded-full bg-current"></span>
+            {/if}
+          </span>
+          {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{explanation}</span
+            >{/if}
+        </span>{/snippet}</Tooltip.Trigger
+    ><Tooltip.Content>{explanation}</Tooltip.Content></Tooltip.Root
+  ></Tooltip.Provider
 >
-  <span
-    class="inline-flex size-3.5 shrink-0 items-center justify-center"
-    class:needs-you-icon={group === 'needs-you'}
-    aria-hidden="true"
-  >
-    {#if presentation.icon}
-      <Fa icon={presentation.icon} weight="fill" class="size-full!" />
-    {:else}
-      <span class="size-1.5 rounded-full bg-current"></span>
-    {/if}
-  </span>
-  {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{explanation}</span>{/if}
-</span>
 
 <style>
   .needs-you {

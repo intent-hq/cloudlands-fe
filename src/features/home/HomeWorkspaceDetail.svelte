@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import { onMount, untrack } from 'svelte';
   import HomeWorkspaceChat from './HomeWorkspaceChat.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
@@ -77,46 +78,58 @@
           class="type-title h-auto max-w-full justify-start px-2 py-1 text-left font-medium leading-snug"
           wrapContent={false}
           aria-label={m.home_open_workspace()}
-          title={workspace.title}
+          tooltip={workspace.title}
           onclick={openWorkspace}
         >
           <span class="min-w-0 line-clamp-2 break-words">{workspace.title}</span>
         </Button>
       </h2>
       {#if repositoryLabel}
-        <div
-          class="flex min-w-0 max-w-[32%] items-center gap-1.5 type-caption text-muted-foreground"
-          data-home-detail-repository
-          title={repositoryLabel}
-          aria-label={repositoryLabel}
+        <Tooltip.Provider
+          ><Tooltip.Root
+            ><Tooltip.Trigger
+              >{#snippet child({ props: homeTooltipProps })}<div
+                  {...homeTooltipProps}
+                  class="flex min-w-0 max-w-[32%] items-center gap-1.5 type-caption text-muted-foreground"
+                  data-home-detail-repository
+                  aria-label={repositoryLabel}
+                >
+                  {#if workspace.repositoryOwner}
+                    <GitHubAvatar
+                      identity={workspace.repositoryOwner}
+                      size={16}
+                      class="shrink-0 rounded-sm"
+                    />
+                  {:else}
+                    <Fa icon={faFolder} />
+                  {/if}
+                  <span class="home-detail-repository-name truncate">{repositoryLabel}</span>
+                </div>{/snippet}</Tooltip.Trigger
+            ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
+          ></Tooltip.Provider
         >
-          {#if workspace.repositoryOwner}
-            <GitHubAvatar
-              identity={workspace.repositoryOwner}
-              size={16}
-              class="shrink-0 rounded-sm"
-            />
-          {:else}
-            <Fa icon={faFolder} />
-          {/if}
-          <span class="home-detail-repository-name truncate">{repositoryLabel}</span>
-        </div>
       {/if}
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label={m.home_close_preview()}
-        title={m.home_close_preview()}
+        tooltip={m.home_close_preview()}
         onclick={onclose}><Fa icon={faXmark} /></Button
       >
     </div>
     {#if workspace.statusMessage}
-      <p
-        class="type-caption line-clamp-2 break-words leading-snug text-muted-foreground"
-        title={workspace.statusMessage}
+      <Tooltip.Provider
+        ><Tooltip.Root
+          ><Tooltip.Trigger
+            >{#snippet child({ props: homeTooltipProps })}<p
+                {...homeTooltipProps}
+                class="type-caption line-clamp-2 break-words leading-snug text-muted-foreground"
+              >
+                {workspace.statusMessage}
+              </p>{/snippet}</Tooltip.Trigger
+          ><Tooltip.Content>{workspace.statusMessage}</Tooltip.Content></Tooltip.Root
+        ></Tooltip.Provider
       >
-        {workspace.statusMessage}
-      </p>
     {/if}
     {#if agents.length}
       <div class="-ml-3 mt-2 min-w-0" data-home-agent-switcher>

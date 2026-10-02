@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
     faCircleCheck,
@@ -134,7 +135,16 @@
     {#each data?.checks ?? [] as check (check.name + check.url)}
       {@const appearance = checkState(check.state)}
       <div class="flex items-center gap-2 type-caption">
-        <span class={appearance.color} title={appearance.label}><Fa icon={appearance.icon} /></span>
+        <Tooltip.Provider
+          ><Tooltip.Root
+            ><Tooltip.Trigger
+              >{#snippet child({ props: homeTooltipProps })}<span
+                  {...homeTooltipProps}
+                  class={appearance.color}><Fa icon={appearance.icon} /></span
+                >{/snippet}</Tooltip.Trigger
+            ><Tooltip.Content>{appearance.label}</Tooltip.Content></Tooltip.Root
+          ></Tooltip.Provider
+        >
         {#if check.url}<Button
             variant="ghost"
             size="sm"

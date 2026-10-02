@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faCodePullRequest, faCodeMerge, faHourglassHalf } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -36,10 +37,16 @@
   );
 </script>
 
-<span
-  class="inline-flex items-center gap-1.5 type-caption {appearance.color}"
-  title={appearance.label}
+<Tooltip.Provider
+  ><Tooltip.Root
+    ><Tooltip.Trigger
+      >{#snippet child({ props: homeTooltipProps })}<span
+          {...homeTooltipProps}
+          class="inline-flex items-center gap-1.5 type-caption {appearance.color}"
+        >
+          <Fa icon={appearance.icon} />
+          <span class:sr-only={compact}>{appearance.label}</span>
+        </span>{/snippet}</Tooltip.Trigger
+    ><Tooltip.Content>{appearance.label}</Tooltip.Content></Tooltip.Root
+  ></Tooltip.Provider
 >
-  <Fa icon={appearance.icon} />
-  <span class:sr-only={compact}>{appearance.label}</span>
-</span>

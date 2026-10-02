@@ -17,7 +17,7 @@
         size="icon-sm"
         class="shrink-0 rounded-full bg-muted/50"
         aria-label={m.home_view_options()}
-        title={m.home_view_options()}
+        tooltip={m.home_view_options()}
       >
         <Fa icon={faSliders} />
       </Button>

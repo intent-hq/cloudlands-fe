@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
     faCircleCheck,
@@ -85,13 +86,20 @@
 </script>
 
 {#if pull && appearance}
-  <span
-    class="inline-flex min-w-0 max-w-full shrink-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs {appearance.background} {appearance.color}"
-    title={`${appearance.label} · #${pull.number} · ${pull.title}`}
-    data-home-workspace-pr-badge
+  <Tooltip.Provider
+    ><Tooltip.Root
+      ><Tooltip.Trigger
+        >{#snippet child({ props: homeTooltipProps })}<span
+            {...homeTooltipProps}
+            class="inline-flex min-w-0 max-w-full shrink-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs {appearance.background} {appearance.color}"
+            data-home-workspace-pr-badge
+          >
+            <Fa icon={appearance.icon} class="shrink-0" />
+            <span class="truncate">{appearance.label}</span>
+            <span class="shrink-0 tabular-nums">#{pull.number}</span>
+          </span>{/snippet}</Tooltip.Trigger
+      ><Tooltip.Content>{`${appearance.label} · #${pull.number} · ${pull.title}`}</Tooltip.Content
+      ></Tooltip.Root
+    ></Tooltip.Provider
   >
-    <Fa icon={appearance.icon} class="shrink-0" />
-    <span class="truncate">{appearance.label}</span>
-    <span class="shrink-0 tabular-nums">#{pull.number}</span>
-  </span>
 {/if}

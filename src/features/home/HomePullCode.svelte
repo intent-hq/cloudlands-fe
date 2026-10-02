@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import HomeSearch from './HomeSearch.svelte';
   import DiffViewer from '$features/file-tracking/components/diff/DiffViewer.svelte';
@@ -42,7 +43,16 @@
         aria-pressed={active?.filename === file.filename}
         onclick={() => (selected = file.filename)}
       >
-        <span class="min-w-0 flex-1 truncate font-mono" title={file.filename}>{file.filename}</span>
+        <Tooltip.Provider
+          ><Tooltip.Root
+            ><Tooltip.Trigger
+              >{#snippet child({ props: homeTooltipProps })}<span
+                  {...homeTooltipProps}
+                  class="min-w-0 flex-1 truncate font-mono">{file.filename}</span
+                >{/snippet}</Tooltip.Trigger
+            ><Tooltip.Content>{file.filename}</Tooltip.Content></Tooltip.Root
+          ></Tooltip.Provider
+        >
         <span class="shrink-0 text-success">+{formatInteger(file.additions)}</span><span
           class="shrink-0 text-danger">−{formatInteger(file.deletions)}</span
         >

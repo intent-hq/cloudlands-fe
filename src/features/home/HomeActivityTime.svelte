@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -14,8 +15,14 @@
   );
 </script>
 
-<span title={label} aria-label={label}>
-  {#if activity.time > 0}<RelativeTime date={activity.time} compact />{:else}<span
-      aria-hidden="true">—</span
-    >{/if}
-</span>
+<Tooltip.Provider
+  ><Tooltip.Root
+    ><Tooltip.Trigger
+      >{#snippet child({ props: homeTooltipProps })}<span {...homeTooltipProps} aria-label={label}>
+          {#if activity.time > 0}<RelativeTime date={activity.time} compact />{:else}<span
+              aria-hidden="true">—</span
+            >{/if}
+        </span>{/snippet}</Tooltip.Trigger
+    ><Tooltip.Content>{label}</Tooltip.Content></Tooltip.Root
+  ></Tooltip.Provider
+>

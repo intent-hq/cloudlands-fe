@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
@@ -64,18 +65,24 @@
         size="icon"
         class="ml-auto size-8 shrink-0"
         aria-label={m.home_integrations_view_comment()}
-        title={m.home_integrations_view_comment()}
+        tooltip={m.home_integrations_view_comment()}
         onclick={(event) => {
           if (url) open(url, event);
         }}><Fa icon={faArrowUpRightFromSquare} /></Button
       >{/if}
   </header>
-  {#if caption}<p
-      class="truncate border-b border-border px-3 py-2 text-xs text-muted-foreground"
-      title={caption}
-    >
-      {caption}
-    </p>{/if}
+  {#if caption}<Tooltip.Provider
+      ><Tooltip.Root
+        ><Tooltip.Trigger
+          >{#snippet child({ props: homeTooltipProps })}<p
+              {...homeTooltipProps}
+              class="truncate border-b border-border px-3 py-2 text-xs text-muted-foreground"
+            >
+              {caption}
+            </p>{/snippet}</Tooltip.Trigger
+        ><Tooltip.Content>{caption}</Tooltip.Content></Tooltip.Root
+      ></Tooltip.Provider
+    >{/if}
   <div
     class="comment-markdown pl-12 pr-4 pb-4"
     class:max-h-48={!expanded}

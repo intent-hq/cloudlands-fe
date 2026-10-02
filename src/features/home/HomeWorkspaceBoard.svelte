@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
@@ -83,9 +84,18 @@
               aria-label={workspace.title}
             >
               <span class="flex items-start justify-between gap-3">
-                <span class="min-w-0 line-clamp-2 break-words font-medium" title={workspace.title}>
-                  {workspace.title}
-                </span>
+                <Tooltip.Provider
+                  ><Tooltip.Root
+                    ><Tooltip.Trigger
+                      >{#snippet child({ props: homeTooltipProps })}<span
+                          {...homeTooltipProps}
+                          class="min-w-0 line-clamp-2 break-words font-medium"
+                        >
+                          {workspace.title}
+                        </span>{/snippet}</Tooltip.Trigger
+                    ><Tooltip.Content>{workspace.title}</Tooltip.Content></Tooltip.Root
+                  ></Tooltip.Provider
+                >
                 <HomeWorkspaceStatus {workspace} class="mt-0.5" />
               </span>
               {#if workspace.statusMessage}
@@ -99,20 +109,28 @@
                 class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
               >
                 {#if showRepository && workspace.repositoryName}
-                  <span
-                    class="flex min-w-0 max-w-full items-center gap-1.5"
-                    title={[workspace.repositoryOwner, workspace.repositoryName]
-                      .filter(Boolean)
-                      .join('/')}
+                  <Tooltip.Provider
+                    ><Tooltip.Root
+                      ><Tooltip.Trigger
+                        >{#snippet child({ props: homeTooltipProps })}<span
+                            {...homeTooltipProps}
+                            class="flex min-w-0 max-w-full items-center gap-1.5"
+                          >
+                            {#if workspace.repositoryOwner}
+                              <GitHubAvatar
+                                identity={workspace.repositoryOwner}
+                                class="shrink-0 rounded-sm"
+                              />
+                            {/if}
+                            <span class="truncate">{workspace.repositoryName}</span>
+                          </span>{/snippet}</Tooltip.Trigger
+                      ><Tooltip.Content
+                        >{[workspace.repositoryOwner, workspace.repositoryName]
+                          .filter(Boolean)
+                          .join('/')}</Tooltip.Content
+                      ></Tooltip.Root
+                    ></Tooltip.Provider
                   >
-                    {#if workspace.repositoryOwner}
-                      <GitHubAvatar
-                        identity={workspace.repositoryOwner}
-                        class="shrink-0 rounded-sm"
-                      />
-                    {/if}
-                    <span class="truncate">{workspace.repositoryName}</span>
-                  </span>
                 {/if}
                 {#if workspace.pullRequests?.length || workspace.activePullRequest}
                   <HomeWorkspacePullBadge {workspace} />

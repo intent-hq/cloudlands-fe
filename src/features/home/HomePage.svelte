@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import './home.css';
   import { goto } from '$app/navigation';
@@ -555,15 +556,23 @@
         {@const needsYou = countNeedsYou(items) > 0}
         {@const running = items.some((workspace) => matchesHomeFilter(workspace, 'running'))}
         {#if showStatus && (needsYou || running)}
-          <span
-            class="size-1.5 shrink-0 rounded-full"
-            style:background={needsYou
-              ? 'hsl(var(--workspace-status-unread))'
-              : 'hsl(var(--warning))'}
-            role="img"
-            aria-label={needsYou ? m.home_filter_attention() : m.home_filter_running()}
-            title={needsYou ? m.home_filter_attention() : m.home_filter_running()}
-          ></span>
+          <Tooltip.Provider
+            ><Tooltip.Root
+              ><Tooltip.Trigger
+                >{#snippet child({ props: homeTooltipProps })}<span
+                    {...homeTooltipProps}
+                    class="size-1.5 shrink-0 rounded-full"
+                    style:background={needsYou
+                      ? 'hsl(var(--workspace-status-unread))'
+                      : 'hsl(var(--warning))'}
+                    role="img"
+                    aria-label={needsYou ? m.home_filter_attention() : m.home_filter_running()}
+                  ></span>{/snippet}</Tooltip.Trigger
+              ><Tooltip.Content
+                >{needsYou ? m.home_filter_attention() : m.home_filter_running()}</Tooltip.Content
+              ></Tooltip.Root
+            ></Tooltip.Provider
+          >
         {/if}
         <span class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
           >{formatInteger(items.filter(isActive).length)}</span
@@ -574,7 +583,7 @@
           variant="ghost"
           active={repoKey === repo.key && destination === 'workspaces'}
           class="w-full justify-start px-2"
-          title={repo.label}
+          tooltip={repo.label}
           aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
             ? m.fileTracking_startNew_noRepository_label()
             : repo.label}
@@ -609,8 +618,15 @@
               class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
               onclick={() => chooseRepo(expansionKey)}
             >
-              <span class="min-w-0 flex-1 truncate text-left font-medium" title={group.label}
-                >{group.label}</span
+              <Tooltip.Provider
+                ><Tooltip.Root
+                  ><Tooltip.Trigger
+                    >{#snippet child({ props: homeTooltipProps })}<span
+                        {...homeTooltipProps}
+                        class="min-w-0 flex-1 truncate text-left font-medium">{group.label}</span
+                      >{/snippet}</Tooltip.Trigger
+                  ><Tooltip.Content>{group.label}</Tooltip.Content></Tooltip.Root
+                ></Tooltip.Provider
               >
               {#if !expanded}{@render sidebarCounts(
                   group.items.flatMap((repo) => repo.workspaces),
@@ -698,18 +714,38 @@
               >
                 <Tabs.List class="home-tabs shrink-0 gap-5 px-0" aria-label={m.home_views()}>
                   <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-                  <Tabs.Trigger value="prs" aria-label={m.home_tab_prs()} title={m.home_tab_prs()}>
-                    <span class="home-tab-label">{m.home_tab_prs()}</span>
-                    <span class="home-tab-logo" aria-hidden="true"><GitHubIcon size={18} /></span>
-                  </Tabs.Trigger>
-                  <Tabs.Trigger
-                    value="linear"
-                    aria-label={m.home_tab_linear()}
-                    title={m.home_tab_linear()}
+                  <Tooltip.Provider
+                    ><Tooltip.Root
+                      ><Tooltip.Trigger
+                        >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
+                            {...homeTooltipProps}
+                            value="prs"
+                            aria-label={m.home_tab_prs()}
+                          >
+                            <span class="home-tab-label">{m.home_tab_prs()}</span>
+                            <span class="home-tab-logo" aria-hidden="true"
+                              ><GitHubIcon size={18} /></span
+                            >
+                          </Tabs.Trigger>{/snippet}</Tooltip.Trigger
+                      ><Tooltip.Content>{m.home_tab_prs()}</Tooltip.Content></Tooltip.Root
+                    ></Tooltip.Provider
                   >
-                    <span class="home-tab-label">{m.home_tab_linear()}</span>
-                    <span class="home-tab-logo" aria-hidden="true"><LinearIcon size={18} /></span>
-                  </Tabs.Trigger>
+                  <Tooltip.Provider
+                    ><Tooltip.Root
+                      ><Tooltip.Trigger
+                        >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
+                            {...homeTooltipProps}
+                            value="linear"
+                            aria-label={m.home_tab_linear()}
+                          >
+                            <span class="home-tab-label">{m.home_tab_linear()}</span>
+                            <span class="home-tab-logo" aria-hidden="true"
+                              ><LinearIcon size={18} /></span
+                            >
+                          </Tabs.Trigger>{/snippet}</Tooltip.Trigger
+                      ><Tooltip.Content>{m.home_tab_linear()}</Tooltip.Content></Tooltip.Root
+                    ></Tooltip.Provider
+                  >
                 </Tabs.List>
                 <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
                   {#if selectedRepositoryGithubUrl}
@@ -821,29 +857,53 @@
                         >
                           {#snippet leading()}
                             {#if !selectedRepository && item.repositoryOwner}
-                              <span
-                                title={[item.repositoryOwner, item.repositoryName]
-                                  .filter(Boolean)
-                                  .join('/')}
+                              <Tooltip.Provider
+                                ><Tooltip.Root
+                                  ><Tooltip.Trigger
+                                    >{#snippet child({ props: homeTooltipProps })}<span
+                                        {...homeTooltipProps}
+                                      >
+                                        <GitHubAvatar
+                                          identity={item.repositoryOwner ?? ''}
+                                          size={20}
+                                          class="shrink-0 rounded-sm"
+                                        />
+                                      </span>{/snippet}</Tooltip.Trigger
+                                  ><Tooltip.Content
+                                    >{[item.repositoryOwner, item.repositoryName]
+                                      .filter(Boolean)
+                                      .join('/')}</Tooltip.Content
+                                  ></Tooltip.Root
+                                ></Tooltip.Provider
                               >
-                                <GitHubAvatar
-                                  identity={item.repositoryOwner}
-                                  size={20}
-                                  class="shrink-0 rounded-sm"
-                                />
-                              </span>
                             {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
-                              <span
-                                title={item.repositoryName || item.repositoryPath}
-                                class="flex size-5 items-center justify-center text-muted-foreground"
-                                ><Fa icon={faFolder} /></span
+                              <Tooltip.Provider
+                                ><Tooltip.Root
+                                  ><Tooltip.Trigger
+                                    >{#snippet child({ props: homeTooltipProps })}<span
+                                        {...homeTooltipProps}
+                                        class="flex size-5 items-center justify-center text-muted-foreground"
+                                        ><Fa icon={faFolder} /></span
+                                      >{/snippet}</Tooltip.Trigger
+                                  ><Tooltip.Content
+                                    >{item.repositoryName || item.repositoryPath}</Tooltip.Content
+                                  ></Tooltip.Root
+                                ></Tooltip.Provider
                               >
                             {/if}
                           {/snippet}
                           {#snippet title()}
                             <span class="home-row-line">
-                              <span title={item.title} class="home-row-title truncate font-medium"
-                                >{item.title}</span
+                              <Tooltip.Provider
+                                ><Tooltip.Root
+                                  ><Tooltip.Trigger
+                                    >{#snippet child({ props: homeTooltipProps })}<span
+                                        {...homeTooltipProps}
+                                        class="home-row-title truncate font-medium"
+                                        >{item.title}</span
+                                      >{/snippet}</Tooltip.Trigger
+                                  ><Tooltip.Content>{item.title}</Tooltip.Content></Tooltip.Root
+                                ></Tooltip.Provider
                               >
                               <span class="home-row-description flex min-w-0 items-center gap-2">
                                 <HomeWorkspacePullBadge workspace={item} />
@@ -853,9 +913,17 @@
                                     >+{formatInteger(item.pullRequests.length - 1)}</span
                                   >
                                 {/if}
-                                <span
-                                  class="home-workspace-summary min-w-0 truncate type-caption"
-                                  title={item.statusMessage || ''}>{item.statusMessage || ''}</span
+                                <Tooltip.Provider
+                                  ><Tooltip.Root
+                                    ><Tooltip.Trigger
+                                      >{#snippet child({ props: homeTooltipProps })}<span
+                                          {...homeTooltipProps}
+                                          class="home-workspace-summary min-w-0 truncate type-caption"
+                                          >{item.statusMessage || ''}</span
+                                        >{/snippet}</Tooltip.Trigger
+                                    ><Tooltip.Content>{item.statusMessage || ''}</Tooltip.Content
+                                    ></Tooltip.Root
+                                  ></Tooltip.Provider
                                 >
                               </span>
                             </span>
@@ -863,10 +931,18 @@
                           {#snippet trailing()}<span
                               class="workspace-row-meta flex items-center gap-4 text-muted-foreground"
                             >
-                              {#if $pinnedIds$.includes(item.id)}<span
-                                  title={m.layout_activeCard_pinned_header()}
-                                  aria-label={m.layout_activeCard_pinned_header()}
-                                  ><Fa icon={faThumbtack} /></span
+                              {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
+                                  ><Tooltip.Root
+                                    ><Tooltip.Trigger
+                                      >{#snippet child({ props: homeTooltipProps })}<span
+                                          {...homeTooltipProps}
+                                          aria-label={m.layout_activeCard_pinned_header()}
+                                          ><Fa icon={faThumbtack} /></span
+                                        >{/snippet}</Tooltip.Trigger
+                                    ><Tooltip.Content
+                                      >{m.layout_activeCard_pinned_header()}</Tooltip.Content
+                                    ></Tooltip.Root
+                                  ></Tooltip.Provider
                                 >{/if}
                               <HomeWorkspaceStatus workspace={item} />
                               <HomeActivityTime workspace={item} />
