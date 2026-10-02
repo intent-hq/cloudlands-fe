@@ -252,7 +252,7 @@ export class SourceProjection {
         !indexOnly &&
         context?.paragraphSeams?.some(
           (seam) =>
-            seam.kind === 'leading' && seam.from === base && seam.to <= base + match[2].length,
+            seam.kind === 'leading' && seam.from === base && seam.to <= base + match![2].length,
         )
       ) {
         this.leading += match[2];

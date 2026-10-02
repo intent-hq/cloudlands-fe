@@ -315,7 +315,9 @@ export class DocumentSession {
             font: this.tableFont(),
             include: this.pointerSelecting ? this.selection.table?.anchor.cell : undefined,
             nearby: selection.table?.kind === 'cell' ? selection.table.anchor.cell : undefined,
-            ...(this.tableScrollRequest?.position === at ? this.tableScrollRequest : {}),
+            ...(!this.drainingInput && this.tableScrollRequest?.position === at
+              ? this.tableScrollRequest
+              : {}),
           },
           preferred,
           selection.table,
@@ -453,6 +455,23 @@ export class DocumentSession {
               cancelable: true,
             });
             accepted = !!view.someProp('handleKeyDown', (handler) => handler(view, event));
+          } else if (/^tableText(Move|Extend)(Up|Down|Left|Right)$/.test(current.command)) {
+            const selection = window.getSelection()!;
+            selection.modify(
+              current.command.includes('Extend') ? 'extend' : 'move',
+              /(?:Up|Left)$/.test(current.command) ? 'backward' : 'forward',
+              /(?:Up|Down)$/.test(current.command) ? 'line' : 'character',
+            );
+            const view = this.editor.view;
+            view.dispatch(
+              view.state.tr.setSelection(
+                TextSelection.create(
+                  view.state.doc,
+                  view.posAtDOM(selection.anchorNode!, selection.anchorOffset),
+                  view.posAtDOM(selection.focusNode!, selection.focusOffset),
+                ),
+              ),
+            );
           } else if (/^(move|extend)(Forward|Backward)$/.test(current.command)) {
             const selection = window.getSelection()!;
             selection.modify(
@@ -1173,6 +1192,33 @@ export class DocumentSession {
                     break;
                   }
                 }
+              }
+              const point = this.selection.table.head;
+              const fragment = table.entries.find((entry) => entry.cell.from === point.cell)?.cell;
+              const paragraph = table.paragraphs.find(
+                (p) => p.cell.from === point.cell && p.block === point.block,
+              );
+              const clipped =
+                fragment &&
+                (fragment.first > fragment.body ||
+                  fragment.last < fragment.end ||
+                  (fragment.blocks && fragment.blocks.length < (fragment.blockCount ?? 0)));
+              const artificialEdge =
+                fragment &&
+                paragraph &&
+                (direction < 0
+                  ? paragraph.offset > 0 || point.block > 0
+                  : fragment.last < fragment.end || point.block + 1 < (fragment.blockCount ?? 1));
+              if (
+                selection instanceof TextSelection &&
+                clipped &&
+                (!atCellEdge || artificialEdge)
+              ) {
+                event.preventDefault();
+                this.deferInput(
+                  'tableText' + (event.shiftKey ? 'Extend' : 'Move') + event.key.slice(5),
+                );
+                return true;
               }
               if (atCellEdge) {
                 const owner = this.selection.table.head.cell;
