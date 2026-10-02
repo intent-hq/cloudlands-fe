@@ -51,7 +51,10 @@ import {
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
-import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  daemonEventsSubscribed,
+  workspaceEventsReducer,
+} from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   loadWorkspaceTabsState,
   openWorkspaceTab,
@@ -78,6 +81,7 @@ const scopedFileParams = (workspaceId: string) => ({
 function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
   const input = stdChannel();
   let state = {
+    workspaceEvents: workspaceEventsReducer(undefined, { type: '@@INIT' }),
     tabState:
       currentTabId === null
         ? tabStateReducer(undefined, { type: '@@INIT' })
@@ -85,7 +89,10 @@ function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
   };
   const listeners = new Set<() => void>();
   const dispatchAction = (action: Parameters<typeof tabStateReducer>[1]) => {
-    state = { tabState: tabStateReducer(state.tabState, action) };
+    state = {
+      tabState: tabStateReducer(state.tabState, action),
+      workspaceEvents: workspaceEventsReducer(state.workspaceEvents, action),
+    };
     input.put(action);
     listeners.forEach((listener) => listener());
     return dispatch(action);
@@ -288,6 +295,7 @@ describe('daemonEventsSaga', () => {
       'github:auth-changed',
       'sourceControl:auth-changed',
       'principal:identity-changed',
+      'client:updated',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',
@@ -299,7 +307,6 @@ describe('daemonEventsSaga', () => {
       'presence:changed',
       'host:members-changed',
       'host:execution-context-changed',
-      'principal:identity-changed',
     ]);
   });
 
@@ -414,7 +421,10 @@ describe('daemonEventsSaga', () => {
     const subscribed = () =>
       dispatch.mock.calls.filter(([action]) => action.type === daemonEventsSubscribed.type);
     expect(subscribed()).toHaveLength(1);
-    expect(dispatch.mock.invocationCallOrder[0]).toBeGreaterThan(
+    const readyIndex = dispatch.mock.calls.findIndex(
+      ([action]) => action.type === daemonEventsSubscribed.type,
+    );
+    expect(dispatch.mock.invocationCallOrder[readyIndex]).toBeGreaterThan(
       mocks.subscribe.mock.invocationCallOrder[0],
     );
 

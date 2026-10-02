@@ -370,3 +370,41 @@ describe('guestSessionsReducer', () => {
     expect(guestSessionsReducer(state, resetWorkspaceState())).toBe(state);
   });
 });
+
+it('#6390 retains a joined workspace after a typed inherited-access refusal', () => {
+  let state = guestSessionsReducer(
+    initialState,
+    guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+  );
+  const request = leaveGuestWorkspaceRequested(GUEST.id, 'ws-guest');
+  state = guestSessionsReducer(
+    state,
+    request.success({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: false,
+      refused: 'host-membership-required',
+    }),
+  );
+  expect(getItems(state.sessions)).toEqual([GUEST]);
+  expect(state.inheritedWorkspaceKeys).toEqual([guestWorkspaceKey(GUEST.id, 'ws-guest')]);
+  state = guestSessionsReducer(
+    state,
+    request.success({ id: GUEST.id, workspaceId: 'ws-guest', left: true }),
+  );
+  expect(state.inheritedWorkspaceKeys).toEqual([]);
+});
+
+it('#6390 keeps the roster on an inherited-access refusal and removes generic retry affordances', () => {
+  let state = guestSessionsReducer(initialState, hostedRosterReceived('ws', [MEMBER], 0, 5));
+  const request = removeHostedMemberRequested('ws', MEMBER.principalId);
+  state = guestSessionsReducer(state, request.failure(new HostedRosterOperationError('transport')));
+  state = guestSessionsReducer(
+    state,
+    request.failure(new HostedRosterOperationError('host-membership-required')),
+  );
+  expect(state.hostedRosters.ws.members).toEqual([MEMBER]);
+  expect(state.hostedRosters.ws.inheritedPrincipalIds).toEqual([MEMBER.principalId]);
+  expect(state.hostedRosters.ws.guestCount).toBe(0);
+  expect(state.failedMemberKeys).toEqual([]);
+});

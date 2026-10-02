@@ -30,6 +30,7 @@
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
+  import { fileContentKey } from '$features/file/utils/file-content-key';
   import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
   import { notify } from '$lib/components/patterns/notify';
   import { gitReadRequested, releaseGitRead } from '$store/renderer/slices/git/git-slice';
@@ -42,6 +43,11 @@
   import { parseHunksToLineChanges, type LineChange } from '$lib/utils/line-change-decorations';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
+  import { selectPdfPreview } from '$store/renderer/slices/pdf-preview/pdf-preview-selectors';
+  import {
+    pdfPreviewRequested,
+    pdfPreviewReleased,
+  } from '$store/renderer/slices/pdf-preview/pdf-preview-slice';
   import PdfViewer from '$features/file/components/PdfViewer.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -70,10 +76,21 @@
   const diffIndicators = selectDiffIndicators();
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
+  const gitRootId = $derived(
+    typeof tab.data?.gitRootId === 'string' ? tab.data.gitRootId : undefined,
+  );
+  const gitRootPath = $derived(
+    typeof tab.data?.gitRootPath === 'string' ? tab.data.gitRootPath : undefined,
+  );
+  const isReadOnly = $derived(!!gitRootId);
+  const contentKey = $derived(
+    tab.filePath ? fileContentKey(tab.filePath, gitRootId) : tab.filePath,
+  );
+
   // svelte-ignore state_referenced_locally
-  const filePathStore = writable<string | null | undefined>(tab.filePath);
+  const filePathStore = writable<string | null | undefined>(contentKey);
   $effect(() => {
-    filePathStore.set(tab.filePath);
+    filePathStore.set(contentKey);
   });
 
   // svelte-ignore state_referenced_locally
@@ -96,6 +113,8 @@
   // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
   const headerContext = getPanelHeaderContext();
+  const rootMediaViewId = crypto.randomUUID();
+  const rootMediaPreview = selectPdfPreview(rootMediaViewId);
   const gutterConsumerId = `file-gutter:${crypto.randomUUID()}`;
   // svelte-ignore state_referenced_locally
   const gutterRead$ = selectGitRead(workspaceId, gutterConsumerId);
@@ -155,16 +174,23 @@
   });
 
   // Computed values
-  // Absolute paths outside the workspace root (e.g. a chat chip pointing at
+  // Registered-root tabs use the selected root for confinement; the daemon validates ownership.
+  // Ordinary absolute paths outside the workspace root (e.g. a chat chip pointing at
   // /Users/dev/.claude/...) are not readable through the daemon's contained
   // file.* surface — render a dedicated warning instead of attempting the read.
   // Tilde paths join the same bucket: the renderer cannot expand `~` (no Node
   // APIs, see `expandPath`), so a read would be doomed regardless of location.
+  const rootRelativePath = $derived(
+    gitRootId ? workspaceRelativeFilePath(tab.filePath, gitRootPath) : null,
+  );
   const isOutsideWorkspace = $derived(
-    !!(
-      tab.filePath &&
-      (isTildePath(tab.filePath) || (repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)))
-    ),
+    gitRootId
+      ? !rootRelativePath
+      : !!(
+          tab.filePath &&
+          (isTildePath(tab.filePath) ||
+            (repoPath && isAbsolutePathOutsideRoot(tab.filePath, repoPath)))
+        ),
   );
   const fileAbsolutePath = $derived(
     tab.filePath && repoPath
@@ -185,6 +211,33 @@
   const workspaceMediaPath = $derived(
     isPdfPath || isAllowlistedMediaPath ? workspaceFilePath : null,
   );
+  // Reuse the bounded preview Blob lease; scoped images/videos never use workspace-file URLs.
+  const rootMediaMime = $derived(
+    gitRootId && isAllowlistedMediaPath
+      ? (
+          {
+            png: 'image/png',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            gif: 'image/gif',
+            webp: 'image/webp',
+            mp4: 'video/mp4',
+            webm: 'video/webm',
+          } as Record<string, string>
+        )[tab.filePath?.split('.').pop()?.toLowerCase() ?? '']
+      : undefined,
+  );
+  $effect(() => {
+    if (!isActive || !gitRootId || !rootRelativePath || !rootMediaMime) return;
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(
+      pdfPreviewRequested(rootMediaViewId, requestId, workspaceId, rootRelativePath, {
+        gitRootId,
+        mimeType: rootMediaMime,
+      }),
+    );
+    return () => appStore.dispatch(pdfPreviewReleased(rootMediaViewId, requestId));
+  });
   let downloading = $state(false);
   const downloadReady = $derived(
     !!workspaceFilePath &&
@@ -207,7 +260,7 @@
   // rendering until this completes so an incorrect workspace-file URL is not
   // committed before a unique candidate can retarget the owning tab.
   $effect(() => {
-    if (!isActive || isPdfPath) return;
+    if (!isActive || isPdfPath || gitRootId) return;
     const requestedPath = workspaceMediaPath;
     const sourceFilePath = tab.filePath;
     const wsId = workspaceId;
@@ -268,7 +321,7 @@
   }
 
   const fileChange = $derived.by(() => {
-    if (!tab.filePath) return null;
+    if (isReadOnly || !tab.filePath) return null;
     return $ftChanges$.find((c) => matchesPath(c, tab.filePath!)) ?? null;
   });
   const fileHasChanges = $derived(!!fileChange);
@@ -277,6 +330,7 @@
   // Flush any pending save when the file/workspace changes or the tab unmounts
   // so an in-flight edit is never lost.
   $effect(() => {
+    if (isReadOnly) return;
     const wsId = workspaceId;
     const filePath = tab.filePath;
     const rootPath = repoPath;
@@ -307,7 +361,8 @@
     // path. Do not block the read while the workspace entity/root hydrates —
     // doing so leaves activity-opened tabs stuck at "Preparing to load file".
     // The effect runs again with the resolved absolute path once hydration lands.
-    const waitingForAbsoluteRoot = !!filePath && isAbsolutePath(filePath) && !repoPath;
+    const waitingForAbsoluteRoot =
+      !gitRootId && !!filePath && isAbsolutePath(filePath) && !repoPath;
     if (
       filePath &&
       wsId &&
@@ -316,7 +371,15 @@
       !isPdfPath &&
       !waitingForAbsoluteRoot
     ) {
-      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
+      if (gitRootId && rootRelativePath && contentKey) {
+        appStore.dispatch(
+          loadFileContentRequested(wsId, contentKey, absolutePath ?? filePath, {
+            gitRoot: { id: gitRootId, relativePath: rootRelativePath },
+          }),
+        );
+      } else {
+        appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
+      }
     }
   });
 
@@ -325,13 +388,14 @@
   }
 
   function setFileContentFromEditor(content: string) {
-    if (!tab.filePath || !workspaceId || !fileAbsolutePath) return;
+    if (isReadOnly || !tab.filePath || !workspaceId || !fileAbsolutePath) return;
     // Optimistic local update + debounced file.write through the seam.
     appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
   }
 
   function saveFileContent() {
-    if (!tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving) return;
+    if (isReadOnly || !tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving)
+      return;
     appStore.dispatch(
       saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent),
     );
@@ -415,6 +479,7 @@
               ? 'select-all'
               : null;
     if (!action) return;
+    if (isReadOnly && action !== 'copy' && action !== 'select-all') return;
     const handled = action !== 'toggle-task-list' && codeEditorRef?.runShortcut(action);
     if (handled) e.preventDefault();
   }
@@ -436,7 +501,7 @@
 
   async function handleDownloadFile() {
     const path = workspaceFilePath;
-    if (!path || !workspaceId || !downloadReady || downloading) return;
+    if (isReadOnly || !path || !workspaceId || !downloadReady || downloading) return;
     downloading = true;
     try {
       const result = await downloadWorkspaceFile(workspaceId, path, repoPath);
@@ -452,7 +517,7 @@
 
   function handleDeleteFile() {
     const absolutePath = fileAbsolutePath;
-    if (!tab.filePath || !workspaceId || !absolutePath) return;
+    if (isReadOnly || !tab.filePath || !workspaceId || !absolutePath) return;
     appStore.dispatch(
       deleteFileWithUndoRequested(workspaceId, tab.filePath, {
         absolutePath,
@@ -465,7 +530,10 @@
   // Register header state and actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    const headerState = { isDirty: isFileDirty, isSaving: fileSaving };
+    const headerState = {
+      isDirty: !isReadOnly && isFileDirty,
+      isSaving: !isReadOnly && fileSaving,
+    };
     untrack(() => {
       headerContext.registerActions({ display: fileDisplayActions, actions: fileActions });
       headerContext.registerState(headerState);
@@ -477,7 +545,7 @@
 
 {#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
-  {#if !isOutsideWorkspace}
+  {#if !isOutsideWorkspace && !isReadOnly}
     <Menu.CommandItem icon={faFloppyDisk} label={saveStatusLabel} disabled />
   {/if}
   {#if tab.filePath && !isOutsideWorkspace}
@@ -491,7 +559,7 @@
       showWrap={!isMarkdownFile || !markdownPreview}
       wrapEnabled={$lineWrapping}
       onToggleWrap={() => appStore.dispatch(toggleLineWrapping())}
-      showDiff={!isMarkdownFile || !markdownPreview}
+      showDiff={!isReadOnly && (!isMarkdownFile || !markdownPreview)}
       diffEnabled={$diffIndicators}
       onToggleDiff={() => appStore.dispatch(toggleDiffIndicators())}
     />
@@ -499,7 +567,7 @@
 {/snippet}
 
 {#snippet fileActions()}
-  {#if tab.filePath && !isOutsideWorkspace}
+  {#if tab.filePath && !isOutsideWorkspace && !isReadOnly}
     {#if fileHasChanges}
       <Menu.CommandItem
         icon={faPencil}
@@ -531,6 +599,24 @@
         <p>{m.layout_fileTab_outsideWorkspace_label()}</p>
         <p class="text-xs">{tab.filePath}</p>
       </div>
+    {:else if gitRootId && isPdfPath && rootRelativePath}
+      {#if isActive}<PdfViewer {workspaceId} filePath={rootRelativePath} {gitRootId} />{/if}
+    {:else if gitRootId && isAllowlistedMediaPath}
+      {#if $rootMediaPreview?.error}
+        <div class="flex h-full items-center justify-center p-4 text-subtle">
+          <p role="alert">{m.layout_fileTab_errorLoading_label()}</p>
+        </div>
+      {:else if $rootMediaPreview?.url}
+        <FileViewer
+          filePath={tab.filePath}
+          sourceUrl={$rootMediaPreview.url}
+          allowDownload={false}
+        />
+      {:else}
+        <div class="flex h-full items-center justify-center text-subtle">
+          <p>{m.layout_fileTab_preparing_label()}</p>
+        </div>
+      {/if}
     {:else if isPdfPath && workspaceMediaPath}
       {#if isActive}
         <PdfViewer {workspaceId} filePath={workspaceMediaPath} />
@@ -590,6 +676,7 @@
           {fileContent}
           language={fileLanguage}
           isBinary={isFileBinary}
+          allowDownload={!isReadOnly}
         />
       {:else if isMarkdownFile && markdownPreview}
         <div class="h-full overflow-auto p-4">
@@ -600,7 +687,7 @@
           bind:this={codeEditorRef}
           bind:value={getFileContentForEditor, setFileContentFromEditor}
           language={fileLanguage}
-          readOnly={false}
+          readOnly={isReadOnly}
           fileName={tab.filePath}
           {workspaceId}
           filePath={tab.filePath}

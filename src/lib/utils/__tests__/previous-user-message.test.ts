@@ -102,7 +102,7 @@ describe('isAutomatedChatMessage', () => {
 describe('getHumanMessageAuthor', () => {
   // PROTOCOL §5.5 serve-time projection (intent-hq/intentd#1869): every user
   // row carries `author`, resolved from `metadata.fromPrincipalId`.
-  const author: MessageAuthor = {
+  const author: MessageAuthor & { principalId: string } = {
     principalId: 'principal-guest',
     login: 'guest',
     displayName: 'Guest User',
@@ -201,13 +201,13 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
   // Queue entries carry only the daemon's `messageMetadata.fromPrincipalId`
   // stamp (intent-hq/intentd#1869); the queue surface resolves the author
   // from the projections the transcript already carries.
-  const guest: MessageAuthor = {
+  const guest: MessageAuthor & { principalId: string } = {
     principalId: 'principal-guest',
     login: 'guest',
     displayName: 'Guest User',
     avatarUrl: null,
   };
-  const owner: MessageAuthor = {
+  const owner: MessageAuthor & { principalId: string } = {
     principalId: 'principal-owner',
     login: 'owner',
     displayName: 'Owner Person',
@@ -374,6 +374,149 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
     const empty = getQueueSurfaceAuthors(3, []);
     expect(empty).toBeInstanceOf(Map);
     expect(empty!.size).toBe(0);
+  });
+});
+
+describe('portable human author projection and local-only cache', () => {
+  const portable = {
+    principalId: null,
+    login: 'same',
+    displayName: 'Same Person',
+    avatarUrl: null,
+    identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+  };
+
+  it('keeps separate portable snapshots without resolving provenance against the viewer or cache', () => {
+    const other = { ...portable, identity: { ...portable.identity, host: 'two.example' } };
+    const metadata = {
+      humanAuthor: { sourcePrincipalId: 'destination-self' },
+      fromPrincipalId: 'destination-self',
+    };
+    const rows = [portable, other].map((author, i) => ({
+      ...msg(`portable-${i}`, 'user', 'unchanged', metadata),
+      author,
+    }));
+    const before = JSON.stringify(rows);
+    const authors = rows.map((row) => getHumanMessageAuthor(row, 'destination-self'));
+    expect(authors).toEqual([portable, other]);
+    expect(authors.map((author) => getMessageAuthorLabel(author!))).toEqual([
+      expect.stringContaining('gitlab@one.example'),
+      expect.stringContaining('gitlab@two.example'),
+    ]);
+    expect(collectMessageAuthors(rows).size).toBe(0);
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: 'destination-self' } },
+        collectMessageAuthors(rows),
+      ),
+    ).toBeNull();
+    expect(JSON.stringify(rows)).toBe(before);
+    expect(collectMessageAuthors([]).size).toBe(0);
+  });
+
+  it('distinguishes all-null human, no author and explicit null, and never reads arbitrary provenance as a profile', () => {
+    const unknown = { principalId: null, login: null, displayName: null, avatarUrl: null };
+    expect(
+      getHumanMessageAuthor({ ...msg('unknown', 'user', 'body'), author: unknown }, 'self'),
+    ).toEqual(unknown);
+    expect(getMessageAuthorLabel(unknown)).toBeNull();
+    expect(getHumanMessageAuthor(msg('absent', 'user', 'body'))).toBeNull();
+    expect(getHumanMessageAuthor({ ...msg('null', 'user', 'body'), author: null })).toBeNull();
+    expect(
+      getHumanMessageAuthor(
+        msg('metadata', 'user', 'body', {
+          humanAuthor: { login: 'spoof', sourcePrincipalId: 'self' },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      getHumanMessageAuthor({
+        ...msg('malformed', 'user', 'body'),
+        author: {
+          ...unknown,
+          login: { text: 'spoof' },
+          displayName: 42,
+          avatarUrl: [],
+          identity: { provider: 'gitlab', host: 'https://one.example', externalUserId: '42' },
+        },
+      }),
+    ).toEqual(unknown);
+    expect(
+      getHumanMessageAuthor({
+        ...msg('bad-id', 'user', 'body'),
+        author: { ...unknown, principalId: '  ' },
+      }),
+    ).toBeNull();
+  });
+
+  it('qualifies identical names by provider, canonical host and stable account, without inventing roles', () => {
+    const identities = [
+      { provider: 'github' as const, host: 'github.com', externalUserId: '42' },
+      portable.identity,
+      { ...portable.identity, host: 'two.example' },
+      { ...portable.identity, externalUserId: '84' },
+    ];
+    const labels = identities.map((identity) => getMessageAuthorLabel({ ...portable, identity }));
+    expect(new Set(labels).size).toBe(4);
+    for (const [i, identity] of identities.entries()) {
+      expect(labels[i]).toContain(identity.provider);
+      expect(labels[i]).toContain(identity.host);
+      expect(labels[i]).toContain(identity.externalUserId);
+    }
+    for (const identity of [
+      null,
+      { provider: 'future', host: 'one.example', externalUserId: '42' },
+      { ...portable.identity, externalUserId: '' },
+    ]) {
+      const author = getHumanMessageAuthor({
+        ...msg('bad-identity', 'user', 'body'),
+        author: { ...portable, identity },
+      });
+      expect(author).not.toHaveProperty('identity');
+      expect(getMessageAuthorLabel(author!)).toBe('Same Person');
+    }
+  });
+
+  it('prefers portable queued authors with the roster off while preserving local suppression and automatic exclusions', () => {
+    const local = { principalId: 'self', login: null, displayName: null, avatarUrl: null };
+    const cache = collectMessageAuthors([{ ...msg('local', 'user', 'body'), author: local }]);
+    expect([...cache.keys()]).toEqual(['self']);
+    const queue = {
+      author: portable,
+      messageMetadata: { fromPrincipalId: 'self', humanAuthor: { sourcePrincipalId: 'self' } },
+    };
+    expect(getQueuedMessageAuthor(queue, getQueueSurfaceAuthors(1, []), 'self')).toEqual(portable);
+    expect(getQueuedMessageAuthor({ ...queue, author: null }, cache)).toBeNull();
+    expect(getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: 'self' } }, cache)).toBe(
+      local,
+    );
+    expect(getQueuedMessageAuthor({ author: local }, cache, 'self')).toBeNull();
+    expect(getQueuedMessageAuthor({ author: local }, null)).toBeNull();
+    expect(
+      getQueuedMessageAuthor(
+        { messageMetadata: { fromPrincipalId: 'self' } },
+        new Map([['self', portable]]),
+      ),
+    ).toBeNull();
+    expect(
+      getHumanMessageAuthor({
+        ...msg('principal-only', 'user', 'body'),
+        author: { principalId: 'other' },
+      }),
+    ).toEqual({ principalId: 'other', login: null, displayName: null, avatarUrl: null });
+    for (const metadata of [
+      { type: 'agent_message', fromAgentId: 'agent' },
+      { source: 'system' },
+      { type: 'hook_wake' },
+    ]) {
+      expect(getQueuedMessageAuthor({ ...queue, messageMetadata: metadata }, cache)).toBeNull();
+      expect(
+        getHumanMessageAuthor({ ...msg('automatic', 'user', 'body', metadata), author: portable }),
+      ).toBeNull();
+    }
+    expect(
+      getHumanMessageAuthor({ ...msg('assistant', 'assistant', 'body'), author: portable }),
+    ).toBeNull();
   });
 });
 

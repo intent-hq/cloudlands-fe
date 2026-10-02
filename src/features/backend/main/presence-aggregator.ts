@@ -62,6 +62,12 @@ export class PresenceAggregator {
     windowId: number,
     params: PresenceReportParams,
   ): Promise<string | null> {
+    // One renderer belongs to one backend. A switch must not leave its old
+    // contribution available for the old pooled connection to replay.
+    for (const [previousId, previousBackend] of this.backends) {
+      if (previousId !== backendId && previousBackend.windows.delete(windowId))
+        void this.flush(previousId);
+    }
     const backend = this.backendState(backendId);
     const previous = backend.windows.get(windowId);
     const typing = params.typing ?? null;

@@ -15,17 +15,26 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
-import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  setAgentsLoaded,
+  removeWorkspaceAgentState,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { m } from '$shared/paraglide/messages.js';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
+import { agentCreationSaga } from '$store/renderer/slices/workspace-agents/sagas/agent-creation-saga';
+
+const { createAgentMock } = vi.hoisted(() => ({ createAgentMock: vi.fn() }));
+vi.mock('$features/agent/services/agent-factory', () => ({
+  agentFactory: { createAgent: createAgentMock },
+}));
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
   default: (await import('./mocks/MockChiefChatPanel.svelte')).default,
 }));
 
-const LAUNCH_TYPE = 'agentSessions/launchAgentRequested';
+const LAUNCH_TYPE = 'workspaceAgents/createAgentFromConfigRequested';
 const CURRENT_THREAD_ID = 'agent-chief-current';
 const STALE_THREAD_ID = 'agent-chief-stale';
 
@@ -58,6 +67,7 @@ async function settle() {
 describe('Chief card migration contract', () => {
   let dispatchSpy: ReturnType<typeof vi.spyOn>;
   let launchActions: unknown[];
+  let stopCreation: () => void;
 
   beforeEach(() => {
     appStore.init();
@@ -65,14 +75,21 @@ describe('Chief card migration contract', () => {
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(hydrateDefaultProvider('auggie'));
     appStore.dispatch(setChiefActiveAgentId(null));
+    createAgentMock.mockReset();
+    createAgentMock.mockResolvedValue({
+      success: true,
+      agent: makeChiefSession('agent-chief-created', {
+        createdAt: '2026-09-30T00:00:00.000Z',
+        chiefPromptVersion: CHIEF_PROMPT_VERSION,
+      }),
+    });
+    stopCreation = appStore.runSaga(agentCreationSaga);
 
     launchActions = [];
     const originalDispatch = appStore.dispatch.bind(appStore);
     dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action: any) => {
       if (action?.type === LAUNCH_TYPE) {
         launchActions.push(action);
-        action.success({ id: 'agent-chief-created' } as unknown as AgentSession);
-        return action.promise;
       }
       return originalDispatch(action);
     });
@@ -80,9 +97,12 @@ describe('Chief card migration contract', () => {
 
   afterEach(() => {
     cleanup();
+    stopCreation();
     dispatchSpy.mockRestore();
     appStore.dispatch(removeSession(CURRENT_THREAD_ID));
     appStore.dispatch(removeSession(STALE_THREAD_ID));
+    appStore.dispatch(removeSession('agent-chief-created'));
+    appStore.dispatch(removeWorkspaceAgentState(CHIEF_WORKSPACE_ID));
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, false));
   });
 
@@ -288,9 +308,9 @@ describe('Chief card migration contract', () => {
     render(ChiefCard, { props: { expanded: true } });
     render(ChiefCard, { props: { expanded: true, embedded: true } });
 
-    await waitFor(() => expect(launchActions).toHaveLength(1));
+    await waitFor(() => expect(createAgentMock).toHaveBeenCalledTimes(1));
     await settle();
-    expect(launchActions).toHaveLength(1);
+    expect(createAgentMock).toHaveBeenCalledTimes(1);
     expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe('agent-chief-created');
   });
 });

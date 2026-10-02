@@ -1,5 +1,5 @@
 import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
-import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,7 +15,11 @@ const mocks = vi.hoisted(() => ({
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
   events: { queryPage: vi.fn() },
   skills: { list: vi.fn() },
-  scripts: { list: vi.fn(), supportsLifecycle: undefined as undefined | (() => Promise<boolean>) },
+  scripts: {
+    list: vi.fn(),
+    status: vi.fn(),
+    supportsLifecycle: undefined as undefined | (() => Promise<boolean>),
+  },
   git: {
     prRefresh: vi.fn(),
     status: vi.fn(),
@@ -67,8 +71,8 @@ import {
   refreshScripts,
   setScriptListState,
   setActiveScriptsData,
-  setArchivedScriptsData,
-  setScriptHistoryLoadState,
+  scriptOutputRequested,
+  updateRuntimeState,
 } from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
@@ -99,12 +103,13 @@ import {
 } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
+  workspaceTasksReadStarted,
+  loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
 } from '../../workspace-tasks/workspace-tasks-slice';
 import {
   loadWorkspacesRequested,
   refreshWorkspaceMembershipRequested,
-  replaceWorkspaceList,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import { consoleOwnerChanged } from '../../hardware-console/hardware-console-slice';
@@ -399,7 +404,6 @@ describe('lifecycleReadSaga', () => {
         .filter((action) => action.type === 'workspace/bulkUpdateWorkspaceEntities')
         .map((action) => (action.payload[0] as { payload: unknown[] }[])[0]!.payload);
       expect(merged).toEqual([
-        [WS, { memberCount: 2, openInviteCount: 1 }],
         [WS, { memberCount: 1, openInviteCount: 0 }],
         ['ws-other', { memberCount: 1, openInviteCount: 0 }],
       ]);
@@ -571,74 +575,22 @@ describe('lifecycleReadSaga', () => {
     });
   });
 
-  describe('attention reconciliation on focus / console-owner acquisition', () => {
-    const wireWorkspace = (attention: 'none' | 'unread') =>
-      ({ id: WS, branch: 'main', attention }) as unknown as import('$shared/types').Workspace;
-
-    it('refetches the workspace list when the window regains focus and converges stale attention', async () => {
+  describe('healthy window transitions', () => {
+    it('does not reload workspaces on focus, blur, or console ownership changes', async () => {
       const run = startWithLoopback();
-      // Seed a stale snapshot: attention raised before the window lost focus,
-      // then cleared daemon-side while this window missed the deltas.
-      run.dispatch(replaceWorkspaceList([wireWorkspace('unread')]));
-      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
-
-      mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [wireWorkspace('none')] });
-      window.dispatchEvent(new Event('focus'));
+      run.channel.put(loadWorkspacesRequested());
       await settle();
-      await settle();
-
       expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
-      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('none');
-      await stop(run.task);
-    });
+      mocks.workspaceServiceList.mockClear();
 
-    it('coalesces a focus burst into one in-flight fetch plus one trailing refetch', async () => {
-      const resolvers: ((value: { ok: true; data: unknown[] }) => void)[] = [];
-      mocks.workspaceServiceList.mockImplementation(
-        () =>
-          new Promise<{ ok: true; data: unknown[] }>((done) => {
-            resolvers.push(done);
-          }),
-      );
-      const run = startWithLoopback();
-      window.dispatchEvent(new Event('focus'));
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
-
-      window.dispatchEvent(new Event('focus'));
-      window.dispatchEvent(new Event('focus'));
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(1);
-
-      resolvers[0]!({ ok: true, data: [] });
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
-
-      resolvers[1]!({ ok: true, data: [] });
-      await settle();
-      expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
-      await stop(run.task);
-    });
-
-    it('refetches on console-owner acquisition and converges stale attention', async () => {
-      const run = startWithLoopback();
-      run.dispatch(replaceWorkspaceList([wireWorkspace('none')]));
-
-      mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [wireWorkspace('unread')] });
-      run.channel.put(consoleOwnerChanged(true));
-      await settle();
-      await settle();
-
-      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
-      expect(getItem(run.getWorkspaceState().workspaces, WS)?.attention).toBe('unread');
-      await stop(run.task);
-    });
-
-    it('does not refetch when console ownership is lost', async () => {
-      const run = startWithLoopback();
-      run.channel.put(consoleOwnerChanged(false));
-      await settle();
-      await settle();
+      for (let i = 0; i < 3; i++) {
+        window.dispatchEvent(new Event('blur'));
+        run.channel.put(consoleOwnerChanged(false));
+        window.dispatchEvent(new Event('focus'));
+        run.channel.put(consoleOwnerChanged(true));
+        await settle();
+      }
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mocks.workspaceServiceList.mock.calls).toEqual([]);
       await stop(run.task);
     });
@@ -667,7 +619,9 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await settle();
@@ -696,6 +650,8 @@ describe('lifecycleReadSaga', () => {
     resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(OTHER),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
     ]);
@@ -724,7 +680,9 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await stop(run.task);
@@ -750,6 +708,7 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
     ]);
     await stop(run.task);
@@ -775,6 +734,9 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      loadWorkspaceTasksFailed(WS, 'Error: offline'),
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
 
@@ -807,12 +769,14 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(ensureWorkspaceTasksLoaded(WS));
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
+    expect(run.actions).toEqual([workspaceTasksReadStarted(WS)]);
 
     run.channel.put(loadWorkspaceTasksRequested(WS));
     await settle();
     expect(mocks.tasks.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 0 }] },
     ]);
     await stop(run.task);
@@ -849,7 +813,10 @@ describe('lifecycleReadSaga', () => {
     resolvers[WS][1]({ tasks: [], stats: { total: 3 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(OTHER),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
     ]);
@@ -877,6 +844,8 @@ describe('lifecycleReadSaga', () => {
     resolvers[OTHER]({ tasks: [], stats: { total: 2 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
+      workspaceTasksReadStarted(OTHER),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [OTHER, [], { total: 2 }] },
     ]);
@@ -907,8 +876,11 @@ describe('lifecycleReadSaga', () => {
     resolvers[2]({ tasks: [], stats: { total: 3 } });
     await settle();
     expect(run.actions).toEqual([
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 1 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 2 }] },
+      workspaceTasksReadStarted(WS),
       { type: 'workspaceTasks/loadWorkspaceTasksSucceeded', payload: [WS, [], { total: 3 }] },
     ]);
     await stop(run.task);
@@ -1175,26 +1147,85 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('loads archived failures once alongside the initial active list', async () => {
+  it('refreshes only the active partition on initial load and repeated refreshes', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
-    const archived = {
-      id: 'script-history',
-      archivedAt: '2026-09-30T12:00:00Z',
-      lastRun: { outcome: 'failed' },
-    };
-    mocks.scripts.list.mockResolvedValueOnce([]).mockResolvedValueOnce([archived]);
-    const run = start();
+    mocks.scripts.list.mockResolvedValue([]);
+    const run = startScriptCache();
     try {
-      run.channel.put(refreshScripts(WS));
-      await settle();
-      await settle();
+      for (const workspaceId of [WS, WS, 'other']) {
+        run.dispatch(refreshScripts(workspaceId));
+        await settle();
+        await settle();
+      }
       expect(mocks.scripts.list.mock.calls).toEqual([
         [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
+        [WS, { archive: 'active' }],
+        ['other', { archive: 'active' }],
       ]);
-      expect(run.actions).toContainEqual(setActiveScriptsData(WS, []));
-      expect(run.actions).toContainEqual(setArchivedScriptsData(WS, [archived] as never, 0));
-      expect(run.actions).toContainEqual(setScriptListState(WS, false, undefined, true));
+      expect(mocks.scripts.status).not.toHaveBeenCalled();
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('recovers missed retirement state for open output without scanning archives', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list.mockResolvedValue([]);
+    mocks.scripts.status.mockResolvedValue({ status: 'exited', exitCode: 1, restartCount: 0 });
+    const run = startScriptCache();
+    try {
+      const row = { id: 'open-output', runtime: { status: 'running', restartCount: 0 } };
+      run.dispatch(setScriptsData(WS, [row, { ...row, id: 'closed-output' }] as never));
+      run.dispatch(scriptOutputRequested(WS, row.id, 'viewer'));
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      await settle();
+      expect(mocks.scripts.list.mock.calls).toEqual([[WS, { archive: 'active' }]]);
+      expect(mocks.scripts.status.mock.calls).toEqual([[WS, 'open-output']]);
+      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
+        status: 'exited',
+        exitCode: 1,
+      });
+      expect(run.getState().byWorkspaceId[WS].activeScriptIds).toEqual([]);
+    } finally {
+      mocks.scripts.supportsLifecycle = undefined;
+      await stop(run.task);
+    }
+  });
+
+  it('keeps a newer live event when an open retired viewer status read finishes late', async () => {
+    mocks.scripts.supportsLifecycle = async () => true;
+    mocks.scripts.list.mockResolvedValue([]);
+    let resolveStatus!: (value: unknown) => void;
+    mocks.scripts.status.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+    const run = startScriptCache();
+    try {
+      run.dispatch(
+        setScriptsData(WS, [
+          { id: 'open-output', runtime: { status: 'running', restartCount: 0 } },
+        ] as never),
+      );
+      run.dispatch(scriptOutputRequested(WS, 'open-output', 'viewer'));
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      await settle();
+      expect(mocks.scripts.status).toHaveBeenCalledOnce();
+      run.dispatch(
+        updateRuntimeState(WS, 'open-output', { status: 'starting', startedAt: 'new run' }),
+      );
+      resolveStatus({ status: 'exited', exitCode: 1, restartCount: 0 });
+      await settle();
+      await settle();
+      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
+        status: 'starting',
+        startedAt: 'new run',
+      });
     } finally {
       mocks.scripts.supportsLifecycle = undefined;
       await stop(run.task);
@@ -1216,115 +1247,7 @@ describe('lifecycleReadSaga', () => {
     return { task, dispatch, actions, getState: () => current.scripts };
   }
 
-  it('caches history across routine refreshes and invalidates it explicitly per workspace', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list.mockResolvedValue([]);
-    const run = startScriptCache();
-    try {
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-      ]);
-      run.dispatch(refreshScripts(WS, true));
-      await settle();
-      await settle();
-      run.dispatch(refreshScripts('other'));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        ['other', { archive: 'active' }],
-        ['other', { archive: 'archived' }],
-      ]);
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('keeps active rows and a retryable error when history fails, then retries the missing history', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list
-      .mockResolvedValueOnce([{ id: 'active' }])
-      .mockRejectedValueOnce(new Error('history offline'))
-      .mockResolvedValue([]);
-    const run = startScriptCache();
-    try {
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(run.getState().byWorkspaceId[WS]).toMatchObject({
-        activeScriptIds: ['active'],
-        historyLoading: false,
-        historyError: 'history offline',
-        loading: false,
-      });
-      expect(run.actions).toContainEqual(setScriptHistoryLoadState(WS, false, 'history offline'));
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-      ]);
-      expect(run.getState().byWorkspaceId[WS].historyError).toBeUndefined();
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('does not lose a history invalidation arriving during an archived read', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    let resolveHistory!: (rows: unknown[]) => void;
-    mocks.scripts.list
-      .mockResolvedValueOnce([])
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveHistory = resolve;
-        }),
-      )
-      .mockResolvedValue([]);
-    const run = startScriptCache();
-    try {
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      run.dispatch(refreshScripts(WS, true));
-      resolveHistory([]);
-      await settle();
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'archived' }],
-      ]);
-      expect(run.getState().byWorkspaceId[WS]).toMatchObject({
-        historyVersion: 1,
-        historyLoadedVersion: 1,
-      });
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('exposes a supporting daemon load failure as retryable History, not an empty list', async () => {
+  it('exposes a supporting daemon load failure as retryable, not an empty list', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
     mocks.scripts.list.mockRejectedValueOnce(new Error('history offline'));
     const run = start();
@@ -4138,7 +4061,7 @@ import { backendRequest as lifecycleRequest } from '$lib/client/live/backend-tra
 import { LiveScriptsClient } from '$lib/client/live/live-scripts-client';
 
 describe('script lifecycle capability coherence', () => {
-  it('does not cache a history response after changing the bound backend', async () => {
+  it('does not cache an active response after changing the bound backend', async () => {
     appStore.dispose();
     appStore.init();
     const request = vi.mocked(lifecycleRequest);
@@ -4151,7 +4074,7 @@ describe('script lifecycle capability coherence', () => {
     request.mockImplementation(async (method, params) => {
       if (method === 'client.hello') {
         helloCount++;
-        if (helloCount === 3) return pending as never;
+        if (helloCount === 2) return pending as never;
         return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
       }
       const archived = (params as { archive?: string }).archive === 'archived';
@@ -4172,12 +4095,11 @@ describe('script lifecycle capability coherence', () => {
     const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
     try {
       dispatch(refreshScripts(WS));
-      await vi.waitFor(() => expect(helloCount).toBe(3));
+      await vi.waitFor(() => expect(helloCount).toBe(2));
       current.connections.windowBackendId = 'replacement';
       resolveHello({ server: { capabilities: { scriptLifecycle: 1 } } });
       for (let i = 0; i < 10; i++) await settle();
-      expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toBeUndefined();
-      expect(current.scripts.byWorkspaceId[WS].historyInitialized).toBeUndefined();
+      expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toBeUndefined();
       expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
     } finally {
       mocks.scripts.supportsLifecycle = undefined;
@@ -4186,7 +4108,7 @@ describe('script lifecycle capability coherence', () => {
     }
   });
   it.each(['failure', 'unsupported'] as const)(
-    'keeps active membership when history negotiation returns %s',
+    'keeps existing membership when active-list negotiation returns %s',
     async (mode) => {
       appStore.dispose();
       appStore.init();
@@ -4219,7 +4141,7 @@ describe('script lifecycle capability coherence', () => {
       request.mockImplementation(async (method, params) => {
         if (method === 'client.hello') {
           helloCount++;
-          if (helloCount === 3) {
+          if (helloCount === 2) {
             if (mode === 'failure') throw new Error('temporary hello failure');
             return { server: { capabilities: {} } } as never;
           }
@@ -4239,6 +4161,10 @@ describe('script lifecycle capability coherence', () => {
       mocks.scripts.supportsLifecycle = client.supportsLifecycle.bind(client);
       mocks.scripts.list.mockImplementation(client.list.bind(client));
       let current = state();
+      current.scripts = scriptsReducer(
+        current.scripts,
+        setActiveScriptsData(WS, [rows[0]] as never),
+      );
       const channel = stdChannel();
       const dispatch = (action: any) => {
         current = { ...current, scripts: scriptsReducer(current.scripts, action) };
@@ -4248,18 +4174,17 @@ describe('script lifecycle capability coherence', () => {
       const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
       try {
         dispatch(refreshScripts(WS));
+        await vi.waitFor(() => expect(current.scripts.byWorkspaceId[WS]?.loadError).toBeTruthy());
+        expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
+        expect(request.mock.calls.filter(([method]) => method === 'script.list')).toHaveLength(0);
+        dispatch(refreshScripts(WS));
         await vi.waitFor(() => expect(current.scripts.byWorkspaceId[WS]?.initialized).toBe(true));
+        expect(current.scripts.byWorkspaceId[WS].loadError).toBeUndefined();
         expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
-        expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toBeUndefined();
-        expect(current.scripts.byWorkspaceId[WS].historyError).toBeTruthy();
-        expect(request.mock.calls.filter(([method]) => method === 'script.list')).toHaveLength(1);
-        dispatch(refreshScripts(WS, true));
-        await vi.waitFor(() =>
-          expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toEqual(['history']),
-        );
-        expect(current.scripts.byWorkspaceId[WS].historyError).toBeUndefined();
-        expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
-        expect(current.scripts.byWorkspaceId[WS].archivedScriptIds).toEqual(['history']);
+        expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
+        expect(request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([
+          ['script.list', { workspaceId: WS, archive: 'active' }],
+        ]);
       } finally {
         mocks.scripts.supportsLifecycle = undefined;
         await stop(task);

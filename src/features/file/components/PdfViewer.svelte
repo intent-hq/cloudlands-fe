@@ -16,7 +16,11 @@
     pdfPreviewReleased,
   } from '$store/renderer/slices/pdf-preview/pdf-preview-slice';
 
-  let { workspaceId, filePath }: { workspaceId: string; filePath: string } = $props();
+  let {
+    workspaceId,
+    filePath,
+    gitRootId,
+  }: { workspaceId: string; filePath: string; gitRootId?: string } = $props();
   const viewId = crypto.randomUUID();
   const preview = selectPdfPreview(viewId);
   const pageUsers = new WeakMap<PDFPageProxy, number>();
@@ -46,7 +50,9 @@
     const path = filePath;
     void retry;
     const requestId = crypto.randomUUID();
-    appStore.dispatch(pdfPreviewRequested(viewId, requestId, wsId, path));
+    appStore.dispatch(
+      pdfPreviewRequested(viewId, requestId, wsId, path, ...(gitRootId ? [{ gitRootId }] : [])),
+    );
     return () => {
       appStore.dispatch(pdfPreviewReleased(viewId, requestId));
     };

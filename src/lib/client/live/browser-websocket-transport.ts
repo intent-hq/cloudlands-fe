@@ -18,6 +18,7 @@
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
   BackendError,
   type BackendErrorPayload,
@@ -249,6 +250,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }> = [];
   private clientId: string | undefined;
   private helloConfirmed = false;
+  private protocolVersion: unknown;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
     message: 'client.hello has not completed on this connection',
@@ -343,6 +345,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
           fail(this.helloError);
           return;
         }
+        try {
+          assertScopedFileReadSupport(method, params, this.protocolVersion);
+        } catch (error) {
+          fail(error);
+          return;
+        }
         // A capability probe must not replace the identity established at connect.
         const wireParams =
           method === 'client.hello' && this.clientId
@@ -357,6 +365,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
               const clientId = (result as { clientId?: unknown } | null)?.clientId;
               if (typeof clientId === 'string') this.clientId = clientId;
               this.helloConfirmed = true;
+              this.protocolVersion = (result as { protocolVersion?: unknown } | null)
+                ?.protocolVersion;
             }
             resolve(result as T);
           },
@@ -645,6 +655,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private teardownSocket(): void {
+    this.protocolVersion = undefined;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

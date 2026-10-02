@@ -23,6 +23,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { BrowserClientsState } from './browser-clients-types';
 import {
+  createAuthenticatedClientCollection,
   createLiveClientCollection,
   emptyWorkspaceBrowserClientsState,
   initialState,
@@ -85,6 +86,14 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
 
 export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
 
+export const authenticatedClientsCleared = createAction<[context: string]>(
+  'browserClients/authenticatedClientsCleared',
+);
+
+export const authenticatedClientsReceived = createAction<[context: string, clients: LiveClient[]]>(
+  'browserClients/authenticatedClientsReceived',
+);
+
 export const liveClientsReceived = createAction<[clients: LiveClient[], workspaceId?: string]>(
   'browserClients/liveClientsReceived',
 );
@@ -119,6 +128,28 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 );
 
 export const browserClientsReducer = createReducer<BrowserClientsState>(initialState);
+browserClientsReducer.with(authenticatedClientsCleared, (state, { payload: [context] }) =>
+  state.authenticatedContext !== context
+    ? state
+    : {
+        ...state,
+        authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
+        liveClients: createLiveClientCollection(),
+        liveClientsLoaded: false,
+      },
+);
+
+browserClientsReducer.with(
+  authenticatedClientsReceived,
+  (state, { payload: [context, clients] }) => ({
+    ...state,
+    authenticatedContext: context,
+    authenticatedClients: createAuthenticatedClientCollection(clients),
+    liveClients: createLiveClientCollection(clients),
+    liveClientsLoaded: true,
+  }),
+);
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
   state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
 );
@@ -126,6 +157,8 @@ browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   ...state,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
+  authenticatedContext: null,
+  authenticatedClients: createAuthenticatedClientCollection(),
   byWorkspaceId: Object.fromEntries(
     Object.entries(state.byWorkspaceId).map(([id, entry]) => [
       id,
@@ -140,7 +173,13 @@ browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, wor
         liveClients: createLiveClientCollection(clients),
         liveClientsLoaded: true,
       })
-    : { ...state, liveClients: createLiveClientCollection(clients), liveClientsLoaded: true },
+    : {
+        ...state,
+        authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
+        liveClients: createLiveClientCollection(clients),
+        liveClientsLoaded: true,
+      },
 );
 browserClientsReducer.with(
   workspaceBrowserClientReceived,
