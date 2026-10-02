@@ -7,6 +7,7 @@ import {
   type Node as PMNode,
 } from '@tiptap/pm/model';
 import { __clipCells, __pastedCells, removeColSpan } from '@tiptap/pm/tables';
+import { Transform } from '@tiptap/pm/transform';
 import { getTextBetween, getTextSerializersFromSchema, type JSONContent } from '@tiptap/core';
 import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import { bytes } from './bounded-note-service';
@@ -40,10 +41,21 @@ export function parseTableClipboard(
   height: number,
 ) {
   const container = document.createElement('div');
-  container.innerHTML = value['text/html'];
-  const slice = DOMParser.fromSchema(schema).parseSlice(container);
-  const cells = __pastedCells(slice);
-  if (!cells) throw new Error('Non-table clipboard input still needs native fitting controls');
+  const plain = !value['text/html'];
+  if (plain) {
+    // Native clipboard plain-text parsing collapses consecutive line separators.
+    for (const block of value['text/plain'].split(/(?:\r\n?|\n)+/)) {
+      const paragraph = container.appendChild(document.createElement('p'));
+      if (block) paragraph.appendChild(document.createTextNode(block));
+    }
+  } else container.innerHTML = value['text/html'];
+  const slice = DOMParser.fromSchema(schema).parseSlice(container, { preserveWhitespace: plain });
+  let cells = __pastedCells(slice);
+  if (!cells) {
+    const cell = schema.nodes.tableCell.createAndFill()!;
+    const fitted = new Transform(cell).replace(0, cell.content.size, slice).doc;
+    cells = { width: 1, height: 1, rows: [Fragment.from(fitted)] };
+  }
   const fitted = __clipCells(cells, width, height);
   let nodes = 0;
   for (const row of fitted.rows)
