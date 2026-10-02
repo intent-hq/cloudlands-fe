@@ -67,14 +67,10 @@ for (const mode of ['merged-input', 'crossing-target', 'combined'] as const) {
         const a = 1 + map.map[mode === 'merged-input' ? 1 * 4 + 1 : 4 * 4],
           h = 1 + map.map[mode === 'merged-input' ? 10 * 4 + 2 : 5 * 4 + 3];
         native.view.dispatch(
-          closeHistory(
-            native.state.tr.setSelection(
-              CellSelection.create(native.state.doc, false ? h : a, false ? a : h),
-            ),
-          ),
+          closeHistory(native.state.tr.setSelection(CellSelection.create(native.state.doc, a, h))),
         );
-        const anchor = identities.get(false ? h : a)!,
-          head = identities.get(false ? a : h)!;
+        const anchor = identities.get(a)!,
+          head = identities.get(h)!;
         session.selection = {
           anchor,
           head,

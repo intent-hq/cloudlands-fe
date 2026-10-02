@@ -121,7 +121,7 @@ export class SourceJournal {
     const received = JSON.parse(encoded) as { selection: Selection; publication: number };
     if (
       received.selection.revision !== this.revision ||
-      received.selection.table?.kind !== 'cell' ||
+      !received.selection.table ||
       this.clipboardInputSink.lastPublication?.id !== received.publication ||
       this.clipboardInputSink.lastPublication.revision !== this.revision
     )
@@ -135,16 +135,23 @@ export class SourceJournal {
     const all = table.rows.flatMap((row) => row.cells);
     const anchor = all.find((cell) => cell.from + start === logical.anchor.cell)!,
       head = all.find((cell) => cell.from + start === logical.head.cell)!;
-    const top = Math.min(anchor.row, head.row),
-      bottom = Math.max(anchor.row + (anchor.rowSpan ?? 1), head.row + (head.rowSpan ?? 1)),
-      left = Math.min(anchor.column, head.column),
+    const textSelection = logical.kind === 'text';
+    const top = textSelection ? head.row : Math.min(anchor.row, head.row),
+      left = textSelection ? head.column : Math.min(anchor.column, head.column);
+    let bottom = Math.max(anchor.row + (anchor.rowSpan ?? 1), head.row + (head.rowSpan ?? 1)),
       right = Math.max(anchor.column + (anchor.span ?? 1), head.column + (head.span ?? 1));
     const parsed = parseTableClipboard(
       this.clipboardInputSink.published,
       schema,
-      right - left,
-      bottom - top,
+      textSelection ? undefined : right - left,
+      textSelection ? undefined : bottom - top,
     );
+    if (textSelection) {
+      if (!parsed.tableInput)
+        throw new Error('Text-caret non-table input still needs native inline fitting');
+      bottom = top + parsed.cells.height;
+      right = left + parsed.cells.width;
+    }
     this.maxClipboardInputDOM = Math.max(this.maxClipboardInputDOM, parsed.costs.elements);
     this.maxClipboardInputNodes = Math.max(this.maxClipboardInputNodes, parsed.costs.nodes);
     this.maxClipboardRepeatedBytes = Math.max(
@@ -155,6 +162,7 @@ export class SourceJournal {
       (cell) => cell.row >= top && cell.row < bottom && cell.column >= left && cell.column < right,
     );
     const hasSpans =
+      textSelection ||
       selected.some((cell) => (cell.span ?? 1) !== 1 || (cell.rowSpan ?? 1) !== 1) ||
       selected.length !== (bottom - top) * (right - left) ||
       parsed.cells.rows.some((row) => {
@@ -189,8 +197,8 @@ export class SourceJournal {
         this.maxClipboardPasteSourceBytes,
         plan.costs.sourceBytes,
       );
-      for (const row of plan.rows.slice().reverse()) {
-        for (const cell of table.rows[row.index].cells)
+      for (const row of plan.rows.slice().sort((a, b) => b.from - a.from || b.index - a.index)) {
+        for (const cell of table.rows[row.index]?.cells ?? [])
           if (this.tableStates.has(`cell:${cell.from + start}`))
             this.stageTableState(`cell:${cell.from + start}`, '');
         const previous = source.slice(row.from, row.to);

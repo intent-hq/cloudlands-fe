@@ -3,7 +3,7 @@ import type { Fragment, Schema } from '@tiptap/pm/model';
 import { removeColSpan } from '@tiptap/pm/tables';
 import { bytes } from './bounded-note-service';
 import { clipboardCellSource } from './table-clipboard';
-import { tableRuns, type TableCellSource, type TableIndex } from './table-source';
+import { tableCellAt, tableRuns, type TableCellSource, type TableIndex } from './table-source';
 
 type Cell = {
   row: number;
@@ -64,6 +64,41 @@ export function planTablePaste(
   const raw = (cell: Cell) => cell.raw ?? source.slice(cell.original!.from, cell.original!.to);
   const empty = (prior: JSONContent, attrs: JSONContent['attrs']) =>
     schema.nodes[prior.type!].createAndFill(attrs)!.toJSON();
+  // Grow with native empty-cell types: existing rows follow their last physical
+  // cell; new rows follow the last logical row. Added cells do not inherit align.
+  if (right > table.columns)
+    for (let r = 0; r < table.rows.length; r++) {
+      const last = cells.filter((cell) => cell.row === r).at(-1);
+      const type = last ? node(last).type! : 'tableCell';
+      for (let c = table.columns; c < right; c++)
+        cells.push({
+          row: r,
+          column: c,
+          width: 1,
+          height: 1,
+          node: schema.nodes[type].createAndFill()!.toJSON(),
+          raw: '  ',
+        });
+      changed.add(r);
+    }
+  if (bottom > table.rows.length)
+    for (let r = table.rows.length; r < bottom; r++) {
+      for (let c = 0; c < Math.max(table.columns, right); c++) {
+        const last = c < table.columns ? tableCellAt(table, table.rows.length - 1, c) : undefined;
+        const type = last
+          ? (stored(last.from)?.type ?? (last.row === 0 ? 'tableHeader' : 'tableCell'))
+          : 'tableCell';
+        cells.push({
+          row: r,
+          column: c,
+          width: 1,
+          height: 1,
+          node: schema.nodes[type].createAndFill()!.toJSON(),
+          raw: '  ',
+        });
+      }
+      changed.add(r);
+    }
   // Native isolates top/bottom before left/right. The original owner keeps its
   // content; each newly exposed right/bottom fragment starts empty.
   for (const edge of [top, bottom]) {
@@ -155,12 +190,12 @@ export function planTablePaste(
     .map((r) => {
       const original = table.rows[r];
       const members = cells.filter((cell) => cell.row === r).sort((a, b) => a.column - b.column);
-      const prefix = original.cells.length
+      const prefix = original?.cells.length
         ? source.slice(original.from, original.cells[0].from)
-        : '|';
-      const suffix = original.cells.length
+        : (r === table.rows.length && source[table.to - 1] !== '\n' ? '\n' : '') + '|';
+      const suffix = original?.cells.length
         ? source.slice(original.cells.at(-1)!.to, original.to)
-        : '|' + (source[original.to - 1] === '\n' ? '\n' : '');
+        : '|' + (!original || source[original.to - 1] === '\n' ? '\n' : '');
       let text = prefix;
       const states: Array<{ offset: number; node: JSONContent }> = [];
       for (const [i, cell] of members.entries()) {
@@ -173,8 +208,24 @@ export function planTablePaste(
       if (!members.length) text += '  ';
       text += suffix;
       sourceBytes += bytes(text);
-      return { index: r, from: original.from, to: original.to, text, states };
+      return {
+        index: r,
+        from: original?.from ?? table.to,
+        to: original?.to ?? table.to,
+        text,
+        states,
+      };
     });
+  if (right > table.columns) {
+    const delimiter = table.delimiter,
+      at = delimiter.cells.at(-1)!.to;
+    const text =
+      source.slice(delimiter.from, at) +
+      '| --- '.repeat(right - table.columns) +
+      source.slice(at, delimiter.to);
+    rows.push({ index: -1, from: delimiter.from, to: delimiter.to, text, states: [] });
+    sourceBytes += bytes(text);
+  }
   return {
     rows,
     costs: {

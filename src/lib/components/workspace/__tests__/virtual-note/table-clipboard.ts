@@ -37,8 +37,8 @@ type ClipboardValueSize = { 'text/plain': number; 'text/html': number };
 export function parseTableClipboard(
   value: ClipboardValue,
   schema: Schema,
-  width: number,
-  height: number,
+  width?: number,
+  height?: number,
 ) {
   const container = document.createElement('div');
   const plain = !value['text/html'];
@@ -51,12 +51,13 @@ export function parseTableClipboard(
   } else container.innerHTML = value['text/html'];
   const slice = DOMParser.fromSchema(schema).parseSlice(container, { preserveWhitespace: plain });
   let cells = __pastedCells(slice);
+  const tableInput = !!cells;
   if (!cells) {
     const cell = schema.nodes.tableCell.createAndFill()!;
     const fitted = new Transform(cell).replace(0, cell.content.size, slice).doc;
     cells = { width: 1, height: 1, rows: [Fragment.from(fitted)] };
   }
-  const fitted = __clipCells(cells, width, height);
+  const fitted = __clipCells(cells, width ?? cells.width, height ?? cells.height);
   let nodes = 0;
   for (const row of fitted.rows)
     row.descendants(() => {
@@ -64,6 +65,7 @@ export function parseTableClipboard(
     });
   return {
     cells: fitted,
+    tableInput,
     costs: {
       inputBytes: bytes(value['text/html']) + bytes(value['text/plain']),
       elements: container.querySelectorAll('*').length,

@@ -999,7 +999,7 @@ export class DocumentSession {
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
             paste: (_view, event) => {
-              if (this.selection.table?.kind !== 'cell' || !this.clipboardInput) return false;
+              if (!this.selection.table || !this.clipboardInput) return false;
               event.preventDefault();
               try {
                 this.pasteTableSelection();
