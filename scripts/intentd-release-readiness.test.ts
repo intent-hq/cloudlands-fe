@@ -1,7 +1,7 @@
 // @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -102,14 +102,17 @@ function runCut(
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
+  git('config', 'core.fileMode', 'true');
   git('remote', 'add', 'origin', data.fetchFail ? join(directory, 'unavailable') : directory);
   writeFileSync(join(directory, 'package.json'), '{ "version": "3.0.0" }\n');
   writeFileSync(join(directory, 'intentd.version'), '0.9.110\n');
+  writeFileSync(join(directory, 'CHANGELOG.md'), '# Changelog\n');
   git('add', '.');
   git('commit', '-qm', 'base');
   const baseRefOid = git('rev-parse', 'HEAD');
   if (data.shape === 'pin') writeFileSync(join(directory, 'intentd.version'), '0.9.111\n');
   else writeFileSync(join(directory, 'package.json'), '{ "version": "3.1.0" }\n');
+  if (data.shape === 'mode') chmodSync(join(directory, 'CHANGELOG.md'), 0o755);
   if (data.shape === 'source') writeFileSync(join(directory, 'app.js'), 'malicious()\n');
   git('add', '.');
   git('commit', '-qm', 'chore(release): 3.1.0');
@@ -342,7 +345,7 @@ describe('auto-cut direct release merge', () => {
     },
   );
 
-  it.each(['source', 'pin'])('keeps %s changes on the queue path', (shape) => {
+  it.each(['source', 'pin', 'mode'])('keeps %s changes on the queue path', (shape) => {
     const result = runCut({ ...fixture(), shape }, 'schedule', mergeStep, '', false);
     expect(result.calls.filter((args) => args[0] === 'pr' && args[1] === 'merge')).toEqual([
       ['pr', 'merge', '99', '--repo', FE, '--squash', '--match-head-commit', result.headRefOid],

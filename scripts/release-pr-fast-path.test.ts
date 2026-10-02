@@ -1,6 +1,14 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  unlinkSync,
+  renameSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -39,6 +47,7 @@ function initRepo(): string {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
+  git('config', 'core.fileMode', 'true');
   writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A));
   writeFileSync(join(dir, '.release-please-manifest.json'), baseManifest(VERSION_A));
   writeFileSync(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 2.28.0\n\n- old entry\n');
@@ -114,6 +123,31 @@ describe('release-pr-fast-path', () => {
     releaseBump(dir);
     commit(dir);
     expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(true);
+  });
+
+  it.each(['package.json', 'CHANGELOG.md', '.release-please-manifest.json'])(
+    'rejects a mode change to %s in release-only mode',
+    (file) => {
+      const dir = initRepo();
+      releaseBump(dir);
+      chmodSync(join(dir, file), 0o755);
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(true);
+      expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+    },
+  );
+
+  it('rejects changed symlink targets in release-only mode', () => {
+    const dir = initRepo();
+    unlinkSync(join(dir, 'CHANGELOG.md'));
+    symlinkSync('old-target', join(dir, 'CHANGELOG.md'));
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_B));
+    unlinkSync(join(dir, 'CHANGELOG.md'));
+    symlinkSync('new-target', join(dir, 'CHANGELOG.md'));
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
   });
 
   it('excludes sidecar pins from direct release eligibility without changing CI fast paths', () => {

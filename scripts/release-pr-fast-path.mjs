@@ -9,6 +9,7 @@
 // Usage: node scripts/release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]
 //   <head> defaults to HEAD. Pass --release-only to exclude sidecar pin bumps
 //   when authorizing a direct release merge (CI keeps both shapes by default).
+//   Direct release eligibility also requires unchanged regular-file modes.
 //
 // Output contract (for CI):
 //   - Prints `fast_path=true` and exits 0 when the diff matches the shape.
@@ -144,6 +145,15 @@ export function evaluateFastPath(
   for (const [status, path] of diff) {
     if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
     if (!ALLOWED_FILES.has(path)) return noMatch(`disallowed file: ${path}`);
+    if (releaseOnly) {
+      // name-status M includes chmod and changed symlink targets. Neither
+      // qualifies as release metadata for bypassing the merge queue.
+      const baseMode = git(cwd, 'ls-tree', mergeBase, '--', path).split(' ')[0];
+      const headMode = git(cwd, 'ls-tree', head, '--', path).split(' ')[0];
+      if (!/^100(644|755)$/.test(baseMode) || headMode !== baseMode) {
+        return noMatch(`non-regular file or mode change: ${path}`);
+      }
+    }
   }
   const changed = new Set(diff.map(([, path]) => path));
   if (!changed.has('package.json')) return noMatch('package.json unchanged (no version delta)');
