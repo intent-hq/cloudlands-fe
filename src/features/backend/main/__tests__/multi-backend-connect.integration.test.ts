@@ -33,6 +33,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { warmImport } from '../../../../test/warm-import';
 
 // ---------------------------------------------------------------------------
 // Electron: temp userData + reversible safeStorage + inspectable ipcMain /
@@ -203,6 +204,10 @@ vi.mock('../backend-connection', async (importActual) => {
 
 // NOTE: `../connections-store` is intentionally NOT mocked — this suite drives
 // the real persistence layer against the temp userData dir above.
+
+// Compile the IPC graph in setup so the first journey's timeout measures behavior.
+// beforeEach still resets module state and creates an independent real store.
+warmImport(() => import('../backend.ipc'));
 
 // ---------------------------------------------------------------------------
 // Helpers
