@@ -8,6 +8,7 @@
     states: {
       modified: { props: {} },
       create: { props: { create: true } },
+      'create-flow': { props: { create: true, creationFlow: true } },
       imported: { props: { imported: true } },
       'imported-missing-skills': { props: { imported: true, missingSkills: true } },
       'import-diagnostics': { props: { diagnosticCode: 'invalid', emptyCatalog: true } },
@@ -25,7 +26,11 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
-  import type { SpecialistCatalog, SpecialistImportDiagnostic } from '$lib/client/app-client';
+  import type {
+    SpecialistCatalog,
+    SpecialistImportDiagnostic,
+    SpecialistDef,
+  } from '$lib/client/app-client';
   import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -46,6 +51,7 @@
   } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditors } from '$store/renderer/slices/external-editors/external-editors-selectors';
   import AIBehaviorEditor from './AIBehaviorEditor.svelte';
+  import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
   import {
     startSpecialistCatalogPreview,
     interceptSpecialistEditorLaunches,
@@ -64,6 +70,7 @@
     diagnosticWorkspace,
     emptyCatalog = false,
     catalogFlow = false,
+    creationFlow = false,
   }: {
     create?: boolean;
     imported?: boolean;
@@ -75,10 +82,18 @@
     diagnosticWorkspace?: 'local' | 'remote';
     emptyCatalog?: boolean;
     catalogFlow?: boolean;
+    creationFlow?: boolean;
   } = $props();
 
   const resolvedSpecialists = selectSpecialists();
   let catalogRequests = $state(0);
+  let showEditor = $state(true);
+  let createdView = $state<AIBehaviorView | undefined>();
+  let releaseWrite = $state<(() => void) | undefined>();
+  let releaseCatalog = $state<(() => void) | undefined>();
+  let writes = $state(0);
+  let holdCatalog = false;
+
   let catalogFailure = false;
   let liveCatalog: SpecialistCatalog = { specialists: [] };
   const notificationListeners = new Map<
@@ -133,10 +148,28 @@
       },
       offById: (_channel: string, id: string) => notificationListeners.delete(id),
       invoke: async (channel: string, ...args: unknown[]) => {
-        if (catalogFlow && channel === 'backend:request') {
-          const request = args[0] as { method: string };
+        if ((catalogFlow || creationFlow) && channel === 'backend:request') {
+          const request = args[0] as { method: string; params?: { spec: SpecialistDef } };
+          if (creationFlow && request.method === 'specialist.create') {
+            writes += 1;
+            const definition = request.params!.spec;
+            await new Promise<void>((resolve) => {
+              releaseWrite = resolve;
+            });
+            releaseWrite = undefined;
+            liveCatalog = { specialists: [...liveCatalog.specialists, definition] };
+            holdCatalog = true;
+            return { ok: true, result: definition };
+          }
           if (request.method === 'specialist.list') {
             catalogRequests += 1;
+            if (creationFlow && holdCatalog) {
+              await new Promise<void>((resolve) => {
+                releaseCatalog = resolve;
+              });
+              releaseCatalog = undefined;
+              holdCatalog = false;
+            }
             return catalogFailure
               ? {
                   ok: false,
@@ -146,9 +179,10 @@
           }
           return { ok: true, result: {} };
         }
-        if (catalogFlow && channel === 'backend:subscribe')
+        if ((catalogFlow || creationFlow) && channel === 'backend:subscribe')
           return { ok: true, result: { subscriptionId: 'preview-catalog' } };
-        if (catalogFlow && channel === 'backend:unsubscribe') return { ok: true, result: {} };
+        if ((catalogFlow || creationFlow) && channel === 'backend:unsubscribe')
+          return { ok: true, result: {} };
         launches = [...launches, { channel, args }];
         return { success: true };
       },
@@ -267,8 +301,11 @@
     };
     stopCatalog = startSpecialistCatalogPreview();
   }
+  if (creationFlow) stopCatalog = startSpecialistCatalogPreview();
   onDestroy(() => {
     stopCatalog?.();
+    releaseWrite?.();
+    releaseCatalog?.();
     disposeLaunchHandlers();
     appStore.dispatch(setSpecialistImportDiagnostics(previous.diagnostics));
     appStore.dispatch(setBundledSpecialists(previous.bundled));
@@ -305,11 +342,41 @@
       >Restore required skill</Button
     >
   {/if}
-  <AIBehaviorEditor
-    activeView={create
-      ? { type: 'create-specialist' }
-      : { type: 'specialist', id: 'preview-detail' }}
-    workspaceId={null}
-  />
+  {#if creationFlow}
+    <!-- i18n-ignore (preview-only controls for deferred transport and editor lifetime) -->
+    <div class="mb-4 flex flex-wrap gap-2">
+      <Button
+        onclick={() => {
+          showEditor = !showEditor;
+        }}>Toggle editor</Button
+      >
+      <Button disabled={!releaseWrite} onclick={() => releaseWrite?.()}>Complete write</Button>
+      <Button disabled={!releaseCatalog} onclick={() => releaseCatalog?.()}>Complete refresh</Button
+      >
+      <Button
+        disabled={!releaseCatalog}
+        onclick={() => {
+          catalogFailure = true;
+          releaseCatalog?.();
+        }}>Fail refresh</Button
+      >
+      <Button
+        onclick={() => {
+          catalogFailure = false;
+        }}>Restore catalog</Button
+      >
+      <output data-testid="creation-writes">{writes}</output>
+    </div>
+  {/if}
+  {#if showEditor}
+    <AIBehaviorEditor
+      activeView={createdView ??
+        (create ? { type: 'create-specialist' } : { type: 'specialist', id: 'preview-detail' })}
+      workspaceId={null}
+      onSpecialistCreated={(id) => {
+        createdView = { type: 'specialist', id };
+      }}
+    />
+  {/if}
   <output class="sr-only" data-testid="editor-launches">{JSON.stringify(launches)}</output>
 </div>

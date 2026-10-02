@@ -8,6 +8,7 @@ import {
   flush,
   fork,
   put,
+  race,
   take,
   takeEvery,
 } from 'typed-redux-saga';
@@ -21,15 +22,30 @@ import type {
 import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { SpecialistFileScope } from '$shared/specialist-file-types';
-import { workspaceCatalogRequested } from '../../provider-catalog/provider-catalog-slice';
+import {
+  generateUniqueSpecialistId,
+  type SpecialistFileScope,
+} from '$shared/specialist-file-types';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { emptySpecialistCreation } from '../specialist-creation-types';
+import {
+  workspaceCatalogRequested,
+  workspaceCatalogReceived,
+  workspaceCatalogReadFailed,
+} from '../../provider-catalog/provider-catalog-slice';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
+  selectSpecialistCreation,
+  selectSpecialistCreationIds,
+  selectSpecialists,
+  selectSpecialistsFolderPath,
   selectBundledSpecialists,
   selectBundledSpecialistsLoaded,
   selectGetFileSpecialist,
 } from '../specialists-selectors';
 import {
+  createSpecialistFromDraft,
+  setSpecialistCreation,
   deleteFileSpecialist,
   refetchSpecialistsRequested,
   saveFileSpecialist,
@@ -206,10 +222,12 @@ function* refetchSpecialists(context: ListContext) {
       const defs = yield* call([appClient.specialists, appClient.specialists.list]);
       if (generation === context.generation) yield* call(applySpecialistList, defs);
     }
+    return true;
   } catch (error) {
     logger.error('Failed to refetch specialist list', error);
     const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
     yield* call([notify, notify.error], m.specialists_mutation_refreshFailed_error());
+    return false;
   }
 }
 
@@ -306,6 +324,162 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
   }
 }
 
+/** Wait on the existing workspace catalog owner rather than starting another catalog reader. */
+function* confirmWorkspaceSpecialist(workspaceId: string, id: string) {
+  const updates = yield* actionChannel(
+    (action: { type: string; payload?: unknown[] }) =>
+      (action.type === workspaceCatalogReceived.type ||
+        action.type === workspaceCatalogReadFailed.type) &&
+      action.payload?.[0] === workspaceId,
+    buffers.expanding(),
+  );
+  try {
+    yield* put(workspaceCatalogRequested(workspaceId));
+    const { available } = yield* race({
+      available: call(function* () {
+        while (true) {
+          const action = yield* take(updates);
+          const specialist = yield* selectGetFileSpecialist.effect(id, workspaceId);
+          if (specialist) return specialist;
+          if (action.type === workspaceCatalogReadFailed.type) return undefined;
+        }
+      }),
+      // Also bounds a missing row or a catalog owner cancelled when leaving its workspace.
+      timeout: delay(30000),
+    });
+    if (!available) throw new Error(m.specialists_mutation_refreshFailed_error());
+    return available;
+  } finally {
+    updates.close();
+  }
+}
+
+/** Creation owns a durable operation in Redux; existing save callers still settle at the write. */
+function* handleCreateFromDraft(
+  context: ListContext,
+  action: ReturnType<typeof createSpecialistFromDraft>,
+) {
+  const [draftContext, workspaceId] = action.payload;
+  const creation = yield* selectSpecialistCreation.effect(draftContext);
+  const { draft } = creation;
+  if (
+    creation.status === 'saving' ||
+    creation.status === 'refreshing' ||
+    !draft.name.trim() ||
+    (draft.behaviorPrompt?.length ?? 0) > 50000
+  ) {
+    yield* put(action.failure(new Error(m.specialists_mutation_saveFailed_error())));
+    return;
+  }
+  let written = creation.status === 'refresh-failed';
+  const specialists = yield* selectSpecialists.effect();
+  const workspaceSpecialists = workspaceId ? yield* selectSpecialists.effect(workspaceId) : [];
+  const reservedIds = yield* selectSpecialistCreationIds.effect();
+  const id =
+    creation.specialistId ??
+    generateUniqueSpecialistId(draft.name.trim(), [
+      ...specialists.map((specialist) => specialist.id),
+      ...workspaceSpecialists.map((specialist) => specialist.id),
+      ...reservedIds,
+    ]);
+  let settled = false;
+  try {
+    yield* put(
+      setSpecialistCreation(draftContext, {
+        draft,
+        specialistId: id,
+        status: written ? 'refreshing' : 'saving',
+      }),
+    );
+    if (!written) {
+      yield* call(
+        [appClient.specialists, appClient.specialists.create],
+        id,
+        {
+          id,
+          name: draft.name.trim(),
+          description: draft.description.trim() || m.settings_aiBehavior_customSpecialistFallback(),
+          codingAgent: draft.codingAgent,
+          model: draft.model ? splitLegacyCompoundId(draft.model).modelId : undefined,
+          reasoningEffort: draft.reasoningEffort,
+          behaviorPrompt: draft.behaviorPrompt ?? m.settings_aiBehavior_newPromptTemplate(),
+          source: 'user' as const,
+        },
+        'user' as const,
+        undefined,
+      );
+      written = true;
+      yield* put(
+        setSpecialistCreation(draftContext, { draft, specialistId: id, status: 'refreshing' }),
+      );
+    }
+    // Only the applied catalog (also used by the sidebar) can confirm availability.
+    // A subscription may supersede this request; inspect Redux after the refresh.
+    const refreshed = yield* call(refetchSpecialists, context);
+    const available = yield* selectGetFileSpecialist.effect(id);
+    if (!available) {
+      const error = new Error(m.specialists_mutation_refreshFailed_error());
+      yield* put(
+        setSpecialistCreation(draftContext, {
+          draft,
+          specialistId: id,
+          status: 'refresh-failed',
+          error: error.message,
+        }),
+      );
+      if (refreshed) yield* call(showMutationError, error, error.message);
+      yield* put(action.failure(error));
+      settled = true;
+      return;
+    }
+    if (workspaceId) yield* call(confirmWorkspaceSpecialist, workspaceId, id);
+    yield* put(setSpecialistCreation(draftContext, emptySpecialistCreation));
+    const folder = yield* selectSpecialistsFolderPath.effect();
+    const path =
+      available.filePath || (folder ? `${folder}/${id}.md` : `~/.intent/specialists/${id}.md`);
+    const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
+    yield* call(
+      [notify, notify.success],
+      m.settings_aiBehavior_createdToast({ name: draft.name.trim() }),
+      {
+        description: path.replace(/^\/Users\/[^/]+/, '~'),
+      },
+    );
+    yield* put(action.success(id));
+    settled = true;
+  } catch (error) {
+    const fallback = written
+      ? m.specialists_mutation_refreshFailed_error()
+      : m.specialists_mutation_saveFailed_error();
+    yield* put(
+      setSpecialistCreation(draftContext, {
+        draft,
+        specialistId: id,
+        status: written ? 'refresh-failed' : 'save-failed',
+        error: errorMessage(error, fallback),
+      }),
+    );
+    yield* call(showMutationError, error, fallback);
+    yield* put(action.failure(mutationError(error, fallback)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      const message = written
+        ? m.specialists_mutation_refreshFailed_error()
+        : m.specialists_mutation_saveFailed_error();
+      yield* put(
+        setSpecialistCreation(draftContext, {
+          draft,
+          specialistId: id,
+          status: written ? 'refresh-failed' : 'save-failed',
+          error: message,
+        }),
+      );
+      yield* put(action.failure(new Error(message)));
+    }
+  }
+}
+
 function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFileSpecialist>) {
   const [ref] = action.payload;
   let settled = false;
@@ -390,6 +564,7 @@ export function* specialistsSaga() {
   const context: ListContext = { generation: 0 };
   yield* fork(watchSpecialistsSubscription, context);
   yield* all([
+    takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
     takeEvery(saveFileSpecialist, handleSave, context),
     takeEvery(deleteFileSpecialist, handleDelete, context),
     fork(watchSpecialistRefetches, context),
