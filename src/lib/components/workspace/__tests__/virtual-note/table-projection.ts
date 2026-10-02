@@ -163,6 +163,22 @@ export class TableProjection {
       const anchor = this.entries.find((e) => e.cell.from === logical.anchor.cell),
         head = this.entries.find((e) => e.cell.from === logical.head.cell);
       if (anchor && head) return CellSelection.create(doc, anchor.pm, head.pm);
+      const rectangle = this.window.selected;
+      if (rectangle?.anchor === logical.anchor.cell && rectangle.head === logical.head.cell) {
+        const visible = this.entries.filter(
+          ({ cell }) =>
+            cell.row < rectangle.bottom &&
+            cell.row + (cell.mounted?.rowspan ?? 1) > rectangle.top &&
+            cell.column < rectangle.right &&
+            cell.column + (cell.mounted?.colspan ?? 1) > rectangle.left,
+        );
+        const ordered = [...visible].sort(
+          (a, b) =>
+            (a.cell.row - b.cell.row) * (rectangle.backwardRows ? -1 : 1) ||
+            (a.cell.column - b.cell.column) * (rectangle.backwardColumns ? -1 : 1),
+        );
+        if (ordered.length) return CellSelection.create(doc, ordered[0].pm, ordered.at(-1)!.pm);
+      }
     }
     return TextSelection.create(
       doc,

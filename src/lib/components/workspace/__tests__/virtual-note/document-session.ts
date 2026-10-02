@@ -216,8 +216,9 @@ export class DocumentSession {
             ...(this.tableScrollRequest?.position === at ? this.tableScrollRequest : {}),
           },
           preferred,
+          this.selection.table,
         )
-      : this.service.tableWindowPages(at, undefined, preferred);
+      : this.service.tableWindowPages(at, undefined, preferred, undefined, this.selection.table);
     const table = this.receiveTable(pages);
     if (table) {
       const source = table.cells.map((c) => c.raw).join('');
@@ -834,6 +835,7 @@ export class DocumentSession {
       // Keep the native highlighter; meter its actual input, including auto detection.
       const splitLogicalCell = (props: CommandProps): boolean | undefined => {
         const p = this.projection?.table;
+        if (!p) return undefined;
         const logical = this.fromPM(props.state.selection).table;
         const entry = p?.entries.find((e) => e.cell.from === logical?.anchor.cell);
         if (

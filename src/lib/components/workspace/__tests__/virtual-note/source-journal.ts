@@ -645,6 +645,7 @@ export class SourceJournal {
       include?: number;
     },
     preferred?: TablePoint,
+    selection?: Selection['table'],
   ) {
     const { id, start } = this.locate(position);
     const table = this.tableIndex(this.region(id), start).find(
@@ -682,36 +683,43 @@ export class SourceJournal {
         columnCount = lastColumn - column;
       }
     }
-    return this.tableWindow(position, undefined, preferred, {
-      row: geometry.row,
-      column,
-      rowCount: geometry.heights.length,
-      columnCount,
-      geometry,
-      ...(viewport.top === undefined
-        ? {}
-        : {
-            fragmentStart: (entry, limit) => {
-              const rowTop =
-                geometry.top +
-                geometry.heights.slice(0, entry.row - geometry.row).reduce((a, b) => a + b, 0);
-              return this.tableHeights.fragmentStart(
-                key,
-                { ...entry, from: entry.from + start },
-                rowTop,
-                top,
-                viewport.height,
-                limit,
-              );
-            },
-          }),
-    });
+    return this.tableWindow(
+      position,
+      undefined,
+      preferred,
+      {
+        row: geometry.row,
+        column,
+        rowCount: geometry.heights.length,
+        columnCount,
+        geometry,
+        ...(viewport.top === undefined
+          ? {}
+          : {
+              fragmentStart: (entry, limit) => {
+                const rowTop =
+                  geometry.top +
+                  geometry.heights.slice(0, entry.row - geometry.row).reduce((a, b) => a + b, 0);
+                return this.tableHeights.fragmentStart(
+                  key,
+                  { ...entry, from: entry.from + start },
+                  rowTop,
+                  top,
+                  viewport.height,
+                  limit,
+                );
+              },
+            }),
+      },
+      selection,
+    );
   }
   tableWindow(
     position: number,
     retained?: TableWindow,
     preferred?: TablePoint,
     rectangle?: TableRectangle,
+    selection?: Selection['table'],
   ) {
     const { id, start } = this.locate(position),
       source = this.region(id);
@@ -756,6 +764,26 @@ export class SourceJournal {
         block.to += start;
       }
     }
+    if (selection?.kind === 'cell') {
+      // Two endpoint lookups stay in backing storage; only a constant-sized rectangle travels.
+      const anchor = table.rows
+        .flatMap((r) => r.cells)
+        .find((c) => c.from + start === selection.anchor.cell);
+      const head = table.rows
+        .flatMap((r) => r.cells)
+        .find((c) => c.from + start === selection.head.cell);
+      if (!anchor || !head) throw new Error('Stale table cell selection');
+      window.selected = {
+        anchor: selection.anchor.cell,
+        head: selection.head.cell,
+        top: Math.min(anchor.row, head.row),
+        bottom: Math.max(anchor.row + (anchor.rowSpan ?? 1), head.row + (head.rowSpan ?? 1)),
+        left: Math.min(anchor.column, head.column),
+        right: Math.max(anchor.column + (anchor.span ?? 1), head.column + (head.span ?? 1)),
+        backwardRows: anchor.row > head.row,
+        backwardColumns: anchor.column > head.column,
+      };
+    } else delete window.selected;
     window.layout = this.tableHeights.layout(window);
     const packed = packTableWindow(window);
     const size = bytes(JSON.stringify(packed));

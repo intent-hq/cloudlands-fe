@@ -53,6 +53,16 @@ export type TableFragment = TableCellSource & {
 };
 export type TableWindow = {
   revision: number;
+  selected?: {
+    anchor: number;
+    head: number;
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+    backwardRows: boolean;
+    backwardColumns: boolean;
+  };
   extent?: { row: number; column: number; rowCount: number; columnCount: number };
   from: number;
   to: number;
