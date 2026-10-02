@@ -14,6 +14,7 @@ describe('renderer app saga registry', () => {
     const names = sagas.map((saga) => saga.name);
 
     expect(names).toEqual([
+      'desktopControlSaga',
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
@@ -134,9 +135,9 @@ describe('renderer app saga registry', () => {
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(110);
+    expect(store.runSaga).toHaveBeenCalledTimes(111);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(110).fill(cancel));
+    expect(handlers).toEqual(Array(111).fill(cancel));
   });
 
   it('starts every hardware-console owner exactly once under one cancellable composition', () => {
