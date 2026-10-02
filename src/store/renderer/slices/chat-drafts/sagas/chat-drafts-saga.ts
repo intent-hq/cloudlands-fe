@@ -1,4 +1,5 @@
 import type { Task } from 'redux-saga';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import type { DraftsClient } from '$lib/client/app-client';
@@ -25,14 +26,17 @@ export const CHAT_DRAFT_SAVE_DEBOUNCE_MS = 500;
 
 type ChatDraftsTransport = Pick<DraftsClient, 'get' | 'set' | 'clear'>;
 type FlushAction = ReturnType<typeof chatDraftSaveFlushRequested | typeof chatDraftOwnerReleased>;
-type ClearAction = ReturnType<typeof chatDraftClearRequested>;
+const chatDraftClearStarted =
+  createAction<[workspaceId: string, agentId: string]>('chatDrafts/clearStarted');
+type ClearRequestAction = ReturnType<typeof chatDraftClearRequested>;
+type ClearAction = ReturnType<typeof chatDraftClearStarted>;
 type SaveStartedAction = ReturnType<typeof chatDraftSaveStarted>;
 type WriteAction = SaveStartedAction | ClearAction;
 type CommittedSave = { epoch: number; rollback: ChatDraftSnapshot | null };
 
 const pairKey = (workspaceId: string, agentId: string) => `${workspaceId}\u0000${agentId}`;
 const isClear = (action: WriteAction): action is ClearAction =>
-  action.type === chatDraftClearRequested.type;
+  action.type === chatDraftClearStarted.type;
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
@@ -97,7 +101,7 @@ export function* chatDraftsSaga(
     yield* dropPending(action.payload[0]);
   }
 
-  function* invalidatePair(action: ClearAction): SagaGenerator<void> {
+  function* invalidatePair(action: ClearRequestAction): SagaGenerator<void> {
     const [workspaceId, agentId] = action.payload;
     const key = pairKey(workspaceId, agentId);
     for (const [ownerId, entry] of Object.entries(pending)) {
@@ -113,6 +117,7 @@ export function* chatDraftsSaga(
       }
     }
     setCachedDraft(workspaceId, agentId, { text: '', attachments: [] });
+    yield* put(chatDraftClearStarted(workspaceId, agentId));
   }
 
   function* restore(action: ReturnType<typeof chatDraftRestoreRequested>): SagaGenerator<void> {
@@ -172,7 +177,7 @@ export function* chatDraftsSaga(
   yield* takeEvery(chatDraftSaveCancelled, cancelPending);
   yield* takeEvery(chatDraftClearRequested, invalidatePair);
   yield* takeEveryByContextFIFO(
-    [chatDraftSaveStarted, chatDraftClearRequested],
+    [chatDraftSaveStarted, chatDraftClearStarted],
     (action: WriteAction) =>
       isClear(action)
         ? pairKey(action.payload[0], action.payload[1])
