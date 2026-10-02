@@ -146,6 +146,15 @@ export function fitNativeTextPaste(
         : [];
     },
   );
+  // Fresh native rule plugins need the same clipboard-origin event as the real
+  // view. Invoke only these new backing-owned plugins, never dispatch the full
+  // input event through the bounded renderer or its plugin instances.
+  const pasteEvent = new Event('paste') as ClipboardEvent;
+  Object.defineProperty(pasteEvent, 'clipboardData', {
+    value: { getData: (mime: string) => value[mime as keyof ClipboardValue] ?? '' },
+  });
+  for (const plugin of plugins)
+    plugin.props.handleDOMEvents?.paste?.call(plugin, editor.view, pasteEvent);
   const state = EditorState.create({
     plugins: [...structuralPlugins, ...plugins],
     schema: cell.type.schema,
