@@ -35,12 +35,5 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
   table.style.minWidth = '0';
   table.style.maxWidth = 'none';
   table.style.borderCollapse = 'collapse';
-  for (const cell of table.querySelectorAll<HTMLElement>('th,td')) {
-    cell.style.minWidth = '0';
-    cell.style.maxWidth = 'none';
-    cell.style.whiteSpace = 'normal';
-    cell.style.overflowWrap = 'anywhere';
-    cell.style.boxSizing = 'border-box';
-  }
   return { width, columns, cells: table.querySelectorAll('th,td').length };
 }

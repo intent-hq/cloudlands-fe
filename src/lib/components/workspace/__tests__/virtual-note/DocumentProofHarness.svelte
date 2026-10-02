@@ -154,6 +154,9 @@
   }
   :global(.proof-table-projection th),
   :global(.proof-table-projection td) {
+    min-width: 0;
+    max-width: none;
+    box-sizing: border-box;
     white-space: normal;
     overflow-wrap: anywhere;
   }
