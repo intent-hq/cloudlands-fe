@@ -7,7 +7,9 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
   const table = editor.view.dom.querySelector('table');
   if (!table) throw new Error('Native table DOM missing');
   const firstColumn = Math.min(...window.cells.map((c) => c.column));
-  const columns = Math.max(...window.cells.map((c) => c.column + (c.span ?? 1))) - firstColumn;
+  const columns =
+    Math.max(...window.cells.map((c) => c.column + (c.mounted?.colspan ?? c.span ?? 1))) -
+    firstColumn;
   // Native TableView updates overwrite its inline table width after transactions.
   // Keep the test-only sizing policy on the stable editor root instead.
   editor.view.dom.classList.add('proof-table-projection');
