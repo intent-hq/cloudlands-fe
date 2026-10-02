@@ -34,10 +34,12 @@ function sameItems<T>(
 }
 
 /**
- * Compare the records and geometry arrays owned by the layout engine. Model-owned
- * objects (including arbitrary metadata and bindings) always require publication:
- * reusing their identity can conceal a raw mutation behind an existing Svelte proxy.
- * Do not serialize or interpret those opaque values.
+ * Compare computed records, bounds and route points. Model-owned member arrays,
+ * metadata and bindings always require publication: comparing their mutated contents
+ * can conceal stale values behind an existing Svelte proxy. Authored node.size may
+ * also alias the model, but consumers use the separately computed width/height scalars;
+ * nested size is only an input to the next layout computation.
+ * Do not serialize or interpret opaque model values.
  */
 export function equalComputedLayout(
   previous: ComputedLayout | null,
@@ -60,10 +62,6 @@ export function equalComputedLayout(
       next.edges,
       (a, b) => sameFields(a, b, ['points']) && sameItems(a.points, b.points, sameFields),
     ) &&
-    sameItems(
-      previous.groups,
-      next.groups,
-      (a, b) => sameFields(a, b, ['nodeIds']) && sameItems(a.nodeIds, b.nodeIds, Object.is),
-    )
+    sameItems(previous.groups, next.groups, sameFields)
   );
 }

@@ -252,3 +252,62 @@ it('publishes a reused binding after its target changes in a new model wrapper',
   await fireEvent.click(result.container.querySelector('[data-node-id="a"] button')!);
   expect(destinations).toEqual(['old.ts', 'new.ts']);
 });
+
+it.each([false, true])(
+  'publishes mutated shared group membership (initially present: %s)',
+  async (initiallyPresent) => {
+    const members = initiallyPresent ? ['a'] : [];
+    const input = diagram();
+    input.baseView.layout = { type: 'circular', direction: 'LR', edgeRouting: 'polyline' };
+    input.model.nodes = [
+      { id: 'a', label: 'Member', group: 'g', size: { width: 100, height: 40 } },
+    ];
+    input.model.edges = [];
+    input.model.groups = [{ id: 'g', label: 'Shared group', nodeIds: members }];
+    const result = render(DiagramRenderer, { diagram: input });
+    await settle();
+    const group = () => result.container.querySelector('[data-group-id="g"]');
+    expect(!!group()).toBe(initiallyPresent);
+    const renderer = result.container.querySelector('.diagram-renderer');
+    const beforeGeometry = geometry(result.container);
+    const beforeLayout = vi.mocked(computeLayout).mock.results.at(-1)!.value;
+    const beforeBounds = { ...beforeLayout.groups[0] };
+    if (initiallyPresent) members.pop();
+    else members.push('a');
+    await result.rerender({
+      diagram: {
+        ...input,
+        model: { ...input.model, groups: [{ ...input.model.groups[0], nodeIds: members }] },
+      },
+    });
+    await settle();
+    const afterLayout = vi.mocked(computeLayout).mock.results.at(-1)!.value;
+    for (const key of ['x', 'y', 'width', 'height']) {
+      expect(afterLayout.groups[0][key]).toBe(beforeBounds[key]);
+    }
+    expect(geometry(result.container)).toEqual(beforeGeometry);
+    expect(!!group()).toBe(!initiallyPresent);
+    expect(result.container.querySelector('.diagram-renderer')).toBe(renderer);
+  },
+);
+
+it('publishes scalar geometry when an authored size is mutated and reused', async () => {
+  const size = { width: 100, height: 40 };
+  const input = diagram();
+  input.baseView.layout = { type: 'circular', direction: 'LR', edgeRouting: 'polyline' };
+  input.model.nodes = [{ id: 'a', label: 'Sized node', size }];
+  input.model.edges = [];
+  const result = render(DiagramRenderer, { diagram: input });
+  await settle();
+  const node = () => result.container.querySelector('foreignObject[data-node-id="a"]')!;
+  expect(node().getAttribute('width')).toBe('100');
+  expect(node().getAttribute('height')).toBe('40');
+  size.width = 180;
+  size.height = 80;
+  await result.rerender({
+    diagram: { ...input, model: { ...input.model, nodes: [{ ...input.model.nodes[0], size }] } },
+  });
+  await settle();
+  expect(node().getAttribute('width')).toBe('180');
+  expect(node().getAttribute('height')).toBe('80');
+});

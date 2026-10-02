@@ -17,7 +17,7 @@ function layout(): ComputedLayout {
         ],
       },
     ],
-    groups: [{ id: 'all', label: 'All', nodeIds: ['a'], x: 0, y: 0, width: 120, height: 60 }],
+    groups: [{ id: 'all', label: 'All', x: 0, y: 0, width: 120, height: 60 }],
     bounds: { minX: 0, minY: 0, maxX: 120, maxY: 60, width: 120, height: 60 },
   };
 }
@@ -156,6 +156,19 @@ it.each(['binding', 'metadata', 'futureField'])(
     Reflect.set(previous.nodes[0], key, value);
     Reflect.set(next.nodes[0], key, value);
     value.target = 'new.ts';
+    expect(equalComputedLayout(previous, next)).toBe(false);
+  },
+);
+
+it.each([{ members: [] }, { members: ['a'] }])(
+  'publishes group member arrays conservatively ($members)',
+  ({ members }) => {
+    const previous = layout();
+    const next = layout();
+    previous.groups![0].nodeIds = members;
+    next.groups![0].nodeIds = members;
+    expect(equalComputedLayout(previous, next)).toBe(false);
+    next.groups![0].nodeIds = [...members];
     expect(equalComputedLayout(previous, next)).toBe(false);
   },
 );
