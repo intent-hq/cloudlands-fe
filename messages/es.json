@@ -7038,5 +7038,7 @@
   "devConsole_sincePrevious_label": "{elapsed} ms desde la carga anterior de este lado",
   "devConsole_retainedFrames_label": "{count} cargas conservadas",
   "devConsole_droppedFrames_description": "Se descartaron {count} cargas por los límites de captura. Los totales incluyen las cargas descartadas; los intervalos se miden desde la carga anterior observada del mismo lado. Solo se copia el texto conservado.",
-  "devConsole_interval_label": "Intervalo: {elapsed} ms"
+  "devConsole_interval_label": "Intervalo: {elapsed} ms",
+  "chat_queuedMessages_draftConflict_description": "Este mensaje en cola se combinó, cambió o eliminó. Tu borrador se conserva aquí. Cópialo para volver a usarlo o descártalo.",
+  "chat_queuedMessages_discardDraft_label": "Descartar borrador"
 }

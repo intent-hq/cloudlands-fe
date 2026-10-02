@@ -7038,5 +7038,7 @@
   "devConsole_sincePrevious_label": "이쪽의 이전 페이로드 이후 {elapsed}ms",
   "devConsole_retainedFrames_label": "보관된 페이로드 {count}개",
   "devConsole_droppedFrames_description": "캡처 제한으로 페이로드 {count}개가 삭제되었습니다. 합계에는 삭제된 페이로드가 포함되며, 간격은 같은 쪽에서 이전에 관측된 페이로드를 기준으로 합니다. 보관된 텍스트만 복사됩니다.",
-  "devConsole_interval_label": "간격: {elapsed}ms"
+  "devConsole_interval_label": "간격: {elapsed}ms",
+  "chat_queuedMessages_draftConflict_description": "대기 중인 메시지가 병합, 변경 또는 삭제되었습니다. 초안은 여기에 보관됩니다. 복사하여 다시 사용하거나 삭제하세요.",
+  "chat_queuedMessages_discardDraft_label": "초안 삭제"
 }

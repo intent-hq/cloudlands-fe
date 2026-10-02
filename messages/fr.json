@@ -7038,5 +7038,7 @@
   "devConsole_sincePrevious_label": "{elapsed} ms depuis la charge précédente de ce côté",
   "devConsole_retainedFrames_label": "{count} charges conservées",
   "devConsole_droppedFrames_description": "{count} charges supprimées par les limites de capture. Les totaux incluent les charges supprimées ; les intervalles partent de la charge précédente observée du même côté. Seul le texte conservé est copié.",
-  "devConsole_interval_label": "Intervalle : {elapsed} ms"
+  "devConsole_interval_label": "Intervalle : {elapsed} ms",
+  "chat_queuedMessages_draftConflict_description": "Ce message en attente a été combiné, modifié ou supprimé. Votre brouillon est conservé ici. Copiez-le pour le réutiliser ou abandonnez-le.",
+  "chat_queuedMessages_discardDraft_label": "Abandonner le brouillon"
 }

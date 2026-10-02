@@ -7038,5 +7038,7 @@
   "devConsole_sincePrevious_label": "{elapsed} ms seit der vorherigen Nutzlast auf dieser Seite",
   "devConsole_retainedFrames_label": "{count} gespeicherte Nutzlasten",
   "devConsole_droppedFrames_description": "{count} Nutzlasten durch Erfassungslimits verworfen. Summen enthalten verworfene Nutzlasten; Intervalle beziehen sich auf die vorherige beobachtete Nutzlast derselben Seite. Kopiert wird nur gespeicherter Nutzlasttext.",
-  "devConsole_interval_label": "Intervall: {elapsed} ms"
+  "devConsole_interval_label": "Intervall: {elapsed} ms",
+  "chat_queuedMessages_draftConflict_description": "Diese Nachricht wurde zusammengeführt, geändert oder entfernt. Dein Entwurf bleibt hier erhalten. Kopiere ihn, um ihn erneut zu verwenden, oder verwirf ihn.",
+  "chat_queuedMessages_discardDraft_label": "Entwurf verwerfen"
 }

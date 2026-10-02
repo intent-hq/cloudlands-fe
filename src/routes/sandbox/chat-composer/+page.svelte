@@ -16,6 +16,7 @@
     {
       id: 'queued-message-one',
       content: 'Review the updated visual hierarchy and spacing.',
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: timestamp,
       position: 0,
     },
@@ -23,6 +24,7 @@
       id: 'queued-message-two',
       content:
         'Then verify the full interaction flow at narrow widths and document any remaining visual differences.',
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: timestamp,
       position: 1,
     },
@@ -72,6 +74,7 @@
     >
       {#snippet queueRegion()}
         <QueuedMessageList
+          ownPrincipalId="preview-author"
           {messages}
           onedit={editMessage}
           onremove={removeMessage}

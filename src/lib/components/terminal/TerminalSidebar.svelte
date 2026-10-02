@@ -11,6 +11,7 @@
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
     refreshScripts,
+    stopScriptRequested,
     removeScript,
     upsertScript,
   } from '$store/renderer/slices/scripts/scripts-slice';
@@ -515,8 +516,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Sort function ----
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: live (running/restarting) > exited > idle
-      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
+      // Priority: live (starting/running/restarting) > exited > idle
+      const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -587,8 +588,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     pendingScrollScriptId = scriptId;
   }
 
-  async function handleStop(scriptId: string) {
-    await scriptsClient.stop(workspaceId, scriptId);
+  function handleStop(scriptId: string) {
+    appStore.dispatch(
+      stopScriptRequested(workspaceId, scriptId, m.terminal_quakeOverlay_stopScriptFailed_error()),
+    );
   }
 
   async function handleRestart(scriptId: string) {

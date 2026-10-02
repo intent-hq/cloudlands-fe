@@ -7038,5 +7038,7 @@
   "devConsole_sincePrevious_label": "{elapsed} ms since previous payload on this side",
   "devConsole_retainedFrames_label": "{count} retained payloads",
   "devConsole_droppedFrames_description": "{count} payloads discarded by capture limits. Totals include discarded payloads; intervals use the previous observed payload on the same side. Copy includes retained payload text only.",
-  "devConsole_interval_label": "Interval: {elapsed} ms"
+  "devConsole_interval_label": "Interval: {elapsed} ms",
+  "chat_queuedMessages_draftConflict_description": "This queued message was combined, changed, or removed. Your draft is kept here. Copy it to reapply it, or discard it.",
+  "chat_queuedMessages_discardDraft_label": "Discard draft"
 }
