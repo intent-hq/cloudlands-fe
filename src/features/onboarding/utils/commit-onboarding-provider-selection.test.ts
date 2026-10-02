@@ -1,32 +1,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
-vi.mock('$lib/client', () => ({ appClient: { settings: { update: vi.fn(async () => []) } } }));
-const tasks: Task[] = [];
-afterEach(() => {
-  for (const task of tasks.splice(0)) task.cancel();
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+}));
+vi.mock('$lib/client', async () => {
+  const { LiveSettingsClient } = await import('$lib/client/live/live-settings-client');
+  return { appClient: { settings: new LiveSettingsClient() } };
 });
-import type { StoreState } from '$store/renderer/types';
+const stops: (() => void)[] = [];
+let dispose: (() => void) | undefined;
+afterEach(() => {
+  for (const stop of stops.splice(0)) stop();
+  dispose?.();
+  vi.resetAllMocks();
+});
+import { backendRequest } from '$lib/client/live/backend-transport';
+import type { AppSettingChange } from '$lib/client/app-client';
+import { applySettingsChanges } from '$features/settings/settings-hydration-service';
+import { store } from '$store/renderer/store';
 import {
-  agentAvailabilityReducer,
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
-  initialState as agentAvailabilityInitialState,
 } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-import {
-  initialState as modelInitialState,
-  modelReducer,
-  reloadModelsForProvider,
-} from '$store/renderer/slices/model/model-slice';
-import {
-  initialState as providerCatalogInitialState,
-  providerCatalogLoaded,
-  providerCatalogReducer,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import {
-  initialState as providerSettingsInitialState,
-  providerSettingsReducer,
   setActiveProvider,
   setProviderEnabled,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -126,36 +127,44 @@ describe('no-click welcome-step advance regression (empty enabled set on step 4)
   // ready provider. The user never clicks a card and advances via the
   // button / ⌘↵ — the commit must leave the resolved provider enabled +
   // active so ModelPicker's availability gate sees a non-empty set.
-  const providerCatalog = providerCatalogReducer(
-    providerCatalogInitialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
-
-  it('enables and activates the resolved provider on an explicit advance', () => {
-    let settings = providerSettingsReducer(
-      providerSettingsInitialState,
-      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-    );
-    // The model slice is kept pre-catalog-hydration here: at
-    // providerCatalogLoaded it installs a first-row default-provider
-    // fallback, and this regression needs the genuine nothing-active state.
-    let model = modelInitialState;
-    let availability = agentAvailabilityReducer(
-      agentAvailabilityInitialState,
-      checkSingleProviderRequested('claude-code'),
-    );
-    availability = agentAvailabilityReducer(
-      availability,
+  it('enables and activates the resolved provider on an explicit advance', async () => {
+    dispose = store.init();
+    store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    store.dispatch(checkSingleProviderRequested('claude-code'));
+    store.dispatch(
       checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }, 1),
     );
-
-    const buildState = (): StoreState =>
-      ({
-        providerCatalog,
-        agentAvailability: availability,
-        providerSettings: settings,
-        model,
-      }) as unknown as StoreState;
+    const persisted: Record<string, AppSettingChange['value']> = {
+      'model.defaultProvider': null,
+      'model.providerDefaults': {},
+      'model.defaultReasoningEffort': null,
+      'providers.enabled': {},
+      'quickActions.defaultModel': null,
+      'quickActions.typeOverrides': {},
+      'quickActions.defaultReasoningEffort': null,
+      'quickActions.typeReasoningEffortOverrides': {},
+      'quickActions.providerSettings': {},
+    };
+    let revision = 1;
+    const request = vi.mocked(backendRequest);
+    request.mockImplementation(async (method, params) => {
+      if (method === 'settings.list') {
+        expect(params).toBeUndefined();
+        return {
+          settings: Object.entries(persisted).map(([path, value]) => ({
+            path,
+            value: structuredClone(value),
+          })),
+          revision,
+        };
+      }
+      expect(method).toBe('settings.update');
+      const { changes } = params as { changes: AppSettingChange[] };
+      expect(params).toEqual({ changes });
+      for (const { path, value } of changes) persisted[path] = structuredClone(value);
+      return { applied: structuredClone(changes), revision: ++revision };
+    });
+    const buildState = () => store.state;
 
     // Precondition: fresh install — nothing active, nothing enabled.
     let state = buildState();
@@ -171,19 +180,47 @@ describe('no-click welcome-step advance regression (empty enabled set on step 4)
     expect(selectedProviderId).toBe('claude-code');
 
     // Advance (button or ⌘↵ — both call the same commit path).
-    const channel = stdChannel();
-    const apply = (action: { type: string }) => {
-      settings = providerSettingsReducer(settings, action);
-      model = modelReducer(model, action);
-      channel.put(action);
-    };
-    tasks.push(runSaga({ channel, dispatch: apply, getState: buildState }, providerSettingsSaga));
+    const apply = (action: { type: string }) => store.dispatch(action);
+    stops.push(store.runSaga(providerSettingsSaga));
     const committed = commitOnboardingProviderSelection({
       selectedProviderId,
       activeProviderId: selectActiveProviderId.select(state),
       dispatch: apply,
     });
     expect(committed).toBe('claude-code');
+    expect(selectActiveProviderId.select(buildState())).toBe('');
+
+    await vi.waitFor(() => expect(persisted['model.defaultProvider']).toBe('claude-code'));
+    expect(request.mock.calls).toEqual([
+      [
+        'settings.update',
+        { changes: [{ path: 'providers.enabled', value: { 'claude-code': true } }] },
+      ],
+      ['settings.list'],
+      [
+        'settings.update',
+        {
+          changes: [
+            { path: 'model.defaultProvider', value: 'claude-code' },
+            { path: 'quickActions.defaultModel', value: '' },
+            {
+              path: 'quickActions.typeOverrides',
+              value: { commit: '', pr: '', review: '', fast: '' },
+            },
+            { path: 'quickActions.defaultReasoningEffort', value: '' },
+            { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+            { path: 'quickActions.providerSettings', value: {} },
+          ],
+        },
+      ],
+    ]);
+    expect(selectActiveProviderId.select(buildState())).toBe('');
+
+    // Only the independent daemon receipt, not the write acknowledgement, activates it.
+    applySettingsChanges(
+      Object.entries(persisted).map(([path, value]) => ({ path, value })),
+      revision,
+    );
 
     state = buildState();
     expect(selectActiveProviderId.select(state)).toBe('claude-code');

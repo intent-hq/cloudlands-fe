@@ -10,7 +10,10 @@ import { SPECIALISTS } from '$lib/constants/specialists';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import {
+  hydrateDefaultProvider,
+  loadProviderModelsFromStorage,
+} from '$store/renderer/slices/model/model-slice';
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
 import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -20,7 +23,6 @@ import {
   setFileSpecialists,
 } from '$store/renderer/slices/specialists/specialists-slice';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-import { setSelectedModel } from '$store/renderer/slices/model/model-slice';
 import { selectMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 import { setError as setMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { selectThemeError } from '$store/renderer/slices/theme/theme-selectors';
@@ -225,8 +227,7 @@ function createFixtureContext(
       };
       break;
     case 'Redux model':
-      writeOwner = (value) =>
-        appStore.dispatch(setSelectedModel({ providerId: 'codex', model: value }));
+      writeOwner = (value) => appStore.dispatch(loadProviderModelsFromStorage({ codex: value }));
       readOwner = () =>
         snapshot(selectSelectedModel.select(appStore.state, 'codex').replace(/^codex:/, ''));
       break;
@@ -664,7 +665,7 @@ describe('settings tab route and focus behavior', () => {
 
   it('renders the default model row under Providers only, not Agent Behavior', async () => {
     appStore.dispatch(hydrateDefaultProvider('codex'));
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'shared-fixture' }));
+    appStore.dispatch(loadProviderModelsFromStorage({ codex: 'shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
     expect(document.getElementById('utility-default-model')).not.toBeNull();
