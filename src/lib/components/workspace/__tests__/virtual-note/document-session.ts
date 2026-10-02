@@ -813,6 +813,11 @@ export class DocumentSession {
         (e) => e.cell.from === this.selection.table?.head.cell,
       )?.cell;
       const point = this.selection.table?.head;
+      const mounted = point && p.table.pointAt(p.table.pointPM(point) ?? -1);
+      // A scrolled viewport may retain an offscreen durable caret. Its clamped
+      // mounted fallback is not a gesture approaching a continuation boundary.
+      if (!point || !mounted || mounted.offset !== point.offset || mounted.block !== point.block)
+        return;
       const pageBlocks =
         cell?.blocks &&
         point &&
