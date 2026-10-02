@@ -314,6 +314,7 @@ export class DocumentSession {
             width: scroller.clientWidth,
             font: this.tableFont(),
             include: this.pointerSelecting ? this.selection.table?.anchor.cell : undefined,
+            nearby: selection.table?.kind === 'cell' ? selection.table.anchor.cell : undefined,
             ...(this.tableScrollRequest?.position === at ? this.tableScrollRequest : {}),
           },
           preferred,
@@ -427,7 +428,10 @@ export class DocumentSession {
           let accepted = true;
           if (neighbor) {
             this.selection = neighborSelection!;
+            this.selectionGeneration++;
+            this.suppress = true;
             this.renderSelection();
+            this.suppress = false;
           } else if (current.command === 'undo' || current.command === 'redo')
             await this.history(current.command === 'redo');
           else if (['insertParagraph', 'indent', 'outdent'].includes(current.command)) {

@@ -112,5 +112,82 @@ for (const key of [
     expect(outcomes[1].stats!.maxSourceContextBytes).toBeLessThanOrEqual(16384);
     expect(outcomes[1].stats!.cacheBytes).toBeLessThanOrEqual(16384);
     expect(outcomes[1].stats!.pmNodes).toBeLessThanOrEqual(4096);
+    if (key === 'Shift+ArrowDown' || key === 'Shift+ArrowUp') {
+      const burst = [];
+      for (const side of ['native', 'bounded']) {
+        await focus(page, side);
+        if (side === 'bounded')
+          await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => {
+              const host = el as Host & { releaseTableArrow?: () => void };
+              host.proof.delayFetch = () =>
+                new Promise<void>((resolve) => {
+                  host.releaseTableArrow = resolve;
+                });
+            });
+        for (let step = 0; step < 18; step++) await page.keyboard.press(key);
+        if (side === 'bounded') {
+          await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => {
+              const host = el as Host & { releaseTableArrow?: () => void };
+              host.proof.delayFetch = undefined;
+              host.releaseTableArrow?.();
+            });
+          await expect
+            .poll(() =>
+              page
+                .getByTestId(side)
+                .getByTestId('proof')
+                .evaluate((el) => (el as Host).proof.service.pendingInputs),
+            )
+            .toBe(0);
+        }
+        await settled(page);
+        burst.push(
+          await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => {
+              const h = el as Host,
+                p = h.proof,
+                editor = (p?.editor ?? h.native)!;
+              const selection = editor!.state.selection as typeof editor.state.selection & {
+                $anchorCell?: typeof editor.state.selection.$anchor;
+                $headCell?: typeof editor.state.selection.$head;
+              };
+              return {
+                kind: selection.toJSON().type,
+                anchor: selection.$anchorCell?.nodeAfter?.textContent,
+                head: selection.$headCell?.nodeAfter?.textContent,
+                logical: p?.selection.table,
+                error: p?.error ?? '',
+                stats: p?.snapshot(),
+                source: p?.service.region(0),
+              };
+            }),
+        );
+      }
+      await info.attach('delayed-table-cell-extension.json', {
+        body: JSON.stringify({ key, burst }),
+        contentType: 'application/json',
+      });
+      expect(burst[0].kind).toBe('cell');
+      expect(burst[1].kind).toBe('cell');
+      expect(burst[1].error).toBe('');
+      expect(burst[1].logical).toEqual({
+        kind: 'cell',
+        anchor: { cell: source.indexOf(burst[0].anchor!) - 1, block: 0, offset: 0 },
+        head: { cell: source.indexOf(burst[0].head!) - 1, block: 0, offset: 0 },
+      });
+      expect(burst[1].source).toBe(source);
+      expect(burst[1].stats!.maxSourceContextBytes).toBeLessThanOrEqual(16384);
+      expect(burst[1].stats!.cacheBytes).toBeLessThanOrEqual(16384);
+      expect(burst[1].stats!.cachePages).toBeLessThanOrEqual(4);
+      expect(burst[1].stats!.pmNodes).toBeLessThanOrEqual(4096);
+    }
   });
 }

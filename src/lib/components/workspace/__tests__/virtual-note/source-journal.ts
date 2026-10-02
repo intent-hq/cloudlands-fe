@@ -1183,6 +1183,7 @@ export class SourceJournal {
       width: number;
       font: string;
       include?: number;
+      nearby?: number;
     },
     preferred?: TablePoint,
     selection?: Selection['table'],
@@ -1209,16 +1210,29 @@ export class SourceJournal {
       viewport.left === undefined
         ? Math.min(cell.column, Math.max(0, table.columns - columnCount))
         : Math.max(0, Math.floor(viewport.left / width));
-    if (viewport.include !== undefined) {
+    if (viewport.include !== undefined || viewport.nearby !== undefined) {
       // Mock backing lookup; only the bounded union rectangle reaches the renderer.
       const anchor = table.rows
         .flatMap((r) => r.cells)
-        .find((c) => c.from + start === viewport.include);
-      if (anchor) {
+        .find((c) => c.from + start === (viewport.include ?? viewport.nearby));
+      // A newly extended cell selection should retain its adjacent endpoint.
+      // A distant logical anchor stays in paged selection metadata, never an
+      // unbounded union rectangle or hidden mounted selection.
+      if (
+        anchor &&
+        (viewport.include !== undefined ||
+          (anchor.row >= geometry.row - 1 &&
+            anchor.row < geometry.row + geometry.heights.length &&
+            anchor.column >= column - 1 &&
+            anchor.column < column + columnCount))
+      ) {
         const lastRow = Math.max(geometry.row + geometry.heights.length, anchor.row + 1);
         const firstRow = Math.min(geometry.row, anchor.row);
         geometry = this.tableHeights.range(key, table.rows.length, firstRow, lastRow - firstRow);
-        const lastColumn = Math.max(column + columnCount, anchor.column + (anchor.span ?? 1));
+        const lastColumn = Math.max(
+          column + columnCount,
+          anchor.column + (viewport.include !== undefined ? (anchor.span ?? 1) : 1),
+        );
         column = Math.min(column, anchor.column);
         columnCount = lastColumn - column;
       }
