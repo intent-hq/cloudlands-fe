@@ -14,6 +14,10 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
+import { normalizeAgent } from '$lib/client/live/live-agents-client';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import type { AgentSession } from '$shared/types';
+import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import type {
@@ -30,17 +34,25 @@ import {
   resetSubscriptionUI,
   setSubscriptionSnapshot,
   subscriptionSnapshotFetchFailed,
+  subscriptionSnapshotFetchStarted,
 } from '../agent-subscription-ui-slice';
 import {
+  selectDisplayedSubscriptionTargets,
   selectTrackedAgentIds,
   selectWaitingState,
   selectSubscriptionSnapshotStatus,
 } from '../agent-subscription-ui-selectors';
-import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectDaemonEventsSubscriptionGeneration } from '../../workspace-events/workspace-events-selectors';
 import { initializeChatRequested } from '../../chat-state/chat-state-slice';
 import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
-import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import {
+  selectAgentSession,
+  selectAgentSessionsById,
+} from '../../agent-session/agent-session-selectors';
 
 export const COMPLETED_DISPLAY_DURATION_MS = 3000;
 const logger = createLogger('AgentSubscriptionReadSaga');
@@ -54,12 +66,15 @@ type WireDelegationGroup = Omit<DelegationGroupStatus, 'agentStatuses'> & {
 };
 
 interface WireResult {
+  /** Optional for daemons predating bundled slim agent.list projections. */
+  agents?: Record<string, unknown>[];
   subscriptions?: WireSubscription[];
   delegationGroups?: WireDelegationGroup[];
   agentStatuses?: Record<string, AgentStatus>;
 }
 
 interface ReadCoordinator {
+  displayed: Set<string>;
   contexts: Map<string, { wsId: string; agentId: string }>;
   reads: Map<string, Task>;
   completedCleanups: Map<string, Task>;
@@ -105,12 +120,40 @@ function mapResult(result: WireResult) {
   return { subscriptions, delegationGroups, agentStatuses };
 }
 
+/** Publish participant rows before readiness can mount missing-session AgentCards. */
+function* ingestBundledAgents(
+  result: WireResult,
+  beforeRead: Readonly<Record<string, AgentSession>>,
+) {
+  const agents: AgentSession[] = [];
+  const current = yield* selectAgentSessionsById.effect();
+  for (const raw of result.agents ?? []) {
+    const id = String(raw.id);
+    // Any local/event/detail write since request start wins over this snapshot.
+    // This also keeps removed rows removed; a later fresh read can update again.
+    if (current[id] !== beforeRead[id]) continue;
+    const session = normalizeAgent(raw);
+    if (session.pendingDeleteAt || isAgentDeletionPending(String(session.id))) continue;
+    const existing = yield* selectAgentSession.effect(String(session.id));
+    // Slim rows have no transcript. Keep history hydrated by the chat/detail
+    // paths, but never carry it across workspace identities.
+    agents.push(
+      existing?.workspaceId === session.workspaceId
+        ? { ...session, messages: existing.messages }
+        : session,
+    );
+  }
+  if (agents.length > 0) yield* put(bulkUpsertSessions(agents, { listProjection: true }));
+}
+
 function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
   try {
+    const beforeRead = yield* selectAgentSessionsById.effect();
     const fresh: WireResult = yield* call(backendRequest<WireResult>, 'agent.getSubscriptions', {
       workspaceId: wsId,
       agentId,
     });
+    yield* ingestBundledAgents(fresh, beforeRead);
     const mapped = mapResult(fresh);
     const hasData = mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0;
     // A view arriving during this read joins it, including an authoritative empty response.
@@ -135,10 +178,12 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
   const key = makeKey(wsId, agentId);
   try {
     const previous: WaitingState = yield* selectWaitingState.effect(wsId, agentId);
+    const beforeRead = yield* selectAgentSessionsById.effect();
     const result: WireResult = yield* call(backendRequest<WireResult>, 'agent.getSubscriptions', {
       workspaceId: wsId,
       agentId,
     });
+    yield* ingestBundledAgents(result, beforeRead);
     const mapped = mapResult(result);
     const hasData = mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0;
     const completed = !hasData && (previous === 'waiting' || previous === 'woken');
@@ -193,7 +238,7 @@ function* readSnapshotTask(
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
   let completed = false;
-  let workspaceCleanedUp = false;
+  let invalidated = false;
   try {
     const outcome = yield* race({
       read: call(
@@ -202,15 +247,16 @@ function* readSnapshotTask(
         agentId,
       ),
       cleanup: take(matchesWorkspaceCleanup(wsId)),
+      reconnected: take(backendReconnected),
     });
     completed = mode === 'snapshot' && outcome.read === true;
-    workspaceCleanedUp = outcome.cleanup !== undefined;
+    invalidated = outcome.cleanup !== undefined || outcome.reconnected !== undefined;
   } finally {
     coordinator.reads.delete(key);
     const taskCancelled = yield* cancelled();
     const snapshotPending = coordinator.pendingSnapshots.delete(key);
     const confirmationPending = coordinator.pendingConfirmations.delete(key);
-    if (!taskCancelled && !workspaceCleanedUp) {
+    if (!taskCancelled && !invalidated) {
       if (confirmationPending) {
         yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
       } else if (snapshotPending) {
@@ -239,6 +285,7 @@ function* startSnapshotRead(
     return;
   }
   if (mode === 'snapshot') {
+    yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
     const cleanup = coordinator.completedCleanups.get(key);
     if (cleanup) yield* cancel(cleanup);
   }
@@ -262,7 +309,10 @@ function* requestSubscriptionFetchWorker(
 /** Mount demand joins current work; only invalidation requires a trailing read. */
 function* ensureSnapshotRead(coordinator: ReadCoordinator, wsId: string, agentId: string) {
   coordinator.contexts.set(makeKey(wsId, agentId), { wsId, agentId });
-  if (coordinator.reads.has(makeKey(wsId, agentId))) return;
+  if (coordinator.reads.has(makeKey(wsId, agentId))) {
+    yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
+    return;
+  }
   if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'ready') return;
   yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
 }
@@ -290,8 +340,39 @@ function* markAgentAsViewedPrefetchWorker(
   if (!agentId) return;
   const session = yield* selectAgentSession.effect(agentId);
   if (!session?.workspaceId) return;
-  if (coordinator.reads.has(makeKey(session.workspaceId, agentId))) return;
+  const key = makeKey(session.workspaceId, agentId);
+  // Selection already refreshed this visibility interval, even if the read
+  // completed before ChatPanel mounted. Failed prefetch still gets a retry.
+  if (coordinator.displayed.has(key)) {
+    yield* ensureSnapshotRead(coordinator, session.workspaceId, agentId);
+    return;
+  }
+  if (coordinator.reads.has(key)) {
+    yield* put(subscriptionSnapshotFetchStarted(session.workspaceId, agentId));
+    return;
+  }
   yield* startSnapshotRead(coordinator, session.workspaceId, agentId, 'snapshot');
+}
+
+/** Demand follows displayed conversations before their components mount. Leaving
+ * a target removes its visibility lease; revisiting refreshes cached snapshots.
+ */
+function* watchDisplayedSubscriptions(coordinator: ReadCoordinator): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectDisplayedSubscriptionTargets);
+  try {
+    while (true) {
+      const { payload: targets } = yield* take(channel);
+      const previous = coordinator.displayed;
+      coordinator.displayed = new Set(targets.map(({ wsId, agentId }) => makeKey(wsId, agentId)));
+      for (const { wsId, agentId } of targets) {
+        const key = makeKey(wsId, agentId);
+        if (previous.has(key) || coordinator.reads.has(key)) continue;
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+      }
+    }
+  } finally {
+    channel.close();
+  }
 }
 
 function* refreshWorkspaceSubscriptionsWorker(
@@ -345,6 +426,7 @@ function* watchSubscriptionGeneration(coordinator: ReadCoordinator): SagaGenerat
 
 export function* agentSubscriptionReadSaga() {
   const coordinator: ReadCoordinator = {
+    displayed: new Set(),
     contexts: new Map(),
     reads: new Map(),
     completedCleanups: new Map(),
@@ -362,5 +444,6 @@ export function* agentSubscriptionReadSaga() {
     ),
     takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker, coordinator),
     fork(watchSubscriptionGeneration, coordinator),
+    fork(watchDisplayedSubscriptions, coordinator),
   ]);
 }

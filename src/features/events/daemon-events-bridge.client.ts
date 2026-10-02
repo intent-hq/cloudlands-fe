@@ -1,3 +1,4 @@
+import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
@@ -284,9 +285,9 @@ import {
   appendScriptOutput,
   removeScript,
   refreshScripts,
+  scriptSnapshotReceived,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
 import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import {
   clearServerErrorMessage,
@@ -1670,16 +1671,11 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:queue:processing` (§6.5) carries `{ agentId, messageId, content,
- * turnId? }` — the drain-start signal emitted right after `agent:queue:updated`
- * when the daemon dequeues an entry to run its turn. It covers
- * `persisted: true` redrives that skip the user-row `agent:message` echo, so
- * it is the exact promotion signal for retry records (monorepo#1057). The
- * reducer matches on `turnId` alone, but `messageId` stays part of the
- * malformed-payload gate so a contract regression is rejected rather than
- * silently no-oping. `turnId` should always be present on the pinned daemon
- * (legacy pre-#1022 rows are backfilled on rehydration); the reducer no-ops
- * defensively when it is not.
+ * Processing identifies the admitted provider turn, including persisted redrives
+ * that skip a user-message echo. Optional queuedMessages contains every consumed
+ * entry in order, with each entry's own identity and complete retry payload.
+ * Queue snapshots and enqueue acknowledgements cannot override that authority.
+ * Legacy events without the array retain turn-based best-effort promotion.
  */
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1687,7 +1683,29 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || typeof data.messageId !== 'string') return;
   const turnId = typeof data.turnId === 'string' ? data.turnId : undefined;
-  appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
+  const rows = data.queuedMessages;
+  if (rows !== undefined) {
+    // Reject malformed authority instead of upgrading a partial payload to truth.
+    if (
+      !Array.isArray(rows) ||
+      !rows.length ||
+      typeof turnId !== 'string' ||
+      rows.some(
+        (row) =>
+          !row ||
+          typeof row !== 'object' ||
+          typeof row.id !== 'string' ||
+          typeof row.turnId !== 'string' ||
+          typeof row.content !== 'string' ||
+          typeof row.queuedAt !== 'string' ||
+          typeof row.position !== 'number',
+      ) ||
+      rows[0].id !== data.messageId ||
+      new Set(rows.map((row) => row.id)).size !== rows.length
+    )
+      return;
+    appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
+  } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }
 
 /**
@@ -3183,11 +3201,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   if (typeof scriptId !== 'string') return;
   // PTY stream ended — drop the streaming decoder so a later run starts fresh.
   if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
-  // The event is a full ScriptRuntimeState snapshot, but the reducer shallow-merges:
-  // make the presence-detected marker explicit so an absent key clears a stale
-  // `previouslyRunning` from an earlier `script.list` hydration.
-  rest.previouslyRunning = rest.previouslyRunning === true;
-  appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
+  // Runtime events are complete snapshots too: omitted optionals clear the
+  // prior run, including future additive fields the renderer passes through.
+  const runtime = scriptRuntimeSnapshot(rest);
+  if (runtime) appStore.dispatch(updateRuntimeState(workspaceId, scriptId, runtime, true));
 }
 
 /** Remove an exited PTY from the transient terminal strip and release any live adapter. */
@@ -4143,15 +4160,25 @@ export function routeDaemonEventsNotification(
     // fall through to the storage dispatch below so the activity timeline
     // records the attention request alongside the sticky toast.
   }
-  // Script definition/output/state (§6.5) — definition mutations trigger a
-  // canonical list refetch, output feeds the live buffer, and state mirrors
-  // the recomputed runtime into the scripts slice.
+  if ((type === 'script:changed' || type === 'script:state') && typeof event.id === 'string') {
+    if (seenScriptEventIds.has(event.id)) return;
+    seenScriptEventIds.add(event.id);
+  }
+
+  // Complete changes apply directly; legacy invalidations still reconcile.
+  // Output feeds the live buffer and state replaces only the runtime.
   if (type === 'script:changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (data?.action === 'removed' && typeof data.scriptId === 'string') {
       appStore.dispatch(removeScript(workspaceId, data.scriptId));
+    } else {
+      const script =
+        data?.action === 'created' || data?.action === 'updated'
+          ? scriptChangeSnapshot(data.script, workspaceId, data.scriptId)
+          : undefined;
+      if (script) appStore.dispatch(scriptSnapshotReceived(workspaceId, script));
+      else appStore.dispatch(refreshScripts(workspaceId));
     }
-    appStore.dispatch(refreshScripts(workspaceId));
     // fall through so the activity timeline records the mutation
   }
   if (type === 'script:output') {
@@ -4502,7 +4529,10 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
   );
 }
 
+const seenScriptEventIds = new Set<string>();
+
 export function disposeDaemonEventsRoutingState(): void {
+  seenScriptEventIds.clear();
   agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();

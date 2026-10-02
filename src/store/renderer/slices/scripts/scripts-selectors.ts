@@ -110,12 +110,7 @@ export const selectAllWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptWithState[] => Object.values(getWs(state, wsId).scripts),
 );
 
-/** Definitions in mounted output viewers, including rows no longer in the active list. */
-export const selectViewedScriptEntries = store.createSelector(
-  (state, wsId: string): ScriptWithState[] => {
-    const ws = getWs(state, wsId);
-    return [
-      ...new Set(Object.values(ws.retainedOutputs ?? {}).map((output) => output.scriptId)),
-    ].flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
-  },
+/** Request-owned event journal; absence means the request was invalidated. */
+export const selectScriptReadJournal = store.createSelector(
+  (state, wsId: string, requestId: string) => getWs(state, wsId).pendingReads?.[requestId],
 );

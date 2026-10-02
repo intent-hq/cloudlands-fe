@@ -193,7 +193,7 @@ describe('WorkspaceShellList development script controls', () => {
       });
     });
 
-    it.each(['idle', 'running', 'exited', 'restarting'] as const)(
+    it.each(['idle', 'starting', 'running', 'exited', 'restarting'] as const)(
       'opens a %s script in a panel even after an overlay placement',
       async (status) => {
         mocks.scripts[WS] = [script('script-1', 'Dev server', status)];
@@ -358,6 +358,7 @@ describe('WorkspaceShellList development script controls', () => {
   it('orders live scripts first and exposes controls for each runtime state', () => {
     mocks.scripts[WS] = [
       script('idle', 'Compile', 'idle'),
+      script('starting', 'App', 'starting'),
       script('running', 'Dev server', 'running'),
       script('exited', 'Build', 'exited'),
       script('restarting', 'Worker', 'restarting'),
@@ -367,8 +368,9 @@ describe('WorkspaceShellList development script controls', () => {
       Array.from(document.querySelectorAll('[data-sidebar-shell-script]'), (row) =>
         row.getAttribute('data-sidebar-shell-script'),
       ),
-    ).toEqual(['running', 'restarting', 'exited', 'idle']);
+    ).toEqual(['starting', 'running', 'restarting', 'exited', 'idle']);
     for (const [id, name] of [
+      ['starting', 'App'],
       ['running', 'Dev server'],
       ['restarting', 'Worker'],
     ]) {

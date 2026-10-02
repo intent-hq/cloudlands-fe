@@ -7,7 +7,6 @@
 
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import type {
   AgentSubscriptionUIState,
   AgentSubscriptionUIEntry,
@@ -95,6 +94,11 @@ export const requestSubscriptionFetch = createAction<
   [workspaceId: string, agentId: string, ensure?: boolean]
 >('agentSubscriptionUI/requestSubscriptionFetch');
 
+/** Actual read demand, after the coordinator has checked prefetch freshness. */
+export const subscriptionSnapshotFetchStarted = createAction<
+  [workspaceId: string, agentId: string]
+>('agentSubscriptionUI/subscriptionSnapshotFetchStarted');
+
 /** Saga → reducer: preserve cached rows and surface the failed snapshot read. */
 export const subscriptionSnapshotFetchFailed = createAction<[workspaceId: string, agentId: string]>(
   'agentSubscriptionUI/subscriptionSnapshotFetchFailed',
@@ -154,21 +158,18 @@ agentSubscriptionUIReducer.with(
     };
   },
 );
-// Switch-back freshness: retain cached rows but show their view-time
-// `agent.getSubscriptions` refresh independently from transcript reveal.
-// The payload carries only the agentId; entries are keyed `${wsId}:${agentId}`,
-// so every workspace entry of the agent drops (an agent has one workspace).
-agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
-  const suffix = `:${agentId}`;
-  let changed = false;
-  const entries = { ...state.entries };
-  for (const [key, entry] of Object.entries(state.entries)) {
-    if (!key.endsWith(suffix) || entry.snapshotStatus === 'loading') continue;
-    changed = true;
-    entries[key] = { ...entry, snapshotStatus: 'loading' };
-  }
-  return changed ? { ...state, entries } : state;
-});
+agentSubscriptionUIReducer.with(
+  subscriptionSnapshotFetchStarted,
+  (state, { payload: [workspaceId, agentId] }) => {
+    const key = makeKey(workspaceId, agentId);
+    const entry = state.entries[key];
+    if (!entry || entry.snapshotStatus === 'loading') return state;
+    return {
+      ...state,
+      entries: { ...state.entries, [key]: { ...entry, snapshotStatus: 'loading' } },
+    };
+  },
+);
 agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
   const key = makeKey(payload.workspaceId, payload.agentId);
   const existing = state.entries[key] ?? emptyEntry;

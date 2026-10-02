@@ -3,6 +3,11 @@
  */
 
 import { store } from '../../store';
+import {
+  selectCurrentWorkspaceTabId,
+  selectWorkspaceTabsHydrated,
+} from '../tab-state/tab-state-selectors';
+import { selectPanelColumnStacks } from '../panel-layout/panel-layout-selectors';
 import { makeKey, emptyEntry } from './agent-subscription-ui-slice';
 import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
 import type {
@@ -201,4 +206,19 @@ export const selectCompletionStatus = store.createSelector<
     completed += group.completedAgentIds.length + group.deletedAgentIds.length;
   }
   return { total, completed };
+});
+
+/** The same active pane per rendered column that Panel gives to AgentTabType.
+ * Layout restoration and initial-agent discovery can populate these after selection.
+ * The layout workspace, not a possibly absent session, owns ChatPanel's request scope.
+ */
+export const selectDisplayedSubscriptionTargets = store.createSelector((state) => {
+  const wsId = selectCurrentWorkspaceTabId.select(state);
+  if (!wsId || !selectWorkspaceTabsHydrated.select(state)) return [];
+  const agents = new Set<string>();
+  for (const column of selectPanelColumnStacks.select(state, wsId)) {
+    const tab = column.panes.find((pane) => pane.id === column.activePaneId);
+    if (tab?.type === 'agent' && tab.agentId) agents.add(tab.agentId);
+  }
+  return [...agents].map((agentId) => ({ wsId, agentId }));
 });

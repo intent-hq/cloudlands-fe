@@ -4,7 +4,8 @@
  * `messageMetadata`) and the transcript surface (`isAutomatedChatMessage`
  * in previous-user-message.ts, reads `metadata`) so the rules cannot drift.
  *
- * User-typed messages never carry an origin tag; daemon-origin messages
+ * Authenticated human stamps take precedence over semantic type/source hints.
+ * Without a stamp, daemon-origin messages
  * (agent-to-agent sends, event-notification wakes, hook wakes, PR-monitor
  * wakes, system wakes) carry metadata with a `type` string, a daemon-stamped
  * `fromAgentId`, or `source: 'system'` (PROTOCOL §5.5). Benign fields that
@@ -18,14 +19,16 @@ import { isCollaborationIdentity } from '$features/collaboration-auth/identity';
 import { m } from '$shared/paraglide/messages.js';
 
 /**
- * True when a metadata object marks its message as user-authored. A message
- * is NON-user iff the metadata is an object and any of: `type` is a string
+ * True when daemon-served metadata identifies a human author. Authenticated
+ * principal stamps win; automatic ingress strips these stamps. Without one,
+ * a message is NON-user iff its metadata is an object and any of: `type` is a string
  * (except the user-authored `question_answers` wizard tag), `fromAgentId`
  * is a non-empty string, or `source === 'system'`.
  */
 export function isUserAuthoredMetadata(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== 'object') return true;
   const md = metadata as Record<string, unknown>;
+  if (typeof md.fromPrincipalId === 'string' && md.fromPrincipalId.trim()) return true;
   // Explicit contract pin for dismissal notifications (`agent.dismissQuestions`,
   // `{ type: 'questions_dismissed', source: 'system', dismissedQuestionsMessageId }`).
   // Redundant with the generic string-`type` rule below, kept as belt-and-braces.
