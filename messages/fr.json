@@ -6330,7 +6330,7 @@
   "layout_daemonStatus_localConnection_label": "Cet ordinateur (local)",
   "layout_daemonStatus_connectionActive_label": "Actif",
   "layout_daemonStatus_secretUnavailable_error": "Impossible d'ouvrir {label} : son jeton d'accès enregistré est indisponible. Saisissez-le de nouveau dans les paramètres des appareils.",
-  "layout_daemonStatus_guestSecretUnavailable_error": "Impossible d'ouvrir {label} : son jeton d'accès enregistré est indisponible. Quittez l'hôte dans les paramètres des sessions invité et rejoignez-le de nouveau avec une nouvelle invitation.",
+  "layout_daemonStatus_guestSecretUnavailable_error": "Impossible d'ouvrir {label} : son jeton d'accès enregistré est indisponible. Quittez l'hôte dans les paramètres de Collaboration et rejoignez-le de nouveau avec une nouvelle invitation.",
   "layout_daemonStatus_open_action": "Ouvrir",
   "layout_daemonStatus_update_action": "Mettre à jour",
   "layout_daemonStatus_update_tooltip": "Mettre à jour l'intentd de ce backend de v{daemonVersion} vers v{pinnedVersion}",

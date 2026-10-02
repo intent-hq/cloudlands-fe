@@ -6330,7 +6330,7 @@
   "layout_daemonStatus_localConnection_label": "Dieser Computer (lokal)",
   "layout_daemonStatus_connectionActive_label": "Aktiv",
   "layout_daemonStatus_secretUnavailable_error": "{label} konnte nicht geöffnet werden: Das gespeicherte Zugriffstoken ist nicht verfügbar. Geben Sie es in den Geräteeinstellungen erneut ein.",
-  "layout_daemonStatus_guestSecretUnavailable_error": "{label} konnte nicht geöffnet werden: Das gespeicherte Zugriffstoken ist nicht verfügbar. Verlassen Sie den Host in den Gastsitzungs-Einstellungen und treten Sie über eine neue Einladung erneut bei.",
+  "layout_daemonStatus_guestSecretUnavailable_error": "{label} konnte nicht geöffnet werden: Das gespeicherte Zugriffstoken ist nicht verfügbar. Verlassen Sie den Host in den Einstellungen für „Zusammenarbeit“ und treten Sie über eine neue Einladung erneut bei.",
   "layout_daemonStatus_open_action": "Öffnen",
   "layout_daemonStatus_update_action": "Aktualisieren",
   "layout_daemonStatus_update_tooltip": "intentd dieses Backends von v{daemonVersion} auf v{pinnedVersion} aktualisieren",
