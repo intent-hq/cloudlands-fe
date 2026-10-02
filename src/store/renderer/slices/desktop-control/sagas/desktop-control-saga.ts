@@ -70,7 +70,14 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
   yield* put(desktopEntryPatched(ws, agent, generation, { submitting: true, error: undefined }));
   try {
     yield* call(desktopClient.respond, ws, requestId, decision);
-    // An ACK consumes the decision; only the outcome event establishes readiness.
+    // A candidate denial is local; other candidates keep their shared request open.
+    if (
+      decision === 'deny' &&
+      entry.pending.claimsPrimary &&
+      generation === (yield* selectDesktopControl.effect()).generation
+    )
+      yield* put(desktopRequestExpired(ws, agent, requestId));
+    // An Allow ACK consumes the decision; only the outcome establishes readiness.
   } catch (error) {
     if (generation !== (yield* selectDesktopControl.effect()).generation) return;
     const current = yield* selectDesktopEntry.effect(ws, agent);

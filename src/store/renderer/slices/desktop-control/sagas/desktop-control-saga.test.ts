@@ -112,6 +112,35 @@ describe('desktop consent wire lifecycle', () => {
       expect(mocks.start).not.toHaveBeenCalled();
     },
   );
+  it('dismisses candidate Deny on ACK without waiting for other candidates', async () => {
+    const h = start();
+    const candidate = { ...request, claimsPrimary: true };
+    h.dispatch(
+      desktopEventReceived({
+        id: 'candidate-deny',
+        type: 'desktop:permission-requested',
+        data: candidate,
+      }),
+    );
+    await settle();
+    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'deny'));
+    await settle();
+    expect(h.entry()?.pending).toBeUndefined();
+    expect(mocks.dismiss).toHaveBeenCalledWith(request.requestId);
+    h.dispatch(
+      desktopEventReceived({
+        id: 'late-repeat',
+        type: 'desktop:permission-requested',
+        data: candidate,
+      }),
+    );
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+    await settle();
+    expect(h.entry()?.pending).toBeUndefined();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
   it('dismisses a losing claim and never replays a late Allow', async () => {
     const h = start();
     h.dispatch(
