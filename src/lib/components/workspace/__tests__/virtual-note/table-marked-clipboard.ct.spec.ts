@@ -7,6 +7,9 @@ test('dense native clipboard crosses bold, italic and code without losing marks 
   page,
   context,
 }, info) => {
+  // Both full native/canonical oracles and four clipboard/history comparisons
+  // run here. This is a correctness budget, not a renderer latency assertion.
+  test.setTimeout(60_000);
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const source =
     '| H |\n| --- |\n| CELL_START ' +
