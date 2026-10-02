@@ -1,25 +1,11 @@
+import { getPrincipalConnectionContext } from './principal-context';
 import { store } from '../../store';
 import type { HostRole } from '$shared/types/principal';
 import { selectLabsMultiplayerEnabled } from '../user-preferences/user-preferences-selectors';
 
 export const selectPrincipalState = store.createSelector((state) => state.principal);
 
-/** The boot-time local backend default is not a binding. Wait for the actual window id. */
-export const selectPrincipalConnectionContext = store.createSelector((state): string | null => {
-  if (
-    !state.connections?.hasReceivedList ||
-    state.daemonHealth?.health === 'down' ||
-    !state.workspaceEvents?.subscriptionGeneration ||
-    state.workspaceEvents.subscriptionPending === true ||
-    state.connections.authRejected?.id === state.connections.windowBackendId
-  )
-    return null;
-  return JSON.stringify([
-    state.connections.windowBackendId,
-    state.daemonHealth?.connectionGeneration,
-    state.workspaceEvents.subscriptionGeneration,
-  ]);
-});
+export const selectPrincipalConnectionContext = store.createSelector(getPrincipalConnectionContext);
 
 export const selectPrincipalSnapshot = store.createSelector((state) => {
   const principal = state.principal;
