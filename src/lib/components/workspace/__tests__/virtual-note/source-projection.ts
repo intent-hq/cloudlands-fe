@@ -438,8 +438,20 @@ export class SourceProjection {
     for (const paragraph of this.paragraphs) {
       const end = mapping.mapResult(paragraph.end, 1),
         next = mapping.mapResult(paragraph.next, -1);
-      if (!end.deleted && !next.deleted && next.pos === end.pos + 2)
-        separators.set(end.pos, paragraph.separator);
+      if (!end.deleted && !next.deleted && next.pos === end.pos + 2) {
+        // A split at a paragraph's end transfers its separator to the new empty
+        // paragraph. Empty paragraphs consume one newline, not the two that
+        // separated the original nonempty paragraph from its neighbor.
+        const becameEmpty =
+          before.resolve(paragraph.end).parent.content.size > 0 &&
+          after.resolve(end.pos).parent.content.size === 0;
+        separators.set(
+          end.pos,
+          becameEmpty && paragraph.separator.startsWith('\n\n')
+            ? paragraph.separator.slice(1)
+            : paragraph.separator,
+        );
+      }
     }
     let source = '';
     const nextFences: Fence[] = [];

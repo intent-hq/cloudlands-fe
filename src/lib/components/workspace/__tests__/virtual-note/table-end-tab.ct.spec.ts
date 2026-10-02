@@ -85,12 +85,15 @@ test('native Tab appends once at the true end of a horizontally paged table and 
     p.save();
     await p.seek(p.selection.head);
     const destroyed = old.isDestroyed,
+      liveTrailing = p.editor!.state.doc.lastChild!.toJSON(),
       selection = structuredClone(p.selection);
     await p.history();
     native.commands.undo();
-    const undo = p.service.region(0);
+    const undo = p.service.region(0),
+      nativeUndo = native.getJSON();
     await p.history(true);
     native.commands.redo();
+    const nativeRedo = native.getJSON();
     await nativeHost.reloadNative(p.service.region(0));
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -101,6 +104,9 @@ test('native Tab appends once at the true end of a horizontally paged table and 
       nativePoint,
       boundedPoint,
       destroyed,
+      liveTrailing,
+      nativeUndo,
+      nativeRedo,
       selection,
       restored: p.selection,
       undo,
@@ -118,7 +124,18 @@ test('native Tab appends once at the true end of a horizontally paged table and 
   expect(result.undo).toBe(source);
   expect(result.redo).toBe(result.source);
   expect(result.restored).toEqual({ ...result.selection, revision: result.restored.revision });
-  expect(result.canonical).toEqual(result.full);
+  // Native Tab appends the editor's trailing paragraph during the live transaction.
+  // A new canonical reload does not append it until a later native transaction.
+  // paragraph-enter.test.ts independently verifies both phases without the proof.
+  expect(result.canonical.content).toHaveLength(1);
+  expect(result.canonical.content![0].type).toBe('table');
+  expect(result.full).toEqual({
+    type: 'doc',
+    content: [...result.canonical.content!, { type: 'paragraph' }],
+  });
+  expect(result.liveTrailing).toEqual({ type: 'paragraph' });
+  expect(result.nativeRedo).toEqual(result.full);
+  expect(result.nativeUndo.content![0].content).toHaveLength(2);
   expect(result.snapshot.maxSourceContextBytes).toBeLessThanOrEqual(16384);
   expect(result.snapshot.cachePages).toBeLessThanOrEqual(4);
   expect(result.snapshot.cacheBytes).toBeLessThanOrEqual(16384);
