@@ -7,7 +7,10 @@ import {
 const baseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running preview server.');
 test.setTimeout(90_000);
-test.use({ video: { mode: 'on', size: { width: 1500, height: 1000 } } });
+test.use({
+  viewport: { width: 1500, height: 1000 },
+  video: { mode: 'on', size: { width: 1500, height: 1000 } },
+});
 
 const flow = 'flowchart LR\n A[Receive request] --> B[Process request] --> C[Return result]';
 const mermaid = (source: string) => `~~~mermaid\n${source}\n~~~`;
@@ -43,7 +46,6 @@ async function mountNote(
   holdFont = false,
   hidden = false,
 ) {
-  await page.setViewportSize({ width: 1500, height: 1000 });
   await page.goto(`${baseUrl}/sandbox/button?state=default&motion=full`, {
     waitUntil: 'domcontentloaded',
   });
@@ -176,7 +178,7 @@ async function finishCapture(page: Page, info: TestInfo, count = 1) {
     '1',
   );
   await page.evaluate(async () => {
-    for (let i = 0; i < 12; i++)
+    for (let i = 0; i < 60; i++)
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   });
   const frames = await page.evaluate(() => {
@@ -187,10 +189,6 @@ async function finishCapture(page: Page, info: TestInfo, count = 1) {
   await info.attach('load-frames', {
     body: JSON.stringify(frames, null, 2),
     contentType: 'application/json',
-  });
-  await info.attach('loaded-note', {
-    body: await page.locator('#diagram-loading-note').screenshot(),
-    contentType: 'image/png',
   });
   return frames;
 }
@@ -274,10 +272,6 @@ test('slow sequence fonts keep text and faster diagrams hidden until the note is
       (frame) => frame.noteVisible || frame.diagrams.some((diagram) => diagram.visible),
     ),
   );
-  await info.attach('pending-font', {
-    body: await page.locator('#diagram-loading-note').screenshot(),
-    contentType: 'image/png',
-  });
   await page.evaluate(() => (window as LoadingWindow).releaseDiagramFont());
   const frames = await finishCapture(page, info, 2);
   expect(pendingVisible).toBe(false);
@@ -298,10 +292,6 @@ test('multiple diagram types reveal together and walkthrough steps stay visible'
   await expect(renderer).not.toHaveAttribute('data-diagram-state', initial!);
   await expect(renderer.locator('.diagram-svg-layer')).toBeVisible();
   await expect(renderer).toHaveAttribute('data-diagram-settled', 'true');
-  await info.attach('walkthrough-next-step', {
-    body: await renderer.screenshot(),
-    contentType: 'image/png',
-  });
 });
 
 test('plain notes do not wait for diagrams', async ({ page }, info) => {
@@ -438,16 +428,12 @@ test('loaded diagrams resize with the panel and keep wide content reachable', as
         .poll(() => viewport.evaluate((element) => element.scrollLeft))
         .toBeGreaterThan(0);
     }
-    await info.attach(`panel-${width}`, {
-      body: await host.screenshot(),
-      contentType: 'image/png',
-    });
   }
 });
 
 test('invalid and empty sources remain accessible and recover through the note editor', async ({
   page,
-}, info) => {
+}) => {
   await mountNote(page, 712, [mermaid('unsupportedDiagram invalid')]);
   const host = page.locator('#diagram-loading-note');
   await expect(host.getByRole('alert')).toBeVisible({ timeout: 30_000 });
@@ -460,8 +446,4 @@ test('invalid and empty sources remain accessible and recover through the note e
   await expect(host.locator('.mermaid-svg > svg')).toBeVisible();
   await expect(host.locator('.mermaid-renderer')).toHaveAttribute('data-render-settled', 'true');
   await expect(host.getByRole('alert')).toHaveCount(0);
-  await info.attach('recovered-diagram', {
-    body: await host.screenshot(),
-    contentType: 'image/png',
-  });
 });
