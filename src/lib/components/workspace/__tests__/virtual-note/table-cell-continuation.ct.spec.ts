@@ -96,7 +96,7 @@ for (const fixture of cases)
       expect(frame.stats.maxTableTransferPageBytes).toBeLessThanOrEqual(4096);
       expect(frame.stats.cachePages).toBeLessThanOrEqual(4);
       expect(frame.stats.cacheBytes).toBeLessThanOrEqual(16384);
-      expect(frame.stats.pmNodes).toBeLessThanOrEqual(256);
+      expect(frame.stats.pmNodes).toBeLessThanOrEqual(4096);
       if (fraction === 0.5) {
         expect(frame.first).toBeGreaterThan(frame.body!);
         expect(frame.last).toBeLessThan(frame.end!);

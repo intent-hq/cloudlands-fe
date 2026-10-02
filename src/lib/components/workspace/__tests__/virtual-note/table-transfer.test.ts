@@ -1,6 +1,7 @@
+import { tableRuns } from './table-source';
 import { expect, it } from 'vitest';
 import { bytes } from './bounded-note-service';
-import { packTableWindow } from './table-payload';
+import { cloneTableWindow, packTableWindow } from './table-payload';
 import { encodeTablePages, decodeTablePages } from './table-transfer';
 import type { TableWindow } from './table-source';
 
@@ -59,4 +60,20 @@ it('rejects missing, reordered, mixed-revision and oversized transfer pages', ()
   ).toThrow();
   expect(() => decodeTablePages([{ ...pages[0], payload: 'x'.repeat(4096) }], 7)).toThrow();
   expect(() => encodeTablePages(fixture('x'.repeat(17000)))).toThrow();
+});
+
+it('derives dense canonical marks from bounded source without repeating every mark record', () => {
+  const raw = 'START ' + '**bold** _italic_ `code` \\| \\\\ '.repeat(190) + ' END';
+  const original = cloneTableWindow(fixture(raw));
+  let offset = 1000;
+  original.cells[0].runs = tableRuns(raw, 60000).map((run) => {
+    const mapped = { ...run, offset };
+    offset += run.text.length;
+    return mapped;
+  });
+  const packed = packTableWindow(original);
+  expect(bytes(JSON.stringify(packed)) + bytes(raw)).toBeLessThanOrEqual(16384);
+  const restored = decodeTablePages(JSON.parse(JSON.stringify(encodeTablePages(packed))), 7);
+  expect(restored.cells[0].runs).toEqual(original.cells[0].runs);
+  expect(restored.cells[0].raw).toBe(raw);
 });

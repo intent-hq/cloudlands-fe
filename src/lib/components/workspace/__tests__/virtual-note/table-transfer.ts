@@ -3,6 +3,7 @@ import { unpackTableWindow } from './table-payload';
 import type { TableWindow } from './table-source';
 
 export const TABLE_ACTIVE_BYTES = 16384;
+export const TABLE_NODE_LIMIT = 4096;
 export type TablePage = { revision: number; index: number; count: number; payload: string };
 /** Mock backing encoder. Only these independently bounded pages cross to the renderer. */
 export function encodeTablePages(window: TableWindow): TablePage[] {

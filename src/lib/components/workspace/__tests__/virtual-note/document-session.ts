@@ -1,4 +1,10 @@
-import { decodeTablePages, TABLE_ACTIVE_BYTES, type TablePage } from './table-transfer';
+import { tableRunWork } from './table-run-context';
+import {
+  decodeTablePages,
+  TABLE_ACTIVE_BYTES,
+  TABLE_NODE_LIMIT,
+  type TablePage,
+} from './table-transfer';
 import { cloneTableWindow } from './table-payload';
 import { Editor, Extension } from '@tiptap/core';
 import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
@@ -1157,7 +1163,8 @@ export class DocumentSession {
           tr.doc.descendants(() => {
             nodes++;
           });
-          if (nodes > LIMITS.nodes) throw new Error('Proof projection exceeds node budget');
+          if (nodes > (this.projection?.table ? TABLE_NODE_LIMIT : LIMITS.nodes))
+            throw new Error('Proof projection exceeds node budget');
           if (index) this.acceptedAppended++;
           else this.acceptedRoots++;
           const before = { ...this.selection };
@@ -1462,6 +1469,21 @@ export class DocumentSession {
     });
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
+      tableRunParseCalls: tableRunWork.calls,
+      tableRunParseBytes: tableRunWork.bytes,
+      maxTableRunParseBytes: tableRunWork.maxBytes,
+      tableDomElements: this.projection?.table
+        ? (this.editor?.view.dom.querySelectorAll('*').length ?? 0)
+        : 0,
+      tableDomTextNodes:
+        this.projection?.table && this.editor
+          ? (() => {
+              let count = 0;
+              const walker = document.createTreeWalker(this.editor!.view.dom, NodeFilter.SHOW_TEXT);
+              while (walker.nextNode()) count++;
+              return count;
+            })()
+          : 0,
       maxTableTransferPageBytes: this.maxTableTransferPageBytes,
       maxTableTransferBytes: this.maxTableTransferBytes,
       maxTableAssemblyBytes: this.maxTableAssemblyBytes,

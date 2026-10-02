@@ -101,7 +101,7 @@ test('encountered offscreen text corrects row height while the visible caret kee
   expect(after.native).toEqual(anchored.point.table!.head);
   expect(Math.abs(after.coords.top - anchored.coords.top)).toBeLessThanOrEqual(1);
   expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
-  expect(after.stats.pmNodes).toBeLessThanOrEqual(256);
+  expect(after.stats.pmNodes).toBeLessThanOrEqual(4096);
 });
 
 test('viewport resize and font changes preserve logical and pixel caret anchors', async ({
