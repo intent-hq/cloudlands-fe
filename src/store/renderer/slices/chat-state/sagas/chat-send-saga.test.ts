@@ -703,9 +703,13 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
-  it.each([true, false])(
-    'retries the processed snapshot after a delayed response (prior record: %s)',
-    async (hasPriorRecord) => {
+  it.each(
+    [true, false].flatMap((prior) =>
+      ['snapshot-first', 'processing-first', 'ack-only'].map((order) => [prior, order] as const),
+    ),
+  )(
+    'retries the processed snapshot after a delayed response (prior record: %s, order: %s)',
+    async (hasPriorRecord, order) => {
       const first: QueuedMessage = {
         id: 'survivor',
         turnId: 'survivor',
@@ -716,7 +720,10 @@ describe('chatSendSaga', () => {
       const latest: QueuedMessage = {
         ...first,
         content: 'first\n\nsecond\n\nthird',
-        fileBlocks: [{ type: 'file', attachmentId: 'third-file', fileName: 'third.txt' }],
+        fileBlocks: [
+          { type: 'file', attachmentId: 'first-file', fileName: 'first.txt' },
+          { type: 'file', attachmentId: 'third-file', fileName: 'third.txt' },
+        ],
         messageMetadata: {
           mergedMessageMetadata: [
             { type: 'question_answers', answeredQuestionsMessageId: 'question-one' },
@@ -729,15 +736,18 @@ describe('chatSendSaga', () => {
         run.dispatch(chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id));
       run.dispatch(replaceAgentQueue(AGENT, [first], WS));
       mocks.queue.mockImplementation(async () => {
-        run.dispatch(replaceAgentQueue(AGENT, [latest], WS));
-        noteAgentQueueEventSnapshotApplied(AGENT, WS);
-        run.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+        if (order !== 'snapshot-first') run.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+        if (order !== 'ack-only') {
+          run.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        if (order === 'snapshot-first') run.dispatch(chatQueueProcessingReceived(AGENT, first.id));
         run.dispatch(replaceAgentQueue(AGENT, [], WS));
         noteAgentQueueEventSnapshotApplied(AGENT, WS);
         return {
           success: true,
           turnId: first.id,
-          queuedMessage: { ...first, content: 'first\n\nsecond' },
+          queuedMessage: order === 'ack-only' ? latest : { ...first, content: 'first\n\nsecond' },
         };
       });
       run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second' }));

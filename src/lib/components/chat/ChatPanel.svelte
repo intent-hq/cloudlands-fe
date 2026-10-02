@@ -80,7 +80,10 @@
     selectAgentTailCapPruned,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
-  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectCanAdministerHost,
+    selectPrincipalSnapshot,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import {
     findQueuedMessageForEdit,
     queuedMessagePermissions,
@@ -1126,6 +1129,8 @@
   // The viewer's own rows carry no author identity (transcript and queue).
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
+  const admittedPrincipal$ = selectPrincipalSnapshot();
+  const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -5085,7 +5090,7 @@
   function queuePermissions(messageId: string) {
     return queuedMessagePermissions(
       $queuedMessages$.find((message) => message.id === messageId),
-      $presenceOwnPrincipalId$,
+      queuePrincipalId,
       workspace?.ownerPrincipalId,
       $isHostOwner$,
     );
@@ -5097,7 +5102,7 @@
     if (
       !queuedMessagePermissions(
         findQueuedMessageForEdit($queuedMessages$, messageId),
-        $presenceOwnPrincipalId$,
+        queuePrincipalId,
         workspace?.ownerPrincipalId,
         $isHostOwner$,
       ).edit
@@ -7316,7 +7321,8 @@
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
                         authors={queuedMessageAuthors}
-                        ownPrincipalId={$presenceOwnPrincipalId$}
+                        ownPrincipalId={queuePrincipalId}
+                        presentationPrincipalId={$presenceOwnPrincipalId$}
                         ownerPrincipalId={workspace?.ownerPrincipalId}
                         isHostOwner={$isHostOwner$}
                         onedit={handleEditQueuedMessage}

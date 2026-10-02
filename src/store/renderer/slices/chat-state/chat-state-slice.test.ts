@@ -760,6 +760,59 @@ describe('chatStateReducer', () => {
       expect(s3.byAgentId['agent-unopened']).toBeUndefined();
     });
 
+    it.each([false, true])(
+      'refreshes a processed retry from a later snapshot without replacing another attempt (%s)',
+      (anotherAttempt) => {
+        const first = {
+          id: 'q',
+          turnId: 'turn',
+          content: 'first',
+          position: 0,
+          queuedAt: '2026-10-02T00:00:00Z',
+        };
+        const combined = {
+          ...first,
+          content: 'first\n\nsecond',
+          fileBlocks: [{ type: 'file' as const, attachmentId: 'second', fileName: 'second.txt' }],
+          messageMetadata: {
+            mergedMessageMetadata: [
+              { answeredQuestionsMessageId: 'one' },
+              { answeredQuestionsMessageId: 'two' },
+            ],
+          },
+        };
+        let state = chatStateReducer(
+          initialState,
+          chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn'),
+        );
+        state = chatStateReducer(state, replaceAgentQueue(AGENT, [first]));
+        state = chatStateReducer(state, chatQueueProcessingReceived(AGENT, 'turn'));
+        state = chatStateReducer(
+          state,
+          chatQueuedRetryRecordSet(AGENT, 'q', { text: 'first' }, 'turn', true, 1),
+        );
+        if (anotherAttempt)
+          state = chatStateReducer(
+            state,
+            chatLastAttemptedMessageSet(AGENT, { text: 'unrelated' }),
+          );
+        state = chatStateReducer(state, replaceAgentQueue(AGENT, [combined]));
+        state = chatStateReducer(state, replaceAgentQueue(AGENT, []));
+        expect(state.byAgentId[AGENT].lastAttemptedMessage).toEqual(
+          anotherAttempt
+            ? { text: 'unrelated' }
+            : {
+                text: combined.content,
+                options: {
+                  fileBlocks: combined.fileBlocks,
+                  messageMetadata: combined.messageMetadata,
+                },
+              },
+        );
+        expect(state.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      },
+    );
+
     it('a queue snapshot does NOT promote a vanished record (processing owns the promotion)', () => {
       // The record's entry id left the snapshot — under the removed inference
       // it would promote. The exact agent:queue:processing signal owns the

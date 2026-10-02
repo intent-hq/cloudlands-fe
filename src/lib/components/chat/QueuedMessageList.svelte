@@ -72,10 +72,12 @@
      */
     authors?: ReadonlyMap<string, MessageAuthor> | null;
     /**
-     * The viewer's own principal (`presence.ownPrincipalId`): their own
-     * entries render no author. `null` = not yet known, every author shown.
+     * The admitted principal used for authorization; never inferred from presence.
+     * Null keeps all mutations disabled until identity is verified.
      */
     ownPrincipalId?: string | null;
+    /** Presence identity affects attribution display only. */
+    presentationPrincipalId?: string | null;
     ownerPrincipalId?: string | null;
     isHostOwner?: boolean;
   }
@@ -89,6 +91,7 @@
     ondone,
     authors = null,
     ownPrincipalId = null,
+    presentationPrincipalId = ownPrincipalId,
     ownerPrincipalId = null,
     isHostOwner = false,
   }: Props = $props();
@@ -832,7 +835,11 @@
                   </Button>
                 </div>
               {:else}
-                {@const queuedAuthor = getQueuedMessageAuthor(message, authors, ownPrincipalId)}
+                {@const queuedAuthor = getQueuedMessageAuthor(
+                  message,
+                  authors,
+                  presentationPrincipalId,
+                )}
                 {@const queuedAuthorLabel = queuedAuthor
                   ? getMessageAuthorLabel(queuedAuthor)
                   : null}

@@ -426,9 +426,13 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     },
   );
 
-  it.each([true, false])(
-    'keeps the processed canonical retry after a delayed response (prior record: %s)',
-    async (hasPriorRecord) => {
+  it.each(
+    [true, false].flatMap((prior) =>
+      ['snapshot-first', 'processing-first', 'ack-only'].map((order) => [prior, order] as const),
+    ),
+  )(
+    'keeps the processed canonical retry after a delayed response (prior record: %s, order: %s)',
+    async (hasPriorRecord, order) => {
       const first: QueuedMessage = {
         id: 'survivor',
         turnId: 'survivor',
@@ -439,7 +443,10 @@ describe('agent-send wire contract (pending agent, first message)', () => {
       const latest: QueuedMessage = {
         ...first,
         content: 'first\n\nsecond\n\nthird',
-        fileBlocks: [{ type: 'file', attachmentId: 'third-file', fileName: 'third.txt' }],
+        fileBlocks: [
+          { type: 'file', attachmentId: 'first-file', fileName: 'first.txt' },
+          { type: 'file', attachmentId: 'third-file', fileName: 'third.txt' },
+        ],
         messageMetadata: {
           mergedMessageMetadata: [
             { type: 'question_answers', answeredQuestionsMessageId: 'question-one' },
@@ -457,16 +464,21 @@ describe('agent-send wire contract (pending agent, first message)', () => {
         if (method === 'agent.get') return { agent: daemonPendingAgent };
         if (method === 'agent.getQueue') return { success: true, queue: [] };
         if (method === 'agent.sendMessage') {
-          appStore.dispatch(replaceAgentQueue(AGENT, [latest], WS));
-          noteAgentQueueEventSnapshotApplied(AGENT, WS);
-          appStore.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+          if (order !== 'snapshot-first')
+            appStore.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+          if (order !== 'ack-only') {
+            appStore.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
+          if (order === 'snapshot-first')
+            appStore.dispatch(chatQueueProcessingReceived(AGENT, first.id));
           appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
           noteAgentQueueEventSnapshotApplied(AGENT, WS);
           return {
             success: true,
             queued: true,
             turnId: first.id,
-            queuedMessage: { ...first, content: 'first\n\nsecond' },
+            queuedMessage: order === 'ack-only' ? latest : { ...first, content: 'first\n\nsecond' },
           };
         }
         return {};

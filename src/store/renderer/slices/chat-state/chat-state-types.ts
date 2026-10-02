@@ -215,7 +215,13 @@ export interface ChatAgentState {
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
   /** Latest queue snapshot and one processed turn bridge events arriving before enqueue acknowledgement. */
   queueSnapshot?: Record<string, QueuedMessage>;
-  processedQueuedTurn?: { turnId: string; message?: QueuedMessage };
+  queueSnapshotVersion?: number;
+  processedQueuedTurn?: {
+    turnId: string;
+    message?: QueuedMessage;
+    snapshotVersion?: number;
+    retryRecord?: LastAttemptedMessage;
+  };
   modelUnavailable: ModelUnavailableInfo | null;
   /**
    * Set when the last turn failed with the daemon's `quota-exceeded` code

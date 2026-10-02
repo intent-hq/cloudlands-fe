@@ -79,6 +79,7 @@ import {
   transcriptHydrationSettled,
 } from '../chat-state-slice';
 import {
+  selectChatAgentState,
   selectChatLastAttemptedMessage,
   selectChatLastChunkTime,
   selectChatStatusEvents,
@@ -311,6 +312,8 @@ function* dispatchToLifecycle(
       // to it.
       yield* put(chatQueuedSendStarted(agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
+      const snapshotVersionAtSend =
+        (yield* selectChatAgentState.effect(agentId)).queueSnapshotVersion ?? 0;
       const result = yield* call(
         [appClient.agents, appClient.agents.queue],
         agentId,
@@ -365,7 +368,14 @@ function* dispatchToLifecycle(
           yield* put(
             retryMessage
               ? chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId)
-              : chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
+              : chatQueuedRetryRecordSet(
+                  agentId,
+                  queuedMessage.id,
+                  record,
+                  turnId,
+                  true,
+                  snapshotVersionAtSend,
+                ),
           );
         }
       }

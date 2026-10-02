@@ -318,12 +318,29 @@ function reduceQueueContentSync(
       next[id] = parked;
     }
   }
+  const queueSnapshotVersion = (agent.queueSnapshotVersion ?? 0) + 1;
+  const processed = agent.processedQueuedTurn;
+  const processedMessage = processed && presentByTurnId.get(processed.turnId);
+  const processedRecord =
+    processedMessage && processed.retryRecord
+      ? buildQueuedRecordedAttempt(processedMessage, processed.retryRecord)
+      : undefined;
   return updateAgent(state, agentId, {
-    queueSnapshot: Object.fromEntries(
-      queue
-        .filter((message) => message.turnId !== undefined)
-        .map((message) => [message.turnId!, message]),
-    ),
+    queueSnapshotVersion,
+    ...(processed && processedMessage
+      ? {
+          processedQueuedTurn: {
+            ...processed,
+            message: processedMessage,
+            snapshotVersion: queueSnapshotVersion,
+            ...(processedRecord ? { retryRecord: processedRecord } : {}),
+          },
+          ...(processedRecord && deepEqual(agent.lastAttemptedMessage, processed.retryRecord)
+            ? { lastAttemptedMessage: processedRecord }
+            : {}),
+        }
+      : {}),
+    queueSnapshot: Object.fromEntries(presentByTurnId),
     ...(payloadSynced ? { queuedRetryRecords: next } : {}),
   });
 }
@@ -363,8 +380,14 @@ function reduceQueueProcessing(
   if (turnId === undefined) return state;
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
+  const previous =
+    agent.processedQueuedTurn?.turnId === turnId ? agent.processedQueuedTurn : undefined;
   const processedQueuedTurn = {
     turnId,
+    snapshotVersion: agent.queueSnapshot?.[turnId]
+      ? agent.queueSnapshotVersion
+      : previous?.snapshotVersion,
+    retryRecord: previous?.retryRecord,
     message:
       agent.queueSnapshot?.[turnId] ??
       (agent.processedQueuedTurn?.turnId === turnId
@@ -377,7 +400,7 @@ function reduceQueueProcessing(
   const remaining = { ...agent.queuedRetryRecords };
   delete remaining[key];
   return updateAgent(state, agentId, {
-    processedQueuedTurn,
+    processedQueuedTurn: { ...processedQueuedTurn, retryRecord: parked.record },
     lastAttemptedMessage: parked.record,
     queuedRetryRecords: remaining,
     error: null,
@@ -575,6 +598,7 @@ export const chatQueuedRetryRecordSet = createAction<
     record: LastAttemptedMessage,
     turnId: string,
     onlyIfProcessed?: boolean,
+    snapshotVersionAtSend?: number,
   ]
 >('chatState/queuedRetryRecordSet');
 
@@ -605,6 +629,7 @@ export const chatQueuedRetryRecordParked = createAction<
     turnId: string,
     canonicalRecord?: LastAttemptedMessage | null,
     onlyIfProcessed?: boolean,
+    snapshotVersionAtSend?: number,
   ]
 >('chatState/queuedRetryRecordParked');
 
@@ -1047,18 +1072,32 @@ function acknowledgedProcessedAttempt(
   agent: ChatAgentState,
   turnId: string,
   record: LastAttemptedMessage,
+  snapshotVersionAtSend?: number,
 ) {
   const processed = agent.processedQueuedTurn;
   if (processed?.turnId !== turnId) return undefined;
-  return processed.message ? buildQueuedRecordedAttempt(processed.message, record) : record;
+  // A snapshot already present before this send cannot supersede its canonical
+  // acknowledgement. Snapshots observed during the send can contain later appends.
+  const hasNewerSnapshot =
+    snapshotVersionAtSend === undefined || (processed.snapshotVersion ?? 0) > snapshotVersionAtSend;
+  return processed.message && hasNewerSnapshot
+    ? buildQueuedRecordedAttempt(processed.message, record)
+    : record;
 }
 
 chatStateReducer.with(
   chatQueuedRetryRecordSet,
-  (state, { payload: [agentId, messageId, record, turnId, onlyIfProcessed] }) => {
+  (
+    state,
+    { payload: [agentId, messageId, record, turnId, onlyIfProcessed, snapshotVersionAtSend] },
+  ) => {
     const agent = getAgent(state, agentId);
-    const processed = acknowledgedProcessedAttempt(agent, turnId, record);
-    if (processed) return updateAgent(state, agentId, { lastAttemptedMessage: processed });
+    const processed = acknowledgedProcessedAttempt(agent, turnId, record, snapshotVersionAtSend);
+    if (processed && agent.processedQueuedTurn)
+      return updateAgent(state, agentId, {
+        lastAttemptedMessage: processed,
+        processedQueuedTurn: { ...agent.processedQueuedTurn, retryRecord: processed },
+      });
     if (onlyIfProcessed) return state;
     return updateAgent(state, agentId, {
       agentId,
@@ -1068,10 +1107,32 @@ chatStateReducer.with(
 );
 chatStateReducer.with(
   chatQueuedRetryRecordParked,
-  (state, { payload: [agentId, messageId, record, turnId, canonicalRecord, onlyIfProcessed] }) => {
+  (
+    state,
+    {
+      payload: [
+        agentId,
+        messageId,
+        record,
+        turnId,
+        canonicalRecord,
+        onlyIfProcessed,
+        snapshotVersionAtSend,
+      ],
+    },
+  ) => {
     const agent = getAgent(state, agentId);
-    const processed = acknowledgedProcessedAttempt(agent, turnId, canonicalRecord ?? record);
-    if (processed) return updateAgent(state, agentId, { lastAttemptedMessage: processed });
+    const processed = acknowledgedProcessedAttempt(
+      agent,
+      turnId,
+      canonicalRecord ?? record,
+      snapshotVersionAtSend,
+    );
+    if (processed && agent.processedQueuedTurn)
+      return updateAgent(state, agentId, {
+        lastAttemptedMessage: processed,
+        processedQueuedTurn: { ...agent.processedQueuedTurn, retryRecord: processed },
+      });
     return updateAgent(state, agentId, {
       agentId,
       queuedRetryRecords:
