@@ -45,6 +45,7 @@ for (const operation of [
               CellSelection.create(editor.state.doc, cells[0], cells[2]),
             ),
           );
+          if (editor === native) before = native.getJSON();
           expect(editor.commands.mergeCells()).toBe(true);
           if (operation === 'verticalSplit') expect(editor.commands.splitCell()).toBe(true);
         } else {
@@ -74,6 +75,9 @@ for (const operation of [
       const old = session.editor!;
       session.save();
       const saved = service.region(0);
+      expect(await processMarkdownToHTML(saved)).toBe(
+        await processMarkdownToHTML(processHTMLToMarkdown(native.getHTML())),
+      );
       await session.seek(session.selection.head);
       expect(old.isDestroyed).toBe(true);
       expect(session.editor!.getJSON()).toEqual(expected);

@@ -364,36 +364,62 @@ export class SourceJournal {
     const { id, start } = this.locate(window.from),
       table = this.tableIndex(this.region(id), start).find((t) => t.from + start === window.from)!;
     const cell = table.rows[edit.row].cells.find((c) => c.column === edit.column)!;
+    const splices: Splice[] = [];
+    if (edit.width > 1)
+      splices.push({
+        from: cell.to + start,
+        to: cell.to + start,
+        insert: '|  '.repeat(edit.width - 1),
+      });
+    for (let r = edit.row + 1; r < edit.row + edit.height; r++) {
+      const row = table.rows[r],
+        next = row.cells.find((c) => c.column >= edit.column);
+      if (!row.cells.length) {
+        const from = row.from + start;
+        const suffix = this.slice(row.to + start - 1, row.to + start) === '\n' ? '\n' : '';
+        splices.push({
+          from,
+          to: row.to + start,
+          insert: '| ' + Array(edit.width).fill('').join(' | ') + ' |' + suffix,
+        });
+      } else {
+        const at = start + (next?.from ?? row.cells.at(-1)!.to + 1);
+        splices.push({ from: at, to: at, insert: '  |'.repeat(edit.width) });
+      }
+    }
+    splices.sort((a, b) => b.from - a.from);
+    for (const splice of splices) this.stage(splice, history);
     this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(edit.nodes[0]), history);
-    const splice = {
-      from: cell.to + start,
-      to: cell.to + start,
-      insert: '|  '.repeat(edit.width - 1),
-    };
-    this.stage(splice, history);
     const updated = this.tableIndex(this.region(id), start).find(
       (t) => t.from + start === window.from,
     )!;
     const retained = cloneTableWindow(window);
-    for (const c of retained.cells) {
-      c.first = mapPoint(c.first, splice, -1);
-      c.last = mapPoint(c.last, splice, 1);
-    }
-    for (let n = 1; n < edit.width; n++) {
-      const next = updated.rows[edit.row].cells.find((c) => c.column === edit.column + n)!;
-      this.stageTableState(`cell:${next.from + start}`, JSON.stringify(edit.nodes[n]), history);
-      retained.cells.push({
-        ...next,
-        from: next.from + start,
-        to: next.to + start,
-        body: next.body + start,
-        end: next.end + start,
-        first: next.body + start,
-        last: next.end + start,
-        raw: '',
-        runs: [],
-      });
-    }
+    for (const splice of splices)
+      for (const c of retained.cells) {
+        c.first = mapPoint(c.first, splice, -1);
+        c.last = mapPoint(c.last, splice, 1);
+      }
+    for (let r = 0; r < edit.height; r++)
+      for (let c = 0; c < edit.width; c++) {
+        if (!r && !c) continue;
+        const next = updated.rows[edit.row + r].cells.find((x) => x.column === edit.column + c)!;
+        this.stageTableState(
+          `cell:${next.from + start}`,
+          JSON.stringify(edit.nodes[r * edit.width + c]),
+          history,
+        );
+        retained.cells.push({
+          ...next,
+          from: next.from + start,
+          to: next.to + start,
+          body: next.body + start,
+          end: next.end + start,
+          first: next.body + start,
+          last: next.end + start,
+          raw: '',
+          runs: [],
+        });
+      }
     retained.cells.sort((a, b) => a.row - b.row || a.column - b.column);
     return this.tableWindow(cell.body + start, retained)!;
   }
@@ -431,30 +457,55 @@ export class SourceJournal {
     const { id, start } = this.locate(window.from),
       table = this.tableIndex(this.region(id), start).find((t) => t.from + start === window.from)!;
     if (edit.row === 0) throw new Error('Header merge source admission is not implemented');
-    const covered = table.rows[edit.row].cells.filter(
-      (c) => c.column >= edit.column && c.column < edit.column + edit.width,
-    );
-    const first = covered[0],
-      last = covered.at(-1)!;
+    const covered = table.rows
+      .slice(edit.row, edit.row + edit.height)
+      .flatMap((row) =>
+        row.cells.filter((c) => c.column >= edit.column && c.column < edit.column + edit.width),
+      );
+    const first = covered[0];
     for (const cell of covered) this.stageTableState(`cell:${cell.from + start}`, '', history);
-    const splice = { from: first.body + start, to: last.end + start, insert: edit.source };
-    this.stage(splice, history);
+    const splices: Splice[] = [];
+    for (let r = edit.row; r < edit.row + edit.height; r++) {
+      const cells = covered.filter((c) => c.row === r);
+      if (!cells.length) continue;
+      if (r === edit.row)
+        splices.push({
+          from: cells[0].body + start,
+          to: cells.at(-1)!.end + start,
+          insert: edit.source,
+        });
+      else if (cells.length === table.rows[r].cells.length) {
+        // Keep a source row even when its logical cells are all covered by an owner above.
+        splices.push({ from: cells[0].from + start, to: cells.at(-1)!.to + start, insert: ' ' });
+      } else
+        splices.push({ from: cells[0].from + start, to: cells.at(-1)!.to + 1 + start, insert: '' });
+    }
+    splices.sort((a, b) => b.from - a.from);
+    for (const splice of splices) this.stage(splice, history);
     this.stageTableState(`cell:${first.from + start}`, JSON.stringify(edit.node), history);
     const retained = cloneTableWindow(window);
+    retained.extent ??= {
+      row: Math.min(...window.cells.map((c) => c.row)),
+      column: Math.min(...window.cells.map((c) => c.column)),
+      rowCount:
+        Math.max(...window.cells.map((c) => c.row)) -
+        Math.min(...window.cells.map((c) => c.row)) +
+        1,
+      columnCount:
+        Math.max(...window.cells.map((c) => c.column + (c.mounted?.colspan ?? c.span ?? 1))) -
+        Math.min(...window.cells.map((c) => c.column)),
+    };
     retained.cells = retained.cells.filter(
-      (c) =>
-        c.row !== edit.row ||
-        c.column === edit.column ||
-        c.column < edit.column ||
-        c.column >= edit.column + edit.width,
+      (c) => !covered.some((x) => x.from + start === c.from) || c.from === first.from + start,
     );
-    for (const cell of retained.cells) {
-      cell.first = mapPoint(cell.first, splice, -1);
-      cell.last = mapPoint(cell.last, splice, 1);
-    }
-    const merged = retained.cells.find((c) => c.row === edit.row && c.column === edit.column)!;
-    merged.first = splice.from;
-    merged.last = splice.from + splice.insert.length;
+    for (const splice of splices)
+      for (const cell of retained.cells) {
+        cell.first = mapPoint(cell.first, splice, -1);
+        cell.last = mapPoint(cell.last, splice, 1);
+      }
+    const merged = retained.cells.find((c) => c.from === first.from + start)!;
+    merged.first = first.body + start;
+    merged.last = merged.first + edit.source.length;
     return this.tableWindow(merged.first, retained)!;
   }
   tableNeighbor(from: number, direction: number) {
@@ -485,7 +536,10 @@ export class SourceJournal {
     throw new Error('Table cell identity is stale');
   }
   readonly tableHeights = new TableHeights(() => this.revision);
-  private tableIndexes = new Map<number, { source: string; tables: TableIndex[] }>();
+  private tableIndexes = new Map<
+    number,
+    { source: string; revision: number; tables: TableIndex[] }
+  >();
   backingTableScannedBytes = 0;
   maxTableWindowBytes = 0;
   tableViewportPages(...args: Parameters<SourceJournal['tableViewportWindow']>) {
@@ -583,8 +637,8 @@ export class SourceJournal {
     const { id, start } = this.locate(position),
       source = this.region(id);
     let index = this.tableIndexes.get(id);
-    if (!index || index.source !== source) {
-      index = { source, tables: this.tableIndex(source, start) };
+    if (!index || index.source !== source || index.revision !== this.revision) {
+      index = { source, revision: this.revision, tables: this.tableIndex(source, start) };
       this.tableIndexes.set(id, index);
       this.backingTableScannedBytes += bytes(source);
     }
@@ -781,7 +835,7 @@ export class SourceJournal {
   private spans(id: number) {
     const source = this.region(id);
     let index = this.inlineIndex.get(id);
-    if (!index || index.source !== source) {
+    if (!index || index.source !== source || index.revision !== this.revision) {
       const fences = scanFences(source);
       const projection = new SourceProjection(
         source,

@@ -2,7 +2,7 @@ import { tableInlineSourcePatch } from './table-inline-source';
 import type { JSONContent } from '@tiptap/core';
 import { DOMSerializer, Fragment, Mark, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection, type Transaction } from '@tiptap/pm/state';
-import { CellSelection } from '@tiptap/pm/tables';
+import { CellSelection, TableMap } from '@tiptap/pm/tables';
 import { ReplaceStep, type Step } from '@tiptap/pm/transform';
 import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import type { SourceProjection } from './source-projection';
@@ -28,8 +28,23 @@ export type TableStructure =
       row: number;
       cells: JSONContent[];
     }
-  | { kind: 'merge'; row: number; column: number; width: number; node: JSONContent; source: string }
-  | { kind: 'split'; row: number; column: number; width: number; nodes: JSONContent[] };
+  | {
+      kind: 'merge';
+      row: number;
+      column: number;
+      width: number;
+      height: number;
+      node: JSONContent;
+      source: string;
+    }
+  | {
+      kind: 'split';
+      row: number;
+      column: number;
+      width: number;
+      height: number;
+      nodes: JSONContent[];
+    };
 
 /** Only admitted cells have nodes; logical coordinates remain backing-owned. */
 export class TableProjection {
@@ -290,23 +305,42 @@ export class TableProjection {
       const after = tr.doc.nodeAt(tr.mapping.map(entry.pm, -1));
       if (!after || !['tableCell', 'tableHeader'].includes(after.type.name))
         throw new Error('Table structural identity requires row/column admission');
-      if (Number(after.attrs.colspan) < Number(before.attrs.colspan)) {
-        const row = tr.doc.firstChild!.child(entry.cell.row - this.window.cells[0].row);
-        const index = this.entries
-          .filter((e) => e.cell.row === entry.cell.row)
-          .findIndex((e) => e.cell.column === entry.cell.column);
+      if (
+        Number(after.attrs.colspan) < Number(before.attrs.colspan) ||
+        Number(after.attrs.rowspan) < Number(before.attrs.rowspan)
+      ) {
+        const table = tr.doc.firstChild!,
+          map = TableMap.get(table);
+        const firstRow = this.window.extent?.row ?? this.window.cells[0].row;
+        const firstColumn =
+          this.window.extent?.column ?? Math.min(...this.window.cells.map((c) => c.column));
+        const width = Number(before.attrs.colspan),
+          height = Number(before.attrs.rowspan);
         this.structural = {
           kind: 'split',
           row: entry.cell.row,
           column: entry.cell.column,
-          width: Number(before.attrs.colspan),
-          nodes: Array.from({ length: Number(before.attrs.colspan) }, (_, i) =>
-            row.child(index + i).toJSON(),
+          width,
+          height,
+          nodes: Array.from({ length: width * height }, (_, n) =>
+            table
+              .nodeAt(
+                map.map[
+                  (entry.cell.row - firstRow + Math.floor(n / width)) * map.width +
+                    entry.cell.column -
+                    firstColumn +
+                    (n % width)
+                ],
+              )!
+              .toJSON(),
           ),
         };
         return [];
       }
-      if (Number(after.attrs.colspan) > Number(before.attrs.colspan)) {
+      if (
+        Number(after.attrs.colspan) > Number(before.attrs.colspan) ||
+        Number(after.attrs.rowspan) > Number(before.attrs.rowspan)
+      ) {
         const container = document.createElement('div');
         container.append(DOMSerializer.fromSchema(after.type.schema).serializeNode(after));
         const markdown = processHTMLToMarkdown(
@@ -318,6 +352,7 @@ export class TableProjection {
           row: entry.cell.row,
           column: entry.cell.column,
           width: Number(after.attrs.colspan),
+          height: Number(after.attrs.rowspan),
           node: after.toJSON(),
           source: markdown.slice(cell.body, cell.end),
         };
