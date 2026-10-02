@@ -28,7 +28,11 @@ export function createGuestWorkflowTestStore() {
     workspace,
     userPreferences: { ...userPreferences, labsMultiplayerEnabled: true },
     daemonHealth: { ...daemonHealth, health: 'healthy' as const },
-    workspaceEvents: { ...workspaceEvents, subscriptionGeneration: 1 },
+    workspaceEvents: {
+      ...workspaceEvents,
+      subscriptionPending: false,
+      subscriptionGeneration: 1,
+    },
     principal: {
       context: JSON.stringify([connections.windowBackendId, daemonHealth.connectionGeneration, 1]),
       status: 'ready',

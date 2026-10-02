@@ -2098,8 +2098,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
   appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
-  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+  // Share the note-event debounce: one mutation can emit both events.
+  // The task row updates above remain immediate; the BE owns the rollup.
+  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
@@ -3457,14 +3458,13 @@ function debouncedChangesRefresh(workspaceId: string): void {
  * Debounced workspace-tasks refetch for `note:*` events. A created/updated/
  * deleted note can change the BE-owned `task.list` stats rollup (task state
  * lives in note metadata), so refetch via `loadWorkspaceTasksRequested` —
- * but only for workspaces whose workspace-tasks slice is already initialized.
- * Uninitialized workspaces have never been viewed; eagerly loading their
+ * but only for workspaces whose task list is loaded or currently loading.
+ * Undemanded workspaces have never been viewed; eagerly loading their
  * tasks would fan out one `task.list` per note event across all workspaces.
  */
 function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
-  const initialized =
-    appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
-  if (!initialized) return;
+  const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
+  if (!entry?.initialized && !entry?.loading) return;
   const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
   if (existing) {
     clearTimeout(existing);
@@ -3473,9 +3473,8 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
     tasksRefreshTimersByWorkspace.delete(workspaceId);
     // Re-check at fire time: the slice may have been cleared (workspace
     // unmounted/deleted) during the debounce window.
-    const stillInitialized =
-      appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
-    if (!stillInitialized) return;
+    const current = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
+    if (!current?.initialized && !current?.loading) return;
     appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
   }, TASKS_REFRESH_DEBOUNCE_MS);
   tasksRefreshTimersByWorkspace.set(workspaceId, timer);
@@ -3842,7 +3841,14 @@ export function routeDaemonEventsNotification(
   // agent-subscription-ui entry via `agent.getSubscriptions` — completion
   // counts tick live while a coordinator waits on `waitMode: after_all`.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
-    appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    const agentId = (event as { data?: { agentId?: unknown } }).data?.agentId;
+    if (type === 'agent:subscriptions-changed' && typeof agentId === 'string' && agentId) {
+      // This event names the parent whose watch set changed. Other lifecycle
+      // events can affect arbitrary watched children and retain workspace scope.
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId, agentId));
+    } else {
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    }
   }
 
   // STAB-9: Agent lifecycle events (status-changed, idle) refresh ONLY the

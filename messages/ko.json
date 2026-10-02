@@ -7025,5 +7025,10 @@
   "collaborationAuth_changeAccount_label": "계정 변경",
   "collaborationAuth_details_label": "로그인 세부 정보",
   "collaborationAuth_tokenSignIn_label": "토큰으로 로그인",
-  "collaborationAuth_providerSignIn_label": "{provider}(으)로 로그인"
+  "collaborationAuth_providerSignIn_label": "{provider}(으)로 로그인",
+  "devConsole_payload_search_label": "검색",
+  "devConsole_payload_collapse_label": "모두 접기",
+  "devConsole_payload_expand_label": "모두 펼치기",
+  "devConsole_payload_load_error": "뷰어를 불러올 수 없습니다. 캡처된 텍스트가 아래에 표시됩니다.",
+  "devConsole_payload_large_description": "큰 페이로드입니다. 구문 강조와 접기를 사용할 수 없지만 검색과 복사는 계속 사용할 수 있습니다."
 }

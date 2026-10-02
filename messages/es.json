@@ -7025,5 +7025,10 @@
   "collaborationAuth_changeAccount_label": "Cambiar de cuenta",
   "collaborationAuth_details_label": "Detalles del inicio de sesión",
   "collaborationAuth_tokenSignIn_label": "Iniciar sesión con token",
-  "collaborationAuth_providerSignIn_label": "Iniciar sesión con {provider}"
+  "collaborationAuth_providerSignIn_label": "Iniciar sesión con {provider}",
+  "devConsole_payload_search_label": "Buscar",
+  "devConsole_payload_collapse_label": "Contraer todo",
+  "devConsole_payload_expand_label": "Expandir todo",
+  "devConsole_payload_load_error": "No se pudo cargar el visor. El texto capturado se muestra a continuación.",
+  "devConsole_payload_large_description": "Carga útil grande. El resaltado de sintaxis y el plegado no están disponibles; la búsqueda y la copia siguen funcionando."
 }

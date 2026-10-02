@@ -7025,5 +7025,10 @@
   "collaborationAuth_changeAccount_label": "Change account",
   "collaborationAuth_details_label": "Sign-in details",
   "collaborationAuth_tokenSignIn_label": "Sign in with token",
-  "collaborationAuth_providerSignIn_label": "Sign in with {provider}"
+  "collaborationAuth_providerSignIn_label": "Sign in with {provider}",
+  "devConsole_payload_search_label": "Search",
+  "devConsole_payload_collapse_label": "Collapse all",
+  "devConsole_payload_expand_label": "Expand all",
+  "devConsole_payload_load_error": "Could not load the viewer. The captured text is shown below.",
+  "devConsole_payload_large_description": "Large payload. Syntax highlighting and folding are unavailable; search and copy still work."
 }

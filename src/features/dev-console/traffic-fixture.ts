@@ -14,7 +14,15 @@ function payload(value: unknown, truncate = false): DevConsolePayload {
     retainedBytes: truncate ? 2048 : text.length,
   };
 }
-export function createTrafficFixture(count = 240) {
+export type PayloadScenario = 'traffic' | 'nested' | 'oversized';
+
+// Deliberately noncanonical whitespace: Copy payload must preserve captured bytes.
+export const nestedRequestText =
+  '{ "object": {"needle":"request first"}, "array": [{"needle":"request second"}], "tail": true }';
+export const nestedResponseText =
+  '{ "object": {"needle":"response first"}, "array": [{"needle":"response second"}], "tail": false }';
+
+export function createTrafficFixture(count = 240, scenario: PayloadScenario = 'traffic') {
   let sequence = 0;
   let records: DevConsoleRecord[] = [];
   let publish: ((update: DevConsoleUpdate) => void) | undefined;
@@ -114,7 +122,48 @@ export function createTrafficFixture(count = 240) {
       limits: { maxRecords: 10000, maxPayloadBytes: 33554432, previewBytes: 2048 },
     });
   }
-  append(count);
+  append(scenario === 'traffic' ? count : 2);
+  if (scenario !== 'traffic') {
+    const captured = (text: string): DevConsolePayload => ({
+      text,
+      state: 'complete',
+      originalBytes: text.length,
+      retainedBytes: text.length,
+    });
+    records = records.map((record, index) => ({
+      ...record,
+      direction: 'outbound',
+      kind: 'request',
+      method: index === 0 ? 'fixture.inspect' : 'fixture.pending',
+      rpcMethod: index === 0 ? 'fixture.inspect' : 'fixture.pending',
+      status: index === 0 ? 'success' : 'pending',
+      payload: captured(
+        index === 1
+          ? '{"pendingRequest":true}'
+          : scenario === 'oversized'
+            ? JSON.stringify({
+                items: Array.from({ length: 100000 }, (_, i) => ({
+                  value: i === 99999 ? 'large-payload-last-match' : 1,
+                })),
+              })
+            : nestedRequestText,
+      ),
+      response: index === 0 ? captured(nestedResponseText) : undefined,
+    }));
+  }
+  function reply() {
+    records = records.map((record) =>
+      record.method === 'fixture.pending'
+        ? {
+            ...record,
+            status: 'success',
+            durationMs: 125,
+            response: payload({ delayedReply: { message: 'arrived after selection' } }),
+          }
+        : record,
+    );
+    update();
+  }
   const connect: typeof connectDevConsole = (onUpdate) => {
     publish = onUpdate;
     queueMicrotask(update);
@@ -143,5 +192,5 @@ export function createTrafficFixture(count = 240) {
       },
     };
   };
-  return { connect, append };
+  return { connect, append, reply };
 }
