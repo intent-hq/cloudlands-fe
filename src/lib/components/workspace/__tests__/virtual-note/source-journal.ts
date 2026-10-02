@@ -747,9 +747,7 @@ export class SourceJournal {
   tableAddress(from: number, row: number, column: number) {
     const { id, start } = this.locate(from),
       table = this.tableIndex(this.region(id), start).find((t) => t.from + start === from)!;
-    const cell = table.rows[row].cells.find(
-      (c) => c.column <= column && c.column + (c.span ?? 1) > column,
-    )!;
+    const cell = tableCellAt(table, row, column);
     return {
       source: cell.body + start,
       point: { cell: cell.from + start, block: 0, offset: 0 },
@@ -998,15 +996,17 @@ export class SourceJournal {
     );
     if (!table) throw new Error('Table cell no longer exists');
     for (const row of table.rows)
-      for (const cell of row.cells)
+      for (const [column, cell] of row.cells.entries())
         if (cell.from + start === from) {
-          const index =
-            cell.row * table.columns + cell.column + (direction > 0 ? (cell.span ?? 1) : -1);
-          if (index < 0 || index >= table.rows.length * table.columns) return undefined;
-          const next = table.rows[Math.floor(index / table.columns)].cells.find(
-            (c) =>
-              c.column <= index % table.columns && c.column + (c.span ?? 1) > index % table.columns,
-          )!;
+          // Native findNextCell visits physical siblings, then the first/last
+          // physical cell of the next nonempty row. Covered rowspan slots are
+          // not additional Tab stops (nor necessarily owners in that row).
+          let next = row.cells[column + direction];
+          for (let r = cell.row + direction; !next && r >= 0 && r < table.rows.length; r += direction) {
+            const cells = table.rows[r].cells;
+            next = direction > 0 ? cells[0] : cells[cells.length - 1];
+          }
+          if (!next) return undefined;
           const result = {
             source: next.body + start,
             point: { cell: next.from + start, block: 0, offset: 0 },
