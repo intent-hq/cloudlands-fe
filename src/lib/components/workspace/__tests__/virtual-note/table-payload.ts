@@ -68,6 +68,15 @@ class PackedCell implements TableFragment {
         : [])
     );
   }
+  get owner() {
+    return this.data[7]?.owner;
+  }
+  get mounted() {
+    return this.data[7]?.mounted;
+  }
+  get rowSpan() {
+    return this.data[7]?.rowSpan;
+  }
   get span() {
     return this.data[7]?.span;
   }
@@ -112,7 +121,16 @@ function packTableCell(c: TableFragment): TableFragment {
       else extra.runs = c.runs;
     }
   }
-  for (const key of ['span', 'blocks', 'blockCount', 'attrs', 'nodeType'] as const)
+  for (const key of [
+    'span',
+    'rowSpan',
+    'owner',
+    'mounted',
+    'blocks',
+    'blockCount',
+    'attrs',
+    'nodeType',
+  ] as const)
     if (c[key] !== undefined) Object.assign(extra, { [key]: c[key] });
   const data: CellData = [c.row, c.column, c.from, c.body - c.from, c.to - c.from, c.raw];
   if (c.align !== null || Object.keys(extra).length) data[6] = c.align;
@@ -137,6 +155,8 @@ export function cloneTableWindow(w: TableWindow): TableWindow {
       last: c.last,
       raw: c.raw,
       runs: c.runs,
+      ...(c.owner ? { owner: c.owner, mounted: c.mounted } : {}),
+      ...(c.rowSpan === undefined ? {} : { rowSpan: c.rowSpan }),
       ...(c.span === undefined ? {} : { span: c.span }),
       ...(c.blocks
         ? { blocks: c.blocks, blockCount: c.blockCount, attrs: c.attrs, nodeType: c.nodeType }

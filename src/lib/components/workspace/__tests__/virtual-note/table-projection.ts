@@ -63,10 +63,16 @@ export class TableProjection {
       cellPM = 2;
     for (const cell of window.cells) {
       if (cell.row !== rowIndex) {
-        if (table.content!.length) rowPM += size(table.content!.at(-1)!);
-        row = { type: 'tableRow', content: [] };
-        table.content!.push(row);
-        rowIndex = cell.row;
+        for (
+          let next = rowIndex < 0 ? (window.extent?.row ?? cell.row) : rowIndex + 1;
+          next <= cell.row;
+          next++
+        ) {
+          if (table.content!.length) rowPM += size(table.content!.at(-1)!);
+          row = { type: 'tableRow', content: [] };
+          table.content!.push(row);
+          rowIndex = next;
+        }
         this.boundaries.set(rowPM, cell.from);
         cellPM = rowPM + 1;
       }
@@ -115,7 +121,10 @@ export class TableProjection {
       }
       const node: JSONContent = {
         type: cell.nodeType ?? (cell.row === 0 ? 'tableHeader' : 'tableCell'),
-        attrs: cell.attrs ?? { colspan: 1, rowspan: 1, colwidth: null, align: cell.align },
+        attrs: {
+          ...(cell.attrs ?? { colspan: 1, rowspan: 1, colwidth: null, align: cell.align }),
+          ...cell.mounted,
+        },
         content: paragraphs,
       };
       row!.content!.push(node);
@@ -124,6 +133,9 @@ export class TableProjection {
       this.entries.push({ cell, pm: cellPM, paragraph: cellPM + 1, end: pm });
       cellPM += size(node);
     }
+    if (window.extent)
+      for (let r = rowIndex + 1; r < window.extent.row + window.extent.rowCount; r++)
+        table.content!.push({ type: 'tableRow', content: [] });
     // Match the native editor's source-less terminal placeholder.
     this.content.content!.push({ type: 'paragraph' });
     this.boundaries.set(size(table) - 1, window.cells.at(-1)!.end);

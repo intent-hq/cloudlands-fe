@@ -26,6 +26,7 @@ export type TableCellSource = {
   end: number;
   align: string | null;
   span?: number;
+  rowSpan?: number;
 };
 export type TableIndex = {
   from: number;
@@ -39,6 +40,8 @@ export type TableIndex = {
   rows: Array<{ from: number; to: number; cells: TableCellSource[] }>;
 };
 export type TableFragment = TableCellSource & {
+  owner?: { row: number; column: number; rowspan: number; colspan: number };
+  mounted?: { rowspan: number; colspan: number };
   first: number;
   last: number;
   raw: string;
@@ -50,6 +53,7 @@ export type TableFragment = TableCellSource & {
 };
 export type TableWindow = {
   revision: number;
+  extent?: { row: number; column: number; rowCount: number; columnCount: number };
   from: number;
   to: number;
   rows: number;
@@ -129,23 +133,33 @@ export function scanTables(
       delimiter: { from: lines[n + 1].from, to: lines[n + 1].to, cells: delimiter },
       rows: [],
     };
+    const occupied = new Map<number, number>(); // Mock backing index only.
     const add = (line: (typeof lines)[number], cells: ReturnType<typeof split>) => {
       const row = table.rows.length;
       const indexed: TableCellSource[] = [];
       let column = 0;
       for (const entry of cells) {
+        while ((occupied.get(column) ?? 0) > row) column++;
         if (column >= table.columns) break;
-        const span = Number(metadata?.(entry.from)?.attrs?.colspan ?? 1);
+        const attrs = metadata?.(entry.from)?.attrs;
+        const span = Number(attrs?.colspan ?? 1),
+          rowSpan = Number(attrs?.rowspan ?? 1);
+        for (let c = column; c < column + span; c++) occupied.set(c, row + rowSpan);
         indexed.push({
           ...entry,
           row,
           column,
           align: alignments[column] ?? null,
           ...(span > 1 ? { span } : {}),
+          ...(rowSpan > 1 ? { rowSpan } : {}),
         });
         column += span;
       }
-      while (column < table.columns)
+      while (column < table.columns) {
+        if ((occupied.get(column) ?? 0) > row) {
+          column++;
+          continue;
+        }
         indexed.push({
           from: line.to,
           to: line.to,
@@ -155,6 +169,7 @@ export function scanTables(
           column: column++,
           align: alignments[column - 1] ?? null,
         });
+      }
       table.rows.push({ from: line.from, to: line.to, cells: indexed });
       table.to = line.to;
     };
@@ -170,6 +185,17 @@ export function scanTables(
     n--;
   }
   return tables;
+}
+
+/** Mock backing lookup; no table-wide ownership map is sent to the renderer. */
+export function tableCellAt(table: TableIndex, row: number, column: number) {
+  for (let r = row; r >= 0; r--) {
+    const cell = table.rows[r].cells.find(
+      (c) => c.column <= column && c.column + (c.span ?? 1) > column && r + (c.rowSpan ?? 1) > row,
+    );
+    if (cell) return cell;
+  }
+  throw new Error('Missing logical table owner');
 }
 
 const decode = (text: string) => {
@@ -457,39 +483,54 @@ export function admitTableWindow(
     limit = viewport ? 8192 : 512;
   for (;;) {
     const cells: TableFragment[] = [];
-    if (retained)
-      for (const old of retained.cells)
-        cells.push(
-          cell(
-            table.rows[old.row].cells.find((c) => c.column === old.column)!,
-            limit,
-          ),
-        );
-    else
-      for (
-        let r = Math.max(0, rectangle?.row ?? row - radius);
-        r <=
+    const extent = retained?.extent ?? {
+      row: Math.max(0, rectangle?.row ?? row - radius),
+      column: Math.max(0, rectangle?.column ?? column - radius),
+      rowCount: 0,
+      columnCount: 0,
+    };
+    if (!retained?.extent) {
+      extent.rowCount =
         Math.min(
-          table.rows.length - 1,
-          rectangle ? rectangle.row + rectangle.rowCount - 1 : row + radius,
-        );
-        r++
-      )
-        for (
-          let c = Math.max(0, rectangle?.column ?? column - radius);
-          c <=
-          Math.min(
-            table.columns - 1,
-            rectangle ? rectangle.column + rectangle.columnCount - 1 : column + radius,
-          );
-          c++
-        ) {
-          const entry = table.rows[r].cells.find(
-            (e) => e.column <= c && e.column + (e.span ?? 1) > c,
-          )!;
-          if (!cells.some((x) => x.row === entry.row && x.column === entry.column))
-            cells.push(cell(entry, limit));
-        }
+          table.rows.length,
+          rectangle ? rectangle.row + rectangle.rowCount : row + radius + 1,
+        ) - extent.row;
+      extent.columnCount =
+        Math.min(
+          table.columns,
+          rectangle ? rectangle.column + rectangle.columnCount : column + radius + 1,
+        ) - extent.column;
+    }
+    const admit = (entry: TableCellSource) => {
+      if (cells.some((c) => c.from === entry.from)) return;
+      const fragment = cell(entry, limit);
+      if ((entry.span ?? 1) > 1 || (entry.rowSpan ?? 1) > 1) {
+        fragment.owner = {
+          row: entry.row,
+          column: entry.column,
+          rowspan: entry.rowSpan ?? 1,
+          colspan: entry.span ?? 1,
+        };
+        fragment.row = Math.max(entry.row, extent.row);
+        fragment.column = Math.max(entry.column, extent.column);
+        fragment.mounted = {
+          rowspan:
+            Math.min(entry.row + (entry.rowSpan ?? 1), extent.row + extent.rowCount) - fragment.row,
+          colspan:
+            Math.min(entry.column + (entry.span ?? 1), extent.column + extent.columnCount) -
+            fragment.column,
+        };
+      }
+      cells.push(fragment);
+    };
+    if (retained) {
+      for (const old of retained.cells) admit(tableCellAt(table, old.row, old.column));
+    } else {
+      for (let r = extent.row; r < extent.row + extent.rowCount; r++)
+        for (let c = extent.column; c < extent.column + extent.columnCount; c++)
+          admit(tableCellAt(table, r, c));
+    }
+    cells.sort((a, b) => a.row - b.row || a.column - b.column);
     const window: TableWindow = {
       revision,
       from: table.from,
@@ -499,6 +540,7 @@ export function admitTableWindow(
       row,
       column,
       cells,
+      ...(cells.some((c) => c.owner) ? { extent } : {}),
       ...((rectangle?.geometry ?? retained?.geometry)
         ? { geometry: rectangle?.geometry ?? retained?.geometry }
         : {}),
