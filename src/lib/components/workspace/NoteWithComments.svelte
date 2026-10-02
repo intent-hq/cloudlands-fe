@@ -600,7 +600,9 @@
           diagram
             .querySelector('[data-diagram-presentation]')
             ?.getAttribute('data-diagram-presentation-settled') === 'true' &&
-          !diagram.querySelector('[data-render-settled="false"], [data-diagram-settled="false"]'),
+          !diagram.querySelector(
+            '[data-render-settled="false"], [data-diagram-settled="false"], [data-diagram-presentation-initializing="true"]',
+          ),
       );
       if (!ready) return;
       isLayingOutDiagrams = false;
@@ -613,6 +615,7 @@
       attributes: true,
       attributeFilter: [
         'data-diagram-presentation-settled',
+        'data-diagram-presentation-initializing',
         'data-render-settled',
         'data-diagram-settled',
       ],

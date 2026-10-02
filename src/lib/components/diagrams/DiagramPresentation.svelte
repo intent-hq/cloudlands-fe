@@ -129,7 +129,8 @@
   class:renderer-owns-actions={rendererOwnsActions}
   inert={initializing}
   data-diagram-presentation
-  data-diagram-presentation-settled={presentationSettled && !initializing}
+  data-diagram-presentation-settled={presentationSettled}
+  data-diagram-presentation-initializing={initializing}
   data-diagram-kind={kind}
   style:width={noteWidth === undefined ? undefined : `${noteWidth}px`}
   style:min-width={noteWidth === undefined ? undefined : '0'}
