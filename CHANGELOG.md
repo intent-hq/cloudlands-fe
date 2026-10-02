@@ -4,6 +4,28 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.198.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.197.0...v2.198.0) (2026-10-02)
+
+
+### 🚀 Features
+
+* reconcile shared queues and protect message drafts ([#3088](https://github.com/intent-hq/cloudlands-fe/issues/3088)) ([0ca6779](https://github.com/intent-hq/cloudlands-fe/commit/0ca677906b5e63959756361003a7dbc7222995c5))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.136 ([#3101](https://github.com/intent-hq/cloudlands-fe/issues/3101)) ([a7e3b16](https://github.com/intent-hq/cloudlands-fe/commit/a7e3b1653864b0f739a273584abe50805c6eb0d7))
+* bump intentd sidecar to v0.9.137 ([#3105](https://github.com/intent-hq/cloudlands-fe/issues/3105)) ([467d656](https://github.com/intent-hq/cloudlands-fe/commit/467d656898367d9cde765f95558d9778823cb3fa))
+* prefetch workspace subscriptions and reuse bundled participant summaries ([#3094](https://github.com/intent-hq/cloudlands-fe/issues/3094)) ([992de6e](https://github.com/intent-hq/cloudlands-fe/commit/992de6ece757832dc7ce95d47a578c5551b5ece3))
+* preserve Dev Console native window title ([#3103](https://github.com/intent-hq/cloudlands-fe/issues/3103)) ([3ada57d](https://github.com/intent-hq/cloudlands-fe/commit/3ada57dc7c39522c939a716f8684446c057316a4))
+* prevent detached maintenance in temporary Git fixtures ([#6144](https://github.com/intent-hq/cloudlands-fe/issues/6144)) ([#3093](https://github.com/intent-hq/cloudlands-fe/issues/3093)) ([392a149](https://github.com/intent-hq/cloudlands-fe/commit/392a1497775aee50c4d06aa4b1e4989adb2518db))
+* reject flaky local component test results ([#3090](https://github.com/intent-hq/cloudlands-fe/issues/3090)) ([eff5abf](https://github.com/intent-hq/cloudlands-fe/commit/eff5abfbf4037abcd01b9d23d02390ce3248ad84))
+* reject leading separators in unit test arguments ([#3096](https://github.com/intent-hq/cloudlands-fe/issues/3096)) ([34da6b4](https://github.com/intent-hq/cloudlands-fe/commit/34da6b40a300104dbb41a528f4791f1a9f28f11f))
+* release promptly after an intentd pin advance ([#3092](https://github.com/intent-hq/cloudlands-fe/issues/3092)) ([54039c3](https://github.com/intent-hq/cloudlands-fe/commit/54039c37debf3ce5b471b72e6445cee39b1cd553))
+* remove obsolete Claude availability probes ([#3095](https://github.com/intent-hq/cloudlands-fe/issues/3095)) ([1c7c590](https://github.com/intent-hq/cloudlands-fe/commit/1c7c590b828799ceb36e39fd4a281e8a5289283e))
+* retain Mermaid fullscreen requests until presentation settles ([#3097](https://github.com/intent-hq/cloudlands-fe/issues/3097)) ([16d7c62](https://github.com/intent-hq/cloudlands-fe/commit/16d7c626f93f96eab5da401e5004aa2ecac7947b))
+* update script lifecycle state from events ([#3100](https://github.com/intent-hq/cloudlands-fe/issues/3100)) ([bf1d7a2](https://github.com/intent-hq/cloudlands-fe/commit/bf1d7a2bdc49a2b1421950a663fc0af9d8802dac))
+
 ## [2.197.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.196.1...v2.197.0) (2026-10-02)
 
 
