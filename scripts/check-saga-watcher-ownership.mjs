@@ -31,6 +31,10 @@ const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'c
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
+    pattern: /daemon-health-slice\.ts#connectionStatusChanged$/,
+    rationale: 'browser registry synchronization and desktop consent cleanup are independent',
+  },
+  {
     pattern: /workspace-lifecycle-slice\.ts#workspace(?:Deleted|Unmounted|Mounted)$/,
     rationale: 'lifecycle cleanup and restore fan out across independent domains',
   },

@@ -1,4 +1,6 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { request as desktopPermissionRequest } from '$features/desktop/renderer/desktop-test-fixtures';
+import { desktopKey } from '$store/renderer/slices/desktop-control/desktop-control-types';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -478,6 +480,39 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
   });
 
   afterEach(() => vi.clearAllMocks());
+
+  it('keeps desktop consent pending after a real agent:idle notification', async () => {
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const data = { ...desktopPermissionRequest, workspaceId: WS, agentId: AGENT };
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'sub-1',
+        event: {
+          id: 'desktop-pending-turn',
+          type: 'desktop:permission-requested',
+          workspaceId: WS,
+          data,
+        },
+      },
+    });
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'sub-1',
+        event: {
+          id: 'desktop-turn-ended',
+          type: 'agent:idle',
+          workspaceId: WS,
+          timestamp: new Date().toISOString(),
+          data: { agentId: AGENT },
+        },
+      },
+    });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expect(appStore.state.desktopControl.byKey[desktopKey(WS, AGENT)]?.pending).toEqual(data);
+  });
 
   it('agent:idle notification flips selectAgentIsResponding from true → false', async () => {
     // Optimistic chatSendStarted-style flag: the FE reducer marks isStreaming

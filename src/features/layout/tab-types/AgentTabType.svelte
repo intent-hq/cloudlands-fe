@@ -9,6 +9,10 @@
    * Renders an agent chat panel with header actions for copy, delete, task note, and font style.
    */
 
+  import DesktopConsentToast from '$features/desktop/renderer/DesktopConsentToast.svelte';
+  import { Card } from '$lib/components/ui/card';
+  import { selectDesktopEntry } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
+  import { desktopReadRequested } from '$store/renderer/slices/desktop-control/desktop-control-slice';
   import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
@@ -75,10 +79,15 @@
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
+  $effect(() => {
+    if (tab.agentId) appStore.dispatch(desktopReadRequested(workspaceId, tab.agentId));
+  });
+
   const headerContext = getPanelHeaderContext();
 
   const workspaceIdStore = writable('');
   const agentIdStore = writable('');
+  const desktop = selectDesktopEntry(workspaceIdStore, agentIdStore);
   const mutationConsumerId = crypto.randomUUID();
   const mutation$ = selectAgentMutationUi(workspaceIdStore, mutationConsumerId);
   $effect(() => {
@@ -310,7 +319,7 @@
 </script>
 
 {#snippet agentDisplayActions()}
-  <AgentViewSettingsDropdown embedded />
+  <AgentViewSettingsDropdown embedded {workspaceId} agentId={tab.agentId} />
 {/snippet}
 
 {#snippet agentActions()}
@@ -435,7 +444,16 @@
 {#if tab.agentId}
   {#if $workspace}
     {#key tab.agentId}
-      <div class="flex h-full min-h-0 w-full flex-1">
+      <div class="flex h-full min-h-0 w-full flex-1 flex-col">
+        {#if $desktop?.pending}
+          <Card class="m-3 shrink-0 p-3">
+            <DesktopConsentToast
+              {workspaceId}
+              agentId={tab.agentId}
+              requestId={$desktop.pending.requestId}
+            />
+          </Card>
+        {/if}
         <ChatPanel
           bind:this={chatPanelRef}
           workspace={$workspace}
