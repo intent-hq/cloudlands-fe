@@ -1,3 +1,4 @@
+import type { RepositoryResourceSession } from '$shared/types/repository-resource-read';
 import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
 import type { RepositorySelectionSession } from '$shared/types/repository-selection';
 /**
@@ -123,6 +124,7 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  captureRepositoryResource?(workspaceId: string): Promise<RepositoryResourceSession>;
   prepareNativeReview?(input: NativeReviewInput): Promise<NativeReviewSession>;
   captureRepositorySelection?(root: RepositoryRootIdentity): Promise<RepositorySelectionSession>;
   /** Absent on older or non-Electron transports; never fall back to ordinary request. */

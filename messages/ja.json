@@ -6913,5 +6913,13 @@
   "native_review_targetChoice_description": "このレビューの対象ブランチを選択してください。準備時にブランチを確認します。ワークスペースの設定は変更されません。",
   "native_review_targetRequired_error": "対象ブランチを入力してください。",
   "native_review_changeTarget_label": "対象ブランチを変更",
-  "native_review_targetContextChanged_description": "リポジトリの情報が変更されました。レビューを開始し直して、対象ブランチを確認してください。"
+  "native_review_targetContextChanged_description": "リポジトリの情報が変更されました。レビューを開始し直して、対象ブランチを確認してください。",
+  "ui_linkTooltip_resourceLoading_ariaLabel": "{provider} の詳細を読み込み中",
+  "ui_linkTooltip_resourceUnavailable_description": "{provider} から詳細を読み込めませんでした。",
+  "ui_linkTooltip_resourceRateLimited_description": "{provider} のリクエスト上限に達しました。後でもう一度お試しください。",
+  "ui_linkTooltip_resourceUnknown_label": "不明",
+  "ui_linkTooltip_resourceLocked_label": "ロック中",
+  "ui_linkTooltip_resourceMergeRequest_label": "マージリクエスト",
+  "ui_linkTooltip_resourceIssue_label": "課題",
+  "ui_linkTooltip_resourceRestricted_description": "この {provider} リソースへのアクセスは制限されています。"
 }

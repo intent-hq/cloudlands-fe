@@ -1,5 +1,11 @@
+import { showLinkTooltip } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
+import {
+  handleLink,
+  createGlobalLinkClickHandler,
+  createLinkClickHandler,
+  createLinkTooltipHandler,
+} from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
@@ -922,5 +928,39 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(result).toBe(true);
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
     expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+  });
+});
+
+describe('chat and note resource hover context', () => {
+  it('uses each actual workspace ancestor without normalizing the original URL', async () => {
+    vi.mocked(showLinkTooltip).mockClear();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const stop = createLinkTooltipHandler(container);
+    const original =
+      'https://gitlab.example.test:8443/forge/Team/Platform/api/-/merge_requests/42/diffs?view=parallel#note_42';
+    try {
+      for (const workspaceId of ['chat-workspace', 'note-workspace']) {
+        const surface = document.createElement('section');
+        surface.dataset.workspaceSurface = workspaceId;
+        const anchor = document.createElement('a');
+        anchor.href = original;
+        surface.append(anchor);
+        container.append(surface);
+        anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        await vi.dynamicImportSettled();
+        expect(showLinkTooltip).toHaveBeenLastCalledWith(anchor, original, workspaceId);
+        anchor.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      }
+      const anchor = document.createElement('a');
+      anchor.href = original;
+      container.append(anchor);
+      anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await vi.dynamicImportSettled();
+      expect(showLinkTooltip).toHaveBeenLastCalledWith(anchor, original, undefined);
+    } finally {
+      stop();
+      container.remove();
+    }
   });
 });

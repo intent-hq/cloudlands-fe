@@ -14,6 +14,19 @@ import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 
+/** Separate explicit resource lifetime, bound to this exact transport. */
+export function captureBackendRepositoryResource(workspaceId: string) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryResource)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_RESOURCE_UNAVAILABLE',
+        message: 'REPOSITORY_RESOURCE_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositoryResource(workspaceId);
+}
+
 /** Capture once before enqueue; a missing bound path never uses ordinary routing. */
 export function captureBackendRepositoryRoute(root: RepositoryRootIdentity) {
   const transport = resolveBackendTransport();

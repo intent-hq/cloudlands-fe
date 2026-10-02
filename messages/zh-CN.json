@@ -6913,5 +6913,13 @@
   "native_review_targetChoice_description": "选择此次评审的目标分支。准备时会检查该分支，工作区设置保持不变。",
   "native_review_targetRequired_error": "请输入目标分支。",
   "native_review_changeTarget_label": "更改目标分支",
-  "native_review_targetContextChanged_description": "仓库信息已更改。请重新开始评审以检查目标分支。"
+  "native_review_targetContextChanged_description": "仓库信息已更改。请重新开始评审以检查目标分支。",
+  "ui_linkTooltip_resourceLoading_ariaLabel": "正在加载 {provider} 详情",
+  "ui_linkTooltip_resourceUnavailable_description": "无法从 {provider} 加载详情。",
+  "ui_linkTooltip_resourceRateLimited_description": "已达到 {provider} 请求速率上限。请稍后重试。",
+  "ui_linkTooltip_resourceUnknown_label": "未知",
+  "ui_linkTooltip_resourceLocked_label": "已锁定",
+  "ui_linkTooltip_resourceMergeRequest_label": "合并请求",
+  "ui_linkTooltip_resourceIssue_label": "议题",
+  "ui_linkTooltip_resourceRestricted_description": "对此 {provider} 资源的访问受到限制。"
 }
