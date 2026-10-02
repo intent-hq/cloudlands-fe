@@ -8,11 +8,12 @@ import {
 } from '@tiptap/pm/model';
 import { __clipCells, __pastedCells, removeColSpan } from '@tiptap/pm/tables';
 import { Transform } from '@tiptap/pm/transform';
+import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { getTextBetween, getTextSerializersFromSchema, type JSONContent } from '@tiptap/core';
 import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import { bytes } from './bounded-note-service';
 import { scanTables, tableCellAt, tableRuns, type TableIndex } from './table-source';
-import type { Selection } from './source-journal';
+import type { Selection, TablePoint } from './source-journal';
 
 export type ClipboardValue = { 'text/plain': string; 'text/html': string };
 export type ClipboardPage = {
@@ -82,6 +83,63 @@ export function clipboardCellSource(cell: PMNode) {
   const markdown = processHTMLToMarkdown(`<table><tr>${container.innerHTML}</tr></table>`);
   const parsed = scanTables(markdown)[0].rows[0].cells[0];
   return markdown.slice(parsed.body, parsed.end);
+}
+
+/** Whole-cell state here is externally owned mock backing, never a renderer
+ * fallback. Native replacement fits inline/block input without an EditorView. */
+export function fitCellTextPaste(
+  cell: PMNode,
+  anchor: TablePoint,
+  head: TablePoint,
+  value: ClipboardValue,
+) {
+  const position = (point: TablePoint) => {
+    let pos = 1;
+    for (let i = 0; i < point.block; i++) pos += cell.child(i).nodeSize;
+    return pos + point.offset;
+  };
+  const state = EditorState.create({
+    schema: cell.type.schema,
+    doc: cell,
+    selection: TextSelection.create(cell, position(anchor), position(head)),
+  });
+  const container = document.createElement('div');
+  const plain = !value['text/html'];
+  const serializer = DOMSerializer.fromSchema(state.schema);
+  if (plain) {
+    for (const text of value['text/plain'].split(/(?:\r\n?|\n)+/)) {
+      const paragraph = container.appendChild(document.createElement('p'));
+      if (text)
+        paragraph.appendChild(
+          serializer.serializeNode(state.schema.text(text, state.selection.$from.marks())),
+        );
+    }
+  } else container.innerHTML = value['text/html'];
+  const slice = DOMParser.fromSchema(state.schema).parseSlice(container, {
+    preserveWhitespace: plain,
+    context: state.selection.$from,
+  });
+  const single = !slice.openStart && !slice.openEnd && slice.content.childCount === 1;
+  const tr = single
+    ? state.tr.replaceSelectionWith(slice.content.firstChild!, plain)
+    : state.tr.replaceSelection(slice);
+  let nodes = 2;
+  cell.descendants(() => nodes++);
+  tr.doc.descendants(() => nodes++);
+  slice.content.descendants(() => nodes++);
+  return {
+    cell: tr.doc,
+    point: {
+      cell: head.cell,
+      block: tr.selection.$head.index(0),
+      offset: tr.selection.$head.parentOffset,
+    },
+    costs: {
+      elements: container.querySelectorAll('*').length,
+      nodes,
+      serializedBytes: bytes(JSON.stringify([cell.toJSON(), slice.toJSON(), tr.doc.toJSON()])),
+    },
+  };
 }
 const empty = (): ClipboardValue => ({ 'text/plain': '', 'text/html': '' });
 const checksum = (text: string) => {

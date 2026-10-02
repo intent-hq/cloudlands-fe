@@ -5,6 +5,7 @@ import {
   serializeTableClipboard,
   parseTableClipboard,
   clipboardCellSource,
+  fitCellTextPaste,
   type ClipboardValue,
 } from './table-clipboard';
 import type { Schema } from '@tiptap/pm/model';
@@ -19,6 +20,7 @@ import { scanLists, type ListItem, type ListSeam } from './list-context';
 import {
   scanTables,
   tableCellAt,
+  tableRuns,
   admitTableWindow,
   type TableIndex,
   type TableWindow,
@@ -105,6 +107,9 @@ export class SourceJournal {
   maxClipboardInputDOM = 0;
   maxClipboardInputNodes = 0;
   maxClipboardRepeatedBytes = 0;
+  maxClipboardTextFitNodes = 0;
+  maxClipboardTextFitBytes = 0;
+  maxClipboardTextFitDOM = 0;
   maxClipboardPastePlanBytes = 0;
   maxClipboardPastePlanCells = 0;
   maxClipboardPasteMetadataBytes = 0;
@@ -146,18 +151,77 @@ export class SourceJournal {
       textSelection ? undefined : right - left,
       textSelection ? undefined : bottom - top,
     );
-    if (textSelection) {
-      if (!parsed.tableInput)
-        throw new Error('Text-caret non-table input still needs native inline fitting');
-      bottom = top + parsed.cells.height;
-      right = left + parsed.cells.width;
-    }
     this.maxClipboardInputDOM = Math.max(this.maxClipboardInputDOM, parsed.costs.elements);
     this.maxClipboardInputNodes = Math.max(this.maxClipboardInputNodes, parsed.costs.nodes);
     this.maxClipboardRepeatedBytes = Math.max(
       this.maxClipboardRepeatedBytes,
       parsed.costs.repeatedBytes,
     );
+    if (textSelection && !parsed.tableInput) {
+      if (anchor.from !== head.from)
+        throw new Error('Cross-cell text paste still needs native range fitting');
+      const stored = this.tableStates.get(`cell:${head.from + start}`);
+      const cell = schema.nodeFromJSON(
+        stored
+          ? JSON.parse(stored)
+          : {
+              type: head.row === 0 ? 'tableHeader' : 'tableCell',
+              attrs: { align: head.align, colspan: head.span ?? 1, rowspan: head.rowSpan ?? 1 },
+              content: [
+                {
+                  type: 'paragraph',
+                  content: tableRuns(source.slice(head.body, head.end), head.body).map((run) => ({
+                    type: run.hardBreak ? 'hardBreak' : 'text',
+                    ...(run.hardBreak ? {} : { text: run.text }),
+                    marks: run.marks,
+                  })),
+                },
+              ],
+            },
+      );
+      const fitted = fitCellTextPaste(
+        cell,
+        logical.anchor,
+        logical.head,
+        this.clipboardInputSink.published,
+      );
+      this.maxClipboardTextFitNodes = Math.max(this.maxClipboardTextFitNodes, fitted.costs.nodes);
+      this.maxClipboardTextFitBytes = Math.max(
+        this.maxClipboardTextFitBytes,
+        fitted.costs.serializedBytes,
+      );
+      this.maxClipboardTextFitDOM = Math.max(this.maxClipboardTextFitDOM, fitted.costs.elements);
+      const inserted = clipboardCellSource(fitted.cell);
+      this.stageTableState(`cell:${head.from + start}`, JSON.stringify(fitted.cell.toJSON()));
+      this.stage({ from: head.body + start, to: head.end + start, insert: inserted });
+      let offset = fitted.point.offset;
+      for (let i = 0; i < fitted.point.block; i++) offset += fitted.cell.child(i).content.size;
+      let caret = head.body + inserted.length;
+      for (const run of tableRuns(inserted, head.body)) {
+        if (offset <= run.text.length) {
+          caret =
+            run.to - run.from === run.text.length ? run.from + offset : offset ? run.to : run.from;
+          break;
+        }
+        offset -= run.text.length;
+      }
+      const after: Selection = {
+        anchor: caret + start,
+        head: caret + start,
+        affinity: 1,
+        revision: this.revision,
+        table: { kind: 'text', anchor: fitted.point, head: fitted.point },
+      };
+      this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(encoded));
+      const response = JSON.stringify(after);
+      if (bytes(response) > LIMITS.request)
+        throw new Error('Clipboard paste response exceeds budget');
+      return JSON.parse(response) as Selection;
+    }
+    if (textSelection) {
+      bottom = top + parsed.cells.height;
+      right = left + parsed.cells.width;
+    }
     const selected = all.filter(
       (cell) => cell.row >= top && cell.row < bottom && cell.column >= left && cell.column < right,
     );
