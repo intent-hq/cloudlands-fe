@@ -805,6 +805,11 @@ export class SourceJournal {
       size * 3,
     );
     if (!plan.accepted) return false;
+    const deletionBoundary =
+      received.command === 'deleteTable' &&
+      !plan.text &&
+      source.slice(Math.max(0, table.from - 2), table.from) === '\n\n' &&
+      source[table.to] === '\n';
     if (apply) {
       for (const row of table.rows)
         for (const cell of row.cells)
@@ -835,17 +840,12 @@ export class SourceJournal {
       // Keep the native live boundary without rewriting either neighbor's source.
       // The table scan owns its final row newline; the remaining right blank line
       // would otherwise be a newly parsed empty paragraph when joined to the left.
-      if (
-        received.command === 'deleteTable' &&
-        !plan.text &&
-        source.slice(Math.max(0, table.from - 2), table.from) === '\n\n' &&
-        source[table.to] === '\n'
-      )
+      if (deletionBoundary)
         this.setParagraphSeam({ from: table.from + start, to: table.from + start + 1 });
     }
     const after: Selection = {
-      anchor: plan.anchorSource,
-      head: plan.caret,
+      anchor: deletionBoundary ? table.from + start + 1 : plan.anchorSource,
+      head: deletionBoundary ? table.from + start + 1 : plan.caret,
       affinity: plan.anchorSource <= plan.caret ? 1 : -1,
       revision: this.revision,
       table: plan.logicalSelection,

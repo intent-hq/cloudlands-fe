@@ -436,8 +436,8 @@ export class SourceProjection {
     }
     const separators = new Map<number, string>();
     for (const paragraph of this.paragraphs) {
-      const end = mapping.mapResult(paragraph.end, -1),
-        next = mapping.mapResult(paragraph.next, 1);
+      const end = mapping.mapResult(paragraph.end, 1),
+        next = mapping.mapResult(paragraph.next, -1);
       if (!end.deleted && !next.deleted && next.pos === end.pos + 2)
         separators.set(end.pos, paragraph.separator);
     }
@@ -506,9 +506,12 @@ export class SourceProjection {
       });
       transition(index === after.childCount - 1 ? (this.context?.after ?? []) : []);
       const end = offset + paragraph.nodeSize - 1;
+      const separator = separators.get(end);
       source +=
         index < after.childCount - 1
-          ? separators.get(end) || (paragraph.content.size ? '\n\n' : '\n')
+          ? paragraph.content.size && separator === '\n'
+            ? '\n\n'
+            : separator || (paragraph.content.size ? '\n\n' : '\n')
           : this.trailing;
     });
     let from = 0,
