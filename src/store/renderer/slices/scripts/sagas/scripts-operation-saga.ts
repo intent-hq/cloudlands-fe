@@ -1,3 +1,29 @@
+import { connectionsListReceived, authRejectedReceived } from '../../connections/connections-slice';
+import { connectionStatusChanged, heartbeatFailed } from '../../daemon-health/daemon-health-slice';
+import {
+  daemonEventsSubscribing,
+  daemonEventsSubscribed,
+} from '../../workspace-events/workspace-events-slice';
+import {
+  principalContextChanged,
+  principalReadStarted,
+  principalReceived,
+  principalReadFailed,
+  hostMembershipChanged,
+  principalIdentityChanged,
+} from '../../principal/principal-slice';
+import {
+  setLabsMultiplayerEnabled,
+  toggleLabsMultiplayer,
+} from '../../user-preferences/user-preferences-slice';
+import {
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  updateWorkspaceEntity,
+  bulkUpdateWorkspaceEntities,
+  removeWorkspaceEntity,
+  resetWorkspaceState,
+} from '../../workspace/workspace-slice';
 import { scriptsOutputSaga } from './scripts-output-saga';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
@@ -14,6 +40,7 @@ import {
 import { selectScriptById, selectWorkspaceScriptOperations } from '../scripts-selectors';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
 import {
+  backendReconnected,
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -54,7 +81,34 @@ function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
 }
 
 function* waitForReadInvalidation(context: ScriptReadContext): SagaGenerator<true> {
-  while (yield* isScriptReadCurrent(context)) yield* take('*');
+  while (yield* isScriptReadCurrent(context)) {
+    yield* take([
+      backendReconnected,
+      workspaceUnmounted,
+      workspaceDeleted,
+      scriptReadFinished,
+      connectionsListReceived,
+      authRejectedReceived,
+      connectionStatusChanged,
+      heartbeatFailed,
+      daemonEventsSubscribing,
+      daemonEventsSubscribed,
+      principalContextChanged,
+      principalReadStarted,
+      principalReceived,
+      principalReadFailed,
+      hostMembershipChanged,
+      principalIdentityChanged,
+      setLabsMultiplayerEnabled,
+      toggleLabsMultiplayer,
+      replaceWorkspaceList,
+      setWorkspaceEntity,
+      updateWorkspaceEntity,
+      bulkUpdateWorkspaceEntities,
+      removeWorkspaceEntity,
+      resetWorkspaceState,
+    ]);
+  }
   return true;
 }
 

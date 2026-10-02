@@ -11,6 +11,7 @@ vi.mock('$lib/client', async () => {
   return { appClient: { scripts: new LiveScriptsClient() } };
 });
 import { store } from '$store/renderer/store';
+import { principalReadStarted } from '$store/renderer/slices/principal/principal-slice';
 import {
   backendReconnected,
   workspaceUnmounted,
@@ -311,7 +312,7 @@ describe('script lifecycle event to transport', () => {
       if (change === 'connection') run.dispatch(backendReconnected());
       else {
         run.state.principal.status = 'loading';
-        run.dispatch({ type: 'test/principalChanged' });
+        run.dispatch(principalReadStarted());
       }
       await settle();
       expect(run.scripts().scripts[ID].runtime.status).toBe('exited');
